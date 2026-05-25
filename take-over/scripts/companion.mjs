@@ -8,7 +8,10 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
+
+const CONFIG_PATH =
+  process.env.TAKE_OVER_CONFIG ||
+  path.join(os.homedir(), ".claude", "take-over.json");
 
 // ── Provider config ──────────────────────────────────────────────────────────
 
@@ -17,16 +20,18 @@ function loadProviderConfig(provider) {
     return { native: true, provider: "codex" };
   }
 
-  const settingsPath = path.join(REPO_ROOT, "claude_env_settings.json");
-  if (!fs.existsSync(settingsPath)) {
-    throw new Error(`Config file not found: ${settingsPath}`);
+  if (!fs.existsSync(CONFIG_PATH)) {
+    throw new Error(
+      `Config file not found: ${CONFIG_PATH}\n` +
+      `Create it with your provider settings, or set TAKE_OVER_CONFIG to point to your config file.`
+    );
   }
-  const config = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   const envKey = `env:${provider}`;
   const env = config[envKey];
   if (!env) {
     throw new Error(
-      `Provider "${provider}" not found in claude_env_settings.json. ` +
+      `Provider "${provider}" not found in ${CONFIG_PATH}. ` +
       `Add an "env:${provider}" block.`
     );
   }
@@ -217,8 +222,8 @@ function usage() {
   console.log(
     [
       "Usage:",
-      "  node scripts/ai-companion.mjs task --provider <name> [--model <model>] [--write] [prompt]",
-      "  node scripts/ai-companion.mjs plan --provider <name> [--model <model>] [prompt]",
+      "  node scripts/companion.mjs task --provider <name> [--model <model>] [--write] [prompt]",
+      "  node scripts/companion.mjs plan --provider <name> [--model <model>] [prompt]",
       "",
       "  For codex background jobs, use /codex:status, /codex:result, /codex:cancel",
     ].join("\n")
@@ -255,28 +260,28 @@ async function main() {
   let data;
   if (providerConfig.provider === "codex") {
     process.stderr.write(
-      `ai-companion: calling codex-companion task (${options.model || "default model"})...\n`
+      `take-over: calling codex-companion task (${options.model || "default model"})...\n`
     );
     data = await callCodexCompanion(userPrompt, systemPrompt, options.model, options.write);
-    process.stderr.write("ai-companion: done\n");
+    process.stderr.write("take-over: done\n");
   } else if (providerConfig.native) {
     process.stderr.write(
-      `ai-companion: calling claude (native CLI, ${options.provider})...\n`
+      `take-over: calling claude (native CLI, ${options.provider})...\n`
     );
     data = await callNativeClaude(userPrompt, systemPrompt);
-    process.stderr.write("ai-companion: done\n");
+    process.stderr.write("take-over: done\n");
   } else {
     if (!providerConfig.token) {
       throw new Error(
         `No ANTHROPIC_AUTH_TOKEN found for provider "${options.provider}". ` +
-        `Add it to claude_env_settings.json under env:${options.provider}.`
+        `Add it to ${CONFIG_PATH} under env:${options.provider}.`
       );
     }
 
     const model = resolveModel(providerConfig, options.model);
     const modeLabel = options.write ? "read-write" : "read-only";
     process.stderr.write(
-      `ai-companion: calling ${model} (${options.provider}, ${modeLabel})...\n`
+      `take-over: calling ${model} (${options.provider}, ${modeLabel})...\n`
     );
 
     data = await callAnthropicAPI(
@@ -288,7 +293,7 @@ async function main() {
     );
 
     process.stderr.write(
-      `ai-companion: ${data.stop_reason || "done"}, ` +
+      `take-over: ${data.stop_reason || "done"}, ` +
       `tokens: in=${data.usage?.input_tokens || "?"} out=${data.usage?.output_tokens || "?"}\n`
     );
   }

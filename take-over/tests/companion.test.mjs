@@ -1,6 +1,6 @@
 /**
- * Tests for ai-companion.mjs
- * Run: node --test claude_plugins/ai/tests/ai-companion.test.mjs
+ * Tests for companion.mjs
+ * Run: node --test take-over/tests/companion.test.mjs
  */
 
 import { test, describe } from "node:test";

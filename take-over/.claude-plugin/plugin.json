@@ -1,7 +1,7 @@
 {
   "name": "take-over",
   "version": "1.0.0",
-  "description": "Multi-model AI orchestration — delegate tasks and planning to different model providers configured in claude_env_settings.json.",
+  "description": "Hand off tasks to another AI model and get back the result — let a different model take over any task or planning request.",
   "author": {
     "name": "linxu"
   },
@@ -9,5 +9,5 @@
     "./commands/continue.md",
     "./commands/plan.md"
   ],
-  "keywords": ["multi-model", "continue", "plan", "deepseek", "orchestration"]
+  "keywords": ["take-over", "handoff", "multi-model", "deepseek", "delegate", "second-opinion"]
 }
