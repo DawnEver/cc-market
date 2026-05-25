@@ -12,19 +12,19 @@ A community marketplace of Claude Code plugins.
 
 | Plugin | Description |
 |---|---|
-| `take-over` | Multi-model AI orchestration — delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider |
+| `takeover` | Multi-model AI orchestration — delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider |
 
 ## Install a plugin
 
 ```shell
-/plugin install take-over@cc-market
+/plugin install takeover@cc-market
 ```
 
 Then use it:
 
 ```shell
-/take-over:continue review this PR for security issues
-/take-over:plan implement OAuth2 login
+/takeover:continue review this PR for security issues
+/takeover:plan implement OAuth2 login
 ```
 
 ## Contributing

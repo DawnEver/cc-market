@@ -1,33 +1,31 @@
 ---
-name: take-over-runtime
-description: Internal contract for calling the take-over companion script from Claude Code
+name: takeover-runtime
+description: Internal contract for calling the takeover companion script from Claude Code
 ---
 
-# Take-Over Runtime
+# Takeover Runtime
 
 ## Provider Configuration
 
-Providers are configured in `~/.claude/take-over.json` under `env:<provider>` keys.
+Providers are configured in `~/.claude/claude_env_settings.json` under `env:<provider>` keys.
 
 Each provider block must contain:
 - `ANTHROPIC_BASE_URL` — Anthropic-compatible API endpoint
 - `ANTHROPIC_AUTH_TOKEN` — API key
 - `ANTHROPIC_DEFAULT_SONNET_MODEL` — default model (optional; required if not passing `--model`)
 
-Override the config file location with the `TAKE_OVER_CONFIG` environment variable.
-
-> **Security note**: `~/.claude/take-over.json` contains API keys in plaintext. Restrict permissions (`chmod 600`) and avoid syncing it through cloud folders.
+> **Security note**: `~/.claude/claude_env_settings.json` contains API keys in plaintext. Restrict permissions (`chmod 600`) and avoid syncing it through cloud folders.
 
 ## Providers
 
 ### Anthropic-compatible (deepseek, etc.)
-Reads `~/.claude/take-over.json` under `env:<provider>`. Requires `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`.
+Reads `~/.claude/claude_env_settings.json` under `env:<provider>`. Requires `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`.
 
 ### `claude`
 Native Claude CLI via OAuth/Pro subscription. No config entry needed — bypass is automatic.
 
 ### `codex`
-Delegates to the codex plugin's `codex-companion.mjs` runtime. Auto-discovered from `~/.claude/plugins/cache/openai-codex/codex/<version>/`, or override with `TAKE_OVER_CODEX_COMPANION`.
+Delegates to the codex plugin's `codex-companion.mjs` runtime. Auto-discovered from `~/.claude/plugins/cache/openai-codex/codex/<version>/`, or override with `TAKEOVER_CODEX_COMPANION`.
 
 - Requires the codex plugin to be installed and authenticated (`/codex:setup`, `codex login`)
 - Model override: `--model <name>` (e.g. `o3`, `o4-mini`)
@@ -52,7 +50,7 @@ PROMPT
 
 ### Behavior
 
-- Reads provider config from `~/.claude/take-over.json` (or `$TAKE_OVER_CONFIG`)
+- Reads provider config from `~/.claude/claude_env_settings.json`
 - Calls the configured API (or delegates to codex-companion)
 - Returns only the response text (stdout), diagnostics go to stderr
 - Default model is the provider's `ANTHROPIC_DEFAULT_SONNET_MODEL`

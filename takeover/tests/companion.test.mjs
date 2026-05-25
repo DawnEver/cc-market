@@ -1,6 +1,6 @@
 /**
  * Tests for companion lib
- * Run: node --test take-over/tests/companion.test.mjs
+ * Run: node --test takeover/tests/companion.test.mjs
  */
 
 import { test, describe } from "node:test";

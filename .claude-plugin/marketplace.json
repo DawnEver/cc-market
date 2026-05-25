@@ -11,9 +11,9 @@
   },
   "plugins": [
     {
-      "name": "take-over",
-      "source": "./take-over",
-      "displayName": "Take-Over",
+      "name": "takeover",
+      "source": "./takeover",
+      "displayName": "Takeover",
       "description": "Multi-model AI orchestration — delegate tasks and planning to different model providers (DeepSeek, etc.) directly from Claude Code.",
       "author": {
         "name": "linxu"

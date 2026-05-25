@@ -13,6 +13,7 @@ import {
   extractText,
   parseArgs,
   readStdin,
+  listModels,
 } from "./lib.mjs";
 
 // ── Callers ──────────────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ function usage() {
       "Usage:",
       "  node scripts/companion.mjs task --provider <name> [--model <model>] [--write] [prompt]",
       "  node scripts/companion.mjs plan --provider <name> [--model <model>] [prompt]",
+      "  node scripts/companion.mjs models",
       "",
       "  For codex background jobs, use /codex:status, /codex:result, /codex:cancel",
     ].join("\n")
@@ -112,8 +114,13 @@ async function main() {
     return;
   }
 
+  if (subcommand === "models") {
+    process.stdout.write(listModels() + "\n");
+    return;
+  }
+
   if (!["task", "plan"].includes(subcommand)) {
-    throw new Error(`Unknown subcommand: ${subcommand}. Use task or plan.`);
+    throw new Error(`Unknown subcommand: ${subcommand}. Use task, plan, or models.`);
   }
 
   const { options, prompt: argsPrompt } = parseArgs(argv);
@@ -129,20 +136,20 @@ async function main() {
 
   let data;
   if (providerConfig.provider === "codex") {
-    process.stderr.write(`take-over: calling codex-companion task (${options.model || "default model"})...\n`);
+    process.stderr.write(`takeover: calling codex-companion task (${options.model || "default model"})...\n`);
     data = await callCodexCompanion(userPrompt, systemPrompt, options.model, options.write);
-    process.stderr.write("take-over: done\n");
+    process.stderr.write("takeover: done\n");
   } else if (providerConfig.native) {
     if (options.write) throw new Error("--write is only supported for the codex provider.");
-    process.stderr.write("take-over: calling claude (native CLI)...\n");
+    process.stderr.write("takeover: calling claude (native CLI)...\n");
     data = await callNativeClaude(userPrompt, systemPrompt);
-    process.stderr.write("take-over: done\n");
+    process.stderr.write("takeover: done\n");
   } else {
     const model = resolveModel(providerConfig, options.model);
-    process.stderr.write(`take-over: calling ${model} (${options.provider})...\n`);
+    process.stderr.write(`takeover: calling ${model} (${options.provider})...\n`);
     data = await callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, options.write);
     process.stderr.write(
-      `take-over: ${data.stop_reason || "done"}, ` +
+      `takeover: ${data.stop_reason || "done"}, ` +
       `tokens: in=${data.usage?.input_tokens || "?"} out=${data.usage?.output_tokens || "?"}\n`
     );
   }
