@@ -1,12 +1,12 @@
 ---
-description: Delegate a task or investigation to another AI model for a second opinion
-argument-hint: "[--provider <name>] [--model <model>] [what to investigate or fix]"
+description: Hand off a task or investigation to another AI model — let it take over and return the result
+argument-hint: "[--provider <name>] [--model <model>] [what to hand off]"
 allowed-tools: Bash(node:*), AskUserQuestion, Agent
 ---
 
-Invoke the `take-over:ai-continue` subagent via the `Agent` tool (`subagent_type: "take-over:ai-continue"`), forwarding the raw user request as the prompt.
+Invoke the `take-over:take-over` subagent via the `Agent` tool (`subagent_type: "take-over:take-over"`), forwarding the raw user request as the prompt.
 
-The subagent (a thin forwarding wrapper) will call ai-companion via Bash with the prompt text on stdin and flags on the command line.
+The subagent hands off the request to the companion script, which calls the target model and returns its output verbatim.
 
 Raw user request:
 $ARGUMENTS
@@ -14,5 +14,5 @@ $ARGUMENTS
 Execution rules:
 - Default to foreground execution.
 - Default provider is `deepseek` unless the user specifies `--provider <name>`.
-- Do not paraphrase, summarize, or add commentary around the agent output. Return it verbatim.
-- If the user did not supply a request, ask what should be investigated or fixed.
+- Return the agent output verbatim — no paraphrasing, no commentary.
+- If the user did not supply a request, ask what should be handed off.
