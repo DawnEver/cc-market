@@ -20,12 +20,11 @@ const PLUGIN_DIR = path.resolve(__dirname, "..");
 // For spawn-dependent functions we use module mocking.
 // ---------------------------------------------------------------------------
 
-// ── Inline copies of pure functions ─────────────────────────────────────────
+// ── Inline copies of pure functions — keep in sync with companion.mjs ────────
 
 function loadProviderConfig(provider, settingsPath) {
-  if (provider === "codex") {
-    return { native: true, provider: "codex" };
-  }
+  if (provider === "codex") return { native: true, provider: "codex" };
+  if (provider === "claude") return { native: true, provider: "claude" };
   if (!fs.existsSync(settingsPath)) {
     throw new Error(`Config file not found: ${settingsPath}`);
   }
@@ -34,22 +33,14 @@ function loadProviderConfig(provider, settingsPath) {
   const env = config[envKey];
   if (!env) {
     throw new Error(
-      `Provider "${provider}" not found in claude_env_settings.json. ` +
+      `Provider "${provider}" not found in ${settingsPath}. ` +
         `Add an "env:${provider}" block.`
     );
   }
-  const isEmpty = !env.ANTHROPIC_AUTH_TOKEN && !env.ANTHROPIC_BASE_URL;
-  if (isEmpty && provider === "claude") {
-    return { native: true, provider: "claude" };
-  }
-  return {
-    native: false,
-    baseUrl: env.ANTHROPIC_BASE_URL,
-    token: env.ANTHROPIC_AUTH_TOKEN,
-    defaultOpus: env.ANTHROPIC_DEFAULT_OPUS_MODEL,
-    defaultSonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-    defaultHaiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-  };
+  const { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: token, ANTHROPIC_DEFAULT_SONNET_MODEL: defaultSonnet } = env;
+  if (!baseUrl) throw new Error(`Provider "${provider}" is missing ANTHROPIC_BASE_URL in ${settingsPath}.`);
+  if (!token)   throw new Error(`Provider "${provider}" is missing ANTHROPIC_AUTH_TOKEN in ${settingsPath}.`);
+  return { native: false, baseUrl, token, defaultSonnet };
 }
 
 function resolveModel(providerConfig, requestedModel) {
@@ -70,22 +61,27 @@ function parseArgs(argv) {
   const options = { provider: null, model: null, write: false };
   const positionals = [];
   let i = 0;
+  let endOfOptions = false;
   while (i < argv.length) {
+    if (endOfOptions) { positionals.push(argv[i++]); continue; }
     switch (argv[i]) {
+      case "--":
+        endOfOptions = true;
+        break;
       case "--provider":
+        if (!argv[i + 1]) throw new Error("--provider requires a value.");
         options.provider = argv[++i];
         break;
       case "--model":
       case "-m":
+        if (!argv[i + 1]) throw new Error("--model requires a value.");
         options.model = argv[++i];
         break;
       case "--write":
         options.write = true;
         break;
       default:
-        if (!argv[i].startsWith("-")) {
-          positionals.push(argv[i]);
-        }
+        positionals.push(argv[i]);
     }
     i++;
   }
@@ -106,33 +102,28 @@ function makeTempSettings(obj) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("loadProviderConfig", () => {
-  test('returns { native: true, provider: "codex" } for codex provider', () => {
-    const result = loadProviderConfig("codex", "/nonexistent");
-    assert.deepEqual(result, { native: true, provider: "codex" });
+  test('returns native codex config without reading config file', () => {
+    assert.deepEqual(loadProviderConfig("codex", "/nonexistent"), { native: true, provider: "codex" });
   });
 
-  test('returns native claude config for claude provider with empty env', () => {
-    const settingsPath = makeTempSettings({ "env:claude": {} });
-    try {
-      const result = loadProviderConfig("claude", settingsPath);
-      assert.deepEqual(result, { native: true, provider: "claude" });
-    } finally {
-      fs.unlinkSync(settingsPath);
-    }
+  test('returns native claude config without reading config file', () => {
+    assert.deepEqual(loadProviderConfig("claude", "/nonexistent"), { native: true, provider: "claude" });
   });
 
-  test('returns API config for non-empty claude provider env', () => {
+  test('returns API config for deepseek provider', () => {
     const settingsPath = makeTempSettings({
-      "env:claude": {
+      "env:deepseek": {
         ANTHROPIC_AUTH_TOKEN: "tok",
-        ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-5",
+        ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash",
       },
     });
     try {
-      const result = loadProviderConfig("claude", settingsPath);
+      const result = loadProviderConfig("deepseek", settingsPath);
       assert.equal(result.native, false);
       assert.equal(result.token, "tok");
+      assert.equal(result.baseUrl, "https://api.deepseek.com/anthropic");
+      assert.equal(result.defaultSonnet, "deepseek-v4-flash");
     } finally {
       fs.unlinkSync(settingsPath);
     }
@@ -151,6 +142,30 @@ describe("loadProviderConfig", () => {
       assert.throws(
         () => loadProviderConfig("unknown-provider", settingsPath),
         /Provider "unknown-provider" not found/
+      );
+    } finally {
+      fs.unlinkSync(settingsPath);
+    }
+  });
+
+  test('throws when ANTHROPIC_BASE_URL is missing', () => {
+    const settingsPath = makeTempSettings({ "env:myprovider": { ANTHROPIC_AUTH_TOKEN: "tok" } });
+    try {
+      assert.throws(
+        () => loadProviderConfig("myprovider", settingsPath),
+        /missing ANTHROPIC_BASE_URL/
+      );
+    } finally {
+      fs.unlinkSync(settingsPath);
+    }
+  });
+
+  test('throws when ANTHROPIC_AUTH_TOKEN is missing', () => {
+    const settingsPath = makeTempSettings({ "env:myprovider": { ANTHROPIC_BASE_URL: "https://x.com" } });
+    try {
+      assert.throws(
+        () => loadProviderConfig("myprovider", settingsPath),
+        /missing ANTHROPIC_AUTH_TOKEN/
       );
     } finally {
       fs.unlinkSync(settingsPath);
@@ -200,6 +215,20 @@ describe("parseArgs", () => {
     assert.equal(options.model, "o4-mini");
     assert.equal(options.write, true);
     assert.equal(prompt, "do something useful");
+  });
+
+  test('-- stops flag parsing, treats rest as prompt', () => {
+    const { options, prompt } = parseArgs(["--provider", "deepseek", "--", "--not-a-flag", "text"]);
+    assert.equal(options.provider, "deepseek");
+    assert.equal(prompt, "--not-a-flag text");
+  });
+
+  test('throws when --provider has no value', () => {
+    assert.throws(() => parseArgs(["--provider"]), /--provider requires a value/);
+  });
+
+  test('throws when --model has no value', () => {
+    assert.throws(() => parseArgs(["--model"]), /--model requires a value/);
   });
 });
 
