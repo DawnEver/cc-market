@@ -1,99 +1,26 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+import {
+  CONFIG_PATH,
+  loadProviderConfig,
+  resolveModel,
+  buildPrompt,
+  findCodexCompanion,
+  extractText,
+  parseArgs,
+  readStdin,
+} from "./lib.mjs";
 
-const CONFIG_PATH =
-  process.env.TAKE_OVER_CONFIG ||
-  path.join(os.homedir(), ".claude", "take-over.json");
-
-// ── Provider config ──────────────────────────────────────────────────────────
-
-function loadProviderConfig(provider) {
-  if (provider === "codex") {
-    return { native: true, provider: "codex" };
-  }
-  if (provider === "claude") {
-    return { native: true, provider: "claude" };
-  }
-
-  if (!fs.existsSync(CONFIG_PATH)) {
-    throw new Error(
-      `Config file not found: ${CONFIG_PATH}\n` +
-      `Create it with your provider settings, or set TAKE_OVER_CONFIG to point to your config file.`
-    );
-  }
-  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-  const envKey = `env:${provider}`;
-  const env = config[envKey];
-  if (!env) {
-    throw new Error(
-      `Provider "${provider}" not found in ${CONFIG_PATH}. ` +
-      `Add an "env:${provider}" block.`
-    );
-  }
-
-  const { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: token, ANTHROPIC_DEFAULT_SONNET_MODEL: defaultSonnet } = env;
-  if (!baseUrl) throw new Error(`Provider "${provider}" is missing ANTHROPIC_BASE_URL in ${CONFIG_PATH}.`);
-  if (!token)   throw new Error(`Provider "${provider}" is missing ANTHROPIC_AUTH_TOKEN in ${CONFIG_PATH}.`);
-
-  return { native: false, baseUrl, token, defaultSonnet };
-}
-
-function resolveModel(providerConfig, requestedModel) {
-  if (requestedModel) return requestedModel;
-  return providerConfig.defaultSonnet;
-}
-
-function buildPrompt(subcommand, userPrompt) {
-  const promptsDir = path.join(SCRIPT_DIR, "..", "prompts");
-
-  let systemPrompt = "";
-  const templateFile = path.join(promptsDir, `${subcommand}.md`);
-  if (fs.existsSync(templateFile)) {
-    systemPrompt = fs.readFileSync(templateFile, "utf8").trim();
-  }
-
-  return { systemPrompt, userPrompt: userPrompt.trim() };
-}
-
-// ── Codex companion delegation ───────────────────────────────────────────────
-
-function findCodexCompanion() {
-  if (process.env.TAKE_OVER_CODEX_COMPANION) {
-    const override = process.env.TAKE_OVER_CODEX_COMPANION;
-    if (!fs.existsSync(override)) throw new Error(`TAKE_OVER_CODEX_COMPANION path not found: ${override}`);
-    return override;
-  }
-  const base = path.join(os.homedir(), ".claude/plugins/cache/openai-codex/codex");
-  if (!fs.existsSync(base)) {
-    throw new Error("Codex plugin not installed. Run /codex:setup first, or set TAKE_OVER_CODEX_COMPANION.");
-  }
-  const versions = fs.readdirSync(base).filter((v) => /^\d+\.\d+\.\d+$/.test(v));
-  if (!versions.length) throw new Error("No codex plugin versions found in ~/.claude/plugins/cache/openai-codex/codex/");
-  versions.sort((a, b) => {
-    const pa = a.split(".").map(Number);
-    const pb = b.split(".").map(Number);
-    for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pb[i] - pa[i];
-    return 0;
-  });
-  const companion = path.join(base, versions[0], "scripts", "codex-companion.mjs");
-  if (!fs.existsSync(companion)) throw new Error(`codex-companion.mjs not found at: ${companion}`);
-  return companion;
-}
+// ── Callers ──────────────────────────────────────────────────────────────────
 
 function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false) {
   return new Promise((resolve, reject) => {
     const companionPath = findCodexCompanion();
-    const fullPrompt = systemPrompt
-      ? `${systemPrompt}\n\n---\n\n${userPrompt}`
-      : userPrompt;
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
     const args = ["task"];
     if (writeMode) args.push("--write");
     if (model) args.push("--model", model);
@@ -109,22 +36,15 @@ function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false) 
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ content: [{ type: "text", text: stdout.trim() }] });
-      } else {
-        reject(new Error(`codex-companion exited ${code}: ${stderr.trim()}`));
-      }
+      if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
+      else reject(new Error(`codex-companion exited ${code}: ${stderr.trim()}`));
     });
   });
 }
 
-// ── Other callers ────────────────────────────────────────────────────────────
-
 function callNativeClaude(userPrompt, systemPrompt) {
   return new Promise((resolve, reject) => {
-    const fullPrompt = systemPrompt
-      ? `${systemPrompt}\n\n---\n\n${userPrompt}`
-      : userPrompt;
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
     const child = spawn("claude", ["-p", fullPrompt], {
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -136,11 +56,8 @@ function callNativeClaude(userPrompt, systemPrompt) {
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ content: [{ type: "text", text: stdout.trim() }] });
-      } else {
-        reject(new Error(`claude CLI exited ${code}: ${stderr.trim()}`));
-      }
+      if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
+      else reject(new Error(`claude CLI exited ${code}: ${stderr.trim()}`));
     });
   });
 }
@@ -150,16 +67,12 @@ async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt,
   if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${CONFIG_PATH}.`);
   const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
   const url = `${baseUrl}/messages`;
-
   const body = {
     model,
     max_tokens: 16000,
     messages: [{ role: "user", content: userPrompt }],
   };
-  if (systemPrompt) {
-    body.system = systemPrompt;
-  }
-
+  if (systemPrompt) body.system = systemPrompt;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -170,68 +83,14 @@ async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(300000),
   });
-
   if (!res.ok) {
     const errorText = await res.text();
     throw new Error(`API error ${res.status}: ${errorText}`);
   }
-
   return res.json();
 }
 
-function extractText(data) {
-  const content = data.content || [];
-  const text = content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-  if (!text && content.length > 0) {
-    const types = [...new Set(content.map((b) => b.type))].join(", ");
-    process.stderr.write(`take-over: warning — response contained no text blocks (got: ${types})\n`);
-  }
-  return text;
-}
-
 // ── CLI ──────────────────────────────────────────────────────────────────────
-
-function parseArgs(argv) {
-  const options = { provider: null, model: null, write: false };
-  const positionals = [];
-  let i = 0;
-  let endOfOptions = false;
-  while (i < argv.length) {
-    if (endOfOptions) {
-      positionals.push(argv[i++]);
-      continue;
-    }
-    switch (argv[i]) {
-      case "--":
-        endOfOptions = true;
-        break;
-      case "--provider":
-        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--provider requires a value.");
-        options.provider = argv[++i];
-        break;
-      case "--model":
-      case "-m":
-        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--model requires a value.");
-        options.model = argv[++i];
-        break;
-      case "--write":
-        options.write = true;
-        break;
-      default:
-        positionals.push(argv[i]);
-    }
-    i++;
-  }
-  return { options, prompt: positionals.join(" ") };
-}
-
-function readStdin() {
-  if (process.stdin.isTTY) return "";
-  return fs.readFileSync(0, "utf8").trim();
-}
 
 function usage() {
   console.log(
@@ -261,49 +120,27 @@ async function main() {
   const stdinPrompt = readStdin();
   const rawPrompt = stdinPrompt || argsPrompt;
 
-  if (!options.provider) {
-    throw new Error("--provider is required (e.g. --provider deepseek)");
-  }
-
-  if (!rawPrompt) {
-    throw new Error("Provide a prompt as arguments or via stdin.");
-  }
-
-  if (options.write && subcommand === "plan") {
-    throw new Error("--write is not supported for the plan subcommand.");
-  }
+  if (!options.provider) throw new Error("--provider is required (e.g. --provider deepseek)");
+  if (!rawPrompt)        throw new Error("Provide a prompt as arguments or via stdin.");
+  if (options.write && subcommand === "plan") throw new Error("--write is not supported for the plan subcommand.");
 
   const providerConfig = loadProviderConfig(options.provider);
   const { systemPrompt, userPrompt } = buildPrompt(subcommand, rawPrompt);
 
   let data;
   if (providerConfig.provider === "codex") {
-    process.stderr.write(
-      `take-over: calling codex-companion task (${options.model || "default model"})...\n`
-    );
+    process.stderr.write(`take-over: calling codex-companion task (${options.model || "default model"})...\n`);
     data = await callCodexCompanion(userPrompt, systemPrompt, options.model, options.write);
     process.stderr.write("take-over: done\n");
   } else if (providerConfig.native) {
     if (options.write) throw new Error("--write is only supported for the codex provider.");
-    process.stderr.write(
-      `take-over: calling claude (native CLI)...\n`
-    );
+    process.stderr.write("take-over: calling claude (native CLI)...\n");
     data = await callNativeClaude(userPrompt, systemPrompt);
     process.stderr.write("take-over: done\n");
   } else {
     const model = resolveModel(providerConfig, options.model);
-    process.stderr.write(
-      `take-over: calling ${model} (${options.provider})...\n`
-    );
-
-    data = await callAnthropicAPI(
-      providerConfig,
-      model,
-      systemPrompt,
-      userPrompt,
-      options.write
-    );
-
+    process.stderr.write(`take-over: calling ${model} (${options.provider})...\n`);
+    data = await callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, options.write);
     process.stderr.write(
       `take-over: ${data.stop_reason || "done"}, ` +
       `tokens: in=${data.usage?.input_tokens || "?"} out=${data.usage?.output_tokens || "?"}\n`
@@ -313,8 +150,10 @@ async function main() {
   process.stdout.write(extractText(data) + "\n");
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${message}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exitCode = 1;
+  });
+}
