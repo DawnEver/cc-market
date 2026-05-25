@@ -66,9 +66,14 @@ function buildPrompt(subcommand, userPrompt) {
 // ── Codex companion delegation ───────────────────────────────────────────────
 
 function findCodexCompanion() {
+  if (process.env.TAKE_OVER_CODEX_COMPANION) {
+    const override = process.env.TAKE_OVER_CODEX_COMPANION;
+    if (!fs.existsSync(override)) throw new Error(`TAKE_OVER_CODEX_COMPANION path not found: ${override}`);
+    return override;
+  }
   const base = path.join(os.homedir(), ".claude/plugins/cache/openai-codex/codex");
   if (!fs.existsSync(base)) {
-    throw new Error("Codex plugin not installed. Run /codex:setup first.");
+    throw new Error("Codex plugin not installed. Run /codex:setup first, or set TAKE_OVER_CODEX_COMPANION.");
   }
   const versions = fs.readdirSync(base).filter((v) => /^\d+\.\d+\.\d+$/.test(v));
   if (!versions.length) throw new Error("No codex plugin versions found in ~/.claude/plugins/cache/openai-codex/codex/");
@@ -176,10 +181,15 @@ async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt,
 
 function extractText(data) {
   const content = data.content || [];
-  return content
+  const text = content
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("\n");
+  if (!text && content.length > 0) {
+    const types = [...new Set(content.map((b) => b.type))].join(", ");
+    process.stderr.write(`take-over: warning — response contained no text blocks (got: ${types})\n`);
+  }
+  return text;
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
@@ -199,12 +209,12 @@ function parseArgs(argv) {
         endOfOptions = true;
         break;
       case "--provider":
-        if (!argv[i + 1]) throw new Error("--provider requires a value.");
+        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--provider requires a value.");
         options.provider = argv[++i];
         break;
       case "--model":
       case "-m":
-        if (!argv[i + 1]) throw new Error("--model requires a value.");
+        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--model requires a value.");
         options.model = argv[++i];
         break;
       case "--write":
@@ -259,6 +269,10 @@ async function main() {
     throw new Error("Provide a prompt as arguments or via stdin.");
   }
 
+  if (options.write && subcommand === "plan") {
+    throw new Error("--write is not supported for the plan subcommand.");
+  }
+
   const providerConfig = loadProviderConfig(options.provider);
   const { systemPrompt, userPrompt } = buildPrompt(subcommand, rawPrompt);
 
@@ -270,16 +284,16 @@ async function main() {
     data = await callCodexCompanion(userPrompt, systemPrompt, options.model, options.write);
     process.stderr.write("take-over: done\n");
   } else if (providerConfig.native) {
+    if (options.write) throw new Error("--write is only supported for the codex provider.");
     process.stderr.write(
-      `take-over: calling claude (native CLI, ${options.provider})...\n`
+      `take-over: calling claude (native CLI)...\n`
     );
     data = await callNativeClaude(userPrompt, systemPrompt);
     process.stderr.write("take-over: done\n");
   } else {
     const model = resolveModel(providerConfig, options.model);
-    const modeLabel = options.write ? "read-write" : "read-only";
     process.stderr.write(
-      `take-over: calling ${model} (${options.provider}, ${modeLabel})...\n`
+      `take-over: calling ${model} (${options.provider})...\n`
     );
 
     data = await callAnthropicAPI(
