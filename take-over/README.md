@@ -32,15 +32,14 @@ Create `~/.claude/take-over.json` with your provider blocks:
   "env:deepseek": {
     "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
     "ANTHROPIC_AUTH_TOKEN": "sk-...",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro"
-  },
-  "env:claude": {}
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash"
+  }
 }
 ```
 
-Each provider needs an Anthropic-compatible Messages API endpoint. Set `TAKE_OVER_CONFIG` to use a different config file path.
+Each provider needs `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and optionally `ANTHROPIC_DEFAULT_SONNET_MODEL` (required if you don't pass `--model`). Set `TAKE_OVER_CONFIG` to use a different config file path.
+
+> **Security**: `take-over.json` stores API keys in plaintext. Run `chmod 600 ~/.claude/take-over.json` and avoid syncing this file through cloud storage.
 
 **Built-in providers** (no config needed):
 - `claude` — native Claude CLI via your Pro subscription

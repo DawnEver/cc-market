@@ -69,12 +69,12 @@ function parseArgs(argv) {
         endOfOptions = true;
         break;
       case "--provider":
-        if (!argv[i + 1]) throw new Error("--provider requires a value.");
+        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--provider requires a value.");
         options.provider = argv[++i];
         break;
       case "--model":
       case "-m":
-        if (!argv[i + 1]) throw new Error("--model requires a value.");
+        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--model requires a value.");
         options.model = argv[++i];
         break;
       case "--write":
@@ -229,6 +229,10 @@ describe("parseArgs", () => {
 
   test('throws when --model has no value', () => {
     assert.throws(() => parseArgs(["--model"]), /--model requires a value/);
+  });
+
+  test('throws when --provider is followed by another flag', () => {
+    assert.throws(() => parseArgs(["--provider", "--model", "x"]), /--provider requires a value/);
   });
 });
 
