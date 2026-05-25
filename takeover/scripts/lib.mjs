@@ -6,9 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-export const CONFIG_PATH =
-  process.env.TAKE_OVER_CONFIG ||
-  path.join(os.homedir(), ".claude", "take-over.json");
+export const CONFIG_PATH = path.join(os.homedir(), ".claude", "claude_env_settings.json");
 
 // ── Provider config ──────────────────────────────────────────────────────────
 
@@ -19,7 +17,7 @@ export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
   if (!fs.existsSync(configPath)) {
     throw new Error(
       `Config file not found: ${configPath}\n` +
-      `Create it with your provider settings, or set TAKE_OVER_CONFIG to point to your config file.`
+      `Create it with your provider settings.`
     );
   }
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -61,14 +59,14 @@ export function buildPrompt(subcommand, userPrompt) {
 // ── Codex discovery ──────────────────────────────────────────────────────────
 
 export function findCodexCompanion() {
-  if (process.env.TAKE_OVER_CODEX_COMPANION) {
-    const override = process.env.TAKE_OVER_CODEX_COMPANION;
-    if (!fs.existsSync(override)) throw new Error(`TAKE_OVER_CODEX_COMPANION path not found: ${override}`);
+  if (process.env.TAKEOVER_CODEX_COMPANION) {
+    const override = process.env.TAKEOVER_CODEX_COMPANION;
+    if (!fs.existsSync(override)) throw new Error(`TAKEOVER_CODEX_COMPANION path not found: ${override}`);
     return override;
   }
   const base = path.join(os.homedir(), ".claude/plugins/cache/openai-codex/codex");
   if (!fs.existsSync(base)) {
-    throw new Error("Codex plugin not installed. Run /codex:setup first, or set TAKE_OVER_CODEX_COMPANION.");
+    throw new Error("Codex plugin not installed. Run /codex:setup first, or set TAKEOVER_CODEX_COMPANION.");
   }
   const versions = fs.readdirSync(base).filter((v) => /^\d+\.\d+\.\d+$/.test(v));
   if (!versions.length) throw new Error("No codex plugin versions found in ~/.claude/plugins/cache/openai-codex/codex/");
@@ -93,7 +91,7 @@ export function extractText(data) {
     .join("\n");
   if (!text && content.length > 0) {
     const types = [...new Set(content.map((b) => b.type))].join(", ");
-    process.stderr.write(`take-over: warning — response contained no text blocks (got: ${types})\n`);
+    process.stderr.write(`takeover: warning — response contained no text blocks (got: ${types})\n`);
   }
   return text;
 }
@@ -132,6 +130,47 @@ export function parseArgs(argv) {
     i++;
   }
   return { options, prompt: positionals.join(" ") };
+}
+
+// ── Model listing ────────────────────────────────────────────────────────────
+
+export function listModels(configPath = CONFIG_PATH) {
+  const lines = [];
+
+  // Native providers (hardcoded, no config needed)
+  lines.push("claude   — Native Claude CLI (OAuth/Pro subscription)");
+  lines.push("codex    — OpenAI Codex (via codex-companion, --model supported)");
+
+  if (!fs.existsSync(configPath)) {
+    lines.push("");
+    lines.push(`Config file not found at ${configPath}.`);
+    return lines.join("\n");
+  }
+
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const apiProviders = Object.keys(config)
+    .filter((k) => k.startsWith("env:") && config[k].ANTHROPIC_BASE_URL)
+    .map((k) => k.slice(4));
+
+  if (apiProviders.length === 0) {
+    lines.push("");
+    lines.push("No API-based providers configured.");
+    return lines.join("\n");
+  }
+
+  lines.push("");
+  for (const name of apiProviders) {
+    const env = config[`env:${name}`];
+    const models = [];
+    if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL) models.push(`haiku=${env.ANTHROPIC_DEFAULT_HAIKU_MODEL}`);
+    if (env.ANTHROPIC_DEFAULT_SONNET_MODEL) models.push(`sonnet=${env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
+    if (env.ANTHROPIC_DEFAULT_OPUS_MODEL) models.push(`opus=${env.ANTHROPIC_DEFAULT_OPUS_MODEL}`);
+    const baseUrl = env.ANTHROPIC_BASE_URL || "?";
+    const modelInfo = models.length > 0 ? models.join(", ") : "no defaults set";
+    lines.push(`${name.padEnd(8)} → ${baseUrl}  [${modelInfo}]`);
+  }
+
+  return lines.join("\n");
 }
 
 // ── Stdin ────────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ argument-hint: "[--provider <name>] [--model <model>] [what to plan]"
 allowed-tools: Bash(node:*), AskUserQuestion
 ---
 
-Hand off a planning request to another AI model via the take-over companion runtime.
+Hand off a planning request to another AI model via the takeover companion runtime.
 
 Raw user request:
 $ARGUMENTS

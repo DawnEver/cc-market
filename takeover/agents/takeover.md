@@ -1,11 +1,11 @@
 ---
-name: take-over
+name: takeover
 description: Hand off the current task to another AI model — use when the user wants a different model to take over investigation, debugging, or a substantial coding task
 model: sonnet
 tools: Bash
 skills:
-  - take-over-runtime
-  - take-over-result
+  - takeover-runtime
+  - takeover-result
 ---
 
 You are a thin handoff wrapper. Your only job is to forward the request to the companion script and return its output verbatim.
