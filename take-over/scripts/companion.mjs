@@ -19,6 +19,9 @@ function loadProviderConfig(provider) {
   if (provider === "codex") {
     return { native: true, provider: "codex" };
   }
+  if (provider === "claude") {
+    return { native: true, provider: "claude" };
+  }
 
   if (!fs.existsSync(CONFIG_PATH)) {
     throw new Error(
@@ -36,19 +39,11 @@ function loadProviderConfig(provider) {
     );
   }
 
-  const isEmpty = !env.ANTHROPIC_AUTH_TOKEN && !env.ANTHROPIC_BASE_URL;
-  if (isEmpty && provider === "claude") {
-    return { native: true, provider: "claude" };
-  }
+  const { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: token, ANTHROPIC_DEFAULT_SONNET_MODEL: defaultSonnet } = env;
+  if (!baseUrl) throw new Error(`Provider "${provider}" is missing ANTHROPIC_BASE_URL in ${CONFIG_PATH}.`);
+  if (!token)   throw new Error(`Provider "${provider}" is missing ANTHROPIC_AUTH_TOKEN in ${CONFIG_PATH}.`);
 
-  return {
-    native: false,
-    baseUrl: env.ANTHROPIC_BASE_URL,
-    token: env.ANTHROPIC_AUTH_TOKEN,
-    defaultOpus: env.ANTHROPIC_DEFAULT_OPUS_MODEL,
-    defaultSonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-    defaultHaiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-  };
+  return { native: false, baseUrl, token, defaultSonnet };
 }
 
 function resolveModel(providerConfig, requestedModel) {
@@ -145,7 +140,9 @@ function callNativeClaude(userPrompt, systemPrompt) {
   });
 }
 
-async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, _writeMode) {
+async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, writeMode) {
+  if (writeMode) throw new Error("--write is only supported for the codex provider.");
+  if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${CONFIG_PATH}.`);
   const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
   const url = `${baseUrl}/messages`;
 
@@ -191,22 +188,30 @@ function parseArgs(argv) {
   const options = { provider: null, model: null, write: false };
   const positionals = [];
   let i = 0;
+  let endOfOptions = false;
   while (i < argv.length) {
+    if (endOfOptions) {
+      positionals.push(argv[i++]);
+      continue;
+    }
     switch (argv[i]) {
+      case "--":
+        endOfOptions = true;
+        break;
       case "--provider":
+        if (!argv[i + 1]) throw new Error("--provider requires a value.");
         options.provider = argv[++i];
         break;
       case "--model":
       case "-m":
+        if (!argv[i + 1]) throw new Error("--model requires a value.");
         options.model = argv[++i];
         break;
       case "--write":
         options.write = true;
         break;
       default:
-        if (!argv[i].startsWith("-")) {
-          positionals.push(argv[i]);
-        }
+        positionals.push(argv[i]);
     }
     i++;
   }
@@ -271,13 +276,6 @@ async function main() {
     data = await callNativeClaude(userPrompt, systemPrompt);
     process.stderr.write("take-over: done\n");
   } else {
-    if (!providerConfig.token) {
-      throw new Error(
-        `No ANTHROPIC_AUTH_TOKEN found for provider "${options.provider}". ` +
-        `Add it to ${CONFIG_PATH} under env:${options.provider}.`
-      );
-    }
-
     const model = resolveModel(providerConfig, options.model);
     const modeLabel = options.write ? "read-write" : "read-only";
     process.stderr.write(

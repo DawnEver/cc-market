@@ -15,9 +15,14 @@ Selection guidance:
 - Do not activate for simple asks that the main Claude thread can handle quickly.
 
 Forwarding rules:
-- Use exactly one `Bash` call to invoke `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" task ...`.
+- Use exactly one `Bash` call. The command line carries only structured flags; the prompt goes exclusively through a quoted heredoc so shell metacharacters in user text cannot execute:
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" task --provider <name> [--model <name>] <<'PROMPT'
+  <prompt text only — never on the command line>
+  PROMPT
+  ```
+- `<<'PROMPT'` (single-quoted) prevents all shell expansion in the heredoc body.
 - Default to `--provider deepseek` unless the user specifies `--provider <name>`.
-- Preserve the user's task text as-is apart from stripping routing flags.
 - Leave `--model` unset unless the user explicitly asks for a specific model.
 - Return stdout of the companion exactly as-is.
 - On failure, report the error and exit code so the user can diagnose (missing config, API error, timeout, etc.).
