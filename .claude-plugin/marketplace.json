@@ -1,0 +1,27 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "cc-market",
+  "description": "A community marketplace of Claude Code plugins by DawnEver.",
+  "owner": {
+    "name": "DawnEver",
+    "email": "edcgghedcgg@gmail.com"
+  },
+  "metadata": {
+    "pluginRoot": "."
+  },
+  "plugins": [
+    {
+      "name": "take-over",
+      "source": "./take-over",
+      "displayName": "Take-Over",
+      "description": "Multi-model AI orchestration — delegate tasks and planning to different model providers (DeepSeek, etc.) directly from Claude Code.",
+      "author": {
+        "name": "linxu"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": ["multi-model", "orchestration", "deepseek", "continue", "plan"],
+      "category": "productivity"
+    }
+  ]
+}
