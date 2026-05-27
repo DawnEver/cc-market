@@ -1,14 +1,13 @@
 /**
  * Tests for companion lib
- * Run: node --test takeover/tests/companion.test.mjs
+ * Run: node --test cc-market/takeover/tests/companion.test.mjs
  */
 
-import { test, describe } from "node:test";
+import { test, describe, mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EventEmitter } from "node:events";
 
 import {
   loadProviderConfig,
@@ -16,6 +15,8 @@ import {
   buildPrompt,
   parseArgs,
   extractText,
+  callCodexCompanion,
+  callAnthropicAPI,
 } from "../scripts/lib.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -200,73 +201,220 @@ describe("extractText", () => {
   });
 });
 
-// ── callCodexCompanion (spawn behaviour via inline harness) ───────────────────
+// ── callCodexCompanion (tests real function via companionPathOverride) ─────────
 
-describe("callCodexCompanion spawn behaviour", () => {
-  function makeCallCodexCompanion(spawnFn, execPath) {
-    return function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false) {
-      return new Promise((resolve, reject) => {
-        const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
-        const args = ["task"];
-        if (writeMode) args.push("--write");
-        if (model) args.push("--model", model);
-        args.push(fullPrompt);
-        const child = spawnFn(execPath, ["/fake/codex-companion.mjs", ...args], {
-          env: process.env, stdio: ["ignore", "pipe", "pipe"], timeout: 600000,
-        });
-        let stdout = "", stderr = "";
-        child.stdout.on("data", (d) => (stdout += d));
-        child.stderr.on("data", (d) => (stderr += d));
-        child.on("error", reject);
-        child.on("close", (code) => {
-          if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
-          else reject(new Error(`codex-companion exited ${code}: ${stderr.trim()}`));
-        });
+describe("callCodexCompanion", () => {
+  test("passes prompt via stdin, not as positional arg", async () => {
+    // Create a real temp script that echoes back its stdin to stdout
+    const tmpScript = path.join(__dirname, "_mock_companion.mjs");
+    fs.writeFileSync(tmpScript, [
+      `import { readFileSync } from "node:fs";`,
+      `const stdin = readFileSync(0, "utf8");`,
+      `const args = process.argv.slice(1);`,
+      `process.stdout.write(JSON.stringify({ stdin, args }));`,
+    ].join("\n"));
+
+    try {
+      const result = await callCodexCompanion("hello world", "sys", "o4-mini", true, tmpScript);
+      const output = JSON.parse(extractText(result));
+
+      // Prompt must reach the script via stdin
+      assert.ok(output.stdin.includes("hello world"), "prompt must be delivered via stdin");
+      assert.ok(output.stdin.includes("sys"), "system prompt must be in stdin");
+      // Prompt must NOT be in args
+      const argsJoined = output.args.join(" ");
+      assert.ok(!argsJoined.includes("hello world"), "prompt must NOT be in spawn args");
+      // Flags must be in args
+      assert.ok(output.args.includes("--write"));
+      assert.ok(output.args.includes("--model"));
+      assert.ok(output.args.includes("task"));
+    } finally {
+      fs.unlinkSync(tmpScript);
+    }
+  });
+
+  test("rejects for non-existent companion path", async () => {
+    await assert.rejects(
+      callCodexCompanion("prompt", "", null, false, "/nonexistent/companion.mjs"),
+      /MODULE_NOT_FOUND|Cannot find module/
+    );
+  });
+});
+
+// ── callAnthropicAPI ──────────────────────────────────────────────────────────
+
+describe("callAnthropicAPI", () => {
+  test("constructs correct URL from baseUrl (strips trailing slash)", async () => {
+    const fetches = [];
+    globalThis.fetch = mock.fn(async (url, init) => {
+      fetches.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
+      };
+    });
+
+    try {
+      await callAnthropicAPI(
+        { baseUrl: "https://api.example.com/anthropic/", token: "sk-test" },
+        "test-model",
+        "sys",
+        "user"
+      );
+      assert.equal(fetches.length, 1);
+      assert.equal(fetches[0].url, "https://api.example.com/anthropic/messages");
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("sends correct headers", async () => {
+    const fetches = [];
+    globalThis.fetch = mock.fn(async (url, init) => {
+      fetches.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
+      };
+    });
+
+    try {
+      await callAnthropicAPI(
+        { baseUrl: "https://api.example.com", token: "sk-secret" },
+        "test-model",
+        null,
+        "user"
+      );
+      assert.equal(fetches[0].init.headers["Content-Type"], "application/json");
+      assert.equal(fetches[0].init.headers["x-api-key"], "sk-secret");
+      assert.equal(fetches[0].init.headers["anthropic-version"], "2023-06-01");
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("includes system prompt in body when provided", async () => {
+    const fetches = [];
+    globalThis.fetch = mock.fn(async (url, init) => {
+      fetches.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
+      };
+    });
+
+    try {
+      await callAnthropicAPI(
+        { baseUrl: "https://api.example.com", token: "sk-test" },
+        "test-model",
+        "you are helpful",
+        "user prompt"
+      );
+      const body = JSON.parse(fetches[0].init.body);
+      assert.equal(body.system, "you are helpful");
+      assert.equal(body.messages[0].content, "user prompt");
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("omits system field when systemPrompt is null", async () => {
+    const fetches = [];
+    globalThis.fetch = mock.fn(async (url, init) => {
+      fetches.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
+      };
+    });
+
+    try {
+      await callAnthropicAPI(
+        { baseUrl: "https://api.example.com", token: "sk-test" },
+        "test-model",
+        "",
+        "user"
+      );
+      const body = JSON.parse(fetches[0].init.body);
+      assert.equal("system" in body, false);
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("throws on non-OK response", async () => {
+    globalThis.fetch = mock.fn(async () => ({
+      ok: false,
+      status: 400,
+      text: async () => "Bad request",
+    }));
+
+    try {
+      await assert.rejects(
+        () => callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user"),
+        /API error 400/
+      );
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("retries on 429 rate limit", async () => {
+    let callCount = 0;
+    globalThis.fetch = mock.fn(async () => {
+      callCount++;
+      if (callCount < 3) return { ok: false, status: 429, text: async () => "Rate limited" };
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: "text", text: "finally" }], stop_reason: "end_turn", usage: {} }),
+      };
+    });
+
+    try {
+      const result = await callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user");
+      assert.equal(callCount, 3);
+      assert.equal(extractText(result), "finally");
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("retries on 502/503/504", async () => {
+    for (const status of [502, 503, 504]) {
+      let callCount = 0;
+      globalThis.fetch = mock.fn(async () => {
+        callCount++;
+        if (callCount === 1) return { ok: false, status, text: async () => "Server error" };
+        return {
+          ok: true,
+          json: async () => ({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: {} }),
+        };
       });
-    };
-  }
 
-  function fakeSpawn(output = "ok", exitCode = 0) {
-    return (_cmd, _args, _opts) => {
-      const child = new EventEmitter();
-      child.stdout = new EventEmitter();
-      child.stderr = new EventEmitter();
-      process.nextTick(() => {
-        if (output) child.stdout.emit("data", output);
-        child.emit("close", exitCode);
-      });
-      return child;
-    };
-  }
-
-  test("passes --model when provided", (_t, done) => {
-    const calls = [];
-    const spy = (cmd, args, opts) => { calls.push(args); return fakeSpawn("out")(cmd, args, opts); };
-    makeCallCodexCompanion(spy, process.execPath)("prompt", "", "o4-mini")
-      .then(() => {
-        assert.ok(calls[0].includes("--model"));
-        assert.equal(calls[0][calls[0].indexOf("--model") + 1], "o4-mini");
-        done();
-      }).catch(done);
+      try {
+        await callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user");
+        assert.equal(callCount, 2, `expected 2 calls for status ${status}, got ${callCount}`);
+      } finally {
+        globalThis.fetch = undefined;
+      }
+    }
   });
 
-  test("omits --model when null", (_t, done) => {
-    const calls = [];
-    const spy = (cmd, args, opts) => { calls.push(args); return fakeSpawn("out")(cmd, args, opts); };
-    makeCallCodexCompanion(spy, process.execPath)("prompt", "", null)
-      .then(() => { assert.ok(!calls[0].includes("--model")); done(); }).catch(done);
-  });
+  test("does not retry on 400 client error", async () => {
+    let callCount = 0;
+    globalThis.fetch = mock.fn(async () => {
+      callCount++;
+      return { ok: false, status: 400, text: async () => "Bad request" };
+    });
 
-  test("adds --write when writeMode is true", (_t, done) => {
-    const calls = [];
-    const spy = (cmd, args, opts) => { calls.push(args); return fakeSpawn("out")(cmd, args, opts); };
-    makeCallCodexCompanion(spy, process.execPath)("prompt", "", null, true)
-      .then(() => { assert.ok(calls[0].includes("--write")); done(); }).catch(done);
-  });
-
-  test("rejects on non-zero exit code", (_t, done) => {
-    makeCallCodexCompanion(fakeSpawn("err", 1), process.execPath)("prompt", "", null)
-      .then(() => done(new Error("should reject")))
-      .catch((err) => { assert.match(err.message, /codex-companion exited 1/); done(); });
+    try {
+      await assert.rejects(
+        () => callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user"),
+        /API error 400/
+      );
+      assert.equal(callCount, 1);
+    } finally {
+      globalThis.fetch = undefined;
+    }
   });
 });

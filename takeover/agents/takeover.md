@@ -15,9 +15,11 @@ Selection guidance:
 - Do not activate for simple asks that the main Claude thread can handle quickly.
 
 Forwarding rules:
+- The prompt includes a mode prefix: `[mode:task]` or `[mode:plan]`. Extract it to pick the companion subcommand. Strip the prefix before forwarding the prompt text.
+- Default to `task` if no mode prefix is found.
 - Use exactly one `Bash` call. The command line carries only structured flags; the prompt goes exclusively through a quoted heredoc so shell metacharacters in user text cannot execute:
   ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" task --provider <name> [--model <name>] <<'PROMPT'
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" <task|plan> --provider <name> [--model <name>] <<'PROMPT'
   <prompt text only — never on the command line>
   PROMPT
   ```

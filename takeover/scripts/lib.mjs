@@ -1,12 +1,15 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-export const CONFIG_PATH = path.join(os.homedir(), ".claude", "claude_env_settings.json");
+const defaultConfigPath = path.join(os.homedir(), ".claude", "claude_env_settings.json");
+export const CONFIG_PATH = process.env.TAKEOVER_CONFIG_PATH || defaultConfigPath;
 
 // ── Provider config ──────────────────────────────────────────────────────────
 
@@ -137,9 +140,9 @@ export function parseArgs(argv) {
 export function listModels(configPath = CONFIG_PATH) {
   const lines = [];
 
-  // Native providers (hardcoded, no config needed)
+  // Native providers (no config needed)
   lines.push("claude   — Native Claude CLI (OAuth/Pro subscription)");
-  lines.push("codex    — OpenAI Codex (via codex-companion, --model supported)");
+  lines.push("codex    — OpenAI Codex (via codex-companion, --model and --write supported)");
 
   if (!fs.existsSync(configPath)) {
     lines.push("");
@@ -178,4 +181,118 @@ export function listModels(configPath = CONFIG_PATH) {
 export function readStdin() {
   if (process.stdin.isTTY) return "";
   return fs.readFileSync(0, "utf8").trim();
+}
+
+// ── Callers ──────────────────────────────────────────────────────────────────
+
+function isRetryable(status) {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Call an Anthropic-compatible Messages API with retry on transient errors.
+ */
+export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt) {
+  if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${CONFIG_PATH}.`);
+
+  const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+  const url = `${baseUrl}/messages`;
+  const body = {
+    model,
+    max_tokens: 16000,
+    messages: [{ role: "user", content: userPrompt }],
+  };
+  if (systemPrompt) body.system = systemPrompt;
+
+  const maxRetries = 2;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": providerConfig.token,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(300000),
+      });
+    } catch (err) {
+      // Network error or timeout — retry if attempts remain
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000;
+        process.stderr.write(`takeover: network error, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...\n`);
+        await setTimeout(delay);
+        continue;
+      }
+      throw err;
+    }
+
+    if (res.ok) return res.json();
+
+    // HTTP error — only retry transient status codes
+    const errorText = await res.text();
+    if (attempt < maxRetries && isRetryable(res.status)) {
+      const delay = Math.pow(2, attempt) * 1000;
+      process.stderr.write(`takeover: retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...\n`);
+      await setTimeout(delay);
+      continue;
+    }
+
+    throw new Error(`API error ${res.status}: ${errorText}`);
+  }
+}
+
+/**
+ * Call Codex companion via codex-companion.mjs. Prompt is passed via stdin.
+ */
+export function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false, companionPathOverride) {
+  return new Promise((resolve, reject) => {
+    const companionPath = companionPathOverride || findCodexCompanion();
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
+    const args = ["task"];
+    if (writeMode) args.push("--write");
+    if (model) args.push("--model", model);
+    const child = spawn(process.execPath, [companionPath, ...args], {
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 600000,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
+      else reject(new Error(`codex-companion exited ${code}: ${stderr.trim()}`));
+    });
+    child.stdin.write(fullPrompt);
+    child.stdin.end();
+  });
+}
+
+/**
+ * Call native Claude CLI via `claude -p`.
+ */
+export function callNativeClaude(userPrompt, systemPrompt) {
+  return new Promise((resolve, reject) => {
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
+    const child = spawn("claude", ["-p", fullPrompt], {
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 300000,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
+      else reject(new Error(`claude CLI exited ${code}: ${stderr.trim()}`));
+    });
+  });
 }
