@@ -4,7 +4,7 @@ argument-hint: "[--provider <name>] [--model <model>] [what to hand off]"
 allowed-tools: Bash(node:*), AskUserQuestion, Agent
 ---
 
-Invoke the `takeover:takeover` subagent via the `Agent` tool (`subagent_type: "takeover:takeover"`), forwarding the raw user request as the prompt.
+Invoke the `takeover:takeover` subagent via the `Agent` tool (`subagent_type: "takeover:takeover"`), forwarding the raw user request as the prompt prefixed with `[mode:task] `.
 
 The subagent hands off the request to the companion script, which calls the target model and returns its output verbatim.
 
