@@ -33,9 +33,12 @@ export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
     );
   }
 
-  const { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: token, ANTHROPIC_DEFAULT_SONNET_MODEL: defaultSonnet } = env;
-  if (!baseUrl) throw new Error(`Provider "${provider}" is missing ANTHROPIC_BASE_URL in ${configPath}.`);
-  if (!token)   throw new Error(`Provider "${provider}" is missing ANTHROPIC_AUTH_TOKEN in ${configPath}.`);
+  const useFoundry = env.CLAUDE_CODE_USE_FOUNDRY === "1" || env.CLAUDE_CODE_USE_FOUNDRY === 1;
+  const baseUrl = useFoundry ? env.ANTHROPIC_FOUNDRY_BASE_URL : env.ANTHROPIC_BASE_URL;
+  const token = useFoundry ? env.ANTHROPIC_FOUNDRY_API_KEY : env.ANTHROPIC_AUTH_TOKEN;
+  const defaultSonnet = env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+  if (!baseUrl) throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_BASE_URL" : "ANTHROPIC_BASE_URL"} in ${configPath}.`);
+  if (!token)   throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_API_KEY" : "ANTHROPIC_AUTH_TOKEN"} in ${configPath}.`);
 
   return { native: false, baseUrl, token, defaultSonnet };
 }
@@ -152,7 +155,7 @@ export function listModels(configPath = CONFIG_PATH) {
 
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const apiProviders = Object.keys(config)
-    .filter((k) => k.startsWith("env:") && config[k].ANTHROPIC_BASE_URL)
+    .filter((k) => k.startsWith("env:") && (config[k].ANTHROPIC_BASE_URL || config[k].ANTHROPIC_FOUNDRY_BASE_URL))
     .map((k) => k.slice(4));
 
   if (apiProviders.length === 0) {
@@ -168,7 +171,7 @@ export function listModels(configPath = CONFIG_PATH) {
     if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL) models.push(`haiku=${env.ANTHROPIC_DEFAULT_HAIKU_MODEL}`);
     if (env.ANTHROPIC_DEFAULT_SONNET_MODEL) models.push(`sonnet=${env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
     if (env.ANTHROPIC_DEFAULT_OPUS_MODEL) models.push(`opus=${env.ANTHROPIC_DEFAULT_OPUS_MODEL}`);
-    const baseUrl = env.ANTHROPIC_BASE_URL || "?";
+    const baseUrl = env.ANTHROPIC_FOUNDRY_BASE_URL || env.ANTHROPIC_BASE_URL || "?";
     const modelInfo = models.length > 0 ? models.join(", ") : "no defaults set";
     lines.push(`${name.padEnd(8)} → ${baseUrl}  [${modelInfo}]`);
   }
