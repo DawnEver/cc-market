@@ -27,7 +27,22 @@ Hand off tasks to another AI model and get back the result. Let a different mode
 
 ## Configuration
 
-Create `~/.claude/claude_env_settings.json` with your provider blocks:
+Create `~/.claude/claude_env_settings.json` with your provider blocks.
+
+**Foundry mode** (recommended for DeepSeek — uses Anthropic-compatible endpoint directly):
+
+```json
+{
+  "env:deepseek": {
+    "CLAUDE_CODE_USE_FOUNDRY": "1",
+    "ANTHROPIC_FOUNDRY_BASE_URL": "https://api.deepseek.com/anthropic",
+    "ANTHROPIC_FOUNDRY_API_KEY": "sk-...",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash"
+  }
+}
+```
+
+**Direct mode** (legacy, proxy-based):
 
 ```json
 {
@@ -39,7 +54,7 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks:
 }
 ```
 
-Each provider needs `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and optionally `ANTHROPIC_DEFAULT_SONNET_MODEL` (required if you don't pass `--model`).
+When `CLAUDE_CODE_USE_FOUNDRY` is `"1"`, the companion reads `ANTHROPIC_FOUNDRY_BASE_URL` and `ANTHROPIC_FOUNDRY_API_KEY`. Otherwise it reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`. Either way, `ANTHROPIC_DEFAULT_SONNET_MODEL` is required if you don't pass `--model`.
 
 > **Security**: `claude_env_settings.json` stores API keys in plaintext. Run `chmod 600 ~/.claude/claude_env_settings.json` and avoid syncing this file through cloud storage.
 

@@ -27,7 +27,10 @@ PROMPT
 
 - **`claude`** — Native Claude CLI via OAuth/Pro subscription. No config needed.
 - **`codex`** — Delegates to codex-companion.mjs. Auto-discovered from plugin cache, or override via `TAKEOVER_CODEX_COMPANION`. Supports `--model` and `--write`.
-- **API-based** (e.g. deepseek) — Reads `~/.claude/claude_env_settings.json` under `env:<provider>`. Requires `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`.
+- **API-based** (e.g. deepseek) — Reads `~/.claude/claude_env_settings.json` under `env:<provider>`.
+  - **Foundry mode** (when `CLAUDE_CODE_USE_FOUNDRY=1`): uses `ANTHROPIC_FOUNDRY_BASE_URL` and `ANTHROPIC_FOUNDRY_API_KEY`.
+  - **Direct mode** (no Foundry flag): uses `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`.
+  - Either way, requires `ANTHROPIC_DEFAULT_SONNET_MODEL` for `--model` fallback.
 
 ### Config override
 
