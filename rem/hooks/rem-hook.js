@@ -75,22 +75,8 @@ export function decideStop(state, input, now) {
   } else if (hasPendingWork) {
     decision = 'allow';
   } else if (state.hook.remPending) {
-    const transcriptPath = input.transcript_path || '';
-    if (transcriptPath) {
-      const transcript = readTranscriptTail(transcriptPath, 10);
-      const remTriggered = transcript.some(entry => {
-        const content = entry?.message?.content;
-        if (!Array.isArray(content)) return false;
-        return content.some(block =>
-          block?.type === 'tool_use' && block?.name === 'Skill' &&
-          block?.input?.skill === 'rem'
-        );
-      });
-      if (remTriggered) {
-        state.hook.remDone = true;
-      }
-    }
     state.hook.remPending = false;
+    state.hook.remDone = true;
     decision = 'allow';
   } else if (stopCount >= MIN_STOP_COUNT) {
     const transcriptPath = input.transcript_path || '';
