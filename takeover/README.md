@@ -1,11 +1,24 @@
 # takeover
 
-Hand off tasks to another AI model and get back the result. Let a different model take over any task, investigation, or planning request — then return to Claude with the output.
+Hand off tasks to another AI model via MCP. Routes to Claude, Codex, DeepSeek, or any Anthropic-compatible API.
 
 ## Install
 
 ```shell
 /plugin install takeover@cc-market
+```
+
+Then register the MCP server in `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "takeover": {
+      "command": "node",
+      "args": ["<plugin-root>/scripts/mcp-server.mjs"]
+    }
+  }
+}
 ```
 
 ## Usage
@@ -29,7 +42,7 @@ Hand off tasks to another AI model and get back the result. Let a different mode
 
 Create `~/.claude/claude_env_settings.json` with your provider blocks.
 
-**Foundry mode** (recommended for DeepSeek — uses Anthropic-compatible endpoint directly):
+**Foundry mode** (recommended for DeepSeek):
 
 ```json
 {
@@ -42,7 +55,7 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks.
 }
 ```
 
-**Direct mode** (legacy, proxy-based):
+**Direct mode**:
 
 ```json
 {
@@ -54,26 +67,19 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks.
 }
 ```
 
-When `CLAUDE_CODE_USE_FOUNDRY` is `"1"`, the companion reads `ANTHROPIC_FOUNDRY_BASE_URL` and `ANTHROPIC_FOUNDRY_API_KEY`. Otherwise it reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`. Either way, `ANTHROPIC_DEFAULT_SONNET_MODEL` is required if you don't pass `--model`.
-
-> **Security**: `claude_env_settings.json` stores API keys in plaintext. Run `chmod 600 ~/.claude/claude_env_settings.json` and avoid syncing this file through cloud storage.
+> **Security**: `chmod 600 ~/.claude/claude_env_settings.json` and avoid syncing through cloud storage.
 
 **Built-in providers** (no config needed):
 - `claude` — native Claude CLI via your Pro subscription
 - `codex` — OpenAI Codex via the codex plugin (requires `/codex:setup`)
-
-## Adding a Provider
-
-1. Add an `env:<provider>` block to `~/.claude/claude_env_settings.json`
-2. Use it: `/takeover:continue --provider <provider> ...`
 
 ## How It Works
 
 ```
 /takeover:continue --provider deepseek "review this"
   → Agent(takeover:takeover)
-    → Bash: node companion.mjs task --provider deepseek
-      → Reads ~/.claude/claude_env_settings.json env:deepseek
+    → MCP tool: call_model(provider=deepseek, mode=task, userPrompt="review this")
+      → mcp-server.mjs reads ~/.claude/claude_env_settings.json
       → Calls DeepSeek Anthropic-compatible API
       → Returns output verbatim
 ```
@@ -82,12 +88,12 @@ When `CLAUDE_CODE_USE_FOUNDRY` is `"1"`, the companion reads `ANTHROPIC_FOUNDRY_
 
 | Path | Purpose |
 |---|---|
-| `scripts/companion.mjs` | Core: reads config, calls API |
+| `scripts/mcp-server.mjs` | MCP server: call_model + list_models tools |
+| `scripts/lib.mjs` | Core: provider config, API callers, retry |
 | `agents/takeover.md` | Subagent: thin handoff wrapper |
 | `commands/continue.md` | `/takeover:continue` |
 | `commands/plan.md` | `/takeover:plan` |
 | `commands/models.md` | `/takeover:models` |
 | `prompts/task.md` | System prompt for task handoffs |
 | `prompts/plan.md` | System prompt for plan handoffs |
-| `skills/takeover-runtime/` | Runtime contract |
 | `skills/takeover-result/` | Result handling contract |

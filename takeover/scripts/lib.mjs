@@ -102,42 +102,6 @@ export function extractText(data) {
   return text;
 }
 
-// ── CLI args ─────────────────────────────────────────────────────────────────
-
-export function parseArgs(argv) {
-  const options = { provider: null, model: null, write: false };
-  const positionals = [];
-  let i = 0;
-  let endOfOptions = false;
-  while (i < argv.length) {
-    if (endOfOptions) {
-      positionals.push(argv[i++]);
-      continue;
-    }
-    switch (argv[i]) {
-      case "--":
-        endOfOptions = true;
-        break;
-      case "--provider":
-        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--provider requires a value.");
-        options.provider = argv[++i];
-        break;
-      case "--model":
-      case "-m":
-        if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error("--model requires a value.");
-        options.model = argv[++i];
-        break;
-      case "--write":
-        options.write = true;
-        break;
-      default:
-        positionals.push(argv[i]);
-    }
-    i++;
-  }
-  return { options, prompt: positionals.join(" ") };
-}
-
 // ── Model listing ────────────────────────────────────────────────────────────
 
 export function listModels(configPath = CONFIG_PATH) {
@@ -145,7 +109,7 @@ export function listModels(configPath = CONFIG_PATH) {
 
   // Native providers (no config needed)
   lines.push("claude   — Native Claude CLI (OAuth/Pro subscription)");
-  lines.push("codex    — OpenAI Codex (via codex-companion, --model and --write supported)");
+  lines.push("codex    — OpenAI Codex (via codex-companion, --model supported)");
 
   if (!fs.existsSync(configPath)) {
     lines.push("");
@@ -177,13 +141,6 @@ export function listModels(configPath = CONFIG_PATH) {
   }
 
   return lines.join("\n");
-}
-
-// ── Stdin ────────────────────────────────────────────────────────────────────
-
-export function readStdin() {
-  if (process.stdin.isTTY) return "";
-  return fs.readFileSync(0, "utf8").trim();
 }
 
 // ── Callers ──────────────────────────────────────────────────────────────────
@@ -287,6 +244,7 @@ export function callNativeClaude(userPrompt, systemPrompt) {
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 300000,
+      shell: process.platform === "win32",
     });
     let stdout = "";
     let stderr = "";
