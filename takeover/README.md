@@ -97,3 +97,14 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks.
 | `prompts/task.md` | System prompt for task handoffs |
 | `prompts/plan.md` | System prompt for plan handoffs |
 | `skills/takeover-result/` | Result handling contract |
+| `tests/lib.test.mjs` | Core library tests (27 tests) |
+| `tests/mcp-server.test.mjs` | MCP server tests (10 tests) |
+
+## Tests
+
+```shell
+node --test cc-market/takeover/tests/lib.test.mjs
+node --test cc-market/takeover/tests/mcp-server.test.mjs
+```
+
+A pre-commit hook in the cc-market repo runs all plugin tests before every commit.

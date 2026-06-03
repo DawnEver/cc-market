@@ -22,13 +22,13 @@ const SERVER_VERSION = pluginJson.version;
 
 // ── MCP stdio transport ───────────────────────────────────────────
 
-function send(rpc) {
+export function send(rpc) {
   process.stdout.write(JSON.stringify(rpc) + "\n");
 }
 
 // ── Tool definitions ──────────────────────────────────────────────
 
-const TOOLS = [
+export const TOOLS = [
   {
     name: "call_model",
     description:
@@ -82,7 +82,7 @@ const TOOLS = [
 
 // ── Tool handlers ─────────────────────────────────────────────────
 
-async function handleCallModel(args) {
+export async function handleCallModel(args) {
   const { provider, model, mode, systemPrompt: customSystem, userPrompt, write } = args;
 
   if (!userPrompt || !userPrompt.trim()) {
@@ -121,7 +121,7 @@ async function handleCallModel(args) {
   return { content: [{ type: "text", text: extractText(data) }] };
 }
 
-async function handleToolCall(name, args) {
+export async function handleToolCall(name, args) {
   switch (name) {
     case "call_model":
       return await handleCallModel(args);

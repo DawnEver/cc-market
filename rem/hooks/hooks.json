@@ -1,0 +1,27 @@
+{
+  "description": "REM sleep for Claude sessions — prune stale memory on start, consolidate learnings on stop.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prune-memory.js\" --evict-stale",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rem-hook.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
