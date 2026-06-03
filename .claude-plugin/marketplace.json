@@ -4,7 +4,7 @@
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
     "name": "DawnEver",
-    "email": "edcgghedcgg@gmail.com"
+    "email": "mingyangbob@gmail.com"
   },
   "metadata": {
     "pluginRoot": "."
@@ -21,6 +21,19 @@
       "repository": "https://github.com/DawnEver/cc-market",
       "license": "MIT",
       "keywords": ["multi-model", "orchestration", "deepseek", "continue", "plan"],
+      "category": "productivity"
+    },
+    {
+      "name": "rem",
+      "source": "./rem",
+      "displayName": "REM",
+      "description": "REM sleep for Claude sessions — auto-prunes stale memory on session start, consolidates learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
+      "author": {
+        "name": "DawnEver"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": ["memory", "session", "retrospect", "prune", "eviction"],
       "category": "productivity"
     }
   ]

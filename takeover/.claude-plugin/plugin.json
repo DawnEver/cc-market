@@ -1,9 +1,9 @@
 {
   "name": "takeover",
-  "version": "2.0.1",
+  "version": "2.1.1",
   "description": "Hand off tasks to another AI model and get back the result — let a different model take over any task or planning request.",
   "author": {
-    "name": "linxu"
+    "name": "DawnEver"
   },
   "commands": [
     "./commands/continue.md",
