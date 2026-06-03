@@ -27,12 +27,23 @@ Then use it:
 /takeover:plan implement OAuth2 login
 ```
 
+## Development
+
+After cloning, run setup to enable git hooks (auto-versioning on push):
+
+```shell
+bash scripts/setup.sh
+```
+
+This configures `core.hooksPath` to `scripts/git-hooks/`, which includes a pre-push hook that auto-bumps plugin versions.
+
 ## Contributing
 
 Each plugin lives in its own directory at the repo root. To add a plugin:
 
 1. Create `<plugin-name>/` with a `.claude-plugin/plugin.json` manifest
-2. Add an entry to `.claude-plugin/marketplace.json`
-3. Open a PR
+2. Add a `scripts/bump-version.sh` for auto-versioning (see `takeover/scripts/bump-version.sh` for template)
+3. Add an entry to `.claude-plugin/marketplace.json`
+4. Open a PR
 
 See [Claude Code plugin docs](https://code.claude.com/docs/en/plugins) for the plugin format.
