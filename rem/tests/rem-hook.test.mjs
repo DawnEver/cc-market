@@ -277,53 +277,22 @@ describe("decideStop", () => {
     assert.equal(result.decision, "allow");
   });
 
-  test("allows stop and clears remPending when it was set", () => {
+  test("allows stop, clears remPending, and sets remDone when remPending was set", () => {
     const now = Date.now();
     let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
     const result = decideStop(state, { session_id: "s1", transcript_path: "/nonexistent" }, now);
     assert.equal(result.decision, "allow");
     assert.equal(result.state.hook.remPending, false);
+    assert.equal(result.state.hook.remDone, true);
   });
 
-  test("sets remDone when transcript shows Skill tool call for 'rem'", () => {
+  test("sets remDone when remPending was true regardless of transcript", () => {
     const now = Date.now();
-    const transcript = [
-      { message: { content: [{ type: "tool_use", name: "Skill", input: { skill: "rem" } }] } },
-    ];
-    let tmpDir, tmpFile;
-    try {
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-hook-test-"));
-      tmpFile = path.join(tmpDir, "transcript.jsonl");
-      fs.writeFileSync(tmpFile, transcript.map(JSON.stringify).join("\n"));
-
-      let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
-      const result = decideStop(state, { session_id: "s1", transcript_path: tmpFile }, now);
-      assert.equal(result.decision, "allow");
-      assert.equal(result.state.hook.remDone, true);
-      assert.equal(result.state.hook.remPending, false);
-    } finally {
-      if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  test("does not set remDone when Skill call is not 'rem'", () => {
-    const now = Date.now();
-    const transcript = [
-      { message: { content: [{ type: "tool_use", name: "Skill", input: { skill: "other-skill" } }] } },
-    ];
-    let tmpDir, tmpFile;
-    try {
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-hook-test-"));
-      tmpFile = path.join(tmpDir, "transcript.jsonl");
-      fs.writeFileSync(tmpFile, transcript.map(JSON.stringify).join("\n"));
-
-      let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
-      const result = decideStop(state, { session_id: "s1", transcript_path: tmpFile }, now);
-      assert.equal(result.state.hook.remDone, false);
-      assert.equal(result.state.hook.remPending, false);
-      assert.equal(result.decision, "allow");
-    } finally {
-      if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+    // No transcript needed — remPending=true always → remDone=true, decision=allow
+    let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
+    const result = decideStop(state, { session_id: "s1", transcript_path: "/nonexistent" }, now);
+    assert.equal(result.decision, "allow");
+    assert.equal(result.state.hook.remDone, true);
+    assert.equal(result.state.hook.remPending, false);
   });
 });
