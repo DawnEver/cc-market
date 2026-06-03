@@ -14,6 +14,7 @@ import {
   resolveModel,
   buildPrompt,
   extractText,
+  parseCommandBlock,
   callCodexCompanion,
   callAnthropicAPI,
 } from "../scripts/lib.mjs";
@@ -143,6 +144,68 @@ describe("extractText", () => {
   test("skips non-text blocks", () => {
     const data = { content: [{ type: "tool_use", id: "x" }, { type: "text", text: "result" }] };
     assert.equal(extractText(data), "result");
+  });
+});
+
+// ── parseCommandBlock ──────────────────────────────────────────────────────────
+
+describe("parseCommandBlock", () => {
+  test("extracts --provider and --model from command block", () => {
+    const prompt = `<command>
+--provider deepseek --model deepseek-v4-pro review the sharp review skill
+</command>
+
+<context>
+some diff output
+</context>`;
+    const result = parseCommandBlock(prompt);
+    assert.deepEqual(result.flags, { provider: "deepseek", model: "deepseek-v4-pro" });
+    assert.ok(!result.cleanPrompt.includes("<command>"), "command block must be stripped");
+    assert.ok(result.cleanPrompt.includes("<context>"), "context must be preserved");
+    assert.ok(result.cleanPrompt.includes("some diff output"), "content must be preserved");
+  });
+
+  test("extracts only --provider when --model absent", () => {
+    const prompt = `<command>
+--provider claude do something
+</command>
+
+<context>x</context>`;
+    const result = parseCommandBlock(prompt);
+    assert.deepEqual(result.flags, { provider: "claude" });
+    assert.equal("model" in result.flags, false);
+  });
+
+  test("extracts only --model when --provider absent", () => {
+    const prompt = `<command>
+--model deepseek-v4-pro do something
+</command>
+
+<context>x</context>`;
+    const result = parseCommandBlock(prompt);
+    assert.deepEqual(result.flags, { model: "deepseek-v4-pro" });
+    assert.equal("provider" in result.flags, false);
+  });
+
+  test("returns empty flags and unmodified prompt when no command block", () => {
+    const prompt = "plain text without any command block";
+    const result = parseCommandBlock(prompt);
+    assert.deepEqual(result.flags, {});
+    assert.equal(result.cleanPrompt, prompt);
+  });
+
+  test("handles compact single-line command block", () => {
+    const prompt = "<command>--provider deepseek --model x task here</command>\n\n<context>ctx</context>";
+    const result = parseCommandBlock(prompt);
+    assert.deepEqual(result.flags, { provider: "deepseek", model: "x" });
+    assert.ok(!result.cleanPrompt.includes("<command>"));
+  });
+
+  test("preserves text after command block even without <context> tags", () => {
+    const prompt = "<command>\n--provider deepseek review this\n</command>\n\nPlease analyze the code.";
+    const result = parseCommandBlock(prompt);
+    assert.deepEqual(result.flags, { provider: "deepseek" });
+    assert.ok(result.cleanPrompt.includes("Please analyze the code"));
   });
 });
 

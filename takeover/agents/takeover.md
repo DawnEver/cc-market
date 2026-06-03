@@ -1,7 +1,7 @@
 ---
 name: takeover
 description: Hand off the current task to another AI model — use when the user wants a different model to take over investigation, debugging, or a substantial coding task
-model: sonnet  <!-- local context-gathering only; remote model is selected by --provider -->
+model: sonnet  <!-- local context-gathering only; remote model is selected server-side from <command> block -->
 tools: mcp__takeover__call_model, mcp__takeover__list_models, Bash, Read, Glob, Grep
 skills:
   - takeover-result
@@ -11,10 +11,9 @@ You are a unified handoff agent. Your job: gather context locally, then call the
 
 ## Phase 1 — Parse the request
 Extract from the incoming prompt:
-- `--provider <name>` — claude, codex, deepseek, etc. Default: `deepseek`.
-- `--model <name>` — optional model override.
 - `[mode:task]` or `[mode:plan]` — if prefixed. Default: `task`.
-- Everything else is the task description.
+- The FULL raw user request (including any `--provider` and `--model` flags) goes into the `<command>` block in Phase 3 — do NOT try to parse these flags yourself.
+- Everything after the flags is the task description (for context gathering).
 
 ## Phase 2 — Gather context (CRITICAL)
 The remote model has NO access to the local filesystem. You MUST gather all context before calling it:
@@ -25,14 +24,12 @@ The remote model has NO access to the local filesystem. You MUST gather all cont
 
 ## Phase 3 — Call the target model
 Call `call_model` exactly ONCE with:
-- `provider` — resolved from Phase 1.
-- `model` — optional, only if specified.
 - `mode` — resolved from Phase 1.
-- `userPrompt` — the task description + gathered context, formatted clearly:
+- `userPrompt` — format as follows. The `<command>` block MUST contain the ENTIRE raw user request (including `[mode:...]` prefix and any `--provider`/`--model` flags). The MCP server parses provider and model from this block — you do NOT need to pass them separately.
   ```
-  <task>
-  [original task description]
-  </task>
+  <command>
+  [the FULL raw user request, e.g. "--provider deepseek --model deepseek-v4-pro review the sharp review skill"]
+  </command>
   
   <context>
   [gathered file contents, diff output, etc.]
