@@ -515,16 +515,29 @@ describe("collectMemoryFiles", () => {
 // ── State management ───────────────────────────────────────────────────────────
 
 describe("loadState / saveState / appendEvent", () => {
-  let tmpDir, origStatePath;
+  let savedState = null;
 
   beforeEach(() => {
-    // We can't easily override stateFile since it's computed from process.cwd()
-    // So we test the logic indirectly via the DEFAULT_STATE structure
+    // Save the real state file if it exists (the test reads from
+    // process.cwd()/.claude/.rem-state.json which is symlinked to
+    // ~/.claude/.rem-state.json — the active session may have data).
+    if (fs.existsSync(stateFile)) {
+      savedState = fs.readFileSync(stateFile, "utf8");
+    }
+  });
+
+  afterEach(() => {
+    if (savedState) {
+      const dir = path.dirname(stateFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(stateFile, savedState, "utf8");
+      savedState = null;
+    }
   });
 
   test("loadState returns default structure when file missing", () => {
-    // stateFile points to .claude/.rem-state.json in process.cwd()
-    // If it doesn't exist, should return defaults
+    // Remove the state file so we test the default path
+    if (fs.existsSync(stateFile)) fs.unlinkSync(stateFile);
     const state = loadState();
     assert.ok("hook" in state);
     assert.ok("prune" in state);
