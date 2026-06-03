@@ -50,6 +50,35 @@ export function resolveModel(providerConfig, requestedModel) {
   return providerConfig.defaultSonnet;
 }
 
+// ── Command block parsing ──────────────────────────────────────────────────────
+
+/**
+ * Parse a <command> block from userPrompt for --provider and --model flags.
+ * The takeover agent embeds the raw user request in a <command> block so the
+ * MCP server can parse flags deterministically — no LLM parsing needed.
+ *
+ * Returns { flags: { provider?, model? }, cleanPrompt: string }.
+ * cleanPrompt has the <command> block stripped.
+ */
+export function parseCommandBlock(prompt) {
+  if (prompt == null) return { flags: {}, cleanPrompt: prompt || "" };
+  const re = /^\s*<command>\s*\n?(.*?)\n?\s*<\/command>\s*\n?/s;
+  const match = prompt.match(re);
+  if (!match) return { flags: {}, cleanPrompt: prompt };
+
+  const cmdText = match[1].trim();
+  const flags = {};
+
+  const providerMatch = cmdText.match(/--provider\s+(\S+)/);
+  if (providerMatch) flags.provider = providerMatch[1];
+
+  const modelMatch = cmdText.match(/--model\s+(\S+)/);
+  if (modelMatch) flags.model = modelMatch[1];
+
+  const cleanPrompt = prompt.replace(re, "");
+  return { flags, cleanPrompt };
+}
+
 // ── Prompt building ──────────────────────────────────────────────────────────
 
 export function buildPrompt(subcommand, userPrompt) {

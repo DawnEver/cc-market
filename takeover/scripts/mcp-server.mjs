@@ -10,6 +10,7 @@ import {
   buildPrompt,
   extractText,
   listModels,
+  parseCommandBlock,
   callAnthropicAPI,
   callCodexCompanion,
   callNativeClaude,
@@ -34,7 +35,9 @@ export const TOOLS = [
     description:
       "Call an AI model from any configured provider. " +
       "Routes to Claude (native CLI), Codex (codex-companion), " +
-      "or any Anthropic-compatible API from ~/.claude/claude_env_settings.json.",
+      "or any Anthropic-compatible API from ~/.claude/claude_env_settings.json. " +
+      "If userPrompt contains a <command> block with --provider/--model flags, " +
+      "those are parsed authoritatively — the provider/model params are overridden.",
     inputSchema: {
       type: "object",
       properties: {
@@ -42,7 +45,8 @@ export const TOOLS = [
           type: "string",
           description:
             "Provider name: claude, codex, deepseek, " +
-            "or a custom provider key from claude_env_settings.json.",
+            "or a custom provider key from claude_env_settings.json. " +
+            "Optional — parsed from <command> block if omitted.",
         },
         model: {
           type: "string",
@@ -70,7 +74,7 @@ export const TOOLS = [
           description: "The user message or task to hand off.",
         },
       },
-      required: ["provider", "userPrompt"],
+      required: ["userPrompt"],
     },
   },
   {
@@ -83,8 +87,19 @@ export const TOOLS = [
 // ── Tool handlers ─────────────────────────────────────────────────
 
 export async function handleCallModel(args) {
-  const { provider, model, mode, systemPrompt: customSystem, userPrompt, write } = args;
+  let { provider, model, mode, systemPrompt: customSystem, userPrompt, write } = args;
 
+  // Parse <command> block from userPrompt — authoritative flag source.
+  // The agent may have parsed flags incorrectly (or not at all); the
+  // <command> block contains the raw user request and is always correct.
+  const parsed = parseCommandBlock(userPrompt);
+  if (parsed.flags.provider) provider = parsed.flags.provider;
+  if (parsed.flags.model) model = parsed.flags.model;
+  userPrompt = parsed.cleanPrompt;
+
+  process.stderr.write(`mcp-takeover: call_model args: provider=${provider} model=${model || "(none)"} mode=${mode || "(none)"} write=${!!write}\n`);
+
+  if (!provider) throw new Error("provider is required — pass it directly or include --provider <name> in a <command> block in userPrompt");
   if (!userPrompt || !userPrompt.trim()) {
     throw new Error("userPrompt must be non-empty");
   }
