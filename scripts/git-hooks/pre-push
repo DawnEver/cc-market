@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pre-push: auto-bump plugin versions for any plugin with changes.
+# Tracked in repo; .git/hooks/pre-push delegates to this script.
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if git describe --exact-match HEAD 2>/dev/null; then
+  exit 0
+fi
+
+VERSIONS=""
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+
+  range=""
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    range="$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  for bump_script in "$REPO_ROOT"/*/scripts/bump-version.sh; do
+    [ -f "$bump_script" ] || continue
+    plugin_dir="$(cd "$(dirname "$bump_script")/.." && pwd)"
+    plugin_name="$(basename "$plugin_dir")"
+
+    if [ -n "$(git diff --name-only "$range" -- "$plugin_name/")" ]; then
+      new_ver=$(bash "$bump_script")
+      VERSIONS="$VERSIONS ${plugin_name}@v${new_ver}"
+    fi
+  done
+done
+
+if [ -n "$VERSIONS" ]; then
+  git commit --amend --no-edit --no-verify -q
+  TAG_NAME=$(echo "$VERSIONS" | tr ' ' '-' | sed 's/^-//')
+  git tag -a "$TAG_NAME" -m "Release:$VERSIONS"
+  echo "pre-push: tagged $TAG_NAME"
+fi
+
+exit 0

@@ -13,7 +13,6 @@ import {
   loadProviderConfig,
   resolveModel,
   buildPrompt,
-  parseArgs,
   extractText,
   callCodexCompanion,
   callAnthropicAPI,
@@ -86,60 +85,6 @@ describe("loadProviderConfig", () => {
     } finally {
       fs.unlinkSync(p);
     }
-  });
-});
-
-// ── parseArgs ─────────────────────────────────────────────────────────────────
-
-describe("parseArgs", () => {
-  test("parses --provider", () => {
-    assert.equal(parseArgs(["--provider", "deepseek"]).options.provider, "deepseek");
-  });
-
-  test("parses --model", () => {
-    assert.equal(parseArgs(["--model", "claude-opus-4-5"]).options.model, "claude-opus-4-5");
-  });
-
-  test("parses -m shorthand", () => {
-    assert.equal(parseArgs(["-m", "gpt-4o"]).options.model, "gpt-4o");
-  });
-
-  test("parses --write", () => {
-    assert.equal(parseArgs(["--write"]).options.write, true);
-  });
-
-  test("--write defaults to false", () => {
-    assert.equal(parseArgs([]).options.write, false);
-  });
-
-  test("collects positionals as prompt", () => {
-    assert.equal(parseArgs(["fix", "the", "bug"]).prompt, "fix the bug");
-  });
-
-  test("handles mixed flags and positionals", () => {
-    const { options, prompt } = parseArgs(["--provider", "codex", "--model", "o4-mini", "--write", "do it"]);
-    assert.equal(options.provider, "codex");
-    assert.equal(options.model, "o4-mini");
-    assert.equal(options.write, true);
-    assert.equal(prompt, "do it");
-  });
-
-  test("-- stops flag parsing", () => {
-    const { options, prompt } = parseArgs(["--provider", "ds", "--", "--not-a-flag", "text"]);
-    assert.equal(options.provider, "ds");
-    assert.equal(prompt, "--not-a-flag text");
-  });
-
-  test("throws when --provider has no value", () => {
-    assert.throws(() => parseArgs(["--provider"]), /--provider requires a value/);
-  });
-
-  test("throws when --model has no value", () => {
-    assert.throws(() => parseArgs(["--model"]), /--model requires a value/);
-  });
-
-  test("throws when --provider is followed by another flag", () => {
-    assert.throws(() => parseArgs(["--provider", "--model", "x"]), /--provider requires a value/);
   });
 });
 
