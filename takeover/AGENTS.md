@@ -20,8 +20,7 @@ Multi-model AI orchestration via MCP. Routes tasks to Claude, Codex, DeepSeek, o
 takeover/
 ├── scripts/
 │   ├── lib.mjs              Core: provider config, API callers, retry, text extraction
-│   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model + list_models
-│   └── bump-version.sh      Pre-push auto-versioning
+│   └── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model + list_models
 ├── agents/takeover.md       Subagent: context gathering + handoff
 ├── commands/
 │   ├── continue.md          /takeover:continue
@@ -89,4 +88,4 @@ Pre-commit hook runs all 37 takeover tests + 87 rem tests. `callAnthropicAPI` te
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic. Export functions for testability where needed.
-- Bump version via `scripts/bump-version.sh` (pre-push hook does this automatically).
+- Version bumping is automatic — the repo-level `pre-push` hook bumps this plugin's `plugin.json` whenever `takeover/` changed in the push.

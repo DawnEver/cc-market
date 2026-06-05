@@ -40,7 +40,7 @@ rem/
 │   ├── touch-memory.js      Bump accessed timestamp, promote short→long
 │   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
 │   └── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
-├── skills/rem/SKILL.md      /rem skill definition and workflow
+├── skills/rem/SKILL.md        /rem skill definition and workflow
 ├── tests/
 │   ├── lib.test.mjs         55 tests — frontmatter, index, date, path, state
 │   └── rem-hook.test.mjs    32 tests — isFreshSession, hasSubstantiveWork, decideStop

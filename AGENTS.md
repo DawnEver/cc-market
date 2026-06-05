@@ -37,13 +37,14 @@ Total: 124 tests. Hook blocks commit on failure. Use Node's built-in test runner
 
 ## Adding a Plugin
 
-1. Create `<plugin-name>/` with `.claude-plugin/plugin.json`
+1. Create `<plugin-name>/` with `.claude-plugin/plugin.json` (include a `"version"` field)
 2. Add `AGENTS.md`, `CLAUDE.md`, and `.claude/rules/` for progressive disclosure
 3. Add `README.md` for user-facing install/usage docs
-4. Add `scripts/bump-version.sh` for auto-versioning
-5. Add tests in `<plugin-name>/tests/` using `node:test`
-6. Add entry to `.claude-plugin/marketplace.json`
-7. Update this file's plugin table
+4. Add tests in `<plugin-name>/tests/` using `node:test`
+5. Add entry to `.claude-plugin/marketplace.json`
+6. Update this file's plugin table
+
+Versioning is automatic: the `pre-push` hook (`scripts/git-hooks/pre-push`, wired via `core.hooksPath`) bumps the patch version of **every changed plugin's** `plugin.json` plus the marketplace manifest on each push, then amends the commit and tags the release. No per-plugin bump script needed.
 
 ## Standard
 

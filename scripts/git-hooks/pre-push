@@ -1,47 +1,60 @@
 #!/usr/bin/env bash
-# Pre-push: auto-bump marketplace version if any plugin changed.
+# Pre-push: auto-bump the patch version of every changed plugin's plugin.json,
+# then bump the marketplace manifest, amend the commit, and tag the release.
 set -e
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# Already on a tagged release? Nothing to do.
 if git describe --exact-match HEAD 2>/dev/null; then
   exit 0
 fi
 
-BUMPED=false
+bump_json() { # $1 = path to a JSON file with a semver "version" field
+  node -e "
+    var fs=require('fs'),p=process.argv[1];
+    var pkg=JSON.parse(fs.readFileSync(p,'utf8'));
+    var v=pkg.version.split('.').map(Number);
+    pkg.version=[v[0],v[1],v[2]+1].join('.');
+    fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');
+    process.stdout.write(pkg.version);
+  " "$1"
+}
 
+CHANGED=""
 while read -r local_ref local_sha remote_ref remote_sha; do
-  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
-    continue
-  fi
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
 
-  range=""
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
     range="$local_sha"
   else
     range="$remote_sha..$local_sha"
   fi
 
-  # Only bump if a plugin directory actually changed
   for plugin_dir in "$REPO_ROOT"/*/; do
     name="$(basename "$plugin_dir")"
-    # Skip non-plugin dirs
     [ -f "$plugin_dir/.claude-plugin/plugin.json" ] || continue
-
     if [ -n "$(git diff --name-only "$range" -- "$name/")" ]; then
-      BUMPED=true
-      break
+      CHANGED="$CHANGED$name"$'\n'
     fi
   done
-
-  [ "$BUMPED" = true ] && break
 done
 
-if [ "$BUMPED" = true ]; then
-  new_ver=$(bash "$REPO_ROOT/scripts/bump-version.sh")
-  git commit --amend --no-edit --no-verify -q
-  git tag -a "v${new_ver}" -m "Release v${new_ver}"
-  echo "pre-push: tagged v${new_ver}"
-fi
+CHANGED="$(printf '%s' "$CHANGED" | sort -u | sed '/^$/d')"
+[ -z "$CHANGED" ] && exit 0
+
+while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  pj="$REPO_ROOT/$name/.claude-plugin/plugin.json"
+  nv="$(bump_json "$pj")"
+  git -C "$REPO_ROOT" add "$pj"
+  echo "pre-push: $name v${nv}" >&2
+done <<< "$CHANGED"
+
+mv="$(bump_json "$REPO_ROOT/.claude-plugin/marketplace.json")"
+git -C "$REPO_ROOT" add "$REPO_ROOT/.claude-plugin/marketplace.json"
+git commit --amend --no-edit --no-verify -q
+git tag -a "v${mv}" -m "Release v${mv}"
+echo "pre-push: marketplace v${mv} tagged" >&2
 
 exit 0

@@ -1,7 +1,7 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
   "name": "cc-market",
-  "version": "2.0.3",
+  "version": "2.0.6",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
     "name": "Mingyang Bao",
@@ -65,6 +65,25 @@
         "sharp-review",
         "quality",
         "findings"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "watch",
+      "source": "./watch",
+      "displayName": "Watch",
+      "description": "Unattended server & long-running task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. One YAML config per project, zero code changes to adopt.",
+      "author": {
+        "name": "Mingyang Bao"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": [
+        "supervision",
+        "monitoring",
+        "health",
+        "alerts",
+        "devops"
       ],
       "category": "productivity"
     }

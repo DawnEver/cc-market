@@ -23,7 +23,7 @@ Invoke the sharp-review workflow with the diff as args:
 
 ```js
 Workflow({
-  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/sharp-review.js",
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/scripts/sharp-review-workflow.js",
   args: { diff: "<the git diff>", date: "<YYYY-MM-DD today>" }
 })
 ```

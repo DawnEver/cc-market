@@ -1,0 +1,27 @@
+{
+  "description": "watch alert hooks — email on Claude Notification/Stop events",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/alert-hook.js\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/alert-hook.js\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
