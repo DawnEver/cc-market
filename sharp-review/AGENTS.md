@@ -8,7 +8,7 @@ Post-feature code review plugin for Claude Code. Three parallel reviewers with J
 Stop → sharp-review-hook.js (classify: none/once/multi)
          ↓
      /sharp-review skill:
-       ├── git diff → Workflow(sharp-review.js, { diff, date })
+       ├── git diff → Workflow(sharp-review-workflow.js, { diff, date })
        ├── 3 parallel schema-constrained reviewers
        ├── Merge & dedup (≥2 reviewers = high confidence)
        ├── Write .claude/sharp-review/YYYY-MM-DD.md
@@ -25,9 +25,10 @@ sharp-review/
 ├── hooks/
 │   ├── hooks.json                Hook registration (Stop)
 │   └── sharp-review-hook.js      Stop hook: classify review depth
-├── skills/sharp-review/SKILL.md  /sharp-review skill definition
-├── scripts/sync-tasks.js         Task sync engine
-├── workflows/sharp-review.js     Review workflow (3 parallel agents)
+├── skills/sharp-review/SKILL.md /sharp-review skill definition
+├── scripts/
+│   ├── sync-tasks.js              Task sync engine
+│   └── sharp-review-workflow.js   Review workflow (3 parallel agents, invoked by skill only)
 ├── lib.mjs                       Shared library
 ├── tests/                        Tests (node:test)
 ├── CLAUDE.md                     Entry point
