@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "REM sleep for your Claude sessions — prune stale memory, consolidate learnings, maintain .claude/memory/ with timestamps and automatic eviction",
   "author": {
-    "name": "DawnEver"
+    "name": "Mingyang Bao"
   },
   "commands": [
     "./skills/rem/SKILL.md"

@@ -14,6 +14,7 @@ Community marketplace of Claude Code plugins. Each plugin lives in its own direc
 |---|---|---|
 | [`takeover`](takeover/README.md) | `takeover/` | Multi-model AI orchestration via MCP |
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, compaction, eviction |
+| [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
 
 Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. See plugin READMEs for user-facing docs.
 
@@ -22,7 +23,7 @@ Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progre
 Pre-commit hook (`.git/hooks/pre-commit`) runs all plugin tests before each commit:
 
 ```shell
-node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs
+node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs
 ```
 
 | Test file | Tests | Coverage |

@@ -62,15 +62,16 @@ After installation, `/rem` is available as a slash command. It triggers automati
 ```
 SessionStart → prune-memory.js --evict-stale (remove stale, demote inactive long-term)
        ↓
-   [Claude works, reads/writes memory files]
+   [Claude works, reads/writes memory files, references sharp-review findings]
        ↓
     Stop → rem-hook.js (after 3+ stops, ≥2 min)
        ↓
     /rem skill triggers:
-      ├── rem-prep.js — scan transcript, bump accessed timestamps, suggest promotions
+      ├── rem-prep.js — scan transcript (memory files + SR-IDs), bump accessed, suggest promotions
       ├── Summarize learnings → write .claude/memory/YYYY-MM-DD/<topic>.md
       ├── Update MEMORY.md index
       └── If ≥20 entries → compact.js distills into .claude/rules/rem/
+          └── Detects SR-ID findings → suggests --resolve for compacted findings
 ```
 
 ### Promotion
@@ -89,7 +90,7 @@ node scripts/touch-memory.js 2026-06-03/some-entry.md --promote
 | `prune-memory.js` | Evict stale short-term, demote inactive long-term |
 | `touch-memory.js` | Bump `accessed` timestamp, optional promotion |
 | `compact.js` | Distill memory into `.claude/rules/rem/` when index ≥20 |
-| `rem-prep.js` | Pre-REM automation: transcript scan, promotions, compact check |
+| `rem-prep.js` | Pre-REM automation: transcript scan (memory + SR-IDs), promotions, compact check |
 
 ## Files
 
