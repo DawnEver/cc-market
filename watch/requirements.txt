@@ -1,0 +1,11 @@
+# Core — required for all functionality
+pyyaml>=6.0
+
+# HTTP health checks (optional, only if using http_health component)
+# (stdlib urllib is enough, no extra deps)
+
+# Process monitoring (optional, only if using process_monitor component)
+psutil>=5.9.0
+
+# Email via Resend API (optional, only if using alerts.email.method=resend)
+resend>=1.0.0
