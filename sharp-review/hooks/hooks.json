@@ -1,0 +1,16 @@
+{
+  "description": "Post-feature sharp review — classify review depth and trigger /sharp-review on stop.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sharp-review-hook.js\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

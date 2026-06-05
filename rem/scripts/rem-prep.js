@@ -7,7 +7,7 @@
 //
 // Usage: node rem-prep.js [--transcript <path>] [--promote]
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { join } from 'path';
 import {
@@ -87,6 +87,74 @@ if (touchedFiles.size === 0) {
   }
 }
 
+// ── 2b. Scan transcript for SR-ID references → touch finding memory files ──
+console.log('\n─── Sharp-review findings referenced ───');
+const touchedSRIds = new Set();
+
+if (transcriptPath && existsSync(transcriptPath)) {
+  try {
+    const lines = readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+    const SR_RE = /SR-(\d{8})-(\d{3})/g;
+    for (const line of lines) {
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
+      const text = JSON.stringify(entry);
+      let m;
+      while ((m = SR_RE.exec(text)) !== null) {
+        const dateStr = m[1]; // YYYYMMDD
+        const dateDir = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
+        touchedSRIds.add({ id: m[0], dateDir, seq: m[3] });
+      }
+    }
+  } catch { /* transcript parse error — skip */ }
+}
+
+if (touchedSRIds.size === 0) {
+  console.log('  (no SR-ID references this session)');
+} else {
+  // Find matching memory files: .claude/memory/*/SR-ID.md
+  const memoryDir = join(process.cwd(), '.claude', 'memory');
+  for (const { id, dateDir } of touchedSRIds) {
+    const filename = `${id}.md`;
+    const expectedPath = join(memoryDir, dateDir, filename);
+    let found = false;
+
+    if (existsSync(expectedPath)) {
+      found = true;
+    } else {
+      // Fallback: search all date directories for the file
+      try {
+        for (const dirEntry of readdirSync(memoryDir, { withFileTypes: true })) {
+          if (!dirEntry.isDirectory() || dirEntry.name.startsWith('.') || dirEntry.name === 'tasks') continue;
+          const candidate = join(memoryDir, dirEntry.name, filename);
+          if (existsSync(candidate)) { found = true; break; }
+        }
+      } catch { /* can't search */ }
+    }
+
+    if (found) {
+      const relPath = `${dateDir}/${filename}`;
+      const memFile = join(memoryDir, relPath);
+      if (existsSync(memFile)) {
+        let content = readFileSync(memFile, 'utf8');
+        content = bumpAccessed(content, today);
+        writeFileSync(memFile, content, 'utf8');
+        // Update index
+        if (existsSync(indexFile)) {
+          const origIdx = readFileSync(indexFile, 'utf8');
+          const newIdx = updateIndexAccessed(origIdx, relPath, today);
+          if (newIdx !== null && newIdx !== origIdx) {
+            writeFileSync(indexFile, newIdx, 'utf8');
+          }
+        }
+        console.log(`  ✓ ${id} → accessed: ${today}`);
+      }
+    } else {
+      console.log(`  ? ${id} (no memory entry yet — will be created on next sync)`);
+    }
+  }
+}
+
 // ── 3. Promotion suggestions ──
 console.log('\n─── Promotion candidates ──');
 let promoted = 0;
@@ -120,9 +188,41 @@ for (const f of touchedFiles) {
   }
 }
 
+// Also check SR-ID memory files for promotion
+if (touchedSRIds.size > 0) {
+  for (const { id, dateDir } of touchedSRIds) {
+    const filename = `${id}.md`;
+    const relPath = `${dateDir}/${filename}`;
+    const memFile = join(memoryDir, relPath);
+    if (!existsSync(memFile)) continue;
+    const content = readFileSync(memFile, 'utf8');
+    const currentTier = getTier(content);
+    if (currentTier === 'long') continue;
+
+    let commitCount = 0;
+    try {
+      const log = execFileSync('git', ['log', '--oneline', '--', `.claude/memory/${relPath}`], {
+        cwd: process.cwd(), timeout: 5000, encoding: 'utf8',
+      });
+      commitCount = log.trim().split('\n').filter(Boolean).length;
+    } catch { /* no commits */ }
+
+    if (commitCount >= 3) {
+      console.log(`  ↑ ${id} → promotion candidate (${commitCount} commits, currently ${currentTier})`);
+      if (autoPromote) {
+        let c = content;
+        c = setField(c, 'accessed', today);
+        c = setField(c, 'tier', 'long');
+        writeFileSync(memFile, c, 'utf8');
+        promoted++;
+      }
+    }
+  }
+}
+
 if (promoted > 0) {
   console.log(`  → auto-promoted ${promoted} file(s) to long-term`);
-} else if (touchedFiles.size > 0) {
+} else if (touchedFiles.size > 0 || touchedSRIds.size > 0) {
   console.log('  (no promotion candidates — run with --promote to auto-upgrade)');
 }
 

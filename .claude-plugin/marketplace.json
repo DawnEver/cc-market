@@ -1,10 +1,10 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
   "name": "cc-market",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
-    "name": "DawnEver",
+    "name": "Mingyang Bao",
     "email": "mingyangbob@gmail.com"
   },
   "metadata": {
@@ -36,7 +36,7 @@
       "displayName": "REM",
       "description": "REM sleep for Claude sessions — auto-prunes stale memory on session start, consolidates learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
       "author": {
-        "name": "DawnEver"
+        "name": "Mingyang Bao"
       },
       "repository": "https://github.com/DawnEver/cc-market",
       "license": "MIT",
@@ -46,6 +46,25 @@
         "retrospect",
         "prune",
         "eviction"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "sharp-review",
+      "source": "./sharp-review",
+      "displayName": "Sharp Review",
+      "description": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge findings, sync structured task list with memory cross-references.",
+      "author": {
+        "name": "Mingyang Bao"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": [
+        "review",
+        "code-review",
+        "sharp-review",
+        "quality",
+        "findings"
       ],
       "category": "productivity"
     }

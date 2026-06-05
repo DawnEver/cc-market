@@ -17,6 +17,8 @@ import {
   indexFile, rulesDir, remRulesDir, memoryDir, INDEX_HEADER, MAX_ENTRIES, collectMemoryFiles,
 } from '../lib.mjs';
 
+const SR_ID_RE = /SR-\d{8}-\d{3}/g;
+
 const args = process.argv.slice(2);
 const mode = args[0] || '--check';
 
@@ -139,6 +141,25 @@ if (mode === '--execute') {
     writeFileSync(indexFile, INDEX_HEADER, 'utf8');
     console.log(`[compact] cleared ${entryLines.length} index entries → MEMORY.md reset`);
   }
+  // 5. Detect SR-ID findings being compacted → suggest resolution
+  const pathsToCheck = distilledPaths || indexedPaths;
+  const srIds = [];
+  for (const p of pathsToCheck) {
+    const memFile = join(memoryDir, p);
+    if (!existsSync(memFile)) continue;
+    try {
+      const content = readFileSync(memFile, 'utf8');
+      let m;
+      while ((m = SR_ID_RE.exec(content)) !== null) {
+        srIds.push(m[0]);
+      }
+    } catch { /* skip */ }
+  }
+  if (srIds.length > 0) {
+    console.log(`[compact] ${srIds.length} SR finding(s) compacted into rules:`);
+    console.log(`  → Mark resolved: node cc-market/sharp-review/scripts/sync-tasks.js --resolve ${srIds.join(' ')}`);
+  }
+
   console.log('[compact] done — memory consolidated into .claude/rules/rem/');
   process.exit(0);
 }

@@ -14,12 +14,14 @@ A community marketplace of Claude Code plugins.
 |---|---|
 | [`takeover`](takeover/README.md) | Multi-model AI orchestration — delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider |
 | [`rem`](rem/README.md) | REM sleep for Claude sessions — memory pruning, session summarization, compaction, and automatic eviction |
+| [`sharp-review`](sharp-review/README.md) | Post-feature sharp review — 3 parallel reviewers, task sync, rem-integrated memory lifecycle |
 
 ## Install
 
 ```shell
 /plugin install takeover@cc-market
 /plugin install rem@cc-market
+/plugin install sharp-review@cc-market
 ```
 
 See each plugin's README for detailed usage, configuration, and API reference.
@@ -29,7 +31,7 @@ See each plugin's README for detailed usage, configuration, and API reference.
 All plugins share a test suite run by the pre-commit hook (`.git/hooks/pre-commit`). Run manually:
 
 ```shell
-node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs
+node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs
 ```
 
 ## Contributing
