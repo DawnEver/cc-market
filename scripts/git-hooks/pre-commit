@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Pre-commit hook — run all plugin tests before commit
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+tests=(
+  "takeover/tests/lib.test.mjs"
+  "takeover/tests/mcp-server.test.mjs"
+  "rem/tests/lib.test.mjs"
+  "rem/tests/rem-hook.test.mjs"
+  "sharp-review/tests/lib.test.mjs"
+)
+
+failed=0
+for t in "${tests[@]}"; do
+  if ! node --test "$t" > /dev/null 2>&1; then
+    echo "FAIL: $t"
+    failed=1
+  fi
+done
+
+if [ "$failed" -ne 0 ]; then
+  echo ""
+  echo "Tests failed. Run manually:"
+  for t in "${tests[@]}"; do
+    echo "  node --test $t"
+  done
+  exit 1
+fi
+
+echo "All plugin tests passed."
