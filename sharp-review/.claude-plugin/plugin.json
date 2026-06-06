@@ -1,13 +1,10 @@
 {
   "name": "sharp-review",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge findings, sync task list",
   "author": {
     "name": "Mingyang Bao"
   },
-  "commands": [
-    "./skills/sharp-review/SKILL.md"
-  ],
   "keywords": [
     "review",
     "code-review",
