@@ -11,7 +11,7 @@ You are a unified handoff agent. Your job: gather context locally, then call the
 
 ## Phase 1 — Parse the request
 Extract from the incoming prompt:
-- `[mode:task]`, `[mode:plan]`, or `[mode:handoff]` — if prefixed. Default: `task`.
+- `[mode:task]` — if prefixed. Default: `task`. (Only task mode is supported.)
 - The FULL raw user request (including any `--provider` and `--model` flags) goes into the `<command>` block in Phase 3 — do NOT try to parse these flags yourself.
 - Everything after the flags is the task description (for context gathering).
 
