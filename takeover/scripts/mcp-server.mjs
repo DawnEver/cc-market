@@ -54,10 +54,11 @@ export const TOOLS = [
         },
         mode: {
           type: "string",
-          enum: ["task", "plan"],
+          enum: ["task", "plan", "handoff"],
           description:
             "Built-in system prompt template. " +
-            "'task' for code/investigation, 'plan' for architecture/design.",
+            "'task' for code/investigation, 'plan' for architecture/design, " +
+            "'handoff' for receiving a conversation handoff from another session.",
         },
         write: {
           type: "boolean",
