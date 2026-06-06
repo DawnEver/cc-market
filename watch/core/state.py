@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 
-def load_state(project_dir: Path, state_file: str = '.claude/watch-state.json') -> dict:
+def load_state(project_dir: Path, state_file: str = '.claude/watch/state/monitor.json') -> dict:
     path = project_dir / state_file
     if not path.exists():
         return {}
@@ -17,7 +17,7 @@ def load_state(project_dir: Path, state_file: str = '.claude/watch-state.json') 
 
 
 def save_state(project_dir: Path, state: dict,
-               state_file: str = '.claude/watch-state.json') -> None:
+               state_file: str = '.claude/watch/state/monitor.json') -> None:
     path = project_dir / state_file
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, ensure_ascii=False) + '\n', encoding='utf-8')

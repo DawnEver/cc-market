@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def append_report(report: dict, project_dir: Path,
-                  log_file: str = '.claude/health-log.jsonl',
+                  log_file: str = '.claude/watch/logs/health.jsonl',
                   max_entries: int = 10000) -> None:
     path = project_dir / log_file
     path.parent.mkdir(parents=True, exist_ok=True)

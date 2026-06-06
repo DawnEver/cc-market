@@ -17,8 +17,8 @@ class HttpHealth(Component):
         endpoints = comp_cfg.get('endpoints', [])
         thresholds = comp_cfg.get('thresholds', [])
         result = CheckResult()
-
         endpoint_data: dict[str, dict] = {}
+
         for ep in endpoints:
             name = ep.get('name', ep['url'])
             ep_result = self._fetch(ep)
@@ -32,16 +32,13 @@ class HttpHealth(Component):
                     message=f"Endpoint '{name}' unreachable: {ep_result['error']}",
                 ))
                 continue
-
             result.data[name] = ep_result['body']
 
-        # Evaluate thresholds against endpoint data
         for t in thresholds:
             value = self._resolve(t['source'], endpoint_data)
             if value is None:
                 continue
             result.metrics[t['name']] = value
-
             critical = t.get('critical')
             warning = t.get('warning')
             if critical is not None and value > critical:
@@ -54,7 +51,6 @@ class HttpHealth(Component):
                     type=t['name'], severity='warning', value=value,
                     threshold=warning, message=f"{t['name']}: {value} > {warning}",
                 ))
-
         return result
 
     def _fetch(self, ep: dict) -> dict:
@@ -62,8 +58,7 @@ class HttpHealth(Component):
         path = ep.get('health_path', '/')
         timeout = ep.get('timeout', 5)
         try:
-            req = urllib.request.Request(f'{url}{path}',
-                                         headers={'User-Agent': 'watch/1.0'})
+            req = urllib.request.Request(f'{url}{path}', headers={'User-Agent': 'watch/1.0'})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 body = json.loads(resp.read().decode('utf-8'))
                 return {'reachable': True, 'status_code': resp.status, 'body': body, 'error': ''}
@@ -73,7 +68,6 @@ class HttpHealth(Component):
             return {'reachable': False, 'status_code': 0, 'body': None, 'error': str(e)}
 
     def _resolve(self, source: str, data: dict) -> float | None:
-        """Resolve source like 'endpoint.backend.$.system.cpu_percent'."""
         if not source.startswith('endpoint.'):
             return None
         parts = source.split('.', 2)

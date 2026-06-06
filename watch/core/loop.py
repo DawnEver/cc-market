@@ -27,7 +27,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
 
     # 2. State
     log_cfg = config.get('logging', {})
-    state = load_state(project, log_cfg.get('state_file', '.claude/watch-state.json'))
+    state = load_state(project, log_cfg.get('state_file', '.claude/watch/state/monitor.json'))
 
     # 3. Run all checks
     ts = datetime.now(timezone.utc).isoformat()
@@ -101,10 +101,10 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
         report['status'] = 'degraded'
 
     # 6. Persist
-    save_state(project, state, log_cfg.get('state_file', '.claude/watch-state.json'))
+    save_state(project, state, log_cfg.get('state_file', '.claude/watch/state/monitor.json'))
 
     output = _to_serializable(report)
-    append_report(output, project, log_file=log_cfg.get('log_file', '.claude/health-log.jsonl'),
+    append_report(output, project, log_file=log_cfg.get('log_file', '.claude/watch/logs/health.jsonl'),
                   max_entries=log_cfg.get('max_entries', 10000))
     return output
 

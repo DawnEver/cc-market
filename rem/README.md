@@ -82,6 +82,13 @@ Memories referenced frequently (≥3 git commits) auto-promote from short-term t
 node scripts/touch-memory.js 2026-06-03/some-entry.md --promote
 ```
 
+## Skills
+
+| Skill | Purpose |
+|---|---|
+| `/rem` | REM sleep — summarize, update memory, compact if needed |
+| `/tasks` | Task management — view, sync, and resolve findings |
+
 ## Scripts
 
 | Script | Purpose |
@@ -91,6 +98,7 @@ node scripts/touch-memory.js 2026-06-03/some-entry.md --promote
 | `touch-memory.js` | Bump `accessed` timestamp, optional promotion |
 | `compact.js` | Distill memory into `.claude/rules/rem/` when index ≥20 |
 | `rem-prep.js` | Pre-REM automation: transcript scan (memory + SR-IDs), promotions, compact check |
+| `sync-tasks.js` | Task management engine: `--findings`, `--resolve`, `--check`, `--report` |
 
 ## Files
 

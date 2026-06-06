@@ -16,6 +16,12 @@ SessionStart → prune-memory.js --evict-stale
     ├── Model summarizes learnings → writes memory files
     ├── Update MEMORY.md index
     └── If ≥20 entries → compact into .claude/rules/rem/
+
+  /tasks skill (user-facing task management):
+    ├── /tasks        → sync-tasks.js --report
+    ├── /tasks sync   → sharp-review wrapper → sync-tasks.js --findings
+    ├── /tasks resolve → sync-tasks.js --resolve
+    └── /tasks check  → sync-tasks.js --check
 ```
 
 ### Three tiers
@@ -30,7 +36,7 @@ SessionStart → prune-memory.js --evict-stale
 
 ```
 rem/
-├── lib.mjs                  Shared library: paths, frontmatter, index, state, date helpers
+├── lib.mjs                  Shared library: paths, frontmatter, index, state, date, module inference, memory cross-reference
 ├── hooks/
 │   ├── hooks.json           Hook registration (SessionStart + Stop)
 │   └── rem-hook.js          Stop hook: session-depth gate for /rem
@@ -39,8 +45,11 @@ rem/
 │   ├── prune-memory.js      Evict stale short-term, demote inactive long-term
 │   ├── touch-memory.js      Bump accessed timestamp, promote short→long
 │   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
-│   └── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
-├── skills/rem/SKILL.md        /rem skill definition and workflow
+│   ├── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
+│   └── sync-tasks.js        Task management engine: --findings, --resolve, --check, --report
+├── skills/
+│   ├── rem/SKILL.md         /rem skill definition and workflow
+│   └── tasks/SKILL.md       /tasks skill — user-facing task management
 ├── tests/
 │   ├── lib.test.mjs         55 tests — frontmatter, index, date, path, state
 │   └── rem-hook.test.mjs    32 tests — isFreshSession, hasSubstantiveWork, decideStop
@@ -68,6 +77,7 @@ See `.claude/rules/invariants.md` for the always-injected version.
 | `touch-memory.js` | Update timestamps | `--promote` |
 | `compact.js` | Distill into rules | `--check`, `--execute`, `--validate`, `--distilled` |
 | `rem-prep.js` | Pre-REM automation | `--transcript <path>`, `--promote` |
+| `sync-tasks.js` | Task management engine | `--findings <json>`, `--resolve <ids>`, `--check`, `--report` |
 
 ## State Management
 
