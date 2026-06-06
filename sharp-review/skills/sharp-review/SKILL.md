@@ -51,7 +51,7 @@ The workflow returns `{ reviewFile, markdown, merged, summary }`. Write `markdow
 node ${CLAUDE_PLUGIN_ROOT}/scripts/sync-tasks.js
 ```
 
-This creates individual memory entries for HIGH/MEDIUM findings in `.claude/memory/YYYY-MM-DD/SR-ID.md` with full frontmatter, enabling rem's touch/promote/eviction lifecycle.
+This thin wrapper parses sharp-review findings and delegates to rem's task engine (`cc-market/rem/scripts/sync-tasks.js`), which creates individual memory entries for HIGH/MEDIUM findings in `.claude/memory/YYYY-MM-DD/SR-ID.md` with full frontmatter, enabling rem's touch/promote/eviction lifecycle.
 
 Then index the new memory files:
 
@@ -61,7 +61,7 @@ node ${CLAUDE_PLUGIN_ROOT}/../rem/scripts/stamp-memory.js
 
 Resolve findings when fixed:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/sync-tasks.js --resolve SR-YYYYMMDD-NNN ...
+node ${CLAUDE_PLUGIN_ROOT}/../rem/scripts/sync-tasks.js --resolve SR-YYYYMMDD-NNN ...
 ```
 
 ### Step 5 — Report

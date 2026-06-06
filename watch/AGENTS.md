@@ -1,40 +1,95 @@
 # watch — Plugin Architecture
 
 A generic Claude Code plugin for unattended supervision of servers and long-running tasks.
+Single YAML config per project. Pluggable components. Isolated uv venv.
 
-## Modes (config-driven, not code-branched)
+## Layers
 
-All three data sources coexist in one config. Declare what you need:
+```
+watchd (Python daemon, runs 24/7)
+  │  Every 5 min: git fetch + health ping + disk + process
+  │  Zero AI tokens. Only wakes AI on anomaly.
+  │
+  ▼
+/watch:watch (Claude Code AI loop, 12h or on-demand)
+  │  Full component check + anomaly detection
+  │  Remedies: restart, rollback, worktree deploy
+  │  Alert escalation: email/webhook
+  │
+  ▼
+alert-hook.js (Claude Code hook)
+  │  Notification + Stop events → fail streak detection → email
+```
 
-- `endpoints` — HTTP GET → JSON → JSONPath extraction
-- `processes` — built-in psutil (name match, RSS/CPU%/count thresholds)
-- `probes` — arbitrary shell commands → parse output (numeric, boolean, delta)
+## File Structure
 
-## Scripts
+```
+core/                    # Engine (config, state, alert, log, loop)
+components/              # Pluggable health checks — flat Python modules
+  base.py                #   Component, CheckResult, Anomaly, RemedyStep, Action
+  registry.py            #   Discovery: built-in + YAML + project custom
+  http_health.py         #   HTTP endpoint check
+  process_monitor.py     #   Process check (psutil)
+  shell_probe.py         #   Shell command probe
+  git_version.py         #   Multi-repo version tracking + worktree deploy
+  disk_usage.py          #   Disk usage check
+watchd/
+  daemon.py              # Lightweight poller (reuses Component.check() directly)
+scripts/                 # CLI entry points
+  watch.py               #   One-shot /watch:check
+  send_alert.py          #   Email dispatch
+  bootstrap.py           #   uv venv lifecycle
+hooks/                   # Claude Code hooks (JS required by CC)
+  hooks.json             #   Event registration
+  alert-hook.js          #   Stop + Notification handler
+skills/watch/SKILL.md    # AI decision tree
+```
 
-| Script | Role |
-|--------|------|
-| `watch.py` | Unified CLI: load config, run all checks, output JSON report |
-| `config_loader.py` | YAML parse, schema validate, defaults, `WATCH_*` env override |
-| `anomaly_engine.py` | Threshold comparison, delta/staleness detection |
-| `action_runner.py` | Execute restart/rollback/custom actions from config |
-| `send_alert.py` | SMTP email + HTTP webhook dispatch |
-| `log_writer.py` | Append structured JSONL log, rotate if needed |
+## Project Layout (per-project `.claude/watch/`)
 
-## Skill
+```
+.claude/watch/
+  config.yaml            # Structural config (tracked in git)
+  config.local.yaml      # Sensitive overrides: email from/to, webhook URLs (gitignored)
+  known-good.json        # Multi-repo version snapshot (tracked in git)
+  components/            # Project custom components (tracked in git)
+    my_check.py          #   Subclass Component, auto-discovered
+  state/                 # Runtime state (gitignored)
+    monitor.json         #   AI loop state
+    daemon.json          #   Daemon state
+    alert.json           #   Hook state
+  logs/                  # Runtime logs (gitignored)
+    health.jsonl         #   AI loop check history
+    daemon.jsonl         #   Daemon poll history
+  trigger.json           #   Escalation trigger (gitignored)
+```
 
-`skills/watch/SKILL.md` — decision tree: load config → run monitor → apply remedies → escalate → schedule.
+**Config merge priority:** env vars > config.local.yaml > config.yaml > defaults.
+config.local.yaml is optional — use it for email from/to, SMTP credentials, and webhook URLs that shouldn't be committed.
 
-## Hooks
+## Component Interface
 
-`hooks/hooks.json` — registers `alert-hook.js` on Notification + Stop events. Tracks fail streaks with cooldown.
+```python
+class Component(ABC):
+    name: str
+    description: str
 
-## Config
+    def check(self, comp_cfg, global_cfg, state) -> CheckResult:
+        """Run health check. Returns metrics + anomalies."""
 
-Per-project `.claude/watch.yaml` (or `ops-supervisor.yaml` for backward compat). See README for full schema.
+    def remedies(self) -> dict[str, list[RemedyStep]]:
+        """anomaly_type → ordered remedy chain."""
+
+    def actions(self) -> dict[str, Action]:
+        """Actions this component provides."""
+```
+
+The daemon reuses `check()` directly via the same registry — no duplicate check logic.
 
 ## Conventions
 
-- Use `${CLAUDE_PLUGIN_ROOT}` for all intra-plugin paths.
-- Use `${CLAUDE_PROJECT_DIR}` for project paths (config, state files, working dir).
-- `watch.py` has zero dependency on any project package — works even when project code is broken.
+- Use `${CLAUDE_PLUGIN_ROOT}` for intra-plugin paths.
+- Use `${CLAUDE_PROJECT_DIR}` for project paths.
+- All Python except `hooks/alert-hook.js` (Claude Code requires standalone hooks).
+- `bootstrap.py` ensures `~/.local/share/claude/watch/venv/` exists at first run.
+- Plugin has zero dependency on host project packages.

@@ -51,7 +51,7 @@ class Component(ABC):
     """Pluggable health check component.
 
     Subclass this, implement check(), and optionally remedies() / actions().
-    Place custom components in .claude/watch-components/ — auto-discovered.
+    Place custom components in .claude/watch/components/ — auto-discovered.
     """
 
     name: str = ''

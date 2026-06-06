@@ -1,7 +1,7 @@
 ---
 name: check
 description: "One-shot health check — runs the monitor and prints a report, no loop, no auto-repair"
-argument-hint: "[--config .claude/watch.yaml]"
+argument-hint: "[--config .claude/watch/config.yaml]"
 ---
 
 # /watch:check — One-shot health check

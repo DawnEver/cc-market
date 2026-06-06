@@ -12,7 +12,6 @@ class ProcessMonitor(Component):
     def check(self, comp_cfg: dict, global_cfg: dict, state: dict) -> CheckResult:
         processes = comp_cfg.get('processes', [])
         result = CheckResult()
-
         if not processes:
             return result
 
@@ -30,8 +29,7 @@ class ProcessMonitor(Component):
                 pinfo = proc.info
                 pname = (pinfo.get('name') or '').lower()
                 cmdline = ' '.join(pinfo.get('cmdline') or [])
-                rss_mb = ((pinfo.get('memory_info') or
-                           type('m', (), {'rss': 0})()).rss) / (1024 * 1024)
+                rss_mb = ((pinfo.get('memory_info') or type('m', (), {'rss': 0})()).rss) / (1024 * 1024)
                 cpu_pct = pinfo.get('cpu_percent') or 0.0
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
@@ -59,17 +57,14 @@ class ProcessMonitor(Component):
             min_c = pc.get('min_count')
             if min_c is not None and s['count'] < min_c:
                 result.anomalies.append(Anomaly(
-                    type=f'{name}_count_low', severity='critical',
-                    value=s['count'], threshold=min_c,
-                    message=f"Process '{name}': {s['count']} < min {min_c}",
+                    type=f'{name}_count_low', severity='critical', value=s['count'],
+                    threshold=min_c, message=f"Process '{name}': {s['count']} < min {min_c}",
                 ))
 
             max_rss = pc.get('max_rss_mb')
             if max_rss is not None and s['rss_mb'] > max_rss:
                 result.anomalies.append(Anomaly(
-                    type=f'{name}_high_ram', severity='critical',
-                    value=s['rss_mb'], threshold=max_rss,
-                    message=f"Process '{name}': {s['rss_mb']}MB > {max_rss}MB",
+                    type=f'{name}_high_ram', severity='critical', value=s['rss_mb'],
+                    threshold=max_rss, message=f"Process '{name}': {s['rss_mb']}MB > {max_rss}MB",
                 ))
-
         return result

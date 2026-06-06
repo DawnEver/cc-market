@@ -115,7 +115,7 @@ class GitVersion(Component):
     # ── Internal helpers ───────────────────────────────────────────────
 
     def _known_good_path(self, comp_cfg: dict, project: Path) -> Path:
-        return project / comp_cfg.get('known_good_file', '.claude/known-good-versions.json')
+        return project / comp_cfg.get('known_good_file', '.claude/watch/known-good.json')
 
     def _load_known(self, comp_cfg: dict, project: Path) -> dict[str, str]:
         path = self._known_good_path(comp_cfg, project)

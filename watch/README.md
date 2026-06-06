@@ -14,7 +14,7 @@ claude plugins install watch
 # 3. Scaffold config in your project
 /watch:setup
 
-# 4. Edit .claude/watch.yaml
+# 4. Edit .claude/watch/config.yaml
 
 # 5. Start the lightweight daemon (git poll + health ping, every 5 min)
 python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir .
@@ -44,7 +44,7 @@ watchd.js (lightweight daemon, runs 24/7)
 
 **Language**: All Python except `hooks/alert-hook.js` (must be a standalone executable for Claude Code hook system).
 
-## Config Schema (`.claude/watch.yaml`)
+## Config Schema (`.claude/watch/config.yaml`)
 
 ### Minimal HTTP server config
 

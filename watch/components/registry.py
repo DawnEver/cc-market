@@ -3,7 +3,7 @@
 Three sources, merged in priority order:
   1. Built-in components (components/ directory)
   2. YAML-declared config (components: section in watch.yaml)
-  3. Project custom components (.claude/watch-components/)
+  3. Project custom components (.claude/watch/components/)
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from .base import Action, Component, RemedyStep
+from components.base import Action, Component, RemedyStep
 
 _COMPONENT_DIR = Path(__file__).resolve().parent
 
@@ -52,19 +52,26 @@ class ComponentRegistry:
         return self._actions.get(action_name)
 
     def enabled(self) -> list[Component]:
-        """Return enabled components in registration order."""
-        return [self._components[n] for n in self._order if n in self._components]
+        """Return enabled components in registration order.
+
+        A component is enabled if its YAML config has ``enabled: true`` or
+        if it has no YAML config entry (built-ins default to enabled)."""
+        result = []
+        for n in self._order:
+            if n not in self._components:
+                continue
+            cfg = self._configs.get(n, {})
+            if cfg.get('enabled', True):
+                result.append(self._components[n])
+        return result
 
 
 def discover_builtin(registry: ComponentRegistry) -> None:
-    """Load all built-in component directories."""
-    for d in sorted(_COMPONENT_DIR.iterdir()):
-        if not d.is_dir() or d.name.startswith('_') or d.name.startswith('.'):
+    """Load all built-in components from flat .py files."""
+    for f in sorted(_COMPONENT_DIR.glob('*.py')):
+        if f.name.startswith('_') or f.name in ('base.py', 'registry.py'):
             continue
-        mod_path = d / 'component.py'
-        if not mod_path.exists():
-            continue
-        _load_module(mod_path, registry)
+        _load_module(f, registry)
 
 
 def discover_yaml(registry: ComponentRegistry, config: dict) -> None:
@@ -79,8 +86,8 @@ def discover_yaml(registry: ComponentRegistry, config: dict) -> None:
 
 
 def discover_project(registry: ComponentRegistry, project_dir: Path) -> None:
-    """Load custom components from .claude/watch-components/ directory."""
-    custom_dir = project_dir / '.claude' / 'watch-components'
+    """Load custom components from .claude/watch/components/ directory."""
+    custom_dir = project_dir / '.claude' / 'watch' / 'components'
     if not custom_dir.is_dir():
         return
     for f in sorted(custom_dir.glob('*.py')):
@@ -91,11 +98,11 @@ def _load_module(path: Path, registry: ComponentRegistry) -> None:
     """Load a Python module and register any Component subclasses found."""
     name = path.stem
     try:
-        spec = importlib.util.spec_from_file_location(f'watch_comp_{name}', str(path))
+        spec = importlib.util.spec_from_file_location(f'components.{name}', str(path))
         if spec is None or spec.loader is None:
             return
         mod = importlib.util.module_from_spec(spec)
-        sys.modules[f'watch_comp_{name}'] = mod
+        sys.modules[f'components.{name}'] = mod
         spec.loader.exec_module(mod)
         for attr in dir(mod):
             obj = getattr(mod, attr)

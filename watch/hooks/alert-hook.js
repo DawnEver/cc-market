@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || '';
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const stateFile = path.join(projectDir, '.claude', '.watch-alert-state.json');
+const stateFile = path.join(projectDir, '.claude', 'watch/state/alert.json');
 
 const NOTIFY_COOLDOWN_MS = 10 * 60 * 1000;
 const FAIL_THRESHOLD = 3;
@@ -68,7 +68,7 @@ function escapeHtml(s) {
 }
 
 function loadWatchConfig() {
-  const configPath = path.join(projectDir, '.claude', 'watch.yaml');
+  const configPath = path.join(projectDir, '.claude', 'watch/config.yaml');
   // Fallback for legacy name
   const legacyPath = path.join(projectDir, '.claude', 'ops-supervisor.yaml');
   for (const p of [configPath, legacyPath]) {

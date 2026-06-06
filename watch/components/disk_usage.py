@@ -41,5 +41,4 @@ class DiskUsage(Component):
                     type='disk_check_failed', severity='warning',
                     message=f"Disk check '{name}' failed: {e}",
                 ))
-
         return result

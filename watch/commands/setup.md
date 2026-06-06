@@ -1,16 +1,16 @@
 ---
 name: setup
-description: "Scaffold a .claude/watch.yaml config file with annotated defaults for this project"
+description: "Scaffold a .claude/watch/config.yaml config file with annotated defaults for this project"
 argument-hint: "[--template http|process|full]"
 ---
 
 # /watch:setup — Generate watch config for this project
 
-Scaffold a `.claude/watch.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with all fields documented as comments.
+Scaffold a `.claude/watch/config.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with all fields documented as comments.
 
 ## Execution
 
-1. Check if `.claude/watch.yaml` already exists → ask before overwriting.
+1. Check if `.claude/watch/config.yaml` already exists → ask before overwriting.
 2. Determine template based on `--template` arg or auto-detect:
    - **http**: HTTP server monitoring (endpoints + thresholds). Default for projects with a web server.
    - **process**: Long-running process monitoring (processes + probes + delta).
@@ -20,7 +20,7 @@ Scaffold a `.claude/watch.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with all fie
    - `pip install pyyaml` (required)
    - `pip install psutil` (only if using process_monitor component)
    - `pip install resend` (only if using Resend email alerts)
-5. Print next steps: "Edit .claude/watch.yaml, then run /watch:check to test."
+5. Print next steps: "Edit .claude/watch/config.yaml, then run /watch:check to test."
 
 ## Template: http
 
@@ -87,7 +87,7 @@ remedies:
 
 # version_tracking:
 #   enabled: true
-#   known_good_file: ".claude/known-good-versions.json"
+#   known_good_file: ".claude/watch/known-good.json"
 #   auto_update_after_checks: 2    # consecutive clean checks before trusting version
 #   repositories:                   # multi-repo: record version combination
 #     - name: "main"

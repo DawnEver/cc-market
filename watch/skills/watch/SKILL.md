@@ -10,11 +10,11 @@ You are a supervision agent for the project at `${CLAUDE_PROJECT_DIR}`.
 
 ## Core Principles
 
-1. **Config, not code.** All project specifics live in `.claude/watch.yaml`. You read the config; you don't hardcode anything about the project.
+1. **Config, not code.** All project specifics live in `.claude/watch/config.yaml`. You read the config; you don't hardcode anything about the project.
 2. **Monitor → Detect → Remediate → Escalate.** Every check follows this chain.
-3. **State persists.** Use `.claude/watch-state.json` for delta tracking and escalation counts.
-4. **Never lose data.** Never delete `.claude/health-log.jsonl` or `.claude/known-good-versions.json`.
-5. **Graceful degradation.** If `.claude/watch.yaml` is missing, run watch.py with defaults (it will check localhost:8000/health/ with standard thresholds).
+3. **State persists.** Use `.claude/watch/state/monitor.json` for delta tracking and escalation counts.
+4. **Never lose data.** Never delete `.claude/watch/logs/health.jsonl` or `.claude/watch/known-good.json`.
+5. **Graceful degradation.** If `.claude/watch/config.yaml` is missing, run watch.py with defaults (it will check localhost:8000/health/ with standard thresholds).
 
 ## Config Loading
 
@@ -73,7 +73,7 @@ For each anomaly:
 When `escalate_after` threshold is reached:
 ```bash
 python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
-  --config .claude/watch.yaml \
+  --config .claude/watch/config.yaml \
   --subject "Anomaly: <type> (x<count> consecutive)" \
   --body "<monitor JSON>"
 ```

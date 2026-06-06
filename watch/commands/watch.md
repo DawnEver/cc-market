@@ -1,12 +1,12 @@
 ---
 name: watch
 description: "Run the supervision loop — health checks, anomaly detection, auto-repair, alerts"
-argument-hint: "[--interval-normal 12h] [--config .claude/watch.yaml]"
+argument-hint: "[--interval-normal 12h] [--config .claude/watch/config.yaml]"
 ---
 
 # /watch:watch — Run the supervision loop
 
-Load config from `.claude/watch.yaml`, run the health monitor, apply remedies for any anomalies, and schedule the next check via ScheduleWakeup.
+Load config from `.claude/watch/config.yaml`, run the health monitor, apply remedies for any anomalies, and schedule the next check via ScheduleWakeup.
 
 ## Execution Steps
 
@@ -47,7 +47,7 @@ For each anomaly in `report.anomalies`:
        ```
      - If `step.max_attempts` is set and action failed, retry up to that count.
      - If action succeeded, move to next anomaly (remedies for this one are done).
-  3. If `step.escalate_after` is set, check `.claude/watch-state.json` for consecutive anomaly count. If threshold reached → send alert.
+  3. If `step.escalate_after` is set, check `.claude/watch/state/monitor.json` for consecutive anomaly count. If threshold reached → send alert.
 
 After all remedies applied: wait 10 seconds, re-run monitor to verify. If still degraded → send alert. ScheduleWakeup with `delaySeconds = config.instance.check_interval_anomaly` (default 1800).
 
@@ -56,7 +56,7 @@ After all remedies applied: wait 10 seconds, re-run monitor to verify. If still 
 When escalating, send alert:
 ```bash
 python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
-  --config .claude/watch.yaml \
+  --config .claude/watch/config.yaml \
   --subject "Anomaly detected: <type>" \
   --body "$(python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --json)"
 ```
@@ -69,6 +69,6 @@ The action runner maintains a context dict for condition evaluation:
 
 ## State File
 
-`.claude/watch-state.json` persists across wakeups:
+`.claude/watch/state/monitor.json` persists across wakeups:
 - `_probe_state` — for delta/staleness detection
 - `consecutive_anomalies` — `{anomaly_type: count}` for escalation tracking

@@ -22,9 +22,9 @@ DEFAULTS: dict[str, Any] = {
         'webhook': {'enabled': False, 'url': '', 'cooldown_minutes': 5},
     },
     'logging': {
-        'log_file': '.claude/health-log.jsonl',
+        'log_file': '.claude/watch/logs/health.jsonl',
         'max_entries': 10000,
-        'state_file': '.claude/watch-state.json',
+        'state_file': '.claude/watch/state/monitor.json',
     },
 }
 
@@ -58,19 +58,42 @@ def _env_override(config: dict, prefix: str = 'WATCH_') -> dict:
     return config
 
 
+def _load_yaml_file(path: Path) -> dict:
+    """Load YAML (or JSON fallback) from a file. Returns empty dict on failure."""
+    if not path.exists():
+        return {}
+    try:
+        import yaml
+        return yaml.safe_load(path.read_text(encoding='utf-8')) or {}
+    except ImportError:
+        import json
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except Exception:
+            return {}
+
+
 def load_config(project_dir: str | Path, config_path: str | None = None) -> dict:
+    """Load project config with merge priority: env > config.local.yaml > config.yaml > defaults.
+
+    config.yaml       — structural config (tracked in git)
+    config.local.yaml — sensitive overrides: email from/to, webhook URLs (gitignored)
+    """
     project = Path(project_dir)
-    cfg_file = project / (config_path or '.claude/watch.yaml')
+    watch_dir = project / '.claude' / 'watch'
 
     config = dict(DEFAULTS)
-    if cfg_file.exists():
-        try:
-            import yaml
-            user = yaml.safe_load(cfg_file.read_text(encoding='utf-8')) or {}
-        except ImportError:
-            import json
-            user = json.loads(cfg_file.read_text(encoding='utf-8'))
-        _deep_merge(config, user)
 
+    # 1. Main config (version-tracked): instance, components, thresholds, actions, remedies
+    main_file = watch_dir / (config_path or 'config.yaml')
+    if main_file.exists():
+        _deep_merge(config, _load_yaml_file(main_file))
+
+    # 2. Local overrides (gitignored): email from/to, SMTP creds, webhook URLs
+    local_file = watch_dir / 'config.local.yaml'
+    if local_file.exists():
+        _deep_merge(config, _load_yaml_file(local_file))
+
+    # 3. Environment overrides (highest priority)
     _env_override(config)
     return config

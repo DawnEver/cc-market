@@ -25,7 +25,6 @@ class ShellProbe(Component):
                     message=f"Probe '{name}' failed: {stderr or stdout}"))
                 continue
 
-            # Parse numeric value
             try:
                 value = float(stdout.strip().rstrip('%'))
             except ValueError:
@@ -43,8 +42,8 @@ class ShellProbe(Component):
                     limit = p.get('stale_rounds', 3)
                     if stale >= limit:
                         result.anomalies.append(Anomaly(
-                            type=f'{name}_stale', severity='critical',
-                            value=value, message=f"Probe '{name}' stalled: {value} for {stale} rounds",
+                            type=f'{name}_stale', severity='critical', value=value,
+                            message=f"Probe '{name}' stalled: {value} for {stale} rounds",
                         ))
                 else:
                     state[f'_stale_{name}'] = 0
@@ -62,5 +61,4 @@ class ShellProbe(Component):
                         type=f'probe_{name}', severity='warning', value=value,
                         threshold=warning, message=f"Probe '{name}': {value} > {warning}",
                     ))
-
         return result
