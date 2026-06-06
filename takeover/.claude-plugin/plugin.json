@@ -1,6 +1,6 @@
 {
   "name": "takeover",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "Hand off tasks to another AI model and get back the result — let a different model take over any task or planning request.",
   "author": {
     "name": "Mingyang Bao"
@@ -9,7 +9,7 @@
     "./commands/continue.md",
     "./commands/plan.md",
     "./commands/models.md",
-    "./commands/handoff.md"
+    "./commands/handoff-msg.md"
   ],
   "keywords": [
     "takeover",

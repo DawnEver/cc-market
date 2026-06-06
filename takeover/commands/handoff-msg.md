@@ -24,7 +24,7 @@ Keep the summary tight — the target model needs context, not a transcript.
 Invoke the `takeover:takeover` subagent via `Agent` (`subagent_type: "takeover:takeover"`), forwarding:
 
 ```
-[mode:handoff]
+[mode:handoff-msg]
 
 <handoff>
 [Your structured summary from Step 1]
