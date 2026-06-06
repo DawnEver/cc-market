@@ -25,10 +25,12 @@ takeover/
 ├── commands/
 │   ├── continue.md          /takeover:continue
 │   ├── plan.md              /takeover:plan
-│   └── models.md            /takeover:models
+│   ├── models.md            /takeover:models
+│   └── handoff.md           /takeover:handoff
 ├── prompts/
 │   ├── task.md              System prompt for code/investigation
-│   └── plan.md              System prompt for architecture/design
+│   ├── plan.md              System prompt for architecture/design
+│   └── handoff.md           System prompt for conversation handoffs
 ├── skills/takeover-result/  Result handling: return verbatim, no paraphrasing
 ├── tests/
 │   ├── lib.test.mjs         27 tests — provider config, model resolution, API, retry

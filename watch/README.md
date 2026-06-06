@@ -10,19 +10,39 @@ claude plugins install watch
 
 # 2. Python environment is auto-managed — first run creates:
 #    ~/.local/share/claude/watch/venv/   (uv venv)
-#    with pyyaml, psutil, resend from requirements.txt
 
 # 3. Scaffold config in your project
 /watch:setup
 
-# 4. Edit .claude/watch.yaml with your endpoints/processes/probes
+# 4. Edit .claude/watch.yaml
 
-# 5. Start the loop
+# 5. Start the lightweight daemon (git poll + health ping, every 5 min)
+python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir .
+
+# 6. Start the AI supervision loop (full check + auto-repair, every 12h)
 /loop 12h /watch:watch
 
 # Or one-shot check
 /watch:check
 ```
+
+## Architecture
+
+```
+watchd.js (lightweight daemon, runs 24/7)
+  │  Every 5 min: git fetch + health ping
+  │  Only wakes AI on anomaly or new commits
+  │
+  ▼
+/watch:watch (Claude Code AI loop, 12h or on-demand)
+  │  Full component check + anomaly detection
+  │  Remedies: restart, rollback, worktree deploy
+  │  Alert escalation: email/webhook
+```
+
+**Why two layers?** Frequent polling with AI would be expensive. `watchd` is a lightweight Python daemon that burns zero AI tokens — it only triggers `/watch:watch` when something actually needs attention.
+
+**Language**: All Python except `hooks/alert-hook.js` (must be a standalone executable for Claude Code hook system).
 
 ## Config Schema (`.claude/watch.yaml`)
 

@@ -25,7 +25,7 @@ describe("TOOLS definition", () => {
     assert.ok(tool.inputSchema.properties.userPrompt);
     assert.ok(tool.inputSchema.properties.model);
     assert.ok(tool.inputSchema.properties.mode);
-    assert.deepEqual(tool.inputSchema.properties.mode.enum, ["task", "plan"]);
+    assert.deepEqual(tool.inputSchema.properties.mode.enum, ["task", "plan", "handoff"]);
     assert.deepEqual(tool.inputSchema.required, ["userPrompt"]);
   });
 
