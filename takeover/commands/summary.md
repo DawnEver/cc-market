@@ -1,16 +1,28 @@
 ---
-description: Summarize the current conversation into a structured handoff-ready context block
+description: Summarize the current conversation and save to .claude/summary/
+allowed-tools: Bash
 ---
 
-Your task: synthesize the current conversation into a structured summary. Do NOT invoke any subagent or external model — just produce the summary.
+Your task: synthesize the current conversation into a structured, action-oriented summary, then save it to a markdown file.
 
-Extract from this session's context:
+## Content
 
-- **Goal**: What are we trying to accomplish? (1 sentence)
-- **Progress**: What's been done so far? (concrete — files changed, decisions made)
+Structure the summary around **what to do next** — the primary purpose is to guide the next session:
+
+- **Next steps**: What should happen next? (ranked by priority, be specific — file paths, actions)
 - **Current state**: Where exactly are we right now? Latest finding or blocker?
-- **Key decisions & rationale**: Non-obvious choices made and why.
-- **Unresolved questions**: What's still open or needs investigation?
-- **Next steps**: What should happen next?
+- **Goal**: What are we trying to accomplish? (1 sentence)
+- **Key decisions**: Non-obvious choices made and why.
+- **Unresolved questions**: What's still open?
 
-Keep the summary tight — the reader needs context, not a transcript. Output the summary directly, no commentary before or after.
+Keep it tight and actionable. The reader needs to know what to do, not a full transcript.
+
+## Save
+
+After writing the summary, save it:
+
+```bash
+mkdir -p .claude/summary
+```
+
+Then write the summary to `.claude/summary/YYYY-MM-DD-HHmm.md` (use the current date/time). Output the file path when done.
