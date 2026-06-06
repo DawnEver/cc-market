@@ -24,13 +24,10 @@ takeover/
 ├── agents/takeover.md       Subagent: context gathering + handoff
 ├── commands/
 │   ├── continue.md          /takeover:continue
-│   ├── plan.md              /takeover:plan
 │   ├── models.md            /takeover:models
-│   └── handoff.md           /takeover:handoff
+│   └── summary.md           /takeover:summary
 ├── prompts/
-│   ├── task.md              System prompt for code/investigation
-│   ├── plan.md              System prompt for architecture/design
-│   └── handoff.md           System prompt for conversation handoffs
+│   └── task.md              System prompt for code/investigation
 ├── skills/takeover-result/  Result handling: return verbatim, no paraphrasing
 ├── tests/
 │   ├── lib.test.mjs         27 tests — provider config, model resolution, API, retry

@@ -25,7 +25,7 @@ Then register the MCP server in `~/.claude/settings.json`:
 
 ```shell
 /takeover:continue review this PR for security issues
-/takeover:plan implement OAuth2 login
+/takeover:summary
 /takeover:continue --provider deepseek --model deepseek-v4-pro explain this crash
 /takeover:models
 ```
@@ -35,7 +35,7 @@ Then register the MCP server in `~/.claude/settings.json`:
 | Command | Description |
 |---|---|
 | `/takeover:continue` | Hand off a task or investigation to another model |
-| `/takeover:plan` | Hand off a planning request to another model |
+| `/takeover:summary` | Summarize the current conversation |
 | `/takeover:models` | List all available providers and their models |
 
 ## Configuration
@@ -92,10 +92,9 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks.
 | `scripts/lib.mjs` | Core: provider config, API callers, retry |
 | `agents/takeover.md` | Subagent: thin handoff wrapper |
 | `commands/continue.md` | `/takeover:continue` |
-| `commands/plan.md` | `/takeover:plan` |
 | `commands/models.md` | `/takeover:models` |
+| `commands/summary.md` | `/takeover:summary` |
 | `prompts/task.md` | System prompt for task handoffs |
-| `prompts/plan.md` | System prompt for plan handoffs |
 | `skills/takeover-result/` | Result handling contract |
 | `tests/lib.test.mjs` | Core library tests (27 tests) |
 | `tests/mcp-server.test.mjs` | MCP server tests (10 tests) |
