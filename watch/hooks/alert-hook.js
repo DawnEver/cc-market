@@ -104,8 +104,10 @@ function sendAlert(subject, html) {
 
   try {
     const sendScript = path.join(pluginRoot, 'scripts', 'send_alert.py');
-    // Try python3 first, fall back to python
-    let pythonCmd = 'python3';
+    // Use the plugin's isolated uv venv
+    const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
+    const venvPython = path.join(home, '.local', 'share', 'claude', 'watch', 'venv', 'bin', 'python3');
+    let pythonCmd = fs.existsSync(venvPython) ? venvPython : 'python3';
     let proc = spawnSync(pythonCmd, [sendScript,
       '--project-dir', projectDir,
       '--subject', `${prefix} ${subject}`,

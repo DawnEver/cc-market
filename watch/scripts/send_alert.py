@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-"""Thin CLI wrapper for core.alert — used by alert-hook.js and manual alerts.
-
-Usage:
-  python send_alert.py --project-dir /path --subject "..." [--body "..."] [--dry-run] [--webhook]
-"""
+"""Alert CLI — used by alert-hook.js. Usage: python send_alert.py --project-dir /path ..."""
 
 from __future__ import annotations
 
+import bootstrap
+bootstrap.ensure()
+
 import argparse
 import sys
-from pathlib import Path
-
-_PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_PLUGIN_ROOT))
 
 from core.alert import send_email, send_webhook
 from core.config import load_config

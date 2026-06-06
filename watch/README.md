@@ -8,9 +8,9 @@ A Claude Code plugin for zero-touch server and long-running task supervision.
 # 1. Install plugin
 claude plugins install watch
 
-# 2. Install Python dependencies
-pip install pyyaml                 # required
-pip install psutil resend           # optional (process monitor, email alerts)
+# 2. Python environment is auto-managed — first run creates:
+#    ~/.local/share/claude/watch/venv/   (uv venv)
+#    with pyyaml, psutil, resend from requirements.txt
 
 # 3. Scaffold config in your project
 /watch:setup
