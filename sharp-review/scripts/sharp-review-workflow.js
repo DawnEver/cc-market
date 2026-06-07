@@ -149,8 +149,7 @@ log(`${merged.length} unique findings (${merged.filter(f => f.confidence.include
 
 const dateStr = args.date || '2026-06-04';
 const timestamp = dateStr + ' (session)';
-const sharpReviewDir = '.claude/sharp-review';
-const reviewFile = `${sharpReviewDir}/${dateStr}.md`;
+const reviewFile = `.claude/memory/${dateStr.replace(/-/g, '/')}/sharp-review.md`;
 
 const lines = [];
 lines.push(`## Review ${timestamp} — current branch`);
@@ -190,7 +189,7 @@ log(`Writing findings to ${reviewFile}...`);
 
 phase('Sync');
 
-// The parent skill will write the markdown and run sync-tasks.
+// The parent skill will write the markdown via post-review.js.
 // Return the structured data so the skill can do the I/O.
 
 return {

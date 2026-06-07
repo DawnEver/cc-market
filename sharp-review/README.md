@@ -34,21 +34,21 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 
 ## Output
 
-- `.claude/sharp-review/YYYY-MM-DD.md` — full review report with stable IDs
+- `.claude/memory/YYYY-MM-DD/sharp-review.md` — single memory entry per session with rem frontmatter
 - `.claude/memory/tasks/tasks.md` — structured active task list
-- `.claude/rules/MEMORY.md` — index entry for progressive disclosure
+- `.claude/rules/MEMORY.md` — one index entry per session
 
 ### Resolving Findings
 
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/sync-tasks.js --resolve SR-YYYYMMDD-NNN ...
-```
+Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then rescan:
 
-Or check `[x]` in tasks.md — auto-promoted to resolved.txt on next sync.
+```bash
+node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --rescan
+```
 
 ## How It Works
 
-1. **Hook** classifies the session (none/once/multi) using a Haiku classifier
+1. **Hook** classifies the session (none/once/multi)
 2. **Skill** gathers git diff, launches 3 parallel reviewers via Workflow
 3. **Workflow** merges findings, deduplicates, assigns IDs
-4. **sync-tasks.js** bridges findings into structured task list with memory cross-references
+4. **post-review.js** writes a single memory entry, cross-links SR-IDs, stamps index, delegates to rem engine

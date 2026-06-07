@@ -7,7 +7,7 @@
 // Idempotent — safe to run multiple times.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { relative } from 'path';
+import { join, relative } from 'path';
 import {
   memoryDir, rulesDir, indexFile, INDEX_HEADER,
   hasAllFields, stampMissingFields, parseFrontmatter,
@@ -24,13 +24,31 @@ if (!existsSync(indexFile)) {
   console.log(`[stamp-memory] created ${relative(process.cwd(), indexFile)}`);
 }
 
-// Parse existing index entries
-const indexContent = readFileSync(indexFile, 'utf8');
+// Parse existing index entries and validate paths
+let indexContent = readFileSync(indexFile, 'utf8');
 const existingPaths = new Set();
+const brokenPaths = new Set();
 const entryPattern = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
 let m;
 while ((m = entryPattern.exec(indexContent)) !== null) {
-  existingPaths.add(m[1]);
+  const rel = m[1];
+  if (existsSync(join(memoryDir, rel))) {
+    existingPaths.add(rel);
+  } else {
+    brokenPaths.add(rel);
+  }
+}
+
+// Remove broken entries from index
+if (brokenPaths.size > 0) {
+  const lines = indexContent.split('\n');
+  const kept = lines.filter(l => {
+    const em = l.match(/\]\(\.\.\/memory\/(.+?\.md)\)/);
+    return !em || !brokenPaths.has(em[1]);
+  });
+  indexContent = kept.join('\n');
+  writeFileSync(indexFile, indexContent, 'utf8');
+  console.log(`[stamp-memory] removed ${brokenPaths.size} broken entries from index`);
 }
 
 // Stamp memory files
