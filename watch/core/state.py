@@ -33,3 +33,28 @@ def track_anomaly(state: dict, anomaly_type: str) -> int:
 
 def reset_anomaly(state: dict, anomaly_type: str) -> None:
     state.pop(f'consecutive_{anomaly_type}', None)
+
+
+def record_last_healthy(state: dict, timestamp: str) -> None:
+    """Record timestamp of last healthy check."""
+    state['last_healthy'] = timestamp
+
+
+def record_remedy_attempt(state: dict, anomaly_type: str, action: str,
+                          result: str, attempts: int) -> None:
+    """Append a remedy attempt to the state's remedy log (last 20)."""
+    entry = {
+        'anomaly': anomaly_type,
+        'action': action,
+        'result': result,
+        'attempts': attempts,
+    }
+    remedies = state.setdefault('_remedies', [])
+    remedies.append(entry)
+    if len(remedies) > 20:
+        state['_remedies'] = remedies[-20:]
+
+
+def set_alert_sent(state: dict, timestamp: str) -> None:
+    """Mark that an alert was sent at the given timestamp."""
+    state['_alert_sent'] = timestamp

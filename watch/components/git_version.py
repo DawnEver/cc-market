@@ -27,6 +27,18 @@ class GitVersion(Component):
             return result
 
         known = self._load_known(comp_cfg, project)
+
+        # Load extra metadata from known-good.json for context
+        kg_path = self._known_good_path(comp_cfg, project)
+        kg_meta: dict = {}
+        if kg_path.exists():
+            try:
+                kg_meta = json.loads(kg_path.read_text(encoding='utf-8'))
+            except Exception:
+                pass
+        result.data['stable_checks'] = kg_meta.get('stable_checks', 0)
+        result.data['last_updated'] = kg_meta.get('updated_at')
+
         total_new = 0
         details: list[str] = []
 
@@ -71,6 +83,16 @@ class GitVersion(Component):
                 total_new += count
                 details.append(f'{name}: +{count}')
                 result.data[f'{name}_new_head'] = remote_head
+                # Fetch pending commit subjects for context
+                if known_commit:
+                    try:
+                        log_out = subprocess.check_output(
+                            ['git', 'log', '--oneline', f'{known_commit}..{remote_head}'],
+                            cwd=repo_path, text=True, timeout=5,
+                        ).strip()
+                        result.data[f'{name}_pending'] = log_out.split('\n') if log_out else []
+                    except Exception:
+                        result.data[f'{name}_pending'] = []
 
         result.metrics['new_commits'] = total_new
         result.data['new_commits'] = total_new

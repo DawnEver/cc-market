@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { tmpdir } from 'os';
 
 // Import the module under test
@@ -12,14 +12,14 @@ const libPath = join(__dirname, '..', 'lib.mjs');
 
 let lib;
 try {
-  lib = await import(libPath);
+  lib = await import(pathToFileURL(libPath).href);
 } catch (e) {
   // We need a project context; set one up
   const tmp = join(tmpdir(), `sharp-review-test-${Date.now()}`);
   mkdirSync(join(tmp, '.claude', 'memory'), { recursive: true });
   const orig = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = tmp;
-  lib = await import(libPath);
+  lib = await import(pathToFileURL(libPath).href);
   process.env.CLAUDE_PROJECT_DIR = orig;
   process.on('exit', () => { try { rmSync(tmp, { recursive: true }); } catch {} });
 }
