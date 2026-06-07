@@ -17,6 +17,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
     """Execute one supervision cycle. Returns the report dict."""
     project = Path(project_dir).resolve()
     config = load_config(project)
+    config['_project_dir'] = str(project)
 
     # 1. Component registry
     registry = create_registry(config, project)
@@ -140,17 +141,21 @@ def _execute_action(action: Action, project_dir: Path,
         return False
 
     if action.start:
-        # Restart action
+        # Restart action — supports multiple kill/start commands
         if action.kill:
-            run_command(action.kill, shell=True, cwd=str(project_dir), timeout=15)
-            import time
-            time.sleep(action.wait)
-        rc, out, err = run_command(action.start, shell=True, cwd=str(project_dir),
-                                   timeout=action.timeout)
-        if rc != 0:
-            print(f'    start failed: {err}')
-            return False
-        print(f'    started: {action.start}')
+            kills = action.kill if isinstance(action.kill, list) else [action.kill]
+            for kill_cmd in kills:
+                run_command(kill_cmd, shell=True, cwd=str(project_dir), timeout=15)
+        import time
+        time.sleep(action.wait)
+        starts = action.start if isinstance(action.start, list) else [action.start]
+        for start_cmd in starts:
+            rc, out, err = run_command(start_cmd, shell=True, cwd=str(project_dir),
+                                       timeout=action.timeout)
+            if rc != 0:
+                print(f'    start failed [{start_cmd[:60]}]: {err}')
+                return False
+        print(f'    started {len(starts)} process(es)')
         return True
 
     if action.command:
