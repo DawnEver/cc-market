@@ -1,6 +1,6 @@
 {
   "name": "rem",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "REM sleep for your Claude sessions — prune stale memory, consolidate learnings, maintain .claude/memory/ with timestamps and automatic eviction",
   "author": {
     "name": "Mingyang Bao"

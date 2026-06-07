@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +15,8 @@ from core.config import load_config
 from core.log import append_report, get_last_report
 from core.state import (load_state, save_state, track_anomaly, reset_anomaly,
                          record_last_healthy, record_remedy_attempt, set_alert_sent)
+
+CHECK_TIMEOUT = 60  # per-component hard timeout (seconds)
 
 
 def run(project_dir: str | Path, dry_run: bool = False) -> dict:
@@ -25,7 +29,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
     registry = create_registry(config, project)
     enabled = registry.enabled()
     if not enabled:
-        print('[watch] No components enabled. Check your watch.yaml.')
+        print('[watch] No components enabled. Check your watch.yaml.', file=sys.stderr)
         return {'status': 'healthy', 'anomalies': [], 'components': {}}
 
     # 2. State
@@ -44,9 +48,11 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
 
     for comp in enabled:
         comp_cfg = registry.get_config(comp.name)
-        print(f'[{comp.name}] checking...')
+        print(f'[{comp.name}] checking...', file=sys.stderr, flush=True)
         try:
-            result = comp.check(comp_cfg, config, state)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(comp.check, comp_cfg, config, state)
+                result = future.result(timeout=CHECK_TIMEOUT)
             report['components'][comp.name] = {
                 'metrics': result.metrics,
                 'data': result.data,
@@ -56,8 +62,11 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
             for a in result.anomalies:
                 a.source = f'{comp.name}.{a.type}'
             report['anomalies'].extend(result.anomalies)
+        except FutureTimeoutError:
+            print(f'[{comp.name}] timed out after {CHECK_TIMEOUT}s', file=sys.stderr, flush=True)
+            report['components'][comp.name] = {'error': f'timed out after {CHECK_TIMEOUT}s'}
         except Exception as e:
-            print(f'[{comp.name}] check failed: {e}')
+            print(f'[{comp.name}] check failed: {e}', file=sys.stderr, flush=True)
             report['components'][comp.name] = {'error': str(e)}
 
     # 4. Apply remedies for each anomaly
@@ -76,7 +85,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
                 track_anomaly(state, anomaly.type)
                 continue
 
-            print(f'  [{anomaly.type}] applying remedies...')
+            print(f'  [{anomaly.type}] applying remedies...', file=sys.stderr, flush=True)
             escalate_count = 0
             for step in steps:
                 if step.on != 'always' and step.on != anomaly.severity:
@@ -86,7 +95,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
 
                 action = registry.get_action(step.action)
                 if not action:
-                    print(f'    action "{step.action}" not found, skipping')
+                    print(f'    action "{step.action}" not found, skipping', file=sys.stderr)
                     continue
 
                 for attempt in range(step.max_attempts):
@@ -95,7 +104,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
                     if ok:
                         record_remedy_attempt(state, anomaly.type, step.action, 'ok', attempt + 1)
                         break
-                    print(f'    retry {attempt + 1}/{step.max_attempts}')
+                    print(f'    retry {attempt + 1}/{step.max_attempts}', file=sys.stderr)
                 else:
                     record_remedy_attempt(state, anomaly.type, step.action, 'failed', step.max_attempts)
 
@@ -152,7 +161,7 @@ def _execute_action(action: Action, project_dir: Path,
             if comp and hasattr(comp, 'execute_action'):
                 return comp.execute_action(special, registry.get_config(comp_name),
                                           {}, project_dir, ctx)  # type: ignore[call-arg]
-        print(f'    cannot delegate {special}: no component found')
+        print(f'    cannot delegate {special}: no component found', file=sys.stderr)
         return False
 
     if action.start:
@@ -168,19 +177,19 @@ def _execute_action(action: Action, project_dir: Path,
             rc, out, err = run_command(start_cmd, shell=True, cwd=str(project_dir),
                                        timeout=action.timeout)
             if rc != 0:
-                print(f'    start failed [{start_cmd[:60]}]: {err}')
+                print(f'    start failed [{start_cmd[:60]}]: {err}', file=sys.stderr)
                 return False
-        print(f'    started {len(starts)} process(es)')
+        print(f'    started {len(starts)} process(es)', file=sys.stderr)
         return True
 
     if action.command:
         rc, out, err = run_command(action.command, shell=action.shell,
                                    cwd=str(project_dir), timeout=action.timeout)
         if rc != 0:
-            print(f'    command failed: {err}')
+            print(f'    command failed: {err}', file=sys.stderr)
             return False
         if out:
-            print(f'    {out[:200]}')
+            print(f'    {out[:200]}', file=sys.stderr)
         return True
 
     return False
