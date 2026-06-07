@@ -16,8 +16,9 @@ PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
 
 def _venv_python() -> Path:
     name = 'python.exe' if sys.platform == 'win32' else 'python3'
-    p = WATCH_VENV / 'bin' / name
-    return p if p.exists() else WATCH_VENV / 'bin' / 'python'
+    subdir = 'Scripts' if sys.platform == 'win32' else 'bin'
+    p = WATCH_VENV / subdir / name
+    return p if p.exists() else WATCH_VENV / subdir / 'python'
 
 
 def _in_venv() -> bool:
@@ -40,7 +41,7 @@ def ensure() -> None:
             print(f'[watch] Installing dependencies...')
             subprocess.run(['uv', 'pip', 'install', '-r', str(REQUIREMENTS)], check=False,
                            env={**os.environ, 'VIRTUAL_ENV': str(WATCH_VENV),
-                                'PATH': f'{WATCH_VENV}/bin:{os.environ["PATH"]}'})
+                                'PATH': f'{WATCH_VENV}/{"Scripts" if sys.platform == "win32" else "bin"}{os.pathsep}{os.environ["PATH"]}'})
 
     # Re-exec into venv
     os.environ['WATCH_VENV'] = '1'

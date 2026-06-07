@@ -31,8 +31,8 @@ class RemedyStep:
 class Action:
     description: str = ''
     command: str | None = None        # shell command
-    kill: str | None = None           # for restart: kill existing
-    start: str | None = None          # for restart: start new
+    kill: str | list[str] | None = None  # for restart: kill existing
+    start: str | list[str] | None = None  # for restart: start new
     wait: int = 3                     # for restart: wait after kill
     shell: bool = False
     timeout: int = 30

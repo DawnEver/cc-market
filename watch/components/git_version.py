@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -96,7 +97,7 @@ class GitVersion(Component):
     def actions(self) -> dict[str, Action]:
         return {
             'deploy': Action(
-                description='Worktree-based deploy: fetch → test → apply or reject',
+                description='Worktree-based deploy: fetch -> test -> apply or reject',
                 command='__deploy__',  # Special — handled by _deploy method
                 timeout=600,
             ),
@@ -169,6 +170,7 @@ class GitVersion(Component):
         deploy_cfg = comp_cfg.get('deploy', {})
         staging = project / deploy_cfg.get('staging_dir', '.watch-staging')
         test_cmd = deploy_cfg.get('test_command', '')
+        deploy_branch = deploy_cfg.get('deploy_branch', 'deploy')
         repos = comp_cfg.get('repositories', [])
 
         if not test_cmd or not repos:
@@ -198,53 +200,73 @@ class GitVersion(Component):
             print('[git_version] No remote HEADs found.')
             return False
 
-        # Clean stale staging
-        primary_repo = (project / repos[0]['path']).resolve()
+        # Primary repo gets a worktree for isolated testing.
+        # All other repos are independent — manage them directly in-place.
+        primary_repo_path = (project / repos[0]['path']).resolve()
+        other_repos = repos[1:]
+
+        # Clean stale primary staging
         primary_remote = repos[0].get('remote', 'origin')
         primary_branch = repos[0].get('branch', 'main')
         if staging.exists():
-            try:
-                subprocess.run(['git', 'worktree', 'remove', '--force', str(staging)],
-                               cwd=primary_repo, capture_output=True, timeout=10)
-                subprocess.run(['git', 'worktree', 'prune'], cwd=primary_repo,
-                               capture_output=True, timeout=5)
-            except Exception:
-                shutil.rmtree(staging, ignore_errors=True)
+            _remove_worktree(staging, primary_repo_path)
 
-        # Create worktree
+        # Create primary worktree
         target_ref = primary_target or f'{primary_remote}/{primary_branch}'
         print(f'[git_version] Creating worktree at {staging} ({target_ref[:8]})')
         try:
             subprocess.run(
                 ['git', 'worktree', 'add', '--detach', str(staging), target_ref],
-                cwd=primary_repo, check=True, capture_output=True, text=True, timeout=30,
+                cwd=primary_repo_path, check=True, capture_output=True, text=True, timeout=30,
             )
         except subprocess.CalledProcessError as e:
             print(f'[git_version] Worktree creation failed: {e.stderr}')
             return False
 
-        # Checkout sub-repos
-        for repo in repos[1:]:
+        # Other repos: checkout candidate directly in their own directory
+        other_prev_refs: dict[str, str] = {}
+        for repo in other_repos:
             name = repo['name']
-            sub_path = staging / repo['path']
+            repo_path = (project / repo['path']).resolve()
             target = new_heads.get(name)
-            if not target or not sub_path.is_dir():
+            if not target:
                 continue
+            # Save current ref to restore on failure
             try:
-                subprocess.run(['git', '-C', str(sub_path), 'fetch', repo.get('remote', 'origin')],
-                               check=True, capture_output=True, timeout=30)
-                subprocess.run(['git', '-C', str(sub_path), 'checkout', '--detach', target],
-                               check=True, capture_output=True, timeout=10)
-                print(f'[git_version]   [{name}] → {target[:8]}')
+                prev_ref = subprocess.check_output(
+                    ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                    cwd=repo_path, text=True, timeout=5,
+                ).strip()
+                if prev_ref == 'HEAD':
+                    prev_ref = subprocess.check_output(
+                        ['git', 'rev-parse', 'HEAD'],
+                        cwd=repo_path, text=True, timeout=5,
+                    ).strip()
+            except Exception:
+                prev_ref = 'HEAD'
+            other_prev_refs[name] = prev_ref
+            try:
+                subprocess.run(['git', 'checkout', '--detach', target],
+                               cwd=repo_path, check=True, capture_output=True, timeout=10)
+                print(f'[git_version]   [{name}] -> {target[:8]} (in-repo)')
             except subprocess.CalledProcessError as e:
-                print(f'[git_version]   [{name}] FAILED: {e.stderr}')
+                print(f'[git_version]   [{name}] checkout FAILED: {e.stderr}')
 
         # Run tests
         print(f'[git_version] Running tests: {test_cmd}')
+        # Build env with WATCH_STAGING_<NAME> for each repo
+        test_env = os.environ.copy()
+        test_env['WATCH_STAGING'] = str(staging)
+        test_env['WATCH_PROJECT_ROOT'] = str(project)
+        for repo in other_repos:
+            name = repo['name']
+            env_key = 'WATCH_STAGING_' + name.upper().replace('-', '_').replace(' ', '_')
+            test_env[env_key] = str((project / repo['path']).resolve())
         t0 = time.time()
         try:
             r = subprocess.run(test_cmd, shell=True, cwd=staging, capture_output=True,
-                               text=True, timeout=deploy_cfg.get('test_timeout', 300))
+                               text=True, timeout=deploy_cfg.get('test_timeout', 300),
+                               env=test_env)
             elapsed = time.time() - t0
             tests_ok = r.returncode == 0
             print(f'[git_version] Tests {"PASSED" if tests_ok else "FAILED"} ({elapsed:.0f}s)')
@@ -254,53 +276,68 @@ class GitVersion(Component):
             print(f'[git_version] Tests TIMED OUT')
             tests_ok = False
 
-        # Cleanup worktree
-        try:
-            subprocess.run(['git', 'worktree', 'remove', '--force', str(staging)],
-                           cwd=primary_repo, capture_output=True, timeout=10)
-            subprocess.run(['git', 'worktree', 'prune'], cwd=primary_repo,
-                           capture_output=True, timeout=5)
-        except Exception:
-            shutil.rmtree(staging, ignore_errors=True)
+        # Cleanup primary worktree
+        _remove_worktree(staging, primary_repo_path)
 
         if tests_ok:
-            # Apply to main repos
-            print('[git_version] Deploying to main repos...')
+            # Apply to deploy branch (isolated from tracking branch)
+            print(f'[git_version] Deploying to {deploy_branch} branch...')
             for repo in repos:
                 name = repo['name']
-                branch = repo.get('branch', 'main')
-                remote = repo.get('remote', 'origin')
+                tracking_branch = repo.get('branch', 'main')
                 repo_path = (project / repo['path']).resolve()
                 target = new_heads.get(name)
                 if not target:
                     continue
                 try:
-                    subprocess.run(['git', 'checkout', branch], cwd=repo_path,
-                                   check=True, capture_output=True, timeout=10)
-                    subprocess.run(['git', 'merge', '--ff-only', f'{remote}/{branch}'],
-                                   cwd=repo_path, check=True, capture_output=True, timeout=10)
-                except subprocess.CalledProcessError:
+                    # Ensure deploy branch exists; create from tracking if not
+                    r = subprocess.run(['git', 'rev-parse', '--verify', deploy_branch],
+                                      cwd=repo_path, capture_output=True, timeout=5)
+                    if r.returncode != 0:
+                        subprocess.run(
+                            ['git', 'checkout', '-b', deploy_branch, f'origin/{tracking_branch}'],
+                            cwd=repo_path, check=True, capture_output=True, timeout=10)
+                    else:
+                        subprocess.run(['git', 'checkout', '-f', deploy_branch],
+                                      cwd=repo_path, check=True, capture_output=True, timeout=10)
+                    # Point deploy branch at tested commit
                     subprocess.run(['git', 'reset', '--hard', target],
-                                   cwd=repo_path, check=True, capture_output=True, timeout=10)
-                print(f'[git_version]   [{name}] → {target[:8]}')
+                                  cwd=repo_path, check=True, capture_output=True, timeout=10)
+                except subprocess.CalledProcessError as e:
+                    print(f'[git_version]   [{name}] FAILED: {e.stderr}')
+                    continue
+                print(f'[git_version]   [{name}] {deploy_branch} -> {target[:8]}')
 
             self._save_known(comp_cfg, project, new_heads, stable_checks=0)
             context['deploy_result'] = 'passed'
-            print('[git_version] Deploy complete. Known-good updated (stable_checks=0).')
+            print(f'[git_version] Deploy complete. Known-good updated (stable_checks=0).')
             return True
         else:
+            # Restore other repos to their previous ref on failure
+            for repo in other_repos:
+                name = repo['name']
+                repo_path = (project / repo['path']).resolve()
+                prev_ref = other_prev_refs.get(name)
+                if prev_ref and prev_ref != 'HEAD':
+                    try:
+                        subprocess.run(['git', 'checkout', prev_ref],
+                                       cwd=repo_path, check=True, capture_output=True, timeout=10)
+                    except subprocess.CalledProcessError:
+                        pass
             context['deploy_result'] = 'failed'
             context['deploy_failed_commits'] = str({k: v[:8] for k, v in new_heads.items()})
             print(f'[git_version] Deploy ABORTED — tests failed. Rejected: {context["deploy_failed_commits"]}')
             return False
 
     def _rollback(self, comp_cfg: dict, global_cfg: dict, project: Path) -> bool:
-        """Rollback all repos to known-good versions."""
+        """Rollback all repos to known-good versions on deploy branch."""
         known = self._load_known(comp_cfg, project)
         if not known:
             print('[git_version] No known-good versions recorded.')
             return False
 
+        deploy_cfg = comp_cfg.get('deploy', {})
+        deploy_branch = deploy_cfg.get('deploy_branch', 'deploy')
         repos = comp_cfg.get('repositories', [])
         ok = True
         for repo in repos:
@@ -318,8 +355,10 @@ class GitVersion(Component):
             if current == target:
                 print(f'[git_version]   [{name}] already at {target[:8]}')
                 continue
-            print(f'[git_version] Rollback [{name}]: {current[:8] if current else "?"} → {target[:8]}')
+            print(f'[git_version] Rollback [{name}]: {current[:8] if current else "?"} -> {target[:8]}')
             try:
+                subprocess.run(['git', 'checkout', '-f', deploy_branch],
+                               cwd=repo_path, check=True, capture_output=True, timeout=10)
                 subprocess.run(['git', 'reset', '--hard', target],
                                cwd=repo_path, check=True, capture_output=True, timeout=10)
                 print(f'[git_version]   [{name}] OK')
@@ -349,3 +388,14 @@ class GitVersion(Component):
         self._save_known(comp_cfg, project, commits, stable_checks=stable)
         print(f'[git_version] Known-good updated (stable_checks={stable})')
         return True
+
+
+def _remove_worktree(staging_path: Path, repo_path: Path) -> None:
+    """Remove a git worktree, falling back to shutil.rmtree."""
+    try:
+        subprocess.run(['git', 'worktree', 'remove', '--force', str(staging_path)],
+                       cwd=repo_path, capture_output=True, timeout=10)
+        subprocess.run(['git', 'worktree', 'prune'], cwd=repo_path,
+                       capture_output=True, timeout=5)
+    except Exception:
+        shutil.rmtree(staging_path, ignore_errors=True)
