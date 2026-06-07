@@ -1,5 +1,5 @@
 /**
- * Tests for rem/lib.mjs — frontmatter, date, path, index, state, and file helpers.
+ * Tests for rem/lib.mjs — index parsing, constants, file collection, state, and project root.
  * Run: node --test cc-market/rem/tests/lib.test.mjs
  */
 
@@ -8,24 +8,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
 
 import {
-  parseFrontmatter,
-  getField,
-  setField,
-  getTier,
-  setTier,
-  hasAllFields,
-  stampMissingFields,
-  bumpAccessed,
-  todayISO,
-  parseDate,
-  dayPrecision,
-  dateToPath,
-  extractDateFromPath,
-  resolveMemoryPath,
-  isInsideMemoryDir,
   parseIndexEntry,
   formatIndexEntry,
   updateIndexAccessed,
@@ -39,364 +23,8 @@ import {
   saveState,
   appendEvent,
   stateFile,
+  findProjectRoot,
 } from "../lib.mjs";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ── parseFrontmatter ───────────────────────────────────────────────────────────
-
-describe("parseFrontmatter", () => {
-  test("parses frontmatter fields", () => {
-    const content = [
-      "---",
-      "name: test-entry",
-      "description: A test memory",
-      "created: 2026-06-03",
-      "accessed: 2026-06-03",
-      "tier: short",
-      "---",
-      "",
-      "# Body content",
-    ].join("\n");
-    const result = parseFrontmatter(content);
-    assert.equal(result.fields.name, "test-entry");
-    assert.equal(result.fields.description, "A test memory");
-    assert.equal(result.fields.created, "2026-06-03");
-    assert.equal(result.fields.tier, "short");
-    assert.ok(result.body.includes("# Body content"));
-  });
-
-  test("returns empty fields object when no frontmatter", () => {
-    const content = "# Just a heading\nSome body text.";
-    const result = parseFrontmatter(content);
-    assert.deepEqual(result.fields, {});
-    assert.equal(result.body, content);
-  });
-
-  test("handles empty frontmatter", () => {
-    const content = "---\n\n---\nbody";
-    const result = parseFrontmatter(content);
-    assert.deepEqual(result.fields, {});
-    assert.equal(result.body, "\nbody");
-  });
-
-  test("handles frontmatter with values containing colons", () => {
-    const content = [
-      "---",
-      "name: url-test",
-      "description: See https://example.com for details",
-      "---",
-      "body",
-    ].join("\n");
-    const result = parseFrontmatter(content);
-    assert.ok(result.fields.description.includes("https://example.com"));
-  });
-
-  test("handles multiline frontmatter structure", () => {
-    const content = [
-      "---",
-      "name: multi-line-test",
-      "description: Line 1",
-      "metadata:",
-      "  type: project",
-      "---",
-      "body",
-    ].join("\n");
-    const result = parseFrontmatter(content);
-    assert.equal(result.fields.metadata, "");
-  });
-});
-
-// ── getField ───────────────────────────────────────────────────────────────────
-
-describe("getField", () => {
-  test("returns field value when present", () => {
-    const content = "---\nname: test\n---\nbody";
-    assert.equal(getField(content, "name"), "test");
-  });
-
-  test("returns null when field absent", () => {
-    const content = "---\nname: test\n---\nbody";
-    assert.equal(getField(content, "tier"), null);
-  });
-
-  test("returns value with inline spaces", () => {
-    const content = "---\ndescription: a b c\n---\nbody";
-    assert.equal(getField(content, "description"), "a b c");
-  });
-
-  test("works without frontmatter", () => {
-    assert.equal(getField("plain text", "name"), null);
-  });
-});
-
-// ── setField ───────────────────────────────────────────────────────────────────
-
-describe("setField", () => {
-  test("replaces existing field", () => {
-    const content = "---\nname: old\n---\nbody";
-    const result = setField(content, "name", "new");
-    assert.ok(result.includes("name: new"));
-    assert.ok(!result.includes("name: old"));
-  });
-
-  test("inserts new field before closing ---", () => {
-    const content = "---\nname: test\n---\nbody";
-    const result = setField(content, "tier", "long");
-    assert.ok(result.includes("tier: long"));
-  });
-
-  test("returns unchanged when no frontmatter (no closing ---)", () => {
-    const content = "plain text";
-    const result = setField(content, "name", "value");
-    assert.equal(result, content);
-  });
-
-  test("updates field when multiple fields exist", () => {
-    const content = "---\nname: A\ntier: short\n---\nbody";
-    const result = setField(content, "tier", "long");
-    assert.ok(result.includes("tier: long"));
-    assert.ok(result.includes("name: A"));
-  });
-});
-
-// ── getTier / setTier ──────────────────────────────────────────────────────────
-
-describe("getTier", () => {
-  test("returns tier when present", () => {
-    assert.equal(getTier("---\ntier: long\n---\nbody"), "long");
-  });
-
-  test("defaults to 'short' when absent", () => {
-    assert.equal(getTier("---\nname: x\n---\nbody"), "short");
-  });
-
-  test("defaults to 'short' when no frontmatter", () => {
-    assert.equal(getTier("plain text"), "short");
-  });
-});
-
-describe("setTier", () => {
-  test("sets tier field via setField", () => {
-    const content = "---\nname: x\n---\nbody";
-    const result = setTier(content, "long");
-    assert.ok(result.includes("tier: long"));
-  });
-});
-
-// ── hasAllFields ───────────────────────────────────────────────────────────────
-
-describe("hasAllFields", () => {
-  test("returns true when created, accessed, tier all present", () => {
-    const content = "---\ncreated: 2026-01-01\naccessed: 2026-06-03\ntier: short\n---\nbody";
-    assert.equal(hasAllFields(content), true);
-  });
-
-  test("returns false when created missing", () => {
-    const content = "---\naccessed: 2026-06-03\ntier: short\n---\nbody";
-    assert.equal(hasAllFields(content), false);
-  });
-
-  test("returns false when accessed missing", () => {
-    const content = "---\ncreated: 2026-01-01\ntier: short\n---\nbody";
-    assert.equal(hasAllFields(content), false);
-  });
-
-  test("returns false when tier missing", () => {
-    const content = "---\ncreated: 2026-01-01\naccessed: 2026-06-03\n---\nbody";
-    assert.equal(hasAllFields(content), false);
-  });
-
-  test("returns false when no frontmatter", () => {
-    assert.equal(hasAllFields("plain text"), false);
-  });
-});
-
-// ── stampMissingFields ─────────────────────────────────────────────────────────
-
-describe("stampMissingFields", () => {
-  let tmpDir, tmpFile;
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-test-"));
-    tmpFile = path.join(tmpDir, "2026-06-03", "test-entry.md");
-    fs.mkdirSync(path.dirname(tmpFile), { recursive: true });
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test("returns false when all fields present", () => {
-    fs.writeFileSync(tmpFile, [
-      "---",
-      "name: test-entry",
-      "created: 2026-06-03",
-      "accessed: 2026-06-03",
-      "tier: short",
-      "---",
-      "body",
-    ].join("\n"));
-    assert.equal(stampMissingFields(tmpFile), false);
-  });
-
-  test("returns true and stamps missing fields", () => {
-    fs.writeFileSync(tmpFile, [
-      "---",
-      "name: test-entry",
-      "---",
-      "body",
-    ].join("\n"));
-    assert.equal(stampMissingFields(tmpFile), true);
-    const updated = fs.readFileSync(tmpFile, "utf8");
-    assert.ok(/^created:/m.test(updated));
-    assert.ok(/^accessed:/m.test(updated));
-    assert.ok(/^tier:/m.test(updated));
-  });
-
-  test("stamps only the missing fields", () => {
-    fs.writeFileSync(tmpFile, [
-      "---",
-      "name: test-entry",
-      "created: 2026-06-01",
-      "---",
-      "body",
-    ].join("\n"));
-    stampMissingFields(tmpFile);
-    const updated = fs.readFileSync(tmpFile, "utf8");
-    assert.ok(/^created: 2026-06-01$/m.test(updated), "existing created should be preserved");
-    assert.ok(/^accessed:/m.test(updated), "accessed should be added");
-    assert.ok(/^tier:/m.test(updated), "tier should be added");
-  });
-});
-
-// ── bumpAccessed ───────────────────────────────────────────────────────────────
-
-describe("bumpAccessed", () => {
-  test("updates accessed field", () => {
-    const content = "---\naccessed: 2026-01-01\n---\nbody";
-    const result = bumpAccessed(content, "2026-06-03");
-    assert.ok(result.includes("accessed: 2026-06-03"));
-    assert.ok(!result.includes("accessed: 2026-01-01"));
-  });
-});
-
-// ── Date helpers ───────────────────────────────────────────────────────────────
-
-describe("todayISO", () => {
-  test("returns YYYY-MM-DD format", () => {
-    const today = todayISO();
-    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(today));
-  });
-
-  test("returns today's date", () => {
-    const expected = new Date().toISOString().slice(0, 10);
-    assert.equal(todayISO(), expected);
-  });
-});
-
-describe("parseDate", () => {
-  test("parses ISO date string to milliseconds", () => {
-    const ms = parseDate("2026-06-03");
-    assert.equal(typeof ms, "number");
-    assert.ok(ms > 0);
-  });
-
-  test("returns same value for same date regardless of time", () => {
-    const a = parseDate("2026-06-03");
-    const b = parseDate("2026-06-03");
-    assert.equal(a, b);
-  });
-});
-
-describe("dayPrecision", () => {
-  test("floors to day boundary", () => {
-    const ms = Date.UTC(2026, 5, 3, 12, 30, 45, 123); // June 3, 2026 12:30:45.123 UTC
-    const floored = dayPrecision(ms);
-    const expected = Date.UTC(2026, 5, 3, 0, 0, 0, 0);
-    assert.equal(floored, expected);
-  });
-
-  test("same day different times yield same precision", () => {
-    const a = dayPrecision(Date.UTC(2026, 5, 3, 1, 0, 0));
-    const b = dayPrecision(Date.UTC(2026, 5, 3, 23, 59, 59));
-    assert.equal(a, b);
-  });
-
-  test("different days yield different precision", () => {
-    const a = dayPrecision(Date.UTC(2026, 5, 3));
-    const b = dayPrecision(Date.UTC(2026, 5, 4));
-    assert.notEqual(a, b);
-  });
-});
-
-describe("dateToPath", () => {
-  test("converts ISO date to path", () => {
-    assert.equal(dateToPath("2026-06-07"), "2026/06/07");
-  });
-  test("handles Date object", () => {
-    assert.ok(dateToPath(new Date("2026-06-07")).endsWith("06/07"));
-  });
-});
-
-describe("extractDateFromPath", () => {
-  let tmpDir;
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-test-"));
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test("extracts from YYYY/MM/DD path", () => {
-    const file = path.join(tmpDir, "2026", "06", "03", "entry.md");
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, "content");
-    assert.equal(extractDateFromPath(file), "2026-06-03");
-  });
-
-  test("extracts from legacy YYYY-MM-DD path", () => {
-    const file = path.join(tmpDir, "2026-06-03", "entry.md");
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, "content");
-    assert.equal(extractDateFromPath(file), "2026-06-03");
-  });
-
-  test("falls back to file mtime when no date folder", () => {
-    const file = path.join(tmpDir, "entry.md");
-    fs.writeFileSync(file, "content");
-    const date = extractDateFromPath(file);
-    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(date));
-  });
-});
-
-// ── Path security ──────────────────────────────────────────────────────────────
-
-describe("resolveMemoryPath", () => {
-  test("resolves relative path under memory dir", () => {
-    const result = resolveMemoryPath("2026-06-03/entry.md");
-    assert.ok(result.endsWith(path.join(".claude", "memory", "2026-06-03", "entry.md")));
-  });
-});
-
-describe("isInsideMemoryDir", () => {
-  test("allows paths inside memory dir", () => {
-    const memPath = resolveMemoryPath("2026-06-03/entry.md");
-    assert.equal(isInsideMemoryDir(memPath), true);
-  });
-
-  test("rejects paths outside memory dir", () => {
-    assert.equal(isInsideMemoryDir("/etc/passwd"), false);
-    assert.equal(isInsideMemoryDir(path.resolve("..")), false);
-  });
-
-  test("allows memory dir itself", () => {
-    const memDir = resolveMemoryPath(".");
-    assert.equal(isInsideMemoryDir(memDir), true);
-  });
-});
 
 // ── Index parsing ──────────────────────────────────────────────────────────────
 
@@ -563,5 +191,68 @@ describe("loadState / saveState / appendEvent", () => {
     assert.equal(state.hook.remDone, false);
     assert.equal(state.prune.lastPruneAt, 0);
     assert.ok(Array.isArray(state.prune.events));
+  });
+});
+
+// ── findProjectRoot ────────────────────────────────────────────────────────────
+
+describe("findProjectRoot", () => {
+  let savedEnv;
+
+  beforeEach(() => {
+    savedEnv = process.env.CLAUDE_PROJECT_DIR;
+    delete process.env.CLAUDE_PROJECT_DIR;
+  });
+
+  afterEach(() => {
+    if (savedEnv) process.env.CLAUDE_PROJECT_DIR = savedEnv;
+    else delete process.env.CLAUDE_PROJECT_DIR;
+  });
+
+  test("returns CLAUDE_PROJECT_DIR when it has .git", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rem-test-"));
+    try {
+      fs.mkdirSync(path.join(tmp, ".git"));
+      fs.mkdirSync(path.join(tmp, "sub"));
+      process.env.CLAUDE_PROJECT_DIR = path.join(tmp, "sub");
+      assert.equal(findProjectRoot(), tmp);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("returns CLAUDE_PROJECT_DIR unchanged when no .git found", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rem-test-"));
+    try {
+      // No .git anywhere
+      process.env.CLAUDE_PROJECT_DIR = tmp;
+      assert.equal(findProjectRoot(), tmp);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("returns dir itself when it has .git", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rem-test-"));
+    try {
+      fs.mkdirSync(path.join(tmp, ".git"));
+      process.env.CLAUDE_PROJECT_DIR = tmp;
+      assert.equal(findProjectRoot(), tmp);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("walks up multiple levels to find .git", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rem-test-"));
+    try {
+      fs.mkdirSync(path.join(tmp, ".git"));
+      const deep = path.join(tmp, "a", "b", "c");
+      fs.mkdirSync(deep, { recursive: true });
+      process.env.CLAUDE_PROJECT_DIR = deep;
+      assert.equal(findProjectRoot(), tmp);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

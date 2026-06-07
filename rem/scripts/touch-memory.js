@@ -2,7 +2,7 @@
 // Update `accessed` timestamp on a memory file AND its index entry.
 // Usage: node scripts/touch-memory.js <relative-path> [--promote]
 //   --promote  also change tier from short → long (frequently accessed memories)
-//   e.g. node scripts/touch-memory.js 2026-06-03/takeover-plugin-v2.md --promote
+//   e.g. node scripts/touch-memory.js 2026/06/03/takeover-plugin-v2.md --promote
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';

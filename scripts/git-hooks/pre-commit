@@ -8,6 +8,8 @@ cd "$repo_root"
 tests=(
   "takeover/tests/lib.test.mjs"
   "takeover/tests/mcp-server.test.mjs"
+  "rem/tests/frontmatter.test.mjs"
+  "rem/tests/date-path.test.mjs"
   "rem/tests/lib.test.mjs"
   "rem/tests/rem-hook.test.mjs"
   "sharp-review/tests/lib.test.mjs"

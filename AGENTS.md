@@ -15,6 +15,7 @@ Community marketplace of Claude Code plugins. Each plugin lives in its own direc
 | [`takeover`](takeover/README.md) | `takeover/` | Multi-model AI orchestration via MCP |
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, compaction, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
+| [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 
 Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. See plugin READMEs for user-facing docs.
 
@@ -30,10 +31,15 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 |---|---|---|
 | `takeover/tests/lib.test.mjs` | 27 | provider config, model resolution, API, retry |
 | `takeover/tests/mcp-server.test.mjs` | 10 | TOOLS schema, JSON-RPC, validation |
-| `rem/tests/lib.test.mjs` | 55 | frontmatter, index, date, path, state |
+| `rem/tests/frontmatter.test.mjs` | 26 | frontmatter parsing, field get/set, tier, stamping |
+| `rem/tests/date-path.test.mjs` | 16 | date formatting, path resolution, memory dir security |
+| `rem/tests/lib.test.mjs` | 20 | index parsing, constants, file collection, state, findProjectRoot |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
+| `sharp-review/tests/lib.test.mjs` | 19 | SR-ID parsing, module/category inference, frontmatter |
+| `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
+| `watch/tests/` (Python) | 48 | config, daemon, components, registry |
 
-Total: 124 tests. Hook blocks commit on failure. Use Node's built-in test runner (`node:test` + `node:assert/strict`).
+All JS tests (`*.test.mjs`) run via pre-commit hook. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
 ## Adding a Plugin
 

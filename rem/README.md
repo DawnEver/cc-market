@@ -78,7 +78,7 @@ SessionStart → prune-memory.js --evict-stale (remove stale, demote inactive lo
 Memories referenced frequently (≥3 git commits) auto-promote from short-term to long-term. Manual promotion:
 
 ```shell
-node scripts/touch-memory.js 2026-06-03/some-entry.md --promote
+node scripts/touch-memory.js 2026/06/03/some-entry.md --promote
 ```
 
 ## Skills

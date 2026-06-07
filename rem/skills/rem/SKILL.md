@@ -104,7 +104,7 @@ Exit 0 = needed, exit 1 = skip.
 3. Update any outdated rules already in `.claude/rules/rem/`
 4. Run the cleanup script with the list of memory files you distilled:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --execute --distilled 2026-05-27/feedback_git_commit.md,2026-05-28/retrospect_hook_task_guard.md
+node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --execute --distilled 2026/05/27/feedback_git_commit.md,2026/05/28/retrospect_hook_task_guard.md
 ```
 This removes only the distilled entries from the index — un-distilled entries stay. Without `--distilled`, clears all entries (full reset).
 

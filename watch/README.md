@@ -16,8 +16,8 @@ A Claude Code plugin for zero-touch server and long-running task supervision.
 
 # 4. Edit .claude/watch/config.yaml
 
-# 5. Start the lightweight daemon (git poll + health ping, every 5 min)
-python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir .
+# 5. /watch:setup already started the daemon. Verify:
+python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir . --once
 
 # 6. Start the AI supervision loop (full check + auto-repair, every 12h)
 /loop 12h /watch:watch

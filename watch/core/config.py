@@ -14,6 +14,15 @@ DEFAULTS: dict[str, Any] = {
         'check_interval_anomaly': 1800,    # 30m
     },
     'components': {},
+    'watchd': {
+        'interval': 300,
+        'fail_threshold': 2,
+        'auto_restart': True,
+        'log_file': '.claude/watch/logs/daemon.jsonl',
+        'state_file': '.claude/watch/state/daemon.json',
+        'trigger_file': '.claude/watch/trigger.json',
+        'heartbeat_file': '.claude/watch/state/heartbeat.json',
+    },
     'actions': {},
     'alerts': {
         'email': {'enabled': False, 'host': 'localhost', 'port': 25,
