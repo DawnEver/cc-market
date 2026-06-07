@@ -15,7 +15,8 @@ SessionStart → prune-memory.js --evict-stale
     ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
     ├── Model summarizes learnings → writes memory files
     ├── Update MEMORY.md index
-    └── If ≥20 entries → compact into .claude/rules/rem/
+    ├── If ≥20 entries → compact into .claude/rules/rem/
+    │   └── check-docs.js — audit doc freshness after compaction
 
   /todo skill (user-facing task management):
     ├── /todo        → task-engine.js --report
@@ -47,6 +48,7 @@ rem/
 │   ├── touch-memory.js      Bump accessed timestamp, promote short→long
 │   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
 │   ├── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
+│   ├── check-docs.js         Doc freshness check at compact time
 │   └── task-engine.js        Task management engine: --findings, --add, --check, --report
 ├── skills/
 │   ├── rem/SKILL.md         /rem skill definition and workflow
@@ -81,6 +83,7 @@ See `.claude/rules/invariants.md` for the always-injected version.
 | `compact.js` | Distill into rules | `--check`, `--execute`, `--validate`, `--distilled` |
 | `rem-prep.js` | Pre-REM automation | `--transcript <path>`, `--promote` |
 | `task-engine.js` | Task management engine | `--findings <json>`, `--check`, `--report` |
+| `check-docs.js` | Doc freshness at compact | `--json` |
 
 ## State Management
 

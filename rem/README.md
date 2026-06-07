@@ -70,7 +70,8 @@ SessionStart → prune-memory.js --evict-stale (remove stale, demote inactive lo
       ├── rem-prep.js — scan transcript (memory files + SR-IDs), bump accessed, suggest promotions
       ├── Summarize learnings → write .claude/memory/YYYY-MM-DD/<topic>.md
       ├── Update MEMORY.md index
-      └── If ≥20 entries → compact.js distills into .claude/rules/rem/
+      ├── If ≥20 entries → compact.js distills into .claude/rules/rem/
+      │   └── check-docs.js — audit doc freshness
 ```
 
 ### Promotion
@@ -97,6 +98,7 @@ node scripts/touch-memory.js 2026/06/03/some-entry.md --promote
 | `touch-memory.js` | Bump `accessed` timestamp, optional promotion |
 | `compact.js` | Distill memory into `.claude/rules/rem/` when index ≥20 |
 | `rem-prep.js` | Pre-REM automation: transcript scan (memory + SR-IDs), promotions, compact check |
+| `check-docs.js` | Doc freshness: detect stale README/AGENTS/CLAUDE at compact time |
 | `task-engine.js` | Task management engine: `--findings`, `--add`, `--check`, `--report` |
 
 ## Files
@@ -111,6 +113,7 @@ node scripts/touch-memory.js 2026/06/03/some-entry.md --promote
 | `scripts/touch-memory.js` | Timestamp updates and promotion |
 | `scripts/compact.js` | Memory compaction orchestrator |
 | `scripts/rem-prep.js` | Pre-REM transcript scan and automation |
+| `scripts/check-docs.js` | Doc freshness check at compact time |
 | `skills/rem/SKILL.md` | /rem skill definition and workflow |
 | `tests/lib.test.mjs` | Core library tests (55 tests) |
 | `tests/rem-hook.test.mjs` | Hook logic tests (32 tests) |

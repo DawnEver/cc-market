@@ -108,6 +108,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --execute --distilled 2026/05/27/f
 ```
 This removes only the distilled entries from the index — un-distilled entries stay. Without `--distilled`, clears all entries (full reset).
 
+5. Check documentation freshness:
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/check-docs.js
+```
+If exit 1, uncommitted changes were found and doc files are stale — update the flagged docs before proceeding.
+
 **Manual verification:**
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --validate
@@ -125,7 +131,7 @@ Then continue with the standard REM session below.
 Brief summary only:
 - What was done in one sentence
 - Skip `.claude/rules/` and `.claude/memory/` updates unless something surprising came up
-- Update `AGENTS.md` only if project architecture, directory layout, setup steps, or hook behaviour changed
+- Run `check-docs.js` to detect stale docs — if exit 1, update the flagged files
 
 ## Standard
 
@@ -159,7 +165,8 @@ Review the output. Re-promote any entries that were demoted but you referenced t
 
 ### 3. Update project docs if needed
 
-- `AGENTS.md` — update if project architecture, directory layout, setup steps, or hook behaviour changed this session
+- If compact ran: `check-docs.js` already flagged stale docs above — update them now
+- If no compact: use judgment — update `AGENTS.md`, `README.md`, etc. if architecture, directory layout, setup steps, or hook behaviour changed this session
 
 ## Cross-project check
 

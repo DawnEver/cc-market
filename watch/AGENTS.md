@@ -42,6 +42,8 @@ components/              # Pluggable health checks — flat Python modules
   git_version.py         #   Multi-repo version tracking + worktree deploy
   disk_usage.py          #   Disk usage check
   watchd_heartbeat.py    #   Daemon heartbeat freshness check
+  log_scanner.py         #   Cross-platform log tail scanner for error patterns
+  progress_tracker.py    #   JSON progress file monitor with stall detection
 watchd/
   daemon.py              # Config-driven poller (reuses Component.check() directly)
 scripts/                 # CLI entry points
