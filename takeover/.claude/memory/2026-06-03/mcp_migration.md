@@ -3,6 +3,9 @@ name: mcp-migration
 description: Takeover plugin migrated from Bash heredoc to pure MCP server (v2.0.0)
 metadata:
   type: project
+created: 2026-06-03
+accessed: 2026-06-03
+tier: short
 ---
 
 # Pure MCP Migration (2026-06-03)
