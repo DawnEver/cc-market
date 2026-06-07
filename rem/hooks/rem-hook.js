@@ -31,6 +31,23 @@ export function hasSubstantiveWork(transcript) {
   });
 }
 
+export function isAwaitingInput(transcript) {
+  // Walk backwards to find the last text block in the last assistant message.
+  // If it ends with ? or ？, the assistant is waiting for the user.
+  for (let i = transcript.length - 1; i >= 0; i--) {
+    const entry = transcript[i];
+    if (entry?.message?.role !== 'assistant') break;
+    const content = entry.message.content;
+    if (!Array.isArray(content)) continue;
+    for (let j = content.length - 1; j >= 0; j--) {
+      if (content[j]?.type === 'text') {
+        return /[?？]$/.test(content[j].text.trim());
+      }
+    }
+  }
+  return false;
+}
+
 export function isFreshSession(state, inputKey, now) {
   if (!state) return true;
   const storedKey = state.hook.sessionKey ?? null;
@@ -59,7 +76,11 @@ export function decideStop(state, input, now) {
   const taskActiveUntil = Number.isFinite(state.hook.taskActiveUntil) ? state.hook.taskActiveUntil : 0;
   const hasPendingWork = backgroundTasks.length > 0 || now < taskActiveUntil;
 
-  if (!hasPendingWork) {
+  const transcriptPath = input.transcript_path || '';
+  const transcript = transcriptPath ? readTranscriptTail(transcriptPath) : [];
+  const awaitingInput = !hasPendingWork && isAwaitingInput(transcript);
+
+  if (!hasPendingWork && !awaitingInput) {
     state.hook.stopCount = (state.hook.stopCount || 0) + 1;
     if (!state.hook.firstStopAt) state.hook.firstStopAt = now;
   }
@@ -72,15 +93,13 @@ export function decideStop(state, input, now) {
 
   if (state.hook.remDone) {
     decision = 'allow';
-  } else if (hasPendingWork) {
+  } else if (hasPendingWork || awaitingInput) {
     decision = 'allow';
   } else if (state.hook.remPending) {
     state.hook.remPending = false;
     state.hook.remDone = true;
     decision = 'allow';
   } else if (stopCount >= MIN_STOP_COUNT) {
-    const transcriptPath = input.transcript_path || '';
-    const transcript = transcriptPath ? readTranscriptTail(transcriptPath) : [];
     const isSubstantive = hasSubstantiveWork(transcript);
     const minAge = isSubstantive ? MIN_SESSION_MS_SUBSTANTIVE : MIN_SESSION_MS;
     if (sessionAge >= minAge) {
