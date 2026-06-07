@@ -9,7 +9,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, relative } from 'path';
 import {
-  memoryDir, rulesDir, indexFile, INDEX_HEADER,
+  scopeMemoryDir as memoryDir, scopeRulesDir as rulesDir, scopeIndexFile as indexFile,
+  INDEX_HEADER,
   hasAllFields, stampMissingFields, parseFrontmatter,
   collectMemoryFiles, todayISO, extractDateFromPath,
 } from '../lib.mjs';

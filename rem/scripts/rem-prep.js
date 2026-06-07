@@ -9,9 +9,9 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { join } from 'path';
+import { join, relative } from 'path';
 import {
-  memoryDir, indexFile, loadState,
+  repoRoot, scopeMemoryDir, scopeIndexFile, findAllScopes, loadState,
   todayISO, bumpAccessed, getTier, setField, MAX_ENTRIES,
   resolveMemoryPath, isInsideMemoryDir, updateIndexAccessed,
 } from '../lib.mjs';
@@ -65,25 +65,30 @@ if (transcriptPath && existsSync(transcriptPath)) {
 if (touchedFiles.size === 0) {
   console.log('  (no memory files read this session)');
 } else {
+  const scopes = findAllScopes();
   for (const f of touchedFiles) {
-    const memFile = resolveMemoryPath(f);
-    if (!isInsideMemoryDir(memFile)) {
-      console.log(`  ! ${f} (rejected — outside memory dir)`);
-      continue;
-    }
-    if (!existsSync(memFile)) { console.log(`  ? ${f} (file not found)`); continue; }
-    let content = readFileSync(memFile, 'utf8');
-    content = bumpAccessed(content, today);
-    writeFileSync(memFile, content, 'utf8');
-    // Also update the index entry to avoid split-brain
-    if (existsSync(indexFile)) {
-      const origIdx = readFileSync(indexFile, 'utf8');
-      const newIdx = updateIndexAccessed(origIdx, f, today);
-      if (newIdx !== null && newIdx !== origIdx) {
-        writeFileSync(indexFile, newIdx, 'utf8');
+    // Search all scopes for the file
+    let found = false;
+    for (const scope of scopes) {
+      const memFile = join(scope, '.claude', 'memory', f);
+      if (!existsSync(memFile)) continue;
+      found = true;
+      let content = readFileSync(memFile, 'utf8');
+      content = bumpAccessed(content, today);
+      writeFileSync(memFile, content, 'utf8');
+      // Update that scope's index
+      const idxFile = join(scope, '.claude', 'rules', 'MEMORY.md');
+      if (existsSync(idxFile)) {
+        const origIdx = readFileSync(idxFile, 'utf8');
+        const newIdx = updateIndexAccessed(origIdx, f, today);
+        if (newIdx !== null && newIdx !== origIdx) {
+          writeFileSync(idxFile, newIdx, 'utf8');
+        }
       }
+      console.log(`  ✓ ${f} → accessed: ${today} (${scope === process.env.CLAUDE_PROJECT_DIR ? 'global' : 'scoped'})`);
+      break;
     }
-    console.log(`  ✓ ${f} → accessed: ${today}`);
+    if (!found) console.log(`  ? ${f} (not found in any scope)`);
   }
 }
 
@@ -112,56 +117,67 @@ if (transcriptPath && existsSync(transcriptPath)) {
 if (touchedSRIds.size === 0) {
   console.log('  (no SR-ID references this session)');
 } else {
-  // Find matching memory files: .claude/memory/*/SR-ID.md
-  const memoryDir = join(process.cwd(), '.claude', 'memory');
+  const scopes = findAllScopes();
   for (const { id, dateDir } of touchedSRIds) {
     const filename = `${id}.md`;
-    const expectedPath = join(memoryDir, dateDir, filename);
     let found = false;
 
-    if (existsSync(expectedPath)) {
-      found = true;
-    } else {
-      // Fallback: search all date directories for the file
-      try {
-        for (const dirEntry of readdirSync(memoryDir, { withFileTypes: true })) {
-          if (!dirEntry.isDirectory() || dirEntry.name.startsWith('.') || dirEntry.name === 'tasks') continue;
-          const candidate = join(memoryDir, dirEntry.name, filename);
-          if (existsSync(candidate)) { found = true; break; }
-        }
-      } catch { /* can't search */ }
-    }
-
-    if (found) {
-      const relPath = `${dateDir}/${filename}`;
-      const memFile = join(memoryDir, relPath);
-      if (existsSync(memFile)) {
-        let content = readFileSync(memFile, 'utf8');
-        content = bumpAccessed(content, today);
-        writeFileSync(memFile, content, 'utf8');
-        // Update index
-        if (existsSync(indexFile)) {
-          const origIdx = readFileSync(indexFile, 'utf8');
-          const newIdx = updateIndexAccessed(origIdx, relPath, today);
-          if (newIdx !== null && newIdx !== origIdx) {
-            writeFileSync(indexFile, newIdx, 'utf8');
+    for (const scope of scopes) {
+      const scopeMem = join(scope, '.claude', 'memory');
+      const expectedPath = join(scopeMem, dateDir, filename);
+      if (existsSync(expectedPath)) {
+        found = true;
+      } else {
+        // Fallback: search all date directories in this scope
+        try {
+          for (const dirEntry of readdirSync(scopeMem, { withFileTypes: true })) {
+            if (!dirEntry.isDirectory() || dirEntry.name.startsWith('.') || dirEntry.name === 'tasks') continue;
+            if (existsSync(join(scopeMem, dirEntry.name, filename))) { found = true; break; }
           }
-        }
-        console.log(`  ✓ ${id} → accessed: ${today}`);
+        } catch {}
       }
-    } else {
-      console.log(`  ? ${id} (no memory entry yet — will be created on next sync)`);
+
+      if (found) {
+        const relPath = `${dateDir}/${filename}`;
+        const memFile = join(scopeMem, relPath);
+        if (existsSync(memFile)) {
+          let content = readFileSync(memFile, 'utf8');
+          content = bumpAccessed(content, today);
+          writeFileSync(memFile, content, 'utf8');
+          const idxFile = join(scope, '.claude', 'rules', 'MEMORY.md');
+          if (existsSync(idxFile)) {
+            const origIdx = readFileSync(idxFile, 'utf8');
+            const newIdx = updateIndexAccessed(origIdx, relPath, today);
+            if (newIdx !== null && newIdx !== origIdx) {
+              writeFileSync(idxFile, newIdx, 'utf8');
+            }
+          }
+          console.log(`  ✓ ${id} → accessed: ${today}`);
+        }
+        break;
+      }
     }
+    if (!found) console.log(`  ? ${id} (no memory entry yet — will be created on next sync)`);
   }
 }
 
 // ── 3. Promotion suggestions ──
 console.log('\n─── Promotion candidates ──');
 let promoted = 0;
+const allScopes = findAllScopes();
+
+function findInScopes(relPath) {
+  for (const scope of allScopes) {
+    const p = join(scope, '.claude', 'memory', relPath);
+    if (existsSync(p)) return { file: p, scope };
+  }
+  return null;
+}
 
 for (const f of touchedFiles) {
-  const memFile = join(memoryDir, f);
-  if (!existsSync(memFile)) continue;
+  const found = findInScopes(f);
+  if (!found) continue;
+  const { file: memFile, scope } = found;
 
   const content = readFileSync(memFile, 'utf8');
   const currentTier = getTier(content);
@@ -170,7 +186,8 @@ for (const f of touchedFiles) {
   // Check git log for commit frequency (≥3 distinct commits = active)
   let commitCount = 0;
   try {
-    const log = execFileSync('git', ['log', '--oneline', '--', `.claude/memory/${f}`], {
+    const relGitPath = join(scope === repoRoot ? '' : relative(repoRoot, scope), '.claude', 'memory', f).replace(/\\/g, '/');
+    const log = execFileSync('git', ['log', '--oneline', '--', relGitPath], {
       cwd: process.cwd(), timeout: 5000, encoding: 'utf8',
     });
     commitCount = log.trim().split('\n').filter(Boolean).length;
@@ -191,10 +208,10 @@ for (const f of touchedFiles) {
 // Also check SR-ID memory files for promotion
 if (touchedSRIds.size > 0) {
   for (const { id, dateDir } of touchedSRIds) {
-    const filename = `${id}.md`;
-    const relPath = `${dateDir}/${filename}`;
-    const memFile = join(memoryDir, relPath);
-    if (!existsSync(memFile)) continue;
+    const relPath = `${dateDir}/${id}.md`;
+    const found = findInScopes(relPath);
+    if (!found) continue;
+    const { file: memFile } = found;
     const content = readFileSync(memFile, 'utf8');
     const currentTier = getTier(content);
     if (currentTier === 'long') continue;
@@ -228,8 +245,8 @@ if (promoted > 0) {
 
 // ── 4. Compact check ──
 console.log('\n─── Compact status ──');
-if (existsSync(indexFile)) {
-  const entries = readFileSync(indexFile, 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
+if (existsSync(scopeIndexFile)) {
+  const entries = readFileSync(scopeIndexFile, 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
   if (entries.length >= MAX_ENTRIES) {
     console.log(`  ⚠ ${entries.length} entries — compact recommended`);
   } else {
