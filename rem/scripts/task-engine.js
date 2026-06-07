@@ -1,15 +1,12 @@
 #!/usr/bin/env node
-// sync-tasks.js — task management engine (owned by rem)
-// Takes finding objects via --findings <json-file>, manages tasks.md, archive, MEMORY.md.
-// Sharp-review calls this via its thin wrapper; users call it via /tasks skill.
+// task-engine.js — generic task management engine (owned by rem)
+// Takes pre-enriched task objects via --findings <json-file>.
+// Generates tasks.md, archives resolved, updates MEMORY.md.
+// Status comes from finding.status (set by caller, e.g. post-review.js).
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { join } from 'path';
-import {
-  memoryDir, indexFile, todayISO, DAY_MS,
-  inferModule, inferCategory,
-  collectMemoryRefs, crossReferenceFindings, writeBackMemoryRefs, findingToMemoryEntry,
-} from '../lib.mjs';
+import { memoryDir, indexFile, todayISO, DAY_MS } from '../lib.mjs';
 
 // ── Paths ──
 
@@ -17,8 +14,6 @@ const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const TASKS_DIR = join(memoryDir, 'tasks');
 const ARCHIVE_DIR = join(TASKS_DIR, 'archive');
 const TASKS_FILE = join(TASKS_DIR, 'tasks.md');
-const RESOLVED_FILE = join(TASKS_DIR, 'resolved.txt');
-const OLD_RESOLVED_FILE = join(ROOT, '.claude', 'sharp-review', 'resolved.txt');
 const STALE_DAYS = 90;
 
 // ── Helpers ──
@@ -48,30 +43,9 @@ function detectScale(openCount) {
   return 'large';
 }
 
-// ── Resolved IDs ──
-
-function loadResolvedIds() {
-  // Migrate from old location on first run
-  if (!existsSync(RESOLVED_FILE) && existsSync(OLD_RESOLVED_FILE)) {
-    const old = new Set(readFileSync(OLD_RESOLVED_FILE, 'utf8').split('\n').map(l => l.trim()).filter(Boolean));
-    if (old.size > 0) {
-      if (!existsSync(TASKS_DIR)) mkdirSync(TASKS_DIR, { recursive: true });
-      writeFileSync(RESOLVED_FILE, [...old].sort().join('\n') + '\n', 'utf8');
-      return old;
-    }
-  }
-  if (!existsSync(RESOLVED_FILE)) return new Set();
-  return new Set(readFileSync(RESOLVED_FILE, 'utf8').split('\n').map(l => l.trim()).filter(Boolean));
-}
-
-function saveResolvedIds(ids) {
-  if (!existsSync(TASKS_DIR)) mkdirSync(TASKS_DIR, { recursive: true });
-  writeFileSync(RESOLVED_FILE, [...ids].sort().join('\n') + '\n', 'utf8');
-}
-
 // ── Task file parsing ──
 
-const TASK_LINE_RE = /^-\s+\[([ x])\]\s+(SR-\d{8}-\d{3})\s+\[(\w+)\]\s+(.+?)\s+\((\d{4}-?\d{2}-?\d{2})\).*$/;
+const TASK_LINE_RE = /^-\s+\[([ x])\]\s+(\S+)\s+\[(\w+)\]\s+(.+?)\s+\((\d{4}-?\d{2}-?\d{2})\).*$/;
 
 function parseExistingTasks(content) {
   const existing = new Map();
@@ -114,17 +88,17 @@ function groupByCategory(findings) {
   return groups;
 }
 
-function mergePreserved(findings, preserved, resolvedIds = new Set()) {
-  const srIds = new Set(findings.map(f => f.id));
+function mergePreserved(findings, preserved) {
+  const taskIds = new Set(findings.map(f => f.id));
   for (const [id, entry] of preserved) {
-    if (!srIds.has(id) && !entry.checked && !resolvedIds.has(id)) {
+    if (!taskIds.has(id) && !entry.checked) {
       findings.push({
         id: entry.id,
         severity: entry.severity,
         file: '',
         summary: entry.summary,
-        category: inferCategory(entry.summary),
-        module: inferModule(''),
+        category: 'Bug',
+        module: 'unknown',
         status: 'open',
         discovered: entry.discovered,
         suggestion: '',
@@ -147,7 +121,7 @@ function taskFrontmatter(openCount, today) {
   return [
     '---',
     `name: active-tasks`,
-    `description: Active task list — ${openCount} open. Managed by rem/scripts/sync-tasks.js. Load on demand via MEMORY.md.`,
+    `description: Active task list — ${openCount} open. Managed by rem/scripts/task-engine.js. Load on demand via MEMORY.md.`,
     'metadata:',
     '  type: project',
     `created: ${today}`,
@@ -158,8 +132,8 @@ function taskFrontmatter(openCount, today) {
   ].join('\n');
 }
 
-function generateSmall(findings, preserved, resolvedIds, today) {
-  const merged = mergePreserved([...findings], preserved, resolvedIds);
+function generateSmall(findings, preserved, today) {
+  const merged = mergePreserved([...findings], preserved);
   const open = merged.filter(f => f.status !== 'fixed');
   const byMod = groupByModule(open);
   const lines = [];
@@ -178,8 +152,8 @@ function generateSmall(findings, preserved, resolvedIds, today) {
   return lines.join('\n').trimEnd() + '\n';
 }
 
-function generateMedium(findings, preserved, resolvedIds, today) {
-  const merged = mergePreserved([...findings], preserved, resolvedIds);
+function generateMedium(findings, preserved, today) {
+  const merged = mergePreserved([...findings], preserved);
   const open = merged.filter(f => f.status !== 'fixed');
   const byCat = groupByCategory(open);
   const lines = [];
@@ -203,8 +177,8 @@ function generateMedium(findings, preserved, resolvedIds, today) {
   return lines.join('\n') + '\n';
 }
 
-function generateLarge(findings, preserved, resolvedIds, today) {
-  const merged = mergePreserved([...findings], preserved, resolvedIds);
+function generateLarge(findings, preserved, today) {
+  const merged = mergePreserved([...findings], preserved);
   const open = merged.filter(f => f.status !== 'fixed');
   const byCat = groupByCategory(open);
   const files = {};
@@ -268,14 +242,14 @@ function archiveResolved(findings, today) {
       writeFileSync(archiveFile, existing.trimEnd() + '\n\n' + newLines.join('\n') + '\n', 'utf8');
     }
     const archivedCount = newLines.filter(l => l.startsWith('- [x]')).length;
-    console.log(`[sync-tasks] Archived ${archivedCount} items → archive/${month}.md`);
+    console.log(`[task-engine] Archived ${archivedCount} items → archive/${month}.md`);
   }
 }
 
 // ── MEMORY.md integration ──
 
 const TASK_SECTION_HEADER = '## Tasks (progressive disclosure)';
-const TASK_SECTION_DESC = '<!-- Task list managed by rem/scripts/sync-tasks.js. Load on demand via the index entries below. Completed tasks are archived to memory/tasks/archive/ and evicted after 90d. -->';
+const TASK_SECTION_DESC = '<!-- Task list managed by rem/scripts/task-engine.js. Load on demand via the index entries below. Completed tasks are archived to memory/tasks/archive/ and evicted after 90d. -->';
 
 function updateMemoryIndex(scale, openFindings, files, today) {
   if (!existsSync(indexFile)) return;
@@ -323,46 +297,71 @@ function main() {
   const args = process.argv.slice(2);
   const today = todayISO();
 
-  // --resolve SR-ID ... → persist IDs
-  const resolveIdx = args.indexOf('--resolve');
-  if (resolveIdx >= 0) {
-    const ids = args.slice(resolveIdx + 1).filter(a => /^SR-\d{8}-\d{3}$/.test(a));
-    if (ids.length === 0) { console.error('[sync-tasks] --resolve requires at least one SR-YYYYMMDD-NNN id'); process.exit(1); }
-    const existing = loadResolvedIds();
-    ids.forEach(id => existing.add(id));
-    saveResolvedIds(existing);
-    console.log(`[sync-tasks] resolved: ${ids.join(', ')} → ${RESOLVED_FILE}`);
+  // --add → append a manual task
+  if (args.includes('--add')) {
+    const summaryIdx = args.indexOf('--summary');
+    if (summaryIdx < 0) { console.error('[task-engine] --add requires --summary "task description"'); process.exit(1); }
+    const summary = args[summaryIdx + 1];
+    if (!summary) { console.error('[task-engine] --summary value is required'); process.exit(1); }
+
+    const severityIdx = args.indexOf('--severity');
+    const severity = (severityIdx >= 0 ? args[severityIdx + 1] : 'MEDIUM') || 'MEDIUM';
+    const moduleIdx = args.indexOf('--module');
+    const module = (moduleIdx >= 0 ? args[moduleIdx + 1] : 'manual') || 'manual';
+    const catIdx = args.indexOf('--category');
+    const category = (catIdx >= 0 ? args[catIdx + 1] : 'Bug') || 'Bug';
+
+    // Generate sequence number
+    let seq = 1;
+    if (existsSync(TASKS_FILE)) {
+      const existing = readFileSync(TASKS_FILE, 'utf8');
+      const manualIds = [...existing.matchAll(/\bMANUAL-\d{8}-(\d{3})\b/g)];
+      if (manualIds.length > 0) {
+        seq = Math.max(...manualIds.map(m => parseInt(m[1], 10))) + 1;
+      }
+    }
+    const id = `MANUAL-${today.replace(/-/g, '')}-${String(seq).padStart(3, '0')}`;
+
+    // Append to tasks.md
+    let content = '';
+    if (existsSync(TASKS_FILE)) {
+      content = readFileSync(TASKS_FILE, 'utf8');
+      if (!content.endsWith('\n')) content += '\n';
+    } else {
+      content = taskFrontmatter(0, today) + '\n# Active Tasks\n> 0 open · last sync: ${today}\n\n';
+    }
+    content += `- [ ] ${id} [${severity}] ${summary} (${today})\n      module: ${module} · category: ${category}\n`;
+    writeFileSync(TASKS_FILE, content, 'utf8');
+    console.log(`[task-engine] Added: ${id} [${severity}] ${summary}`);
     process.exit(0);
   }
 
   // --check → verify tasks.md is up to date
-  const checkMode = args.includes('--check');
-  if (checkMode) {
+  if (args.includes('--check')) {
     if (!existsSync(TASKS_FILE)) {
-      console.log('[sync-tasks] No task file found — needs sync');
+      console.log('[task-engine] No task file found — needs sync');
       process.exit(1);
     }
     const existing = readFileSync(TASKS_FILE, 'utf8');
     if (!existing.includes(`last sync: ${today}`)) {
-      console.log('[sync-tasks] Task file stale — needs sync');
+      console.log('[task-engine] Task file stale — needs sync');
       process.exit(1);
     }
-    console.log('[sync-tasks] Task file up to date');
+    console.log('[task-engine] Task file up to date');
     process.exit(0);
   }
 
   // --report → print summary
-  const reportMode = args.includes('--report');
-  if (reportMode) {
+  if (args.includes('--report')) {
     if (!existsSync(TASKS_FILE)) {
-      console.log('[sync-tasks] No task file found. Run sync first.');
+      console.log('[task-engine] No task file found. Run sync first.');
       process.exit(0);
     }
     const content = readFileSync(TASKS_FILE, 'utf8');
     const existing = parseExistingTasks(content);
     const open = [...existing.values()].filter(e => !e.checked);
     const done = [...existing.values()].filter(e => e.checked);
-    console.log(`[sync-tasks] ${open.length} open, ${done.length} resolved`);
+    console.log(`[task-engine] ${open.length} open, ${done.length} resolved`);
     for (const f of open) {
       console.log(`  ${f.id} [${f.severity}] ${f.summary} (${f.discovered})`);
     }
@@ -372,13 +371,13 @@ function main() {
   // --findings <json-file> → full sync
   const findingsIdx = args.indexOf('--findings');
   if (findingsIdx < 0) {
-    console.error('[sync-tasks] Expected --findings <json-file>, --resolve <ids>, --check, or --report');
+    console.error('[task-engine] Expected --findings <json-file>, --check, or --report');
     process.exit(1);
   }
 
   const findingsFile = args[findingsIdx + 1];
   if (!findingsFile || !existsSync(findingsFile)) {
-    console.error(`[sync-tasks] Findings file not found: ${findingsFile}`);
+    console.error(`[task-engine] Findings file not found: ${findingsFile}`);
     process.exit(1);
   }
 
@@ -386,63 +385,14 @@ function main() {
   try {
     allFindings = JSON.parse(readFileSync(findingsFile, 'utf8'));
   } catch (e) {
-    console.error(`[sync-tasks] Failed to parse findings JSON: ${e.message}`);
+    console.error(`[task-engine] Failed to parse findings JSON: ${e.message}`);
     process.exit(1);
   }
-
-  // Enrich findings (fill missing module/category)
-  for (const f of allFindings) {
-    if (!f.module) f.module = inferModule(f.file);
-    if (!f.category) f.category = inferCategory(f.summary, f.category);
-  }
-
-  // Memory cross-reference
-  const { refs: memoryRefs, idIndex: memoryIdIndex } = collectMemoryRefs();
-  crossReferenceFindings(allFindings, memoryRefs, memoryIdIndex);
-
-  // Create individual memory entries for HIGH/MEDIUM findings
-  let memCreated = 0;
-  for (const f of allFindings) {
-    if (!f.memoryRef) {
-      const relPath = findingToMemoryEntry(f, memoryDir, today);
-      if (relPath) { f.memoryRef = relPath; memCreated++; }
-    }
-  }
-  if (memCreated > 0) console.log(`[sync-tasks] ${memCreated} findings → memory entries`);
-
-  // Write SR-IDs back to matched/created memory files
-  const wbCount = writeBackMemoryRefs(allFindings);
-  if (wbCount > 0) console.log(`[sync-tasks] ${wbCount} SR-IDs written back to memory files`);
 
   // Load existing task file to preserve manual entries
   let preserved = new Map();
   if (existsSync(TASKS_FILE)) {
     preserved = parseExistingTasks(readFileSync(TASKS_FILE, 'utf8'));
-  }
-
-  // Apply persistent resolved IDs
-  const resolvedIds = loadResolvedIds();
-
-  // Propagate checked boxes from tasks.md → persist them
-  const checkedIds = new Set([...preserved.values()].filter(e => e.checked).map(e => e.id));
-  if (checkedIds.size > 0) {
-    let newChecks = 0;
-    for (const id of checkedIds) {
-      if (!resolvedIds.has(id)) { resolvedIds.add(id); newChecks++; }
-    }
-    if (newChecks > 0) {
-      saveResolvedIds(resolvedIds);
-      console.log(`[sync-tasks] ${newChecks} checked task(s) persisted to resolved.txt`);
-    }
-  }
-
-  // Mark all resolved IDs as fixed
-  if (resolvedIds.size > 0) {
-    let count = 0;
-    for (const f of allFindings) {
-      if (resolvedIds.has(f.id) && f.status !== 'fixed') { f.status = 'fixed'; count++; }
-    }
-    if (count > 0) console.log(`[sync-tasks] ${count} finding(s) marked fixed via resolved.txt`);
   }
 
   // Archive resolved findings
@@ -455,7 +405,7 @@ function main() {
   if (!existsSync(TASKS_DIR)) mkdirSync(TASKS_DIR, { recursive: true });
 
   if (scale === 'large') {
-    const files = generateLarge(openFindings, preserved, resolvedIds, today);
+    const files = generateLarge(openFindings, preserved, today);
     for (const [name, content] of Object.entries(files)) {
       writeFileSync(join(TASKS_DIR, name), content, 'utf8');
     }
@@ -468,21 +418,21 @@ function main() {
     }
     writeFileSync(TASKS_FILE, idxLines.join('\n') + '\n', 'utf8');
     updateMemoryIndex(scale, openFindings, files, today);
-    console.log(`[sync-tasks] Large scale — ${Object.keys(files).length} files → memory/tasks/`);
+    console.log(`[task-engine] Large scale — ${Object.keys(files).length} files → memory/tasks/`);
   } else {
     const content = scale === 'small'
-      ? generateSmall(openFindings, preserved, resolvedIds, today)
-      : generateMedium(openFindings, preserved, resolvedIds, today);
+      ? generateSmall(openFindings, preserved, today)
+      : generateMedium(openFindings, preserved, today);
     writeFileSync(TASKS_FILE, content, 'utf8');
     updateMemoryIndex(scale, openFindings, {}, today);
-    console.log(`[sync-tasks] ${openFindings.length} findings → memory/tasks/tasks.md (${scale} tier)`);
+    console.log(`[task-engine] ${openFindings.length} findings → memory/tasks/tasks.md (${scale} tier)`);
   }
 
   // Print summary
   const stale = openFindings.filter(f => isStale(f, today)).length;
   const likely = openFindings.filter(f => !f.status.startsWith('fix') && checkFileModified(f, today)).length;
-  if (stale > 0) console.log(`[sync-tasks] ⚠ ${stale} stale (>${STALE_DAYS}d)`);
-  if (likely > 0) console.log(`[sync-tasks] ⚠ ${likely} likely-resolved (file modified since discovery)`);
+  if (stale > 0) console.log(`[task-engine] ⚠ ${stale} stale (>${STALE_DAYS}d)`);
+  if (likely > 0) console.log(`[task-engine] ⚠ ${likely} likely-resolved (file modified since discovery)`);
 }
 
 main();

@@ -5,7 +5,7 @@ description: Post-feature sharp review (锐评) — 3 parallel reviewers with sc
 
 # Sharp Review (锐评)
 
-Workflow-driven post-feature review. Three parallel reviewers each constrained by JSON Schema, then cross-checked and merged. Findings are written to `.claude/sharp-review/YYYY-MM-DD.md` with stable IDs and synced to `.claude/memory/tasks/tasks.md`.
+Workflow-driven post-feature review. Three parallel reviewers each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY-MM-DD/sharp-review.md` with rem frontmatter.
 
 ## Execution
 
@@ -37,32 +37,21 @@ The workflow launches 3 parallel reviewers, each with a JSON Schema that enforce
 - `status`: OPEN | FIXED
 - `suggestion`: one-line fix
 
-### Step 3 — Write findings
+### Step 3 — Write memory entry & sync
 
-The workflow returns `{ reviewFile, markdown, merged, summary }`. Write `markdown` to the file:
-
-1. Create `.claude/sharp-review/` if it doesn't exist
-2. Append to `reviewFile`
-3. Apply fixes for all confirmed findings immediately
-
-### Step 4 — Sync task list & index memory
+The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings as a single memory entry:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/sync-tasks.js
+# Write merged findings to temp JSON, markdown to temp file
+# Then:
+node ${CLAUDE_PLUGIN_ROOT}/scripts/post-review.js --date <YYYY-MM-DD> --findings <merged.json> --markdown <markdown.md>
 ```
 
-This thin wrapper parses sharp-review findings and delegates to rem's task engine (`cc-market/rem/scripts/sync-tasks.js`), which creates individual memory entries for HIGH/MEDIUM findings in `.claude/memory/YYYY-MM-DD/SR-ID.md` with full frontmatter, enabling rem's touch/promote/eviction lifecycle.
+This does everything: writes `.claude/memory/YYYY-MM-DD/sharp-review.md` with rem frontmatter, cross-links SR-IDs to related memory files, runs stamp-memory.js to index, and delegates to task-engine.js for tasks.md.
 
-Then index the new memory files:
+### Step 4 — Resolve findings
 
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/../rem/scripts/stamp-memory.js
-```
-
-Resolve findings when fixed:
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/../rem/scripts/sync-tasks.js --resolve SR-YYYYMMDD-NNN ...
-```
+To mark a finding as fixed, edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then re-run post-review.js to sync statuses to tasks.md.
 
 ### Step 5 — Report
 

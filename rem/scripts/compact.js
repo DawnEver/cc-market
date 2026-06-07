@@ -157,7 +157,7 @@ if (mode === '--execute') {
   }
   if (srIds.length > 0) {
     console.log(`[compact] ${srIds.length} SR finding(s) compacted into rules:`);
-    console.log(`  → Mark resolved: node cc-market/sharp-review/scripts/sync-tasks.js --resolve ${srIds.join(' ')}`);
+    console.log(`  → Mark resolved: edit **Status:** OPEN → **Status:** FIXED in the memory file, then post-review --rescan`);
   }
 
   console.log('[compact] done — memory consolidated into .claude/rules/rem/');

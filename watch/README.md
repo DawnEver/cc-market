@@ -6,7 +6,7 @@ A Claude Code plugin for zero-touch server and long-running task supervision.
 
 ```bash
 # 1. Install plugin
-claude plugins install watch
+/plugin install rem@cc-market
 
 # 2. Python environment is auto-managed — first run creates:
 #    ~/.local/share/claude/watch/venv/   (uv venv)
@@ -45,6 +45,25 @@ watchd.js (lightweight daemon, runs 24/7)
 **Language**: All Python except `hooks/alert-hook.js` (must be a standalone executable for Claude Code hook system).
 
 ## Config Schema (`.claude/watch/config.yaml`)
+
+**Merge priority:** `env vars` > `config.local.yaml` > `config.yaml` > `defaults`.
+
+- `config.yaml` — structural config, safe to commit (instance, endpoints, thresholds, remedies).
+- `config.local.yaml` — sensitive overrides, **gitignored** (email `from`/`to`, SMTP credentials, webhook URLs). Optional — only create it if you have secrets.
+- `WATCH_*` env vars — highest priority, good for CI/CD injection.
+
+Example `config.local.yaml` for email alerts:
+
+```yaml
+alerts:
+  email:
+    from: "My App<no-reply@my-domain.com>"
+    to: "admin@example.com"
+  webhook:
+    url: "https://hooks.slack.com/T.../B.../..."
+```
+
+Values from `config.local.yaml` are deep-merged on top of `config.yaml` — you only need to write the fields you're overriding.
 
 ### Minimal HTTP server config
 

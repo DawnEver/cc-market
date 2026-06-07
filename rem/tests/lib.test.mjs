@@ -22,6 +22,7 @@ import {
   todayISO,
   parseDate,
   dayPrecision,
+  dateToPath,
   extractDateFromPath,
   resolveMemoryPath,
   isInsideMemoryDir,
@@ -329,6 +330,15 @@ describe("dayPrecision", () => {
   });
 });
 
+describe("dateToPath", () => {
+  test("converts ISO date to path", () => {
+    assert.equal(dateToPath("2026-06-07"), "2026/06/07");
+  });
+  test("handles Date object", () => {
+    assert.ok(dateToPath(new Date("2026-06-07")).endsWith("06/07"));
+  });
+});
+
 describe("extractDateFromPath", () => {
   let tmpDir;
 
@@ -340,7 +350,14 @@ describe("extractDateFromPath", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("extracts ISO date from parent folder name", () => {
+  test("extracts from YYYY/MM/DD path", () => {
+    const file = path.join(tmpDir, "2026", "06", "03", "entry.md");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "content");
+    assert.equal(extractDateFromPath(file), "2026-06-03");
+  });
+
+  test("extracts from legacy YYYY-MM-DD path", () => {
     const file = path.join(tmpDir, "2026-06-03", "entry.md");
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "content");

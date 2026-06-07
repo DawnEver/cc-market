@@ -24,7 +24,7 @@ try {
   process.on('exit', () => { try { rmSync(tmp, { recursive: true }); } catch {} });
 }
 
-const { SR_ID_RE, SR_ID_PARSE_RE, inferModule, inferCategory, findingMemoryPath } = lib;
+const { SR_ID_RE, SR_ID_PARSE_RE, inferModule, inferCategory, reviewFrontmatter, parseFindingsFromMarkdown } = lib;
 
 describe('SR_ID_RE', () => {
   it('matches SR-YYYYMMDD-NNN format', () => {
@@ -93,18 +93,73 @@ describe('inferCategory', () => {
   });
 });
 
-describe('findingMemoryPath', () => {
-  it('derives date dir from SR-ID', () => {
-    const f = { id: 'SR-20260604-001', discovered: '2026-06-04' };
-    const pm = findingMemoryPath(f);
-    assert.ok(pm);
-    assert.equal(pm.dir, '2026-06-04');
-    assert.equal(pm.file, 'SR-20260604-001.md');
-    assert.equal(pm.relPath, '2026-06-04/SR-20260604-001.md');
+describe('reviewFrontmatter', () => {
+  it('generates frontmatter with total count', () => {
+    const findings = [
+      { id: 'SR-20260607-001', status: 'fixed' },
+      { id: 'SR-20260607-002', status: 'open' },
+      { id: 'SR-20260607-003', status: 'open' },
+    ];
+    const fm = reviewFrontmatter(findings, '2026-06-07');
+    assert.ok(fm.includes('name: sharp-review-2026-06-07'));
+    assert.ok(fm.includes('3 total'));
+    assert.ok(fm.includes('created: 2026-06-07'));
+    assert.ok(fm.includes('tier: short'));
   });
 
-  it('returns null for missing date', () => {
-    const f = { id: 'SR-20260604-001', discovered: '' };
-    assert.equal(findingMemoryPath(f), null);
+  it('handles empty findings', () => {
+    const fm = reviewFrontmatter([], '2026-06-07');
+    assert.ok(fm.includes('0 total'));
+  });
+});
+
+describe('parseFindingsFromMarkdown', () => {
+  const sample = `# Sharp Review — 2026-06-07
+
+### [SR-20260607-001] [HIGH] .gitignore — Some issue
+- **Category:** Bug
+- **Module:** test
+- **Status:** FIXED
+- **Suggestion:** Fix it
+
+---
+
+### [SR-20260607-002] [MEDIUM] lib.mjs — Another thing
+- **Category:** Feature
+- **Status:** OPEN
+
+---
+
+### [SR-20260607-003] [LOW] test.js — Missing status defaults to open
+- **Suggestion:** Add it
+`;
+
+  it('parses FIXED status', () => {
+    const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
+    assert.equal(findings.length, 3);
+    assert.equal(findings[0].status, 'fixed');
+    assert.equal(findings[0].resolvedDate, '2026-06-07');
+  });
+
+  it('parses OPEN status', () => {
+    const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
+    assert.equal(findings[1].status, 'open');
+    assert.equal(findings[1].resolvedDate, null);
+  });
+
+  it('defaults missing status to open', () => {
+    const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
+    assert.equal(findings[2].status, 'open');
+  });
+
+  it('extracts file path', () => {
+    const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
+    assert.equal(findings[0].file, '.gitignore');
+    assert.equal(findings[1].file, 'lib.mjs');
+  });
+
+  it('handles empty content', () => {
+    const findings = parseFindingsFromMarkdown('', '2026-06-07');
+    assert.equal(findings.length, 0);
   });
 });

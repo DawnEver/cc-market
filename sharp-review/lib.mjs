@@ -1,7 +1,7 @@
 // lib.mjs — Sharp Review shared library
 // Constants, helpers, and memory cross-reference logic
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 
 // ── Paths (relative to project root) ──
@@ -13,6 +13,8 @@ const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 
 export const SR_ID_RE = /SR-\d{8}-\d{3}/g;
 export const SR_ID_PARSE_RE = /^SR-(\d{8})-(\d{3})$/;
+export const FINDING_HDR_RE = /^###\s+\[(SR-\d{8}-\d{3})\]\s+\[(\w+)\]\s+(.+?)\s+—\s+(.+)/;
+export const STATUS_RE = /^\s*-?\s*\*\*Status:\*\*\s*(\w+)/m;
 
 // ── Date helpers (no Date.now() — callers pass explicit date) ──
 
@@ -137,9 +139,17 @@ export function writeBackMemoryRefs(findings, memoryDir = MEMORY_DIR) {
       let content = readFileSync(memFile, 'utf8');
       // Check if SR-ID already present
       if (content.includes(f.id)) continue;
-      // Append wiki-link reference before any trailing newlines
-      const refLine = `\nRelated finding: [[${f.id}]]\n`;
-      content = content.trimEnd() + refLine;
+      // Insert under ## Related Findings section, or append one
+      const sectionHeader = '## Related Findings';
+      if (content.includes(sectionHeader)) {
+        const idx = content.indexOf(sectionHeader);
+        const afterHeader = content.indexOf('\n', idx);
+        const before = content.slice(0, afterHeader + 1);
+        const after = content.slice(afterHeader + 1);
+        content = before + `- [[${f.id}]]\n` + after;
+      } else {
+        content = content.trimEnd() + `\n\n${sectionHeader}\n- [[${f.id}]]\n`;
+      }
       writeFileSync(memFile, content, 'utf8');
       written++;
     } catch { /* skip unwritable files */ }
@@ -147,68 +157,48 @@ export function writeBackMemoryRefs(findings, memoryDir = MEMORY_DIR) {
   return written;
 }
 
-// ── Finding → Memory Entry ──
+// ── Review Frontmatter ──
 
-export function findingMemoryPath(finding) {
-  // Derive date directory from SR-ID or discovered field
-  const date = (finding.discovered || '').replace(/-/g, '');
-  if (date.length !== 8) return null;
-  const dir = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
-  return { dir, file: `${finding.id}.md`, relPath: `${dir}/${finding.id}.md` };
-}
-
-export function findingToMemoryEntry(finding, memoryDir = MEMORY_DIR) {
-  // Only create memory entries for HIGH and MEDIUM findings
-  if (finding.severity !== 'HIGH' && finding.severity !== 'MEDIUM') return null;
-
-  const pm = findingMemoryPath(finding);
-  if (!pm) return null;
-
-  const dirPath = join(memoryDir, pm.dir);
-  const filePath = join(dirPath, pm.file);
-
-  // Don't overwrite existing entries (idempotent)
-  if (existsSync(filePath)) return pm.relPath;
-
-  const today = todayISO();
-  const body = [
+export function reviewFrontmatter(findings, date) {
+  const count = Array.isArray(findings) ? findings.length : 0;
+  const desc = `Sharp review findings — ${count} total`;
+  return [
     '---',
-    `name: ${finding.id}`,
-    `description: [${finding.severity}] ${finding.summary.slice(0, 120)}`,
+    `name: sharp-review-${date}`,
+    `description: ${desc}`,
     'metadata:',
     '  type: project',
-    `  category: ${finding.category || 'Bug'}`,
-    `  module: ${finding.module || 'unknown'}`,
-    `  status: open`,
-    `  source: sharp-review`,
-    `created: ${pm.dir}`,
-    `accessed: ${today}`,
+    `created: ${date}`,
+    `accessed: ${date}`,
     'tier: short',
     '---',
-    '',
-    `# ${finding.id} [${finding.severity}] ${finding.file || ''} — ${finding.summary}`,
-    '',
-    `**Category:** ${finding.category || 'Bug'}`,
-    `**Module:** ${finding.module || 'unknown'}`,
-    `**Discovered:** ${pm.dir}`,
-    '',
-  ];
+  ].join('\n');
+}
 
-  if (finding.detail) {
-    body.push(finding.detail);
-    body.push('');
+// ── Markdown parsing ──
+
+export function parseFindingsFromMarkdown(content, date) {
+  const findings = [];
+  const blocks = content.split(/\n(?=###\s+\[SR-)/);
+  for (const block of blocks) {
+    const hdr = block.match(FINDING_HDR_RE);
+    if (!hdr) continue;
+    const statusMatch = block.match(STATUS_RE);
+    const status = statusMatch ? statusMatch[1].toLowerCase() : 'open';
+    const resolvedDate = status === 'fixed' ? date : null;
+    findings.push({
+      id: hdr[1],
+      severity: hdr[2],
+      file: hdr[3].trim(),
+      summary: hdr[4].trim(),
+      status,
+      discovered: hdr[1].slice(3, 11).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'),
+      resolvedDate,
+      category: 'Bug',
+      module: 'unknown',
+      suggestion: '',
+      detail: '',
+    });
   }
-
-  if (finding.suggestion) {
-    body.push(`**Suggested fix:** ${finding.suggestion}`);
-    body.push('');
-  }
-
-  body.push(`Open in tasks: [[../tasks/tasks.md#${finding.id.toLowerCase()}]]`);
-
-  try {
-    if (!existsSync(dirPath)) mkdirSync(dirPath, { recursive: true });
-    writeFileSync(filePath, body.join('\n') + '\n', 'utf8');
-    return pm.relPath;
-  } catch { return null; }
+  return findings;
 }

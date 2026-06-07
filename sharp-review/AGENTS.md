@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code. Three parallel reviewers with JSON Schema constraints, cross-checked and merged. Findings written to `.claude/sharp-review/YYYY-MM-DD.md` with stable IDs (SR-YYYYMMDD-NNN) and synced to `.claude/memory/tasks/tasks.md`.
+Post-feature code review plugin for Claude Code. Three parallel reviewers with JSON Schema constraints, cross-checked and merged. Findings written as a single memory entry `.claude/memory/YYYY-MM-DD/sharp-review.md` with rem frontmatter, synced to `.claude/memory/tasks/tasks.md`.
 
 ## Architecture
 
@@ -11,9 +11,14 @@ Stop → sharp-review-hook.js (classify: none/once/multi)
        ├── git diff → Workflow(sharp-review-workflow.js, { diff, date })
        ├── 3 parallel schema-constrained reviewers
        ├── Merge & dedup (≥2 reviewers = high confidence)
-       ├── Write .claude/sharp-review/YYYY-MM-DD.md
-       ├── sync-tasks.js (thin wrapper: parse findings → delegate to rem engine)
-       └── rem/scripts/sync-tasks.js → .claude/memory/tasks/tasks.md + MEMORY.md update
+       └── post-review.js:
+             ├── Write .claude/memory/YYYY-MM-DD/sharp-review.md (single file w/ rem frontmatter)
+             ├── Memory cross-reference (SR-ID ↔ .claude/memory/)
+             ├── stamp-memory.js → index in MEMORY.md
+             └── Delegate to rem/scripts/task-engine.js
+                   ├── Generate .claude/memory/tasks/tasks.md
+                   ├── Archive resolved → tasks/archive/
+                   └── Update .claude/rules/MEMORY.md
 ```
 
 ## File Structure
@@ -27,9 +32,9 @@ sharp-review/
 │   └── sharp-review-hook.js      Stop hook: classify review depth
 ├── skills/sharp-review/SKILL.md /sharp-review skill definition
 ├── scripts/
-│   ├── sync-tasks.js              Thin wrapper: parse findings → delegate to rem engine
+│   ├── post-review.js                Write workflow result as memory entry → stamp → task-engine
 │   └── sharp-review-workflow.js   Review workflow (3 parallel agents, invoked by skill only)
-├── lib.mjs                       Shared library (module/category inference — memory ops moved to rem)
+├── lib.mjs                       SR-specific logic: module/category inference, memory cross-reference, frontmatter generation
 ├── tests/                        Tests (node:test)
 ├── CLAUDE.md                     Entry point
 ├── AGENTS.md                     This file
@@ -44,16 +49,15 @@ See `.claude/rules/invariants.md` for the always-injected version.
 - **Schema**: Must be `{ type: 'object', properties: { findings: [...] } }` — bare array fails silently.
 - **Finding IDs**: `SR-YYYYMMDD-NNN`, assigned by workflow merge phase.
 - **Memory cross-reference**: Findings that reference memory entries get SR-IDs written back using `[[SR-ID]]` notation.
-- **Task sync**: `--resolve` persists IDs; `[x]` in tasks.md auto-promotes.
+- **Resolution**: Edit `**Status:** OPEN` → `**Status:** FIXED` directly in the memory file.
 
 ## Task System
 
-Task management is owned by `rem`. Sharp-review's `sync-tasks.js` is a thin wrapper that parses findings from `.claude/sharp-review/YYYY-MM-DD.md` and delegates to `rem/scripts/sync-tasks.js`.
+Task management output (tasks.md, archive, MEMORY.md) is owned by `rem`. Sharp-review's `post-review.js` writes a single memory entry with rem frontmatter, cross-links SR-IDs, stamps memory — then delegates clean task objects to `rem/scripts/task-engine.js` for final output.
 
 | File | Purpose |
 |---|---|
-| `.claude/sharp-review/YYYY-MM-DD.md` | Raw review output |
-| `.claude/memory/tasks/resolved.txt` | Persistent resolved IDs (managed by rem) |
+| `.claude/memory/YYYY-MM-DD/sharp-review.md` | Single session review file with rem frontmatter |
 | `.claude/memory/tasks/tasks.md` | Structured active task list (managed by rem) |
 | `.claude/memory/tasks/archive/YYYY-MM.md` | Resolved task archive (managed by rem) |
 | `.claude/rules/MEMORY.md` | Task index section (managed by rem) |

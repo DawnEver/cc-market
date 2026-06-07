@@ -71,7 +71,6 @@ SessionStart → prune-memory.js --evict-stale (remove stale, demote inactive lo
       ├── Summarize learnings → write .claude/memory/YYYY-MM-DD/<topic>.md
       ├── Update MEMORY.md index
       └── If ≥20 entries → compact.js distills into .claude/rules/rem/
-          └── Detects SR-ID findings → suggests --resolve for compacted findings
 ```
 
 ### Promotion
@@ -87,7 +86,7 @@ node scripts/touch-memory.js 2026-06-03/some-entry.md --promote
 | Skill | Purpose |
 |---|---|
 | `/rem` | REM sleep — summarize, update memory, compact if needed |
-| `/tasks` | Task management — view, sync, and resolve findings |
+| `/todo` | Task management — view, add, sync, and resolve findings |
 
 ## Scripts
 
@@ -98,7 +97,7 @@ node scripts/touch-memory.js 2026-06-03/some-entry.md --promote
 | `touch-memory.js` | Bump `accessed` timestamp, optional promotion |
 | `compact.js` | Distill memory into `.claude/rules/rem/` when index ≥20 |
 | `rem-prep.js` | Pre-REM automation: transcript scan (memory + SR-IDs), promotions, compact check |
-| `sync-tasks.js` | Task management engine: `--findings`, `--resolve`, `--check`, `--report` |
+| `task-engine.js` | Task management engine: `--findings`, `--add`, `--check`, `--report` |
 
 ## Files
 
