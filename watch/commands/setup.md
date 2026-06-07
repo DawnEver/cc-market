@@ -20,7 +20,17 @@ Scaffold a `.claude/watch/config.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with 
    - `pip install pyyaml` (required)
    - `pip install psutil` (only if using process_monitor component)
    - `pip install resend` (only if using Resend email alerts)
-5. Print next steps: "Edit .claude/watch/config.yaml, then run /watch:check to test."
+5. **Start the watchd daemon:**
+   - Check if watchd is already running by reading `.claude/watch/logs/daemon.jsonl` — if the last entry timestamp is within 600 seconds (2 × 300s default interval), the daemon is alive.
+   - If NOT running, spawn it detached:
+     ```
+     python ${CLAUDE_PLUGIN_ROOT}/scripts/start-server.py \
+       --project-dir ${CLAUDE_PROJECT_DIR} \
+       --cmd "python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir ${CLAUDE_PROJECT_DIR}"
+     ```
+   - Wait 2 seconds, then verify `daemon.jsonl` has a new entry with a recent timestamp.
+   - Report: "watchd daemon is running (PID from heartbeat)" or "WARNING: watchd failed to start — check Python and venv."
+6. Print next steps: "Watchd is running. Edit .claude/watch/config.yaml to adjust thresholds, then run /watch:check to verify."
 
 ## Template: http
 
@@ -68,6 +78,11 @@ actions:
     kill: ""                        # e.g. "pkill -f uvicorn"
     start: ""                       # e.g. "python -m my_server"
     wait: 3
+
+components:
+  watchd_heartbeat:
+    enabled: true
+    max_age_seconds: 600
 
 remedies:
   high_cpu:       [{action: restart}]

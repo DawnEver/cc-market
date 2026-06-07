@@ -9,8 +9,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
 
-const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+export function findGitRoot(startDir) {
+  let dir = startDir;
+  while (true) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return startDir;
+}
 
+const projectDir = findGitRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
 const MEMORY_MAX = 20;
 const TARGETS = { none: 0, once: 1, multi: 2 };
@@ -215,4 +225,6 @@ async function main() {
   process.stderr.write('/sharp-review\n', () => process.exit(2));
 }
 
-main().catch(() => process.exit(0));
+// Only run when executed directly (not when imported for testing)
+const runningDirectly = process.argv[1] && process.argv[1].endsWith('sharp-review-hook.js');
+if (runningDirectly) main().catch(() => process.exit(0));

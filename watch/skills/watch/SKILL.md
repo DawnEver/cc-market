@@ -48,6 +48,12 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
   ```
 
 **On `degraded` (general):**
+- If any anomaly has type `daemon_not_running` or `daemon_heartbeat_stale` / `daemon_heartbeat_missing`:
+  1. The loop has already attempted auto-restart (if `watchd.auto_restart` is enabled in config)
+  2. If the anomaly persists after auto-restart, report it to the user
+  3. Troubleshooting: is Python available? Is the venv intact at `~/.local/share/claude/watch/venv/`?
+     Are there permission issues with `.claude/watch/state/`?
+  4. If `daemon_heartbeat_stale`, the daemon may be running but stuck — check `daemon.jsonl` for errors
 - For each anomaly in `report.anomalies`:
   1. Read `remedy_plan` — it lists actions, max attempts, and escalation threshold
   2. Execute each action in order. Respect `max_attempts`.

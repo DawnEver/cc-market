@@ -52,8 +52,10 @@ rem/
 │   ├── rem/SKILL.md         /rem skill definition and workflow
 │   └── todo/SKILL.md         /todo skill — user-facing task management
 ├── tests/
-│   ├── lib.test.mjs         55 tests — frontmatter, index, date, path, state
-│   └── rem-hook.test.mjs    32 tests — isFreshSession, hasSubstantiveWork, decideStop
+│   ├── frontmatter.test.mjs  frontmatter parsing, field get/set, tier, stamping
+│   ├── date-path.test.mjs    date formatting, path resolution, memory dir security
+│   ├── lib.test.mjs          index parsing, constants, file collection, state, findProjectRoot
+│   └── rem-hook.test.mjs     isFreshSession, hasSubstantiveWork, decideStop
 ├── .claude/rules/           Injected every session (invariants only)
 ├── CLAUDE.md                Entry point → @AGENTS.md + @.claude/rules/*.md
 └── AGENTS.md                This file
@@ -105,14 +107,17 @@ See `.claude/rules/invariants.md` for the always-injected version.
 ## Testing
 
 ```shell
+node --test cc-market/rem/tests/frontmatter.test.mjs
+node --test cc-market/rem/tests/date-path.test.mjs
 node --test cc-market/rem/tests/lib.test.mjs
 node --test cc-market/rem/tests/rem-hook.test.mjs
 ```
 
-Pre-commit hook (`.git/hooks/pre-commit`) runs all 87 rem tests + 37 takeover tests. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; all `lib.mjs` exports are already public.
+Pre-commit hook runs all rem tests + takeover + sharp-review tests. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
 ## Standard
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic.
 - Keep `lib.mjs` as the single source of truth for paths, constants, and formats.
+- **When memory entries are created or split**: update MEMORY.md, AGENTS.md, and README.md to reflect the new structure.

@@ -18,4 +18,4 @@ Frontmatter:
 -->
 
 
-- [2026-06-07 watch-hang-windows](../memory/2026-06-07/watch-hang-windows.md) — `created: 2026-06-07, accessed: 2026-06-07`
+- [2026-06-07 watch-hang-windows](../memory/2026/06/07/watch-hang-windows.md) — `created: 2026-06-07, accessed: 2026-06-07`

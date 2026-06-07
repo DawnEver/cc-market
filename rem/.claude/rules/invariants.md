@@ -29,4 +29,4 @@ Unified state in `.claude/.rem-state.json`. Use `loadState()`/`saveState()` — 
 
 ## Tests
 
-87 tests across 2 files. Run: `node --test cc-market/rem/tests/lib.test.mjs cc-market/rem/tests/rem-hook.test.mjs`. Pre-commit hook enforces.
+Tests across 4 files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`. Run all: `node --test cc-market/rem/tests/*.test.mjs`. Pre-commit hook enforces.

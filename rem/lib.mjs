@@ -6,8 +6,19 @@ import { join, dirname, resolve } from 'path';
 
 // ── Paths ──
 
-function findProjectRoot() {
-  if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+export function findProjectRoot() {
+  if (process.env.CLAUDE_PROJECT_DIR) {
+    // Walk up to the nearest .git — CLAUDE_PROJECT_DIR may be a subdirectory
+    // (e.g. cc-market/watch/) rather than the actual project root.
+    let dir = process.env.CLAUDE_PROJECT_DIR;
+    while (true) {
+      if (existsSync(join(dir, '.git'))) return dir;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    return process.env.CLAUDE_PROJECT_DIR;
+  }
   // Walk up from CWD to find .git (works outside Claude Code)
   let dir = process.cwd();
   while (true) {
