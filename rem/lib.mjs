@@ -310,3 +310,4 @@ export function appendEvent(type, detail) {
   }
   saveState(state);
 }
+// test

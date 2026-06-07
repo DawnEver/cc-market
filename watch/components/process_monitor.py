@@ -1,4 +1,5 @@
-"""Process monitor component — psutil-based process presence, RSS, CPU checks."""
+"""Process monitor component — psutil-based process presence, RSS, CPU checks,
+peak tracking, and cross-platform system resource snapshot."""
 
 from __future__ import annotations
 
@@ -7,12 +8,13 @@ from components.base import Anomaly, CheckResult, Component
 
 class ProcessMonitor(Component):
     name = 'process_monitor'
-    description = 'Monitor processes — presence, RSS, CPU% via psutil'
+    description = 'Monitor processes — presence, RSS, CPU% via psutil, with peak tracking and system snapshot'
 
     def check(self, comp_cfg: dict, global_cfg: dict, state: dict) -> CheckResult:
         processes = comp_cfg.get('processes', [])
+        track_system = comp_cfg.get('track_system', False)
         result = CheckResult()
-        if not processes:
+        if not processes and not track_system:
             return result
 
         try:
@@ -23,6 +25,7 @@ class ProcessMonitor(Component):
                 message='psutil not installed; process checks skipped'))
             return result
 
+        # ── Process monitoring ─────────────────────────────────────────────
         stats: dict[str, dict] = {}
         for proc in psutil.process_iter(['name', 'memory_info', 'cmdline', 'cpu_percent']):
             try:
@@ -52,6 +55,20 @@ class ProcessMonitor(Component):
                 s[k] = round(s[k], 2)
             result.metrics[f'{name}_count'] = s['count']
             result.metrics[f'{name}_rss_mb'] = s['rss_mb']
+
+            # ── Peak tracking ──────────────────────────────────────────────
+            if pc.get('track_peaks'):
+                peak_rss_key = f'_pm_peak_rss_{name}'
+                peak_cpu_key = f'_pm_peak_cpu_{name}'
+                prev_rss = state.get(peak_rss_key, 0.0)
+                prev_cpu = state.get(peak_cpu_key, 0.0)
+                if s['rss_mb'] > prev_rss:
+                    state[peak_rss_key] = s['rss_mb']
+                if s['cpu_pct'] > prev_cpu:
+                    state[peak_cpu_key] = s['cpu_pct']
+                s['peak_rss_mb'] = round(state.get(peak_rss_key, 0.0), 2)
+                s['peak_cpu_pct'] = round(state.get(peak_cpu_key, 0.0), 2)
+
             result.data[name] = s
 
             min_c = pc.get('min_count')
@@ -67,4 +84,33 @@ class ProcessMonitor(Component):
                     type=f'{name}_high_ram', severity='critical', value=s['rss_mb'],
                     threshold=max_rss, message=f"Process '{name}': {s['rss_mb']}MB > {max_rss}MB",
                 ))
+
+        # ── System resource snapshot ───────────────────────────────────────
+        if track_system:
+            cpu = psutil.cpu_percent()
+            mem = psutil.virtual_memory()
+            ram_pct = mem.percent
+            avail_mb = round(mem.available / (1024 * 1024), 1)
+
+            result.metrics['system_cpu_percent'] = cpu
+            result.metrics['system_ram_percent'] = ram_pct
+            result.metrics['system_ram_available_mb'] = avail_mb
+            result.data['system'] = {
+                'cpu_percent': cpu,
+                'ram_percent': ram_pct,
+                'ram_available_mb': avail_mb,
+                'ram_total_gb': round(mem.total / (1024 ** 3), 1),
+            }
+
+            if ram_pct > 95:
+                result.anomalies.append(Anomaly(
+                    type='system_ram_critical', severity='critical', value=ram_pct,
+                    threshold=95, message=f'System RAM critical: {ram_pct:.1f}% ({avail_mb:.0f} MB free)',
+                ))
+            elif ram_pct > 90:
+                result.anomalies.append(Anomaly(
+                    type='system_ram_high', severity='warning', value=ram_pct,
+                    threshold=90, message=f'System RAM high: {ram_pct:.1f}% ({avail_mb:.0f} MB free)',
+                ))
+
         return result
