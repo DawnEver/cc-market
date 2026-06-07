@@ -102,7 +102,7 @@ export function dateToPath(date) {
 
 export function extractDateFromPath(filePath) {
   // Match YYYY/MM/DD or YYYY-MM-DD in path
-  const m = filePath.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})/);
+  const m = filePath.match(/(\d{4})[\/\\-](\d{2})[\/\\-](\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   try {
     return statSync(filePath).mtime.toISOString().slice(0, 10);

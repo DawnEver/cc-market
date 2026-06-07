@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,8 +10,9 @@ from components.base import Action, Anomaly, run_command
 from components.registry import create_registry
 from core.alert import send_email, send_webhook
 from core.config import load_config
-from core.log import append_report
-from core.state import load_state, save_state, track_anomaly
+from core.log import append_report, get_last_report
+from core.state import (load_state, save_state, track_anomaly, reset_anomaly,
+                         record_last_healthy, record_remedy_attempt, set_alert_sent)
 
 
 def run(project_dir: str | Path, dry_run: bool = False) -> dict:
@@ -47,6 +49,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
             result = comp.check(comp_cfg, config, state)
             report['components'][comp.name] = {
                 'metrics': result.metrics,
+                'data': result.data,
                 'anomalies': [{'type': a.type, 'severity': a.severity,
                                'message': a.message} for a in result.anomalies],
             }
@@ -62,6 +65,9 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
         for key in list(state.keys()):
             if key.startswith('consecutive_'):
                 state.pop(key, None)
+        state.pop('_alert_sent', None)
+        state.pop('_remedies', None)
+        record_last_healthy(state, ts)
     else:
         context: dict[str, object] = {}
         for anomaly in report['anomalies']:
@@ -87,13 +93,17 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
                     ok = _execute_action(action, project, registry,
                                         anomaly.source or '', context)
                     if ok:
+                        record_remedy_attempt(state, anomaly.type, step.action, 'ok', attempt + 1)
                         break
                     print(f'    retry {attempt + 1}/{step.max_attempts}')
+                else:
+                    record_remedy_attempt(state, anomaly.type, step.action, 'failed', step.max_attempts)
 
                 if step.escalate_after:
                     escalate_count = track_anomaly(state, anomaly.type)
                     if escalate_count >= step.escalate_after:
                         _escalate(config, anomaly, escalate_count, report, dry_run)
+                        set_alert_sent(state, ts)
 
     # 5. Status
     if any(a.severity == 'critical' for a in report['anomalies']):
@@ -101,13 +111,18 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
     elif report['anomalies']:
         report['status'] = 'degraded'
 
+    # 5b. Serialize anomalies (Anomaly objects → dicts)
+    report = _to_serializable(report)
+
+    # 5c. Enrich report with progressive disclosure layers
+    report = _enrich_report(report, registry, config, state, project)
+
     # 6. Persist
     save_state(project, state, log_cfg.get('state_file', '.claude/watch/state/monitor.json'))
 
-    output = _to_serializable(report)
-    append_report(output, project, log_file=log_cfg.get('log_file', '.claude/watch/logs/health.jsonl'),
+    append_report(report, project, log_file=log_cfg.get('log_file', '.claude/watch/logs/health.jsonl'),
                   max_entries=log_cfg.get('max_entries', 10000))
-    return output
+    return report
 
 
 def _to_serializable(report: dict) -> dict:
@@ -197,6 +212,174 @@ def _eval_condition(condition: str, context: dict) -> bool:
         if op == '!=':
             return ctx_val != val
     return True
+
+
+# ── Report enrichment (progressive disclosure) ──────────────────────────
+
+def _enrich_report(report: dict, registry, config: dict,
+                   state: dict, project: Path) -> dict:
+    """Add progressive-disclosure layers to the report."""
+    report['summary'] = _build_summary(report)
+    report['watch'] = _build_watch_overview(config, registry, state, project)
+    report['history'] = _build_history(report, project)
+    report['escalation'] = _build_escalation(state)
+    # Embed remedy_plan in each anomaly
+    for a in report['anomalies']:
+        steps = registry.get_remedies(a['type']) if hasattr(registry, 'get_remedies') else []
+        a['remedy_plan'] = [
+            {'action': s.action, 'max_attempts': s.max_attempts,
+             'escalate_after': s.escalate_after}
+            for s in steps
+        ]
+    return report
+
+
+def _build_summary(report: dict) -> str:
+    """One-line orientation string."""
+    comp_names = list(report.get('components', {}).keys())
+    anomalies = report['anomalies']
+    if not anomalies:
+        comps = ', '.join(comp_names[:4])
+        if len(comp_names) > 4:
+            comps += f', +{len(comp_names) - 4} more'
+        return f'HEALTHY — {comps} OK'
+
+    criticals = [a for a in anomalies if a.get('severity') == 'critical']
+    warnings = [a for a in anomalies if a.get('severity') == 'warning']
+    parts = []
+    for a in criticals + warnings:
+        msg = a.get('message', '')[:80]
+        parts.append(msg)
+    summary = f'DEGRADED — {"; ".join(parts[:3])}'
+    if len(parts) > 3:
+        summary += f' (+{len(parts) - 3} more)'
+    return summary
+
+
+def _build_watch_overview(config: dict, registry, state: dict,
+                          project: Path) -> dict:
+    """Configuration overview — what's being watched and how."""
+    instance = config.get('instance', {})
+    alert_cfg = config.get('alerts', {})
+    daemon_state = _read_daemon_state(project)
+
+    # Alert targets (redacted for safety)
+    email = alert_cfg.get('email', {}).get('to', '')
+    webhook = alert_cfg.get('webhook', {}).get('url', '')
+    alerts = {}
+    if email:
+        alerts['email'] = _redact_email(email)
+    if webhook:
+        alerts['webhook'] = _redact_url(webhook)
+
+    # Version tracking
+    vt = None
+    gv_cfg = registry.get_config('git_version') if hasattr(registry, 'get_config') else {}
+    if gv_cfg and gv_cfg.get('repositories'):
+        repos = gv_cfg['repositories']
+        vt = {
+            'enabled': True,
+            'repos': [r['name'] for r in repos],
+            'deploy_branch': gv_cfg.get('deploy', {}).get('deploy_branch', 'deploy'),
+        }
+
+    return {
+        'project': str(project),
+        'instance': instance.get('name', ''),
+        'components': [c.name for c in registry.enabled()] if hasattr(registry, 'enabled') else [],
+        'alerts': alerts,
+        'daemon': {
+            'running': daemon_state.get('running', False),
+            'pid': daemon_state.get('pid'),
+            'interval_seconds': daemon_state.get('interval'),
+            'last_poll': daemon_state.get('last_poll'),
+        },
+        'intervals': {
+            'normal': _format_duration(instance.get('check_interval_normal', 43200)),
+            'anomaly': _format_duration(instance.get('check_interval_anomaly', 1800)),
+        },
+        'version_tracking': vt,
+    }
+
+
+def _build_history(report: dict, project: Path) -> dict:
+    """Delta from previous check."""
+    prev = get_last_report(project)
+    if not prev:
+        return {'previous_check': None, 'seconds_ago': None, 'deltas': {}}
+
+    deltas: dict[str, dict[str, float]] = {}
+    prev_comps = prev.get('components', {})
+    for name, comp in report.get('components', {}).items():
+        prev_metrics = prev_comps.get(name, {}).get('metrics', {})
+        curr_metrics = comp.get('metrics', {})
+        comp_deltas = {}
+        for k, v in curr_metrics.items():
+            if k in prev_metrics and isinstance(v, (int, float)):
+                comp_deltas[k] = round(v - prev_metrics[k], 2)
+        if comp_deltas:
+            deltas[name] = comp_deltas
+
+    return {
+        'previous_check': prev.get('timestamp'),
+        'seconds_ago': None,  # caller computes relative
+        'deltas': deltas,
+    }
+
+
+def _build_escalation(state: dict) -> dict:
+    """Escalation state — consecutive counts and remedy history."""
+    consecutive = {}
+    for k, v in state.items():
+        if k.startswith('consecutive_'):
+            consecutive[k[len('consecutive_'):]] = v
+
+    remedies = state.get('_remedies', [])
+
+    return {
+        'consecutive': consecutive,
+        'alerts_sent_this_cycle': '_alert_sent' in state,
+        'remedies_attempted': remedies,
+    }
+
+
+def _read_daemon_state(project: Path) -> dict:
+    """Read watchd daemon state file if it exists."""
+    path = project / '.claude/watch/state/daemon.json'
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def _redact_email(email: str) -> str:
+    """Redact email for safe display: ab***@domain."""
+    if '@' not in email:
+        return email[:2] + '***'
+    local, domain = email.split('@', 1)
+    return local[:2] + '***@' + domain
+
+
+def _redact_url(url: str) -> str:
+    """Show only domain of webhook URL."""
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+        return p.netloc or url[:20] + '...'
+    except Exception:
+        return url[:20] + '...'
+
+
+def _format_duration(seconds: int | float) -> str:
+    """Format seconds into human-readable duration."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f'{seconds}s'
+    if seconds < 3600:
+        return f'{seconds // 60}m'
+    return f'{seconds // 3600}h'
 
 
 def _escalate(config: dict, anomaly: Anomaly, count: int,
