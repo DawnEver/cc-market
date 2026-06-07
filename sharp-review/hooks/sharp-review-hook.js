@@ -94,6 +94,21 @@ function hasCodeEdits(transcript) {
   });
 }
 
+function isAwaitingInput(transcript) {
+  for (let i = transcript.length - 1; i >= 0; i--) {
+    const entry = transcript[i];
+    if (entry?.message?.role !== 'assistant') break;
+    const content = entry.message.content;
+    if (!Array.isArray(content)) continue;
+    for (let j = content.length - 1; j >= 0; j--) {
+      if (content[j]?.type === 'text') {
+        return /[?？]$/.test(content[j].text.trim());
+      }
+    }
+  }
+  return false;
+}
+
 function extractTaskSummary(transcript) {
   const msgs = transcript
     .filter(e => e?.message?.role === 'assistant')
@@ -151,6 +166,10 @@ async function main() {
   const transcriptPath = input.transcript_path || '';
 
   const transcript = transcriptPath ? readTranscriptTail(transcriptPath) : [];
+
+  // Conversation still active — assistant is waiting for user input
+  if (isAwaitingInput(transcript)) process.exit(0);
+
   const changedFiles = getChangedFiles();
 
   if (isDocOnly(changedFiles) || (changedFiles.length === 0 && !hasCodeEdits(transcript))) {
