@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'path';
 
 // ── Paths ──
 
-export const repoRoot = process.cwd();
+export const repoRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 export const memoryDir = join(repoRoot, '.claude', 'memory');
 export const rulesDir = join(repoRoot, '.claude', 'rules');
 export const remRulesDir = join(rulesDir, 'rem');
