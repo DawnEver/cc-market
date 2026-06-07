@@ -8,7 +8,8 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
-  memoryDir, indexFile, MAX_ENTRIES, STALE_DAYS, DAY_MS,
+  scopeMemoryDir as memoryDir, scopeIndexFile as indexFile, scopeRoot,
+  MAX_ENTRIES, STALE_DAYS, DAY_MS,
   getTier, setTier, parseIndex, loadState, saveState, appendEvent, dayPrecision,
 } from '../lib.mjs';
 

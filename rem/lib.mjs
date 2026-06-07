@@ -6,12 +6,63 @@ import { join, dirname, resolve } from 'path';
 
 // ── Paths ──
 
-export const repoRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+function findProjectRoot() {
+  if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+  // Walk up from CWD to find .git (works outside Claude Code)
+  let dir = process.cwd();
+  while (true) {
+    if (existsSync(join(dir, '.git'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+
+export const repoRoot = findProjectRoot();
 export const memoryDir = join(repoRoot, '.claude', 'memory');
 export const rulesDir = join(repoRoot, '.claude', 'rules');
 export const remRulesDir = join(rulesDir, 'rem');
 export const indexFile = join(rulesDir, 'MEMORY.md');
 export const stateFile = join(repoRoot, '.claude', '.rem-state.json');
+
+// ── Scope-aware paths ──
+
+export function findMemoryScope() {
+  let dir = process.cwd();
+  const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  while (dir.startsWith(root)) {
+    if (existsSync(join(dir, '.claude', 'memory'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return root;
+}
+
+export function findAllScopes() {
+  const scopes = [repoRoot];
+  function walk(dir, depth) {
+    if (depth > 4) return;
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          const sub = join(dir, entry.name);
+          if (existsSync(join(sub, '.claude', 'memory'))) scopes.push(sub);
+          walk(sub, depth + 1);
+        }
+      }
+    } catch { /* permissions, etc. */ }
+  }
+  walk(repoRoot, 0);
+  return scopes;
+}
+
+export const scopeRoot = findMemoryScope();
+export const scopeMemoryDir = join(scopeRoot, '.claude', 'memory');
+export const scopeRulesDir = join(scopeRoot, '.claude', 'rules');
+export const scopeIndexFile = join(scopeRulesDir, 'MEMORY.md');
+
 export const MAX_ENTRIES = 20;
 export const STALE_DAYS = 90;
 export const DAY_MS = 24 * 60 * 60 * 1000;
