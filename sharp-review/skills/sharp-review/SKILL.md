@@ -5,7 +5,7 @@ description: Post-feature sharp review (锐评) — 3 parallel reviewers with sc
 
 # Sharp Review (锐评)
 
-Workflow-driven post-feature review. Three parallel reviewers each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY-MM-DD/sharp-review.md` with rem frontmatter.
+Workflow-driven post-feature review. Three parallel reviewers each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter.
 
 ## Execution
 
@@ -28,7 +28,7 @@ Workflow({
 })
 ```
 
-The workflow launches 3 parallel reviewers, each with a JSON Schema that enforces:
+The workflow launches 3 parallel reviewers for model diversity — Reviewer A runs Codex's adversarial review via takeover's direct app-server integration (`mcp__plugin_takeover_takeover__call_model`, provider=codex, mode=review — no third-party Codex plugin needed), Reviewer B runs an independent perspective via takeover→DeepSeek (`provider=deepseek`, no explicit model — falls back to the configured `ANTHROPIC_DEFAULT_SONNET_MODEL`), and Reviewer C is a native Claude agent (official subscription). Each is constrained by a JSON Schema that enforces:
 - `severity`: HIGH | MEDIUM | LOW | INFO
 - `file`: affected file path
 - `summary`: one-line issue description
@@ -47,7 +47,7 @@ The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings
 node ${CLAUDE_PLUGIN_ROOT}/scripts/post-review.js --date <YYYY-MM-DD> --findings <merged.json> --markdown <markdown.md>
 ```
 
-This does everything: writes `.claude/memory/YYYY-MM-DD/sharp-review.md` with rem frontmatter, cross-links SR-IDs to related memory files, runs stamp-memory.js to index, and delegates to task-engine.js for tasks.md.
+This does everything: writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, cross-links SR-IDs to related memory files, runs stamp-memory.js to index, and delegates to task-engine.js for tasks.md.
 
 ### Step 4 — Resolve findings
 

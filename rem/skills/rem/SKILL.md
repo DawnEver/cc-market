@@ -40,7 +40,7 @@ tier: short | long
 
 ### Index (`.claude/rules/MEMORY.md`)
 - Sorted by `accessed` newest-first, max 20 entries
-- Each line: `[date title](../memory/YYYY-MM-DD/slug.md) — created: ..., accessed: ...`
+- Each line: `[date title](../memory/YYYY/MM/DD/slug.md) — created: ..., accessed: ...`
 
 ### Scripts (plugin, at `${CLAUDE_PLUGIN_ROOT}/scripts/`)
 | Script | Usage |
@@ -69,7 +69,7 @@ tier: short | long
 ### Rules vs Memory boundary
 - **Rule** = what the model MUST do every session. Short, actionable.
 - **Memory** = why, what happened, known bugs. Load on demand.
-- Pointer pattern: `→ see .claude/memory/YYYY-MM-DD/slug.md`
+- Pointer pattern: `→ see .claude/memory/YYYY/MM/DD/slug.md`
 
 ---
 
@@ -157,7 +157,7 @@ Review the output. Re-promote any entries that were demoted but you referenced t
 
 ### 2. Update project memory
 
-- `.claude/memory/YYYY-MM-DD/` — add/update content files under date directory
+- `.claude/memory/YYYY/MM/DD/` — add/update content files under date directory
 - Run `stamp-memory.js` to auto-index new files:
   ```bash
   node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js

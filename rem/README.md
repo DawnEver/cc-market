@@ -68,7 +68,7 @@ SessionStart → prune-memory.js --evict-stale (remove stale, demote inactive lo
        ↓
     /rem skill triggers:
       ├── rem-prep.js — scan transcript (memory files + SR-IDs), bump accessed, suggest promotions
-      ├── Summarize learnings → write .claude/memory/YYYY-MM-DD/<topic>.md
+      ├── Summarize learnings → write .claude/memory/YYYY/MM/DD/<topic>.md
       ├── Update MEMORY.md index
       ├── If ≥20 entries → compact.js distills into .claude/rules/rem/
       │   └── check-docs.js — audit doc freshness

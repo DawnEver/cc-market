@@ -22,7 +22,7 @@ SessionStart → prune-memory.js --evict-stale
     ├── /todo        → task-engine.js --report
     ├── /todo add    → task-engine.js --add
     ├── /todo sync   → post-review.js → task-engine.js --findings
-    ├── /todo resolve → edit .claude/memory/YYYY-MM-DD/sharp-review.md in-place
+    ├── /todo resolve → edit .claude/memory/YYYY/MM/DD/sharp-review.md in-place
     └── /todo check  → task-engine.js --check
 ```
 

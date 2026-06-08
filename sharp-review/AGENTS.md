@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code. Three parallel reviewers with JSON Schema constraints, cross-checked and merged. Findings written as a single memory entry `.claude/memory/YYYY-MM-DD/sharp-review.md` with rem frontmatter, synced to `.claude/memory/tasks/tasks.md`.
+Post-feature code review plugin for Claude Code. Three parallel reviewers with JSON Schema constraints, cross-checked and merged. Findings written as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, synced to `.claude/memory/tasks/tasks.md`.
 
 ## Architecture
 
@@ -57,9 +57,9 @@ Task management output (tasks.md, archive, MEMORY.md) is owned by `rem`. Sharp-r
 
 | File | Purpose |
 |---|---|
-| `.claude/memory/YYYY-MM-DD/sharp-review.md` | Single session review file with rem frontmatter |
+| `.claude/memory/YYYY/MM/DD/sharp-review.md` | Single session review file with rem frontmatter |
 | `.claude/memory/tasks/tasks.md` | Structured active task list (managed by rem) |
-| `.claude/memory/tasks/archive/YYYY-MM.md` | Resolved task archive (managed by rem) |
+| `.claude/memory/tasks/archive/YYYY/MM.md` | Resolved task archive (managed by rem) |
 | `.claude/rules/MEMORY.md` | Task index section (managed by rem) |
 
 ### Scale Detection (in rem engine)

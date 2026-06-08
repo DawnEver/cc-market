@@ -40,15 +40,10 @@ const REVIEW_SCOPE = [
   'Redundant / dead code',
   'Anything simpler, faster, or more idiomatic',
   'Missed edge cases or silent failures',
+  'Files that grew past ~400 lines and should be split into smaller modules',
 ].join(', ');
 
-function reviewPrompt(diff) {
-  return `Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
-
-Scope: ${REVIEW_SCOPE}
-
-You MUST call the StructuredOutput tool with a JSON object: { "findings": [...] }
-Each finding has these fields:
+const FINDINGS_FORMAT = `Each finding has these fields:
 - severity: "HIGH" | "MEDIUM" | "LOW" | "INFO"
 - file: affected file path relative to repo root (string)
 - summary: one-line description of the issue (string)
@@ -58,7 +53,15 @@ Each finding has these fields:
 - suggestion: one-line fix (string)
 - detail: optional deeper analysis (string)
 
-If there are no issues, call StructuredOutput with { "findings": [] }.
+If there are no issues, call StructuredOutput with { "findings": [] }.`;
+
+function reviewPrompt(diff) {
+  return `Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
+
+Scope: ${REVIEW_SCOPE}
+
+You MUST call the StructuredOutput tool with a JSON object: { "findings": [...] }
+${FINDINGS_FORMAT}
 
 Git diff:
 \`\`\`
@@ -66,27 +69,65 @@ ${diff}
 \`\`\``;
 }
 
+function codexReviewPrompt(diff) {
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="review", and userPrompt set to the git diff below — this runs Codex's adversarial review directly via its app-server, no plugin install required.
+
+Then translate Codex's findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
+${FINDINGS_FORMAT}
+
+If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.
+
+Git diff:
+\`\`\`
+${diff}
+\`\`\``;
+}
+
+function deepseekReviewPrompt(diff) {
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="deepseek" (do NOT pass a model — let it fall back to the configured default) and a userPrompt that embeds this exact instruction:
+
+<command>
+--provider deepseek
+Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
+
+Scope: ${REVIEW_SCOPE}
+
+Git diff:
+\`\`\`
+${diff}
+\`\`\`
+
+Respond with a JSON object: { "findings": [...] }
+${FINDINGS_FORMAT}
+</command>
+
+Then translate DeepSeek's response into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
+${FINDINGS_FORMAT}
+
+If the takeover tool call fails or DeepSeek is unavailable, call StructuredOutput with { "findings": [] }.`;
+}
+
 // ── Phase 1: Review ──
 
 phase('Review');
 
-log('Launching 3 parallel reviewers (Codex adversarial-review + DeepSeek + Claude)...');
+log('Launching 3 parallel reviewers (Codex via takeover + DeepSeek via takeover + Claude)...');
 
 const reviewers = await parallel([
-  // Reviewer A — Claude (adversarial)
+  // Reviewer A — Codex (adversarial, via takeover's direct app-server integration)
   () => agent(
-    reviewPrompt(args.diff || 'See git diff in context above'),
-    { label: 'Reviewer A', phase: 'Review', schema: FINDINGS_SCHEMA }
+    codexReviewPrompt(args.diff || 'See git diff in context above'),
+    { label: 'Reviewer A (Codex)', phase: 'Review', schema: FINDINGS_SCHEMA }
   ),
-  // Reviewer B — Claude (independent)
+  // Reviewer B — DeepSeek (independent model perspective, via takeover)
   () => agent(
-    reviewPrompt(args.diff || 'See git diff in context above'),
-    { label: 'Reviewer B', phase: 'Review', schema: FINDINGS_SCHEMA }
+    deepseekReviewPrompt(args.diff || 'See git diff in context above'),
+    { label: 'Reviewer B (DeepSeek)', phase: 'Review', schema: FINDINGS_SCHEMA }
   ),
-  // Reviewer C — Claude (independent)
+  // Reviewer C — Claude (independent, native subscription)
   () => agent(
     reviewPrompt(args.diff || 'See git diff in context above'),
-    { label: 'Reviewer C', phase: 'Review', schema: FINDINGS_SCHEMA }
+    { label: 'Reviewer C (Claude)', phase: 'Review', schema: FINDINGS_SCHEMA }
   ),
 ]).catch(() => [null, null, null]);
 
@@ -155,9 +196,9 @@ const lines = [];
 lines.push(`## Review ${timestamp} — current branch`);
 lines.push('');
 lines.push('### Reviewer Status');
-lines.push(`- Reviewer A: ${results[0] ? 'OK' : 'FAILED'}`);
-lines.push(`- Reviewer B: ${results[1] ? 'OK' : 'FAILED'}`);
-lines.push(`- Reviewer C: ${results[2] ? 'OK' : 'FAILED'}`);
+lines.push(`- Reviewer A (Codex, via takeover): ${results[0] ? 'OK' : 'FAILED'}`);
+lines.push(`- Reviewer B (DeepSeek, via takeover): ${results[1] ? 'OK' : 'FAILED'}`);
+lines.push(`- Reviewer C (Claude, native): ${results[2] ? 'OK' : 'FAILED'}`);
 if (succeeded.length < 2) lines.push('- Self-review fallback: used to supplement');
 lines.push('');
 lines.push('### Confirmed findings');
