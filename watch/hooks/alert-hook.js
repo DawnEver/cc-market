@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { readStdinJSON, readTranscriptTail as _readTranscriptTail } from '../../shared/lib.mjs';
 
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || '';
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -19,17 +20,6 @@ const LIMIT_RE =
   /(usage|quota|credit|billing|rate.?limit|limit reached|overloaded|insufficient|exceeded)/i;
 const FAIL_TEXT_RE =
   /(unable to|couldn'?t|can'?t\b|still fail|not working|stuck|giving up|didn'?t work|no luck)/i;
-
-function readStdinJSON() {
-  if (process.stdin.isTTY) return {};
-  try {
-    let raw = fs.readFileSync(0, 'utf8');
-    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
 
 function loadJSON(file) {
   try {
@@ -51,19 +41,7 @@ function saveJSON(file, data) {
   }
 }
 
-function readTranscriptTail(transcriptPath, maxLines = TRANSCRIPT_TAIL) {
-  try {
-    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-    return lines
-      .slice(-maxLines)
-      .map((l) => {
-        try { return JSON.parse(l); } catch { return null; }
-      })
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
+function readTranscriptTail(transcriptPath, maxLines = TRANSCRIPT_TAIL) { return _readTranscriptTail(transcriptPath, maxLines); }
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

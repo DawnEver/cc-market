@@ -8,44 +8,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
+import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../../shared/lib.mjs';
+import { loadState as _loadState, saveState as _saveState } from '../../shared/state.mjs';
 
-export function findGitRoot(startDir) {
-  let dir = startDir;
-  while (true) {
-    if (fs.existsSync(path.join(dir, '.git'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return startDir;
-}
+// Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
+export function findGitRoot(startDir) { return findProjectRoot(startDir); }
 
-const projectDir = findGitRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+const projectDir = findProjectRoot();
 const unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
 const MEMORY_MAX = 20;
 const TARGETS = { none: 0, once: 1, multi: 2 };
 
-function readStdinJSON() {
-  if (process.stdin.isTTY) return {};
-  try {
-    const raw = fs.readFileSync(0, 'utf8');
-    return JSON.parse(raw);
-  } catch { return {}; }
-}
+function readStdinJSON() { return _readStdinJSON(); }
 
-function loadUnifiedState() {
-  try {
-    let raw = fs.readFileSync(unifiedStateFile, 'utf8');
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    return JSON.parse(raw);
-  } catch { return {}; }
-}
+function loadUnifiedState() { return _loadState(unifiedStateFile); }
 
-function saveUnifiedState(state) {
-  const dir = path.dirname(unifiedStateFile);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(unifiedStateFile, JSON.stringify(state, null, 2), 'utf8');
-}
+function saveUnifiedState(state) { return _saveState(unifiedStateFile, state); }
 
 function loadReviewGate() {
   const unified = loadUnifiedState();
@@ -86,12 +64,7 @@ function isDocOnly(files) {
   return files.length > 0 && files.every(f => DOC_ONLY_PATTERNS.some(p => p.test(f)));
 }
 
-function readTranscriptTail(transcriptPath, maxLines = 40) {
-  try {
-    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-    return lines.slice(-maxLines).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  } catch { return []; }
-}
+function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
 
 function hasCodeEdits(transcript) {
   return transcript.some(entry => {
@@ -226,5 +199,4 @@ async function main() {
 }
 
 // Only run when executed directly (not when imported for testing)
-const runningDirectly = process.argv[1] && process.argv[1].endsWith('sharp-review-hook.js');
-if (runningDirectly) main().catch(() => process.exit(0));
+if (isMain(import.meta)) main().catch(() => process.exit(0));

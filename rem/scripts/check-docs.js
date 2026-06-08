@@ -5,7 +5,6 @@
 import { readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { join, relative } from 'path';
-import { fileURLToPath } from 'url';
 import { repoRoot } from '../lib.mjs';
 
 export const DOC_PATTERN = /^(README|CLAUDE|AGENTS|AGENT|CHANGELOG|CONTRIBUTING).*\.md$/i;
@@ -92,5 +91,5 @@ function main() {
   process.exit(needsReview ? 1 : 0);
 }
 
-const isMain = process.argv[1] && fileURLToPath(import.meta.url).replace(/\\/g, '/') === process.argv[1].replace(/\\/g, '/');
-if (isMain) main();
+import { isMain } from '../../shared/lib.mjs';
+if (isMain(import.meta)) main();

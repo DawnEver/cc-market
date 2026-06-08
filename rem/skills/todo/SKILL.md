@@ -12,13 +12,13 @@ Manage the project task list. The task engine is owned by `rem` — a generic en
 ### `/todo` — View summary
 
 ```bash
-node cc-market/rem/scripts/task-engine.js --report
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" --report
 ```
 
 ### `/todo add <summary>` — Add a manual task
 
 ```bash
-node cc-market/rem/scripts/task-engine.js --add --summary "Fix login timeout" --severity MEDIUM --module auth
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" --add --summary "Fix login timeout" --severity MEDIUM --module auth
 ```
 
 Options: `--severity` (HIGH|MEDIUM|LOW, default MEDIUM), `--module` (default 'manual'), `--category` (Bug|Feature|Performance, default Bug).
@@ -30,7 +30,7 @@ Generates a `MANUAL-YYYYMMDD-NNN` ID and appends to tasks.md. Manual tasks are p
 Reads `.claude/memory/YYYY/MM/DD/sharp-review.md`, regenerates tasks.md:
 
 ```bash
-node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --findings <json> --markdown <md>
+node "${CLAUDE_PLUGIN_ROOT}/../sharp-review/scripts/post-review.js" --date YYYY-MM-DD --findings <json> --markdown <md>
 ```
 
 ### `/todo resolve <id...>` — Resolve tasks
@@ -40,7 +40,7 @@ Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`
 ### `/todo check` — Check if up to date
 
 ```bash
-node cc-market/rem/scripts/task-engine.js --check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" --check
 ```
 
 ## Architecture

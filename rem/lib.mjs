@@ -3,32 +3,12 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs';
 import { join, dirname, resolve } from 'path';
+import { findProjectRoot as _findProjectRoot } from '../shared/lib.mjs';
+import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from '../shared/state.mjs';
 
 // ── Paths ──
 
-export function findProjectRoot() {
-  if (process.env.CLAUDE_PROJECT_DIR) {
-    // Walk up to the nearest .git — CLAUDE_PROJECT_DIR may be a subdirectory
-    // (e.g. cc-market/watch/) rather than the actual project root.
-    let dir = process.env.CLAUDE_PROJECT_DIR;
-    while (true) {
-      if (existsSync(join(dir, '.git'))) return dir;
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-    return process.env.CLAUDE_PROJECT_DIR;
-  }
-  // Walk up from CWD to find .git (works outside Claude Code)
-  let dir = process.cwd();
-  while (true) {
-    if (existsSync(join(dir, '.git'))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return process.cwd();
-}
+export function findProjectRoot(startDir) { return _findProjectRoot(startDir); }
 
 export const repoRoot = findProjectRoot();
 export const memoryDir = join(repoRoot, '.claude', 'memory');
@@ -267,47 +247,8 @@ export function collectMemoryFiles(dir) {
   return results;
 }
 
-// ── State management ──
+// ── State management (delegates to shared/state.mjs) ──
 
-const DEFAULT_STATE = {
-  hook: {
-    sessionKey: null,
-    stopCount: 0,
-    firstStopAt: null,
-    remPending: false,
-    remDone: false,
-    lastTouched: null,
-    taskActiveUntil: null,
-  },
-  prune: {
-    lastPruneAt: 0,
-    events: [],
-  },
-};
-
-export function loadState() {
-  try {
-    if (!existsSync(stateFile)) return JSON.parse(JSON.stringify(DEFAULT_STATE));
-    const raw = readFileSync(stateFile, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return JSON.parse(JSON.stringify(DEFAULT_STATE));
-  }
-}
-
-export function saveState(state) {
-  const dir = dirname(stateFile);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(stateFile, JSON.stringify(state, null, 2), 'utf8');
-}
-
-export function appendEvent(type, detail) {
-  const state = loadState();
-  state.prune.events.push({ ts: new Date().toISOString(), type, ...detail });
-  // Keep last 50 events
-  if (state.prune.events.length > 50) {
-    state.prune.events = state.prune.events.slice(-50);
-  }
-  saveState(state);
-}
-// test
+export function loadState() { return _loadState(stateFile); }
+export function saveState(state) { return _saveState(stateFile, state); }
+export function appendEvent(type, detail) { return _appendEvent(stateFile, type, detail); }
