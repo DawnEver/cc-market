@@ -22,7 +22,10 @@ def _venv_python() -> Path:
 
 
 def _in_venv() -> bool:
-    return os.environ.get('WATCH_VENV') == '1' or 'watch/venv' in sys.executable
+    if os.environ.get('WATCH_VENV') == '1':
+        return True
+    # Normalize to forward slashes for cross-platform comparison
+    return 'watch/venv' in sys.executable.replace('\\', '/')
 
 
 def ensure() -> None:
