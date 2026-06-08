@@ -45,21 +45,27 @@ function detectScale(openCount) {
 
 // ── Task file parsing ──
 
-const TASK_LINE_RE = /^-\s+\[([ x])\]\s+(\S+)\s+\[(\w+)\]\s+(.+?)\s+\((\d{4}-?\d{2}-?\d{2})\).*$/;
+const TASK_LINE_RE = /^-\s+\[([ x])\]\s+(\S+)\s+\[(\w+)\]\s+(.+?)\s+\((\d{4}-?\d{2}-?\d{2}|undefined)\).*$/;
 
 function parseExistingTasks(content) {
   const existing = new Map();
   if (!content) return existing;
+  let currentModule = 'unknown';
   for (const line of content.split('\n')) {
+    if (line.startsWith('### ')) { currentModule = line.slice(4).trim(); continue; }
     const m = line.match(TASK_LINE_RE);
     if (m) {
+      const rawDate = m[5];
       existing.set(m[2], {
         id: m[2],
         checked: m[1] === 'x',
         severity: m[3],
         summary: m[4].trim(),
-        discovered: m[5].includes('-') ? m[5] : `${m[5].slice(0,4)}-${m[5].slice(4,6)}-${m[5].slice(6,8)}`,
-        trail: line.slice(line.lastIndexOf(`(${m[5]})`) + m[5].length + 1).trim(),
+        discovered: rawDate === 'undefined' ? undefined
+          : rawDate.includes('-') ? rawDate
+          : `${rawDate.slice(0,4)}-${rawDate.slice(4,6)}-${rawDate.slice(6,8)}`,
+        module: currentModule,
+        trail: line.slice(line.lastIndexOf(`(${rawDate})`) + rawDate.length + 1).trim(),
       });
     }
   }
@@ -98,7 +104,7 @@ function mergePreserved(findings, preserved) {
         file: '',
         summary: entry.summary,
         category: 'Bug',
-        module: 'unknown',
+        module: entry.module || 'unknown',
         status: 'open',
         discovered: entry.discovered,
         suggestion: '',
@@ -112,7 +118,7 @@ function mergePreserved(findings, preserved) {
 
 function formatFindingLine(f, today) {
   const stale = isStale(f, today) ? ' ⚠ stale' : '';
-  const likely = !f.status.startsWith('fix') && checkFileModified(f, today) ? ' ⚠ likely-resolved' : '';
+  const likely = !(f.status || '').toLowerCase().startsWith('fix') && checkFileModified(f, today) ? ' ⚠ likely-resolved' : '';
   const ref = f.memoryRef ? `\n      ref: ../${f.memoryRef}` : '';
   return `- [ ] ${f.id} [${f.severity}] ${f.summary} (${f.discovered})${stale}${likely}${ref}`;
 }
@@ -134,7 +140,7 @@ function taskFrontmatter(openCount, today) {
 
 function generateSmall(findings, preserved, today) {
   const merged = mergePreserved([...findings], preserved);
-  const open = merged.filter(f => f.status !== 'fixed');
+  const open = merged.filter(f => (f.status || '').toLowerCase() !== 'fixed');
   const byMod = groupByModule(open);
   const lines = [];
   lines.push(taskFrontmatter(open.length, today));
@@ -154,7 +160,7 @@ function generateSmall(findings, preserved, today) {
 
 function generateMedium(findings, preserved, today) {
   const merged = mergePreserved([...findings], preserved);
-  const open = merged.filter(f => f.status !== 'fixed');
+  const open = merged.filter(f => (f.status || '').toLowerCase() !== 'fixed');
   const byCat = groupByCategory(open);
   const lines = [];
   lines.push(taskFrontmatter(open.length, today));
@@ -179,7 +185,7 @@ function generateMedium(findings, preserved, today) {
 
 function generateLarge(findings, preserved, today) {
   const merged = mergePreserved([...findings], preserved);
-  const open = merged.filter(f => f.status !== 'fixed');
+  const open = merged.filter(f => (f.status || '').toLowerCase() !== 'fixed');
   const byCat = groupByCategory(open);
   const files = {};
 
@@ -206,7 +212,7 @@ function generateLarge(findings, preserved, today) {
 // ── Archive ──
 
 function archiveResolved(findings, today) {
-  const resolved = findings.filter(f => f.status === 'fixed' || f.status === 'resolved');
+  const resolved = findings.filter(f => ['fixed', 'resolved'].includes((f.status || '').toLowerCase()));
   if (resolved.length === 0) return;
 
   const byMonth = new Map();
@@ -399,7 +405,7 @@ function main() {
   archiveResolved(allFindings, today);
 
   // Recompute open after resolution propagation
-  const openFindings = allFindings.filter(f => f.status !== 'fixed');
+  const openFindings = allFindings.filter(f => (f.status || '').toLowerCase() !== 'fixed');
   const scale = detectScale(openFindings.length);
 
   if (!existsSync(TASKS_DIR)) mkdirSync(TASKS_DIR, { recursive: true });

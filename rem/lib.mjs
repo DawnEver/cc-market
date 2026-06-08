@@ -146,6 +146,8 @@ export function extractDateFromPath(filePath) {
   // Match YYYY/MM/DD or YYYY-MM-DD in path
   const m = filePath.match(/(\d{4})[\/\\-](\d{2})[\/\\-](\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // Fallback: warn so miscategorised files are visible rather than silently misdated
+  console.warn(`[warn] extractDateFromPath: no date segment in path, falling back to mtime/today: ${filePath}`);
   try {
     return statSync(filePath).mtime.toISOString().slice(0, 10);
   } catch { return todayISO(); }

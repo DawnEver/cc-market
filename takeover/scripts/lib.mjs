@@ -37,17 +37,27 @@ export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
   const baseUrl = useFoundry ? env.ANTHROPIC_FOUNDRY_BASE_URL : env.ANTHROPIC_BASE_URL;
   const token = useFoundry ? env.ANTHROPIC_FOUNDRY_API_KEY : env.ANTHROPIC_AUTH_TOKEN;
   const defaultSonnet = env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+  const defaultOpus = env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  const defaultHaiku = env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   if (!baseUrl) throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_BASE_URL" : "ANTHROPIC_BASE_URL"} in ${configPath}.`);
   if (!token)   throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_API_KEY" : "ANTHROPIC_AUTH_TOKEN"} in ${configPath}.`);
 
-  return { native: false, baseUrl, token, defaultSonnet };
+  return { native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku };
 }
 
 // ── Model resolution ─────────────────────────────────────────────────────────
 
+// Map logical tier names to provider-specific model names.
+// This prevents passing "sonnet"/"opus"/"haiku" literally to providers like
+// DeepSeek that only accept their own model name strings (e.g. deepseek-v4-flash).
+const TIER_MAP = { sonnet: 'defaultSonnet', opus: 'defaultOpus', haiku: 'defaultHaiku' };
+
 export function resolveModel(providerConfig, requestedModel) {
-  if (requestedModel) return requestedModel;
-  return providerConfig.defaultSonnet;
+  if (!requestedModel) return providerConfig.defaultSonnet;
+  const tier = requestedModel.toLowerCase();
+  const configKey = TIER_MAP[tier];
+  if (configKey) return providerConfig[configKey] || providerConfig.defaultSonnet || requestedModel;
+  return requestedModel;
 }
 
 // ── Command block parsing ──────────────────────────────────────────────────────
