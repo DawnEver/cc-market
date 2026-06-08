@@ -34,6 +34,8 @@ def _execute_action(action: Action, project_dir: Path,
             comp_name = anomaly_source.split('.')[0]
             comp = registry.get(comp_name)
             if comp and hasattr(comp, 'execute_action'):
+                ctx['_registry'] = registry
+                ctx['_project_dir'] = str(project_dir)
                 return comp.execute_action(special, registry.get_config(comp_name),
                                           {}, project_dir, ctx)  # type: ignore[call-arg]
         print(f'    cannot delegate {special}: no component found', file=sys.stderr)

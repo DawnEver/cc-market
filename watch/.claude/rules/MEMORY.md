@@ -18,4 +18,7 @@ Frontmatter:
 -->
 
 
+
+- [2026 new-components-from-supervise](../memory/2026/06/08/new_components_from_supervise.md) — `created: 2026-06-08, accessed: 2026-06-08`
+- [2026 watch-deploy-gate](../memory/2026/06/08/watch-deploy-gate.md) — `created: 2026-06-08, accessed: 2026-06-08`
 - [2026-06-07 watch-hang-windows](../memory/2026/06/07/watch-hang-windows.md) — `created: 2026-06-07, accessed: 2026-06-07`

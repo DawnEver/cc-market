@@ -39,12 +39,18 @@ The workflow launches 3 parallel reviewers for model diversity — Reviewer A ru
 
 ### Step 3 — Write memory entry & sync
 
-The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings as a single memory entry:
+The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings as a single memory entry.
 
-```bash
-# Write merged findings to temp JSON, markdown to temp file
-# Then:
-node "${CLAUDE_PLUGIN_ROOT}/scripts/post-review.js" --date <YYYY-MM-DD> --findings <merged.json> --markdown <markdown.md>
+**IMPORTANT on Windows**: Do NOT use Bash redirection (`>`) with Windows paths — Bash treats backslashes as escape characters and creates stray files in the wrong location. Instead, write temp files using the Write tool, then call post-review.js via PowerShell.
+
+Use the Write tool to create two temp files (paths must use forward slashes or be resolved by Node):
+- `$env:TEMP/claude-sharp-review/findings.json` — contents: `result.merged` as JSON
+- `$env:TEMP/claude-sharp-review/review.md` — contents: `result.markdown`
+
+Then run post-review.js via PowerShell:
+
+```powershell
+node "<CLAUDE_PLUGIN_ROOT>/scripts/post-review.js" --date <YYYY-MM-DD> --findings "$env:TEMP/claude-sharp-review/findings.json" --markdown "$env:TEMP/claude-sharp-review/review.md"
 ```
 
 This does everything: writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, cross-links SR-IDs to related memory files, runs stamp-memory.js to index, and delegates to task-engine.js for tasks.md.
