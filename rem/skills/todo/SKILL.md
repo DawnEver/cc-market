@@ -27,7 +27,7 @@ Generates a `MANUAL-YYYYMMDD-NNN` ID and appends to tasks.md. Manual tasks are p
 
 ### `/todo sync` — Full sync from review file
 
-Reads `.claude/memory/YYYY-MM-DD/sharp-review.md`, regenerates tasks.md:
+Reads `.claude/memory/YYYY/MM/DD/sharp-review.md`, regenerates tasks.md:
 
 ```bash
 node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --findings <json> --markdown <md>
@@ -50,7 +50,7 @@ node cc-market/rem/scripts/task-engine.js --check
   ├── /todo          → rem/scripts/task-engine.js --report
   ├── /todo add      → rem/scripts/task-engine.js --add --summary "..." --severity ... --module ...
   ├── /todo sync     → sharp-review/scripts/post-review.js        (writes memory entry → task-engine)
-  ├── /todo resolve  → edit .claude/memory/YYYY-MM-DD/sharp-review.md in-place
+  ├── /todo resolve  → edit .claude/memory/YYYY/MM/DD/sharp-review.md in-place
   └── /todo check    → rem/scripts/task-engine.js --check
 ```
 

@@ -25,4 +25,4 @@ After writing the summary, save it:
 mkdir -p .claude/summary
 ```
 
-Then write the summary to `.claude/summary/YYYY-MM-DD-HHmm.md` (use the current date/time). Output the file path when done.
+Then write the summary to `.claude/summary/YYYY/MM/DD-HHmm.md` (use the current date/time). Output the file path when done.

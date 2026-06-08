@@ -34,7 +34,7 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 
 ## Output
 
-- `.claude/memory/YYYY-MM-DD/sharp-review.md` — single memory entry per session with rem frontmatter
+- `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter
 - `.claude/memory/tasks/tasks.md` — structured active task list
 - `.claude/rules/MEMORY.md` — one index entry per session
 

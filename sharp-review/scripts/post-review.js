@@ -5,7 +5,8 @@
 // Then runs cross-linking, indexes via stamp-memory.js, and generates tasks.md.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
 import { execFileSync } from 'child_process';
 import {
@@ -13,9 +14,11 @@ import {
   collectMemoryRefs, crossReferenceFindings, writeBackMemoryRefs,
 } from '../lib.mjs';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CC_MARKET = join(__dirname, '..', '..'); // scripts/ → sharp-review/ → cc-market/
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const STAMP_SCRIPT = join(ROOT, 'cc-market', 'rem', 'scripts', 'stamp-memory.js');
-const TASK_ENGINE = join(ROOT, 'cc-market', 'rem', 'scripts', 'task-engine.js');
+const STAMP_SCRIPT = join(CC_MARKET, 'rem', 'scripts', 'stamp-memory.js');
+const TASK_ENGINE = join(CC_MARKET, 'rem', 'scripts', 'task-engine.js');
 const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 
 // ── Parse args ──
