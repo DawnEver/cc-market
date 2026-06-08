@@ -1,6 +1,6 @@
 ---
 description: Hand off a task or investigation to another AI model — let it take over and return the result
-argument-hint: "[--provider <name>] [--model <model>] [what to hand off]"
+argument-hint: "[--provider <name>] [--model <model>] [--review | --image | --image-edit] [what to hand off]"
 allowed-tools: Agent
 ---
 

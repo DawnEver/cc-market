@@ -11,10 +11,10 @@ import { TOOLS, handleToolCall, handleCallModel, send } from "../scripts/mcp-ser
 // ── TOOLS definition ───────────────────────────────────────────────────────────
 
 describe("TOOLS definition", () => {
-  test("has exactly two tools", () => {
-    assert.equal(TOOLS.length, 2);
+  test("has exactly three tools", () => {
+    assert.equal(TOOLS.length, 3);
     const names = TOOLS.map(t => t.name);
-    assert.deepEqual(names, ["call_model", "list_models"]);
+    assert.deepEqual(names, ["call_model", "list_models", "codex_status"]);
   });
 
   test("call_model has correct schema", () => {
@@ -25,7 +25,7 @@ describe("TOOLS definition", () => {
     assert.ok(tool.inputSchema.properties.userPrompt);
     assert.ok(tool.inputSchema.properties.model);
     assert.ok(tool.inputSchema.properties.mode);
-    assert.deepEqual(tool.inputSchema.properties.mode.enum, ["task"]);
+    assert.deepEqual(tool.inputSchema.properties.mode.enum, ["task", "review", "image-generate", "image-edit"]);
     assert.deepEqual(tool.inputSchema.required, ["userPrompt"]);
   });
 

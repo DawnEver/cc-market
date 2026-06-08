@@ -10,8 +10,14 @@ Multi-model AI orchestration via MCP. Routes tasks to Claude, Codex, DeepSeek, o
     → Gathers local context (git diff, file reads)
     → MCP tool: call_model(provider=deepseek, mode=task, userPrompt="...")
       → mcp-server.mjs reads claude_env_settings.json
-      → Routes to: Anthropic API | Codex companion | Native Claude CLI
+      → Routes to: Anthropic API | Codex app-server | Native Claude CLI
       → Returns output verbatim via takeover-result skill
+
+/takeover:continue --provider codex --review
+  → Agent gathers git diff
+    → MCP tool: call_model(provider=codex, mode=review, userPrompt="<diff>")
+      → CodexAppServerClient → codex app-server → review/start (adversarial)
+      → Returns findings verbatim
 ```
 
 ## File Structure
@@ -19,19 +25,35 @@ Multi-model AI orchestration via MCP. Routes tasks to Claude, Codex, DeepSeek, o
 ```
 takeover/
 ├── scripts/
-│   ├── lib.mjs              Core: provider config, API callers, retry, text extraction
-│   └── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model + list_models
+│   ├── lib.mjs              Core: provider config, API callers, retry, flag parsing
+│   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model + list_models + codex_status
+│   ├── jobs.mjs             Background job lifecycle
+│   └── codex/
+│       ├── discovery.mjs    Codex binary detection
+│       ├── app-server.mjs   JSON-RPC 2.0 client for codex app-server
+│       ├── task.mjs         Task execution with streaming (replaces callCodexCompanion)
+│       ├── review.mjs       Adversarial code review via review/start
+│       └── image.mjs        Image gen/edit via codex exec --full-auto
 ├── agents/takeover.md       Subagent: context gathering + handoff
 ├── commands/
-│   ├── continue.md          /takeover:continue
+│   ├── continue.md          /takeover:continue (--review, --image, --image-edit)
 │   ├── models.md            /takeover:models
 │   └── summary.md           /takeover:summary
 ├── prompts/
-│   └── task.md              System prompt for code/investigation
-├── skills/takeover-result/  Result handling: return verbatim, no paraphrasing
+│   ├── task.md              System prompt for task handoffs
+│   └── review.md            Adversarial review system prompt
+├── skills/
+│   ├── takeover-result/     Result handling: return verbatim
+│   └── codex-image-result/  Image output: present SAVED: paths
 ├── tests/
-│   ├── lib.test.mjs         27 tests — provider config, model resolution, API, retry
-│   └── mcp-server.test.mjs  10 tests — TOOLS schema, JSON-RPC, validation
+│   ├── lib.test.mjs         Provider config, model resolution, API, retry
+│   ├── mcp-server.test.mjs  TOOLS schema, JSON-RPC, validation
+│   ├── discovery.test.mjs   Codex binary discovery
+│   ├── app-server.test.mjs  JSON-RPC client
+│   ├── task.test.mjs        Task handler
+│   ├── review.test.mjs      Review handler
+│   ├── image.test.mjs       Image gen/edit
+│   └── jobs.test.mjs        Job lifecycle
 ├── .claude/rules/           Injected every session (invariants only)
 ├── CLAUDE.md                Entry point → @AGENTS.md + @.claude/rules/*.md
 └── AGENTS.md                This file
@@ -65,23 +87,29 @@ See `.claude/rules/invariants.md` for the always-injected version.
 
 ## MCP Server
 
-`mcp-server.mjs` implements JSON-RPC 2.0 over stdin/stdout. Exposes two tools:
+`mcp-server.mjs` implements JSON-RPC 2.0 over stdin/stdout. Exposes three tools:
 
 | Tool | Input | Routes to |
 |---|---|---|
-| `call_model` | `provider`, `userPrompt`, `model?`, `mode?`, `write?`, `systemPrompt?` | `callAnthropicAPI` / `callCodexCompanion` / `callNativeClaude` |
+| `call_model` | `provider`, `userPrompt`, `model?`, `mode?`, `write?`, `systemPrompt?` | `callAnthropicAPI` / `callCodexCompanion` (task) / `runCodexReview` / `generateImage` / `editImage` / `callNativeClaude` |
 | `list_models` | (none) | `listModels()` |
+| `codex_status` | `codexPath?` | `checkCodexStatus()` |
+
+Mode routing for `call_model` with `provider=codex`:
+- `mode=review` → `runCodexReview()` (adversarial by default)
+- `mode=image-generate` → `generateImage()`
+- `mode=image-edit` → `editImage()`
+- `mode=task` (default) → `callCodexCompanion()` → `runCodexTask()`
 
 Exported for testing: `TOOLS`, `handleToolCall`, `handleCallModel`, `send`.
 
 ## Testing
 
 ```shell
-node --test cc-market/takeover/tests/lib.test.mjs
-node --test cc-market/takeover/tests/mcp-server.test.mjs
+node --test cc-market/takeover/tests/*.test.mjs
 ```
 
-Pre-commit hook runs all 37 takeover tests + 87 rem tests. `callAnthropicAPI` tests mock `globalThis.fetch`. `callCodexCompanion` tests use a temp mock script that echoes stdin.
+Pre-commit hook runs all takeover tests via glob. `callAnthropicAPI` tests mock `globalThis.fetch`.
 
 ## Standard
 

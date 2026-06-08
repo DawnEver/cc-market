@@ -14,6 +14,7 @@ import {
   callAnthropicAPI,
   callCodexCompanion,
   callNativeClaude,
+  checkCodexStatus,
 } from "./lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -54,10 +55,13 @@ export const TOOLS = [
         },
         mode: {
           type: "string",
-          enum: ["task"],
+          enum: ["task", "review", "image-generate", "image-edit"],
           description:
-            "Built-in system prompt template. " +
-            "'task' for code/investigation or architecture/design.",
+            "Operation mode. 'task' for code/investigation (default). " +
+            "'review' for adversarial code review (codex only). " +
+            "'image-generate' for image generation (codex only). " +
+            "'image-edit' for image editing (codex only). " +
+            "Parsed from <command> block flags: --review, --image, --image-edit.",
         },
         write: {
           type: "boolean",
@@ -81,6 +85,19 @@ export const TOOLS = [
     name: "list_models",
     description: "List all available providers and their configured models.",
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "codex_status",
+    description: "Check Codex CLI installation status, version, and authentication state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        codexPath: {
+          type: "string",
+          description: "Optional path to codex binary. Auto-detected if omitted.",
+        },
+      },
+    },
   },
 ];
 
@@ -111,12 +128,37 @@ export async function handleCallModel(args) {
 
   const providerConfig = loadProviderConfig(provider);
 
+  // Review and image modes require the codex provider
+  if (mode && mode !== "task" && providerConfig.provider !== "codex") {
+    throw new Error(
+      `Mode "${mode}" is only supported with --provider codex. ` +
+      `The current provider "${provider}" does not support review or image operations.`
+    );
+  }
+
   let data;
   if (providerConfig.provider === "codex") {
-    process.stderr.write(
-      `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}...\n`
-    );
-    data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write);
+    if (mode === "review") {
+      process.stderr.write(`mcp-takeover: codex review (adversarial)...\n`);
+      const { runCodexReview } = await import("./codex/review.mjs");
+      data = await runCodexReview(userPrompt, model || null, null, process.cwd());
+    } else if (mode === "image-generate") {
+      process.stderr.write(`mcp-takeover: codex image generate...\n`);
+      const { generateImage } = await import("./codex/image.mjs");
+      data = await generateImage(userPrompt);
+    } else if (mode === "image-edit") {
+      process.stderr.write(`mcp-takeover: codex image edit...\n`);
+      const { editImage } = await import("./codex/image.mjs");
+      // Agent should pass image path in userPrompt or as systemPrompt
+      const imagePath = systemPrompt || userPrompt.split(/\s+/)[0];
+      const editPrompt = systemPrompt ? userPrompt : userPrompt.replace(/^\S+\s*/, "");
+      data = await editImage(editPrompt, imagePath);
+    } else {
+      process.stderr.write(
+        `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}...\n`
+      );
+      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write);
+    }
   } else if (providerConfig.native) {
     process.stderr.write("mcp-takeover: calling claude (native CLI)...\n");
     data = await callNativeClaude(userPrompt, systemPrompt);
@@ -142,6 +184,17 @@ export async function handleToolCall(name, args) {
       return await handleCallModel(args);
     case "list_models":
       return { content: [{ type: "text", text: listModels() }] };
+    case "codex_status": {
+      const status = checkCodexStatus(args.codexPath || null);
+      const lines = [
+        `Installed: ${status.installed}`,
+        status.path ? `Path: ${status.path}` : "",
+        status.version ? `Version: ${status.version}` : "",
+        `Authenticated: ${status.authenticated}`,
+        status.error ? `Error: ${status.error}` : "",
+      ];
+      return { content: [{ type: "text", text: lines.filter(Boolean).join("\n") }] };
+    }
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

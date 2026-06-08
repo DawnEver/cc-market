@@ -15,7 +15,6 @@ import {
   buildPrompt,
   extractText,
   parseCommandBlock,
-  callCodexCompanion,
   callAnthropicAPI,
 } from "../scripts/lib.mjs";
 
@@ -209,43 +208,35 @@ some diff output
   });
 });
 
-// ── callCodexCompanion (tests real function via companionPathOverride) ─────────
+// ── parseCommandBlock (mode flags) ──────────────────────────────────────────────
 
-describe("callCodexCompanion", () => {
-  test("passes prompt via stdin, not as positional arg", async () => {
-    // Create a real temp script that echoes back its stdin to stdout
-    const tmpScript = path.join(__dirname, "_mock_companion.mjs");
-    fs.writeFileSync(tmpScript, [
-      `import { readFileSync } from "node:fs";`,
-      `const stdin = readFileSync(0, "utf8");`,
-      `const args = process.argv.slice(1);`,
-      `process.stdout.write(JSON.stringify({ stdin, args }));`,
-    ].join("\n"));
-
-    try {
-      const result = await callCodexCompanion("hello world", "sys", "o4-mini", true, tmpScript);
-      const output = JSON.parse(extractText(result));
-
-      // Prompt must reach the script via stdin
-      assert.ok(output.stdin.includes("hello world"), "prompt must be delivered via stdin");
-      assert.ok(output.stdin.includes("sys"), "system prompt must be in stdin");
-      // Prompt must NOT be in args
-      const argsJoined = output.args.join(" ");
-      assert.ok(!argsJoined.includes("hello world"), "prompt must NOT be in spawn args");
-      // Flags must be in args
-      assert.ok(output.args.includes("--write"));
-      assert.ok(output.args.includes("--model"));
-      assert.ok(output.args.includes("task"));
-    } finally {
-      fs.unlinkSync(tmpScript);
-    }
+describe("parseCommandBlock mode flags", () => {
+  test("detects --review flag", () => {
+    const { flags } = parseCommandBlock("<command>\n--provider codex --review\n</command>\ncheck this code");
+    assert.equal(flags.mode, "review");
+    assert.equal(flags.provider, "codex");
   });
 
-  test("rejects for non-existent companion path", async () => {
-    await assert.rejects(
-      callCodexCompanion("prompt", "", null, false, "/nonexistent/companion.mjs"),
-      /MODULE_NOT_FOUND|Cannot find module/
-    );
+  test("detects --image flag", () => {
+    const { flags } = parseCommandBlock("<command>\n--provider codex --image\n</command>\na sunset");
+    assert.equal(flags.mode, "image-generate");
+  });
+
+  test("detects --image-edit flag (takes precedence over --image)", () => {
+    const { flags } = parseCommandBlock("<command>\n--provider codex --image-edit\n</command>\nedit photo.png");
+    assert.equal(flags.mode, "image-edit");
+  });
+
+  test("no mode flag defaults to undefined", () => {
+    const { flags } = parseCommandBlock("<command>\n--provider deepseek\n</command>\nreview this PR");
+    assert.equal(flags.mode, undefined);
+    assert.equal(flags.provider, "deepseek");
+  });
+
+  test("--review combined with --model", () => {
+    const { flags } = parseCommandBlock("<command>\n--provider codex --review --model gpt-5.1\n</command>\n");
+    assert.equal(flags.mode, "review");
+    assert.equal(flags.model, "gpt-5.1");
   });
 });
 

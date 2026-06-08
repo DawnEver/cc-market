@@ -2,9 +2,20 @@
 
 Always-injected behavioral constraints for working on the takeover plugin.
 
-## Prompt via stdin
+## Prompt delivery
 
-`callCodexCompanion` and `callNativeClaude` pipe prompts to the subprocess stdin — NEVER pass user content in spawn args. Args carry only flags (`--write`, `--model <name>`, `task`).
+- **Codex app-server**: prompts go in `turn/start` message body (JSON-RPC params), never in spawn args.
+- **Codex exec** (images): prompt goes after `--` argument, via `spawn` args — this is the CLI convention for `codex exec`.
+- **Native Claude**: prompt piped to subprocess stdin.
+- **API**: prompt in HTTP request body.
+
+## Codex app-server
+
+- `CodexAppServerClient` spawns `codex app-server`, communicates via line-delimited JSON-RPC over stdin/stdout.
+- No broker — one process per request. Simple, sufficient for handoff use.
+- Initialize handshake (`initialize` with clientInfo) required before any other request.
+- Notification routing: `onNotification(method, handler)`, dispatched from `_handleLine()`.
+- Cleanup via `stop()` on completion or error. Kill child process on hang.
 
 ## Retry logic
 
@@ -27,8 +38,18 @@ Always-injected behavioral constraints for working on the takeover plugin.
 - `send(rpc)` writes `JSON.stringify(rpc) + "\n"` to stdout.
 - Error codes: `-32601` for unknown method, `-32000` for server error, `-32602` for invalid params.
 - `call_model` requires `provider` + `userPrompt` (non-empty). `--write` only valid for `provider=codex`.
-- `list_models` takes no params.
+- `mode` enum: `task`, `review`, `image-generate`, `image-edit`. Review/image modes require `provider=codex`.
+- `list_models` and `codex_status` take no required params.
+
+## Mode flags
+
+`parseCommandBlock()` extracts from `<command>` block:
+- `--review` → `mode=review` (adversarial by default)
+- `--image-edit` → `mode=image-edit`
+- `--image` → `mode=image-generate`
+- `--provider X` → provider override
+- `--model X` → model override
 
 ## Tests
 
-37 tests across 2 files. Run: `node --test cc-market/takeover/tests/lib.test.mjs cc-market/takeover/tests/mcp-server.test.mjs`. Pre-commit hook enforces.
+Run: `node --test cc-market/takeover/tests/*.test.mjs`. Pre-commit hook enforces.

@@ -11,16 +11,19 @@ You are a unified handoff agent. Your job: gather context locally, then call the
 
 ## Phase 1 — Parse the request
 Extract from the incoming prompt:
-- `[mode:task]` — if prefixed. Default: `task`. (Only task mode is supported.)
-- The FULL raw user request (including any `--provider` and `--model` flags) goes into the `<command>` block in Phase 3 — do NOT try to parse these flags yourself.
+- `[mode:task]` — if prefixed. Default: `task`. May be `review`, `image-generate`, or `image-edit` based on flags.
+- The FULL raw user request (including `--provider`, `--model`, `--review`, `--image`, `--image-edit` flags) goes into the `<command>` block in Phase 3 — do NOT try to parse these flags yourself.
 - Everything after the flags is the task description (for context gathering).
 
 ## Phase 2 — Gather context (CRITICAL)
 The remote model has NO access to the local filesystem. You MUST gather all context before calling it:
+- If `--review` flag is present → run `git diff HEAD` via Bash and include the full diff in `<context>`.
 - If the task asks to "review branch diff", "review changes", or "review this code" → run `git diff HEAD` via Bash and include the output.
 - If the task references specific files → Read them.
 - If the task asks to "find X" or "check Y" → use Glob/Grep to locate relevant files first.
 - **Never send the task to the remote model raw if it needs local context.** Package everything inline.
+
+For `--review` mode: the diff IS the primary input — include it as the main content in `<context>`.
 
 ## Phase 3 — Call the target model
 Call `call_model` exactly ONCE with:
