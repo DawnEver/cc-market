@@ -22,6 +22,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description='Cross-platform detached process starter')
     p.add_argument('--project-dir', default=os.environ.get('WATCH_PROJECT_DIR', str(Path.cwd())))
     p.add_argument('--cmd', default=os.environ.get('WATCH_START_CMD', ''))
+    p.add_argument('--log', default='', help='Log file for stdout/stderr (default: DEVNULL)')
     args = p.parse_args()
 
     if not args.cmd:
@@ -30,11 +31,22 @@ def main() -> None:
     cwd = Path(args.project_dir).resolve()
     cmd_parts = shlex.split(args.cmd) if sys.platform != 'win32' else args.cmd
 
-    popen_kwargs = {
-        'cwd': cwd,
-        'stdout': subprocess.DEVNULL,
-        'stderr': subprocess.DEVNULL,
-    }
+    if args.log:
+        log_path = Path(args.log)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fh = open(str(log_path), 'a')
+        popen_kwargs = {
+            'cwd': cwd,
+            'stdout': log_fh,
+            'stderr': log_fh,
+        }
+    else:
+        popen_kwargs = {
+            'cwd': cwd,
+            'stdout': subprocess.DEVNULL,
+            'stderr': subprocess.DEVNULL,
+        }
+
     if sys.platform == 'win32':
         popen_kwargs['creationflags'] = subprocess.DETACHED_PROCESS  # type: ignore[call-arg]
     else:

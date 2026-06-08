@@ -1,6 +1,6 @@
 {
   "name": "watch",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Unattended server & long-running task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. One YAML config per project, zero code changes to adopt.",
   "author": {
     "name": "Mingyang Bao"

@@ -79,12 +79,19 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('--status', action='store_true',
                    help='Check daemon liveness via PID file (OS-level, no TaskGet needed)')
+    p.add_argument('--action', default=None,
+                   help='Execute a named action directly (deploy, rollback, mark_stable) '
+                        'without re-running the full check loop')
     args = p.parse_args(argv)
 
     project_dir = Path(args.project_dir).resolve()
 
     if args.status:
         _print_status(project_dir)
+        return
+
+    if args.action:
+        _execute_named_action(project_dir, args.action, args.json)
         return
 
     if not _try_lock(project_dir):
@@ -99,6 +106,47 @@ def main(argv: list[str] | None = None) -> None:
             _print_report(report)
     finally:
         _unlock(project_dir)
+
+
+def _execute_named_action(project_dir: Path, action_name: str,
+                        json_output: bool = False) -> None:
+    """Execute a named component action (deploy/rollback/mark_stable) directly."""
+    from core.config import load_config
+    from components.registry import create_registry
+
+    config = load_config(project_dir)
+    config['_project_dir'] = str(project_dir)
+    registry = create_registry(config, project_dir)
+
+    comp = registry.get('git_version')
+    if not comp or not hasattr(comp, 'execute_action'):
+        msg = f'Component git_version not found or has no execute_action'
+        if json_output:
+            print(json.dumps({'status': 'error', 'message': msg}, ensure_ascii=False))
+        else:
+            print(msg, file=sys.stderr)
+        sys.exit(1)
+
+    comp_cfg = registry.get_config('git_version')
+    context: dict[str, object] = {'_registry': registry, '_project_dir': str(project_dir)}
+    ok = comp.execute_action(action_name, comp_cfg, {}, project_dir, context)
+
+    result = {
+        'status': 'ok' if ok else 'failed',
+        'action': action_name,
+        'result': context.get('deploy_result', 'unknown'),
+    }
+    if ok and context.get('deploy_branch_updated'):
+        result['deploy_branch_updated'] = True
+    if context.get('deploy_test_health_passed'):
+        result['test_health_passed'] = True
+    if context.get('deploy_failure_reason'):
+        result['failure_reason'] = str(context['deploy_failure_reason'])
+
+    if json_output:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        _print_report(result)
 
 
 def _print_status(project_dir: Path) -> None:

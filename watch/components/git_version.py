@@ -94,11 +94,15 @@ class GitVersion(Component):
                     except Exception:
                         result.data[f'{name}_pending'] = []
 
+            # Per-repo metric — lets the report and AI see each repo independently
+            result.metrics[f'{name}_new_commits'] = count
+
         result.metrics['new_commits'] = total_new
         result.data['new_commits'] = total_new
         result.data['new_commits_detail'] = ', '.join(details) if details else 'none'
         state['_git_new_commits'] = total_new
         state['_git_detail'] = result.data['new_commits_detail']
+        state['_git_new_repos'] = details
 
         if total_new > 0:
             result.anomalies.append(Anomaly(
@@ -188,9 +192,16 @@ class GitVersion(Component):
 
     def _deploy(self, comp_cfg: dict, global_cfg: dict, project: Path,
                 context: dict) -> bool:
-        """Worktree-based deployment gate."""
+        """Worktree-based deployment gate with optional test-port verification.
+
+        Phase 1: Filter — only deploy repos with new commits.
+        Phase 2: Test  — worktree per changed repo, run per-repo test_command.
+        Phase 3: Apply — fast-forward deploy branch to tested commit.
+        Phase 4: Gate  — start test instance on alternate port, health-check,
+                   then signal ready for production swap (or revert on failure).
+        """
         deploy_cfg = comp_cfg.get('deploy', {})
-        staging = project / deploy_cfg.get('staging_dir', '.watch-staging')
+        staging_base = project / deploy_cfg.get('staging_dir', '.watch-staging')
         test_cmd = deploy_cfg.get('test_command', '')
         deploy_branch = deploy_cfg.get('deploy_branch', 'deploy')
         repos = comp_cfg.get('repositories', [])
@@ -199,157 +210,198 @@ class GitVersion(Component):
             print('[git_version] No test_command or repositories configured.')
             return False
 
-        # Get target commits (remote HEADs fetched in check())
+        # ── Phase 1: Get target commits, filter to only changed repos ──
+        known = self._load_known(comp_cfg, project)
         new_heads: dict[str, str] = {}
-        primary_target: str | None = None
+        repos_to_deploy: list[dict] = []
         for repo in repos:
             name = repo['name']
             branch = repo.get('branch', 'main')
             remote = repo.get('remote', 'origin')
             repo_path = (project / repo['path']).resolve()
+            if not repo_path.is_dir():
+                continue
             try:
                 target = subprocess.check_output(
                     ['git', 'rev-parse', f'{remote}/{branch}'],
                     cwd=repo_path, text=True, timeout=5,
                 ).strip()
-                new_heads[name] = target
-                if primary_target is None:
-                    primary_target = target
             except Exception:
                 continue
+            new_heads[name] = target
+            if known.get(name) != target:
+                repos_to_deploy.append(repo)
 
-        if not new_heads:
-            print('[git_version] No remote HEADs found.')
-            return False
+        if not repos_to_deploy:
+            print('[git_version] All repos already at known-good. Nothing to deploy.')
+            return True
 
-        # Primary repo gets a worktree for isolated testing.
-        # All other repos are independent — manage them directly in-place.
-        primary_repo_path = (project / repos[0]['path']).resolve()
-        other_repos = repos[1:]
+        print(f'[git_version] Deploying {len(repos_to_deploy)} repo(s): '
+              f'{", ".join(r["name"] for r in repos_to_deploy)}')
 
-        # Clean stale primary staging
-        primary_remote = repos[0].get('remote', 'origin')
-        primary_branch = repos[0].get('branch', 'main')
-        if staging.exists():
-            _remove_worktree(staging, primary_repo_path)
+        # ── Phase 2: Worktree per changed repo, run per-repo test_command ──
+        staging_dirs: dict[str, Path] = {}
 
-        # Create primary worktree
-        target_ref = primary_target or f'{primary_remote}/{primary_branch}'
-        print(f'[git_version] Creating worktree at {staging} ({target_ref[:8]})')
-        try:
-            subprocess.run(
-                ['git', 'worktree', 'add', '--detach', str(staging), target_ref],
-                cwd=primary_repo_path, check=True, capture_output=True, text=True, timeout=30,
-            )
-        except subprocess.CalledProcessError as e:
-            print(f'[git_version] Worktree creation failed: {e.stderr}')
-            return False
-
-        # Other repos: checkout candidate directly in their own directory
-        other_prev_refs: dict[str, str] = {}
-        for repo in other_repos:
+        for repo in repos_to_deploy:
             name = repo['name']
             repo_path = (project / repo['path']).resolve()
-            target = new_heads.get(name)
-            if not target:
-                continue
-            # Save current ref to restore on failure
+            target = new_heads[name]
+            staging = staging_base / name
+
+            # Clean stale staging
+            if staging.exists():
+                _remove_worktree(staging, repo_path)
+
+            print(f'[git_version]   [{name}] worktree at {staging} ({target[:8]})')
             try:
-                prev_ref = subprocess.check_output(
-                    ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                    cwd=repo_path, text=True, timeout=5,
-                ).strip()
-                if prev_ref == 'HEAD':
-                    prev_ref = subprocess.check_output(
-                        ['git', 'rev-parse', 'HEAD'],
-                        cwd=repo_path, text=True, timeout=5,
-                    ).strip()
-            except Exception:
-                prev_ref = 'HEAD'
-            other_prev_refs[name] = prev_ref
-            try:
-                subprocess.run(['git', 'checkout', '--detach', target],
-                               cwd=repo_path, check=True, capture_output=True, timeout=10)
-                print(f'[git_version]   [{name}] -> {target[:8]} (in-repo)')
+                subprocess.run(
+                    ['git', 'worktree', 'add', '--detach', str(staging), target],
+                    cwd=repo_path, check=True, capture_output=True, text=True, timeout=30,
+                )
             except subprocess.CalledProcessError as e:
-                print(f'[git_version]   [{name}] checkout FAILED: {e.stderr}')
+                print(f'[git_version]   [{name}] worktree FAILED: {e.stderr}')
+                # Cleanup all worktrees created so far
+                for n, d in staging_dirs.items():
+                    _remove_worktree(d, (project / next(
+                        r['path'] for r in repos_to_deploy if r['name'] == n)).resolve())
+                context['deploy_result'] = 'failed'
+                context['deploy_failure_reason'] = f'Worktree creation failed for {name}'
+                return False
 
-        # Run tests
-        print(f'[git_version] Running tests: {test_cmd}')
-        # Build env with WATCH_STAGING_<NAME> for each repo
+            staging_dirs[name] = staging
+
+        # Run per-repo test_command (or global fallback)
+        tests_ok = True
         test_env = os.environ.copy()
-        test_env['WATCH_STAGING'] = str(staging)
         test_env['WATCH_PROJECT_ROOT'] = str(project)
-        for repo in other_repos:
+        for repo in repos_to_deploy:
             name = repo['name']
+            staging = staging_dirs[name]
+            repo_test_cmd = repo.get('test_command', test_cmd)
+
+            # Set env vars for cross-repo access
+            test_env['WATCH_STAGING'] = str(staging)
             env_key = 'WATCH_STAGING_' + name.upper().replace('-', '_').replace(' ', '_')
-            test_env[env_key] = str((project / repo['path']).resolve())
-        t0 = time.time()
-        try:
-            r = subprocess.run(test_cmd, shell=True, cwd=staging, capture_output=True,
-                               text=True, timeout=deploy_cfg.get('test_timeout', 300),
-                               env=test_env)
-            elapsed = time.time() - t0
-            tests_ok = r.returncode == 0
-            print(f'[git_version] Tests {"PASSED" if tests_ok else "FAILED"} ({elapsed:.0f}s)')
-            if not tests_ok and r.stdout:
-                print(r.stdout[-1500:])
-        except subprocess.TimeoutExpired:
-            print(f'[git_version] Tests TIMED OUT')
-            tests_ok = False
+            test_env[env_key] = str(staging)
 
-        # Cleanup primary worktree
-        _remove_worktree(staging, primary_repo_path)
+            print(f'[git_version]   [{name}] test: {repo_test_cmd}')
+            t0 = time.time()
+            try:
+                r = subprocess.run(repo_test_cmd, shell=True, cwd=staging,
+                                   capture_output=True, text=True,
+                                   timeout=deploy_cfg.get('test_timeout', 300),
+                                   env=test_env)
+                elapsed = time.time() - t0
+                if r.returncode != 0:
+                    tests_ok = False
+                    print(f'[git_version]   [{name}] Tests FAILED ({elapsed:.0f}s)')
+                    if r.stdout:
+                        print(r.stdout[-1500:])
+                else:
+                    print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
+            except subprocess.TimeoutExpired:
+                print(f'[git_version]   [{name}] Tests TIMED OUT')
+                tests_ok = False
 
-        if tests_ok:
-            # Apply to deploy branch (isolated from tracking branch)
-            print(f'[git_version] Deploying to {deploy_branch} branch...')
-            for repo in repos:
-                name = repo['name']
-                tracking_branch = repo.get('branch', 'main')
-                repo_path = (project / repo['path']).resolve()
-                target = new_heads.get(name)
-                if not target:
-                    continue
-                try:
-                    # Ensure deploy branch exists; create from tracking if not
-                    r = subprocess.run(['git', 'rev-parse', '--verify', deploy_branch],
-                                      cwd=repo_path, capture_output=True, timeout=5)
-                    if r.returncode != 0:
-                        subprocess.run(
-                            ['git', 'checkout', '-b', deploy_branch, f'origin/{tracking_branch}'],
-                            cwd=repo_path, check=True, capture_output=True, timeout=10)
-                    else:
-                        subprocess.run(['git', 'checkout', '-f', deploy_branch],
-                                      cwd=repo_path, check=True, capture_output=True, timeout=10)
-                    # Point deploy branch at tested commit
-                    subprocess.run(['git', 'reset', '--hard', target],
-                                  cwd=repo_path, check=True, capture_output=True, timeout=10)
-                except subprocess.CalledProcessError as e:
-                    print(f'[git_version]   [{name}] FAILED: {e.stderr}')
-                    continue
-                print(f'[git_version]   [{name}] {deploy_branch} -> {target[:8]}')
+            if not tests_ok:
+                break
 
-            self._save_known(comp_cfg, project, new_heads, stable_checks=0)
-            context['deploy_result'] = 'passed'
-            print(f'[git_version] Deploy complete. Known-good updated (stable_checks=0).')
-            return True
-        else:
-            # Restore other repos to their previous ref on failure
-            for repo in other_repos:
-                name = repo['name']
-                repo_path = (project / repo['path']).resolve()
-                prev_ref = other_prev_refs.get(name)
-                if prev_ref and prev_ref != 'HEAD':
-                    try:
-                        subprocess.run(['git', 'checkout', prev_ref],
-                                       cwd=repo_path, check=True, capture_output=True, timeout=10)
-                    except subprocess.CalledProcessError:
-                        pass
+        # ── Cleanup all worktrees ──
+        for name, staging in staging_dirs.items():
+            repo_path = (project / next(
+                r['path'] for r in repos_to_deploy if r['name'] == name)).resolve()
+            _remove_worktree(staging, repo_path)
+
+        if not tests_ok:
             context['deploy_result'] = 'failed'
+            context['deploy_failure_reason'] = (
+                'Tests failed in worktree staging. The deploy branch was NOT updated. '
+                'The main service continues running from the previous known-good version.'
+            )
             context['deploy_failed_commits'] = str({k: v[:8] for k, v in new_heads.items()})
-            print(f'[git_version] Deploy ABORTED — tests failed. Rejected: {context["deploy_failed_commits"]}')
+            print(f'[git_version] Deploy ABORTED — tests failed.')
             return False
+
+        # ── Phase 3: Fast-forward deploy branch for each changed repo ──
+        print(f'[git_version] Applying to {deploy_branch} branch...')
+        for repo in repos_to_deploy:
+            name = repo['name']
+            tracking_branch = repo.get('branch', 'main')
+            repo_path = (project / repo['path']).resolve()
+            target = new_heads[name]
+            try:
+                r = subprocess.run(['git', 'rev-parse', '--verify', deploy_branch],
+                                  cwd=repo_path, capture_output=True, timeout=5)
+                if r.returncode != 0:
+                    subprocess.run(
+                        ['git', 'checkout', '-b', deploy_branch, f'origin/{tracking_branch}'],
+                        cwd=repo_path, check=True, capture_output=True, timeout=10)
+                else:
+                    subprocess.run(['git', 'checkout', '-f', deploy_branch],
+                                  cwd=repo_path, check=True, capture_output=True, timeout=10)
+                subprocess.run(['git', 'reset', '--hard', target],
+                              cwd=repo_path, check=True, capture_output=True, timeout=10)
+                print(f'[git_version]   [{name}] {deploy_branch} -> {target[:8]}')
+            except subprocess.CalledProcessError as e:
+                print(f'[git_version]   [{name}] FAILED: {e.stderr}')
+                self._rollback(comp_cfg, global_cfg, project)
+                context['deploy_result'] = 'failed'
+                context['deploy_failure_reason'] = f'Failed to update deploy branch for {name}'
+                return False
+
+        # Update known-good for ALL repos (including unchanged ones)
+        self._save_known(comp_cfg, project, new_heads, stable_checks=0)
+        context['deploy_result'] = 'passed'
+        context['deploy_branch_updated'] = True
+        print(f'[git_version] Deploy branch updated. Known-good saved (stable_checks=0).')
+
+        # ── Phase 4: Test-port gate (optional) ──
+        enable_test_gate = deploy_cfg.get('enable_test_gate', False)
+        test_health_url = deploy_cfg.get('test_health_url', '')
+        if not enable_test_gate or not test_health_url:
+            print(f'[git_version] Test gate disabled — production restart delegated to SKILL.md.')
+            return True
+
+        # Start test instance on alternate port
+        registry = context.get('_registry')
+        test_start_action = deploy_cfg.get('test_start_action', '')
+        if registry and test_start_action:
+            start_act = registry.get_action(test_start_action) if hasattr(registry, 'get_action') else None
+            if start_act:
+                print(f'[git_version] Starting test instance via {test_start_action}...')
+                from core.actions import _execute_action
+                _execute_action(start_act, project, registry, '', context)
+        time.sleep(deploy_cfg.get('test_prestart_sleep', 5))
+
+        # Health-check the test instance
+        print(f'[git_version] Health-checking test instance at {test_health_url}...')
+        test_healthy = self._health_check_url(
+            test_health_url,
+            deploy_cfg.get('test_health_timeout', 30),
+        )
+
+        # Kill test instance
+        test_kill_action = deploy_cfg.get('test_kill_action', '')
+        if registry and test_kill_action:
+            kill_act = registry.get_action(test_kill_action) if hasattr(registry, 'get_action') else None
+            if kill_act:
+                from core.actions import _execute_action
+                _execute_action(kill_act, project, registry, '', context)
+
+        if not test_healthy:
+            print(f'[git_version] Test instance health check FAILED at {test_health_url}')
+            self._rollback(comp_cfg, global_cfg, project)
+            context['deploy_result'] = 'failed_test_health'
+            context['deploy_failure_reason'] = (
+                f'Test instance at {test_health_url} did not become healthy. '
+                'Deploy branch reverted to known-good. Production service was NOT touched.'
+            )
+            return False
+
+        print(f'[git_version] Test instance health check PASSED.')
+        context['deploy_test_health_passed'] = True
+        print(f'[git_version] Production restart delegated to SKILL.md.')
+        return True
 
     def _rollback(self, comp_cfg: dict, global_cfg: dict, project: Path) -> bool:
         """Rollback all repos to known-good versions on deploy branch."""
@@ -410,6 +462,24 @@ class GitVersion(Component):
         self._save_known(comp_cfg, project, commits, stable_checks=stable)
         print(f'[git_version] Known-good updated (stable_checks={stable})')
         return True
+
+    @staticmethod
+    def _health_check_url(url: str, timeout: int, interval: float = 2.0) -> bool:
+        """Poll a health URL until 2xx response or timeout expires. Stdlib only."""
+        import socket
+        import urllib.error
+        import urllib.request
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=min(5, timeout)) as resp:
+                    if 200 <= resp.status < 300:
+                        return True
+            except (urllib.error.URLError, OSError, socket.timeout):
+                pass
+            time.sleep(interval)
+        return False
 
 
 def _remove_worktree(staging_path: Path, repo_path: Path) -> None:

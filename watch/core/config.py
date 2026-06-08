@@ -24,6 +24,14 @@ DEFAULTS: dict[str, Any] = {
         'heartbeat_file': '.claude/watch/state/heartbeat.json',
     },
     'actions': {},
+    'deploy': {
+        'enable_test_gate': False,
+        'test_health_url': '',
+        'test_health_timeout': 30,
+        'test_start_action': '',
+        'test_kill_action': '',
+        'test_prestart_sleep': 5,
+    },
     'alerts': {
         'email': {'enabled': False, 'host': 'localhost', 'port': 25,
                   'to': '', 'from': 'watch@localhost', 'subject_prefix': '[watch]',
@@ -105,4 +113,23 @@ def load_config(project_dir: str | Path, config_path: str | None = None) -> dict
 
     # 3. Environment overrides (highest priority)
     _env_override(config)
+
+    # 4. Validate cross-field constraints
+    _validate_config(config)
+
     return config
+
+
+def _validate_config(config: dict) -> None:
+    deploy = config.get('deploy', {})
+    if deploy.get('enable_test_gate'):
+        missing = []
+        for key in ('test_health_url', 'test_start_action', 'test_kill_action'):
+            if not deploy.get(key):
+                missing.append(key)
+        if missing:
+            raise ValueError(
+                f'deploy.enable_test_gate is True but these required fields are '
+                f'missing or empty: {", ".join(missing)}. '
+                f'All three must be configured for the test gate to work.'
+            )
