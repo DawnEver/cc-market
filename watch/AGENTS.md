@@ -70,9 +70,11 @@ skills/watch/SKILL.md    # AI decision tree
     daemon.json          #   Daemon state
     alert.json           #   Hook state
     heartbeat.json       #   Daemon heartbeat timestamp + PID
+    trigger_ack.json     #   Trigger consumption acknowledgement
   logs/                  # Runtime logs (gitignored)
     health.jsonl         #   AI loop check history
     daemon.jsonl         #   Daemon poll history
+    trigger-watch.jsonl  #   Trigger watch poller log
   trigger.json           #   Escalation trigger (gitignored)
 ```
 
@@ -90,6 +92,22 @@ watchd:
   trigger_file: .claude/watch/trigger.json
   heartbeat_file: .claude/watch/state/heartbeat.json
 ```
+
+**Waking Claude from trigger.json.** watchd writes `trigger.json` when `state['fails'] >= fail_threshold`.
+Use `scripts/trigger-watch.py` — a standalone Python process that polls trigger.json independently of any Claude Code session:
+
+```bash
+# In a separate terminal (survives session restarts):
+python cc-market/watch/scripts/trigger-watch.py --project-dir .
+```
+
+On trigger change it runs `scripts/watch.py` (the full AI check loop) directly — same venv, no `claude -p` dependency.
+All context lives in filesystem state (`state/*.json`, `logs/*.jsonl`) read fresh each run; no conversation history needed.
+After completion writes `trigger_ack.json`. Supports `--interval 15` (default), `--once`, and `--dry-run`.
+Logs to `.claude/watch/logs/trigger-watch.jsonl`.
+
+This replaces the previous two-layer session-bound approach (Monitor + CronCreate) which died with the session.
+For one-off manual triggers, the Monitor snippet in the archived docs still works.
 
 ## Component Interface
 

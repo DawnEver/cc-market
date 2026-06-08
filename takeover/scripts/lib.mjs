@@ -75,6 +75,11 @@ export function parseCommandBlock(prompt) {
   const modelMatch = cmdText.match(/--model\s+(\S+)/);
   if (modelMatch) flags.model = modelMatch[1];
 
+  // Mode flags — review is adversarial by default
+  if (cmdText.match(/--review/)) flags.mode = "review";
+  if (cmdText.match(/--image-edit/)) flags.mode = "image-edit";
+  else if (cmdText.match(/--image/)) flags.mode = "image-generate";
+
   const cleanPrompt = prompt.replace(re, "");
   return { flags, cleanPrompt };
 }
@@ -91,30 +96,9 @@ export function buildPrompt(subcommand, userPrompt) {
   return { systemPrompt, userPrompt: userPrompt.trim() };
 }
 
-// ── Codex discovery ──────────────────────────────────────────────────────────
+// ── Codex integration ────────────────────────────────────────────────────────
 
-export function findCodexCompanion() {
-  if (process.env.TAKEOVER_CODEX_COMPANION) {
-    const override = process.env.TAKEOVER_CODEX_COMPANION;
-    if (!fs.existsSync(override)) throw new Error(`TAKEOVER_CODEX_COMPANION path not found: ${override}`);
-    return override;
-  }
-  const base = path.join(os.homedir(), ".claude/plugins/cache/openai-codex/codex");
-  if (!fs.existsSync(base)) {
-    throw new Error("Codex plugin not installed. Run /codex:setup first, or set TAKEOVER_CODEX_COMPANION.");
-  }
-  const versions = fs.readdirSync(base).filter((v) => /^\d+\.\d+\.\d+$/.test(v));
-  if (!versions.length) throw new Error("No codex plugin versions found in ~/.claude/plugins/cache/openai-codex/codex/");
-  versions.sort((a, b) => {
-    const pa = a.split(".").map(Number);
-    const pb = b.split(".").map(Number);
-    for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pb[i] - pa[i];
-    return 0;
-  });
-  const companion = path.join(base, versions[0], "scripts", "codex-companion.mjs");
-  if (!fs.existsSync(companion)) throw new Error(`codex-companion.mjs not found at: ${companion}`);
-  return companion;
-}
+export { findCodexBinary, checkCodexStatus } from "./codex/discovery.mjs";
 
 // ── Text extraction ──────────────────────────────────────────────────────────
 
@@ -138,7 +122,7 @@ export function listModels(configPath = CONFIG_PATH) {
 
   // Native providers (no config needed)
   lines.push("claude   — Native Claude CLI (OAuth/Pro subscription)");
-  lines.push("codex    — OpenAI Codex (via codex-companion, --model supported)");
+  lines.push("codex    — OpenAI Codex (via codex app-server; supports --review, --image, --write)");
 
   if (!fs.existsSync(configPath)) {
     lines.push("");
@@ -235,31 +219,13 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
 }
 
 /**
- * Call Codex companion via codex-companion.mjs. Prompt is passed via stdin.
+ * Call Codex via app-server JSON-RPC. Prompt is sent in the turn/start message body.
+ * Delegates to scripts/codex/task.mjs which spawns `codex app-server` directly.
  */
-export function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false, companionPathOverride) {
-  return new Promise((resolve, reject) => {
-    const companionPath = companionPathOverride || findCodexCompanion();
-    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
-    const args = ["task"];
-    if (writeMode) args.push("--write");
-    if (model) args.push("--model", model);
-    const child = spawn(process.execPath, [companionPath, ...args], {
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 600000,
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
-      else reject(new Error(`codex-companion exited ${code}: ${stderr.trim()}`));
-    });
-    child.stdin.write(fullPrompt);
-    child.stdin.end();
+export async function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false) {
+  const { runCodexTask } = await import("./codex/task.mjs");
+  return runCodexTask(userPrompt, systemPrompt, model, writeMode, process.cwd(), (msg) => {
+    process.stderr.write(`mcp-takeover[codex]: ${msg.slice(0, 200)}${msg.length > 200 ? "..." : ""}\n`);
   });
 }
 
