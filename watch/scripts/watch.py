@@ -8,11 +8,67 @@ bootstrap.ensure()
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from core.config import load_config
 from core.loop import run
+
+
+# ── PID file lock for one-shot runs ────────────────────────────
+def _pid_path(project_dir: Path) -> Path:
+    p = project_dir / '.claude' / 'watch' / 'state' / 'watch-check.pid'
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except ImportError:
+        if sys.platform == 'win32':
+            import ctypes.wintypes
+            SYNCHRONIZE = 0x100000
+            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if not h:
+                return False
+            WAIT_TIMEOUT = 0x00000102
+            alive = ctypes.windll.kernel32.WaitForSingleObject(h, 0) == WAIT_TIMEOUT
+            ctypes.windll.kernel32.CloseHandle(h)
+            return alive
+        else:
+            try:
+                os.kill(pid, 0)
+                return True
+            except (OSError, ProcessLookupError):
+                return False
+
+
+def _try_lock(project_dir: Path) -> bool:
+    """Try to acquire the one-shot check lock. Returns True if acquired."""
+    path = _pid_path(project_dir)
+    if path.exists():
+        try:
+            stale_pid = int(path.read_text(encoding='utf-8').strip())
+            if _pid_alive(stale_pid):
+                print(f'[watch] check already running (PID {stale_pid}), '
+                      f'skipping duplicate.', file=sys.stderr)
+                return False
+        except (ValueError, OSError):
+            pass
+    path.write_text(str(os.getpid()), encoding='utf-8')
+    return True
+
+
+def _unlock(project_dir: Path) -> None:
+    path = _pid_path(project_dir)
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,14 +77,66 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument('--config', default=None)
     p.add_argument('--json', action='store_true')
     p.add_argument('--dry-run', action='store_true')
+    p.add_argument('--status', action='store_true',
+                   help='Check daemon liveness via PID file (OS-level, no TaskGet needed)')
     args = p.parse_args(argv)
 
-    report = run(Path(args.project_dir).resolve(), dry_run=args.dry_run)
+    project_dir = Path(args.project_dir).resolve()
 
-    if args.json:
-        print(json.dumps(report, indent=2, ensure_ascii=False))
-    else:
-        _print_report(report)
+    if args.status:
+        _print_status(project_dir)
+        return
+
+    if not _try_lock(project_dir):
+        sys.exit(0)
+
+    try:
+        report = run(project_dir, dry_run=args.dry_run)
+
+        if args.json:
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+        else:
+            _print_report(report)
+    finally:
+        _unlock(project_dir)
+
+
+def _print_status(project_dir: Path) -> None:
+    """Check daemon liveness via PID file — OS-level, no TaskGet needed."""
+    from datetime import datetime, timezone
+    pid_path = project_dir / '.claude' / 'watch' / 'state' / 'watchd.pid'
+    hb_path = project_dir / '.claude' / 'watch' / 'state' / 'heartbeat.json'
+
+    # Daemon PID check
+    if not pid_path.exists():
+        print(json.dumps({'daemon': 'not_running', 'reason': 'no PID file'}, ensure_ascii=False))
+        return
+
+    try:
+        pid = int(pid_path.read_text(encoding='utf-8').strip())
+    except (ValueError, OSError):
+        print(json.dumps({'daemon': 'not_running', 'reason': 'corrupt PID file'}, ensure_ascii=False))
+        return
+
+    alive = _pid_alive(pid)
+
+    # Heartbeat freshness
+    hb_age = None
+    if hb_path.exists():
+        try:
+            hb = json.loads(hb_path.read_text(encoding='utf-8'))
+            hb_ts = datetime.fromisoformat(hb['ts'])
+            hb_age = (datetime.now(timezone.utc) - hb_ts).total_seconds()
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+    status = {
+        'daemon': 'running' if alive else 'dead',
+        'pid': pid,
+        'heartbeat_age_seconds': hb_age,
+        'stale': hb_age is not None and hb_age > 600,
+    }
+    print(json.dumps(status, ensure_ascii=False))
 
 
 def _print_report(report: dict) -> None:
