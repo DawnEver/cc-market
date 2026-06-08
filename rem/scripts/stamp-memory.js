@@ -12,7 +12,7 @@ import {
   scopeMemoryDir as memoryDir, scopeRulesDir as rulesDir, scopeIndexFile as indexFile,
   INDEX_HEADER,
   hasAllFields, stampMissingFields, parseFrontmatter,
-  collectMemoryFiles, todayISO, extractDateFromPath,
+  collectMemoryFiles, extractDateFromPath, parseIndexEntry, formatIndexEntry,
 } from '../lib.mjs';
 
 // Ensure directories exist
@@ -25,18 +25,20 @@ if (!existsSync(indexFile)) {
   console.log(`[stamp-memory] created ${relative(process.cwd(), indexFile)}`);
 }
 
-// Parse existing index entries and validate paths
+// Parse existing index entries and validate paths.
+// Only well-formed entries (YYYY-MM-DD label via parseIndexEntry) are marked as indexed.
+// Malformed entries like [2026 name] are treated as unindexed so they are
+// re-added with the correct date format in this run.
 let indexContent = readFileSync(indexFile, 'utf8');
 const existingPaths = new Set();
 const brokenPaths = new Set();
-const entryPattern = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
-let m;
-while ((m = entryPattern.exec(indexContent)) !== null) {
-  const rel = m[1];
-  if (existsSync(join(memoryDir, rel))) {
-    existingPaths.add(rel);
+for (const line of indexContent.split('\n')) {
+  const entry = parseIndexEntry(line);
+  if (!entry) continue;
+  if (existsSync(join(memoryDir, entry.path))) {
+    existingPaths.add(entry.path);
   } else {
-    brokenPaths.add(rel);
+    brokenPaths.add(entry.path);
   }
 }
 
@@ -73,13 +75,14 @@ for (const file of allFiles) {
     updated++;
   }
 
-  // Check if in index
+  // Check if in index (skip tasks/ — managed by task-engine, not memory)
   const relPath = relative(memoryDir, file).replace(/\\/g, '/');
+  if (relPath.startsWith('tasks/')) continue;
   if (!existingPaths.has(relPath)) {
     // Re-read to get fresh stamped fields
     const fresh = readFileSync(file, 'utf8');
     const { fields: f } = parseFrontmatter(fresh);
-    const date = relPath.split('/')[0];
+    const date = extractDateFromPath(relPath);
     const name = f.name || relPath.split('/').pop().replace('.md', '');
     const created = f.created || date;
     const accessed = f.accessed || created;
@@ -89,24 +92,25 @@ for (const file of allFiles) {
 
 // Append new files to index — rebuild sorted by accessed
 if (newFiles.length > 0) {
-  // Collect existing entries with accessed date for sorting
-  const entryRe = /^-\s+\[\d{4}-\d{2}-\d{2}\s+.+\]\(\.\.\/memory\/(.+?\.md)\)\s*—\s*`created:\s*\d{4}-\d{2}-\d{2},\s*accessed:\s*(\d{4}-\d{2}-\d{2})`/;
-  const allEntries = [];
   const idxLines = readFileSync(indexFile, 'utf8').split('\n');
+
+  // Collect existing well-formed entries using the shared parseIndexEntry/formatIndexEntry.
+  // Malformed entries (e.g. [2026 name]) don't parse → are excluded here and dropped from
+  // the rebuilt index, while their files appear in newFiles and get re-added correctly.
+  const allEntries = [];
   for (const line of idxLines) {
-    const m = line.match(entryRe);
-    if (m) {
-      allEntries.push({ line, accessed: m[2] });
-    }
+    const e = parseIndexEntry(line);
+    if (e) allEntries.push({ line: formatIndexEntry(e), accessed: e.accessed });
   }
   for (const f of newFiles) {
-    const line = `- [${f.date} ${f.name}](../memory/${f.path}) — \`created: ${f.created}, accessed: ${f.accessed}\``;
+    const line = formatIndexEntry({ date: f.date, title: f.name, path: f.path, created: f.created, accessed: f.accessed });
     allEntries.push({ line, accessed: f.accessed });
   }
   allEntries.sort((a, b) => b.accessed.localeCompare(a.accessed));
 
-  // Rebuild: header lines + sorted entries
-  const headerLines = idxLines.filter(l => !/^-\s+\[/.test(l));
+  // Preserve all non-memory-entry lines (section headers, Tasks links, Scoped pointers, etc).
+  // Only strip lines referencing date-structured paths (../memory/YYYY/MM/DD/) — not tasks links.
+  const headerLines = idxLines.filter(l => !/\.\.\/memory\/\d{4}\/\d{2}\/\d{2}\//.test(l));
   const rebuilt = [...headerLines, ...allEntries.map(e => e.line)].join('\n') + '\n';
   writeFileSync(indexFile, rebuilt, 'utf8');
   console.log(`[stamp-memory] added ${newFiles.length} entries to index (globally sorted)`);

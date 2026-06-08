@@ -102,6 +102,26 @@ describe("resolveModel", () => {
   test("returns undefined when no model and no defaultSonnet", () => {
     assert.equal(resolveModel({}, null), undefined);
   });
+
+  test("maps 'sonnet' tier name to provider's defaultSonnet", () => {
+    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash" }, "sonnet"), "deepseek-v4-flash");
+  });
+
+  test("maps 'opus' tier name to provider's defaultOpus", () => {
+    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash", defaultOpus: "deepseek-v4-pro" }, "opus"), "deepseek-v4-pro");
+  });
+
+  test("maps 'opus' to defaultSonnet when defaultOpus absent", () => {
+    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash" }, "opus"), "deepseek-v4-flash");
+  });
+
+  test("maps 'haiku' tier name to provider's defaultHaiku", () => {
+    assert.equal(resolveModel({ defaultSonnet: "ds-flash", defaultHaiku: "ds-haiku" }, "haiku"), "ds-haiku");
+  });
+
+  test("passes through non-tier model names unchanged", () => {
+    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash" }, "deepseek-v4-pro"), "deepseek-v4-pro");
+  });
 });
 
 // ── buildPrompt ───────────────────────────────────────────────────────────────
