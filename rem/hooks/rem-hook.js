@@ -3,8 +3,8 @@
 // Triggers /rem after 3+ stops AND either (2+ min session) OR (substantive code edits).
 // State tracked in unified .claude/.rem-state.json
 
-import { readFileSync } from 'fs';
 import { loadState, saveState } from '../lib.mjs';
+import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../../shared/lib.mjs';
 
 const MIN_STOP_COUNT = 3;
 const MIN_SESSION_MS = 2 * 60 * 1000;
@@ -13,12 +13,8 @@ const SESSION_EXPIRY_MS = 30 * 60 * 1000;
 
 // ── Pure helpers ──
 
-export function readTranscriptTail(transcriptPath, maxLines = 40) {
-  try {
-    const lines = readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-    return lines.slice(-maxLines).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  } catch { return []; }
-}
+// Re-exported from shared/lib.mjs for backward compat (rem-hook.test.mjs imports from here)
+export function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
 
 export function hasSubstantiveWork(transcript) {
   return transcript.some(entry => {
@@ -113,18 +109,8 @@ export function decideStop(state, input, now) {
 
 // ── Main ──
 
-function readStdinJSON() {
-  if (process.stdin.isTTY) return {};
-  try {
-    const raw = readFileSync(0, 'utf8');
-    return JSON.parse(raw);
-  } catch { return {}; }
-}
-
 // Only run main logic when executed directly (not imported for testing)
-const isDirect = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
-
-if (isDirect) {
+if (isMain(import.meta)) {
   const input = readStdinJSON();
   const now = Date.now();
   let state = loadState();

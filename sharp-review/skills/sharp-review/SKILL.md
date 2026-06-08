@@ -44,7 +44,7 @@ The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings
 ```bash
 # Write merged findings to temp JSON, markdown to temp file
 # Then:
-node ${CLAUDE_PLUGIN_ROOT}/scripts/post-review.js --date <YYYY-MM-DD> --findings <merged.json> --markdown <markdown.md>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/post-review.js" --date <YYYY-MM-DD> --findings <merged.json> --markdown <markdown.md>
 ```
 
 This does everything: writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, cross-links SR-IDs to related memory files, runs stamp-memory.js to index, and delegates to task-engine.js for tasks.md.
