@@ -13,7 +13,7 @@ Stop → sharp-review-hook.js
          ├── Classify (claude -p): none / once / multi
          └── Trigger /sharp-review skill:
                ├── git diff → Workflow(sharp-review-workflow.js, { diff, date })
-               ├── 3 parallel schema-constrained reviewers
+               ├── 2 of 3 reviewers (day-of-month mod 3: AB/BC/AC), schema-constrained
                ├── Merge & dedup (≥2 reviewers = high confidence)
                └── post-review.js:
                      ├── Write .claude/memory/YYYY/MM/DD/sharp-review.md (single file w/ rem frontmatter)

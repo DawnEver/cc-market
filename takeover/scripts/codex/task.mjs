@@ -4,10 +4,14 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
   const client = new CodexAppServerClient({ timeout: 600000 });
   await client.start();
 
-  const result = { text: "", threadId: null, turnId: null };
+  const result = { text: "", threadId: null, turnId: null, usage: null };
 
   const turnDone = new Promise((resolve) => {
-    client.onNotification("turn/completed", () => resolve());
+    client.onNotification("turn/completed", (params) => {
+      // Extract token usage from turn completion (Codex returns usage data)
+      result.usage = params?.usage || null;
+      resolve();
+    });
   });
 
   client.onNotification("thread/started", (params) => {
@@ -21,6 +25,8 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
       result.text += text;
       if (onProgress) onProgress(text);
     }
+    // Capture usage from final item if available
+    if (item.usage && !result.usage) result.usage = item.usage;
   });
 
   try {
@@ -55,6 +61,10 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     content: [{ type: "text", text: result.text.trim() || "(no output)" }],
     threadId: result.threadId,
     turnId: result.turnId,
+    _usage: result.usage ? {
+      input_tokens: result.usage.input_tokens || result.usage.prompt_tokens || 0,
+      output_tokens: result.usage.output_tokens || result.usage.completion_tokens || 0,
+    } : null,
   };
 }
 

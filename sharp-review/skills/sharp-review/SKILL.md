@@ -1,11 +1,11 @@
 ---
 name: sharp-review
-description: Post-feature sharp review (锐评) — 3 parallel reviewers with schema enforcement, merge findings, sync task list
+description: Post-feature sharp review (锐评) —parallel reviewers, merge findings, sync task list
 ---
 
 # Sharp Review (锐评)
 
-Workflow-driven post-feature review. Three parallel reviewers each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter.
+Workflow-driven post-feature review. multiple reviewers, each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter.
 
 ## Triggering (Wave Gate)
 
@@ -45,7 +45,7 @@ Workflow({
 })
 ```
 
-The workflow launches 2 parallel reviewers for model diversity — randomly picked from 3 backends each session: Reviewer A (Codex adversarial review via takeover, provider=codex, mode=review), Reviewer B (DeepSeek via takeover, provider=deepseek), and Reviewer C (Sonnet via takeover, provider=deepseek, model=sonnet). Each is constrained by a JSON Schema that enforces:
+The workflow launches 2 of 3 reviewers, picked deterministically by `day-of-month mod 3` (combos: AB, BC, AC per day): Reviewer A (Codex adversarial review via takeover, provider=codex, mode=review), Reviewer B (DeepSeek via takeover, provider=deepseek), Reviewer C (Sonnet via takeover, provider=claude, model=sonnet). Each is constrained by a JSON Schema that enforces:
 - `severity`: HIGH | MEDIUM | LOW | INFO
 - `file`: affected file path
 - `summary`: one-line issue description

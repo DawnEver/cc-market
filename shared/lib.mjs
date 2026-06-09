@@ -51,3 +51,22 @@ export function readTranscriptTail(transcriptPath, maxLines = 40) {
     return [];
   }
 }
+
+// ── todayISO: YYYY-MM-DD date string ──
+
+export function todayISO(date) {
+  if (date instanceof Date) return date.toISOString().slice(0, 10);
+  if (typeof date === 'string') return date.slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ── normalizePath: cross-platform path normalization ──
+
+export function normalizePath(p) { return p.replace(/\\/g, '/'); }
+
+// ── SR finding regex patterns (contract between sharp-review and rem) ──
+
+export const SR_ID_RE = /SR-\d{8}-\d{3}/g;
+export const SR_ID_PARSE_RE = /^SR-(\d{8})-(\d{3})$/;
+export const SR_FINDING_HDR_RE = /^###\s+\[(SR-\d{8}-\d{3})\]\s+\[(\w+)\]\s+(.+?)\s+—\s+(.+)/;
+export const SR_STATUS_RE = /^\s*-?\s*\*\*Status:\*\*\s*(\w+)/m;

@@ -123,11 +123,8 @@ export function bumpAccessed(content, date) {
 
 // ── Date helpers ──
 
-export function todayISO(date) {
-  if (date instanceof Date) return date.toISOString().slice(0, 10);
-  if (typeof date === 'string') return date.slice(0, 10);
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayISO } from '../shared/lib.mjs';
+export { todayISO };
 
 export function parseDate(s) {
   return new Date(s).getTime();

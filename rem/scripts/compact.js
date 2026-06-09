@@ -11,13 +11,12 @@
 //   2. Model reads memory files, distills to .claude/rules/rem/<topic>.md
 //   3. Model runs --execute → validates rules exist, clears index, logs summary
 
+import { SR_ID_RE } from '../shared/lib.mjs';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
   indexFile, rulesDir, remRulesDir, memoryDir, INDEX_HEADER, MAX_ENTRIES, collectMemoryFiles,
 } from '../lib.mjs';
-
-const SR_ID_RE = /SR-\d{8}-\d{3}/g;
 
 const args = process.argv.slice(2);
 const mode = args[0] || '--check';

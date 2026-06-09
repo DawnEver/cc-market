@@ -9,9 +9,7 @@ export function getDbPath() {
 }
 export const ERROR_LOG = join(TRACEME_DIR, 'error.log');
 
-export function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+export { todayISO } from '../shared/lib.mjs';
 
 export function getGitBranch(cwd) {
   try {
