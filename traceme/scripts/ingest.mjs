@@ -101,10 +101,16 @@ export function ingestTranscript(transcriptPath, sessionId) {
   db.prepare('UPDATE sessions SET prompt_count=?, total_tokens=?, total_cost=? WHERE id=?')
     .run(promptCount, totalInput + totalOutput + totalCacheRead + totalCacheCreate, totalCost, sessionId);
 
+  // Backfill individual prompt rows with aggregate token/cost data
+  const avgTokens = promptCount > 0 ? Math.round((totalInput + totalOutput + totalCacheRead + totalCacheCreate) / promptCount) : 0;
+  const avgCost = promptCount > 0 ? totalCost / promptCount : 0;
+  const topModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  db.prepare('UPDATE prompts SET input_tokens=?, output_tokens=0, cache_tokens=0, cost_usd=?, model=? WHERE session_id=? AND cost_usd = 0')
+    .run(avgTokens, avgCost, topModel, sessionId);
+
   // Update daily summary
   const session = db.prepare('SELECT project FROM sessions WHERE id=?').get(sessionId);
   if (session) {
-    const topModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     upsertDailySummary(todayISO(), session.project, {
       session_count: 1,
       prompt_count: promptCount,
