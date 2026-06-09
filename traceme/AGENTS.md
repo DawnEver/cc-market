@@ -39,7 +39,7 @@ Each device is a git branch. Only `.enc` files (age-encrypted) touch the remote 
 
 ### Architecture
 ```
-Device A (linxu-win)             GitHub (traceme-data)            Device B (linxu-mac)
+Device A (linxu-win)             GitHub (traceme-history)         Device B (linxu-mac)
      |                                |                                |
      | traceme sync push             |                                |
      | → dump SQLite → JSON          |                                |
@@ -60,7 +60,7 @@ Device A (linxu-win)             GitHub (traceme-data)            Device B (linx
      |──────────────────────────────>|                                |
 ```
 
-### Repo Structure (traceme-data)
+### Repo Structure (traceme-history)
 ```
 device/linxu-win/
   2026-06-09.enc
@@ -92,7 +92,7 @@ Auto-push: `hooks/sync-hook.js` fires on Stop/SessionEnd — no manual push need
 | `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, aggregate, verify, backfill |
 | `hooks/sync-hook.js` | Auto-push hook: fires on session end, pushes today's snapshot |
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
-| `~/.claude/traceme/sync-repo/` | Local clone of traceme-data repo |
+| `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
 
 ### Environment
 - `TRACEME_SYNC_REMOTE` — Git remote URL for the sync data repo (required for push/pull/aggregate)

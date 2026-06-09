@@ -36,9 +36,11 @@ export async function runCodexReview(diff, model, context, cwd) {
   if (context) reviewInput += `\n\n## Additional Context\n${context}`;
 
   let resultText = "";
+  let resultUsage = null;
 
   client.onNotification("item/completed", (params) => {
     const item = params.item || {};
+    if (item.usage && !resultUsage) resultUsage = item.usage;
     if (item.text) resultText += item.text;
     else if (item.content) {
       if (typeof item.content === "string") resultText += item.content;
@@ -51,7 +53,10 @@ export async function runCodexReview(diff, model, context, cwd) {
   });
 
   const reviewDone = new Promise((resolve) => {
-    client.onNotification("turn/completed", () => resolve());
+    client.onNotification("turn/completed", (params) => {
+      if (params?.usage && !resultUsage) resultUsage = params.usage;
+      resolve();
+    });
   });
 
   try {
@@ -82,5 +87,9 @@ export async function runCodexReview(diff, model, context, cwd) {
 
   return {
     content: [{ type: "text", text: resultText.trim() || "(no findings — review may have completed without text output)" }],
+    _usage: resultUsage ? {
+      input_tokens: resultUsage.input_tokens || resultUsage.prompt_tokens || 0,
+      output_tokens: resultUsage.output_tokens || resultUsage.completion_tokens || 0,
+    } : null,
   };
 }

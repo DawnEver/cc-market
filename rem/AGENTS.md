@@ -9,7 +9,7 @@ SessionStart → prune-memory.js --evict-stale
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
-  Stop → rem-hook.js (gates after ≥3 stops, ≥2 min)
+  Stop → rem-hook.js (gates after ≥3 stops AND (≥2 min session OR ≥30s + substantive code edits))
      ↓
   /rem skill:
     ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
@@ -112,13 +112,12 @@ See `.claude/rules/invariants.md` for the always-injected version.
 ## Testing
 
 ```shell
-node --test cc-market/rem/tests/frontmatter.test.mjs
-node --test cc-market/rem/tests/date-path.test.mjs
-node --test cc-market/rem/tests/lib.test.mjs
-node --test cc-market/rem/tests/rem-hook.test.mjs
+node --test cc-market/rem/tests/*.test.mjs
 ```
 
 Pre-commit hook runs all rem tests + takeover + sharp-review tests. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
+
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`.
 
 ## Standard
 

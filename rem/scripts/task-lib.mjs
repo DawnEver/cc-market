@@ -93,10 +93,8 @@ export function groupByCategory(findings) {
 
 // ── Sharp-review finding scanning ──
 
-// Matches finding headers in sharp-review.md:
-//   ### [SR-YYYYMMDD-NNN] [SEVERITY] file/path — summary
-const SR_FINDING_HDR_RE = /^###\s+\[(SR-\d{8}-\d{3})\]\s+\[(\w+)\]\s+(.+?)\s+—\s+(.+)/;
-const SR_STATUS_RE = /^\s*-?\s*\*\*Status:\*\*\s*(\w+)/m;
+import { SR_FINDING_HDR_RE, SR_STATUS_RE } from '../shared/lib.mjs';
+
 const SR_MODULE_RE = /^\s*-?\s*\*\*Module:\*\*\s*(.+)/m;
 
 export function scanMemoryForFindings(memDir) {

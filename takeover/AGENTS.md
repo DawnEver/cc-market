@@ -50,8 +50,6 @@ takeover/
 │   ├── mcp-server.test.mjs  TOOLS schema, JSON-RPC, validation
 │   ├── discovery.test.mjs   Codex binary discovery
 │   ├── app-server.test.mjs  JSON-RPC client
-│   ├── task.test.mjs        Task handler
-│   ├── review.test.mjs      Review handler
 │   ├── image.test.mjs       Image gen/edit
 │   └── jobs.test.mjs        Job lifecycle
 ├── .claude/rules/           Injected every session (invariants only)
@@ -83,7 +81,7 @@ See `.claude/rules/invariants.md` for the always-injected version.
 }
 ```
 
-`loadProviderConfig()` returns `{ native: true, provider: "claude"|"codex" }` for built-in, or `{ native: false, baseUrl, token, defaultSonnet }` for API providers.
+`loadProviderConfig()` returns `{ native: true, provider: "claude"|"codex" }` for built-in, or `{ native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku }` for API providers.
 
 ## MCP Server
 
@@ -95,11 +93,12 @@ See `.claude/rules/invariants.md` for the always-injected version.
 | `list_models` | (none) | `listModels()` |
 | `codex_status` | `codexPath?` | `checkCodexStatus()` |
 
-Mode routing for `call_model` with `provider=codex`:
-- `mode=review` → `runCodexReview()` (adversarial by default)
-- `mode=image-generate` → `generateImage()`
-- `mode=image-edit` → `editImage()`
-- `mode=task` (default) → `callCodexCompanion()` → `runCodexTask()`
+Mode routing for `call_model`:
+- `mode=task` (default, any provider) → codex: `callCodexCompanion()`; native claude: `callNativeClaude()`; API: `callAnthropicAPI()`
+- `mode=agent` (any provider) → codex: `callCodexCompanion()`; others: `callAgentMode()` (spawns `claude -p` with provider env)
+- `mode=review` → `runCodexReview()` (codex only, adversarial)
+- `mode=image-generate` → `generateImage()` (codex only)
+- `mode=image-edit` → `editImage()` (codex only)
 
 Exported for testing: `TOOLS`, `handleToolCall`, `handleCallModel`, `send`.
 
