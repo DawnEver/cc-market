@@ -357,50 +357,71 @@ class GitVersion(Component):
 
         # ── Phase 4: Test-port gate (optional) ──
         enable_test_gate = deploy_cfg.get('enable_test_gate', False)
-        test_health_url = deploy_cfg.get('test_health_url', '')
-        if not enable_test_gate or not test_health_url:
+        # test_gates: list of {start_action, health_url, kill_action, prestart_sleep, health_timeout}
+        # Backwards-compatible: scalar test_health_url / test_start_action / test_kill_action
+        raw_url = deploy_cfg.get('test_health_url', '')
+        if not enable_test_gate or not raw_url:
             print(f'[git_version] Test gate disabled — production restart delegated to SKILL.md.')
             return True
 
-        # Start test instance on alternate port
+        # Normalise to list of gate dicts
+        if isinstance(raw_url, str):
+            raw_url = [raw_url]
+        raw_start = deploy_cfg.get('test_start_action', '')
+        raw_kill = deploy_cfg.get('test_kill_action', '')
+        if isinstance(raw_start, str):
+            raw_start = [raw_start] * len(raw_url)
+        if isinstance(raw_kill, str):
+            raw_kill = [raw_kill] * len(raw_url)
+        gates = [
+            {
+                'health_url': u,
+                'start_action': raw_start[i] if i < len(raw_start) else '',
+                'kill_action': raw_kill[i] if i < len(raw_kill) else '',
+            }
+            for i, u in enumerate(raw_url)
+        ]
+
         registry = context.get('_registry')
-        test_start_action = deploy_cfg.get('test_start_action', '')
-        if registry and test_start_action:
-            start_act = registry.get_action(test_start_action) if hasattr(registry, 'get_action') else None
-            if start_act:
-                print(f'[git_version] Starting test instance via {test_start_action}...')
-                from core.actions import _execute_action
-                _execute_action(start_act, project, registry, '', context)
-        time.sleep(deploy_cfg.get('test_prestart_sleep', 5))
+        prestart_sleep = deploy_cfg.get('test_prestart_sleep', 5)
+        health_timeout = deploy_cfg.get('test_health_timeout', 30)
 
-        # Health-check the test instance
-        print(f'[git_version] Health-checking test instance at {test_health_url}...')
-        test_healthy = self._health_check_url(
-            test_health_url,
-            deploy_cfg.get('test_health_timeout', 30),
-        )
+        for gate in gates:
+            health_url = gate['health_url']
+            start_action = gate.get('start_action', '')
+            kill_action = gate.get('kill_action', '')
 
-        # Kill test instance
-        test_kill_action = deploy_cfg.get('test_kill_action', '')
-        if registry and test_kill_action:
-            kill_act = registry.get_action(test_kill_action) if hasattr(registry, 'get_action') else None
-            if kill_act:
-                from core.actions import _execute_action
-                _execute_action(kill_act, project, registry, '', context)
+            if registry and start_action:
+                start_act = registry.get_action(start_action) if hasattr(registry, 'get_action') else None
+                if start_act:
+                    print(f'[git_version] Starting test instance via {start_action}...')
+                    from core.actions import _execute_action
+                    _execute_action(start_act, project, registry, '', context)
+            time.sleep(prestart_sleep)
 
-        if not test_healthy:
-            print(f'[git_version] Test instance health check FAILED at {test_health_url}')
-            self._rollback(comp_cfg, global_cfg, project)
-            context['deploy_result'] = 'failed_test_health'
-            context['deploy_failure_reason'] = (
-                f'Test instance at {test_health_url} did not become healthy. '
-                'Deploy branch reverted to known-good. Production service was NOT touched.'
-            )
-            return False
+            print(f'[git_version] Health-checking test instance at {health_url}...')
+            test_healthy = self._health_check_url(health_url, health_timeout)
 
-        print(f'[git_version] Test instance health check PASSED.')
+            if registry and kill_action:
+                kill_act = registry.get_action(kill_action) if hasattr(registry, 'get_action') else None
+                if kill_act:
+                    from core.actions import _execute_action
+                    _execute_action(kill_act, project, registry, '', context)
+
+            if not test_healthy:
+                print(f'[git_version] Test instance health check FAILED at {health_url}')
+                self._rollback(comp_cfg, global_cfg, project)
+                context['deploy_result'] = 'failed_test_health'
+                context['deploy_failure_reason'] = (
+                    f'Test instance at {health_url} did not become healthy. '
+                    'Deploy branch reverted to known-good. Production service was NOT touched.'
+                )
+                return False
+
+            print(f'[git_version] Test gate PASSED: {health_url}')
+
         context['deploy_test_health_passed'] = True
-        print(f'[git_version] Production restart delegated to SKILL.md.')
+        print(f'[git_version] All test gates passed. Production restart delegated to SKILL.md.')
         return True
 
     def _rollback(self, comp_cfg: dict, global_cfg: dict, project: Path) -> bool:
