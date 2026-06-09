@@ -3,7 +3,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs';
 import { join, dirname, resolve } from 'path';
-import { findProjectRoot as _findProjectRoot } from './shared/lib.mjs';
+import { findProjectRoot as _findProjectRoot, todayISO } from './shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from './shared/state.mjs';
 
 // ── Paths ──
@@ -123,7 +123,6 @@ export function bumpAccessed(content, date) {
 
 // ── Date helpers ──
 
-import { todayISO } from '../shared/lib.mjs';
 export { todayISO };
 
 export function parseDate(s) {
