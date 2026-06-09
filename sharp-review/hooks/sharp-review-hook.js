@@ -226,13 +226,23 @@ async function main() {
 
     const stat = getDiffStat(diffRef);
 
-    if (stat.lines < threshold.lines && stat.files < threshold.files) {
+    // For same-ref, only count new changes since the last review.
+    // This prevents "one more file" from re-triggering after wave1 is reached.
+    let effectiveStat = stat;
+    if (sameRef && reviewGate.lastReviewDiff) {
+      effectiveStat = {
+        lines: Math.max(0, stat.lines - reviewGate.lastReviewDiff.lines),
+        files: Math.max(0, stat.files - reviewGate.lastReviewDiff.files),
+      };
+    }
+
+    if (effectiveStat.lines < threshold.lines && effectiveStat.files < threshold.files) {
       // Accumulated changes below wave threshold — skip, preserve ref for accumulation
       reviewGate = {
         ...(reviewGate || {}),
         sessionId,
         mode: 'none',
-        reason: `wave-${wave} gate: ${stat.lines}L/${stat.files}F < ${threshold.lines}L/${threshold.files}F`,
+        reason: `wave-${wave} gate: ${effectiveStat.lines}L/${effectiveStat.files}F < ${threshold.lines}L/${threshold.files}F`,
         reviewCount: 0,
         classifiedAt: now,
       };
@@ -257,6 +267,7 @@ async function main() {
       reviewCount: 0,
       classifiedAt: now,
       lastReviewRef: head,
+      lastReviewDiff: stat,
       wave,
       memory,
       thresholds: reviewGate?.thresholds,

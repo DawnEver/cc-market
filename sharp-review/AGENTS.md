@@ -35,6 +35,7 @@ Reviews are gated by change accumulation, not per-session triggers. This prevent
 | wave 1+ (same ref already reviewed) | High (300L / 10F) | Only re-trigger when substantial new changes accumulate |
 
 - `lastReviewRef` tracks which commit was last reviewed. Skipped sessions do NOT update it — changes keep accumulating.
+- `lastReviewDiff` records the diff stat at the time of the last review. On same-ref checks, only the **delta** (current diff minus last reviewed diff) is compared against the threshold — preventing "one more file" from re-triggering after the threshold is already crossed.
 - Wave resets to 0 when HEAD moves to a new commit (new territory = early scrutiny).
 - Ref vanished (rebase/gc): falls back to `HEAD~1`.
 
