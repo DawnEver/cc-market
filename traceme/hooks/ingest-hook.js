@@ -60,10 +60,14 @@ async function main() {
         break;
       }
 
+      case 'Stop':
       case 'SessionEnd': {
+        // Idempotency: skip if session already has token data
+        const s = db.prepare('SELECT total_tokens FROM sessions WHERE id=?').get(input.session_id);
+        if (s && s.total_tokens > 0) break;
+
         closeSession(input.session_id, new Date().toISOString());
 
-        // Run transcript ingest to backfill token/cost
         try {
           const { ingestTranscript } = await import('../scripts/ingest.mjs');
           ingestTranscript(input.transcript_path, input.session_id);
