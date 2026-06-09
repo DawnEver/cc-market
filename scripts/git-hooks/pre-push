@@ -21,14 +21,40 @@ bump_json() { # $1 = path to a JSON file with a semver "version" field
   " "$1"
 }
 
+bundle_shared() { # $1 = plugin name
+  local src="$REPO_ROOT/shared"
+  local dest="$REPO_ROOT/$1/shared"
+  local tmp
+  [ -d "$src" ] || return 0
+  # Atomic: copy to tmp first, then replace — avoids empty dest if cp fails
+  tmp="$(mktemp -d)"
+  if ! cp "$src"/*.mjs "$tmp/"; then
+    rm -rf "$tmp"
+    echo "pre-push: bundle_shared failed for $1 — no .mjs files in shared/" >&2
+    return 1
+  fi
+  rm -rf "$dest"
+  mv "$tmp" "$dest"
+  git -C "$REPO_ROOT" add "$dest"
+  echo "pre-push: bundled shared → $1/shared/" >&2
+}
+
 CHANGED=""
+SHARED_CHANGED=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
 
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-    range="$local_sha"
+    # New branch — always re-bundle; can't reliably compute range from root
+    SHARED_CHANGED=1
+    range="$(git rev-list --max-parents=0 "$local_sha" 2>/dev/null || echo "")..$local_sha"
   else
     range="$remote_sha..$local_sha"
+  fi
+
+  # If shared/ itself changed, all plugins need re-bundling
+  if [ -n "$(git diff --name-only "$range" -- "shared/")" ]; then
+    SHARED_CHANGED=1
   fi
 
   for plugin_dir in "$REPO_ROOT"/*/; do
@@ -40,11 +66,22 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   done
 done
 
+# If shared/ changed, mark all plugins as changed so they get re-bundled + re-versioned
+if [ "$SHARED_CHANGED" = "1" ]; then
+  for plugin_dir in "$REPO_ROOT"/*/; do
+    name="$(basename "$plugin_dir")"
+    [ -f "$plugin_dir/.claude-plugin/plugin.json" ] || continue
+    CHANGED="$CHANGED$name"$'\n'
+  done
+fi
+
 CHANGED="$(printf '%s' "$CHANGED" | sort -u | sed '/^$/d')"
 [ -z "$CHANGED" ] && exit 0
 
+# Bundle shared into each changed plugin, then bump version
 while IFS= read -r name; do
   [ -z "$name" ] && continue
+  bundle_shared "$name"
   pj="$REPO_ROOT/$name/.claude-plugin/plugin.json"
   nv="$(bump_json "$pj")"
   git -C "$REPO_ROOT" add "$pj"

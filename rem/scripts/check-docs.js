@@ -91,5 +91,5 @@ function main() {
   process.exit(needsReview ? 1 : 0);
 }
 
-import { isMain } from '../../shared/lib.mjs';
+import { isMain } from '../shared/lib.mjs';
 if (isMain(import.meta)) main();

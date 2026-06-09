@@ -4,7 +4,7 @@
 // State tracked in unified .claude/.rem-state.json
 
 import { loadState, saveState } from '../lib.mjs';
-import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../../shared/lib.mjs';
+import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 
 const MIN_STOP_COUNT = 3;
 const MIN_SESSION_MS = 2 * 60 * 1000;

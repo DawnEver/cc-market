@@ -6,6 +6,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 tests=(
+  "tests/bundle-integrity.test.mjs"
   "takeover/tests/lib.test.mjs"
   "takeover/tests/mcp-server.test.mjs"
   "rem/tests/frontmatter.test.mjs"
