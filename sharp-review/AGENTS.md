@@ -5,21 +5,47 @@ Post-feature code review plugin for Claude Code. Three parallel reviewers with J
 ## Architecture
 
 ```
-Stop → sharp-review-hook.js (classify: none/once/multi)
-         ↓
-     /sharp-review skill:
-       ├── git diff → Workflow(sharp-review-workflow.js, { diff, date })
-       ├── 3 parallel schema-constrained reviewers
-       ├── Merge & dedup (≥2 reviewers = high confidence)
-       └── post-review.js:
-             ├── Write .claude/memory/YYYY-MM-DD/sharp-review.md (single file w/ rem frontmatter)
-             ├── Memory cross-reference (SR-ID ↔ .claude/memory/)
-             ├── stamp-memory.js → index in MEMORY.md
-             └── Delegate to rem/scripts/task-engine.js
-                   ├── Generate .claude/memory/tasks/tasks.md
-                   ├── Archive resolved → tasks/archive/
-                   └── Update .claude/rules/MEMORY.md
+Stop → sharp-review-hook.js
+         ├── Wave gate: diff lastReviewRef..WORKTREE
+         │     wave 0 (new commit): ≥80 lines or ≥4 files → pass
+         │     wave 1+ (same ref):  ≥300 lines or ≥10 files → pass
+         │     Below threshold → skip (changes accumulate across sessions)
+         ├── Classify (claude -p): none / once / multi
+         └── Trigger /sharp-review skill:
+               ├── git diff → Workflow(sharp-review-workflow.js, { diff, date })
+               ├── 3 parallel schema-constrained reviewers
+               ├── Merge & dedup (≥2 reviewers = high confidence)
+               └── post-review.js:
+                     ├── Write .claude/memory/YYYY-MM-DD/sharp-review.md (single file w/ rem frontmatter)
+                     ├── Memory cross-reference (SR-ID ↔ .claude/memory/)
+                     ├── stamp-memory.js → index in MEMORY.md
+                     └── Delegate to rem/scripts/task-engine.js
+                           ├── Generate .claude/memory/tasks/tasks.md
+                           ├── Archive resolved → tasks/archive/
+                           └── Update .claude/rules/MEMORY.md
 ```
+
+### Wave Gate
+
+Reviews are gated by change accumulation, not per-session triggers. This prevents the "just reviewed, next stop triggers again" problem.
+
+| State | Threshold | Purpose |
+|---|---|---|
+| wave 0 (new commit / first review) | Low (80L / 4F) | Catch issues early on fresh code |
+| wave 1+ (same ref already reviewed) | High (300L / 10F) | Only re-trigger when substantial new changes accumulate |
+
+- `lastReviewRef` tracks which commit was last reviewed. Skipped sessions do NOT update it — changes keep accumulating.
+- Wave resets to 0 when HEAD moves to a new commit (new territory = early scrutiny).
+- Ref vanished (rebase/gc): falls back to `HEAD~1`.
+
+**Per-project configuration** (`.claude/.rem-state.json` → `reviewGate.thresholds`):
+```json
+{
+  "wave0": { "lines": 80, "files": 4 },
+  "wave1": { "lines": 300, "files": 10 }
+}
+```
+Omit to use defaults. Partial override supported (e.g. only change `wave0.lines`).
 
 ## File Structure
 
