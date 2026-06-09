@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { readStdinJSON, readTranscriptTail as _readTranscriptTail } from '../../shared/lib.mjs';
+import { readStdinJSON, readTranscriptTail as _readTranscriptTail } from '../shared/lib.mjs';
 
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || '';
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
