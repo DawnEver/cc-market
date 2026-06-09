@@ -9,12 +9,19 @@ Single YAML config per project. Pluggable components. Isolated uv venv.
 watchd (Python daemon, runs 24/7)
   │  Every 5 min: git fetch + health ping + disk + process
   │  Zero AI tokens. Only wakes AI on anomaly.
+  │  On fail_threshold exceeded → writes trigger.json
   │
   ▼
-/watch:watch (Claude Code AI loop, 12h or on-demand)
+trigger-watch.py (standalone poller, always-on terminal)
+  │  Polls trigger.json every 15s. On change → runs watch.py directly.
+  │  No Claude Code dependency. Survives session restarts.
+  │
+  ▼
+/watch:watch (Claude Code AI loop, 12h cron or on-demand)
   │  Full component check + anomaly detection
   │  Remedies: restart, rollback, worktree deploy
   │  Alert escalation: email/webhook
+  │  Auto-refreshes durable CronCreate for next scheduled check
   │
   ▼
 alert-hook.js (Claude Code hook)
@@ -106,8 +113,11 @@ All context lives in filesystem state (`state/*.json`, `logs/*.jsonl`) read fres
 After completion writes `trigger_ack.json`. Supports `--interval 15` (default), `--once`, and `--dry-run`.
 Logs to `.claude/watch/logs/trigger-watch.jsonl`.
 
-This replaces the previous two-layer session-bound approach (Monitor + CronCreate) which died with the session.
-For one-off manual triggers, the Monitor snippet in the archived docs still works.
+Two complementary mechanisms:
+- **trigger-watch.py** — daemon-driven: watchd writes trigger.json on anomaly → trigger-watch runs the AI check immediately
+- **CronCreate** — interval-driven: durable cron calls `/watch:watch` every 12h (configurable), self-refreshes to reset 7-day TTL
+
+For one-off manual triggers, run `/watch:watch` directly.
 
 ## Component Interface
 

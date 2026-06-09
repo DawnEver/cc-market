@@ -30,7 +30,20 @@ Scaffold a `.claude/watch/config.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with 
      ```
    - Wait 2 seconds, then verify `daemon.jsonl` has a new entry with a recent timestamp.
    - Report: "watchd daemon is running (PID from heartbeat)" or "WARNING: watchd failed to start — check Python and venv."
-6. Print next steps: "Watchd is running. Edit .claude/watch/config.yaml to adjust thresholds, then run /watch:check to verify."
+6. **Create the interval cron:**
+   - Read the configured `check_interval_normal` from config (default 43200 = 12h).
+   - Convert to a cron expression using off-peak minutes:
+     - 12h → `57 <hour>,<hour+12> * * *` (pick the current hour and its 12h counterpart, e.g. `57 8,20 * * *` for 8:57 AM/PM)
+     - 6h → `7 */6 * * *`
+     - 4h → `7 */4 * * *`
+     - 1h → `7 * * * *`
+   - CronCreate with:
+     - `cron`: the expression
+     - `prompt`: `/watch:watch`
+     - `recurring`: true
+     - `durable`: true
+   - This creates `.claude/scheduled_tasks.json` — survives restarts. The watch skill refreshes the cron on each run to reset the 7-day TTL.
+7. Print next steps: "Watchd is running. Cron scheduled for <interval>. Edit .claude/watch/config.yaml to adjust thresholds, then run /watch:watch to verify."
 
 ## Template: http
 
