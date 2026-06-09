@@ -7,7 +7,7 @@ import {
   SR_FINDING_HDR_RE,
   SR_STATUS_RE,
   todayISO,
-} from '../shared/lib.mjs';
+} from './shared/lib.mjs';
 
 export {
   SR_ID_RE, SR_ID_PARSE_RE,
