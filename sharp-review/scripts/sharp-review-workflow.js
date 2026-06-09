@@ -1,6 +1,6 @@
 export const meta = {
   name: 'sharp-review',
-  description: 'Post-feature sharp review — 3 parallel reviewers with schema, merge findings, sync task list',
+  description: 'Post-feature sharp review — 2 parallel reviewers (random pick from 3 backends), merge findings, sync task list',
   phases: [
     { title: 'Review', detail: '3 parallel reviewers with schema' },
     { title: 'Merge', detail: 'cross-check, assign IDs, render markdown' },
@@ -17,7 +17,6 @@ const FINDING = {
     file: { description: 'Affected file path relative to repo root', type: 'string' },
     summary: { description: 'One-line issue description', type: 'string' },
     category: { description: 'Bug, Feature, or Performance', enum: ['Bug', 'Feature', 'Performance'] },
-    module: { description: 'Module name inferred from file path', type: 'string' },
     status: { description: 'OPEN or FIXED if resolved inline', enum: ['OPEN', 'FIXED'] },
     suggestion: { description: 'One-line fix suggestion', type: 'string' },
     detail: { description: 'Optional deeper analysis', type: 'string' },
@@ -48,7 +47,6 @@ const FINDINGS_FORMAT = `Each finding has these fields:
 - file: affected file path relative to repo root (string)
 - summary: one-line description of the issue (string)
 - category: "Bug" | "Feature" | "Performance"
-- module: inferred from file path (e.g. "notify hook")
 - status: "OPEN" | "FIXED"
 - suggestion: one-line fix (string)
 - detail: optional deeper analysis (string)
@@ -83,61 +81,78 @@ ${diff}
 \`\`\``;
 }
 
-function deepseekReviewPrompt(diff) {
-  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="deepseek" (do NOT pass a model — let it fall back to the configured default) and a userPrompt that embeds this exact instruction:
+function deepseekAgentPrompt(diff) {
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="deepseek", mode="review" and a userPrompt containing:
 
-<command>
---provider deepseek
-Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
+Review the following git diff. Explore the codebase as needed — read relevant source files, trace callers and callees, check for edge cases. Be BLUNT.
 
 Scope: ${REVIEW_SCOPE}
+
+Respond with ONLY a JSON object: { "findings": [...] }
+${FINDINGS_FORMAT}
 
 Git diff:
 \`\`\`
 ${diff}
 \`\`\`
 
-Respond with a JSON object: { "findings": [...] }
-${FINDINGS_FORMAT}
-</command>
+Then take the response and call the StructuredOutput tool with it.
 
-Then translate DeepSeek's response into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
+If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
+}
+
+function claudeAgentPrompt(diff) {
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="claude", model="sonnet", mode="review" and a userPrompt containing:
+
+Review the following git diff. Explore the codebase as needed — read relevant source files, trace callers and callees, check for edge cases. Be BLUNT.
+
+Scope: ${REVIEW_SCOPE}
+
+Respond with ONLY a JSON object: { "findings": [...] }
 ${FINDINGS_FORMAT}
 
-If the takeover tool call fails or DeepSeek is unavailable, call StructuredOutput with { "findings": [] }.`;
+Git diff:
+\`\`\`
+${diff}
+\`\`\`
+
+Then take the response and call the StructuredOutput tool with it.
+
+If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
 }
 
 // ── Phase 1: Review ──
 
 phase('Review');
 
-log('Launching 3 parallel reviewers (Codex via takeover + DeepSeek via takeover + Claude)...');
+// Pick 2 of 3 reviewers deterministically from date (Math.random() banned in workflows).
+// Day-of-month mod 3 cycles through combinations for diversity across sessions.
+const reviewers = [
+  { key: 'A', name: 'Codex', prompt: codexReviewPrompt },
+  { key: 'B', name: 'DeepSeek', prompt: deepseekAgentPrompt },
+  { key: 'C', name: 'Sonnet', prompt: claudeAgentPrompt },
+];
+const day = parseInt((args.date || '2026-06-09').slice(-2), 10) || 9;
+const combos = [[0, 1], [1, 2], [0, 2]];  // AB, BC, AC
+const pick = combos[day % 3];
+const active = pick.map(i => reviewers[i]);
 
-const reviewers = await parallel([
-  // Reviewer A — Codex (adversarial, via takeover's direct app-server integration)
-  () => agent(
-    codexReviewPrompt(args.diff || 'See git diff in context above'),
-    { label: 'Reviewer A (Codex)', phase: 'Review', schema: FINDINGS_SCHEMA }
-  ),
-  // Reviewer B — DeepSeek (independent model perspective, via takeover)
-  () => agent(
-    deepseekReviewPrompt(args.diff || 'See git diff in context above'),
-    { label: 'Reviewer B (DeepSeek)', phase: 'Review', schema: FINDINGS_SCHEMA }
-  ),
-  // Reviewer C — Claude (independent, native subscription)
-  () => agent(
-    reviewPrompt(args.diff || 'See git diff in context above'),
-    { label: 'Reviewer C (Claude)', phase: 'Review', schema: FINDINGS_SCHEMA }
-  ),
-]).catch(() => [null, null, null]);
+log(`Launching 2 parallel reviewers (${active.map(r => r.name).join(' + ')})...`);
 
-const results = reviewers.filter(Boolean);
+const raw = await parallel(active.map(r => () =>
+  agent(
+    r.prompt(args.diff || 'See git diff in context above'),
+    { label: `Reviewer ${r.key} (${r.name})`, phase: 'Review', schema: FINDINGS_SCHEMA }
+  )
+)).catch(() => [null, null]);
+
+const results = raw.filter(Boolean);
 const succeeded = results.filter(r => r && Array.isArray(r.findings));
-log(`${succeeded.length}/3 reviewers returned results`);
+log(`${succeeded.length}/2 reviewers returned results`);
 
-if (succeeded.length < 2) {
-  log('WARNING: Fewer than 2 reviewers succeeded. Findings are single-source only.');
-}
+// Map results back to A/B/C slots for markdown rendering
+const slotResults = { A: null, B: null, C: null };
+pick.forEach((ri, i) => { slotResults[reviewers[ri].key] = raw[i]; });
 
 // ── Phase 3: Merge ──
 
@@ -196,10 +211,11 @@ const lines = [];
 lines.push(`## Review ${timestamp} — current branch`);
 lines.push('');
 lines.push('### Reviewer Status');
-lines.push(`- Reviewer A (Codex, via takeover): ${results[0] ? 'OK' : 'FAILED'}`);
-lines.push(`- Reviewer B (DeepSeek, via takeover): ${results[1] ? 'OK' : 'FAILED'}`);
-lines.push(`- Reviewer C (Claude, native): ${results[2] ? 'OK' : 'FAILED'}`);
-if (succeeded.length < 2) lines.push('- Self-review fallback: used to supplement');
+const ran = pick.map(i => reviewers[i]);
+lines.push(`- Reviewer A (Codex): ${slotResults.A ? 'OK' : (ran.some(r => r.key === 'A') ? 'FAILED' : 'skipped')}`);
+lines.push(`- Reviewer B (DeepSeek): ${slotResults.B ? 'OK' : (ran.some(r => r.key === 'B') ? 'FAILED' : 'skipped')}`);
+lines.push(`- Reviewer C (Sonnet): ${slotResults.C ? 'OK' : (ran.some(r => r.key === 'C') ? 'FAILED' : 'skipped')}`);
+if (succeeded.length < 2) lines.push('- Warning: fewer than 2 reviewers succeeded');
 lines.push('');
 lines.push('### Confirmed findings');
 lines.push('');

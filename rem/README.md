@@ -99,7 +99,8 @@ node scripts/touch-memory.js 2026/06/03/some-entry.md --promote
 | `compact.js` | Distill memory into `.claude/rules/rem/` when index ≥20 |
 | `rem-prep.js` | Pre-REM automation: transcript scan (memory + SR-IDs), promotions, compact check |
 | `check-docs.js` | Doc freshness: detect stale README/AGENTS/CLAUDE at compact time |
-| `task-engine.js` | Task management engine: `--findings`, `--add`, `--check`, `--report` |
+| `task-engine.js` / `todo` CLI | Task management: `report` (default), `add`, `remove`/`rm`/`-r`, `help` |
+| `task-lib.mjs` | Pure logic: scanMemoryForFindings, archiveResolved, parseExistingTasks, groupBy* |
 
 ## Files
 

@@ -11,6 +11,82 @@ export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const defaultConfigPath = path.join(os.homedir(), ".claude", "claude_env_settings.json");
 export const CONFIG_PATH = process.env.TAKEOVER_CONFIG_PATH || defaultConfigPath;
 
+// ── Provider env keys (mirrors scripts/runtime/cc.js) ────────────────────────
+
+export const PROVIDER_ENV_KEYS = [
+  'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY',
+  'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_EFFORT_LEVEL',
+  'CLAUDE_CODE_USE_FOUNDRY', 'ANTHROPIC_FOUNDRY_BASE_URL', 'ANTHROPIC_FOUNDRY_API_KEY',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES',
+];
+
+// ── Agent mode: spawn claude -p with provider env ────────────────────────────
+
+export function loadProviderEnv(provider, configPath = CONFIG_PATH) {
+  const env = { ...process.env };
+  for (const key of PROVIDER_ENV_KEYS) delete env[key];
+
+  if (provider === 'claude') return env; // OAuth/Pro subscription
+
+  if (!fs.existsSync(configPath)) {
+    throw new Error(`Config file not found: ${configPath}`);
+  }
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const profile = config[`env:${provider}`];
+  if (!profile) {
+    const available = Object.keys(config)
+      .filter(k => k.startsWith('env:'))
+      .map(k => k.slice(4))
+      .join(', ');
+    throw new Error(`Provider "${provider}" not found in ${configPath}. Available: ${available}`);
+  }
+  Object.assign(env, profile);
+  return env;
+}
+
+export async function callAgentMode(provider, userPrompt, systemPrompt, model, configPath = CONFIG_PATH) {
+  const env = loadProviderEnv(provider, configPath);
+
+  // Resolve model tier if specified (e.g. "sonnet" → provider-specific name)
+  if (model && provider !== 'claude') {
+    const providerConfig = loadProviderConfig(provider);
+    const resolved = resolveModel(providerConfig, model);
+    env.ANTHROPIC_MODEL = resolved;
+  }
+
+  const fullPrompt = systemPrompt
+    ? `${systemPrompt}\n\n---\n\n${userPrompt}`
+    : userPrompt;
+
+  process.stderr.write(`mcp-takeover: agent mode — spawning claude -p (provider=${provider} model=${model || 'default'})...\n`);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', ['-p', fullPrompt], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 300000,
+      shell: process.platform === 'win32',
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        const usage = extractUsageFromStderr(stderr);
+        resolve({ content: [{ type: 'text', text: stdout.trim() }], _usage: usage });
+      } else {
+        reject(new Error(`claude agent (${provider}) exited ${code}: ${stderr.trim()}`));
+      }
+    });
+  });
+}
+
 // ── Provider config ──────────────────────────────────────────────────────────
 
 export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
@@ -104,6 +180,31 @@ export function buildPrompt(subcommand, userPrompt) {
     systemPrompt = fs.readFileSync(templateFile, "utf8").trim();
   }
   return { systemPrompt, userPrompt: userPrompt.trim() };
+}
+
+// ── TraceMe integration (NDJSON contract, no code dependency) ───────────────
+
+const TRACEME_DIR = path.join(os.homedir(), '.claude', 'traceme');
+const TAKEOVER_TRACES_FILE = path.join(TRACEME_DIR, 'takeover_traces.jsonl');
+
+function parseTokenCount(s) {
+  const t = String(s).trim().toLowerCase();
+  if (t.endsWith('k')) return Math.round(parseFloat(t) * 1000);
+  return parseInt(t, 10) || 0;
+}
+
+function extractUsageFromStderr(stderr) {
+  // Claude Code stderr: "  Tokens: 12.5k input, 3.2k output (15.7k total)"
+  const m = stderr.match(/Tokens:\s+(\S+)\s+input,\s+(\S+)\s+output/);
+  if (!m) return null;
+  return { input_tokens: parseTokenCount(m[1]), output_tokens: parseTokenCount(m[2]) };
+}
+
+export function emitTakeoverTrace(entry) {
+  try {
+    if (!fs.existsSync(TRACEME_DIR)) fs.mkdirSync(TRACEME_DIR, { recursive: true });
+    fs.appendFileSync(TAKEOVER_TRACES_FILE, JSON.stringify(entry) + '\n');
+  } catch {}
 }
 
 // ── Codex integration ────────────────────────────────────────────────────────
@@ -257,8 +358,12 @@ export function callNativeClaude(userPrompt, systemPrompt) {
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve({ content: [{ type: "text", text: stdout.trim() }] });
-      else reject(new Error(`claude CLI exited ${code}: ${stderr.trim()}`));
+      if (code === 0) {
+        const usage = extractUsageFromStderr(stderr);
+        resolve({ content: [{ type: "text", text: stdout.trim() }], _usage: usage });
+      } else {
+        reject(new Error(`claude CLI exited ${code}: ${stderr.trim()}`));
+      }
     });
   });
 }
