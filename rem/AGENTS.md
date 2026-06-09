@@ -19,11 +19,11 @@ SessionStart → prune-memory.js --evict-stale
     │   └── check-docs.js — audit doc freshness after compaction
 
   /todo skill (user-facing task management):
-    ├── /todo        → task-engine.js --report
-    ├── /todo add    → task-engine.js --add
-    ├── /todo sync   → post-review.js → task-engine.js --findings
-    ├── /todo resolve → edit .claude/memory/YYYY/MM/DD/sharp-review.md in-place
-    └── /todo check  → task-engine.js --check
+    ├── /todo        → task-engine.js report  (scans memory directly)
+    ├── /todo add    → task-engine.js add --summary "..."
+    ├── /todo remove → task-engine.js remove <id>  (or close SR-*)
+    ├── /todo resolve → edit sharp-review.md → post-review.js --rescan
+    └── /todo check  → task-engine.js report  (report includes stats)
 ```
 
 ### Three tiers
@@ -49,7 +49,8 @@ rem/
 │   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
 │   ├── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
 │   ├── check-docs.js         Doc freshness check at compact time
-│   └── task-engine.js        Task management engine: --findings, --add, --check, --report
+│   ├── task-lib.mjs          Task pure logic: scan, parse, archive, report helpers
+│   └── task-engine.js        Task CLI (todo): report, add, remove, help
 ├── skills/
 │   ├── rem/SKILL.md         /rem skill definition and workflow
 │   └── todo/SKILL.md         /todo skill — user-facing task management
@@ -82,7 +83,8 @@ See `.claude/rules/invariants.md` for the always-injected version.
 | `touch-memory.js` | Update timestamps | `--promote` |
 | `compact.js` | Distill into rules | `--check`, `--execute`, `--validate`, `--distilled` |
 | `rem-prep.js` | Pre-REM automation | `--transcript <path>`, `--promote` |
-| `task-engine.js` | Task management engine | `--findings <json>`, `--check`, `--report` |
+| `task-engine.js` | Task CLI (`todo`) | `report`, `add`, `remove`, `help` |
+| `task-lib.mjs` | Task pure logic | scan, parseExistingTasks, archiveResolved, groupBy* |
 | `check-docs.js` | Doc freshness at compact | `--json` |
 
 ## State Management

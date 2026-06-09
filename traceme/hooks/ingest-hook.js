@@ -1,5 +1,6 @@
-import { openDb, closeDb, insertSession, insertPrompt, insertToolCall, closeSession } from '../scripts/db.mjs';
+import { openDb, closeDb, insertSession, insertPrompt, insertToolCall, closeSession, upsertDailySummary } from '../scripts/db.mjs';
 import { getGitBranch, getProjectRoot, getProjectName, todayISO, summarizeToolInput, ERROR_LOG } from '../scripts/lib.mjs';
+import { scanTakeoverTraces } from '../scripts/ingest.mjs';
 import { appendFileSync } from 'node:fs';
 
 function logError(msg) {
@@ -74,6 +75,25 @@ async function main() {
           ingestTranscript(input.transcript_path, input.session_id);
         } catch (e) {
           logError(`ingest failed: ${e.message}`);
+        }
+
+        // Ingest takeover traces (NDJSON contract, no code dependency)
+        try {
+          const date = todayISO();
+          const { totalTokens } = scanTakeoverTraces(date);
+          if (totalTokens > 0) {
+            const session = db.prepare('SELECT project FROM sessions WHERE id=?').get(input.session_id);
+            if (session) {
+              upsertDailySummary(date, session.project, {
+                session_count: 0,
+                prompt_count: 0,
+                total_tokens: totalTokens,
+                total_cost: 0,
+              });
+            }
+          }
+        } catch (e) {
+          logError(`takeover trace ingest failed: ${e.message}`);
         }
         break;
       }

@@ -1,5 +1,6 @@
 // shared/lib.mjs — pure utilities shared across cc-market plugins
 // No plugin-specific imports; safe to import from any plugin.
+// No project-specific data — only reusable functions.
 
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';

@@ -24,7 +24,7 @@ try {
   process.on('exit', () => { try { rmSync(tmp, { recursive: true }); } catch {} });
 }
 
-const { SR_ID_RE, SR_ID_PARSE_RE, inferModule, inferCategory, reviewFrontmatter, parseFindingsFromMarkdown } = lib;
+const { SR_ID_RE, SR_ID_PARSE_RE, inferCategory, reviewFrontmatter, parseFindingsFromMarkdown } = lib;
 
 describe('SR_ID_RE', () => {
   it('matches SR-YYYYMMDD-NNN format', () => {
@@ -51,25 +51,6 @@ describe('SR_ID_PARSE_RE', () => {
     assert.ok(m);
     assert.equal(m[1], '20260604');
     assert.equal(m[2], '015');
-  });
-});
-
-describe('inferModule', () => {
-  it('maps takeover paths', () => {
-    assert.equal(inferModule('cc-market/takeover/lib.mjs'), 'takeover plugin');
-  });
-
-  it('maps notify paths', () => {
-    assert.equal(inferModule('scripts/hooks/notify-hook.js'), 'notify hook');
-  });
-
-  it('falls back to directory name', () => {
-    assert.equal(inferModule('some/unknown/dir/file.js'), 'dir');
-  });
-
-  it('returns unknown for empty path', () => {
-    assert.equal(inferModule(''), 'unknown');
-    assert.equal(inferModule(null), 'unknown');
   });
 });
 
@@ -156,6 +137,17 @@ describe('parseFindingsFromMarkdown', () => {
     const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
     assert.equal(findings[0].file, '.gitignore');
     assert.equal(findings[1].file, 'lib.mjs');
+  });
+
+  it('uses explicit Module field when present', () => {
+    const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
+    assert.equal(findings[0].module, 'test');
+  });
+
+  it('defaults module to empty when no explicit field', () => {
+    const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
+    // test.js has no Module field → no inference, just empty
+    assert.equal(findings[2].module, '');
   });
 
   it('handles empty content', () => {

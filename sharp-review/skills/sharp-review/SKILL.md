@@ -45,7 +45,7 @@ Workflow({
 })
 ```
 
-The workflow launches 3 parallel reviewers for model diversity — Reviewer A runs Codex's adversarial review via takeover's direct app-server integration (`mcp__plugin_takeover_takeover__call_model`, provider=codex, mode=review — no third-party Codex plugin needed), Reviewer B runs an independent perspective via takeover→DeepSeek (`provider=deepseek`, no explicit model — falls back to the configured `ANTHROPIC_DEFAULT_SONNET_MODEL`), and Reviewer C is a native Claude agent (official subscription). Each is constrained by a JSON Schema that enforces:
+The workflow launches 2 parallel reviewers for model diversity — randomly picked from 3 backends each session: Reviewer A (Codex adversarial review via takeover, provider=codex, mode=review), Reviewer B (DeepSeek via takeover, provider=deepseek), and Reviewer C (Sonnet via takeover, provider=deepseek, model=sonnet). Each is constrained by a JSON Schema that enforces:
 - `severity`: HIGH | MEDIUM | LOW | INFO
 - `file`: affected file path
 - `summary`: one-line issue description
@@ -70,11 +70,11 @@ Then run post-review.js via PowerShell:
 node "<CLAUDE_PLUGIN_ROOT>/scripts/post-review.js" --date <YYYY-MM-DD> --findings "$env:TEMP/claude-sharp-review/findings.json" --markdown "$env:TEMP/claude-sharp-review/review.md"
 ```
 
-This does everything: writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, cross-links SR-IDs to related memory files, runs stamp-memory.js to index, and delegates to task-engine.js for tasks.md.
+This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, runs stamp-memory.js, then archives resolved findings to `.claude/tasks/archive/YYYY/MM/DD.md`.
 
 ### Step 4 — Resolve findings
 
-To mark a finding as fixed, edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then re-run post-review.js to sync statuses to tasks.md.
+Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then run `post-review.js --rescan --date YYYY-MM-DD` to archive it.
 
 ### Step 5 — Report
 
@@ -86,8 +86,8 @@ Do NOT dump findings in chat.
 
 After the review:
 
-1. Read `.claude/memory/tasks/tasks.md` — review open HIGH/MEDIUM bugs against code changed in this session. Mark any that are now resolved.
-2. Flag stale items (> 90d untouched) with `[STALE]` or move to archive if confirmed fixed.
+1. Run `todo` — review open findings against code changed in this session. Mark resolved ones as FIXED.
+2. Flag stale items (> 90d untouched) — `todo` report shows `⚠ stale` markers.
 3. Check in-flight Codex tasks via `TaskGet` — do not mark feature complete until verified.
 
 ## Usage

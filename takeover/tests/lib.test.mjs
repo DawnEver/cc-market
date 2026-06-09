@@ -16,6 +16,8 @@ import {
   extractText,
   parseCommandBlock,
   callAnthropicAPI,
+  loadProviderEnv,
+  PROVIDER_ENV_KEYS,
 } from "../scripts/lib.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -434,6 +436,74 @@ describe("callAnthropicAPI", () => {
       assert.equal(callCount, 1);
     } finally {
       globalThis.fetch = undefined;
+    }
+  });
+});
+
+// ── loadProviderEnv ─────────────────────────────────────────────────────────
+
+describe("loadProviderEnv", () => {
+  test("clears all provider keys for non-claude provider", () => {
+    // Set known provider keys in process.env
+    process.env.ANTHROPIC_BASE_URL = 'https://original.example.com';
+    process.env.ANTHROPIC_AUTH_TOKEN = 'orig-token';
+
+    const tmp = makeTempSettings({ "env:test": {
+      ANTHROPIC_BASE_URL: "https://test.example.com",
+      ANTHROPIC_AUTH_TOKEN: "sk-test",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "test-sonnet",
+    }});
+
+    try {
+      const env = loadProviderEnv("test", tmp);
+      assert.equal(env.ANTHROPIC_BASE_URL, "https://test.example.com");
+      assert.equal(env.ANTHROPIC_AUTH_TOKEN, "sk-test");
+      assert.equal(env.ANTHROPIC_DEFAULT_SONNET_MODEL, "test-sonnet");
+    } finally {
+      delete process.env.ANTHROPIC_BASE_URL;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  test("returns empty env for claude provider (OAuth/Pro)", () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://stale.example.com';
+    try {
+      const env = loadProviderEnv("claude");
+      assert.equal(env.ANTHROPIC_BASE_URL, undefined);
+    } finally {
+      delete process.env.ANTHROPIC_BASE_URL;
+    }
+  });
+
+  test("throws for unknown provider", () => {
+    const tmp = makeTempSettings({ "env:known": { ANTHROPIC_BASE_URL: "u", ANTHROPIC_AUTH_TOKEN: "t" }});
+    try {
+      assert.throws(
+        () => loadProviderEnv("unknown", tmp),
+        /Provider "unknown" not found/
+      );
+    } finally {
+      fs.unlinkSync(tmp);
+    }
+  });
+});
+
+// ── PROVIDER_ENV_KEYS ───────────────────────────────────────────────────────
+
+describe("PROVIDER_ENV_KEYS", () => {
+  test("includes all cc.js provider keys", () => {
+    const required = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_USE_FOUNDRY',
+      'ANTHROPIC_FOUNDRY_BASE_URL', 'ANTHROPIC_FOUNDRY_API_KEY'];
+    for (const key of required) {
+      assert.ok(PROVIDER_ENV_KEYS.includes(key), `Missing key: ${key}`);
+    }
+  });
+
+  test("includes model tier keys", () => {
+    const tiers = ['ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'];
+    for (const key of tiers) {
+      assert.ok(PROVIDER_ENV_KEYS.includes(key), `Missing tier key: ${key}`);
     }
   });
 });

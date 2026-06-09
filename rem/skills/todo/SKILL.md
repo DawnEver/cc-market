@@ -1,59 +1,55 @@
 ---
 name: todo
-description: Manage the project task list — view, sync, and resolve tasks. Hosted by rem, backed by rem/scripts/task-engine.js.
+description: Manage the project task list — view, add, check, and resolve tasks. Hosted by rem, backed by rem/scripts/task-engine.js.
 ---
 
 # Tasks
 
-Manage the project task list. The task engine is owned by `rem` — a generic engine that generates `tasks.md`, archives resolved tasks, and updates `MEMORY.md`. Sharp-review writes findings as a single memory entry via `post-review.js`.
+Manage the project task list. Findings live in `.claude/memory/YYYY/MM/DD/sharp-review.md` (sole source of truth). Manual tasks live in `manual.md` alongside. No derived `tasks.md` — the report scans memory directly.
 
 ## Usage
 
-### `/todo` — View summary
+### `/todo` — View open tasks (default)
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" --report
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" report
 ```
 
 ### `/todo add <summary>` — Add a manual task
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" --add --summary "Fix login timeout" --severity MEDIUM --module auth
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" add --summary "Fix login timeout" --severity MEDIUM --module auth
 ```
 
-Options: `--severity` (HIGH|MEDIUM|LOW, default MEDIUM), `--module` (default 'manual'), `--category` (Bug|Feature|Performance, default Bug).
+Options: `--severity` (HIGH|MEDIUM|LOW, default MEDIUM), `--module` (default 'manual').
 
-Generates a `MANUAL-YYYYMMDD-NNN` ID and appends to tasks.md. Manual tasks are preserved across syncs.
+Generates a `MANUAL-YYYYMMDD-NNN` ID and writes to `.claude/memory/YYYY/MM/DD/manual.md` with rem frontmatter.
 
-### `/todo sync` — Full sync from review file
-
-Reads `.claude/memory/YYYY/MM/DD/sharp-review.md`, regenerates tasks.md:
+### `/todo check` — Quick status
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/../sharp-review/scripts/post-review.js" --date YYYY-MM-DD --findings <json> --markdown <md>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" check
 ```
 
-### `/todo resolve <id...>` — Resolve tasks
+### `/todo resolve <SR-ID>` — Resolve a finding
 
-Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then re-run `/todo sync` to update tasks.md.
-
-### `/todo check` — Check if up to date
+1. Edit `.claude/memory/YYYY/MM/DD/sharp-review.md`: `**Status:** OPEN` → `**Status:** FIXED`
+2. Run `post-review.js --rescan --date YYYY-MM-DD` to archive the finding
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" --check
+node "${CLAUDE_PLUGIN_ROOT}/../sharp-review/scripts/post-review.js" --rescan --date YYYY-MM-DD
 ```
 
 ## Architecture
 
 ```
 /todo (hosted by rem)
-  ├── /todo          → rem/scripts/task-engine.js --report
-  ├── /todo add      → rem/scripts/task-engine.js --add --summary "..." --severity ... --module ...
-  ├── /todo sync     → sharp-review/scripts/post-review.js        (writes memory entry → task-engine)
-  ├── /todo resolve  → edit .claude/memory/YYYY/MM/DD/sharp-review.md in-place
-  └── /todo check    → rem/scripts/task-engine.js --check
+  ├── /todo          → task-engine.js report (scans memory directly)
+  ├── /todo add      → task-engine.js add --summary "..." (writes manual.md)
+  ├── /todo check    → task-engine.js check
+  └── /todo resolve  → edit sharp-review.md → post-review.js --rescan
 ```
 
-**Rem** owns the generic task engine: `tasks.md` generation, archive, `MEMORY.md` update, check/report.
+**Rem** owns the task engine: report, add, check.
 
-**Sharp-review** owns the finding pipeline: post-review.js writes a single memory entry per session, cross-links SR-IDs, stamps. Delegates to rem for final output.
+**Sharp-review** owns findings: post-review.js writes `sharp-review.md` and archives resolved findings to `.claude/tasks/archive/YYYY/MM/DD.md`.

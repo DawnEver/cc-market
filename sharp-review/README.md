@@ -30,13 +30,14 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 |---|---|---|
 | `none` | Trivial/doc-only tasks | 0 (skipped) |
 | `once` | Moderate code changes | 1 pass |
-| `multi` | Complex/risky changes | 3 parallel + merge |
+| `multi` | Complex/risky changes | 2 parallel (random pick from 3 backends) + merge |
 
 ## Output
 
-- `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter
-- `.claude/memory/tasks/tasks.md` — structured active task list
-- `.claude/rules/MEMORY.md` — one index entry per session
+- `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter (sole source of truth)
+- `.claude/tasks/archive/YYYY/MM/DD.md` — resolved findings archived here
+- `.claude/rules/MEMORY.md` — one index entry per session (stamp-memory.js)
+- `todo` / `todo report` — scan memory directly; no derived `tasks.md`
 
 ### Resolving Findings
 

@@ -14,6 +14,8 @@ import {
   callAnthropicAPI,
   callCodexCompanion,
   callNativeClaude,
+  callAgentMode,
+  emitTakeoverTrace,
   checkCodexStatus,
 } from "./lib.mjs";
 
@@ -55,10 +57,11 @@ export const TOOLS = [
         },
         mode: {
           type: "string",
-          enum: ["task", "review", "image-generate", "image-edit"],
+          enum: ["task", "review", "image-generate", "image-edit", "agent"],
           description:
             "Operation mode. 'task' for code/investigation (default). " +
             "'review' for adversarial code review (codex only). " +
+            "'agent' for full tool-access via Claude Code harness + provider env. " +
             "'image-generate' for image generation (codex only). " +
             "'image-edit' for image editing (codex only). " +
             "Parsed from <command> block flags: --review, --image, --image-edit.",
@@ -128,6 +131,18 @@ export async function handleCallModel(args) {
 
   const providerConfig = loadProviderConfig(provider);
 
+  // ── Agent mode: full tool access via provider-specific runtime ──
+  if (mode === 'agent') {
+    process.stderr.write(`mcp-takeover: agent mode — provider=${provider} model=${model || '(none)'}\n`);
+    let data;
+    if (providerConfig.provider === 'codex') {
+      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write);
+    } else {
+      data = await callAgentMode(provider, userPrompt, systemPrompt, model || null);
+    }
+    return { content: [{ type: 'text', text: extractText(data) }] };
+  }
+
   // Review and image modes require the codex provider
   if (mode && mode !== "task" && providerConfig.provider !== "codex") {
     throw new Error(
@@ -137,6 +152,7 @@ export async function handleCallModel(args) {
   }
 
   let data;
+  let resolvedModel = model || null;
   if (providerConfig.provider === "codex") {
     if (mode === "review") {
       process.stderr.write(`mcp-takeover: codex review (adversarial)...\n`);
@@ -149,7 +165,6 @@ export async function handleCallModel(args) {
     } else if (mode === "image-edit") {
       process.stderr.write(`mcp-takeover: codex image edit...\n`);
       const { editImage } = await import("./codex/image.mjs");
-      // Agent should pass image path in userPrompt or as systemPrompt
       const imagePath = systemPrompt || userPrompt.split(/\s+/)[0];
       const editPrompt = systemPrompt ? userPrompt : userPrompt.replace(/^\S+\s*/, "");
       data = await editImage(editPrompt, imagePath);
@@ -163,7 +178,7 @@ export async function handleCallModel(args) {
     process.stderr.write("mcp-takeover: calling claude (native CLI)...\n");
     data = await callNativeClaude(userPrompt, systemPrompt);
   } else {
-    const resolvedModel = resolveModel(providerConfig, model || null);
+    resolvedModel = resolveModel(providerConfig, model || null);
     process.stderr.write(
       `mcp-takeover: calling ${resolvedModel} (${provider})...\n`
     );
@@ -174,6 +189,19 @@ export async function handleCallModel(args) {
         `in=${usage.input_tokens || "?"} out=${usage.output_tokens || "?"}\n`
     );
   }
+
+  // Emit trace for TraceMe (NDJSON contract, no code dependency)
+  const usage = data?._usage || data?.usage || null;
+  emitTakeoverTrace({
+    ts: new Date().toISOString(),
+    provider,
+    model: resolvedModel || 'default',
+    mode: mode || 'task',
+    input_tokens: usage?.input_tokens || 0,
+    output_tokens: usage?.output_tokens || 0,
+    cache_read: usage?.cache_read_input_tokens || 0,
+    cache_write: usage?.cache_creation_input_tokens || 0,
+  });
 
   return { content: [{ type: "text", text: extractText(data) }] };
 }

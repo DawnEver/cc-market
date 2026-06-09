@@ -2,23 +2,19 @@
 // post-review.js — write sharp review result as a rem memory entry
 // Takes workflow output ({ markdown, merged }) and creates
 // .claude/memory/YYYY/MM/DD/sharp-review.md with proper frontmatter.
-// Then runs cross-linking, indexes via stamp-memory.js, and generates tasks.md.
+// Indexes via stamp-memory.js, archives resolved findings, syncs tasks.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { tmpdir } from 'os';
 import { execFileSync } from 'child_process';
-import {
-  reviewFrontmatter, parseFindingsFromMarkdown,
-  collectMemoryRefs, crossReferenceFindings, writeBackMemoryRefs,
-} from '../lib.mjs';
+import { reviewFrontmatter, parseFindingsFromMarkdown } from '../lib.mjs';
+import { archiveResolved } from '../../rem/scripts/task-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CC_MARKET = join(__dirname, '..', '..'); // scripts/ → sharp-review/ → cc-market/
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const STAMP_SCRIPT = join(CC_MARKET, 'rem', 'scripts', 'stamp-memory.js');
-const TASK_ENGINE = join(CC_MARKET, 'rem', 'scripts', 'task-engine.js');
 const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 
 // ── Parse args ──
@@ -52,7 +48,7 @@ if (rescan) {
   writeFileSync(memFile, `${updatedFrontmatter}\n${body}`, 'utf8');
   console.log(`[post-review] Rescanned: ${findings.length} findings, frontmatter updated`);
 
-  writeFindingsToTasks(findings, date);
+  archiveResolved(findings, date, '[post-review]');
   const open = findings.filter(f => f.status !== 'fixed' && f.status !== 'FIXED').length;
   console.log(`[post-review] Done — ${findings.length} findings, ${open} open`);
   process.exit(0);
@@ -98,16 +94,7 @@ const frontmatter = reviewFrontmatter(findings, date);
 const dirPath = join(MEMORY_DIR, datePath);
 if (!existsSync(dirPath)) mkdirSync(dirPath, { recursive: true });
 writeFileSync(memFile, `${frontmatter}\n\n${markdown}`, 'utf8');
-console.log(`[post-review] Written: ${memFile}`);
-
-// ── Cross-link SR-IDs into related memory files ──
-
-const { refs, idIndex } = collectMemoryRefs();
-crossReferenceFindings(findings, refs, idIndex);
-const linked = writeBackMemoryRefs(findings);
-if (linked > 0) console.log(`[post-review] ${linked} SR-IDs linked to memory files`);
-
-// ── Index with stamp-memory.js ──
+console.log(`[post-review] Written: ${memFile}`);// ── Index with stamp-memory.js ──
 
 try {
   execFileSync('node', [STAMP_SCRIPT], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' });
@@ -116,27 +103,13 @@ try {
   console.error(`[post-review] stamp-memory.js failed: ${e.stderr || e.message}`);
 }
 
-writeFindingsToTasks(findings, date);
+archiveResolved(findings, date, '[post-review]');
 
 const open = findings.filter(f => f.status !== 'fixed' && f.status !== 'FIXED').length;
 console.log(`[post-review] Done — ${findings.length} findings, ${open} open`);
 
 // ── Helpers ──
 
-function writeFindingsToTasks(findings, d) {
-  const tmpDir = join(tmpdir(), 'claude-post-review');
-  if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
-  const tmpFile = join(tmpDir, `post-review-${d}.json`);
-  writeFileSync(tmpFile, JSON.stringify(findings, null, 2), 'utf8');
 
-  try {
-    const result = execFileSync('node', [TASK_ENGINE, '--findings', tmpFile], {
-      cwd: ROOT, encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'],
-    });
-    if (result) process.stdout.write(result);
-  } catch (e) {
-    if (e.stdout) process.stdout.write(e.stdout);
-    if (e.stderr) process.stderr.write(e.stderr);
-  }
-}
+
 
