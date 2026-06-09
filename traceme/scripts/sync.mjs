@@ -10,7 +10,12 @@ const SYNC_DIR = join(TRACEME_DIR, 'sync-repo');
 const DEVICE = process.env.TRACEME_DEVICE_NAME || `${userInfo().username}@${hostname().split('.')[0]}`;
 
 function getRemote() {
-  return process.env.TRACEME_SYNC_REMOTE || null;
+  if (process.env.TRACEME_SYNC_REMOTE) return process.env.TRACEME_SYNC_REMOTE;
+  try {
+    const r = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: SYNC_DIR, encoding: 'utf8', timeout: 5000 });
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  } catch {}
+  return null;
 }
 
 function git(args, opts = {}) {
@@ -32,8 +37,12 @@ export function ensureSyncRepo() {
   if (!existsSync(SYNC_DIR)) {
     mkdirSync(SYNC_DIR, { recursive: true });
     git(['init'], { cwd: SYNC_DIR });
-    const remote = getRemote();
-    if (remote) git(['remote', 'add', 'origin', remote]);
+  }
+  const remote = getRemote();
+  if (remote) {
+    const existing = git(['remote', 'get-url', 'origin'], { cwd: SYNC_DIR, ignoreError: true });
+    if (existing.status !== 0) git(['remote', 'add', 'origin', remote]);
+    else if (existing.stdout.trim() !== remote) git(['remote', 'set-url', 'origin', remote]);
   }
   return SYNC_DIR;
 }
