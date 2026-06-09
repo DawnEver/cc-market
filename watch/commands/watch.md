@@ -6,7 +6,7 @@ argument-hint: "[--interval-normal 12h] [--config .claude/watch/config.yaml]"
 
 # /watch:watch — Run the supervision loop
 
-Load config from `.claude/watch/config.yaml`, run the health monitor, apply remedies for any anomalies, and schedule the next check via ScheduleWakeup.
+Load config from `.claude/watch/config.yaml`, run the health monitor, apply remedies for any anomalies, and schedule the next check via CronCreate (durable, survives restarts, self-refreshes to reset 7-day TTL).
 
 ## Execution Steps
 
@@ -30,7 +30,7 @@ Parse the JSON output. Key fields: `status`, `anomalies`, `endpoints`, `processe
   ```
   (Implement by reading config and calling action_runner's function directly)
 - Report: all clear.
-- ScheduleWakeup with `delaySeconds = config.instance.check_interval_normal` (default 43200).
+- CronCreate: refresh the durable cron for `check_interval_normal` (see SKILL.md Step 5).
 
 **If `status == "degraded"` or `status == "unreachable"`:**
 
@@ -49,7 +49,7 @@ For each anomaly in `report.anomalies`:
      - If action succeeded, move to next anomaly (remedies for this one are done).
   3. If `step.escalate_after` is set, check `.claude/watch/state/monitor.json` for consecutive anomaly count. If threshold reached → send alert.
 
-After all remedies applied: wait 10 seconds, re-run monitor to verify. If still degraded → send alert. ScheduleWakeup with `delaySeconds = config.instance.check_interval_anomaly` (default 1800).
+After all remedies applied: wait 10 seconds, re-run monitor to verify. If still degraded → send alert. CronCreate: refresh the durable cron for `check_interval_anomaly` (default 1800).
 
 ### Step 3: Alert (if needed)
 

@@ -1,7 +1,7 @@
 ---
 name: watch
 description: "Unattended server & task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. Use when the user asks to supervise, monitor, watch, babysit a server, check health, auto-fix, restart on failure, rollback, or set up unattended ops."
-allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebFetch, TaskCreate, TaskUpdate, ScheduleWakeup]
+allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebFetch, TaskCreate, TaskUpdate, ScheduleWakeup, CronCreate, CronDelete, CronList]
 ---
 
 # watch — Unattended Operations Supervisor
@@ -107,11 +107,44 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
 
 Check `report.escalation.alerts_sent_this_cycle` before sending — avoid duplicate alerts.
 
-## ScheduleWakeup Logic
+## Step 5: Schedule Next Check
 
-- Healthy → `report.watch.intervals.normal` (default 12h)
-- Degraded → `report.watch.intervals.anomaly` (default 30m)
-- After 3+ consecutive degraded checks, keep 30m interval but escalate alerts
+After each run, refresh the durable CronCreate to guarantee the next check fires. This self-refreshing pattern resets the 7-day expiry clock every cycle.
+
+### 5a: Determine interval
+
+Read `report.watch.intervals`:
+- **Healthy** → `normal_seconds` (default 43200 = 12h)
+- **Degraded** → `anomaly_seconds` (default 1800 = 30m)
+
+### 5b: Calculate cron schedule
+
+Convert the interval to a cron expression (local time). Use off-peak minutes to avoid `:00`/`:30` fleet congestion:
+
+- **12h interval**: pick two daily times ~12h apart, e.g. `57 8,20 * * *` (8:57 AM + 8:57 PM)
+- **6h interval**: `7 0,6,12,18 * * *`
+- **1h interval**: `7 * * * *`
+- **30m interval**: `7,37 * * * *`
+- **Custom interval**: if the config's `check_interval_normal` doesn't match standard buckets, pick the start hour (e.g. if 4h, use `7 */4 * * *`)
+
+### 5c: Manage CronCreate
+
+1. **CronList** — check for existing durable watch crons (look for prompts containing `/watch:watch` or `watch scheduling`)
+2. **CronDelete** — remove any stale watch cron (wrong interval, wrong project)
+3. **CronCreate** — create a fresh one:
+   - `cron`: the expression from 5b
+   - `prompt`: `/watch:watch` (triggers this skill in the project)
+   - `recurring`: true
+   - `durable`: true (survives session restarts, written to `.claude/scheduled_tasks.json`)
+
+The prompt fires when Claude Code is idle. If Claude Code is not running, the job queues — it fires on next launch if the scheduled time has passed.
+
+### 5d: Fallback — ScheduleWakeup
+
+If CronCreate is unavailable (e.g. running in a forked agent without the tool), fall back to:
+- `ScheduleWakeup` with `delaySeconds = normal_seconds` (or `anomaly_seconds`)
+
+This is session-scoped only (dies when session ends) but keeps the check cadence within long-running sessions.
 
 ## Multi-Repo Deploy Awareness
 
