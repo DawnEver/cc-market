@@ -1,0 +1,16 @@
+{
+  "name": "traceme",
+  "version": "0.1.1",
+  "description": "Local-first personal observability for Claude Code — token usage, cost, tool usage, daily reports, ActivityWatch integration",
+  "author": {
+    "name": "linxu"
+  },
+  "keywords": [
+    "observability",
+    "telemetry",
+    "token-usage",
+    "cost",
+    "activitywatch",
+    "report"
+  ]
+}
