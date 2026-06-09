@@ -1,6 +1,6 @@
 import { openDb, closeDb, insertSession, insertPrompt, insertToolCall, closeSession, upsertDailySummary } from '../scripts/db.mjs';
 import { getGitBranch, getProjectRoot, getProjectName, todayISO, summarizeToolInput, ERROR_LOG } from '../scripts/lib.mjs';
-import { scanTakeoverTraces } from '../scripts/ingest.mjs';
+import { scanTakeoverTraces, ingestTranscript } from '../scripts/ingest.mjs';
 import { appendFileSync } from 'node:fs';
 
 function logError(msg) {
@@ -70,8 +70,6 @@ async function main() {
         closeSession(input.session_id, new Date().toISOString());
 
         try {
-          const ingestUrl = new URL('../scripts/ingest.mjs', import.meta.url).href;
-          const { ingestTranscript } = await import(ingestUrl);
           ingestTranscript(input.transcript_path, input.session_id);
         } catch (e) {
           logError(`ingest failed: ${e.message}`);
