@@ -67,7 +67,7 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
      but does NOT restart services. You must restart production services yourself,
      verifying they come up healthy.
   5. Report to the user: which repos were deployed, commit SHAs, test/health results.
-- ScheduleWakeup with `delaySeconds` from `report.watch.intervals.normal` (parsed to seconds).
+- Go to Step 5 (schedule next check with `normal` interval).
 
 **On `degraded` (anomaly after recent deploy):**
 - Check `report.escalation.remedies_attempted` — if a recent deploy failed, consider rollback:
@@ -86,7 +86,7 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
   1. Read `remedy_plan` — it lists actions, max attempts, and escalation threshold
   2. Execute each action in order. Respect `max_attempts`.
   3. Check `report.escalation.consecutive` for this anomaly type — if count ≥ `escalate_after`, escalate.
-- ScheduleWakeup with `delaySeconds` from `report.watch.intervals.anomaly`.
+- Go to Step 5 (schedule next check with `anomaly` interval).
 
 ### Step 3: Trend-aware decisions
 
@@ -146,53 +146,13 @@ If CronCreate is unavailable (e.g. running in a forked agent without the tool), 
 
 This is session-scoped only (dies when session ends) but keeps the check cadence within long-running sessions.
 
-## Multi-Repo Deploy Awareness
+## Deploy
 
-When the project tracks multiple repositories (check `report.watch.version_tracking.repos`):
+- Multi-repo: each repo independently checked. Only repos with new commits are deployed. Any repo failure reverts ALL deploy branches to known-good.
+- Test gate (`enable_test_gate`): starts test instance, health-checks, kills it — **production untouched** during this phase.
+- Deploy branch hygiene: `deploy` branch updated via `git reset --hard <tested-commit>`, never commit fixes during deploy. Hotfixes via normal PR flow.
+- Verify production: `.claude/watch/known-good.json`.
 
-1. Each repo is independently checked for new commits. Read `report.components.git_version.metrics`
-   for per-repo commit counts (e.g., `wdg-lab_new_commits: 2`, `wdg-lab-webui_new_commits: 0`).
-2. The `deploy` action only deploys repos that have new commits. Unchanged repos are skipped.
-3. Each changed repo gets its own isolated worktree and runs its own `test_command` (if configured)
-   or falls back to the global `deploy.test_command`.
-4. If any repo's tests fail, **all** deploy branches are reverted to known-good
-   (best-effort rollback — repos are reverted sequentially).
-5. Service repos (e.g., a frontend on port 7000) can have their own `test_health_url`
-   configured per-repo to verify after deploy.
-6. Repos without services (data repos, shared libs) skip the test port gate —
-   their deploy is just: worktree → test → fast-forward deploy branch.
+## Logging
 
-## Logging & Temp File Convention
-
-All temporary logs and detached process output go under `.claude/watch/logs/`:
-
-- `daemon.jsonl` — watchd poll history
-- `health.jsonl` — AI loop check history
-- `backend.log` — backend detached process stdout/stderr
-- `frontend.log` — frontend detached process stdout/stderr
-
-When starting detached processes, always use the `--log` flag:
-```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/start-server.py \
-  --project-dir ${CLAUDE_PROJECT_DIR} \
-  --log .claude/watch/logs/backend.log \
-  --cmd "uv run python -m wdg_lab"
-```
-
-**Never create log files in the project root.** They are git-ignored inside
-`.claude/watch/` by default.
-
-## Deploy Branch History Hygiene
-
-The `deploy` branch is the production branch — it must have a clean, linear history:
-
-1. **Never commit fixes during automated deploy.** If tests fail, the deploy is
-   aborted and the failure is reported. The deploy branch stays at the last known-good commit.
-2. **Hotfixes go through the normal PR workflow**: branch from `main` → fix → PR → merge.
-   The next deploy cycle will pick up the fix automatically.
-3. **The deploy branch is updated by `git reset --hard <tested-commit>`** —
-   a single linear pointer, never a merge, never a fixup commit.
-4. **The main service runs from the deploy branch**, not from `main`.
-   `main` is for active development; `deploy` is for production.
-5. If you need to verify what's running in production, check
-   `.claude/watch/known-good.json` for the last deployed commit SHAs.
+All logs under `.claude/watch/logs/` (gitignored). Use `--log .claude/watch/logs/<name>.log` for detached processes. Never create logs in project root.
