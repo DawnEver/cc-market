@@ -27,6 +27,10 @@ Every memory file must have YAML frontmatter: `name`, `description`, `created`, 
 
 Unified state in `.claude/.rem-state.json`. Use `loadState()`/`saveState()` — never read/write directly. `appendEvent()` for prune log (auto-trims to 50). Hook state keyed under `state.hook`, prune state under `state.prune`.
 
+### deepMerge preserves foreign keys
+
+`deepMerge` must preserve keys in `partial` that are not in `DEFAULT_STATE`. Other plugins (e.g. sharp-review) store their state under the same file — silent drop on load→save would lose their data. When adding a new key to `DEFAULT_STATE`, add it here first, then propagate to all `*/shared/state.mjs` copies. Bundle integrity test enforces per-plugin copies stay in sync with `cc-market/shared/`.
+
 ## Tests
 
 Tests across 4 files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`. Run all: `node --test cc-market/rem/tests/*.test.mjs`. Pre-commit hook enforces.
