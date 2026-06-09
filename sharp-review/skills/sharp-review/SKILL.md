@@ -19,8 +19,8 @@ Reviews are gated by change accumulation, not per-session. The Stop hook (`sharp
 Per-project threshold config in `.claude/.rem-state.json` → `reviewGate.thresholds`:
 ```json
 {
-  "wave0": { "lines": 80, "files": 4 },
-  "wave1": { "lines": 300, "files": 10 }
+  "wave0": { "lines": 300, "files": 5 },
+  "wave1": { "lines": 800, "files": 15 }
 }
 ```
 
