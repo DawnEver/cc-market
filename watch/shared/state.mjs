@@ -31,6 +31,13 @@ function deepMerge(defaults, partial) {
   for (const key of Object.keys(defaults)) {
     result[key] = deepMerge(defaults[key], partial[key]);
   }
+  // Preserve extra keys from partial that are not in defaults
+  // (e.g. reviewGate added by other plugins sharing the same state file)
+  for (const key of Object.keys(partial)) {
+    if (!(key in defaults)) {
+      result[key] = JSON.parse(JSON.stringify(partial[key]));
+    }
+  }
   return result;
 }
 
