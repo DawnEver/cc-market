@@ -7,6 +7,23 @@ description: Post-feature sharp review (锐评) — 3 parallel reviewers with sc
 
 Workflow-driven post-feature review. Three parallel reviewers each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter.
 
+## Triggering (Wave Gate)
+
+Reviews are gated by change accumulation, not per-session. The Stop hook (`sharp-review-hook.js`) diffs from the last-reviewed ref:
+
+- **Wave 0** (new commit): triggers at ≥80 lines changed OR ≥4 files — catch issues early
+- **Wave 1+** (same ref already reviewed): triggers at ≥300 lines changed OR ≥10 files — only re-trigger after substantial new changes
+- Wave resets to 0 when HEAD moves to a new commit
+- Skipped sessions keep accumulating — changes add up across stops until threshold met
+
+Per-project threshold config in `.claude/.rem-state.json` → `reviewGate.thresholds`:
+```json
+{
+  "wave0": { "lines": 80, "files": 4 },
+  "wave1": { "lines": 300, "files": 10 }
+}
+```
+
 ## Execution
 
 ### Step 1 — Gather context

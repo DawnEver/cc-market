@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 // review-gate-hook.js — Claude Code Stop hook
-// A haiku classifier decides how many rounds of sharp critique to run.
-// Modes: none | once | multi. Skips for trivial/non-code tasks.
+// Wave-gated adaptive review trigger. Tracks change accumulation per ref:
+//   wave 0 (new territory): low threshold, catch issues early
+//   wave 1+ (same ref already reviewed): high threshold, accumulate before re-trigger
+//   Resets to wave 0 when HEAD moves to a new commit.
+//
+// Per-project configurable thresholds in .claude/.rem-state.json → reviewGate.thresholds.
+// Defaults: wave0 = 80 lines / 4 files, wave1 = 300 lines / 10 files.
 //
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
-import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../../shared/lib.mjs';
-import { loadState as _loadState, saveState as _saveState } from '../../shared/state.mjs';
+import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
+import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
 
 // Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
 export function findGitRoot(startDir) { return findProjectRoot(startDir); }
@@ -18,6 +22,11 @@ const projectDir = findProjectRoot();
 const unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
 const MEMORY_MAX = 20;
 const TARGETS = { none: 0, once: 1, multi: 2 };
+
+const DEFAULT_THRESHOLDS = {
+  wave0: { lines: 80, files: 4 },
+  wave1: { lines: 300, files: 10 },
+};
 
 function readStdinJSON() { return _readStdinJSON(); }
 
@@ -62,6 +71,41 @@ const DOC_ONLY_PATTERNS = [/\.md$/i, /^memories\//, /^\.claude\//, /^MEMORY\.md$
 
 function isDocOnly(files) {
   return files.length > 0 && files.every(f => DOC_ONLY_PATTERNS.some(p => p.test(f)));
+}
+
+// ── Wave Gate ──
+
+function getCurrentHead() {
+  try {
+    return execSync('git rev-parse HEAD', { cwd: projectDir, timeout: 5000 }).toString().trim();
+  } catch { return null; }
+}
+
+function gitRefExists(ref) {
+  try {
+    execSync(`git cat-file -t ${ref}`, { cwd: projectDir, timeout: 5000, stdio: 'ignore' });
+    return true;
+  } catch { return false; }
+}
+
+function getDiffStat(sinceRef) {
+  try {
+    const out = execSync(`git diff --shortstat ${sinceRef}`, { cwd: projectDir, timeout: 5000 }).toString();
+    const m = out.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
+    if (!m) return { lines: 0, files: 0 };
+    const files = parseInt(m[1], 10) || 0;
+    const insertions = parseInt(m[2], 10) || 0;
+    const deletions = parseInt(m[3], 10) || 0;
+    return { lines: insertions + deletions, files };
+  } catch { return { lines: 0, files: 0 }; }
+}
+
+function loadThresholds(reviewGate) {
+  const custom = reviewGate?.thresholds || {};
+  return {
+    wave0: { ...DEFAULT_THRESHOLDS.wave0, ...custom.wave0 },
+    wave1: { ...DEFAULT_THRESHOLDS.wave1, ...custom.wave1 },
+  };
 }
 
 function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
@@ -164,6 +208,39 @@ async function main() {
   const isFresh = !reviewGate || reviewGate.sessionId !== sessionId;
 
   if (isFresh) {
+    // ── Wave gate ──
+    const head = getCurrentHead();
+    const thresholds = loadThresholds(reviewGate);
+    const lastRef = reviewGate?.lastReviewRef;
+
+    // Wave resets to 0 when HEAD moves to a new commit, otherwise increments
+    const sameRef = !!(lastRef && head && head === lastRef);
+    const wave = sameRef ? ((reviewGate.wave ?? 0) + 1) : 0;
+    const threshold = wave === 0 ? thresholds.wave0 : thresholds.wave1;
+
+    // Resolve diff reference: use lastReviewRef, fall back to HEAD~1 or HEAD
+    let diffRef = lastRef;
+    if (!diffRef || !gitRefExists(diffRef)) {
+      diffRef = gitRefExists('HEAD~1') ? 'HEAD~1' : 'HEAD';
+    }
+
+    const stat = getDiffStat(diffRef);
+
+    if (stat.lines < threshold.lines && stat.files < threshold.files) {
+      // Accumulated changes below wave threshold — skip, preserve ref for accumulation
+      reviewGate = {
+        ...(reviewGate || {}),
+        sessionId,
+        mode: 'none',
+        reason: `wave-${wave} gate: ${stat.lines}L/${stat.files}F < ${threshold.lines}L/${threshold.files}F`,
+        reviewCount: 0,
+        classifiedAt: now,
+      };
+      saveReviewGate(reviewGate);
+      process.exit(0);
+    }
+
+    // ── Gate passed — classify review depth ──
     const taskSummary = extractTaskSummary(transcript);
     const memory = loadClassifierMemory();
     let classification;
@@ -179,7 +256,10 @@ async function main() {
       reason: classification.reason,
       reviewCount: 0,
       classifiedAt: now,
-      memory: memory, // preserve existing memory
+      lastReviewRef: head,
+      wave,
+      memory,
+      thresholds: reviewGate?.thresholds,
     };
     saveReviewGate(reviewGate);
 
