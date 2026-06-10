@@ -24,6 +24,12 @@ Stop → sharp-review-hook.js
                      ├── Write .claude/memory/YYYY/MM/DD/sharp-review.md (single file w/ rem frontmatter)
                      ├── stamp-memory.js → index in MEMORY.md
                      └── archiveResolved() → .claude/tasks/archive/YYYY/MM/DD.md
+
+Generalized content review (external consumers):
+  Caller → Workflow(sharp-review-workflow.js, { contentType: "content", content, reviewScope, findingSchema, reviewers, pickStrategy: "all", ... })
+            ├── Parallel reviewers (all, configurable identities) with JSON Schema enforcement
+            ├── Merge & dedup by configurable key fields
+            └── Return { merged, markdown, summary } → caller handles pipeline integration
 ```
 
 ### Wave Gate
@@ -63,6 +69,24 @@ sharp-review/
 ### Dual Review Modes
 
 `review` (full diff inlined) vs `agent` (manifest only, reviewers explore via tools) vs `empty` (skip) — see `skills/sharp-review/SKILL.md` for the mode table, thresholds, and filtering rules.
+
+### Generalized Content Review
+
+The workflow engine supports arbitrary content review via `contentType: "content"`. This decouples the review orchestration (parallel fanout, schema enforcement, dedup merge, confidence tagging) from the review target (code diffs).
+
+**External consumer example — ai-post 三方会审:**
+
+```
+ai-post /post-review
+  ├── Defines 2 reviewer identities (读者代理人, 技术核查员) with custom finding schemas
+  ├── Runs 2 Workflow(sharp-review-workflow.js, { contentType: "content", ... }) in parallel
+  │     ├── Identity A: hook quality, AI-taste per paragraph, humor density, rhythm
+  │     └── Identity B: code correctness, install steps, terminology, architecture accuracy
+  ├── Each workflow returns { merged, markdown, summary }
+  └── post-review synthesizes cross-identity verdict (✅/⚠️/❌) + platform overview
+```
+
+Full parameter reference → `skills/sharp-review/SKILL.md` § Generalized Mode.
 
 ## Key Invariants
 

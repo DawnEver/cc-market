@@ -8,9 +8,9 @@ export const meta = {
   ],
 };
 
-// ── Finding Schema ──
+// ── Default Finding Schema (code review) ──
 
-const FINDING = {
+const DEFAULT_FINDING = {
   type: 'object',
   properties: {
     severity: { description: 'Severity level', enum: ['HIGH', 'MEDIUM', 'LOW', 'INFO'] },
@@ -24,17 +24,17 @@ const FINDING = {
   required: ['severity', 'summary', 'category'],
 };
 
-const FINDINGS_SCHEMA = {
-  type: 'object',
-  properties: {
-    findings: { type: 'array', items: FINDING },
-  },
-  required: ['findings'],
-};
+// ── Default Reviewers (code review) ──
 
-// ── Review prompt template ──
+const DEFAULT_REVIEWERS = [
+  { key: 'A', name: 'Codex', provider: 'codex' },
+  { key: 'B', name: 'DeepSeek', provider: 'deepseek' },
+  { key: 'C', name: 'Sonnet', provider: 'claude', model: 'sonnet' },
+];
 
-const REVIEW_SCOPE = [
+// ── Default Review Scope (code review) ──
+
+const DEFAULT_REVIEW_SCOPE = [
   'Bad architectural or design decisions',
   'Redundant / dead code',
   'Anything simpler, faster, or more idiomatic',
@@ -42,55 +42,110 @@ const REVIEW_SCOPE = [
   'Files that grew past ~400 lines and should be split into smaller modules',
 ].join(', ');
 
-const FINDINGS_FORMAT = `Each finding has these fields:
-- severity: "HIGH" | "MEDIUM" | "LOW" | "INFO"
-- file: affected file path relative to repo root (string)
-- summary: one-line description of the issue (string)
-- category: "Bug" | "Feature" | "Performance"
-- status: "OPEN" | "FIXED"
-- suggestion: one-line fix (string)
-- detail: optional deeper analysis (string)
+// ── Default Dedup Key Fields ──
 
-If there are no issues, call StructuredOutput with { "findings": [] }.`;
+const DEFAULT_DEDUP_KEY_FIELDS = ['file', 'summary'];
 
-// ── Unified reviewer prompt (dual-mode) ──
+// ── Helpers ──
 
-function reviewerPrompt(reviewer, args) {
-  const name = reviewer.name;
+function buildFindingsFormat(findingSchema) {
+  const props = findingSchema.properties || {};
+  const lines = ['Each finding has these fields:'];
+  for (const [name, def] of Object.entries(props)) {
+    const desc = def.description || '';
+    if (def.enum) {
+      lines.push(`- ${name}: ${def.enum.map(v => `"${v}"`).join(' | ')}${desc ? ' — ' + desc : ''}`);
+    } else if (def.type) {
+      lines.push(`- ${name}: ${def.type}${desc ? ' — ' + desc : ''}`);
+    }
+  }
+  lines.push('');
+  lines.push('If there are no issues, call StructuredOutput with { "findings": [] }.');
+  return lines.join('\n');
+}
+
+const ID_PREFIX = 'SR';
+
+function buildFindingsSchema(findingSchema) {
+  return {
+    type: 'object',
+    properties: {
+      findings: { type: 'array', items: findingSchema },
+    },
+    required: ['findings'],
+  };
+}
+
+function buildDedupKey(f, fields) {
+  return fields.map(field => (f[field] || '').toString().toLowerCase().slice(0, 60)).join('|');
+}
+
+// ── Content review prompt ──
+
+function buildContentReviewPrompt(reviewer, args) {
+  const scope = args.reviewScope || DEFAULT_REVIEW_SCOPE;
+  const findingsFormat = buildFindingsFormat(args.findingSchema || DEFAULT_FINDING);
+
+  const reviewBody = `Review the following content. Be BLUNT. Praise nothing that doesn't deserve it.
+
+Scope: ${scope}
+
+Respond with ONLY a JSON object: { "findings": [...] }
+${findingsFormat}
+
+Content to review:
+\`\`\`
+${args.content}
+\`\`\``;
+
+  const provider = reviewer.provider || 'claude';
+  const modelArg = reviewer.model ? `, model="${reviewer.model}"` : '';
+
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="review" and a userPrompt containing:
+
+${reviewBody}
+
+Then take the response and call the StructuredOutput tool with it.
+
+If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
+}
+
+// ── Code review prompt (original behavior, parameterized) ──
+
+function buildCodeReviewPrompt(reviewer, args) {
+  const scope = args.reviewScope || DEFAULT_REVIEW_SCOPE;
+  const findingsFormat = buildFindingsFormat(args.findingSchema || DEFAULT_FINDING);
   const takeoverMode = args.mode === 'agent' ? 'agent' : 'review';
   const prefix = `Range: ${args.range}. ${args.excludedSummary || ''}`;
 
   if (args.mode === 'review') {
-    // Small diff: inline full diff
     const reviewBody = `${prefix}
 
 Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
 
-Scope: ${REVIEW_SCOPE}
+Scope: ${scope}
 
 Respond with ONLY a JSON object: { "findings": [...] }
-${FINDINGS_FORMAT}
+${findingsFormat}
 
 Git diff:
 \`\`\`
 ${args.diff}
 \`\`\``;
 
-    // Codex review — uses takeover's adversarial review mode
     if (reviewer.key === 'A') {
       return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="review", and userPrompt set to:
 
 ${reviewBody}
 
 Then translate Codex's findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
-${FINDINGS_FORMAT}
+${findingsFormat}
 
 If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
     }
 
-    // DeepSeek / Sonnet — use takeover review mode
-    const provider = reviewer.key === 'B' ? 'deepseek' : 'claude';
-    const modelArg = reviewer.key === 'C' ? ', model="sonnet"' : '';
+    const provider = reviewer.provider || (reviewer.key === 'B' ? 'deepseek' : 'claude');
+    const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="sonnet"' : '');
 
     return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="review" and a userPrompt containing:
 
@@ -114,8 +169,8 @@ ${args.manifestText}
 - Cover ALL manifest files at least at summary level; deep-read the ones that matter,
   prioritized by (1) churn, (2) risk (core logic, auth/security, error handling, concurrency),
   (3) new files (status A). Skip tests/docs/config unless the manifest looks suspicious.
-- Scope: ${REVIEW_SCOPE}
-- Respond with ONLY a JSON object: { "findings": [...] }  ${FINDINGS_FORMAT}`;
+- Scope: ${scope}
+- Respond with ONLY a JSON object: { "findings": [] }  ${findingsFormat}`;
 
   if (reviewer.key === 'A') {
     return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="agent", and userPrompt set to:
@@ -123,13 +178,13 @@ ${args.manifestText}
 ${agentBody}
 
 Then translate the findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
-${FINDINGS_FORMAT}
+${findingsFormat}
 
 If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
   }
 
-  const provider = reviewer.key === 'B' ? 'deepseek' : 'claude';
-  const modelArg = reviewer.key === 'C' ? ', model="sonnet"' : '';
+  const provider = reviewer.provider || (reviewer.key === 'B' ? 'deepseek' : 'claude');
+  const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="sonnet"' : '');
 
   return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="agent" and a userPrompt containing:
 
@@ -140,48 +195,85 @@ Then take the response and call the StructuredOutput tool with it.
 If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
 }
 
-// ── Validate required args ──
-// All args originate from diff-manifest.js output. stats must always be present
-// (even in empty/dry-run mode); missing stats means the caller (skill) is broken.
-if (!args.stats || typeof args.stats.files !== 'number') {
-  const err = `sharp-review-workflow: args.stats is required (got ${JSON.stringify(args.stats)}). The caller must pass diff-manifest.js output fields verbatim.`;
-  log(err);
-  return { error: 'missing-stats', reason: err };
+// ── Main ──
+
+// Resolve config with fallbacks
+const contentType = args.contentType || 'code';
+const findingSchema = args.findingSchema || DEFAULT_FINDING;
+const findingsSchema = buildFindingsSchema(findingSchema);
+const reviewers = args.reviewers || DEFAULT_REVIEWERS;
+const pickStrategy = args.pickStrategy || 'day-mod';
+const dedupKeyFields = args.dedupKeyFields || DEFAULT_DEDUP_KEY_FIELDS;
+
+// Validate required args
+if (contentType === 'code') {
+  if (!args.stats || typeof args.stats.files !== 'number') {
+    const err = `sharp-review-workflow: args.stats is required for code mode (got ${JSON.stringify(args.stats)}). The caller must pass diff-manifest.js output fields verbatim.`;
+    log(err);
+    return { error: 'missing-stats', reason: err };
+  }
+} else if (contentType === 'content') {
+  if (!args.content || typeof args.content !== 'string' || args.content.trim().length === 0) {
+    const err = `sharp-review-workflow: args.content is required for content mode (got ${typeof args.content}).`;
+    log(err);
+    return { error: 'missing-content', reason: err };
+  }
 }
 
 // ── Phase 1: Review ──
 
 phase('Review');
 
-// Pick 2 of 3 reviewers deterministically from date (Math.random() banned in workflows).
-// Day-of-month mod 3 cycles through combinations for diversity across sessions.
-const reviewers = [
-  { key: 'A', name: 'Codex' },
-  { key: 'B', name: 'DeepSeek' },
-  { key: 'C', name: 'Sonnet' },
-];
-const day = parseInt((args.date || '2026-06-09').slice(-2), 10) || 9;
-const combos = [[0, 1], [1, 2], [0, 2]];  // AB, BC, AC
-const pick = combos[day % 3];
-const active = pick.map(i => reviewers[i]);
+// Pick reviewers based on strategy
+let active;
+if (pickStrategy === 'all') {
+  active = [...reviewers];
+} else {
+  // day-mod: pick 2 of N deterministically from date
+  const day = parseInt((args.date || '2026-06-09').slice(-2), 10) || 9;
+  const n = reviewers.length;
+  if (n <= 2) {
+    active = [...reviewers];
+  } else {
+    // Cycle through all pair combinations: (0,1), (1,2), (2,0), (0,1), ...
+    const comboCount = n * (n - 1) / 2;
+    const comboIdx = day % comboCount;
+    // Generate the comboIdx-th pair
+    let ci = 0;
+    active = [];
+    for (let i = 0; i < n && active.length < 2; i++) {
+      for (let j = i + 1; j < n && active.length < 2; j++) {
+        if (ci === comboIdx) { active = [reviewers[i], reviewers[j]]; }
+        ci++;
+      }
+    }
+  }
+}
 
-log(`Mode: ${args.mode} | Range: ${args.range} | ${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions} | ${args.excludedSummary || 'no files excluded'}`);
-log(`Launching 2 parallel reviewers (${active.map(r => r.name).join(' + ')})...`);
+// Build prompt per reviewer
+const promptBuilder = contentType === 'content' ? buildContentReviewPrompt : buildCodeReviewPrompt;
+
+if (contentType === 'code') {
+  log(`Mode: ${args.mode} | Range: ${args.range} | ${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions} | ${args.excludedSummary || 'no files excluded'}`);
+} else {
+  log(`Content review mode | ${active.length} reviewers | ${args.content.length} chars of content`);
+}
+log(`Launching ${active.length} parallel reviewers (${active.map(r => r.name).join(' + ')})...`);
 
 const raw = await parallel(active.map(r => () =>
   agent(
-    reviewerPrompt(r, args),
-    { label: `Reviewer ${r.key} (${r.name})`, phase: 'Review', schema: FINDINGS_SCHEMA }
+    promptBuilder(r, args),
+    { label: `Reviewer ${r.key} (${r.name})`, phase: 'Review', schema: findingsSchema }
   )
-)).catch(() => [null, null]);
+)).catch(() => active.map(() => null));
 
 const results = raw.filter(Boolean);
 const succeeded = results.filter(r => r && Array.isArray(r.findings));
-log(`${succeeded.length}/2 reviewers returned results`);
+log(`${succeeded.length}/${active.length} reviewers returned results`);
 
-// Map results back to A/B/C slots for markdown rendering
-const slotResults = { A: null, B: null, C: null };
-pick.forEach((ri, i) => { slotResults[reviewers[ri].key] = raw[i]; });
+// Map results back to reviewer keys for markdown rendering
+const slotResults = {};
+active.forEach((r, i) => { slotResults[r.key] = raw[i]; });
 
 // ── Phase 2: Merge ──
 
@@ -193,25 +285,22 @@ for (const result of results) {
   if (result && Array.isArray(result.findings)) allFindings.push(...result.findings);
 }
 
-// Deduplicate by summary similarity (≥2 reviewers = high confidence)
-function key(f) {
-  return (f.file || '').toLowerCase() + '|' + (f.summary || '').toLowerCase().slice(0, 60);
-}
-
+// Deduplicate by configurable key fields
 const grouped = new Map();
 for (const f of allFindings) {
-  const k = key(f);
+  const k = buildDedupKey(f, dedupKeyFields);
   if (!grouped.has(k)) grouped.set(k, []);
   grouped.get(k).push(f);
 }
 
 const today = (args.date || '2026-06-04').replace(/-/g, '');
+const idPrefix = args.idPrefix || ID_PREFIX;
 const merged = [];
 let seq = 0;
 
 for (const [k, group] of grouped) {
   seq++;
-  const id = `SR-${today}-${String(seq).padStart(3, '0')}`;
+  const id = `${idPrefix}-${today}-${String(seq).padStart(3, '0')}`;
   const primary = group[0];
   const confidence = group.length >= 2 ? 'high-confidence (≥2 reviewers)' : 'single-reviewer';
   merged.push({
@@ -240,11 +329,11 @@ const lines = [];
 lines.push(`## Review ${timestamp} — current branch`);
 lines.push('');
 lines.push('### Reviewer Status');
-const ran = pick.map(i => reviewers[i]);
-lines.push(`- Reviewer A (Codex): ${slotResults.A ? 'OK' : (ran.some(r => r.key === 'A') ? 'FAILED' : 'skipped')}`);
-lines.push(`- Reviewer B (DeepSeek): ${slotResults.B ? 'OK' : (ran.some(r => r.key === 'B') ? 'FAILED' : 'skipped')}`);
-lines.push(`- Reviewer C (Sonnet): ${slotResults.C ? 'OK' : (ran.some(r => r.key === 'C') ? 'FAILED' : 'skipped')}`);
-if (succeeded.length < 2) lines.push('- Warning: fewer than 2 reviewers succeeded');
+for (const r of reviewers) {
+  const status = slotResults[r.key] ? 'OK' : (active.some(a => a.key === r.key) ? 'FAILED' : 'skipped');
+  lines.push(`- Reviewer ${r.key} (${r.name}): ${status}`);
+}
+if (succeeded.length < active.length) lines.push(`- Warning: only ${succeeded.length}/${active.length} reviewers succeeded`);
 lines.push('');
 lines.push('### Confirmed findings');
 lines.push('');
@@ -268,15 +357,9 @@ for (const f of merged) {
 
 const markdown = lines.join('\n');
 
-// Write to file via Bash
-log(`Writing findings to ${reviewFile}...`);
-
 // ── Phase 3: Sync ──
 
 phase('Sync');
-
-// The parent skill will write the markdown via post-review.js.
-// Return the structured data so the skill can do the I/O.
 
 return {
   reviewFile,
