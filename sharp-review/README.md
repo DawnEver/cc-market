@@ -78,3 +78,22 @@ When a session is skipped (below threshold), the reference point is preserved �
 }
 ```
 Omit to use defaults shown above. Override only the fields you want to change.
+
+### Large Diffs
+
+When a change touches many files or produces a very large diff, sharp review automatically switches to **agent mode**:
+
+- **Smart filtering**: lockfiles (`package-lock.json`, `Cargo.lock`, etc.), minified/build/generated files, binary files, and pure renames are automatically excluded from review — reducing noise and preventing them from inflating the diff size.
+- **Review mode** (default, ≤ `inlineDiffLimit` chars): the full diff is inlined into reviewer prompts — best signal quality.
+- **Agent mode** (> `inlineDiffLimit` chars): only a manifest (file table + hunk header summary) is sent to reviewers. Each reviewer gets full tool access via takeover `mode="agent"` and explores autonomously — running `git diff -- <path>`, reading source files, tracing call chains. Two reviewers still cross-validate findings.
+- **Empty mode**: if all files are filtered out, the review is skipped entirely.
+
+Configure the threshold in `.claude/.rem-state.json`:
+```json
+{
+  "reviewGate": {
+    "inlineDiffLimit": 40000
+  }
+}
+```
+Default is 40000 characters (~10k tokens). Units are **chars** (not lines) because chars track actual context window cost — line counts mislead on minified or long-line content.

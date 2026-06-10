@@ -38,7 +38,7 @@ Always-injected behavioral constraints for working on the takeover plugin.
 - `send(rpc)` writes `JSON.stringify(rpc) + "\n"` to stdout.
 - Error codes: `-32601` for unknown method, `-32000` for server error, `-32602` for invalid params.
 - `call_model` requires `provider` + `userPrompt` (non-empty). `--write` only valid for `provider=codex`.
-- `mode` enum: `task`, `review`, `image-generate`, `image-edit`. Review/image modes require `provider=codex`.
+- `mode` enum: `task`, `review`, `image-generate`, `image-edit`, `agent`. Review/image modes require `provider=codex`.
 - `list_models` and `codex_status` take no required params.
 
 ## Mode flags

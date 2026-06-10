@@ -2,7 +2,7 @@ export const meta = {
   name: 'sharp-review',
   description: 'Post-feature sharp review — 2 parallel reviewers (random pick from 3 backends), merge findings, sync task list',
   phases: [
-    { title: 'Review', detail: '3 parallel reviewers with schema' },
+    { title: 'Review', detail: '2 parallel reviewers with schema' },
     { title: 'Merge', detail: 'cross-check, assign IDs, render markdown' },
     { title: 'Sync', detail: 'return structured findings' },
   ],
@@ -53,68 +53,87 @@ const FINDINGS_FORMAT = `Each finding has these fields:
 
 If there are no issues, call StructuredOutput with { "findings": [] }.`;
 
-function reviewPrompt(diff) {
-  return `Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
+// ── Unified reviewer prompt (dual-mode) ──
+
+function reviewerPrompt(reviewer, args) {
+  const name = reviewer.name;
+  const takeoverMode = args.mode === 'agent' ? 'agent' : 'review';
+  const prefix = `Range: ${args.range}. ${args.excludedSummary || ''}`;
+
+  if (args.mode === 'review') {
+    // Small diff: inline full diff
+    const reviewBody = `${prefix}
+
+Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
 
 Scope: ${REVIEW_SCOPE}
 
-You MUST call the StructuredOutput tool with a JSON object: { "findings": [...] }
+Respond with ONLY a JSON object: { "findings": [...] }
 ${FINDINGS_FORMAT}
 
 Git diff:
 \`\`\`
-${diff}
+${args.diff}
 \`\`\``;
-}
 
-function codexReviewPrompt(diff) {
-  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="review", and userPrompt set to the git diff below — this runs Codex's adversarial review directly via its app-server, no plugin install required.
+    // Codex review — uses takeover's adversarial review mode
+    if (reviewer.key === 'A') {
+      return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="review", and userPrompt set to:
+
+${reviewBody}
 
 Then translate Codex's findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
 ${FINDINGS_FORMAT}
 
-If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.
+If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
+    }
 
-Git diff:
-\`\`\`
-${diff}
-\`\`\``;
-}
+    // DeepSeek / Sonnet — use takeover review mode
+    const provider = reviewer.key === 'B' ? 'deepseek' : 'claude';
+    const modelArg = reviewer.key === 'C' ? ', model="sonnet"' : '';
 
-function deepseekAgentPrompt(diff) {
-  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="deepseek", mode="review" and a userPrompt containing:
+    return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="review" and a userPrompt containing:
 
-Review the following git diff. Explore the codebase as needed — read relevant source files, trace callers and callees, check for edge cases. Be BLUNT.
-
-Scope: ${REVIEW_SCOPE}
-
-Respond with ONLY a JSON object: { "findings": [...] }
-${FINDINGS_FORMAT}
-
-Git diff:
-\`\`\`
-${diff}
-\`\`\`
+${reviewBody}
 
 Then take the response and call the StructuredOutput tool with it.
 
 If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
-}
+  }
 
-function claudeAgentPrompt(diff) {
-  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="claude", model="sonnet", mode="review" and a userPrompt containing:
+  // Agent mode: manifest + autonomous exploration
+  const agentBody = `Large change set (${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions}). Full diff NOT included.
+${prefix}
 
-Review the following git diff. Explore the codebase as needed — read relevant source files, trace callers and callees, check for edge cases. Be BLUNT.
+## Review manifest (all changed files)
+${args.manifestText}
 
-Scope: ${REVIEW_SCOPE}
+## Your job — explore autonomously
+- You have full tool access. Run \`git diff ${args.range} -- <path>\` to read any file's changes;
+  read source files / trace callers as needed.
+- Cover ALL manifest files at least at summary level; deep-read the ones that matter,
+  prioritized by (1) churn, (2) risk (core logic, auth/security, error handling, concurrency),
+  (3) new files (status A). Skip tests/docs/config unless the manifest looks suspicious.
+- Scope: ${REVIEW_SCOPE}
+- Respond with ONLY a JSON object: { "findings": [...] }  ${FINDINGS_FORMAT}`;
 
-Respond with ONLY a JSON object: { "findings": [...] }
+  if (reviewer.key === 'A') {
+    return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="agent", and userPrompt set to:
+
+${agentBody}
+
+Then translate the findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
 ${FINDINGS_FORMAT}
 
-Git diff:
-\`\`\`
-${diff}
-\`\`\`
+If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
+  }
+
+  const provider = reviewer.key === 'B' ? 'deepseek' : 'claude';
+  const modelArg = reviewer.key === 'C' ? ', model="sonnet"' : '';
+
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="agent" and a userPrompt containing:
+
+${agentBody}
 
 Then take the response and call the StructuredOutput tool with it.
 
@@ -128,20 +147,21 @@ phase('Review');
 // Pick 2 of 3 reviewers deterministically from date (Math.random() banned in workflows).
 // Day-of-month mod 3 cycles through combinations for diversity across sessions.
 const reviewers = [
-  { key: 'A', name: 'Codex', prompt: codexReviewPrompt },
-  { key: 'B', name: 'DeepSeek', prompt: deepseekAgentPrompt },
-  { key: 'C', name: 'Sonnet', prompt: claudeAgentPrompt },
+  { key: 'A', name: 'Codex' },
+  { key: 'B', name: 'DeepSeek' },
+  { key: 'C', name: 'Sonnet' },
 ];
 const day = parseInt((args.date || '2026-06-09').slice(-2), 10) || 9;
 const combos = [[0, 1], [1, 2], [0, 2]];  // AB, BC, AC
 const pick = combos[day % 3];
 const active = pick.map(i => reviewers[i]);
 
+log(`Mode: ${args.mode} | Range: ${args.range} | ${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions} | ${args.excludedSummary || 'no files excluded'}`);
 log(`Launching 2 parallel reviewers (${active.map(r => r.name).join(' + ')})...`);
 
 const raw = await parallel(active.map(r => () =>
   agent(
-    r.prompt(args.diff || 'See git diff in context above'),
+    reviewerPrompt(r, args),
     { label: `Reviewer ${r.key} (${r.name})`, phase: 'Review', schema: FINDINGS_SCHEMA }
   )
 )).catch(() => [null, null]);
@@ -154,7 +174,7 @@ log(`${succeeded.length}/2 reviewers returned results`);
 const slotResults = { A: null, B: null, C: null };
 pick.forEach((ri, i) => { slotResults[reviewers[ri].key] = raw[i]; });
 
-// ── Phase 3: Merge ──
+// ── Phase 2: Merge ──
 
 phase('Merge');
 
@@ -242,7 +262,7 @@ const markdown = lines.join('\n');
 // Write to file via Bash
 log(`Writing findings to ${reviewFile}...`);
 
-// ── Phase 4: Sync ──
+// ── Phase 3: Sync ──
 
 phase('Sync');
 

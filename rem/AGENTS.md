@@ -26,13 +26,7 @@ SessionStart → prune-memory.js --evict-stale
     └── /todo check  → task-engine.js report  (report includes stats)
 ```
 
-### Three tiers
-
-| Tier | Location | Frontmatter | Loaded | Eviction |
-|---|---|---|---|---|
-| Rules | `.claude/rules/` | (none) | Every session | Never |
-| Long-term | `.claude/memory/` | `tier: long` | On demand via index | Demoted if inactive between prune cycles |
-| Short-term | `.claude/memory/` | `tier: short` | On demand via index | 90d since last `accessed` |
+Three-tier memory system (rules / long-term / short-term) → `skills/rem/reference/memory-conventions.md`.
 
 ## File Structure
 
@@ -66,13 +60,7 @@ rem/
 
 ## Key Invariants
 
-See `.claude/rules/invariants.md` for the always-injected version.
-
-- **Append-only**: Memory files are never deleted from disk. `prune-memory.js` removes from index only. `compact.js` clears index but keeps files.
-- **Path security**: Use `resolveMemoryPath()` + `isInsideMemoryDir()` before any file I/O on user-supplied paths.
-- **Frontmatter fields**: Every `.claude/memory/*.md` needs `name`, `description`, `created`, `accessed`, `tier`.
-- **Index format**: `MEMORY.md` sorted by `accessed` descending, max 20 entries.
-- **Unified state**: `.claude/.rem-state.json` holds both hook state and prune events.
+See `.claude/rules/invariants.md` (always-injected) for append-only, path security, frontmatter, index, and state constraints.
 
 ## Reference
 
