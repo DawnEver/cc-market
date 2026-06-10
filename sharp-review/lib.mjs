@@ -82,10 +82,10 @@ export function parseFindingsFromMarkdown(content, date) {
 
 // ── Diff manifest — constants ──
 
-export const INLINE_DIFF_LIMIT_DEFAULT = 40000; // chars (~10k tokens); config key reviewGate.inlineDiffLimit
-export const MANIFEST_TEXT_BUDGET = 12000;      // manifest 渲染总预算
-export const MAX_HUNKS_PER_FILE = 10;           // 每文件保留 hunk header 数
-export const MAX_MANIFEST_FILES = 300;          // 超出按 churn 取 top N
+export const INLINE_DIFF_LIMIT_DEFAULT = 20000; // chars (~5k tokens); config key reviewGate.inlineDiffLimit
+export const MANIFEST_TEXT_BUDGET = 12000;      // manifest total budget
+export const MAX_HUNKS_PER_FILE = 10;           // each file hunk header number
+export const MAX_MANIFEST_FILES = 300;          // exceeded churn use top N
 
 export const LOW_VALUE_PATTERNS = [
   // lockfile
