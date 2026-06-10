@@ -10,7 +10,7 @@ import { join } from 'path';
 import {
   scopeMemoryDir as memoryDir, scopeIndexFile as indexFile, scopeRoot,
   MAX_ENTRIES, STALE_DAYS, DAY_MS,
-  getTier, setTier, parseIndex, loadState, saveState, appendEvent, dayPrecision,
+  getTier, setTier, setField, parseIndex, loadState, saveState, appendEvent, dayPrecision,
 } from '../lib.mjs';
 
 const dryRun = process.argv.includes('--dry-run');
@@ -71,6 +71,13 @@ if (demoted.length > 0) {
     console.log(`  ${e.date} ${e.path}`);
     if (!dryRun) {
       writeTier(e, 'short');
+      // Reset access_count so demoted entries must earn re-promotion with fresh accesses.
+      // Without this, an entry with access_count >= 3 bounces back immediately on the next
+      // rem-prep --promote run (demote-bounce bug).
+      const memFile = join(memoryDir, e.path);
+      let c = readFileSync(memFile, 'utf8');
+      c = setField(c, 'access_count', '1');
+      writeFileSync(memFile, c, 'utf8');
       shortTerm.push(e);
       appendEvent('demote', { path: e.path, previousTier: 'long', reason: 'inactive between prune cycles' });
     }

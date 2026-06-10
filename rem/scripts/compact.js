@@ -2,20 +2,23 @@
 // Compact orchestrator for the REM memory system.
 //
 //   node compact.js --check       → exit 0 if compact needed (≥20 entries), exit 1 otherwise
+//   node compact.js --propose      → JSON listing of all indexed entries for user review
 //   node compact.js --execute      → after model distilled rules into .claude/rules/rem/,
 //                                    validate and clear the MEMORY.md index
 //   node compact.js --validate     → check .claude/rules/rem/ namespace integrity
 //
 // Workflow:
 //   1. Model runs --check; if exit 0 → compact needed
-//   2. Model reads memory files, distills to .claude/rules/rem/<topic>.md
-//   3. Model runs --execute → validates rules exist, clears index, logs summary
+//   2. Model runs --propose → presents entry list to user for approval
+//   3. Model reads approved memory files, distills to .claude/rules/rem/<topic>.md
+//   4. Model runs --execute → validates rules exist, clears index, logs summary
 
 import { SR_ID_RE } from '../shared/lib.mjs';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
   indexFile, rulesDir, remRulesDir, memoryDir, INDEX_HEADER, MAX_ENTRIES, collectMemoryFiles,
+  parseIndex, getTier, getAccessCount, getField,
 } from '../lib.mjs';
 
 const args = process.argv.slice(2);
@@ -35,6 +38,48 @@ if (mode === '--check') {
   }
   console.log(`[compact] ${entryCount} entries (<${MAX_ENTRIES}) — not needed`);
   process.exit(1);
+}
+
+// ── --propose: list all indexed entries for user review before compact ──
+if (mode === '--propose') {
+  if (!existsSync(indexFile)) {
+    console.log(JSON.stringify({ entryCount: 0, maxEntries: MAX_ENTRIES, entries: [] }));
+    process.exit(0);
+  }
+  const content = readFileSync(indexFile, 'utf8');
+  const { entries } = parseIndex(content);
+
+  const result = entries.map(e => {
+    const memFile = join(memoryDir, e.path);
+    let tier = 'short';
+    let accessCount = 1;
+    let description = '';
+    if (existsSync(memFile)) {
+      try {
+        const memContent = readFileSync(memFile, 'utf8');
+        tier = getTier(memContent);
+        accessCount = getAccessCount(memContent);
+        description = getField(memContent, 'description') || '';
+      } catch { /* use defaults */ }
+    }
+    return {
+      path: e.path,
+      title: e.title,
+      created: e.created,
+      accessed: e.accessed,
+      tier,
+      accessCount,
+      description,
+    };
+  });
+
+  console.log(JSON.stringify({
+    entryCount: result.length,
+    maxEntries: MAX_ENTRIES,
+    overLimit: Math.max(0, result.length - MAX_ENTRIES),
+    entries: result,
+  }, null, 2));
+  process.exit(0);
 }
 
 // ── --validate: check rem/ namespace integrity ──
@@ -164,5 +209,5 @@ if (mode === '--execute') {
 }
 
 // ── default ──
-console.log('Usage: node compact.js [--check|--validate|--execute]');
+console.log('Usage: node compact.js [--check|--propose|--validate|--execute]');
 process.exit(1);
