@@ -92,8 +92,8 @@ Configure the threshold in `.claude/.rem-state.json`:
 ```json
 {
   "reviewGate": {
-    "inlineDiffLimit": 40000
+    "inlineDiffLimit": 20000
   }
 }
 ```
-Default is 40000 characters (~10k tokens). Units are **chars** (not lines) because chars track actual context window cost — line counts mislead on minified or long-line content.
+Default is 20000 characters (~5k tokens). Units are **chars** (not lines) because chars track actual context window cost — line counts mislead on minified or long-line content.

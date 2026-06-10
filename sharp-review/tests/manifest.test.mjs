@@ -263,7 +263,7 @@ describe('decideMode', () => {
   });
 
   it('uses default constant', () => {
-    assert.equal(INLINE_DIFF_LIMIT_DEFAULT, 40000);
+    assert.equal(INLINE_DIFF_LIMIT_DEFAULT, 20000);
   });
 
   it('respects custom limit', () => {
