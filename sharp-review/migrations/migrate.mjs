@@ -64,7 +64,11 @@ export async function migrate(projectRoot) {
 
     for (const f of srFiles) rmSync(join(oldDir, f));
     if (existsSync(resolvedPath)) rmSync(resolvedPath);
-    if (readdirSync(oldDir).length === 0) rmSync(oldDir, { recursive: true });
+    if (readdirSync(oldDir).length === 0) {
+      rmSync(oldDir, { recursive: true });
+    } else {
+      summary.push(`WARN  .claude/memory/${entry.name}/ not empty after consolidation — review remaining files manually`);
+    }
 
     changed = true;
     summary.push(`consolidated ${srFiles.length} finding file(s) for ${date} into .claude/memory/${y}/${m}/${d}/sharp-review.md`);

@@ -54,22 +54,35 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --check
 ```
 Exit 0 = needed, exit 1 = skip.
 
-**If compact needed:**
+**If compact needed, present the proposal to the user before acting:**
 
-1. Read all files in `.claude/memory/`
-2. Distill durable insights into `.claude/rules/rem/` rule files, organized by topic:
+1. Run the propose command to get structured data:
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --propose
+```
+This outputs JSON with every indexed entry, including its tier, access_count, and description.
+
+2. Classify each entry as rule-worthy or keep-as-memory:
+   - **Rule-worthy** (should be always-injected): durable insights, behavioral constraints, invariants, gotchas that apply every session. Typically entries with `tier: long` and `access_count >= 5`.
+   - **Keep-as-memory** (on-demand): historical reference, one-off decisions, bug-specific notes, context useful but not needed every session.
+
+3. Present the classification to the user with AskUserQuestion (multiSelect) — let them deselect items they want kept as long-term memory.
+
+4. After user confirmation, read ONLY the approved-to-be-rules entries and distill them into `.claude/rules/rem/` rule files, organized by topic:
    - `.claude/rules/rem/hook.md` — hook behavior and guards
    - `.claude/rules/rem/api-proxy.md` — proxy gotchas and invariants
    - `.claude/rules/rem/takeover.md` — plugin architecture
    - etc. Group related memory topics under the same rule file.
-3. Update any outdated rules already in `.claude/rules/rem/`
-4. Run the cleanup script with the list of memory files you distilled:
+   - **Do NOT distill entries the user chose to keep as long-term memory.**
+   - Update any outdated rules already in `.claude/rules/rem/`.
+
+5. Run the cleanup script with ONLY the distilled paths:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --execute --distilled 2026/05/27/feedback_git_commit.md,2026/05/28/retrospect_hook_task_guard.md
 ```
 This removes only the distilled entries from the index — un-distilled entries stay. Without `--distilled`, clears all entries (full reset).
 
-5. Check documentation freshness:
+6. Check documentation freshness:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/check-docs.js
 ```

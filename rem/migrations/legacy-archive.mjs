@@ -126,6 +126,8 @@ export function migrateLegacyArchives(projectRoot) {
     const remaining = other.filter(b => !/^# Resolved Tasks/.test(b));
     if (remaining.length) {
       writeFileSync(file, remaining.join('\n\n') + '\n', 'utf8');
+      const relFile = toPosix(relative(projectRoot, file));
+      summary.push(`WARN  ${relFile} still has non-entry content — kept in place, review manually`);
     } else {
       rmSync(file);
     }
@@ -139,6 +141,8 @@ export function migrateLegacyArchives(projectRoot) {
     rmSync(legacyDir, { recursive: true });
     changed = true;
     summary.push('removed empty legacy .claude/memory/tasks/ (superseded by .claude/tasks/archive/)');
+  } else if (existsSync(legacyDir)) {
+    summary.push('WARN  .claude/memory/tasks/ not empty after migration — review remaining files manually');
   }
 
   return { changed, summary };
