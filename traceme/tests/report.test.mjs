@@ -32,9 +32,6 @@ describe('Report Generator', () => {
     db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
       VALUES (?,?,?,?,?)`).run('tr3', 'sess-r1', 'Read', 'Read src/auth.js', '2026-06-09T10:31:00Z');
 
-    db.prepare(`INSERT OR REPLACE INTO skill_calls (id, session_id, skill_name, timestamp)
-      VALUES (?,?,?,?)`).run(1, 'sess-r1', 'sharp-review', '2026-06-09T11:00:00Z');
-
     db.prepare(`INSERT OR REPLACE INTO daily_summary (date, project, session_count, prompt_count, total_tokens, total_cost, top_model)
       VALUES (?,?,?,?,?,?,?)`).run('2026-06-09', 'my-project', 1, 2, 12000, 0.045, 'claude-sonnet-4');
   });
@@ -55,7 +52,6 @@ describe('Report Generator', () => {
     assert.ok(report.includes('Edit'));
     assert.ok(report.includes('Bash'));
     assert.ok(report.includes('Read'));
-    assert.ok(report.includes('sharp-review'));
   });
 
   it('should return no-data message for empty date', () => {

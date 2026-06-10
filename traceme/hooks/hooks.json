@@ -45,7 +45,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-hook.js\"",
-            "timeout": 30
+            "timeout": 15
           }
         ]
       }
@@ -61,7 +61,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-hook.js\"",
-            "timeout": 30
+            "timeout": 15
           }
         ]
       }

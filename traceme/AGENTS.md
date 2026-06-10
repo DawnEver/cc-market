@@ -30,15 +30,13 @@ SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
 ## Data Flow
 
 1. Hook → `ingest-hook.js` → `db.mjs` → `~/.claude/traceme/traceme.db`
-2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary
-3. CLI/Skill → `report.mjs` → `sync.readMergedSnapshot(date)` (cached `origin/main`, no network) for
-   the cross-device aggregate; falls back to local SQLite (`db.mjs` queries) when no merged
-   snapshot exists for the date or `--local-only` is passed. Top Expensive Prompts is always
-   local-only (prompt text is never synced).
+2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary.
+   SessionEnd → `sync-hook.js` → `sync.mjs` → push per-device file to main (no aggregate step needed)
+3. CLI/Skill → `report.mjs` → reads all device files in the date directory from cached `origin/main`, merges in memory; falls back to local SQLite (`db.mjs` queries) when no synced data exists for the date or `--local-only` is passed. Top Expensive Prompts is always local-only (prompt text is never synced).
 
 ## Multi-Device Encrypted Sync
 
-Each device is a git branch. Only `.enc` files (age-encrypted) touch the remote repo. The sync repo is separate from the config repo.
+All devices push per-device `.enc` files directly to `main`. Only `.enc` files (age-encrypted) touch the remote repo. The sync repo is separate from the config repo.
 
 ### Architecture
 ```
@@ -47,37 +45,30 @@ Device A (linxu-win)             GitHub (traceme-history)         Device B (linx
      | traceme sync push             |                                |
      | → dump SQLite → JSON          |                                |
      | → age encrypt                 |                                |
-     | → git push device/linxu-win   |                                |
+     | → push main:YYYY/MM/DD/       |                                |
+     |        linxu-win.enc          |                                |
      |──────────────────────────────>|                                |
      |                                |                                |
      |                                |     traceme sync pull         |
-     |                                |     → fetch device/*           |
-     |                                |     → age decrypt              |
+     |                                |     → fetch main               |
+     |                                |     → decrypt linxu-win.enc    |
      |                                |     → merge into SQLite        |
      |                                |<───────────────────────────────|
-     |                                |                                |
-     | traceme sync aggregate        |                                |
-     | → fetch all device branches   |                                |
-     | → decrypt, merge, re-encrypt  |                                |
-     | → push YYYY/MM/DD/cc.enc      |                                |
-     |──────────────────────────────>|                                |
 ```
 
 ### Repo Structure (traceme-history)
 
-Snapshot paths are `YYYY/MM/DD/cc.enc` — one directory per day, `cc.enc` holds the Claude Code
-snapshot. The per-day directory leaves room for future sibling files (other tools' data) without
-another path redesign. Same convention on device branches and `main`:
+Snapshot paths are `YYYY/MM/DD/<device-name>.enc` — one directory per day, one `.enc` file per
+device. The per-day directory leaves room for future sibling files (other tools' data) without
+another path redesign. All devices push directly to `main`:
 ```
-device/linxu-win/
-  2026/06/09/cc.enc
-  2026/06/10/cc.enc
-
-device/linxu-mac/
-  2026/06/09/cc.enc
-
 main:
-  2026/06/09/cc.enc    ← all-device aggregate
+  2026/06/09/
+    linxu-win.enc
+    linxu-mac.enc
+  2026/06/10/
+    linxu-win.enc
+    linxu-mac.enc
 ```
 
 ### Commands
@@ -85,27 +76,26 @@ main:
 traceme sync setup             Generate keypair, init sync repo, auto-pull from other devices
 traceme sync push [date|--all] Encrypt & push daily snapshot (--all: backfill all history)
 traceme sync pull [date|--all] Pull & import from other devices (--all: full sync)
-traceme sync aggregate [date]  Merge all devices → push encrypted merge to main
 traceme sync verify [date]     Compare local SQLite vs merged aggregate
 ```
 
-`traceme report`/`traceme stats` read the cross-device `YYYY/MM/DD/cc.enc` aggregate from the
-cached `origin/main` ref by default (via `sync.readMergedSnapshot`), labeling output with the
-contributing devices. Pass `--local-only` to force local-SQLite-only output (e.g. before any
-sync has run, or to inspect just this device's data).
+`traceme report`/`traceme stats` read all device files in the date directory from the
+cached `origin/main` ref by default (via `sync.readMergedSnapshot`) and merge in memory,
+labeling output with the contributing devices. Pass `--local-only` to force local-SQLite-only
+output (e.g. before any sync has run, or to inspect just this device's data).
 
-Auto-sync: `hooks/sync-hook.js` fires on Stop/SessionEnd — pushes today's snapshot, then
-re-aggregates all device branches into `main`. No manual push or separate aggregate cron
-needed. Remote resolves from `TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's
-`origin` if unset.
+Auto-sync: `hooks/sync-hook.js` fires on Stop/SessionEnd — pushes today's per-device snapshot
+directly to `main`. Report reads all device files in the date directory and merges in memory.
+No separate aggregate step needed. Remote resolves from `TRACEME_SYNC_REMOTE` env var, falling
+back to the sync repo's `origin` if unset.
 
 ### Key Files
 | File | Role |
 |------|------|
 | `scripts/crypto.mjs` | Zero-dep AES-256-GCM encryption (Node `crypto`, no external CLI) |
-| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, aggregate, verify, backfill, `readMergedSnapshot` |
+| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, verify, backfill, `readMergedSnapshot` |
 | `scripts/migrate-legacy-paths.mjs` | One-time, manual: re-paths existing remote `YYYY-MM-DD.enc` snapshots to `YYYY/MM/DD.enc`. Not part of the CLI — `node scripts/migrate-legacy-paths.mjs` |
-| `hooks/sync-hook.js` | Auto-sync hook: fires on session end, pushes today's snapshot and aggregates to `main` |
+| `hooks/sync-hook.js` | Auto-sync hook: fires on session end, pushes today's per-device snapshot to `main` |
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
 | `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
 
