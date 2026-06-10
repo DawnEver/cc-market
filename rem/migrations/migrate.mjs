@@ -1,20 +1,26 @@
 // rem migration: bring a project's .claude/memory + .claude/rules up to the latest rem format.
 // Idempotent — safe to re-run; no-op once a project is current.
 //
-// Folds in two past breaking changes:
+// Folds in past breaking changes:
 //   - memory frontmatter (name/description/created/accessed/tier) + dated YYYY/MM/DD dirs
 //     (delegated to stamp-memory.js, which already does this idempotently)
 //   - resolved task archives must live at .claude/tasks/archive/YYYY/MM/DD.md — legacy
 //     .claude/memory/tasks/** content and non-conforming archive rollups (e.g. YYYY/MM.md,
 //     YYYY-MM.md) are folded into that layout, deduped by ID
+//   - removal of stray state files left behind by plugins predating rem
+//     (e.g. .claude/.retro_state.json, superseded by .claude/.rem-state.json)
 
-import { existsSync } from 'fs';
+import { existsSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import { migrateLegacyArchives } from './legacy-archive.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Stray .claude/ files left behind by plugins predating rem — safe to delete,
+// their data has no successor format and was never load-bearing.
+const LEGACY_STATE_FILES = ['.retro_state.json'];
 
 export async function migrate(projectRoot) {
   const summary = [];
@@ -42,6 +48,15 @@ export async function migrate(projectRoot) {
   if (archives.changed) {
     changed = true;
     summary.push(...archives.summary);
+  }
+
+  for (const name of LEGACY_STATE_FILES) {
+    const file = join(projectRoot, '.claude', name);
+    if (existsSync(file)) {
+      rmSync(file);
+      changed = true;
+      summary.push(`removed stray legacy .claude/${name}`);
+    }
   }
 
   return { changed, summary };

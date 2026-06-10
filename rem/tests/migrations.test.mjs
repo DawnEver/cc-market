@@ -139,6 +139,17 @@ describe('rem migrate()', () => {
     assert.equal(fs.existsSync(path.join(archiveDir, '2026-06.md')), false);
   });
 
+  test('removes stray legacy .claude/.retro_state.json', async () => {
+    fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.claude', '.retro_state.json'), '{}');
+
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('.retro_state.json')));
+    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', '.retro_state.json')), false);
+  });
+
   test('preserves non-entry content in a non-canonical archive file', async () => {
     const archiveDir = path.join(projectRoot, '.claude', 'tasks', 'archive');
     fs.mkdirSync(archiveDir, { recursive: true });
