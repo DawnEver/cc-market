@@ -1,6 +1,11 @@
 # Step 5: Schedule Next Check
 
-After each run, refresh the durable CronCreate to guarantee the next check fires. This self-refreshing pattern resets the 7-day expiry clock every cycle.
+**Run 5a–5e on every single `/watch:watch` invocation, unconditionally** — not just
+"when needed". This self-refreshing pattern resets the 7-day expiry clock every cycle.
+The `cron_freshness` component (checked by watchd every 5 minutes) reads the marker
+written in 5e; if this step is skipped or fails, the marker goes stale and the
+anomaly escalates independently of this skill — so treat 5a–5e as mandatory, not
+best-effort.
 
 ## 5a: Determine interval
 
@@ -30,9 +35,34 @@ Convert the interval to a cron expression (local time). Use off-peak minutes to 
 
 The prompt fires when Claude Code is idle. If Claude Code is not running, the job queues — it fires on next launch if the scheduled time has passed.
 
-## 5d: Fallback — ScheduleWakeup
+## 5d: Verify
+
+**CronList** again — confirm the entry from 5c is now registered (correct prompt and
+cron expression). If it's missing, retry 5c once. Only proceed to 5e once verified —
+the marker in 5e is the audit trail that this verification passed.
+
+## 5e: Write refresh marker
+
+Write `.claude/watch/state/cron_refresh.json` (only after 5d verification succeeds):
+
+```json
+{
+  "ts": "<now, ISO 8601 UTC>",
+  "interval_seconds": <the interval used in 5a>,
+  "cron_expr": "<the expression from 5b>",
+  "mode": "normal"
+}
+```
+
+The `cron_freshness` component compares `ts` + `interval_seconds` against the next
+expected refresh, so this file must be rewritten every cycle.
+
+## 5f: Fallback — ScheduleWakeup
 
 If CronCreate is unavailable (e.g. running in a forked agent without the tool), fall back to:
 - `ScheduleWakeup` with `delaySeconds = normal_seconds` (or `anomaly_seconds`)
 
-This is session-scoped only (dies when session ends) but keeps the check cadence within long-running sessions.
+This is session-scoped only (dies when session ends) but keeps the check cadence
+within long-running sessions. Still write the marker from 5e, but with
+`"mode": "fallback"` — `cron_freshness` applies a tighter staleness threshold for
+fallback markers since they don't survive a restart.

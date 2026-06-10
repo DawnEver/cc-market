@@ -87,10 +87,14 @@ A second escalation path exists outside the AI loop: `trigger-watch.py` polls `t
 
 ## Step 5: Schedule Next Check
 
-After each run, refresh the durable CronCreate to guarantee the next check fires —
-interval depends on healthy/degraded status (this self-refreshing pattern resets the
-7-day expiry clock every cycle). Full interval lookup, cron-expression calculation, and
-CronCreate/CronList/CronDelete/ScheduleWakeup procedure → `reference/scheduling.md`.
+**Always run this step, every invocation — never skip it.** Refresh the durable
+CronCreate to guarantee the next check fires, interval depending on healthy/degraded
+status (this self-refreshing pattern resets the 7-day expiry clock every cycle). After
+CronCreate, verify via CronList that the entry exists, then write
+`.claude/watch/state/cron_refresh.json` — this marker is checked by the pure-script
+`cron_freshness` component every 5 minutes, so a skipped or failed refresh is detected
+and escalated even if this step is forgotten. Full interval lookup, cron-expression
+calculation, verification, and marker procedure → `reference/scheduling.md`.
 
 ## Logging
 

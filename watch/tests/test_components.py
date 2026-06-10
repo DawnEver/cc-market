@@ -18,6 +18,7 @@ from components.disk_usage import DiskUsage
 from components.http_health import HttpHealth
 from components.shell_probe import ShellProbe
 from components.watchd_heartbeat import WatchdHeartbeat
+from components.cron_freshness import CronFreshness
 from components.log_scanner import LogScanner
 from components.progress_tracker import ProgressTracker
 from components.process_monitor import ProcessMonitor
@@ -492,6 +493,85 @@ class TestProgressTracker(unittest.TestCase):
         self.assertIn('_tracker_a_last_ops', state_a)
         self.assertIn('_tracker_b_last_ops', state_b)
         self.assertNotIn('_tracker_a_last_ops', state_b)
+
+
+class TestCronFreshness(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.project = Path(self.tmp.name)
+        self.cfg = {'_project_dir': str(self.project)}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write_marker(self, ts, interval_seconds=43200, mode='normal', cron_expr='57 8,20 * * *'):
+        marker = self.project / '.claude' / 'watch' / 'state' / 'cron_refresh.json'
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({
+            'ts': ts, 'interval_seconds': interval_seconds,
+            'mode': mode, 'cron_expr': cron_expr,
+        }))
+
+    def test_name_and_description(self):
+        c = CronFreshness()
+        self.assertEqual(c.name, 'cron_freshness')
+        self.assertIsInstance(c.description, str)
+
+    def test_missing_marker_within_grace_is_warning(self):
+        c = CronFreshness()
+        result = c.check({}, self.cfg, {})
+        self.assertEqual(len(result.anomalies), 1)
+        self.assertEqual(result.anomalies[0].type, 'cron_marker_missing')
+        self.assertEqual(result.anomalies[0].severity, 'warning')
+
+    def test_missing_marker_past_grace_is_critical(self):
+        c = CronFreshness()
+        first_missing = (datetime.now(timezone.utc) - timedelta(seconds=7200)).isoformat()
+        state = {'_cron_marker_first_missing': first_missing}
+        result = c.check({'grace_seconds': 3600}, self.cfg, state)
+        self.assertEqual(len(result.anomalies), 1)
+        self.assertEqual(result.anomalies[0].type, 'cron_marker_missing')
+        self.assertEqual(result.anomalies[0].severity, 'critical')
+
+    def test_fresh_marker_returns_no_anomaly(self):
+        now = datetime.now(timezone.utc).isoformat()
+        self._write_marker(now)
+        c = CronFreshness()
+        result = c.check({}, self.cfg, {})
+        self.assertEqual(len(result.anomalies), 0)
+        self.assertIn('cron_marker_age_seconds', result.metrics)
+        self.assertLess(result.metrics['cron_marker_age_seconds'], 5)
+
+    def test_stale_marker_returns_critical_anomaly(self):
+        # interval=43200 (12h), grace_multiplier=1.5, fixed_buffer=1800
+        # threshold = 43200*1.5 + 1800 = 66600s. Set age beyond that.
+        old = (datetime.now(timezone.utc) - timedelta(seconds=70000)).isoformat()
+        self._write_marker(old, interval_seconds=43200)
+        c = CronFreshness()
+        result = c.check({}, self.cfg, {})
+        self.assertEqual(len(result.anomalies), 1)
+        self.assertEqual(result.anomalies[0].type, 'cron_stale')
+        self.assertEqual(result.anomalies[0].severity, 'critical')
+        self.assertIn('cron_marker_threshold_seconds', result.metrics)
+
+    def test_fallback_marker_uses_tighter_threshold(self):
+        # 1h-old fallback marker — within 12h*1.5+1800 but beyond fallback cap (3600s)
+        old = (datetime.now(timezone.utc) - timedelta(seconds=4000)).isoformat()
+        self._write_marker(old, interval_seconds=43200, mode='fallback')
+        c = CronFreshness()
+        result = c.check({}, self.cfg, {})
+        self.assertEqual(len(result.anomalies), 1)
+        self.assertEqual(result.anomalies[0].type, 'cron_stale')
+
+    def test_remedies_and_actions_shape(self):
+        c = CronFreshness()
+        remedies = c.remedies()
+        for anomaly_type in ('cron_stale', 'cron_marker_missing'):
+            steps = remedies[anomaly_type]
+            self.assertEqual(len(steps), 1)
+            self.assertEqual(steps[0].on, 'critical')
+            self.assertEqual(steps[0].escalate_after, 1)
+            self.assertIn(steps[0].action, c.actions())
 
 
 class TestProcessMonitorPeak(unittest.TestCase):

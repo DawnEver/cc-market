@@ -12,6 +12,7 @@
     daemon.json          #   Daemon state
     alert.json           #   Hook state
     heartbeat.json       #   Daemon heartbeat timestamp + PID
+    cron_refresh.json    #   CronCreate refresh marker, written by /watch:watch Step 5e
     trigger_ack.json     #   Trigger consumption acknowledgement
   logs/                  # Runtime logs (gitignored)
     health.jsonl         #   AI loop check history
@@ -36,4 +37,7 @@ watchd:
   state_file: .claude/watch/state/daemon.json
   trigger_file: .claude/watch/trigger.json
   heartbeat_file: .claude/watch/state/heartbeat.json
+  enable_headless_ai_escalation: false  # opt-in: trigger-watch.py spawns
+                                         # `claude -p "/watch:watch"` for AI-only
+                                         # anomalies (e.g. cron_stale)
 ```
