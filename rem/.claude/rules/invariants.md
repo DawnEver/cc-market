@@ -17,7 +17,7 @@ if (!isInsideMemoryDir(file)) throw new Error("path traversal denied");
 
 ## Frontmatter
 
-Every memory file must have YAML frontmatter: `name`, `description`, `created`, `accessed`, `tier`. Use `stampMissingFields()` to backfill. `created`/`accessed` are ISO dates (YYYY-MM-DD). `tier` is `short` or `long`.
+Every memory file must have YAML frontmatter: `name`, `description`, `created`, `accessed`, `tier`. Use `stampMissingFields()` to backfill. `created`/`accessed` are ISO dates (YYYY-MM-DD). `tier` is `short` or `long`. `access_count` (auto-managed, defaults to 1) tracks distinct days referenced via `bumpAccessed()`; `rem-prep.js --promote` auto-promotes to `tier: long` once `access_count >= 3`.
 
 ## Index
 

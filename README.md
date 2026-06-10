@@ -2,6 +2,8 @@
 
 A community marketplace of Claude Code plugins.
 
+> Active development — backward compatibility is not guaranteed. Plugin configs, data formats, and internal APIs may change between versions without migration paths.
+
 ## Add this marketplace
 
 ```shell

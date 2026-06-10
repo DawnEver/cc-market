@@ -76,7 +76,9 @@ SessionStart → prune-memory.js --evict-stale (remove stale, demote inactive lo
 
 ### Promotion
 
-Memories referenced frequently (≥3 git commits) auto-promote from short-term to long-term. Manual promotion:
+Each memory file tracks `access_count` (distinct days referenced, via `bumpAccessed`).
+Once `access_count >= 3`, `rem-prep.js --promote` auto-promotes from short-term to long-term.
+Manual promotion:
 
 ```shell
 node scripts/touch-memory.js 2026/06/03/some-entry.md --promote

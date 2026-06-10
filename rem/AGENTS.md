@@ -74,40 +74,10 @@ See `.claude/rules/invariants.md` for the always-injected version.
 - **Index format**: `MEMORY.md` sorted by `accessed` descending, max 20 entries.
 - **Unified state**: `.claude/.rem-state.json` holds both hook state and prune events.
 
-## Scripts Quick Reference
+## Reference
 
-| Script | Entry Point | Key Flags |
-|---|---|---|
-| `stamp-memory.js` | Initialize memory system | (none, idempotent) |
-| `prune-memory.js` | Evict/demote | `--evict-stale`, `--dry-run` |
-| `touch-memory.js` | Update timestamps | `--promote` |
-| `compact.js` | Distill into rules | `--check`, `--execute`, `--validate`, `--distilled` |
-| `rem-prep.js` | Pre-REM automation | `--transcript <path>`, `--promote` |
-| `task-engine.js` | Task CLI (`todo`) | `report`, `add`, `remove`, `help` |
-| `task-lib.mjs` | Task pure logic | scan, parseExistingTasks, archiveResolved, groupBy* |
-| `check-docs.js` | Doc freshness at compact | `--json` |
-
-## State Management
-
-`lib.mjs` exports `loadState()`, `saveState()`, `appendEvent()`. State file: `.claude/.rem-state.json`.
-
-```json
-{
-  "hook": {
-    "sessionKey": "uuid",
-    "stopCount": 3,
-    "firstStopAt": 1780500000000,
-    "remPending": false,
-    "remDone": false,
-    "lastTouched": 1780500000000,
-    "taskActiveUntil": null
-  },
-  "prune": {
-    "lastPruneAt": 1780500000000,
-    "events": [{ "ts": "...", "type": "evict", "path": "...", "reason": "stale-90d" }]
-  }
-}
-```
+Script flag reference and the `.claude/.rem-state.json` schema now live in
+`skills/rem/reference/` (`scripts.md`, `state-schema.md`) — loaded on demand by `/rem`.
 
 ## Testing
 

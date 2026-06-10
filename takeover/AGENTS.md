@@ -70,18 +70,7 @@ See `.claude/rules/invariants.md` for the always-injected version.
 
 ## Provider Config
 
-```json
-{
-  "env:deepseek": {
-    "CLAUDE_CODE_USE_FOUNDRY": "1",
-    "ANTHROPIC_FOUNDRY_BASE_URL": "https://api.deepseek.com/anthropic",
-    "ANTHROPIC_FOUNDRY_API_KEY": "sk-...",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash"
-  }
-}
-```
-
-`loadProviderConfig()` returns `{ native: true, provider: "claude"|"codex" }` for built-in, or `{ native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku }` for API providers.
+Config shape and troubleshooting → `skills/takeover-result/reference/provider-config.md`.
 
 ## MCP Server
 

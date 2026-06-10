@@ -30,5 +30,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" sync verify today  # Check 
 
 Requires `TRACEME_SYNC_REMOTE` env var set to the sync repo URL. Zero external dependencies — uses Node built-in `crypto` for AES-256-GCM encryption.
 
+For first-time multi-device setup (key sharing) and what data is/isn't synced (privacy) → `reference/sync.md`.
+
 ## Output
 Displays today's per-project breakdown: sessions, prompt count, token usage, cost, top expensive prompts, and tool/skill usage.

@@ -8,11 +8,10 @@
 // Usage: node rem-prep.js [--transcript <path>] [--promote]
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
-import { execFileSync } from 'child_process';
-import { join, relative } from 'path';
+import { join } from 'path';
 import {
-  repoRoot, scopeMemoryDir, scopeIndexFile, findAllScopes, loadState,
-  todayISO, bumpAccessed, getTier, setField, MAX_ENTRIES,
+  scopeMemoryDir, scopeIndexFile, findAllScopes, loadState,
+  todayISO, bumpAccessed, getTier, getAccessCount, setField, MAX_ENTRIES,
   resolveMemoryPath, isInsideMemoryDir, updateIndexAccessed,
 } from '../lib.mjs';
 
@@ -177,24 +176,15 @@ function findInScopes(relPath) {
 for (const f of touchedFiles) {
   const found = findInScopes(f);
   if (!found) continue;
-  const { file: memFile, scope } = found;
+  const { file: memFile } = found;
 
   const content = readFileSync(memFile, 'utf8');
   const currentTier = getTier(content);
   if (currentTier === 'long') continue;
 
-  // Check git log for commit frequency (≥3 distinct commits = active)
-  let commitCount = 0;
-  try {
-    const relGitPath = join(scope === repoRoot ? '' : relative(repoRoot, scope), '.claude', 'memory', f).replace(/\\/g, '/');
-    const log = execFileSync('git', ['log', '--oneline', '--', relGitPath], {
-      cwd: process.cwd(), timeout: 5000, encoding: 'utf8',
-    });
-    commitCount = log.trim().split('\n').filter(Boolean).length;
-  } catch { /* not a git repo or no commits */ }
-
-  if (commitCount >= 3) {
-    console.log(`  ↑ ${f} (${commitCount} commits, currently ${currentTier})`);
+  const accessCount = getAccessCount(content);
+  if (accessCount >= 3) {
+    console.log(`  ↑ ${f} (accessed ${accessCount}x, currently ${currentTier})`);
     if (autoPromote) {
       let c = content;
       c = setField(c, 'accessed', today);
@@ -216,16 +206,9 @@ if (touchedSRIds.size > 0) {
     const currentTier = getTier(content);
     if (currentTier === 'long') continue;
 
-    let commitCount = 0;
-    try {
-      const log = execFileSync('git', ['log', '--oneline', '--', `.claude/memory/${relPath}`], {
-        cwd: process.cwd(), timeout: 5000, encoding: 'utf8',
-      });
-      commitCount = log.trim().split('\n').filter(Boolean).length;
-    } catch { /* no commits */ }
-
-    if (commitCount >= 3) {
-      console.log(`  ↑ ${id} → promotion candidate (${commitCount} commits, currently ${currentTier})`);
+    const accessCount = getAccessCount(content);
+    if (accessCount >= 3) {
+      console.log(`  ↑ ${id} → promotion candidate (accessed ${accessCount}x, currently ${currentTier})`);
       if (autoPromote) {
         let c = content;
         c = setField(c, 'accessed', today);
