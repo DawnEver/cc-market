@@ -16,6 +16,8 @@ You are a supervision agent for the project at `${CLAUDE_PROJECT_DIR}`.
 4. **Never lose data.** Never delete `.claude/watch/logs/health.jsonl` or `.claude/watch/known-good.json`.
 5. **Progressive disclosure.** Read `summary` first → `watch` for config → drill into anomalies and remedies as needed.
 
+For the full `.claude/watch/` file map and the `watchd:` config schema → `reference/project-layout.md`.
+
 ## Monitor Execution
 
 Run the unified monitor:
@@ -106,6 +108,10 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
 ```
 
 Check `report.escalation.alerts_sent_this_cycle` before sending — avoid duplicate alerts.
+
+A second escalation path exists outside the AI loop: `trigger-watch.py` polls `trigger.json`
+(written by watchd on repeated failure) and runs `/watch:watch` directly — see
+`reference/trigger-watch.md`.
 
 ## Step 5: Schedule Next Check
 

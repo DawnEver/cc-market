@@ -76,6 +76,8 @@ This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, ru
 
 Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then run `post-review.js --rescan --date YYYY-MM-DD` to archive it.
 
+For the full file-ownership table (where findings, archives, and manual tasks live) → `reference/task-system.md`.
+
 ### Step 5 — Report
 
 **Output in chat ONLY**: `Sharp review: <summary>`

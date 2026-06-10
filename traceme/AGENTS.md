@@ -94,21 +94,10 @@ Auto-push: `hooks/sync-hook.js` fires on Stop/SessionEnd — no manual push need
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
 | `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
 
-### Environment
-- `TRACEME_SYNC_REMOTE` — Git remote URL for the sync data repo (required for push/pull/aggregate)
-- `TRACEME_DEVICE_NAME` — Override device name (default: hostname)
+### Environment, Key Sharing & Privacy
 
-### Multi-Device Key Sharing
-All devices share the same symmetric key. After `traceme sync setup` on device A:
-1. Copy `~/.claude/traceme/key.txt` to device B at the same path
-2. Run `traceme sync setup` on device B (skips key gen, just inits repo)
-
-### Sync Data Model (what gets synced)
-- `daily_summary` table (per-project aggregates: tokens, cost, sessions)
-- `sessions` metadata (id, project, branch, timestamps, counts — NO prompt text, NO paths)
-- `tool_usage` / `skill_usage` aggregated counts
-
-Prompt text and project paths are excluded per the privacy invariant.
+Env vars, multi-device key sharing steps, and the sync data model (what's synced vs.
+excluded) → `skills/traceme/reference/sync.md`.
 
 ## Invariants
 

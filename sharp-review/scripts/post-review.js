@@ -6,16 +6,32 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { homedir } from 'os';
 import { execFileSync } from 'child_process';
 import { reviewFrontmatter, parseFindingsFromMarkdown } from '../lib.mjs';
-import { archiveResolved } from '../../rem/scripts/task-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CC_MARKET = join(__dirname, '..', '..'); // scripts/ → sharp-review/ → cc-market/
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const STAMP_SCRIPT = join(CC_MARKET, 'rem', 'scripts', 'stamp-memory.js');
 const MEMORY_DIR = join(ROOT, '.claude', 'memory');
+
+// Resolve another cc-market plugin's root dir. Relative paths like
+// `../../rem` break once plugins are cached under versioned dirs
+// (cc-market/<plugin>/<version>/), so fall back to installed_plugins.json.
+function resolvePluginDir(name) {
+  const flatCandidate = join(__dirname, '..', '..', name); // dev/flat repo layout
+  if (existsSync(join(flatCandidate, '.claude-plugin', 'plugin.json'))) return flatCandidate;
+
+  const installedPath = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
+  const data = JSON.parse(readFileSync(installedPath, 'utf8'));
+  const entries = data.plugins?.[`${name}@cc-market`];
+  if (!entries?.length) throw new Error(`Cannot resolve plugin dir for ${name}@cc-market`);
+  return entries.reduce((a, b) => new Date(a.installedAt) > new Date(b.installedAt) ? a : b).installPath;
+}
+
+const REM_DIR = resolvePluginDir('rem');
+const STAMP_SCRIPT = join(REM_DIR, 'scripts', 'stamp-memory.js');
+const { archiveResolved } = await import(pathToFileURL(join(REM_DIR, 'scripts', 'task-lib.mjs')).href);
 
 // ── Parse args ──
 

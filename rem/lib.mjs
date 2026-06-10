@@ -118,7 +118,16 @@ export function stampMissingFields(filePath) {
 }
 
 export function bumpAccessed(content, date) {
-  return setField(content, 'accessed', date);
+  const oldAccessed = getField(content, 'accessed');
+  let updated = setField(content, 'accessed', date);
+  if (oldAccessed && oldAccessed !== date) {
+    updated = setField(updated, 'access_count', String(getAccessCount(content) + 1));
+  }
+  return updated;
+}
+
+export function getAccessCount(content) {
+  return parseInt(getField(content, 'access_count') || '1', 10);
 }
 
 // ── Date helpers ──
@@ -171,15 +180,18 @@ Three-tier memory system:
   2. Long-term memory (tier: long)  — progressive disclosure, demoted to short if inactive between prune cycles
   3. Short-term memory (tier: short) — progressive disclosure, 90d eviction
 
-Promotion: run \`node scripts/touch-memory.js <path> --promote\` to upgrade short → long
+Promotion: run \`node scripts/touch-memory.js <path> --promote\` to upgrade short → long,
+           or automatic when access_count >= 3 (rem-prep.js --promote)
 Demotion:  long-term not accessed between two prune cycles → auto-demoted to short
 Prune:     run \`node scripts/prune-memory.js --evict-stale\` (short-term eviction + long-term demotion check)
 Compact:   run \`node scripts/compact.js --check\` when index grows large
 
 Frontmatter:
-  - created:  ISO date (parent folder date)
-  - accessed: ISO date (bumped by touch-memory.js on reference)
-  - tier:     long | short (default short, promoted via touch-memory.js --promote)
+  - created:      ISO date (parent folder date)
+  - accessed:     ISO date (bumped by touch-memory.js / rem-prep.js on reference)
+  - tier:         long | short (default short, promoted via touch-memory.js --promote)
+  - access_count: number of distinct days this file was referenced (default 1, incremented
+                   by bumpAccessed when accessed date advances; >=3 triggers auto-promotion)
 -->
 
 `;

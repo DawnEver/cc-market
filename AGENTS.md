@@ -17,7 +17,7 @@ Community marketplace of Claude Code plugins. Each plugin lives in its own direc
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 
-Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. See plugin READMEs for user-facing docs.
+Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
 ## Tests & Git Hooks
 
@@ -35,11 +35,28 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `rem/tests/date-path.test.mjs` | 16 | date formatting, path resolution, memory dir security |
 | `rem/tests/lib.test.mjs` | 20 | index parsing, constants, file collection, state, findProjectRoot |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
+| `rem/tests/migrations.test.mjs` | 5 | `migrate()`: legacy tasks dir cleanup, memory stamping, idempotence |
 | `sharp-review/tests/lib.test.mjs` | 19 | SR-ID parsing, module/category inference, frontmatter |
 | `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
+| `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
 
 All JS tests (`*.test.mjs`) run via pre-commit hook. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
+
+## Migrating `.claude/` Project Files
+
+Backward compatibility for `.claude/` data formats is not a concern (see Standard below) — but when a breaking format change ships, existing projects need a path to the new format. Each plugin owns this via an optional `migrations/migrate.mjs`:
+
+```js
+// <plugin>/migrations/migrate.mjs
+export async function migrate(projectRoot) {
+  // idempotent: detect old-format artifacts under projectRoot/.claude and fix them.
+  // No-op (changed: false) if already current. Safe to re-run.
+  return { changed: false, summary: [] };
+}
+```
+
+The root repo's `node scripts/setup/migrate.js` (`npm run migrate`) discovers every `<plugin>@cc-market` entry relevant to the current project (via `~/.claude/plugins/installed_plugins.json`) and calls `migrate(projectRoot)` if `migrations/migrate.mjs` exists. "Migrate to latest only" — no version-range bookkeeping; each migration is self-detecting and additive (fold new format changes into the same file rather than chaining versioned steps). Plugins with nothing to migrate simply omit `migrations/`.
 
 ## Adding a Plugin
 
@@ -58,3 +75,4 @@ Versioning is automatic: the `pre-push` hook (`scripts/git-hooks/pre-push`, wire
 - After plugin changes, update the plugin's own `AGENTS.md` and `README.md`
 - Always add tests for new plugin logic
 - Pre-commit hook catches regressions across all plugins
+- Backward compatibility is not a concern here. Freely rename/restructure data formats, configs, and internal APIs instead of adding migration shims or compat layers — update all call sites and docs in the same change.

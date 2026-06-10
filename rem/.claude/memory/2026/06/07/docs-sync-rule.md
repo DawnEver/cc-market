@@ -5,7 +5,7 @@ metadata:
   type: feedback
 created: 2026-06-07
 accessed: 2026-06-07
-tier: long
+tier: short
 ---
 
 # Documentation Sync Rule

@@ -18,6 +18,7 @@ import {
   hasAllFields,
   stampMissingFields,
   bumpAccessed,
+  getAccessCount,
 } from "../lib.mjs";
 
 // ── parseFrontmatter ───────────────────────────────────────────────────────────
@@ -255,5 +256,38 @@ describe("bumpAccessed", () => {
     const result = bumpAccessed(content, "2026-06-03");
     assert.ok(result.includes("accessed: 2026-06-03"));
     assert.ok(!result.includes("accessed: 2026-01-01"));
+  });
+
+  test("increments access_count when accessed date advances", () => {
+    const content = "---\naccessed: 2026-01-01\n---\nbody";
+    const result = bumpAccessed(content, "2026-06-03");
+    assert.ok(result.includes("access_count: 2"));
+  });
+
+  test("does not increment access_count when accessed date is unchanged", () => {
+    const content = "---\naccessed: 2026-06-03\naccess_count: 2\n---\nbody";
+    const result = bumpAccessed(content, "2026-06-03");
+    assert.ok(result.includes("access_count: 2"));
+    assert.ok(!result.includes("access_count: 3"));
+  });
+
+  test("compounds across repeated date advances", () => {
+    let content = "---\naccessed: 2026-01-01\naccess_count: 2\n---\nbody";
+    content = bumpAccessed(content, "2026-06-03");
+    assert.ok(content.includes("access_count: 3"));
+  });
+});
+
+// ── getAccessCount ───────────────────────────────────────────────────────────────
+
+describe("getAccessCount", () => {
+  test("defaults to 1 when access_count field is absent", () => {
+    const content = "---\naccessed: 2026-01-01\n---\nbody";
+    assert.equal(getAccessCount(content), 1);
+  });
+
+  test("returns the parsed access_count value", () => {
+    const content = "---\naccessed: 2026-01-01\naccess_count: 4\n---\nbody";
+    assert.equal(getAccessCount(content), 4);
   });
 });
