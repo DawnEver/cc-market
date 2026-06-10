@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { openDb, closeDb } from './db.mjs';
 import { generateReport, generateStats } from './report.mjs';
 import { todayISO } from './lib.mjs';
-import { setupSync, pushSnapshot, pushAllSnapshots, pullSnapshots, pullAllSnapshots, aggregateAndPush, verifyConsistency } from './sync.mjs';
+import { setupSync, pushSnapshot, pushAllSnapshots, pullSnapshots, pullAllSnapshots, verifyConsistency } from './sync.mjs';
 
 const args = process.argv.slice(2);
 const cmd = args[0] || 'report';
@@ -26,7 +26,6 @@ Usage:
   traceme sync setup                             Generate age keypair, init sync repo
   traceme sync push [date|--all]                 Encrypt & push daily snapshot (--all: backfill all history)
   traceme sync pull [date|--all]                 Pull & import snapshots from other devices (--all: full sync)
-  traceme sync aggregate [date]                  Merge all device snapshots → encrypted main
   traceme sync verify [date]                     Compare local SQLite vs merged aggregate
   traceme help                                   Show this help`);
 }
@@ -83,9 +82,6 @@ try {
           if (args[2] === '--all') pullAllSnapshots();
           else pullSnapshots(date);
           break;
-        case 'aggregate':
-          aggregateAndPush(date);
-          break;
         case 'verify': {
           const result = verifyConsistency(date);
           console.log(`Local:  ${result.local.tokens.toLocaleString()} tokens, ${result.local.projects} projects`);
@@ -93,13 +89,13 @@ try {
             console.log(`Merged: ${result.merged.tokens.toLocaleString()} tokens`);
             console.log(`Consistent: ${result.consistent ? 'YES' : 'NO (diff > 1%)'}`);
           } else {
-            console.log('No merged aggregate found — run `traceme sync aggregate` first');
+            console.log('No merged snapshot found — run `traceme sync pull` first');
           }
           break;
         }
         default:
           console.log(`Unknown sync command: ${sub}`);
-          console.log('Available: setup, push, pull, aggregate, verify');
+          console.log('Available: setup, push, pull, verify');
           process.exit(1);
       }
       break;

@@ -1,15 +1,27 @@
 import { readFileSync } from 'node:fs';
-import { openDb, batchUpdatePromptTokens, upsertDailySummary, closeSession } from './db.mjs';
+import { openDb, upsertDailySummary } from './db.mjs';
 import { todayISO } from './lib.mjs';
 
 // Approximate pricing per 1M tokens (USD). Updated periodically.
 const MODEL_PRICING = {
-  'claude-opus-4':          { input: 15.00, output: 75.00, cache_read: 1.50, cache_write: 7.50 },
-  'claude-sonnet-4':        { input: 3.00,  output: 15.00, cache_read: 0.30, cache_write: 1.50 },
-  'claude-haiku-4':         { input: 0.80,  output: 4.00,  cache_read: 0.08, cache_write: 0.40 },
-  'deepseek-v4-pro':        { input: 0.50,  output: 2.00,  cache_read: 0.05, cache_write: 0.25 },
-  'deepseek-v4-flash':      { input: 0.15,  output: 0.60,  cache_read: 0.015, cache_write: 0.075 },
-  'deepseek-v4-pro[1m]':    { input: 0.50,  output: 2.00,  cache_read: 0.05, cache_write: 0.25 },
+  // Claude models (API pricing per 1M tokens)
+  // https://platform.claude.com/docs/zh-CN/about-claude/pricing  2026/06/10
+  'claude-fable-5':          { input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00 },
+  'claude-mythos-5':         { input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00 },
+  'claude-opus-4.8':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4.7':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4.6':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4.5':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
+  'claude-opus-4':           { input: 15.00, output: 75.00, cache_write: 18.75, cache_read: 1.50 },
+  'claude-sonnet-4.6':       { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
+  'claude-sonnet-4.5':       { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
+  'claude-sonnet-4':         { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
+  'claude-haiku-4.5':        { input: 1.00,  output: 5.00,  cache_write: 1.25,  cache_read: 0.10 },
+  'claude-haiku-3.5':        { input: 0.80,  output: 4.00,  cache_write: 1.00,  cache_read: 0.08 },
+  // DeepSeek models (pricing per 1M tokens — flat input, no cache_write)
+  // https://api-docs.deepseek.com/quick_start/pricing 2026/06/10
+  'deepseek-v4-pro':         { input: 0.435, output: 0.87,  cache_hit: 0.003625 },
+  'deepseek-v4-flash':       { input: 0.14,  output: 0.28,  cache_hit: 0.0028 },
 };
 
 function getPricing(model) {
@@ -18,20 +30,22 @@ function getPricing(model) {
     if (model.startsWith(key)) return price;
   }
   // Default: estimate based on model tier
-  if (model.includes('opus')) return MODEL_PRICING['claude-opus-4'];
-  if (model.includes('sonnet')) return MODEL_PRICING['claude-sonnet-4'];
-  if (model.includes('haiku')) return MODEL_PRICING['claude-haiku-4'];
+  if (model.includes('opus')) return MODEL_PRICING['claude-opus-4.8'];
+  if (model.includes('sonnet')) return MODEL_PRICING['claude-sonnet-4.6'];
+  if (model.includes('haiku')) return MODEL_PRICING['claude-haiku-4.5'];
+  if (model.includes('fable')) return MODEL_PRICING['claude-fable-5'];
+  if (model.includes('mythos')) return MODEL_PRICING['claude-mythos-5'];
   if (model.includes('deepseek')) return MODEL_PRICING['deepseek-v4-pro'];
-  // Unknown: $3/$15 per 1M tokens (conservative)
-  return MODEL_PRICING['claude-sonnet-4'];
+  // Unknown: conservative default (claude-sonnet-4.6)
+  return MODEL_PRICING['claude-sonnet-4.6'];
 }
 
 function calcCost(usage, model) {
   const p = getPricing(model);
-  const inputCost     = (usage.input_tokens || 0) / 1_000_000 * p.input;
-  const outputCost    = (usage.output_tokens || 0) / 1_000_000 * p.output;
-  const cacheReadCost = (usage.cache_read_input_tokens || 0) / 1_000_000 * p.cache_read;
-  const cacheWriteCost = (usage.cache_creation_input_tokens || 0) / 1_000_000 * p.cache_write;
+  const inputCost      = (usage.input_tokens || 0) / 1_000_000 * p.input;
+  const outputCost     = (usage.output_tokens || 0) / 1_000_000 * p.output;
+  const cacheReadCost  = (usage.cache_read_input_tokens || 0) / 1_000_000 * (p.cache_hit || p.cache_read || 0);
+  const cacheWriteCost = (usage.cache_creation_input_tokens || 0) / 1_000_000 * (p.cache_write || p.input);
   return inputCost + outputCost + cacheReadCost + cacheWriteCost;
 }
 
@@ -83,7 +97,6 @@ export function ingestTranscript(transcriptPath, sessionId) {
   // Aggregate token/cost data
   let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreate = 0;
   let totalCost = 0;
-  let totalDuration = 0;
   const modelCounts = {};
 
   for (const req of apiRequests) {

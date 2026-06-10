@@ -8,9 +8,9 @@ import {
   openDb, closeDb,
   insertSession, closeSession,
   insertPrompt, batchUpdatePromptTokens,
-  insertToolCall, insertSkillCall,
+  insertToolCall,
   upsertDailySummary,
-  queryDailySummary, queryTopPrompts, queryToolUsage, querySkillUsage, querySessionStats
+  queryDailySummary, queryTopPrompts, queryToolUsage, querySessionStats
 } from '../scripts/db.mjs';
 
 const TEST_DB = join(tmpdir(), `traceme-test-${randomUUID()}.db`);
@@ -50,10 +50,6 @@ describe('DB Layer', { concurrency: 1 }, () => {
     insertToolCall({ id: 'toolu_003', session_id: 'sess-001', prompt_id: 'sess-001_1', tool_name: 'Read', summary: 'read src/bug.js', timestamp: '2026-06-09T10:31:00Z' });
   });
 
-  it('should insert skill calls', () => {
-    insertSkillCall({ session_id: 'sess-001', skill_name: 'sharp-review', timestamp: '2026-06-09T10:40:00Z' });
-  });
-
   it('should upsert daily summary', () => {
     upsertDailySummary('2026-06-09', 'test-project', { session_count: 1, prompt_count: 2, total_tokens: 2300, total_cost: 0.13, top_model: 'claude-sonnet-4' });
   });
@@ -73,11 +69,6 @@ describe('DB Layer', { concurrency: 1 }, () => {
   it('should query tool usage', () => {
     const rows = queryToolUsage('2026-06-09');
     assert.equal(rows.length, 3);
-  });
-
-  it('should query skill usage', () => {
-    const rows = querySkillUsage('2026-06-09');
-    assert.equal(rows.length, 1);
   });
 
   it('should query session stats', () => {

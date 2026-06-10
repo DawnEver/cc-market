@@ -54,13 +54,6 @@ export function openDb(opts = {}) {
       duration_ms   INTEGER
     );
 
-    CREATE TABLE IF NOT EXISTS skill_calls (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id    TEXT NOT NULL REFERENCES sessions(id),
-      skill_name    TEXT NOT NULL,
-      timestamp     TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS daily_summary (
       date          TEXT NOT NULL,
       project       TEXT NOT NULL,
@@ -76,7 +69,6 @@ export function openDb(opts = {}) {
     CREATE INDEX IF NOT EXISTS idx_prompts_ts ON prompts(timestamp);
     CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
     CREATE INDEX IF NOT EXISTS idx_tool_calls_ts ON tool_calls(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_skill_calls_session ON skill_calls(session_id);
     CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_summary(date);
   `);
   return db;
@@ -131,15 +123,6 @@ export function insertToolCall(tc) {
   stmt.run(tc.id, tc.session_id, tc.prompt_id || null, tc.tool_name, tc.summary, tc.timestamp);
 }
 
-// ── Skill Call CRUD ──
-
-export function insertSkillCall(sc) {
-  const stmt = db.prepare(`
-    INSERT INTO skill_calls (session_id, skill_name, timestamp) VALUES (?, ?, ?)
-  `);
-  stmt.run(sc.session_id, sc.skill_name, sc.timestamp);
-}
-
 // ── Daily Summary ──
 
 export function upsertDailySummary(date, project, data) {
@@ -185,17 +168,6 @@ export function queryToolUsage(date) {
   return stmt.all(date);
 }
 
-export function querySkillUsage(date) {
-  const stmt = db.prepare(`
-    SELECT skill_name, COUNT(*) as count
-    FROM skill_calls
-    WHERE date(timestamp) = ?
-    GROUP BY skill_name
-    ORDER BY count DESC
-  `);
-  return stmt.all(date);
-}
-
 export function querySessionStats(date) {
   const stmt = db.prepare(`
     SELECT s.project,
@@ -212,7 +184,7 @@ export function querySessionStats(date) {
 }
 
 export function queryDbStats() {
-  const tables = ['sessions', 'prompts', 'tool_calls', 'skill_calls', 'daily_summary'];
+  const tables = ['sessions', 'prompts', 'tool_calls', 'daily_summary'];
   const stats = {};
   for (const t of tables) {
     const row = db.prepare(`SELECT COUNT(*) as count FROM ${t}`).get();

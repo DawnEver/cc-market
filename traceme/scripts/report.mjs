@@ -1,4 +1,4 @@
-import { openDb, queryTopPrompts, queryToolUsage, querySkillUsage, querySessionStats, queryDbStats } from './db.mjs';
+import { openDb, queryTopPrompts, queryToolUsage, querySessionStats, queryDbStats } from './db.mjs';
 import { readMergedSnapshot } from './sync.mjs';
 import { todayISO } from './lib.mjs';
 
@@ -49,8 +49,6 @@ export function generateReport(date, opts = {}) {
     : querySessionStats(date).map(r => normalizeProjectRow(r, false));
   const topPrompts = queryTopPrompts(date, 10);
   const toolUsage = merged ? merged.tool_usage : queryToolUsage(date);
-  const skillUsage = merged ? merged.skill_usage : querySkillUsage(date);
-
   if (projectRows.length === 0) {
     lines.push('_No data for this date._');
     return lines.join('\n');
@@ -78,7 +76,6 @@ export function generateReport(date, opts = {}) {
   lines.push(`| Tokens   | ${fmt(totalTokens)} |`);
   lines.push(`| Cost     | **${fmtCost(totalCost)}** |`);
   lines.push(`| Tools    | ${toolUsage.reduce((s, r) => s + r.count, 0)} |`);
-  lines.push(`| Skills   | ${skillUsage.reduce((s, r) => s + r.count, 0)} |`);
   lines.push('');
 
   // ── Per-Project ──
@@ -118,22 +115,10 @@ export function generateReport(date, opts = {}) {
     lines.push('');
   }
 
-  // ── Skill Usage ──
-  if (skillUsage.length > 0) {
-    lines.push('## Skills');
-    lines.push('');
-    lines.push('| Skill | Count |');
-    lines.push('|-------|-------|');
-    for (const s of skillUsage) {
-      lines.push(`| ${s.skill_name} | ${s.count} |`);
-    }
-    lines.push('');
-  }
-
   // ── Database Stats (local DB, for debugging) ──
   const dbStats = queryDbStats();
   lines.push('---');
-  lines.push(`_Local DB: ${dbStats.sessions} sessions, ${dbStats.prompts} prompts, ${dbStats.tool_calls} tool calls, ${dbStats.skill_calls} skill calls_`);
+  lines.push(`_Local DB: ${dbStats.sessions} sessions, ${dbStats.prompts} prompts, ${dbStats.tool_calls} tool calls_`);
   lines.push('');
 
   return lines.join('\n');

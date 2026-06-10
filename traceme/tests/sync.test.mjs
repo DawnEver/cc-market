@@ -24,8 +24,6 @@ describe('Sync Data Dump/Import', () => {
       VALUES (?,?,?,?,?)`).run('t1', 'sess-s1', 'Edit', 'Edit src/a.js', '2026-06-09T10:02:00Z');
     db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
       VALUES (?,?,?,?,?)`).run('t2', 'sess-s1', 'Bash', 'npm test', '2026-06-09T10:03:00Z');
-    db.prepare(`INSERT OR REPLACE INTO skill_calls (id, session_id, skill_name, timestamp)
-      VALUES (?,?,?,?)`).run(1, 'sess-s1', 'sharp-review', '2026-06-09T11:00:00Z');
   });
 
   after(() => {
@@ -55,7 +53,6 @@ describe('Sync Data Dump/Import', () => {
     // project_path must NOT be in sessions
     assert.equal(data.sessions[0].project_path, undefined);
     assert.equal(data.tool_usage.length, 2);
-    assert.equal(data.skill_usage.length, 1);
   });
 
   it('should import data from another device without corrupting local', async () => {
@@ -85,8 +82,8 @@ describe('Sync Data Dump/Import', () => {
     assert.equal(summary.length, 2);
     const myProj = summary.find(r => r.project === 'my-project');
     assert.ok(myProj);
-    // Local had 1 session, foreign had 2 — MAX keeps 2
-    assert.equal(myProj.session_count, 2);
+    // Local had 1 session, foreign had 2 — SUM aggregates to 3 across devices
+    assert.equal(myProj.session_count, 3);
 
     // New session should be inserted (foreign sessions)
     const allSessions = db.prepare("SELECT * FROM sessions WHERE date(started_at)='2026-06-09'").all();

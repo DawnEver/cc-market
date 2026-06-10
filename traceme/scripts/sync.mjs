@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { hostname, userInfo } from 'node:os';
-import { openDb, queryDailySummary, queryToolUsage, querySkillUsage } from './db.mjs';
+import { openDb, queryDailySummary, queryToolUsage } from './db.mjs';
 import { encrypt, decrypt, hasKey, generateKey } from './crypto.mjs';
 import { todayISO, TRACEME_DIR } from './lib.mjs';
 
@@ -31,11 +31,11 @@ function git(args, opts = {}) {
   return r;
 }
 
-// Convert "YYYY-MM-DD" to the repo-relative snapshot path "YYYY/MM/DD/cc.enc" —
-// the per-day directory leaves room for future sibling files (other tools' snapshots).
+// Convert "YYYY-MM-DD" to the repo-relative snapshot path "YYYY/MM/DD/<DEVICE>.enc" —
+// each device writes its own file directly to the main branch.
 function datePath(date) {
   const [y, m, d] = date.split('-');
-  return `${y}/${m}/${d}/cc.enc`;
+  return `${y}/${m}/${d}/${DEVICE}.enc`;
 }
 
 // ── Repo management ──
@@ -98,7 +98,6 @@ export function dumpDailyData(date) {
       top_model: r.top_model
     })),
     tool_usage: queryToolUsage(date),
-    skill_usage: querySkillUsage(date),
     sessions: db.prepare(`
       SELECT id, project, branch, started_at, ended_at, prompt_count, total_tokens, total_cost
       FROM sessions WHERE date(started_at) = ?
@@ -112,19 +111,18 @@ export function dumpDailyData(date) {
 export function importDailyData(data) {
   const db = openDb();
 
-  // Merge daily_summary
+  // Merge daily_summary — SUM across devices (matches aggregate logic on main)
   for (const row of (data.daily_summary || [])) {
     const existing = db.prepare(
       'SELECT * FROM daily_summary WHERE date=? AND project=?'
     ).get(data.date, row.project);
     if (existing) {
-      // Take max values — merged should reflect all devices
       db.prepare(`
         UPDATE daily_summary SET
-          session_count = MAX(session_count, ?),
-          prompt_count  = MAX(prompt_count, ?),
-          total_tokens  = MAX(total_tokens, ?),
-          total_cost    = MAX(total_cost, ?),
+          session_count = session_count + ?,
+          prompt_count  = prompt_count + ?,
+          total_tokens  = total_tokens + ?,
+          total_cost    = total_cost + ?,
           top_model     = COALESCE(?, top_model)
         WHERE date=? AND project=?
       `).run(row.session_count, row.prompt_count, row.total_tokens, row.total_cost, row.top_model, data.date, row.project);
@@ -158,23 +156,20 @@ export function pushSnapshot(date) {
   if (!remote) throw new Error('TRACEME_SYNC_REMOTE not set — cannot push');
 
   ensureSyncRepo();
-  const branch = `device/${DEVICE}`;
-  const file = datePath(date);
-  const filePath = join(SYNC_DIR, ...file.split('/'));
 
-  // Fetch remote to see current state
-  try { git(['fetch', 'origin', branch], { ignoreError: true }); } catch {}
-
-  // Checkout or create device branch
-  const branches = git(['branch', '--list', branch]);
-  const remoteExists = git(['ls-remote', '--heads', 'origin', branch], { ignoreError: true }).stdout.trim();
-  if (!branches.stdout.includes(branch) && !remoteExists) {
-    // New branch from scratch (orphan for clean history)
-    git(['checkout', '--orphan', branch]);
-  } else if (!branches.stdout.includes(branch)) {
-    git(['checkout', '-b', branch, `origin/${branch}`]);
-  } else {
-    git(['checkout', branch]);
+  // Ensure on main branch
+  const currentBranch = git(['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  if (currentBranch !== 'main') {
+    const mainExists = git(['branch', '--list', 'main']).stdout.includes('main');
+    const mainRemote = git(['ls-remote', '--heads', 'origin', 'main'], { ignoreError: true }).stdout.trim();
+    if (!mainExists && !mainRemote) {
+      git(['checkout', '--orphan', 'main']);
+      git(['rm', '-rf', '.'], { ignoreError: true });
+    } else if (!mainExists) {
+      git(['checkout', '-b', 'main', 'origin/main']);
+    } else {
+      git(['checkout', 'main']);
+    }
   }
 
   // Dump, encrypt, write
@@ -184,18 +179,27 @@ export function pushSnapshot(date) {
     return null;
   }
 
+  const file = datePath(date);
+  const filePath = join(SYNC_DIR, ...file.split('/'));
   const json = JSON.stringify(data);
   const armored = encrypt(json);
   mkdirSync(join(filePath, '..'), { recursive: true });
   writeFileSync(filePath, armored, 'utf8');
 
-  // Commit and push
   git(['add', file]);
-  git(['commit', '-m', `traceme: daily snapshot ${date} [${DEVICE}]`], { ignoreError: true }); // ok if no changes
-  git(['push', '-u', 'origin', branch]);
+  git(['commit', '-m', `traceme: daily snapshot ${date} [${DEVICE}]`], { ignoreError: true });
 
-  console.log(`Pushed ${file} to origin/${branch} (${data.daily_summary.length} projects, ${data.sessions.length} sessions)`);
-  return { file, branch, projects: data.daily_summary.length, sessions: data.sessions.length };
+  // Push with retry: if another device pushed since we last fetched, rebase and retry
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = git(['push', 'origin', 'main'], { ignoreError: true });
+    if (r.status === 0) {
+      console.log(`Pushed ${file} to origin/main (${data.daily_summary.length} projects, ${data.sessions.length} sessions)`);
+      return { file, branch: 'main', projects: data.daily_summary.length, sessions: data.sessions.length };
+    }
+    console.warn(`Push attempt ${attempt + 1} failed, pulling and retrying...`);
+    git(['pull', '--rebase', 'origin', 'main'], { ignoreError: true });
+  }
+  throw new Error('Failed to push after 3 attempts');
 }
 
 export function pushAllSnapshots() {
@@ -222,26 +226,20 @@ export function pullSnapshots(date) {
   if (!remote) throw new Error('TRACEME_SYNC_REMOTE not set — cannot pull');
 
   ensureSyncRepo();
-  git(['fetch', '--all']);
+  git(['fetch', 'origin', 'main']);
 
-  // Discover device branches
-  const refs = git(['ls-remote', '--heads', 'origin']).stdout;
-  const deviceBranches = refs.split('\n').filter(l => l.includes('refs/heads/device/')).map(l => l.split('refs/heads/')[1].trim());
+  const [y, m, d] = date.split('-');
+  const dir = `${y}/${m}/${d}`;
+  const fileList = git(['ls-tree', '--name-only', 'origin/main', dir], { ignoreError: true }).stdout;
+  const encFiles = fileList.split('\n').map(f => f.trim()).filter(f => f.endsWith('.enc'));
 
   const results = [];
-  for (const branch of deviceBranches) {
-    const deviceName = branch.replace('device/', '');
+  for (const file of encFiles) {
+    const deviceName = file.replace('.enc', '');
     if (deviceName === DEVICE) continue; // skip self
 
-    // Check if this branch has a file for the requested date
-    git(['fetch', 'origin', branch]);
-    const file = datePath(date);
-    // Try to show the file from the remote branch
-    const r = git(['show', `origin/${branch}:${file}`], { ignoreError: true });
-    if (r.status !== 0) {
-      console.log(`No ${date} data from ${deviceName}`);
-      continue;
-    }
+    const r = git(['show', `origin/main:${dir}/${file}`], { ignoreError: true });
+    if (r.status !== 0) continue;
 
     try {
       const json = decrypt(r.stdout);
@@ -261,33 +259,27 @@ export function pullAllSnapshots() {
   if (!remote) throw new Error('TRACEME_SYNC_REMOTE not set — cannot pull');
 
   ensureSyncRepo();
-  git(['fetch', '--all']);
+  git(['fetch', 'origin', 'main']);
 
-  const refs = git(['ls-remote', '--heads', 'origin']).stdout;
-  const deviceBranches = refs.split('\n').filter(l => l.includes('refs/heads/device/')).map(l => l.split('refs/heads/')[1].trim());
+  const fileList = git(['ls-tree', '-r', '--name-only', 'origin/main'], { ignoreError: true }).stdout;
+  const encFiles = fileList.split('\n').map(f => f.trim()).filter(f => /^\d{4}\/\d{2}\/\d{2}\/.+\.enc$/.test(f));
 
   const allResults = [];
-  for (const branch of deviceBranches) {
-    const deviceName = branch.replace('device/', '');
+  for (const file of encFiles) {
+    const fileName = file.split('/').pop();
+    const deviceName = fileName.replace('.enc', '');
     if (deviceName === DEVICE) continue;
 
-    git(['fetch', 'origin', branch]);
+    const r = git(['show', `origin/main:${file}`], { ignoreError: true });
+    if (r.status !== 0) continue;
 
-    // List all snapshot files on this branch (recursively, under YYYY/MM/DD/cc.enc)
-    const fileList = git(['ls-tree', '-r', '--name-only', `origin/${branch}`], { ignoreError: true }).stdout;
-    const encFiles = fileList.split('\n').map(f => f.trim()).filter(f => /^\d{4}\/\d{2}\/\d{2}\/cc\.enc$/.test(f));
-
-    for (const file of encFiles) {
-      const r = git(['show', `origin/${branch}:${file}`], { ignoreError: true });
-      if (r.status !== 0) continue;
-      try {
-        const json = decrypt(r.stdout);
-        const data = JSON.parse(json);
-        importDailyData(data);
-        allResults.push({ device: deviceName, date: data.date, projects: data.daily_summary.length });
-      } catch (e) {
-        console.warn(`Failed to decrypt ${file} from ${deviceName}: ${e.message}`);
-      }
+    try {
+      const json = decrypt(r.stdout);
+      const data = JSON.parse(json);
+      importDailyData(data);
+      allResults.push({ device: deviceName, date: data.date, projects: data.daily_summary.length });
+    } catch (e) {
+      console.warn(`Failed to decrypt ${file}: ${e.message}`);
     }
   }
 
@@ -295,19 +287,26 @@ export function pullAllSnapshots() {
   return allResults;
 }
 
-// ── Aggregate ──
+// ── Merged read ──
 
-export function aggregateAndPush(date) {
+// Read and merge all device snapshots for `date` from the cached `origin/main` ref —
+// no network call (relies on a prior `git fetch` from pushSnapshot/pullSnapshots).
+// Returns null if sync isn't set up, origin/main was never fetched, or no snapshots exist for the date.
+export function readMergedSnapshot(date) {
   date = date || todayISO();
-  const remote = getRemote();
-  if (!remote) throw new Error('TRACEME_SYNC_REMOTE not set — cannot aggregate');
+  if (!isSyncSetup()) return null;
 
   ensureSyncRepo();
-  git(['fetch', '--all']);
 
-  // Pull + merge data from ALL device branches (including self)
-  const refs = git(['ls-remote', '--heads', 'origin']).stdout;
-  const deviceBranches = refs.split('\n').filter(l => l.includes('refs/heads/device/')).map(l => l.split('refs/heads/')[1].trim());
+  const ref = git(['rev-parse', '--verify', '--quiet', 'origin/main'], { ignoreError: true });
+  if (ref.status !== 0) return null;
+
+  const [y, m, d] = date.split('-');
+  const dir = `${y}/${m}/${d}`;
+  const fileList = git(['ls-tree', '--name-only', 'origin/main', dir], { ignoreError: true }).stdout;
+  const encFiles = fileList.split('\n').map(f => f.trim()).filter(f => f.endsWith('.enc'));
+
+  if (encFiles.length === 0) return null;
 
   const merged = {
     version: 1,
@@ -317,22 +316,18 @@ export function aggregateAndPush(date) {
     daily_summary: {},   // keyed by project
     sessions: [],
     tool_usage: {},      // keyed by tool_name
-    skill_usage: {},     // keyed by skill_name
   };
 
-  for (const branch of deviceBranches) {
-    const deviceName = branch.replace('device/', '');
-    git(['fetch', 'origin', branch]);
-    const file = datePath(date);
-    const r = git(['show', `origin/${branch}:${file}`], { ignoreError: true });
+  for (const file of encFiles) {
+    const r = git(['show', `origin/main:${dir}/${file}`], { ignoreError: true });
     if (r.status !== 0) continue;
 
     try {
       const json = decrypt(r.stdout);
       const data = JSON.parse(json);
-      merged.devices.push(deviceName);
+      merged.devices.push(data.device || file.replace('.enc', ''));
 
-      // Merge daily_summary
+      // Merge daily_summary — SUM across devices
       for (const row of (data.daily_summary || [])) {
         const key = row.project;
         if (!merged.daily_summary[key]) {
@@ -355,83 +350,19 @@ export function aggregateAndPush(date) {
       for (const t of (data.tool_usage || [])) {
         merged.tool_usage[t.tool_name] = (merged.tool_usage[t.tool_name] || 0) + t.count;
       }
-
-      // Merge skill usage
-      for (const s of (data.skill_usage || [])) {
-        merged.skill_usage[s.skill_name] = (merged.skill_usage[s.skill_name] || 0) + s.count;
-      }
     } catch (e) {
-      console.warn(`Failed to decrypt from ${deviceName}: ${e.message}`);
+      console.warn(`Failed to decrypt ${file}: ${e.message}`);
     }
   }
 
-  if (merged.devices.length === 0) {
-    console.log('No device data to aggregate.');
-    return null;
-  }
+  if (merged.devices.length === 0) return null;
 
   // Convert maps to arrays for JSON
-  const output = {
+  return {
     ...merged,
     daily_summary: Object.values(merged.daily_summary),
     tool_usage: Object.entries(merged.tool_usage).map(([k, v]) => ({ tool_name: k, count: v })),
-    skill_usage: Object.entries(merged.skill_usage).map(([k, v]) => ({ skill_name: k, count: v })),
   };
-
-  // Encrypt and commit to main (create if new repo)
-  const mainLocal = git(['branch', '--list', 'main']).stdout;
-  const mainRemote = git(['ls-remote', '--heads', 'origin', 'main'], { ignoreError: true }).stdout.trim();
-  if (!mainLocal.includes('main') && !mainRemote) {
-    git(['checkout', '--orphan', 'main']);
-    // Clear any staged files from previous branch
-    git(['rm', '-rf', '.'], { ignoreError: true });
-  } else if (!mainLocal.includes('main')) {
-    git(['checkout', '-b', 'main', 'origin/main']);
-  } else {
-    git(['checkout', 'main']);
-    git(['pull', 'origin', 'main'], { ignoreError: true });
-  }
-
-  const file = datePath(date);
-  const filePath = join(SYNC_DIR, ...file.split('/'));
-  mkdirSync(join(filePath, '..'), { recursive: true });
-
-  const json = JSON.stringify(output);
-  const armored = encrypt(json);
-  writeFileSync(filePath, armored, 'utf8');
-
-  git(['add', file]);
-  git(['commit', '-m', `traceme: merged daily ${date} [${merged.devices.join(', ')}]`], { ignoreError: true });
-  git(['push', 'origin', 'main']);
-
-  console.log(`Aggregated ${merged.devices.length} devices → ${file} on main`);
-  return output;
-}
-
-// ── Merged aggregate ──
-
-// Read the cross-device aggregate for `date` from the cached `origin/main` ref —
-// no network call (relies on a prior `git fetch` from aggregateAndPush/pullSnapshots).
-// Returns null if sync isn't set up, origin/main was never fetched, or no snapshot exists for the date.
-export function readMergedSnapshot(date) {
-  date = date || todayISO();
-  if (!isSyncSetup()) return null;
-
-  ensureSyncRepo();
-
-  const ref = git(['rev-parse', '--verify', '--quiet', 'origin/main'], { ignoreError: true });
-  if (ref.status !== 0) return null;
-
-  const file = datePath(date);
-  const r = git(['show', `origin/main:${file}`], { ignoreError: true });
-  if (r.status !== 0) return null;
-
-  try {
-    return JSON.parse(decrypt(r.stdout));
-  } catch (e) {
-    console.warn(`Failed to decrypt ${file}: ${e.message}`);
-    return null;
-  }
 }
 
 // ── Verify ──

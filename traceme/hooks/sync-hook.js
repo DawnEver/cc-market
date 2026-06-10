@@ -1,4 +1,4 @@
-// Auto-push encrypted daily snapshot and re-aggregate at session end. Non-blocking — always exit 0.
+// Auto-push encrypted daily snapshot at session end. Non-blocking — always exit 0.
 import { hasKey } from '../scripts/crypto.mjs';
 
 async function main() {
@@ -7,9 +7,8 @@ async function main() {
 
   try {
     const syncUrl = new URL('../scripts/sync.mjs', import.meta.url).href;
-    const { pushSnapshot, aggregateAndPush } = await import(syncUrl);
-    pushSnapshot();
-    aggregateAndPush();
+    const { pushSnapshot } = await import(syncUrl);
+    await pushSnapshot();
   } catch {}
 }
 
