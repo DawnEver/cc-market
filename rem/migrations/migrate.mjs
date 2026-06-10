@@ -4,13 +4,14 @@
 // Folds in past breaking changes:
 //   - memory frontmatter (name/description/created/accessed/tier) + dated YYYY/MM/DD dirs
 //     (delegated to stamp-memory.js, which already does this idempotently)
+//   - flat YYYY-MM-DD/ memory directories → nested YYYY/MM/DD/ (migrateFlatDirs)
 //   - resolved task archives must live at .claude/tasks/archive/YYYY/MM/DD.md — legacy
 //     .claude/memory/tasks/** content and non-conforming archive rollups (e.g. YYYY/MM.md,
 //     YYYY-MM.md) are folded into that layout, deduped by ID
 //   - removal of stray state files left behind by plugins predating rem
 //     (e.g. .claude/.retro_state.json, superseded by .claude/.rem-state.json)
 
-import { existsSync, rmSync } from 'fs';
+import { existsSync, rmSync, mkdirSync, readdirSync, renameSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
@@ -22,9 +23,44 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // their data has no successor format and was never load-bearing.
 const LEGACY_STATE_FILES = ['.retro_state.json'];
 
+// Regex for flat YYYY-MM-DD directory names (legacy, must be migrated to nested YYYY/MM/DD/)
+const FLAT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function migrateFlatDirs(projectRoot) {
+  const memoryDir = join(projectRoot, '.claude', 'memory');
+  if (!existsSync(memoryDir)) return { changed: false, summary: [] };
+
+  const moved = [];
+  for (const entry of readdirSync(memoryDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !FLAT_DATE_RE.test(entry.name)) continue;
+    const [y, m, d] = entry.name.split('-');
+    const oldDir = join(memoryDir, entry.name);
+    const newDir = join(memoryDir, y, m, d);
+    mkdirSync(newDir, { recursive: true });
+    for (const file of readdirSync(oldDir)) {
+      renameSync(join(oldDir, file), join(newDir, file));
+    }
+    rmSync(oldDir, { recursive: true });
+    moved.push(`${entry.name}/ → ${y}/${m}/${d}/`);
+  }
+
+  return {
+    changed: moved.length > 0,
+    summary: moved.length > 0 ? [`migrated ${moved.length} flat memory director${moved.length === 1 ? 'y' : 'ies'} to nested format`] : [],
+  };
+}
+
 export async function migrate(projectRoot) {
   const summary = [];
   let changed = false;
+
+  // Step 1: Migrate flat YYYY-MM-DD/ memory dirs → nested YYYY/MM/DD/ (before stamp-memory
+  // re-indexes them — so stamp-memory sees the correct nested paths).
+  const flatMigration = migrateFlatDirs(projectRoot);
+  if (flatMigration.changed) {
+    changed = true;
+    summary.push(...flatMigration.summary);
+  }
 
   const stampScript = join(__dirname, '..', 'scripts', 'stamp-memory.js');
   if (existsSync(stampScript) && existsSync(join(projectRoot, '.claude'))) {

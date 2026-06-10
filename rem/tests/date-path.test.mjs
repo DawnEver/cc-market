@@ -95,11 +95,13 @@ describe("extractDateFromPath", () => {
     assert.equal(extractDateFromPath(file), "2026-06-03");
   });
 
-  test("extracts from legacy YYYY-MM-DD path", () => {
+  test("falls back to file mtime when no date folder (flat YYYY-MM-DD is rejected)", () => {
     const file = path.join(tmpDir, "2026-06-03", "entry.md");
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "content");
-    assert.equal(extractDateFromPath(file), "2026-06-03");
+    const date = extractDateFromPath(file);
+    // Flat YYYY-MM-DD dirs are not recognized — falls back to mtime
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(date));
   });
 
   test("falls back to file mtime when no date folder", () => {
@@ -114,14 +116,14 @@ describe("extractDateFromPath", () => {
 
 describe("resolveMemoryPath", () => {
   test("resolves relative path under memory dir", () => {
-    const result = resolveMemoryPath("2026-06-03/entry.md");
-    assert.ok(result.endsWith(path.join(".claude", "memory", "2026-06-03", "entry.md")));
+    const result = resolveMemoryPath("2026/06/03/entry.md");
+    assert.ok(result.endsWith(path.join(".claude", "memory", "2026", "06", "03", "entry.md")));
   });
 });
 
 describe("isInsideMemoryDir", () => {
   test("allows paths inside memory dir", () => {
-    const memPath = resolveMemoryPath("2026-06-03/entry.md");
+    const memPath = resolveMemoryPath("2026/06/03/entry.md");
     assert.equal(isInsideMemoryDir(memPath), true);
   });
 

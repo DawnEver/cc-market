@@ -140,6 +140,15 @@ Then take the response and call the StructuredOutput tool with it.
 If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
 }
 
+// ── Validate required args ──
+// All args originate from diff-manifest.js output. stats must always be present
+// (even in empty/dry-run mode); missing stats means the caller (skill) is broken.
+if (!args.stats || typeof args.stats.files !== 'number') {
+  const err = `sharp-review-workflow: args.stats is required (got ${JSON.stringify(args.stats)}). The caller must pass diff-manifest.js output fields verbatim.`;
+  log(err);
+  return { error: 'missing-stats', reason: err };
+}
+
 // ── Phase 1: Review ──
 
 phase('Review');

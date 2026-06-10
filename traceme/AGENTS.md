@@ -83,14 +83,17 @@ traceme sync aggregate [date]  Merge all devices → push encrypted merge to mai
 traceme sync verify [date]     Compare local SQLite vs merged aggregate
 ```
 
-Auto-push: `hooks/sync-hook.js` fires on Stop/SessionEnd — no manual push needed.
+Auto-sync: `hooks/sync-hook.js` fires on Stop/SessionEnd — pushes today's snapshot, then
+re-aggregates all device branches into `main`. No manual push or separate aggregate cron
+needed. Remote resolves from `TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's
+`origin` if unset.
 
 ### Key Files
 | File | Role |
 |------|------|
 | `scripts/crypto.mjs` | Zero-dep AES-256-GCM encryption (Node `crypto`, no external CLI) |
 | `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, aggregate, verify, backfill |
-| `hooks/sync-hook.js` | Auto-push hook: fires on session end, pushes today's snapshot |
+| `hooks/sync-hook.js` | Auto-sync hook: fires on session end, pushes today's snapshot and aggregates to `main` |
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
 | `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
 
