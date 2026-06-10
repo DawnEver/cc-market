@@ -62,8 +62,8 @@ export function saveState(stateFile, state) {
 export function appendEvent(stateFile, type, detail) {
   const state = loadState(stateFile);
   state.prune.events.push({ ts: new Date().toISOString(), type, ...detail });
-  if (state.prune.events.length > 50) {
-    state.prune.events = state.prune.events.slice(-50);
+  if (state.prune.events.length > 15) {
+    state.prune.events = state.prune.events.slice(-15);
   }
   saveState(stateFile, state);
 }
