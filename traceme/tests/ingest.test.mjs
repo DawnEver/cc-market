@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { openDb, closeDb, insertSession } from '../scripts/db.mjs';
 import { ingestTranscript } from '../scripts/ingest.mjs';
+import { todayISO } from '../scripts/lib.mjs';
 
 const TEST_DB = join(tmpdir(), `traceme-ingest-${randomUUID()}.db`);
 
@@ -52,7 +53,8 @@ describe('Transcript Ingest', () => {
     assert.ok(session.total_tokens > 0);
     assert.ok(session.total_cost > 0);
 
-    const summary = db.prepare('SELECT * FROM daily_summary WHERE date=? AND project=?').all('2026-06-09', 'my-project');
+    const today = todayISO();
+    const summary = db.prepare('SELECT * FROM daily_summary WHERE date=? AND project=?').all(today, 'my-project');
     assert.equal(summary.length, 1);
   });
 });

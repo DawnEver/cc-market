@@ -17,11 +17,11 @@ if (!isInsideMemoryDir(file)) throw new Error("path traversal denied");
 
 ## Frontmatter
 
-Every memory file must have YAML frontmatter: `name`, `description`, `created`, `accessed`, `tier`. Use `stampMissingFields()` to backfill. `created`/`accessed` are ISO dates (YYYY-MM-DD). `tier` is `short` or `long`. `access_count` (auto-managed, defaults to 1) tracks distinct days referenced via `bumpAccessed()`; `rem-prep.js --promote` auto-promotes to `tier: long` once `access_count >= 3`.
+Every memory file must have YAML frontmatter (`name`, `description`, `created`, `accessed`, `tier`, `access_count`). Use `stampMissingFields()` to backfill — never hand-write. Full schema → `skills/rem/reference/memory-conventions.md`.
 
 ## Index
 
-`MEMORY.md` entries sorted by `accessed` descending. Regex for parsing: `ENTRY_RE` in `lib.mjs`. Max 20 entries (`MAX_ENTRIES`). Use `parseIndex()` and `formatIndexEntry()` — never hand-roll index parsing.
+`MEMORY.md` entries sorted by `accessed` descending, max 20 (`MAX_ENTRIES`). Use `parseIndex()` and `formatIndexEntry()` from `lib.mjs` — never hand-roll index parsing.
 
 ## State
 

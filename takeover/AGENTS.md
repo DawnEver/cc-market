@@ -59,14 +59,7 @@ takeover/
 
 ## Key Invariants
 
-See `.claude/rules/invariants.md` for the always-injected version.
-
-- **Prompt via stdin**: `callCodexCompanion` and `callNativeClaude` pass prompts via stdin, never in spawn args.
-- **Retry**: 429/502/503/504 → 2 exponential-backoff retries (1s, 2s). 4xx → fail immediately. Network errors → retry.
-- **`--write` rejected early** for non-codex providers.
-- **Config path**: Overridable via `TAKEOVER_CONFIG_PATH`. Default: `~/.claude/claude_env_settings.json`.
-- **Foundry mode**: Read `CLAUDE_CODE_USE_FOUNDRY=1` from env block; uses `ANTHROPIC_FOUNDRY_BASE_URL` + `ANTHROPIC_FOUNDRY_API_KEY` instead of `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`.
-- **MCP JSON-RPC**: `send()` writes JSON + newline to stdout. Errors use `-32601` (method not found) or `-32000` (server error).
+See `.claude/rules/invariants.md` (always-injected) for prompt delivery, retry logic, provider config, foundry mode, and MCP protocol constraints.
 
 ## Provider Config
 

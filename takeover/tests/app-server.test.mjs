@@ -90,6 +90,12 @@ describe("CodexAppServerClient _handleLine", () => {
     assert.equal(written.method, "test/method");
     assert.deepEqual(written.params, { x: 1 });
     assert.ok(written.id > 0);
+
+    // Clean up pending promise — send() creates a timeout that fires after the test ends
+    for (const [, entry] of client.pending) {
+      clearTimeout(entry.timer);
+    }
+    client.pending.clear();
   });
 
   test("ignores invalid JSON lines", () => {

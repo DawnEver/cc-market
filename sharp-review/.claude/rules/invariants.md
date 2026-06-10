@@ -1,7 +1,18 @@
 # Sharp Review Invariants
 
+## Diff manifest
+- `scripts/diff-manifest.js` is the ONLY allowed diff payload source. Never run raw `git diff` or paste diff text into the skill context — the script's output is construction-guaranteed to stay within safe size limits.
+- All Workflow args flow from diff-manifest.js output: `{ date, mode, range, stats, diff?, manifestText?, excludedSummary }`.
+
 ## Workflow args
-- `{ diff, date }` — both required. `date` is YYYY-MM-DD. Never call `Date.now()`/`new Date()` in workflow scripts (breaks resume caching).
+- `{ date, mode, range, stats, diff?, manifestText?, excludedSummary }` — `date` is YYYY-MM-DD. Never call `Date.now()`/`new Date()` in workflow scripts (breaks resume caching).
+- `mode` is `'review'` | `'agent'` — determined by diff-manifest.js based on `reviewGate.inlineDiffLimit` (chars, default 40000). `stats` is `{ files, insertions, deletions, excluded, diffChars }`.
+- `mode === 'empty'` means all files filtered — skill exits early, no Workflow call, no memory write.
+
+## Dual-mode semantics
+- **review mode** (≤ `inlineDiffLimit`): full `args.diff` inlined into reviewer prompts via takeover `mode="review"`. Best signal quality.
+- **agent mode** (> `inlineDiffLimit`): only `args.manifestText` sent; reviewers use takeover `mode="agent"` for full tool access — explore autonomously via `git diff <range> -- <path>`, read source files, trace callers.
+- Both modes apply the same smart filtering (lockfiles, generated files, binary, pure renames) — this is done by diff-manifest.js before the workflow.
 
 ## Schema
 - StructuredOutput schema must be `{ type: 'object', properties: { findings: [...] } }`. Bare array schema causes silent failure.

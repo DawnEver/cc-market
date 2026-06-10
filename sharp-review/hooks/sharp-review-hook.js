@@ -6,7 +6,7 @@
 //   Resets to wave 0 when HEAD moves to a new commit.
 //
 // Per-project configurable thresholds in .claude/.rem-state.json → reviewGate.thresholds.
-// Defaults: wave0 = 80 lines / 4 files, wave1 = 300 lines / 10 files.
+// Defaults: wave0 = 300 lines / 5 files, wave1 = 1000 lines / 15 files.
 //
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
@@ -24,8 +24,8 @@ const MEMORY_MAX = 20;
 const TARGETS = { none: 0, once: 1, multi: 2 };
 
 const DEFAULT_THRESHOLDS = {
-  wave0: { lines: 80, files: 4 },
-  wave1: { lines: 300, files: 10 },
+  wave0: { lines: 300, files: 5 },
+  wave1: { lines: 1000, files: 15 },
 };
 
 function readStdinJSON() { return _readStdinJSON(); }

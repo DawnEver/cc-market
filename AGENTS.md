@@ -37,6 +37,7 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
 | `rem/tests/migrations.test.mjs` | 5 | `migrate()`: legacy tasks dir cleanup, memory stamping, idempotence |
 | `sharp-review/tests/lib.test.mjs` | 19 | SR-ID parsing, module/category inference, frontmatter |
+| `sharp-review/tests/manifest.test.mjs` | 42 | classifyLowValue, numstat/name-status parsing, buildManifest, decideMode, renderManifestText, extractHunkHeaders |
 | `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
