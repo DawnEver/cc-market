@@ -110,7 +110,8 @@ if (newFiles.length > 0) {
 
   // Preserve all non-memory-entry lines (section headers, Tasks links, Scoped pointers, etc).
   // Only strip lines referencing date-structured paths (../memory/YYYY/MM/DD/) — not tasks links.
-  const headerLines = idxLines.filter(l => !/\.\.\/memory\/\d{4}\/\d{2}\/\d{2}\//.test(l));
+  // Also strip legacy ../memory/YYYY-MM-DD/ entries so they get rebuilt in nested form.
+  const headerLines = idxLines.filter(l => !/\.\.\/memory\/\d{4}[\/-]\d{2}[\/-]\d{2}\//.test(l));
   const rebuilt = [...headerLines, ...allEntries.map(e => e.line)].join('\n') + '\n';
   writeFileSync(indexFile, rebuilt, 'utf8');
   console.log(`[stamp-memory] added ${newFiles.length} entries to index (globally sorted)`);

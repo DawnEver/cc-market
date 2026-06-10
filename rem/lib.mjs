@@ -148,8 +148,8 @@ export function dateToPath(date) {
 }
 
 export function extractDateFromPath(filePath) {
-  // Match YYYY/MM/DD or YYYY-MM-DD in path
-  const m = filePath.match(/(\d{4})[\/\\-](\d{2})[\/\\-](\d{2})/);
+  // Only match nested YYYY/MM/DD in path — flat YYYY-MM-DD is legacy and must be migrated.
+  const m = filePath.match(/(\d{4})[\/\\](\d{2})[\/\\](\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   // Fallback: warn so miscategorised files are visible rather than silently misdated
   console.warn(`[warn] extractDateFromPath: no date segment in path, falling back to mtime/today: ${filePath}`);
@@ -186,6 +186,10 @@ Demotion:  long-term not accessed between two prune cycles → auto-demoted to s
 Prune:     run \`node scripts/prune-memory.js --evict-stale\` (short-term eviction + long-term demotion check)
 Compact:   run \`node scripts/compact.js --check\` when index grows large
 
+Path format:  ../memory/YYYY/MM/DD/slug.md — nested per-day directories (required).
+              Flat YYYY-MM-DD/ directories are legacy and must be migrated via
+              \`migrate.mjs\`, which renames them to the nested form on disk.
+
 Frontmatter:
   - created:      ISO date (parent folder date)
   - accessed:     ISO date (bumped by touch-memory.js / rem-prep.js on reference)
@@ -199,13 +203,18 @@ Frontmatter:
 // Regex to match and parse an index entry line
 const ENTRY_RE = /^-\s+\[(\d{4}-\d{2}-\d{2})\s+(.+?)\]\(\.\.\/memory\/(.+?\.md)\)\s*—\s*`created:\s*(\d{4}-\d{2}-\d{2}),\s*accessed:\s*(\d{4}-\d{2}-\d{2})`/;
 
+export function normalizeMemoryPath(relPath) {
+  // Convert legacy YYYY-MM-DD/slug.md → YYYY/MM/DD/slug.md
+  return relPath.replace(/^(\d{4})-(\d{2})-(\d{2})\//, '$1/$2/$3/');
+}
+
 export function parseIndexEntry(line) {
   const m = line.match(ENTRY_RE);
   if (!m) return null;
   return {
     date: m[1],
     title: m[2],
-    path: m[3],
+    path: normalizeMemoryPath(m[3]),
     created: m[4],
     accessed: m[5],
     accessedDate: parseDate(m[5]),

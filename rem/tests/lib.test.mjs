@@ -30,11 +30,11 @@ import {
 
 describe("parseIndexEntry", () => {
   test("parses valid entry line", () => {
-    const line = "- [2026-06-03 Test Entry](../memory/2026-06-03/test-entry.md) — `created: 2026-06-03, accessed: 2026-06-03`";
+    const line = "- [2026-06-03 Test Entry](../memory/2026/06/03/test-entry.md) — `created: 2026-06-03, accessed: 2026-06-03`";
     const entry = parseIndexEntry(line);
     assert.equal(entry.date, "2026-06-03");
     assert.equal(entry.title, "Test Entry");
-    assert.equal(entry.path, "2026-06-03/test-entry.md");
+    assert.equal(entry.path, "2026/06/03/test-entry.md");
     assert.equal(entry.created, "2026-06-03");
     assert.equal(entry.accessed, "2026-06-03");
   });
@@ -55,13 +55,13 @@ describe("formatIndexEntry", () => {
     const entry = {
       date: "2026-06-03",
       title: "Test Entry",
-      path: "2026-06-03/test-entry.md",
+      path: "2026/06/03/test-entry.md",
       created: "2026-06-03",
       accessed: "2026-06-03",
     };
     const line = formatIndexEntry(entry);
     assert.ok(line.includes("[2026-06-03 Test Entry]"));
-    assert.ok(line.includes("../memory/2026-06-03/test-entry.md"));
+    assert.ok(line.includes("../memory/2026/06/03/test-entry.md"));
     assert.ok(line.includes("created: 2026-06-03"));
     assert.ok(line.includes("accessed: 2026-06-03"));
   });
@@ -72,11 +72,11 @@ describe("updateIndexAccessed", () => {
     const index = [
       "# Memory Index",
       "",
-      "- [2026-06-03 Test Entry](../memory/2026-06-03/test-entry.md) — `created: 2026-06-03, accessed: 2026-06-01`",
-      "- [2026-06-02 Other](../memory/2026-06-02/other.md) — `created: 2026-06-02, accessed: 2026-06-02`",
+      "- [2026-06-03 Test Entry](../memory/2026/06/03/test-entry.md) — `created: 2026-06-03, accessed: 2026-06-01`",
+      "- [2026-06-02 Other](../memory/2026/06/02/other.md) — `created: 2026-06-02, accessed: 2026-06-02`",
       "",
     ].join("\n");
-    const result = updateIndexAccessed(index, "2026-06-03/test-entry.md", "2026-06-03");
+    const result = updateIndexAccessed(index, "2026/06/03/test-entry.md", "2026-06-03");
     assert.notEqual(result, null);
     assert.ok(result.includes("accessed: 2026-06-03"));
     assert.ok(!result.includes("accessed: 2026-06-01"));
@@ -87,16 +87,16 @@ describe("updateIndexAccessed", () => {
   test("returns null when path not found in index", () => {
     const index = [
       "# Memory Index",
-      "- [2026-06-03 Test](../memory/2026-06-03/test.md) — `created: 2026-06-03, accessed: 2026-06-03`",
+      "- [2026-06-03 Test](../memory/2026/06/03/test.md) — `created: 2026-06-03, accessed: 2026-06-03`",
     ].join("\n");
     assert.equal(updateIndexAccessed(index, "nonexistent/file.md", "2026-06-03"), null);
   });
 
   test("handles paths with regex special characters", () => {
     const index = [
-      "- [2026-06-03 Special+Chars](../memory/2026-06-03/special+chars.md) — `created: 2026-06-03, accessed: 2026-06-01`",
+      "- [2026-06-03 Special+Chars](../memory/2026/06/03/special+chars.md) — `created: 2026-06-03, accessed: 2026-06-01`",
     ].join("\n");
-    const result = updateIndexAccessed(index, "2026-06-03/special+chars.md", "2026-06-03");
+    const result = updateIndexAccessed(index, "2026/06/03/special+chars.md", "2026-06-03");
     assert.notEqual(result, null);
     assert.ok(result.includes("accessed: 2026-06-03"));
   });
@@ -109,8 +109,8 @@ describe("parseIndex", () => {
       "",
       "<!-- comment -->",
       "",
-      "- [2026-06-03 Entry A](../memory/2026-06-03/a.md) — `created: 2026-06-03, accessed: 2026-06-03`",
-      "- [2026-06-02 Entry B](../memory/2026-06-02/b.md) — `created: 2026-06-02, accessed: 2026-06-02`",
+      "- [2026-06-03 Entry A](../memory/2026/06/03/a.md) — `created: 2026-06-03, accessed: 2026-06-03`",
+      "- [2026-06-02 Entry B](../memory/2026/06/02/b.md) — `created: 2026-06-02, accessed: 2026-06-02`",
     ].join("\n");
     const { header, entries } = parseIndex(content);
     assert.ok(header.length > 0);
@@ -121,7 +121,7 @@ describe("parseIndex", () => {
 
   test("handles index with only entries (no header)", () => {
     const content = [
-      "- [2026-06-03 Entry](../memory/2026-06-03/entry.md) — `created: 2026-06-03, accessed: 2026-06-03`",
+      "- [2026-06-03 Entry](../memory/2026/06/03/entry.md) — `created: 2026-06-03, accessed: 2026-06-03`",
     ].join("\n");
     const { header, entries } = parseIndex(content);
     assert.equal(header.length, 0);

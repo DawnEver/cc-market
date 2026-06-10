@@ -6,6 +6,14 @@ Always-injected behavioral constraints for working on the rem plugin.
 
 Memory files in `.claude/memory/` are NEVER deleted. `prune-memory.js` and `compact.js` only remove from `MEMORY.md` index — files stay on disk forever.
 
+## Path format: nested YYYY/MM/DD/ only
+
+Memory files MUST live at `.claude/memory/YYYY/MM/DD/slug.md` — nested per-day directories.
+The old flat `YYYY-MM-DD/slug.md` format is rejected by `extractDateFromPath` and must be
+migrated via `migrate.mjs` (which runs `migrateFlatDirs` before `stamp-memory.js`). Do not
+read, write, or accept old-format paths anywhere. `parseIndexEntry` normalizes old-format
+index entries to nested form on read via `normalizeMemoryPath`.
+
 ## Path security
 
 Use `resolveMemoryPath()` + `isInsideMemoryDir()` before any file I/O on paths that could come from user input or index entries.

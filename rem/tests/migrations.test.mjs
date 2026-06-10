@@ -170,4 +170,26 @@ describe('rem migrate()', () => {
     assert.match(remaining, /Some manual note unrelated to resolved tasks/);
     assert.doesNotMatch(remaining, /SR-20260604-001/);
   });
+
+  test('converts flat YYYY-MM-DD/ memory dirs to nested YYYY/MM/DD/', async () => {
+    const memoryDir = path.join(projectRoot, '.claude', 'memory');
+    const flatDir = path.join(memoryDir, '2026-06-03');
+    fs.mkdirSync(flatDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(flatDir, 'flat-entry.md'),
+      '---\nname: flat-entry\ndescription: test\ncreated: 2026-06-03\naccessed: 2026-06-03\ntier: short\n---\n\nbody\n',
+    );
+
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('migrated 1 flat memory directory')));
+    // Old flat dir removed
+    assert.equal(fs.existsSync(flatDir), false);
+    // New nested dir exists with the file
+    const nestedFile = path.join(memoryDir, '2026', '06', '03', 'flat-entry.md');
+    assert.equal(fs.existsSync(nestedFile), true);
+    const content = fs.readFileSync(nestedFile, 'utf8');
+    assert.match(content, /name: flat-entry/);
+  });
 });
