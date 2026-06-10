@@ -23,6 +23,14 @@ Every memory file must have YAML frontmatter (`name`, `description`, `created`, 
 
 `MEMORY.md` entries sorted by `accessed` descending, max 20 (`MAX_ENTRIES`). Use `parseIndex()` and `formatIndexEntry()` from `lib.mjs` — never hand-roll index parsing.
 
+## Task archive layout
+
+Resolved findings live ONLY at `.claude/tasks/archive/YYYY/MM/DD.md` (one file per resolution
+day). No monthly rollups, flat `YYYY-MM.md`/`YYYY-MM-DD.md`, or `.claude/memory/tasks/` tree.
+`migrate.mjs` (via `migrations/legacy-archive.mjs`) folds any non-conforming archive content
+into this layout, deduped by ID — re-run `npm run migrate` after restoring/importing old
+`.claude/tasks/` or `.claude/memory/tasks/` data.
+
 ## State
 
 Unified state in `.claude/.rem-state.json`. Use `loadState()`/`saveState()` — never read/write directly. `appendEvent()` for prune log (auto-trims to 50). Hook state keyed under `state.hook`, prune state under `state.prune`.
