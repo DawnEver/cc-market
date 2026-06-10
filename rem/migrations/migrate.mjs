@@ -4,12 +4,15 @@
 // Folds in two past breaking changes:
 //   - memory frontmatter (name/description/created/accessed/tier) + dated YYYY/MM/DD dirs
 //     (delegated to stamp-memory.js, which already does this idempotently)
-//   - removal of the legacy .claude/memory/tasks/ tree, replaced by .claude/tasks/archive/YYYY/MM/DD.md
+//   - resolved task archives must live at .claude/tasks/archive/YYYY/MM/DD.md — legacy
+//     .claude/memory/tasks/** content and non-conforming archive rollups (e.g. YYYY/MM.md,
+//     YYYY-MM.md) are folded into that layout, deduped by ID
 
-import { existsSync, readdirSync, rmSync } from 'fs';
+import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
+import { migrateLegacyArchives } from './legacy-archive.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -35,24 +38,11 @@ export async function migrate(projectRoot) {
     }
   }
 
-  const legacyTasksDir = join(projectRoot, '.claude', 'memory', 'tasks');
-  if (existsSync(legacyTasksDir) && isEmptyDirTree(legacyTasksDir)) {
-    rmSync(legacyTasksDir, { recursive: true });
+  const archives = migrateLegacyArchives(projectRoot);
+  if (archives.changed) {
     changed = true;
-    summary.push('removed empty legacy .claude/memory/tasks/ (superseded by .claude/tasks/archive/)');
+    summary.push(...archives.summary);
   }
 
   return { changed, summary };
-}
-
-function isEmptyDirTree(dir) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!isEmptyDirTree(full)) return false;
-    } else {
-      return false;
-    }
-  }
-  return true;
 }
