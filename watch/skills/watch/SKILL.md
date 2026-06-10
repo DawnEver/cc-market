@@ -38,38 +38,10 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
 ### Step 2: Branch on status
 
 **On `healthy`:**
-- If `report.watch.version_tracking.enabled` and `report.components.git_version.data.new_commits > 0`:
-  1. **Check per-repo status**: Read `report.components.git_version.metrics` for per-repo commit counts
-     (e.g., `wdg-lab_new_commits: 2`, `wdg-lab-webui_new_commits: 0`).
-     Only repos with `> 0` new commits will be deployed.
-  2. The `deploy` action (worktree test gate) runs via the remedy plan in
-     `report.anomalies[].remedy_plan` if `new_version_available` exists.
-     Execute it via:
-     ```bash
-     python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py \
-       --project-dir ${CLAUDE_PROJECT_DIR} \
-       --action deploy
-     ```
-     Internally the deploy action:
-     - Creates an isolated worktree per changed repo
-     - Runs each repo's `test_command` (or the global default)
-     - **Only deploys repos with new commits** — unchanged repos are skipped
-     - Fast-forwards the deploy branch to the tested commit (`git reset --hard`)
-     - If `enable_test_gate: true`: starts a test instance on `test_health_url`,
-       health-checks it, then kills it. Returns `deploy_test_health_passed: true`.
-       **The production service is NOT touched during this phase.**
-     - If tests or health check fail: reverts ALL deploy branches to known-good,
-       production continues undisturbed. Read `failure_reason` for details.
-  3. **After deploy passes with test gate**: Check the `--action deploy` JSON output.
-     If `test_health_passed: true`:
-     - Restart the production service(s) on their production ports.
-     - The restart actions now use `--log .claude/watch/logs/<name>.log` —
-       check those logs if restart fails.
-  4. **If no test gate**: The deploy action returns `deploy_branch_updated: true`
-     but does NOT restart services. You must restart production services yourself,
-     verifying they come up healthy.
-  5. Report to the user: which repos were deployed, commit SHAs, test/health results.
-- Go to Step 5 (schedule next check with `normal` interval).
+- If `report.watch.version_tracking.enabled` and `report.components.git_version.data.new_commits > 0`
+  for any repo → run the deploy/test-gate/restart procedure in `reference/deploy.md`,
+  then go to Step 5 (`normal` interval).
+- Otherwise go straight to Step 5 (`normal` interval).
 
 **On `degraded` (anomaly after recent deploy):**
 - Check `report.escalation.remedies_attempted` — if a recent deploy failed, consider rollback:
@@ -115,49 +87,10 @@ A second escalation path exists outside the AI loop: `trigger-watch.py` polls `t
 
 ## Step 5: Schedule Next Check
 
-After each run, refresh the durable CronCreate to guarantee the next check fires. This self-refreshing pattern resets the 7-day expiry clock every cycle.
-
-### 5a: Determine interval
-
-Read `report.watch.intervals`:
-- **Healthy** → `normal_seconds` (default 43200 = 12h)
-- **Degraded** → `anomaly_seconds` (default 1800 = 30m)
-
-### 5b: Calculate cron schedule
-
-Convert the interval to a cron expression (local time). Use off-peak minutes to avoid `:00`/`:30` fleet congestion:
-
-- **12h interval**: pick two daily times ~12h apart, e.g. `57 8,20 * * *` (8:57 AM + 8:57 PM)
-- **6h interval**: `7 0,6,12,18 * * *`
-- **1h interval**: `7 * * * *`
-- **30m interval**: `7,37 * * * *`
-- **Custom interval**: if the config's `check_interval_normal` doesn't match standard buckets, pick the start hour (e.g. if 4h, use `7 */4 * * *`)
-
-### 5c: Manage CronCreate
-
-1. **CronList** — check for existing durable watch crons (look for prompts containing `/watch:watch` or `watch scheduling`)
-2. **CronDelete** — remove any stale watch cron (wrong interval, wrong project)
-3. **CronCreate** — create a fresh one:
-   - `cron`: the expression from 5b
-   - `prompt`: `/watch:watch` (triggers this skill in the project)
-   - `recurring`: true
-   - `durable`: true (survives session restarts, written to `.claude/scheduled_tasks.json`)
-
-The prompt fires when Claude Code is idle. If Claude Code is not running, the job queues — it fires on next launch if the scheduled time has passed.
-
-### 5d: Fallback — ScheduleWakeup
-
-If CronCreate is unavailable (e.g. running in a forked agent without the tool), fall back to:
-- `ScheduleWakeup` with `delaySeconds = normal_seconds` (or `anomaly_seconds`)
-
-This is session-scoped only (dies when session ends) but keeps the check cadence within long-running sessions.
-
-## Deploy
-
-- Multi-repo: each repo independently checked. Only repos with new commits are deployed. Any repo failure reverts ALL deploy branches to known-good.
-- Test gate (`enable_test_gate`): starts test instance, health-checks, kills it — **production untouched** during this phase.
-- Deploy branch hygiene: `deploy` branch updated via `git reset --hard <tested-commit>`, never commit fixes during deploy. Hotfixes via normal PR flow.
-- Verify production: `.claude/watch/known-good.json`.
+After each run, refresh the durable CronCreate to guarantee the next check fires —
+interval depends on healthy/degraded status (this self-refreshing pattern resets the
+7-day expiry clock every cycle). Full interval lookup, cron-expression calculation, and
+CronCreate/CronList/CronDelete/ScheduleWakeup procedure → `reference/scheduling.md`.
 
 ## Logging
 
