@@ -21,3 +21,17 @@ All devices share the same symmetric key. After `traceme sync setup` on device A
 Prompt text and project paths are excluded per the privacy invariant — never included in any
 sync/export path. The sync repo contains ONLY `.enc` (age-encrypted) files; no plaintext ever
 touches GitHub.
+
+## Report Data Source
+
+`traceme report`/`traceme stats` show the **cross-device aggregate** (`YYYY/MM/DD/cc.enc` from
+`main`) by default, labeled `Aggregated across N device(s): ...`. This is read via the locally
+cached `origin/main` ref (`git show origin/main:YYYY/MM/DD/cc.enc` + decrypt) — no network call,
+relies on a prior `sync push`/`aggregate`/`pull` having fetched `origin`.
+
+If no merged snapshot exists for the date (sync not set up, or nothing aggregated yet), output
+falls back to local-SQLite-only data, labeled `Local-only (no cross-device aggregate available)`.
+Pass `--local-only` to always force the local view.
+
+The **Top Expensive Prompts** section is always local-only — prompt text is never synced (see
+privacy invariant above), so it cannot be part of the cross-device aggregate.

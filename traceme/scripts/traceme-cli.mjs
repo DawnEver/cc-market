@@ -20,8 +20,8 @@ function usage() {
   console.log(`TraceMe ${VERSION} — personal Claude Code observability
 
 Usage:
-  traceme report [today|yesterday|YYYY-MM-DD]  Daily markdown report
-  traceme stats                                  Quick summary
+  traceme report [today|yesterday|YYYY-MM-DD] [--local-only]  Daily markdown report
+  traceme stats [--local-only]                   Quick summary
   traceme setup                                  Initialize database
   traceme sync setup                             Generate age keypair, init sync repo
   traceme sync push [date|--all]                 Encrypt & push daily snapshot (--all: backfill all history)
@@ -46,11 +46,13 @@ try {
   switch (cmd) {
     case 'report': {
       const date = parseDate(args[1]);
-      console.log(generateReport(date) + `\nTraceMe ${VERSION}`);
+      const localOnly = args.includes('--local-only');
+      console.log(generateReport(date, { localOnly }) + `\nTraceMe ${VERSION}`);
       break;
     }
     case 'stats': {
-      console.log(generateStats() + `\nTraceMe ${VERSION}`);
+      const localOnly = args.includes('--local-only');
+      console.log(generateStats({ localOnly }) + `\nTraceMe ${VERSION}`);
       break;
     }
     case 'setup': {

@@ -25,13 +25,16 @@ SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
 | `scripts/traceme-cli.mjs` | CLI: `traceme report today`, `traceme stats`, `traceme setup` |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
-| `tests/` | Node built-in test runner, 14 tests across 3 suites |
+| `tests/` | Node built-in test runner, 32 tests across 5 suites |
 
 ## Data Flow
 
 1. Hook → `ingest-hook.js` → `db.mjs` → `~/.claude/traceme/traceme.db`
 2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary
-3. CLI/Skill → `report.mjs` → queries DB → markdown to stdout
+3. CLI/Skill → `report.mjs` → `sync.readMergedSnapshot(date)` (cached `origin/main`, no network) for
+   the cross-device aggregate; falls back to local SQLite (`db.mjs` queries) when no merged
+   snapshot exists for the date or `--local-only` is passed. Top Expensive Prompts is always
+   local-only (prompt text is never synced).
 
 ## Multi-Device Encrypted Sync
 
@@ -56,22 +59,25 @@ Device A (linxu-win)             GitHub (traceme-history)         Device B (linx
      | traceme sync aggregate        |                                |
      | → fetch all device branches   |                                |
      | → decrypt, merge, re-encrypt  |                                |
-     | → push merged/ to main        |                                |
+     | → push YYYY/MM/DD/cc.enc      |                                |
      |──────────────────────────────>|                                |
 ```
 
 ### Repo Structure (traceme-history)
+
+Snapshot paths are `YYYY/MM/DD/cc.enc` — one directory per day, `cc.enc` holds the Claude Code
+snapshot. The per-day directory leaves room for future sibling files (other tools' data) without
+another path redesign. Same convention on device branches and `main`:
 ```
 device/linxu-win/
-  2026-06-09.enc
-  2026-06-10.enc
+  2026/06/09/cc.enc
+  2026/06/10/cc.enc
 
 device/linxu-mac/
-  2026-06-09.enc
+  2026/06/09/cc.enc
 
 main:
-  merged/
-    2026-06-09.enc    ← all-device aggregate
+  2026/06/09/cc.enc    ← all-device aggregate
 ```
 
 ### Commands
@@ -83,6 +89,11 @@ traceme sync aggregate [date]  Merge all devices → push encrypted merge to mai
 traceme sync verify [date]     Compare local SQLite vs merged aggregate
 ```
 
+`traceme report`/`traceme stats` read the cross-device `YYYY/MM/DD/cc.enc` aggregate from the
+cached `origin/main` ref by default (via `sync.readMergedSnapshot`), labeling output with the
+contributing devices. Pass `--local-only` to force local-SQLite-only output (e.g. before any
+sync has run, or to inspect just this device's data).
+
 Auto-sync: `hooks/sync-hook.js` fires on Stop/SessionEnd — pushes today's snapshot, then
 re-aggregates all device branches into `main`. No manual push or separate aggregate cron
 needed. Remote resolves from `TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's
@@ -92,7 +103,8 @@ needed. Remote resolves from `TRACEME_SYNC_REMOTE` env var, falling back to the 
 | File | Role |
 |------|------|
 | `scripts/crypto.mjs` | Zero-dep AES-256-GCM encryption (Node `crypto`, no external CLI) |
-| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, aggregate, verify, backfill |
+| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, aggregate, verify, backfill, `readMergedSnapshot` |
+| `scripts/migrate-legacy-paths.mjs` | One-time, manual: re-paths existing remote `YYYY-MM-DD.enc` snapshots to `YYYY/MM/DD.enc`. Not part of the CLI — `node scripts/migrate-legacy-paths.mjs` |
 | `hooks/sync-hook.js` | Auto-sync hook: fires on session end, pushes today's snapshot and aggregates to `main` |
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
 | `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
@@ -117,4 +129,4 @@ excluded) → `skills/traceme/reference/sync.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-27 tests: DB CRUD (10), transcript ingest (1), report (3), crypto (9), sync dump/import (4).
+32 tests: DB CRUD (10), transcript ingest (1), report incl. merged-vs-local (6), crypto (9), sync dump/import/merged (6).

@@ -121,4 +121,29 @@ describe('Sync Data Dump/Import', () => {
     assert.equal(data.daily_summary.length, 0);
     assert.equal(data.sessions.length, 0);
   });
+
+  describe('readMergedSnapshot / verifyConsistency without sync configured', () => {
+    before(() => {
+      // Point at a key file that doesn't exist so isSyncSetup() is false,
+      // regardless of any real sync setup on the host machine.
+      process.env.TRACEME_KEY_FILE = join(tmpdir(), `traceme-no-key-${randomUUID()}.txt`);
+    });
+
+    after(() => {
+      delete process.env.TRACEME_KEY_FILE;
+    });
+
+    it('readMergedSnapshot returns null when sync is not set up', async () => {
+      const { readMergedSnapshot } = await import('../scripts/sync.mjs');
+      assert.equal(readMergedSnapshot('2026-06-09'), null);
+    });
+
+    it('verifyConsistency reports null merged data when sync is not set up', async () => {
+      const { verifyConsistency } = await import('../scripts/sync.mjs');
+      const result = verifyConsistency('2026-06-09');
+      assert.equal(result.merged, null);
+      assert.equal(result.consistent, null);
+      assert.ok(result.local.tokens >= 0);
+    });
+  });
 });

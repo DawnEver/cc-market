@@ -14,6 +14,11 @@ tests=(
   "rem/tests/lib.test.mjs"
   "rem/tests/rem-hook.test.mjs"
   "sharp-review/tests/lib.test.mjs"
+  "traceme/tests/crypto.test.mjs"
+  "traceme/tests/db.test.mjs"
+  "traceme/tests/ingest.test.mjs"
+  "traceme/tests/report.test.mjs"
+  "traceme/tests/sync.test.mjs"
 )
 
 failed=0
