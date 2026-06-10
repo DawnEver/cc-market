@@ -16,6 +16,7 @@ Community marketplace of Claude Code plugins. Each plugin lives in its own direc
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, compaction, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
+| [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
 
 Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
@@ -24,7 +25,7 @@ Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progre
 Pre-commit hook (`.git/hooks/pre-commit`) runs all plugin tests before each commit:
 
 ```shell
-node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs
+node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs
 ```
 
 | Test file | Tests | Coverage |
@@ -41,6 +42,11 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
+| `traceme/tests/crypto.test.mjs` | 9 | AES-256-GCM encrypt/decrypt |
+| `traceme/tests/db.test.mjs` | 10 | DB CRUD, daily_summary, queries |
+| `traceme/tests/ingest.test.mjs` | 1 | transcript JSONL token/cost extraction |
+| `traceme/tests/report.test.mjs` | 6 | generateReport/generateStats, merged vs local-only data source |
+| `traceme/tests/sync.test.mjs` | 6 | dump/import, readMergedSnapshot, verifyConsistency |
 
 All JS tests (`*.test.mjs`) run via pre-commit hook. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 

@@ -67,4 +67,51 @@ describe('Report Generator', () => {
     const stats = generateStats();
     assert.ok(stats.includes('TraceMe Stats'));
   });
+
+  it('should label local-only output when no merged snapshot is available', () => {
+    const report = generateReport('2026-06-09', { mergedSnapshot: null });
+    assert.ok(report.includes('Local-only (no cross-device aggregate available'));
+    assert.ok(report.includes('my-project'));
+  });
+
+  it('should prefer merged cross-device data when available', () => {
+    const merged = {
+      devices: ['linxu-win', 'linxu-mac'],
+      aggregated_at: '2026-06-09T23:00:00Z',
+      daily_summary: [
+        { project: 'my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
+        { project: 'other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' },
+      ],
+      sessions: [],
+      tool_usage: [{ tool_name: 'Edit', count: 5 }],
+      skill_usage: [{ skill_name: 'sharp-review', count: 2 }],
+    };
+
+    const report = generateReport('2026-06-09', { mergedSnapshot: merged });
+    assert.ok(report.includes('Aggregated across 2 device(s): linxu-win, linxu-mac'));
+    assert.ok(report.includes('other-project'));
+    assert.ok(report.includes('37.0K'), `Total tokens not found. Report: ${report.slice(0, 600)}`);
+    assert.ok(report.includes('$0.1450'), `Total cost not found. Report: ${report.slice(0, 600)}`);
+    // Top prompts remain local-only even with merged data
+    assert.ok(report.includes('Top Expensive Prompts'));
+    assert.ok(report.includes('Local device only — prompt text not synced'));
+    assert.ok(report.includes('Refactor the auth module'));
+  });
+
+  it('should generate stats from merged data when available', () => {
+    const merged = {
+      devices: ['linxu-win', 'linxu-mac'],
+      aggregated_at: '2026-06-09T23:00:00Z',
+      daily_summary: [
+        { project: 'my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
+      ],
+      sessions: [],
+      tool_usage: [],
+      skill_usage: [],
+    };
+
+    const stats = generateStats({ mergedSnapshot: merged });
+    assert.ok(stats.includes('linxu-win, linxu-mac'));
+    assert.ok(stats.includes('3 sessions'));
+  });
 });
