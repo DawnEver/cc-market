@@ -19,39 +19,18 @@ import {
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const MAX_BUFFER = 256 * 1024 * 1024; // 256MB
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf899d9e1f93e4b1a';
-
 function getArg(args, flag) { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; }
 
 function git(args) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: 'pipe' });
 }
 
-function gitQuiet(args) {
-  try { git(args); return true; } catch { return false; }
-}
-
-function gitOutput(args) {
-  try { return git(args).trim(); } catch { return ''; }
-}
-
 // ── Range detection ──
 
 function detectRange(rangeArg) {
   if (rangeArg) return rangeArg;
-
-  const currentBranch = gitOutput(['branch', '--show-current']);
-
-  if (gitQuiet(['rev-parse', '--verify', 'refs/heads/main']) && currentBranch !== 'main') {
-    return 'main...HEAD';
-  }
-  if (gitQuiet(['rev-parse', '--verify', 'refs/heads/master']) && currentBranch !== 'master') {
-    return 'master...HEAD';
-  }
-  if (gitQuiet(['rev-parse', '--verify', 'HEAD~1'])) {
-    return 'HEAD~1..HEAD';
-  }
-  return `${EMPTY_TREE}..HEAD`;
+  // Default: uncommitted changes (staged + unstaged vs HEAD)
+  return 'HEAD';
 }
 
 // ── Config ──
