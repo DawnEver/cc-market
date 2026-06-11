@@ -3,7 +3,8 @@
 //
 // Folds in past breaking changes:
 //   - volatile frontmatter fields (created/accessed/access_count/tier) → _meta.json per date dir
-//   - flat YYYY-MM-DD/ memory directories → nested YYYY/MM/DD/ (migrateFlatDirs)
+//   - flat memory layouts → nested YYYY/MM/DD/ across all scopes (migrateFlatDirs):
+//     both `YYYY-MM-DD/` dirs and date-prefixed root files (`YYYY-MM-DD_slug.md`)
 //   - legacy task directories (.claude/tasks/, .claude/memory/tasks/) removed
 //     across all scopes (cleanupLegacyTasks) — the task system was retired; tasks
 //     now live solely in sharp-review findings
@@ -27,27 +28,47 @@ const FLAT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Volatile frontmatter fields to strip → move to _meta.json
 const VOLATILE_FIELDS = ['created', 'accessed', 'access_count', 'tier'];
 
+// Migrate legacy flat memory layouts → nested YYYY/MM/DD/ across EVERY scope.
+// Handles two shapes: flat `YYYY-MM-DD/` dirs, and date-prefixed files sitting
+// directly under memory/ (e.g. `2026-06-02_ci_ruff_checks.md`). Like
+// migrateVolatileFrontmatter/cleanupLegacyTasks, this must recurse nested scopes
+// (monorepo sub-projects) — not just projectRoot — or their flat layouts are
+// silently left behind while their frontmatter gets migrated.
 function migrateFlatDirs(projectRoot) {
-  const memoryDir = join(projectRoot, '.claude', 'memory');
-  if (!existsSync(memoryDir)) return { changed: false, summary: [] };
-
   const moved = [];
-  for (const entry of readdirSync(memoryDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !FLAT_DATE_RE.test(entry.name)) continue;
-    const [y, m, d] = entry.name.split('-');
-    const oldDir = join(memoryDir, entry.name);
-    const newDir = join(memoryDir, y, m, d);
-    mkdirSync(newDir, { recursive: true });
-    for (const file of readdirSync(oldDir)) {
-      renameSync(join(oldDir, file), join(newDir, file));
+  for (const scope of findAllMemoryScopes(projectRoot)) {
+    const memoryDir = join(scope, '.claude', 'memory');
+    if (!existsSync(memoryDir)) continue;
+    const prefix = scope === projectRoot ? '' : scope.slice(projectRoot.length + 1).replace(/\\/g, '/') + '/';
+    for (const entry of readdirSync(memoryDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && FLAT_DATE_RE.test(entry.name)) {
+        const [y, m, d] = entry.name.split('-');
+        const oldDir = join(memoryDir, entry.name);
+        const newDir = join(memoryDir, y, m, d);
+        mkdirSync(newDir, { recursive: true });
+        for (const file of readdirSync(oldDir)) {
+          renameSync(join(oldDir, file), join(newDir, file));
+        }
+        rmSync(oldDir, { recursive: true });
+        moved.push(`${prefix}${entry.name}/ → ${prefix}${y}/${m}/${d}/`);
+        continue;
+      }
+      // Date-prefixed file directly under memory/ → strip prefix into a date dir.
+      const fileMatch = entry.isFile() && entry.name.match(/^(\d{4})-(\d{2})-(\d{2})[-_](.+)$/);
+      if (fileMatch) {
+        const [, y, m, d, rest] = fileMatch;
+        const dest = join(memoryDir, y, m, d, rest);
+        if (existsSync(dest)) continue; // never clobber an existing nested file
+        mkdirSync(join(memoryDir, y, m, d), { recursive: true });
+        renameSync(join(memoryDir, entry.name), dest);
+        moved.push(`${prefix}${entry.name} → ${prefix}${y}/${m}/${d}/${rest}`);
+      }
     }
-    rmSync(oldDir, { recursive: true });
-    moved.push(`${entry.name}/ → ${y}/${m}/${d}/`);
   }
 
   return {
     changed: moved.length > 0,
-    summary: moved.length > 0 ? [`migrated ${moved.length} flat memory director${moved.length === 1 ? 'y' : 'ies'} to nested format`] : [],
+    summary: moved.length > 0 ? [`migrated ${moved.length} flat memory entr${moved.length === 1 ? 'y' : 'ies'} to nested format`] : [],
   };
 }
 
@@ -92,8 +113,13 @@ function findAllMemoryScopes(root) {
 }
 
 function extractDateFromPath(filePath) {
-  const m = filePath.match(/(\d{4})[\/\\](\d{2})[\/\\](\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // Preferred: nested YYYY/MM/DD/ directory layout.
+  const nested = filePath.match(/(\d{4})[\/\\](\d{2})[\/\\](\d{2})/);
+  if (nested) return `${nested[1]}-${nested[2]}-${nested[3]}`;
+  // Fallback: a YYYY-MM-DD token (e.g. a date-prefixed filename like
+  // `2026-06-02_ci_ruff_checks.md`) — keeps undated _meta out of the 1970 bucket.
+  const token = filePath.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (token) return `${token[1]}-${token[2]}-${token[3]}`;
   return null;
 }
 
@@ -221,18 +247,20 @@ export async function migrate(projectRoot) {
   const summary = [];
   let changed = false;
 
-  // Step 0: Migrate volatile frontmatter → _meta.json (before stamp rebuilds index)
-  const volatileMigration = migrateVolatileFrontmatter(projectRoot);
-  if (volatileMigration.changed) {
-    changed = true;
-    summary.push(...volatileMigration.summary);
-  }
-
-  // Step 1: Migrate flat YYYY-MM-DD/ memory dirs → nested YYYY/MM/DD/
+  // Step 0: Migrate flat YYYY-MM-DD/ memory dirs → nested YYYY/MM/DD/.
+  // Must precede volatile migration so extractDateFromPath sees nested paths and
+  // routes each file's _meta.json to the correct YYYY/MM/DD/ shard.
   const flatMigration = migrateFlatDirs(projectRoot);
   if (flatMigration.changed) {
     changed = true;
     summary.push(...flatMigration.summary);
+  }
+
+  // Step 1: Migrate volatile frontmatter → _meta.json (before stamp rebuilds index)
+  const volatileMigration = migrateVolatileFrontmatter(projectRoot);
+  if (volatileMigration.changed) {
+    changed = true;
+    summary.push(...volatileMigration.summary);
   }
 
   // Step 2: Run stamp-memory to rebuild indexes
