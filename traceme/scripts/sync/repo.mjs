@@ -14,8 +14,14 @@ export function getDeviceId() {
   if (_deviceId) return _deviceId;
   openDb();
   _deviceId = getMeta('device_id');
+  const canonical = `${userInfo().username}@${hostname().split('.')[0]}`;
   if (!_deviceId) {
-    _deviceId = `${userInfo().username}@${hostname().split('.')[0]}_${Date.now().toString(36)}`;
+    _deviceId = canonical;
+    setMeta('device_id', _deviceId);
+  } else if (_deviceId !== canonical && _deviceId.startsWith(canonical + '_')) {
+    // Migrate: old format had a random timestamp suffix (worktree isolation would
+    // create separate DBs each with a different suffix, counting as extra devices).
+    _deviceId = canonical;
     setMeta('device_id', _deviceId);
   }
   return _deviceId;
