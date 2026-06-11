@@ -3,9 +3,6 @@ name: takeover-model-bug
 description: takeover MCP call_model always passes model="sonnet" regardless of --provider — blocks DeepSeek/Claude takeover reviewers
 metadata:
   type: project
-created: 2026-06-04
-accessed: 2026-06-04
-tier: short
 ---
 
 # Takeover Plugin Model Bug

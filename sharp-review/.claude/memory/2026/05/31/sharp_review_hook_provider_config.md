@@ -3,9 +3,6 @@ name: sharp-review-hook-provider-config
 description: sharp-review-hook.js now reuses Claude Code provider env vars instead of hardcoding api.anthropic.com
 metadata:
   type: project
-created: 2026-05-31
-accessed: 2026-05-31
-tier: short
 ---
 
 ## What changed

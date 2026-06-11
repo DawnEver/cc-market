@@ -3,9 +3,6 @@ name: takeover-plugin-v2
 description: Takeover plugin cleanup — MCP self-declaration, version from plugin.json, bump-version fix, Windows spawn fix, dead skills removed
 metadata:
   type: project
-created: 2026-06-03
-accessed: 2026-06-03
-tier: short
 ---
 
 Takeover plugin (cc-market/takeover/) cleanup session.

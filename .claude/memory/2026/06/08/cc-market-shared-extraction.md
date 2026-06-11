@@ -3,9 +3,6 @@ name: cc-market-shared-extraction
 description: Extracted duplicated utilities from 4 plugins into cc-market/shared/ — findProjectRoot, isMain, readStdinJSON, readTranscriptTail, unified state management
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # cc-market/shared — 提取共享工具库

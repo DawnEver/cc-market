@@ -3,9 +3,6 @@ name: file-size-scope-added
 description: Sharp review now flags files that grew past ~400 lines and suggests splitting them, per user request
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # File-Size Review Scope Added

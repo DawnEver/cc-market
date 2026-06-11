@@ -3,9 +3,6 @@ name: takeover-codex-direct
 description: takeover replaced findCodexCompanion (third-party plugin dep) with direct Codex app-server JSON-RPC — sharp-review's Codex reviewer restored
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # Takeover: Direct Codex App-Server Integration

@@ -3,9 +3,6 @@ name: watch-deploy-gate
 description: Deploy branch isolation, test port gate, multi-repo tracking, temp file conventions
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 ## Watch Plugin — Deploy Gate & Multi-Repo

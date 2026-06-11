@@ -3,10 +3,6 @@ name: docs-sync-rule
 description: When memory structure changes, update all documentation files in the progressive-disclosure chain
 metadata:
   type: feedback
-created: 2026-06-07
-accessed: 2026-06-10
-tier: short
-access_count: 2
 ---
 
 # Documentation Sync Rule

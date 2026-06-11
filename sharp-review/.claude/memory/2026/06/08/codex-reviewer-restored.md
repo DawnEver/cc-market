@@ -3,9 +3,6 @@ name: codex-reviewer-restored
 description: Reviewer A switched from plain Claude fallback to a real Codex adversarial reviewer via takeover's direct app-server integration
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # Codex Reviewer Restored in sharp-review-workflow.js

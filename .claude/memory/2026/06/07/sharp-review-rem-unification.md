@@ -3,9 +3,6 @@ name: sharp-review-rem-unification
 description: Sharp-review findings become single memory entry per session, fully managed by rem — eliminated 14 individual SR-*.md files, resolved.txt, and .claude/sharp-review/ directory
 metadata:
   type: project
-created: 2026-06-07
-accessed: 2026-06-07
-tier: short
 ---
 
 # Sharp-Review → Rem Unification

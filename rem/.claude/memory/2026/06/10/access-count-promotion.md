@@ -3,10 +3,6 @@ name: access-count-promotion
 description: access_count frontmatter field replaces broken git-commit-count promotion heuristic in rem-prep.js
 metadata:
   type: project
-created: 2026-06-10
-accessed: 2026-06-10
-tier: short
-access_count: 1
 ---
 
 ## Problem

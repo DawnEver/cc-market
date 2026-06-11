@@ -3,9 +3,6 @@ name: takeover-review-fixes
 description: Key architectural invariants and test patterns for the takeover plugin after 3-round sharp review and full fix pass
 metadata:
   type: project
-created: 2026-05-28
-accessed: 2026-05-28
-tier: short
 ---
 
 Takeover plugin (cc-market/takeover/) completed 3-round sharp review and full fix pass on 2026-05-28.

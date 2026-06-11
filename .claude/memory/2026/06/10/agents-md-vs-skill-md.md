@@ -3,9 +3,6 @@ name: agnets-md-vs-skill-md
 description: AGENTS.md is dev-only; SKILL.md is what users actually see
 metadata:
   type: feedback
-created: 2026-06-10
-accessed: 2026-06-10
-tier: short
 ---
 
 # AGENTS.md is Dev-Only — Use SKILL.md for User-Visible Changes
