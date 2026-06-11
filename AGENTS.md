@@ -38,7 +38,7 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `rem/tests/memory-state.test.mjs` | 13 | _meta.json state: load, save, bump, drop, self-heal, scope isolation |
 | `rem/tests/scope-validate.test.mjs` | 6 | scope isolation check/fix, intermediate file integrity |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
-| `rem/tests/migrations.test.mjs` | 5 | `migrate()`: volatile field stripping, _meta.json import, idempotence |
+| `rem/tests/migrations.test.mjs` | 9 | `migrate()`: volatile field stripping, _meta.json import, gitignore block normalization, legacy task-dir cleanup, idempotence |
 | `rem/tests/task-lib.test.mjs` | 36 | scan, parse, markFinding, scanAllScopes, formatScopeReport |
 | `rem/tests/check-docs.test.mjs` | 29 | collectDocs, crossReference, formatReport, CLI |
 | `sharp-review/tests/lib.test.mjs` | 17 | SR-ID parsing, module/category inference, frontmatter |
@@ -83,6 +83,7 @@ Versioning is automatic: the `pre-push` hook (`scripts/git-hooks/pre-push`, wire
 ## Standard
 
 - Keep plugin concerns in `cc-market/` — never add plugin details to root `AGENTS.md`
+- **A skill's execution knowledge goes in its `SKILL.md` / `reference/*.md`, never in `rules/*` or `AGENTS.md`/`CLAUDE.md`.** At runtime a skill sees only its own files and the host project's config — never this repo's rules/`AGENTS.md` (dev-context only — see `.claude/rules/invariants.md` "Dev context vs. runtime context").
 - After plugin changes, update the plugin's own `AGENTS.md` and `README.md`
 - Always add tests for new plugin logic
 - Pre-commit hook catches regressions across all plugins
