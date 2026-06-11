@@ -69,13 +69,13 @@ Config shape and troubleshooting → `skills/takeover-result/reference/provider-
 
 | Tool | Input | Routes to |
 |---|---|---|
-| `call_model` | `provider`, `userPrompt`, `model?`, `mode?`, `write?`, `systemPrompt?` | `callAnthropicAPI` / `callCodexCompanion` (task) / `runCodexReview` / `generateImage` / `editImage` / `callNativeClaude` |
+| `call_model` | `provider`, `userPrompt`, `model?`, `mode?`, `write?`, `systemPrompt?` | `callAnthropicAPI` / `callCodexCompanion` (task) / `runCodexReview` / `handleImageEdit` / `handleGenerateImage` / `spawnClaudeP` |
 | `list_models` | (none) | `listModels()` |
 | `codex_status` | `codexPath?` | `checkCodexStatus()` |
 
 Mode routing for `call_model`:
-- `mode=task` (default, any provider) → codex: `callCodexCompanion()`; native claude: `callNativeClaude()`; API: `callAnthropicAPI()`
-- `mode=agent` (any provider) → codex: `callCodexCompanion()`; others: `callAgentMode()` (spawns `claude -p` with provider env)
+- `mode=task` (default, any provider) → codex: `callCodexCompanion()`; native claude: `spawnClaudeP()`; API: `callAnthropicAPI()`
+- `mode=agent` (any provider) → codex: `callCodexCompanion()`; others: `spawnClaudeP()` (claude -p with provider env)
 - `mode=review` → `runCodexReview()` (codex only, adversarial)
 - `mode=image-generate` → `generateImage()` (codex only)
 - `mode=image-edit` → `editImage()` (codex only)

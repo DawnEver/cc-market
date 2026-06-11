@@ -54,13 +54,20 @@ export function loadProviderEnv(provider, configPath = CONFIG_PATH) {
   return env;
 }
 
-export async function callAgentMode(provider, userPrompt, systemPrompt, model, images = null, configPath = CONFIG_PATH) {
-  const env = loadProviderEnv(provider, configPath);
+export async function spawnClaudeP(userPrompt, opts = {}) {
+  const { provider, model, systemPrompt, images, configPath } = opts;
+  const cfgPath = configPath || CONFIG_PATH;
+  let env;
+  const label = provider || 'claude';
 
-  if (model && provider !== 'claude') {
-    const providerConfig = loadProviderConfig(provider);
-    const resolved = resolveModel(providerConfig, model);
-    env.ANTHROPIC_MODEL = resolved;
+  if (!provider || provider === 'claude') {
+    env = process.env;
+  } else {
+    env = loadProviderEnv(provider, cfgPath);
+    if (model) {
+      const providerConfig = loadProviderConfig(provider, cfgPath);
+      env.ANTHROPIC_MODEL = resolveModel(providerConfig, model);
+    }
   }
 
   const fullPrompt = systemPrompt
@@ -68,11 +75,11 @@ export async function callAgentMode(provider, userPrompt, systemPrompt, model, i
     : userPrompt;
 
   const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
-  process.stderr.write(`mcp-takeover: agent mode — spawning claude (provider=${provider} model=${model || 'default'})${useStdin ? ' [stdin]' : ''}...\n`);
+  process.stderr.write(`mcp-takeover: spawning claude (provider=${label} model=${model || 'default'})${useStdin ? ' [stdin]' : ''}...\n`);
 
   return stdinSpawnClaude(claudeExe, fullPrompt, useStdin, env, (code, stdout, stderr, usage) => {
     if (code === 0) return { content: [{ type: 'text', text: stdout.trim() }], _usage: usage };
-    throw new Error(`claude agent (${provider}) exited ${code}: ${stderr.trim()}`);
+    throw new Error(`claude CLI (${label}) exited ${code}: ${stderr.trim()}`);
   }, images);
 }
 
@@ -473,18 +480,10 @@ async function parseSSEStream(body) {
   return { content: [{ type: "text", text: accumulatedText }], stop_reason: stopReason, usage };
 }
 
-export async function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false, images = null) {
+export async function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false, images = null, client = null) {
   const { runCodexTask } = await import("./codex/task.mjs");
   return runCodexTask(userPrompt, systemPrompt, model, writeMode, process.cwd(), (msg) => {
     process.stderr.write(`mcp-takeover[codex]: ${msg.slice(0, 200)}${msg.length > 200 ? "..." : ""}\n`);
-  }, images);
+  }, images, client);
 }
 
-export function callNativeClaude(userPrompt, systemPrompt, images = null) {
-  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
-  const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
-  return stdinSpawnClaude(claudeExe, fullPrompt, useStdin, process.env, (code, stdout, stderr, usage) => {
-    if (code === 0) return { content: [{ type: "text", text: stdout.trim() }], _usage: usage };
-    throw new Error(`claude CLI exited ${code}: ${stderr.trim()}`);
-  }, images);
-}

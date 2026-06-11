@@ -74,6 +74,25 @@ function spawnCodex(codexPath, args, timeout) {
   });
 }
 
+export function handleImageEdit(userPrompt, systemPrompt, opts = {}) {
+  let imagePath, editPrompt;
+  if (systemPrompt) {
+    imagePath = systemPrompt;
+    editPrompt = userPrompt;
+  } else {
+    const parts = userPrompt.trim().split(/\s+/);
+    if (parts.length < 2)
+      throw new Error("image-edit requires an image path and edit prompt");
+    imagePath = parts[0];
+    editPrompt = parts.slice(1).join(" ");
+  }
+  return editImage(editPrompt, imagePath, opts);
+}
+
+export function handleGenerateImage(userPrompt, opts = {}) {
+  return generateImage(userPrompt, opts);
+}
+
 function parseSavedPaths(output) {
   const paths = [];
   for (const line of output.split("\n")) {
