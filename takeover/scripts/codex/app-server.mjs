@@ -116,11 +116,12 @@ export class CodexAppServerClient {
   }
 
   async stop() {
-    if (this._closed) return;
-    try { await this.send("shutdown", {}); } catch {}
-    this._closed = true;
+    if (!this._closed) {
+      try { await this.send("shutdown", {}); } catch {}
+      this._closed = true;
+    }
     if (this.child) {
-      this.child.stdin.end();
+      if (!this.child.stdin.destroyed) this.child.stdin.end();
       if (!this.child.killed) this.child.kill();
     }
     if (this._closeResolve) { this._closeResolve(); this._closeResolve = null; }

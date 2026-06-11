@@ -57,16 +57,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" export today --csv      # E
 
 Exports daily summaries (per-project aggregates: tokens, cost, sessions) in JSON or CSV format. Prompt text is never included (privacy invariant).
 
-### Prune
+### Rescan
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" prune 90                      # Delete old prompt text
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" prune 90 --keep-stats         # Delete text but preserve stats
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" prune 90 --dry-run            # Preview what would be deleted
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" prune 90 --tool-calls         # Also prune tool call data
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" prune 90 --keep-stats --tool-calls  # Clear summaries only
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" rescan            # Incremental: only changed transcripts
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" rescan --all      # Full rebuild from every transcript
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" rescan --prune    # Also drop sessions whose transcript is gone
 ```
 
-Removes stored prompt text and/or tool call summaries to save disk space. `--keep-stats` retains aggregated statistics while only deleting the full text. `--dry-run` shows count without making changes. Use `--tool-calls` to also prune the `tool_calls` table.
+Re-derives the local DB from the Claude Code transcripts at `~/.claude/projects/**/*.jsonl`. The DB is purely a cache of jsonl-derived facts, so this is always safe to run — `--all` ignores the per-file cursors and rebuilds everything (use after upgrading or if data looks wrong); `--prune` removes sessions whose source transcript no longer exists.
 
 ### Errors
 ```bash
@@ -85,11 +83,9 @@ By default, `report` and `stats` show the **cross-device aggregate** — data me
 
 Cross-device data is auto-pulled at session start when sync is configured. If no cross-device data exists for the requested date (sync not set up, or nothing pushed yet), output falls back to local SQLite data. Pass `--local` to always force the local view.
 
-The **Top Expensive Prompts** section is always local-only — prompt text is never synced.
-
 ## Privacy
 
-- Prompt text is stored locally only — never included in any sync or export path
+- Prompt text is **never** stored or read — the scanner counts prompts but never persists their content (structural guarantee)
 - The sync repo contains ONLY `.enc` (AES-256-GCM encrypted) files — no plaintext ever touches GitHub
 - Project paths are excluded from sync data
 - Encryption key is stored locally at `~/.claude/traceme/key.txt` and never committed
@@ -116,9 +112,9 @@ traceme sync forget linxu-win           # Remove device from sync
 traceme sync rebuild                    # Reset sync repo from local data
 traceme export today                    # Export daily summary as JSON
 traceme export today --csv              # Export daily summary as CSV
-traceme prune 90                        # Delete old prompt text
-traceme prune 90 --dry-run              # Preview what would be deleted
-traceme prune 90 --tool-calls           # Also prune tool calls
+traceme rescan                          # Re-derive DB from changed transcripts
+traceme rescan --all                    # Full rebuild from all transcripts
+traceme rescan --prune                  # Also drop stale sessions
 traceme errors                          # Show recent hook errors
 traceme help                            # Show all commands
 ```

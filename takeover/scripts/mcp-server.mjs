@@ -218,13 +218,15 @@ export async function handleCallModel(args) {
       data = await withSharedClient(client =>
         runCodexReview(promptWithImages, model || null, null, process.cwd(), client));
     } else if (mode === "image-generate") {
-      process.stderr.write(`mcp-takeover: codex image generate...\n`);
+      process.stderr.write(`mcp-takeover: codex image generate (app-server)...\n`);
       const { generateImage } = await import("./codex/image.mjs");
-      data = await generateImage(userPrompt);
+      data = await withSharedClient(client =>
+        generateImage(userPrompt, { client }));
     } else if (mode === "image-edit") {
-      process.stderr.write(`mcp-takeover: codex image edit...\n`);
+      process.stderr.write(`mcp-takeover: codex image edit (app-server)...\n`);
       const { handleImageEdit } = await import("./codex/image.mjs");
-      data = await handleImageEdit(userPrompt, systemPrompt);
+      data = await withSharedClient(client =>
+        handleImageEdit(userPrompt, systemPrompt, { client }));
     } else {
       process.stderr.write(
         `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`

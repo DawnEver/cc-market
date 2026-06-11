@@ -33,9 +33,6 @@ If no merged snapshot exists for the date (sync not set up, or nothing aggregate
 falls back to local-SQLite-only data, labeled `Local-only (no cross-device aggregate available)`.
 Pass `--local` to always force the local view.
 
-The **Top Expensive Prompts** section is always local-only — prompt text is never synced (see
-privacy invariant above), so it cannot be part of the cross-device aggregate.
-
 ## Sync Health
 
 ```bash

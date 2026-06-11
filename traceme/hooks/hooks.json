@@ -1,5 +1,5 @@
 {
-  "description": "TraceMe observability hooks — capture session context, tool usage, prompt metadata, parse transcript for token/cost data, and push encrypted daily snapshot at session end.",
+  "description": "TraceMe observability hooks — pull cross-device snapshots at session start; at session end, scan transcripts for token/tool/cost data and push an encrypted daily snapshot.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,28 +8,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
-            "timeout": 3
           }
         ]
       }

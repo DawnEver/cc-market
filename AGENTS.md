@@ -47,9 +47,9 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
 | `traceme/tests/crypto.test.mjs` | 9 | AES-256-GCM encrypt/decrypt |
-| `traceme/tests/db.test.mjs` | 10 | DB CRUD, daily_summary, queries |
-| `traceme/tests/ingest.test.mjs` | 1 | transcript JSONL token/cost extraction |
-| `traceme/tests/report.test.mjs` | 6 | generateReport/generateStats, merged vs local-only data source |
+| `traceme/tests/db.test.mjs` | 7 | replaceSession, derived daily/model/tool/skill queries, takeover fold-in |
+| `traceme/tests/scan.test.mjs` | 4 | transcript scan: token aggregation, message-id dedup, cursor skip, idempotent re-scan |
+| `traceme/tests/report.test.mjs` | 7 | generateReport/generateStats, merged vs local-only data source |
 | `traceme/tests/sync.test.mjs` | 6 | dump/import, readMergedSnapshot, verifyConsistency |
 
 All JS tests (`*.test.mjs`) run via pre-commit hook. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.

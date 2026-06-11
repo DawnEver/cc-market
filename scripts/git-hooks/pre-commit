@@ -16,7 +16,7 @@ tests=(
   "sharp-review/tests/lib.test.mjs"
   "traceme/tests/crypto.test.mjs"
   "traceme/tests/db.test.mjs"
-  "traceme/tests/ingest.test.mjs"
+  "traceme/tests/scan.test.mjs"
   "traceme/tests/report.test.mjs"
   "traceme/tests/sync.test.mjs"
 )

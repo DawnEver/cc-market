@@ -1,4 +1,4 @@
-import { openDb, queryTopPrompts, queryToolUsage, queryModelBreakdown, querySessionStats, queryDbStats } from './db.mjs';
+import { openDb, queryToolUsage, queryModelBreakdown, querySessionStats, queryDbStats } from './db.mjs';
 import { readMergedSnapshot, isSyncSetup } from './sync.mjs';
 import { todayISO } from './lib.mjs';
 
@@ -10,12 +10,6 @@ function fmt(n) {
 
 function fmtCost(n) {
   return '$' + n.toFixed(4);
-}
-
-function truncate(str, len = 60) {
-  if (!str) return '(none)';
-  const cleaned = str.replace(/\s+/g, ' ').trim();
-  return cleaned.length > len ? cleaned.slice(0, len) + '...' : cleaned;
 }
 
 function summarizeProjectRows(rows) {
@@ -58,7 +52,6 @@ export function generateReport(date, opts = {}) {
 
   projectRows = filterByProject(projectRows, opts.project);
 
-  const topPrompts = queryTopPrompts(date, 10);
   const toolUsage = merged ? merged.tool_usage : queryToolUsage(date);
 
   // --- JSON output ---
@@ -74,7 +67,6 @@ export function generateReport(date, opts = {}) {
       overview: { sessions: totalSessions, prompts: totalPrompts, tokens: totalTokens, cost: totalCost, tools: toolUsage.reduce((s, r) => s + r.count, 0) },
       projects: projectRows,
       model_breakdown: modelBreakdown,
-      top_prompts: topPrompts.map(p => ({ project: p.project, text: truncate(p.text), tokens: p.input_tokens + p.output_tokens + (p.cache_tokens || 0), cost: p.cost_usd })),
       tool_usage: toolUsage,
       db_stats: dbStats,
     }, null, 2);
@@ -156,19 +148,6 @@ export function generateReport(date, opts = {}) {
     for (const m of modelBreakdown) {
       lines.push(`| ${m.model} | ${m.calls} | ${fmt(m.tokens)} | ${fmtCost(m.cost)} |`);
     }
-    lines.push('');
-  }
-
-  if (topPrompts.length > 0) {
-    lines.push('## Top Expensive Prompts');
-    lines.push('');
-    lines.push('_Local device only — prompt text not synced_');
-    lines.push('');
-    lines.push('| # | Project | Prompt | Tokens | Cost |');
-    lines.push('|---|---------|--------|--------|------|');
-    topPrompts.forEach((p, i) => {
-      lines.push(`| ${i + 1} | ${p.project || '-'} | ${truncate(p.text)} | ${fmt(p.input_tokens + p.output_tokens + (p.cache_tokens || 0))} | ${fmtCost(p.cost_usd)} |`);
-    });
     lines.push('');
   }
 

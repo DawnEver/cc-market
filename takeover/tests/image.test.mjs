@@ -7,7 +7,7 @@ describe("generateImage", () => {
   test("rejects when codex binary not found", async () => {
     await assert.rejects(
       generateImage("a sunset", { codexPath: "/nonexistent/codex", cwd: process.cwd() }),
-      /ENOENT|not found|spawn/
+      /ENOENT|not found|exited|spawn/i
     );
   });
 });
@@ -15,8 +15,8 @@ describe("generateImage", () => {
 describe("editImage", () => {
   test("rejects when codex binary not found", async () => {
     await assert.rejects(
-      editImage("make it brighter", "photo.png", { codexPath: "/nonexistent/codex", cwd: process.cwd() }),
-      /ENOENT|not found|spawn/
+      editImage("make it brighter", "/fake/photo.png", { codexPath: "/nonexistent/codex", cwd: process.cwd() }),
+      /ENOENT|not found|exited|spawn/i
     );
   });
 });

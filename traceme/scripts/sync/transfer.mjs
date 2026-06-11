@@ -89,7 +89,7 @@ export async function pushSnapshot(date) {
 
 export async function pushAllSnapshots() {
   const db = openDb();
-  const dates = db.prepare("SELECT DISTINCT date(started_at) as d FROM sessions UNION SELECT DISTINCT date FROM daily_summary ORDER BY d").all().map(r => r.d);
+  const dates = db.prepare("SELECT DISTINCT date AS d FROM sessions UNION SELECT DISTINCT date FROM daily_takeover ORDER BY d").all().map(r => r.d);
   if (dates.length === 0) {
     console.log('No historical data to backfill.');
     return [];
