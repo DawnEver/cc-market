@@ -115,7 +115,6 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks.
 | `scripts/codex/task.mjs` | Task execution with streaming |
 | `scripts/codex/review.mjs` | Adversarial code review |
 | `scripts/codex/image.mjs` | Image generation and editing |
-| `scripts/jobs.mjs` | Background job lifecycle |
 | `agents/takeover.md` | Subagent: context gathering + handoff |
 | `commands/continue.md` | `/takeover:continue` |
 | `commands/models.md` | `/takeover:models` |
@@ -124,7 +123,7 @@ Create `~/.claude/claude_env_settings.json` with your provider blocks.
 | `prompts/review.md` | Adversarial review system prompt |
 | `skills/takeover-result/` | Result handling contract |
 | `skills/codex-image-result/` | Image output handling |
-| `tests/` | Test suite (lib, mcp-server, discovery, app-server, task, review, image, jobs) |
+| `tests/` | Test suite (lib, mcp-server, discovery, app-server, task, review, image) |
 
 ## Tests
 

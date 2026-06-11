@@ -128,6 +128,7 @@ export async function handleCallModel(args) {
   if (parsed.flags.provider) provider = parsed.flags.provider;
   if (parsed.flags.model) model = parsed.flags.model;
   userPrompt = parsed.cleanPrompt;
+  if (parsed.flags.write && write === undefined) write = true;
 
   process.stderr.write(`mcp-takeover: call_model args: provider=${provider} model=${model || "(none)"} mode=${mode || "(none)"} write=${!!write}\n`);
 
@@ -166,11 +167,21 @@ export async function handleCallModel(args) {
     }
   }
 
-  // Embed images as data URIs for stdin-based callers (claude native, agent mode, codex task).
-  // API-based callers receive structured image blocks instead.
+  // Embed images as data URIs for stdin-based callers (claude native, codex task).
+  // API callers receive structured content blocks — Anthropic API charges by pixel
+  // dimensions, so full-size originals are fine.
   const imageURIs = resolvedImages.length > 0
     ? resolvedImages.map(img => `data:${img.media_type};base64,${img.data}`).join('\n')
     : '';
+
+  // Check if any image exceeds safe size for data-URI embedding in text prompts.
+  // Base64 inflates by ~33%, and each char ≈ 0.25 tokens. ~150KB binary → ~200KB
+  // base64 → ~50K tokens — safe for 1M context window. Larger images risk overflow.
+  const oversized = resolvedImages.some(img => img.data.length > 150000);
+  if (oversized && (provider === 'claude' || provider === 'codex')) {
+    process.stderr.write(`mcp-takeover: WARNING — image base64 >150KB will inflate text-prompt token count. ` +
+      `For Claude native/codex paths, prefer pre-resized images. API path (--provider <api>) uses content blocks and is unaffected.\n`);
+  }
 
   const providerConfig = loadProviderConfig(provider);
 
@@ -178,11 +189,10 @@ export async function handleCallModel(args) {
   if (mode === 'agent') {
     process.stderr.write(`mcp-takeover: agent mode — provider=${provider} model=${model || '(none)'}\n`);
     let data;
-    const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
     if (providerConfig.provider === 'codex') {
-      data = await callCodexCompanion(promptWithImages, systemPrompt, model || null, !!write);
+      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, resolvedImages.length > 0 ? resolvedImages : null);
     } else {
-      data = await callAgentMode(provider, promptWithImages, systemPrompt, model || null);
+      data = await callAgentMode(provider, userPrompt, systemPrompt, model || null, resolvedImages.length > 0 ? resolvedImages : null);
     }
     return { content: [{ type: 'text', text: extractText(data) }] };
   }
@@ -196,6 +206,7 @@ export async function handleCallModel(args) {
   }
 
   const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
+  const hasImages = resolvedImages.length > 0;
 
   let data;
   let resolvedModel = model || null;
@@ -216,19 +227,23 @@ export async function handleCallModel(args) {
       data = await editImage(editPrompt, imagePath);
     } else {
       process.stderr.write(
-        `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}...\n`
+        `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`
       );
-      data = await callCodexCompanion(promptWithImages, systemPrompt, model || null, !!write);
+      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, hasImages ? resolvedImages : null);
     }
   } else if (providerConfig.native) {
     process.stderr.write("mcp-takeover: calling claude (native CLI)...\n");
-    data = await callNativeClaude(promptWithImages, systemPrompt);
+    // claude.exe -p with stream-json doesn't support image content blocks.
+    // Embed as data URI in text instead — caller is responsible for keeping
+    // total token count within model context limits.
+    const promptWithImagesNative = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
+    data = await callNativeClaude(promptWithImagesNative, systemPrompt, null);
   } else {
     resolvedModel = resolveModel(providerConfig, model || null);
     process.stderr.write(
       `mcp-takeover: calling ${resolvedModel} (${provider})...\n`
     );
-    data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, promptWithImages, resolvedImages.length > 0 ? resolvedImages : null);
+    data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, hasImages ? resolvedImages : null, true);
     const usage = data.usage || {};
     process.stderr.write(
       `mcp-takeover: ${data.stop_reason || "done"}, ` +
