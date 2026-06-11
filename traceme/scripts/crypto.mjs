@@ -21,6 +21,13 @@ export function hasKey() {
   return existsSync(KEY_FILE);
 }
 
+export function setKey(hexKey) {
+  if (!/^[0-9a-fA-F]{64}$/.test(hexKey)) {
+    throw new Error('Key must be 64 hex characters (32 bytes)');
+  }
+  writeFileSync(KEY_FILE, hexKey.toLowerCase() + '\n', 'utf8');
+}
+
 export function encrypt(plaintext) {
   const key = getKey();
   const iv = randomBytes(12);

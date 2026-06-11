@@ -19,7 +19,7 @@ All devices share the same symmetric key. After `traceme sync setup` on device A
 - `tool_usage` / `skill_usage` aggregated counts
 
 Prompt text and project paths are excluded per the privacy invariant — never included in any
-sync/export path. The sync repo contains ONLY `.enc` (age-encrypted) files; no plaintext ever
+sync/export path. The sync repo contains ONLY `.enc` (AES-256-GCM encrypted) files; no plaintext ever
 touches GitHub.
 
 ## Report Data Source
@@ -31,7 +31,16 @@ relies on a prior `sync push`/`aggregate`/`pull` having fetched `origin`.
 
 If no merged snapshot exists for the date (sync not set up, or nothing aggregated yet), output
 falls back to local-SQLite-only data, labeled `Local-only (no cross-device aggregate available)`.
-Pass `--local-only` to always force the local view.
+Pass `--local` to always force the local view.
 
 The **Top Expensive Prompts** section is always local-only — prompt text is never synced (see
 privacy invariant above), so it cannot be part of the cross-device aggregate.
+
+## Sync Health
+
+```bash
+traceme sync status
+```
+
+Shows encryption key fingerprint, configured remote, local sync repo status, and
+`last_push`/`last_pull` timestamps — useful for diagnosing sync issues across devices.

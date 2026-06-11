@@ -1,53 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { openDb, upsertDailySummary } from './db.mjs';
 import { todayISO } from './lib.mjs';
-
-// Approximate pricing per 1M tokens (USD). Updated periodically.
-const MODEL_PRICING = {
-  // Claude models (API pricing per 1M tokens)
-  // https://platform.claude.com/docs/zh-CN/about-claude/pricing  2026/06/10
-  'claude-fable-5':          { input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00 },
-  'claude-mythos-5':         { input: 10.00, output: 50.00, cache_write: 12.50, cache_read: 1.00 },
-  'claude-opus-4.8':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
-  'claude-opus-4.7':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
-  'claude-opus-4.6':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
-  'claude-opus-4.5':         { input: 5.00,  output: 25.00, cache_write: 6.25,  cache_read: 0.50 },
-  'claude-opus-4':           { input: 15.00, output: 75.00, cache_write: 18.75, cache_read: 1.50 },
-  'claude-sonnet-4.6':       { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
-  'claude-sonnet-4.5':       { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
-  'claude-sonnet-4':         { input: 3.00,  output: 15.00, cache_write: 3.75,  cache_read: 0.30 },
-  'claude-haiku-4.5':        { input: 1.00,  output: 5.00,  cache_write: 1.25,  cache_read: 0.10 },
-  'claude-haiku-3.5':        { input: 0.80,  output: 4.00,  cache_write: 1.00,  cache_read: 0.08 },
-  // DeepSeek models (pricing per 1M tokens — flat input, no cache_write)
-  // https://api-docs.deepseek.com/quick_start/pricing 2026/06/10
-  'deepseek-v4-pro':         { input: 0.435, output: 0.87,  cache_hit: 0.003625 },
-  'deepseek-v4-flash':       { input: 0.14,  output: 0.28,  cache_hit: 0.0028 },
-};
-
-function getPricing(model) {
-  // Match prefix: "claude-sonnet-4-20250514" → "claude-sonnet-4"
-  for (const [key, price] of Object.entries(MODEL_PRICING)) {
-    if (model.startsWith(key)) return price;
-  }
-  // Default: estimate based on model tier
-  if (model.includes('opus')) return MODEL_PRICING['claude-opus-4.8'];
-  if (model.includes('sonnet')) return MODEL_PRICING['claude-sonnet-4.6'];
-  if (model.includes('haiku')) return MODEL_PRICING['claude-haiku-4.5'];
-  if (model.includes('fable')) return MODEL_PRICING['claude-fable-5'];
-  if (model.includes('mythos')) return MODEL_PRICING['claude-mythos-5'];
-  if (model.includes('deepseek')) return MODEL_PRICING['deepseek-v4-pro'];
-  // Unknown: conservative default (claude-sonnet-4.6)
-  return MODEL_PRICING['claude-sonnet-4.6'];
-}
-
-function calcCost(usage, model) {
-  const p = getPricing(model);
-  const inputCost      = (usage.input_tokens || 0) / 1_000_000 * p.input;
-  const outputCost     = (usage.output_tokens || 0) / 1_000_000 * p.output;
-  const cacheReadCost  = (usage.cache_read_input_tokens || 0) / 1_000_000 * (p.cache_hit || p.cache_read || 0);
-  const cacheWriteCost = (usage.cache_creation_input_tokens || 0) / 1_000_000 * (p.cache_write || p.input);
-  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
-}
+import { calcCost } from './pricing.mjs';
 
 export function ingestTranscript(transcriptPath, sessionId) {
   let raw;
@@ -121,41 +75,58 @@ export function ingestTranscript(transcriptPath, sessionId) {
   db.prepare('UPDATE prompts SET input_tokens=?, output_tokens=0, cache_tokens=0, cost_usd=?, model=? WHERE session_id=? AND cost_usd = 0')
     .run(avgTokens, avgCost, topModel, sessionId);
 
+  // Backfill per-prompt durations from consecutive timestamp deltas
+  const promptRows = db.prepare('SELECT id, timestamp, turn_index FROM prompts WHERE session_id=? ORDER BY turn_index').all(sessionId);
+  const durationStmt = db.prepare('UPDATE prompts SET duration_ms=? WHERE id=?');
+  for (let i = 0; i < promptRows.length; i++) {
+    const start = new Date(promptRows[i].timestamp).getTime();
+    const end = i + 1 < promptRows.length
+      ? new Date(promptRows[i + 1].timestamp).getTime()
+      : Date.now();
+    durationStmt.run(Math.max(0, end - start), promptRows[i].id);
+  }
+
   // Update daily summary
-  const session = db.prepare('SELECT project FROM sessions WHERE id=?').get(sessionId);
+  const session = db.prepare('SELECT project, repo_origin FROM sessions WHERE id=?').get(sessionId);
   if (session) {
     upsertDailySummary(todayISO(), session.project, {
       session_count: 1,
       prompt_count: promptCount,
       total_tokens: totalInput + totalOutput + totalCacheRead + totalCacheCreate,
       total_cost: totalCost,
-      top_model: topModel
+      top_model: topModel,
+      repo_origin: session.repo_origin
     });
   }
 
   return { promptCount, apiRequests: apiRequests.length, totalCost, totalTokens: totalInput + totalOutput + totalCacheRead + totalCacheCreate };
 }
 
-// ── Takeover trace scanning (NDJSON contract, no code dependency) ─────────
+// --- Takeover trace scanning (NDJSON contract, no code dependency) ---
 
 import { TRACEME_DIR } from './lib.mjs';
 import { join } from 'node:path';
 
 const TAKEOVER_TRACES_FILE = join(TRACEME_DIR, 'takeover_traces.jsonl');
 
-export function scanTakeoverTraces(date) {
+export function scanTakeoverTraces(date, since = null) {
   const traces = [];
+  let maxTs = since || null;
   try {
     const raw = readFileSync(TAKEOVER_TRACES_FILE, 'utf8');
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue;
       try {
         const rec = JSON.parse(line);
-        if (rec.ts && rec.ts.slice(0, 10) === date) traces.push(rec);
+        if (rec.ts && rec.ts.slice(0, 10) === date) {
+          if (since && rec.ts <= since) continue;
+          traces.push(rec);
+          if (!maxTs || rec.ts > maxTs) maxTs = rec.ts;
+        }
       } catch {}
     }
   } catch {
-    return { traces: [], totalTokens: 0, totalInput: 0, totalOutput: 0, byProvider: {} };
+    return { traces: [], totalTokens: 0, totalInput: 0, totalOutput: 0, byProvider: {}, maxTs };
   }
 
   let totalInput = 0, totalOutput = 0;
@@ -177,5 +148,6 @@ export function scanTakeoverTraces(date) {
     totalInput,
     totalOutput,
     byProvider: Object.values(byProvider),
+    maxTs,
   };
 }

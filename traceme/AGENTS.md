@@ -22,7 +22,7 @@ SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
 | `scripts/db.mjs` | SQLite wrapper: schema, CRUD, queries |
 | `scripts/ingest.mjs` | Transcript JSONL parser: extracts api_request token/cost data |
 | `scripts/report.mjs` | Markdown report generator: per-project stats, top prompts, tool/skill usage |
-| `scripts/traceme-cli.mjs` | CLI: `traceme report today`, `traceme stats`, `traceme setup` |
+| `scripts/traceme-cli.mjs` | CLI: report, stats, sync (setup/push/pull/verify/status), export, prune |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
 | `tests/` | Node built-in test runner, 32 tests across 5 suites |
@@ -31,7 +31,7 @@ SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
 
 1. Hook → `traceme-hook.js` → `db.mjs` → `~/.claude/traceme/traceme.db`
 2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary, then `sync.mjs` pushes per-device file to main (no aggregate step needed)
-3. CLI/Skill → `report.mjs` → reads all device files in the date directory from cached `origin/main`, merges in memory; falls back to local SQLite (`db.mjs` queries) when no synced data exists for the date or `--local-only` is passed. Top Expensive Prompts is always local-only (prompt text is never synced).
+3. CLI/Skill → `report.mjs` → reads all device files in the date directory from cached `origin/main`, merges in memory; falls back to local SQLite (`db.mjs` queries) when no synced data exists for the date or `--local` is passed. Top Expensive Prompts is always local-only (prompt text is never synced).
 
 ## Multi-Device Encrypted Sync
 
@@ -76,12 +76,19 @@ traceme sync setup             Generate keypair, init sync repo, auto-pull from 
 traceme sync push [date|--all] Encrypt & push daily snapshot (--all: backfill all history)
 traceme sync pull [date|--all] Pull & import from other devices (--all: full sync)
 traceme sync verify [date]     Compare local SQLite vs merged aggregate
+traceme sync status            Show encryption key, remote, and sync health (last_push/last_pull)
+traceme export [date] [--csv]  Export daily summaries as JSON or CSV
+traceme prune [days] [--keep-stats] Delete prompt text older than N days (default: 90)
 ```
 
 `traceme report`/`traceme stats` read all device files in the date directory from the
 cached `origin/main` ref by default (via `sync.readMergedSnapshot`) and merge in memory,
-labeling output with the contributing devices. Pass `--local-only` to force local-SQLite-only
+labeling output with the contributing devices. Pass `--local` to force local-SQLite-only
 output (e.g. before any sync has run, or to inspect just this device's data).
+
+`traceme sync status` shows sync health: encryption key fingerprint, remote URL, local repo
+status, and `last_push`/`last_pull` timestamps. `traceme export [date] [--csv]` exports daily
+per-project aggregates as JSON or CSV — prompt text is never included per privacy invariant.
 
 Auto-sync runs at the end of Stop/SessionEnd processing in `hooks/traceme-hook.js` — pushes
 today's per-device snapshot directly to `main`. Report reads all device files in the date
