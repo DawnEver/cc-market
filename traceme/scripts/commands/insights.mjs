@@ -1,0 +1,300 @@
+import { openDb, queryModelBreakdown } from '../db.mjs';
+import { readMergedSnapshot } from '../sync.mjs';
+import { todayISO } from '../lib.mjs';
+
+function fmt(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+function fmtCost(n) { return '$' + n.toFixed(4); }
+function fmtDuration(min) {
+  if (min < 1) return '<1m';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function daysArray(from, to) {
+  const days = [];
+  const d = new Date(from + 'T00:00:00');
+  const end = new Date(to + 'T00:00:00');
+  while (d <= end) { days.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
+  return days;
+}
+
+function parseSkillName(summary) {
+  if (!summary) return null;
+  try { const p = JSON.parse(summary); return p.skill || null; } catch {}
+  const m = summary.match(/"skill"\s*:\s*"([^"]+)"/);
+  return m ? m[1] : summary.slice(0, 40);
+}
+
+export function cmdInsights(args, VERSION) {
+  // ── flags ──
+  const getFlag = (a, f) => { const i = a.indexOf(f); return (i >= 0 && a[i + 1] && !a[i + 1].startsWith('--')) ? a[i + 1] : null; };
+
+  const dayFlag = args.includes('--day');
+  const monthFlag = args.includes('--month');
+  const daysVal = getFlag(args, '--days');
+  const local = args.includes('--local');
+  const project = getFlag(args, '--project');
+
+  let numDays = 7;
+  if (dayFlag) numDays = 1;
+  else if (monthFlag) numDays = 30;
+  else if (daysVal) numDays = parseInt(daysVal) || 7;
+
+  const to = todayISO();
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - numDays + 1);
+  const from = fromDate.toISOString().slice(0, 10);
+  const days = daysArray(from, to);
+
+  const db = openDb();
+  const lines = [];
+
+  lines.push(`# TraceMe Insights — Last ${numDays} Day${numDays !== 1 ? 's' : ''}`);
+  lines.push('');
+  lines.push(`_${from} to ${to}_`);
+  if (project) lines.push(`_Filtered by project: "${project}"_`);
+  lines.push('');
+
+  const projectSearch = project ? project.toLowerCase() : null;
+  const projectLike = projectSearch ? `%${projectSearch}%` : null;
+
+  // ═══════════════════════════════════════════════
+  // TOKEN CONSUMPTION (merged data per day)
+  // ═══════════════════════════════════════════════
+  const tokenByDay = {};       // date → { project → { tokens, cost, sessions, prompts } }
+  const projectTokenTotals = {};
+  const allProjects = new Set();
+  let grandTokens = 0, grandCost = 0, grandSessions = 0, grandPrompts = 0, daysWithData = 0;
+
+  for (const day of days) {
+    const merged = local ? null : readMergedSnapshot(day);
+    let rows;
+    if (merged) {
+      rows = merged.daily_summary.map(r => ({
+        project: r.project, sessions: r.session_count, prompts: r.prompt_count,
+        tokens: r.total_tokens, cost: r.total_cost,
+      }));
+    } else {
+      rows = db.prepare(`
+        SELECT project, COUNT(*) as sessions, COALESCE(SUM(prompt_count),0) as prompts,
+               COALESCE(SUM(total_tokens),0) as tokens, COALESCE(SUM(total_cost),0) as cost
+        FROM sessions
+        WHERE date(started_at) = ?
+        GROUP BY COALESCE(repo_origin, project_path, project)
+      `).all(day);
+    }
+
+    if (projectSearch) rows = rows.filter(r => r.project.toLowerCase().includes(projectSearch));
+    if (rows.length === 0) continue;
+
+    daysWithData++;
+    tokenByDay[day] = {};
+    for (const r of rows) {
+      tokenByDay[day][r.project] = r;
+      allProjects.add(r.project);
+      if (!projectTokenTotals[r.project]) projectTokenTotals[r.project] = { sessions: 0, prompts: 0, tokens: 0, cost: 0 };
+      projectTokenTotals[r.project].sessions += r.sessions;
+      projectTokenTotals[r.project].prompts += r.prompts;
+      projectTokenTotals[r.project].tokens += r.tokens;
+      projectTokenTotals[r.project].cost += r.cost;
+      grandTokens += r.tokens; grandCost += r.cost; grandSessions += r.sessions; grandPrompts += r.prompts;
+    }
+  }
+
+  const projList = [...allProjects].sort((a, b) => (projectTokenTotals[b]?.tokens || 0) - (projectTokenTotals[a]?.tokens || 0));
+
+  // ═══════════════════════════════════════════════
+  // TIME CONSUMPTION (local sessions table)
+  // ═══════════════════════════════════════════════
+  const timeQuery = projectLike
+    ? `SELECT s.project, s.started_at, s.ended_at, s.prompt_count
+       FROM sessions s
+       WHERE date(s.started_at) >= ? AND date(s.started_at) <= ?
+         AND s.project LIKE ?`
+    : `SELECT s.project, s.started_at, s.ended_at, s.prompt_count
+       FROM sessions s
+       WHERE date(s.started_at) >= ? AND date(s.started_at) <= ?`;
+
+  const sessRows = projectLike
+    ? db.prepare(timeQuery).all(from, to, projectLike)
+    : db.prepare(timeQuery).all(from, to);
+
+  const now = new Date();
+  const timeByProject = {};
+  let grandDuration = 0;
+  let zombieCount = 0;
+
+  for (const s of sessRows) {
+    const start = new Date(s.started_at);
+    const end = s.ended_at ? new Date(s.ended_at) : now;
+    let durMin = Math.round((end - start) / 60000);
+
+    // zombie filter
+    if (s.prompt_count === 0 && !s.ended_at && durMin > 240) { zombieCount++; continue; }
+    if (!s.ended_at && durMin > 240) durMin = 240;
+
+    if (!timeByProject[s.project]) timeByProject[s.project] = { sessions: 0, totalMin: 0, countWithEnd: 0, sumWithEnd: 0 };
+    timeByProject[s.project].sessions++;
+    timeByProject[s.project].totalMin += durMin;
+    if (s.ended_at) { timeByProject[s.project].countWithEnd++; timeByProject[s.project].sumWithEnd += durMin; }
+    grandDuration += durMin;
+  }
+
+  // ═══════════════════════════════════════════════
+  // SKILL USAGE (local tool_calls table)
+  // ═══════════════════════════════════════════════
+  const skillQuery = projectLike
+    ? `SELECT tc.summary, s.project
+       FROM tool_calls tc JOIN sessions s ON tc.session_id = s.id
+       WHERE tc.tool_name = 'Skill' AND tc.summary IS NOT NULL AND tc.summary != ''
+         AND date(tc.timestamp) >= ? AND date(tc.timestamp) <= ?
+         AND s.project LIKE ?`
+    : `SELECT tc.summary, s.project
+       FROM tool_calls tc JOIN sessions s ON tc.session_id = s.id
+       WHERE tc.tool_name = 'Skill' AND tc.summary IS NOT NULL AND tc.summary != ''
+         AND date(tc.timestamp) >= ? AND date(tc.timestamp) <= ?`;
+
+  const skillRows = projectLike
+    ? db.prepare(skillQuery).all(from, to, projectLike)
+    : db.prepare(skillQuery).all(from, to);
+
+  const skillAgg = {};
+  let totalSkillCalls = 0;
+  for (const r of skillRows) {
+    const name = parseSkillName(r.summary);
+    if (!name) continue;
+    totalSkillCalls++;
+    if (!skillAgg[name]) skillAgg[name] = { total: 0, projects: {} };
+    skillAgg[name].total++;
+    skillAgg[name].projects[r.project] = (skillAgg[name].projects[r.project] || 0) + 1;
+  }
+
+  // ═══════════════════════════════════════════════
+  // MODEL USAGE (local)
+  // ═══════════════════════════════════════════════
+  const modelAgg = {};
+  for (const day of days) {
+    for (const m of queryModelBreakdown(day)) {
+      if (!modelAgg[m.model]) modelAgg[m.model] = { calls: 0, tokens: 0, cost: 0 };
+      modelAgg[m.model].calls += m.calls;
+      modelAgg[m.model].tokens += m.tokens;
+      modelAgg[m.model].cost += m.cost;
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  // OUTPUT
+  // ═══════════════════════════════════════════════
+
+  // Quick Stats
+  lines.push('## Quick Stats');
+  lines.push('');
+  lines.push('| Metric | Value |');
+  lines.push('|--------|-------|');
+  lines.push(`| Days with data | ${daysWithData}/${days.length} |`);
+  lines.push(`| Projects | ${projList.length} |`);
+  lines.push(`| Total sessions | ${grandSessions} |`);
+  lines.push(`| Total prompts | ${grandPrompts} |`);
+  lines.push(`| Total tokens | ${fmt(grandTokens)} |`);
+  lines.push(`| Total cost | **${fmtCost(grandCost)}** |`);
+  lines.push(`| Total session time | ${fmtDuration(grandDuration)} |`);
+  lines.push(`| Skills used | ${Object.keys(skillAgg).length} |`);
+  lines.push(`| Total skill calls | ${totalSkillCalls} |`);
+  lines.push('');
+
+  if (projList.length === 0) {
+    lines.push('_No token data for this period._');
+    lines.push('');
+  } else {
+
+  // Token Consumption by Project (per day)
+  lines.push('## Token Consumption by Project');
+  lines.push('');
+  const header = '| Date | ' + projList.map(p => p.length > 14 ? p.slice(0, 12) + '..' : p).join(' | ') + ' | Daily Total |';
+  const sep = '|------|' + projList.map(() => '------|').join('') + '------|';
+  lines.push(header);
+  lines.push(sep);
+
+  for (const day of days) {
+    if (!tokenByDay[day]) continue;
+    const cells = projList.map(p => tokenByDay[day][p] ? fmt(tokenByDay[day][p].tokens) : '-');
+    const dayTotal = projList.reduce((s, p) => s + (tokenByDay[day][p]?.tokens || 0), 0);
+    lines.push(`| ${day} | ${cells.join(' | ')} | ${fmt(dayTotal)} |`);
+  }
+
+  // total row
+  const totalCells = projList.map(p => fmt(projectTokenTotals[p]?.tokens || 0));
+  lines.push(`| **Total** | ${totalCells.join(' | ')} | **${fmt(grandTokens)}** |`);
+  lines.push('');
+
+  // Time Consumption
+  lines.push('## Time Consumption by Project');
+  if (zombieCount > 0) lines.push(`_${zombieCount} zombie session(s) filtered (>4h, no prompts, no end)_`);
+  lines.push('');
+  lines.push('| Project | Sessions | Total Time | Avg Time |');
+  lines.push('|---------|----------|------------|----------|');
+  for (const proj of [...projList].sort((a, b) => (timeByProject[b]?.totalMin || 0) - (timeByProject[a]?.totalMin || 0))) {
+    const t = timeByProject[proj];
+    if (!t) continue;
+    const avg = t.countWithEnd > 0 ? fmtDuration(Math.round(t.sumWithEnd / t.countWithEnd)) : 'N/A';
+    lines.push(`| ${proj} | ${t.sessions} | ${fmtDuration(t.totalMin)} | ${avg} |`);
+  }
+  lines.push('');
+
+  // Skill Rankings
+  if (Object.keys(skillAgg).length > 0) {
+    lines.push('## Skill Usage Rankings');
+    lines.push('');
+    const skillSorted = Object.entries(skillAgg).sort((a, b) => b[1].total - a[1].total);
+    const maxCount = skillSorted[0][1].total;
+    for (const [name, agg] of skillSorted) {
+      const pct = (agg.total / totalSkillCalls * 100).toFixed(1);
+      const bar = '█'.repeat(Math.round(agg.total / maxCount * 15));
+      lines.push(`| ${name} | ${agg.total} | ${pct}% | ${bar} |`);
+    }
+    lines.push('');
+
+    // per-project breakdown (only if >1 project)
+    const skillProjects = new Set();
+    for (const [, agg] of skillSorted) for (const p of Object.keys(agg.projects)) skillProjects.add(p);
+    if (skillProjects.size > 1) {
+      lines.push('### Skill Usage by Project');
+      lines.push('');
+      const spList = [...skillProjects];
+      const skillHeader = '| Skill | ' + spList.map(p => p.length > 14 ? p.slice(0, 12) + '..' : p).join(' | ') + ' |';
+      const skillSep = '|-------|' + spList.map(() => '------|').join('') + '';
+      lines.push(skillHeader);
+      lines.push(skillSep);
+      for (const [name, agg] of skillSorted) {
+        const cells = spList.map(p => agg.projects[p] ? String(agg.projects[p]) : '-');
+        lines.push(`| ${name} | ${cells.join(' | ')} |`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Model Usage
+  if (Object.keys(modelAgg).length > 0) {
+    lines.push('## Model Usage');
+    lines.push('');
+    lines.push('_Local device only — model data not synced_');
+    lines.push('');
+    lines.push('| Model | Calls | Tokens | Cost |');
+    lines.push('|-------|-------|--------|------|');
+    for (const [model, m] of Object.entries(modelAgg).sort((a, b) => b[1].cost - a[1].cost)) {
+      lines.push(`| ${model} | ${m.calls} | ${fmt(m.tokens)} | ${fmtCost(m.cost)} |`);
+    }
+    lines.push('');
+  }
+
+  } // end else (projList.length > 0)
+
+  lines.push('---');
+  lines.push(`TraceMe ${VERSION}`);
+  console.log(lines.join('\n'));
+}

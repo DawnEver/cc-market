@@ -9,6 +9,7 @@ import { cmdExport } from './commands/export.mjs';
 import { cmdPrune } from './commands/prune.mjs';
 import { cmdSync } from './commands/sync-cmd.mjs';
 import { cmdStatus, cmdErrors, cmdPricing, cmdConfig } from './commands/info.mjs';
+import { cmdInsights } from './commands/insights.mjs';
 
 const args = process.argv.slice(2);
 const cmd = args[0] || 'report';
@@ -41,6 +42,7 @@ Usage:
   traceme errors [-n N]                          Show last N hook errors (default: 50)
   traceme pricing                                Show current model pricing
   traceme config                                 Show configuration summary
+  traceme insights [--day|--month|--days N] [--local] [--project <name>]  Multi-day trend analysis
   traceme help                                   Show this help`);
 }
 
@@ -114,6 +116,9 @@ try {
       break;
     case 'config':
       cmdConfig(VERSION);
+      break;
+    case 'insights':
+      cmdInsights(args, VERSION);
       break;
     default:
       console.log(`Unknown command: ${cmd}`);
