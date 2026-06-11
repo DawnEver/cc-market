@@ -264,6 +264,19 @@ export function generateRangeReport(opts = {}) {
     totalCost += r.cost;
   }
 
+  if (opts.json) {
+    return JSON.stringify({
+      date_range: { from, to },
+      source: 'local',
+      overview: { sessions: totalSessions, prompts: totalPrompts, tokens: totalTokens, cost: totalCost },
+      projects: projectList,
+      daily_trend: dailyTrend,
+      model_breakdown: Object.entries(modelAgg).map(([model, m]) => ({ model, ...m })),
+      tool_usage: Object.entries(toolAgg).map(([tool_name, count]) => ({ tool_name, count })),
+      db_stats: queryDbStats(),
+    }, null, 2);
+  }
+
   if (opts.brief) {
     lines.push(`  Days with data: ${daysWithData}/${days.length}`);
     lines.push(`  Projects: ${projectList.length} | Sessions: ${totalSessions} | Prompts: ${totalPrompts}`);
