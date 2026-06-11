@@ -6,78 +6,90 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import {
   openDb, closeDb,
-  insertSession, closeSession,
-  insertPrompt,
-  insertToolCall,
-  upsertDailySummary,
-  queryDailySummary, queryTopPrompts, queryToolUsage, querySessionStats
+  replaceSession,
+  upsertTakeoverTokens,
+  queryDailySummary, queryToolUsage, queryModelBreakdown,
+  querySkillUsage, querySessionStats, queryDbStats, deleteSession, allSessionIds,
 } from '../scripts/db.mjs';
 
 const TEST_DB = join(tmpdir(), `traceme-test-${randomUUID()}.db`);
+
+function sampleSession(id, over = {}) {
+  return {
+    id,
+    date: '2026-06-09',
+    project: 'test-project',
+    project_path: '/home/user/test-project',
+    repo_origin: 'github.com/user/test-project',
+    branch: 'main',
+    started_at: '2026-06-09T10:00:00Z',
+    ended_at: '2026-06-09T11:00:00Z',
+    prompt_count: 2,
+    input_tokens: 1300, output_tokens: 600, cache_read_tokens: 300, cache_creation_tokens: 50,
+    total_tokens: 2250, total_cost: 0.13, top_model: 'claude-sonnet-4-6',
+    models: [
+      { model: 'claude-sonnet-4-6', requests: 1, input: 500, output: 200, cache_read: 100, cache_creation: 0, cost: 0.05 },
+      { model: 'claude-opus-4-8', requests: 1, input: 800, output: 400, cache_read: 200, cache_creation: 50, cost: 0.08 },
+    ],
+    tools: [{ tool_name: 'Edit', count: 2 }, { tool_name: 'Bash', count: 1 }],
+    skills: [{ skill_name: 'rem:rem', count: 1 }],
+    ...over,
+  };
+}
 
 describe('DB Layer', { concurrency: 1 }, () => {
   before(() => openDb({ path: TEST_DB }));
   after(() => {
     closeDb();
-    try { unlinkSync(TEST_DB); } catch {}
-    try { unlinkSync(TEST_DB + '-wal'); } catch {}
-    try { unlinkSync(TEST_DB + '-shm'); } catch {}
+    for (const ext of ['', '-wal', '-shm']) { try { unlinkSync(TEST_DB + ext); } catch {} }
   });
 
-  it('should insert and query a session', () => {
-    insertSession({
-      id: 'sess-001',
-      project: 'test-project',
-      project_path: '/home/user/test-project',
-      repo_origin: 'github.com/user/test-project',
-      branch: 'main',
-      started_at: '2026-06-09T10:00:00Z'
-    });
-    closeSession('sess-001', '2026-06-09T11:00:00Z');
+  it('replaceSession inserts a session with models/tools/skills', () => {
+    replaceSession(sampleSession('sess-001'));
+    const stats = queryDbStats();
+    assert.equal(stats.sessions, 1);
+    assert.equal(stats.prompts, 2);
+    assert.equal(stats.tool_calls, 3);
   });
 
-  it('should insert and update prompts', () => {
-    insertPrompt({ id: 'sess-001_0', session_id: 'sess-001', turn_index: 0, text: 'Write a function', timestamp: '2026-06-09T10:01:00Z' });
-    insertPrompt({ id: 'sess-001_1', session_id: 'sess-001', turn_index: 1, text: 'Fix the bug', timestamp: '2026-06-09T10:30:00Z' });
-    // Update prompts directly (batchUpdatePromptTokens removed as dead code)
-    const db = openDb({ path: TEST_DB });
-    db.prepare('UPDATE prompts SET input_tokens=?, output_tokens=?, cache_tokens=?, cost_usd=?, model=?, duration_ms=? WHERE id=?')
-      .run(500, 300, 100, 0.05, 'claude-sonnet-4', 2500, 'sess-001_0');
-    db.prepare('UPDATE prompts SET input_tokens=?, output_tokens=?, cache_tokens=?, cost_usd=?, model=?, duration_ms=? WHERE id=?')
-      .run(800, 400, 200, 0.08, 'claude-sonnet-4', 3200, 'sess-001_1');
+  it('replaceSession is idempotent (replaces, never duplicates)', () => {
+    replaceSession(sampleSession('sess-001'));
+    replaceSession(sampleSession('sess-001'));
+    assert.equal(queryDbStats().sessions, 1);
+    assert.equal(queryDbStats().tool_calls, 3);
   });
 
-  it('should insert tool calls', () => {
-    insertToolCall({ id: 'toolu_001', session_id: 'sess-001', prompt_id: 'sess-001_0', tool_name: 'Edit', summary: 'Write function to file', timestamp: '2026-06-09T10:02:00Z' });
-    insertToolCall({ id: 'toolu_002', session_id: 'sess-001', prompt_id: 'sess-001_0', tool_name: 'Bash', summary: 'npm test', timestamp: '2026-06-09T10:03:00Z' });
-    insertToolCall({ id: 'toolu_003', session_id: 'sess-001', prompt_id: 'sess-001_1', tool_name: 'Read', summary: 'read src/bug.js', timestamp: '2026-06-09T10:31:00Z' });
-  });
-
-  it('should upsert daily summary', () => {
-    upsertDailySummary('2026-06-09', 'test-project', { session_count: 1, prompt_count: 2, total_tokens: 2300, total_cost: 0.13, top_model: 'claude-sonnet-4', repo_origin: 'github.com/user/test-project' });
-  });
-
-  it('should query daily summary', () => {
+  it('queryDailySummary aggregates per repo_origin', () => {
     const rows = queryDailySummary('2026-06-09');
     assert.equal(rows.length, 1);
     assert.equal(rows[0].project, 'test-project');
-    assert.equal(rows[0].total_cost, 0.13);
+    assert.equal(rows[0].total_tokens, 2250);
+    assert.equal(rows[0].top_model, 'claude-sonnet-4-6');
   });
 
-  it('should query top prompts', () => {
-    const rows = queryTopPrompts('2026-06-09', 5);
-    assert.equal(rows.length, 2);
+  it('queryToolUsage / queryModelBreakdown / querySkillUsage', () => {
+    assert.equal(queryToolUsage('2026-06-09').length, 2);
+    assert.equal(queryModelBreakdown('2026-06-09').length, 2);
+    assert.equal(querySkillUsage('2026-06-09', '2026-06-09')[0].skill_name, 'rem:rem');
   });
 
-  it('should query tool usage', () => {
-    const rows = queryToolUsage('2026-06-09');
-    assert.equal(rows.length, 3);
-  });
-
-  it('should query session stats', () => {
-    openDb({ path: TEST_DB }).prepare('UPDATE sessions SET total_tokens=2300, total_cost=0.13 WHERE id=?').run('sess-001');
+  it('querySessionStats groups by repo', () => {
     const rows = querySessionStats('2026-06-09');
     assert.equal(rows.length, 1);
     assert.equal(rows[0].project, 'test-project');
+    assert.equal(rows[0].tokens, 2250);
+  });
+
+  it('upsertTakeoverTokens folds into daily summary total', () => {
+    upsertTakeoverTokens('2026-06-09', 'test-project', 1000, 'github.com/user/test-project');
+    const rows = queryDailySummary('2026-06-09');
+    assert.equal(rows[0].total_tokens, 3250);
+  });
+
+  it('deleteSession / allSessionIds', () => {
+    replaceSession(sampleSession('sess-002', { repo_origin: 'github.com/user/other' }));
+    assert.equal(allSessionIds().length, 2);
+    deleteSession('sess-002');
+    assert.deepEqual(allSessionIds(), ['sess-001']);
   });
 });

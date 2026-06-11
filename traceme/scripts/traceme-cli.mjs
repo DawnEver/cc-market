@@ -6,7 +6,7 @@ import { closeDb } from './db.mjs';
 import { todayISO } from './lib.mjs';
 import { cmdReport, cmdStats } from './commands/report.mjs';
 import { cmdExport } from './commands/export.mjs';
-import { cmdPrune } from './commands/prune.mjs';
+import { cmdRescan } from './commands/rescan.mjs';
 import { cmdSync } from './commands/sync-cmd.mjs';
 import { cmdStatus, cmdErrors, cmdPricing, cmdConfig } from './commands/info.mjs';
 import { cmdInsights } from './commands/insights.mjs';
@@ -38,7 +38,7 @@ Usage:
   traceme sync purge                             Clear local data and re-import from remote
   traceme sync rebuild                           Reset sync repo and repush all local data
   traceme export [date] [--csv] [--project <name>] [--from <d> --to <d>|--range Nd]  Export daily summaries as JSON/CSV
-  traceme prune [days|YYYY-MM-DD] [--keep-stats] [--dry-run] [--tool-calls]  Delete old prompt/tool_call data
+  traceme rescan [--all] [--prune]               Re-derive sessions from transcripts (--all: full rebuild, --prune: drop stale)
   traceme errors [-n N]                          Show last N hook errors (default: 50)
   traceme pricing                                Show current model pricing
   traceme config                                 Show configuration summary
@@ -105,8 +105,8 @@ try {
     case 'export':
       cmdExport(args, parseRange, getFlag, parseDate);
       break;
-    case 'prune':
-      cmdPrune(args);
+    case 'rescan':
+      cmdRescan(args);
       break;
     case 'errors':
       cmdErrors(args);

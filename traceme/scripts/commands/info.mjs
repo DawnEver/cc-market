@@ -29,7 +29,7 @@ export function printStatus(showSync) {
     const repoExists = existsSync(syncDir) && existsSync(join(syncDir, '.git'));
     console.log(`  Local sync repo: ${repoExists ? 'exists' : 'missing'}`);
     if (repoExists) {
-      const deviceId = db.prepare("SELECT value FROM meta WHERE key = 'device_id'").get()?.value || '';
+      const deviceId = db.prepare("SELECT value FROM traceme_meta WHERE key = 'device_id'").get()?.value || '';
       if (deviceId) {
         const lastPush = spawnSync('git', ['log', '--all', '--oneline', '--author', deviceId, '-1', '--format=%ai'], { cwd: syncDir, encoding: 'utf8', timeout: 5000 });
         console.log(`  Last push (by this device): ${lastPush.stdout.trim() || 'never'}`);

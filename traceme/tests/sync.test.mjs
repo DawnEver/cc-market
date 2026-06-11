@@ -4,7 +4,7 @@ import { unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { openDb, closeDb, queryDailySummary } from '../scripts/db.mjs';
+import { openDb, closeDb, queryDailySummary, replaceSession } from '../scripts/db.mjs';
 
 // Test the pure logic: dumpDailyData, importDailyData, verifyConsistency
 // (git/age operations tested manually)
@@ -17,15 +17,17 @@ describe('Sync Data Dump/Import', () => {
     // Set before first import so crypto.mjs captures the test key path, not the real one
     process.env.TRACEME_KEY_FILE = join(tmpdir(), `traceme-no-key-${randomUUID()}.txt`);
     // Seed test data
-    const db = openDb({ path: TEST_DB });
-    db.prepare(`INSERT OR REPLACE INTO sessions (id, project, project_path, branch, started_at, prompt_count, total_tokens, total_cost)
-      VALUES (?,?,?,?,?,?,?,?)`).run('sess-s1', 'my-project', '/home/user/my-project', 'main', '2026-06-09T10:00:00Z', 5, 25000, 0.095);
-    db.prepare(`INSERT OR REPLACE INTO daily_summary (date, project, repo_origin, session_count, prompt_count, total_tokens, total_cost, top_model)
-      VALUES (?,?,?,?,?,?,?,?)`).run('2026-06-09', 'my-project', 'github.com/user/my-project', 1, 5, 25000, 0.095, 'claude-sonnet-4');
-    db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
-      VALUES (?,?,?,?,?)`).run('t1', 'sess-s1', 'Edit', 'Edit src/a.js', '2026-06-09T10:02:00Z');
-    db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
-      VALUES (?,?,?,?,?)`).run('t2', 'sess-s1', 'Bash', 'npm test', '2026-06-09T10:03:00Z');
+    openDb({ path: TEST_DB });
+    replaceSession({
+      id: 'sess-s1', date: '2026-06-09', project: 'my-project', project_path: '/home/user/my-project',
+      repo_origin: 'github.com/user/my-project', branch: 'main',
+      started_at: '2026-06-09T10:00:00Z', ended_at: '2026-06-09T11:00:00Z',
+      prompt_count: 5, input_tokens: 18000, output_tokens: 6500, cache_read_tokens: 500, cache_creation_tokens: 0,
+      total_tokens: 25000, total_cost: 0.095, top_model: 'claude-sonnet-4-6',
+      models: [{ model: 'claude-sonnet-4-6', requests: 5, input: 18000, output: 6500, cache_read: 500, cache_creation: 0, cost: 0.095 }],
+      tools: [{ tool_name: 'Edit', count: 1 }, { tool_name: 'Bash', count: 1 }],
+      skills: [],
+    });
   });
 
   after(() => {

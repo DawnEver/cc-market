@@ -4,34 +4,51 @@ Local-first personal observability for Claude Code. Tracks token usage, cost, to
 
 ## Architecture
 
-Claude Code hooks capture session/tool/prompt events in real-time. At session end, the transcript JSONL is parsed to extract per-API-request token counts and model info. Cost is calculated from known model pricing. Everything stored in SQLite via `node:sqlite` (zero npm deps).
+The Claude Code transcripts at `~/.claude/projects/**/*.jsonl` are the source of truth —
+every assistant message carries its model and full `usage` (input/output/cache), every
+`tool_use` block names the tool, and each line carries `cwd`/`gitBranch`/`timestamp`. TraceMe
+does **not** record any of this via real-time hooks; it scans the transcripts and derives
+everything. The only thing the transcript lacks is the git remote (for cross-device repo
+dedup), resolved per `cwd` via git and cached. Derived facts land in SQLite (`node:sqlite`,
+zero npm deps); all reports are query-time aggregates — no additive bookkeeping.
 
 ```
-SessionStart → capture git branch, project name
-UserPromptSubmit → record prompt text + timestamp
-PreToolUse → record tool name + summary
-SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
+SessionStart → pull cross-device snapshots
+Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace session rows
+                → fold in takeover traces → push encrypted daily snapshot (throttled)
 ```
 
 ## File Map
 
 | File | Role |
 |------|------|
-| `hooks/traceme-hook.js` | Reads stdin JSON, routes by event type, writes to DB; sync push at session end |
-| `hooks/hooks.json` | Registers SessionStart, UserPromptSubmit, PreToolUse, Stop, SessionEnd |
-| `scripts/db.mjs` | SQLite wrapper: schema, CRUD, queries |
-| `scripts/ingest.mjs` | Transcript JSONL parser: extracts api_request token/cost data |
-| `scripts/report.mjs` | Markdown report generator: per-project stats, top prompts, tool/skill usage |
-| `scripts/traceme-cli.mjs` | CLI: report, stats, sync (setup/push/pull/verify/status), export, prune |
+| `hooks/traceme-hook.js` | SessionStart pulls; Stop/SessionEnd scans transcripts + pushes |
+| `hooks/hooks.json` | Registers SessionStart, Stop, SessionEnd |
+| `scripts/scan.mjs` | Incremental transcript scanner: per-file (size:mtime) cursor, message-id dedup, derives session/model/tool/skill facts |
+| `scripts/db.mjs` | SQLite wrapper: schema, `replaceSession`, derived queries |
+| `scripts/ingest.mjs` | Takeover NDJSON trace scanner (only non-transcript source) |
+| `scripts/report.mjs` | Markdown report generator: per-project stats, model/tool usage |
+| `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
-| `tests/` | Node built-in test runner, 32 tests across 5 suites |
+| `tests/` | Node built-in test runner, 34 tests across 5 suites |
 
 ## Data Flow
 
-1. Hook → `traceme-hook.js` → `db.mjs` → `~/.claude/traceme/traceme.db`
-2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary, then `sync.mjs` pushes per-device file to main (no aggregate step needed)
-3. CLI/Skill → `report.mjs` → reads all device files in the date directory from cached `origin/main`, merges in memory; falls back to local SQLite (`db.mjs` queries) when no synced data exists for the date or `--local` is passed. Top Expensive Prompts is always local-only (prompt text is never synced).
+1. Stop/SessionEnd → `scan.mjs` sweeps `~/.claude/projects/**/*.jsonl`. Unchanged files skip
+   via cursor; changed files are fully re-parsed and the session's rows replaced
+   (idempotent). Aggregates (`daily_summary`, model/tool/skill breakdowns) are derived at
+   query time from the per-session tables.
+2. After scan, `sync.mjs` pushes the per-device daily snapshot to `main` (throttled on Stop,
+   forced on SessionEnd).
+3. CLI/Skill → `report.mjs` → reads all device files in the date directory from cached
+   `origin/main`, merges in memory; falls back to local SQLite queries when no synced data
+   exists or `--local` is passed.
+
+Schema (all per-session, recomputed on each scan): `sessions` (one row per transcript) +
+`session_models` / `session_tools` / `session_skills` breakdowns. `daily_takeover` holds the
+only non-transcript source. `traceme_meta` holds scan cursors (`cur:<path>`), the cwd→repo
+cache (`repo:<cwd>`), `device_id`, and sync timestamps.
 
 ## Multi-Device Encrypted Sync
 
@@ -78,7 +95,7 @@ traceme sync pull [date|--all] Pull & import from other devices (--all: full syn
 traceme sync verify [date]     Compare local SQLite vs merged aggregate
 traceme sync status            Show encryption key, remote, and sync health (last_push/last_pull)
 traceme export [date] [--csv]  Export daily summaries as JSON or CSV
-traceme prune [days] [--keep-stats] Delete prompt text older than N days (default: 90)
+traceme rescan [--all] [--prune] Re-derive sessions from transcripts (--all: full rebuild; --prune: drop stale)
 ```
 
 `traceme report`/`traceme stats` read all device files in the date directory from the
@@ -88,7 +105,9 @@ output (e.g. before any sync has run, or to inspect just this device's data).
 
 `traceme sync status` shows sync health: encryption key fingerprint, remote URL, local repo
 status, and `last_push`/`last_pull` timestamps. `traceme export [date] [--csv]` exports daily
-per-project aggregates as JSON or CSV — prompt text is never included per privacy invariant.
+per-project aggregates as JSON or CSV. `traceme rescan` re-derives the local DB from the
+transcripts (`--all` ignores cursors for a full rebuild; `--prune` drops sessions whose
+transcript no longer exists) — safe to run anytime since all data is jsonl-derived.
 
 Auto-sync runs at the end of Stop/SessionEnd processing in `hooks/traceme-hook.js` — pushes
 today's per-device snapshot directly to `main`. Report reads all device files in the date
@@ -112,11 +131,12 @@ excluded) → `skills/traceme/reference/sync.md`.
 ## Invariants
 
 - Hooks never block — always exit 0. Errors logged to `~/.claude/traceme/error.log`
-- DB at `~/.claude/traceme/traceme.db` — outside git repo, local only
+- DB at `~/.claude/traceme/traceme.db` — outside git repo, local only, fully rebuildable from transcripts via `rescan`
 - Zero npm dependencies — uses Node 24 `node:sqlite` built-in
-- Prompt text stored locally only — not included in any sync/export path
+- Prompt text is **never** stored or read — the scanner only counts prompts; it never persists their content (structural guarantee, not a convention)
 - Sync repo contains ONLY `.enc` files — no plaintext ever touches GitHub
-- Project = git repo basename of `cwd` at session start
+- Project = git repo basename of the transcript's `cwd`; `repo_origin` = normalized git remote (cached per cwd)
+- Scan is idempotent: a session is fully recomputed and replaced on each pass; aggregates are query-time only
 
 ## Tests
 
@@ -124,4 +144,4 @@ excluded) → `skills/traceme/reference/sync.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-32 tests: DB CRUD (10), transcript ingest (1), report incl. merged-vs-local (6), crypto (9), sync dump/import/merged (6).
+34 tests: DB derived queries (7), transcript scan incl. dedup/cursor/idempotence (4), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged (6), plus the shared `--test` run via pre-commit.

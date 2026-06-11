@@ -20,7 +20,7 @@ export function dumpDailyData(date) {
     tool_usage: queryToolUsage(date),
     sessions: db.prepare(`
       SELECT id, project, repo_origin, branch, started_at, ended_at, prompt_count, total_tokens, total_cost
-      FROM sessions WHERE date(started_at) = ?
+      FROM sessions WHERE date = ?
     `).all(date).map(r => ({
       ...r,
       total_cost: Math.round(r.total_cost * 100000) / 100000

@@ -126,11 +126,15 @@ export async function purgeLocalData() {
     console.warn(`Push before purge failed (continuing): ${e.message}`);
   }
 
-  // Clear data tables but keep traceme_meta (device_id, sync timestamps, etc.)
-  db.exec('DELETE FROM tool_calls');
-  db.exec('DELETE FROM prompts');
+  // Clear derived data and the per-file scan cursors (so a later scan rebuilds
+  // from the transcripts), but keep traceme_meta identity keys (device_id, sync
+  // timestamps, repo cache).
+  db.exec('DELETE FROM session_models');
+  db.exec('DELETE FROM session_tools');
+  db.exec('DELETE FROM session_skills');
   db.exec('DELETE FROM sessions');
-  db.exec('DELETE FROM daily_summary');
+  db.exec('DELETE FROM daily_takeover');
+  db.exec("DELETE FROM traceme_meta WHERE key LIKE 'cur:%'");
 
   // Refresh the cached origin/main ref so merged reports reflect the remote.
   // Foreign data is never written back into local SQLite (see importDailyData) —

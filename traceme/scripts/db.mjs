@@ -19,50 +19,56 @@ export function openDb(opts = {}) {
   db.exec('PRAGMA busy_timeout=5000');
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
-      id            TEXT PRIMARY KEY,
-      project       TEXT NOT NULL,
-      project_path  TEXT NOT NULL,
-      branch        TEXT,
-      started_at    TEXT NOT NULL,
-      ended_at      TEXT,
-      prompt_count  INTEGER DEFAULT 0,
-      total_tokens  INTEGER DEFAULT 0,
-      total_cost    REAL DEFAULT 0.0
+      id                    TEXT PRIMARY KEY,
+      date                  TEXT NOT NULL,
+      project               TEXT NOT NULL,
+      project_path          TEXT,
+      repo_origin           TEXT NOT NULL DEFAULT '',
+      branch                TEXT,
+      started_at            TEXT NOT NULL,
+      ended_at              TEXT,
+      prompt_count          INTEGER DEFAULT 0,
+      input_tokens          INTEGER DEFAULT 0,
+      output_tokens         INTEGER DEFAULT 0,
+      cache_read_tokens     INTEGER DEFAULT 0,
+      cache_creation_tokens INTEGER DEFAULT 0,
+      total_tokens          INTEGER DEFAULT 0,
+      total_cost            REAL DEFAULT 0.0,
+      top_model             TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS prompts (
-      id            TEXT PRIMARY KEY,
-      session_id    TEXT NOT NULL REFERENCES sessions(id),
-      turn_index    INTEGER NOT NULL,
-      text          TEXT,
-      timestamp     TEXT NOT NULL,
-      input_tokens  INTEGER DEFAULT 0,
-      output_tokens INTEGER DEFAULT 0,
-      cache_tokens  INTEGER DEFAULT 0,
-      cost_usd      REAL DEFAULT 0.0,
-      model         TEXT,
-      duration_ms   INTEGER
+    CREATE TABLE IF NOT EXISTS session_models (
+      session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      model                 TEXT NOT NULL,
+      requests              INTEGER DEFAULT 0,
+      input_tokens          INTEGER DEFAULT 0,
+      output_tokens         INTEGER DEFAULT 0,
+      cache_read_tokens     INTEGER DEFAULT 0,
+      cache_creation_tokens INTEGER DEFAULT 0,
+      cost                  REAL DEFAULT 0.0,
+      PRIMARY KEY (session_id, model)
     );
 
-    CREATE TABLE IF NOT EXISTS tool_calls (
-      id            TEXT PRIMARY KEY,
-      session_id    TEXT NOT NULL REFERENCES sessions(id),
-      prompt_id     TEXT REFERENCES prompts(id),
-      tool_name     TEXT NOT NULL,
-      summary       TEXT,
-      timestamp     TEXT NOT NULL,
-      duration_ms   INTEGER
+    CREATE TABLE IF NOT EXISTS session_tools (
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      tool_name  TEXT NOT NULL,
+      count      INTEGER DEFAULT 0,
+      PRIMARY KEY (session_id, tool_name)
     );
 
-    CREATE TABLE IF NOT EXISTS daily_summary (
-      date          TEXT NOT NULL,
-      project       TEXT NOT NULL,
-      session_count INTEGER DEFAULT 0,
-      prompt_count  INTEGER DEFAULT 0,
-      total_tokens  INTEGER DEFAULT 0,
-      total_cost    REAL DEFAULT 0.0,
-      top_model     TEXT,
-      PRIMARY KEY (date, project)
+    CREATE TABLE IF NOT EXISTS session_skills (
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      skill_name TEXT NOT NULL,
+      count      INTEGER DEFAULT 0,
+      PRIMARY KEY (session_id, skill_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_takeover (
+      date        TEXT NOT NULL,
+      repo_origin TEXT NOT NULL DEFAULT '',
+      project     TEXT NOT NULL,
+      tokens      INTEGER DEFAULT 0,
+      PRIMARY KEY (date, repo_origin)
     );
 
     CREATE TABLE IF NOT EXISTS traceme_meta (
@@ -70,38 +76,9 @@ export function openDb(opts = {}) {
       value TEXT NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_prompts_session ON prompts(session_id);
-    CREATE INDEX IF NOT EXISTS idx_prompts_ts ON prompts(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
-    CREATE INDEX IF NOT EXISTS idx_tool_calls_ts ON tool_calls(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_summary(date);
+    CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(date);
+    CREATE INDEX IF NOT EXISTS idx_sessions_repo ON sessions(repo_origin);
   `);
-
-  const sessCols = db.prepare("PRAGMA table_info('sessions')").all().map(c => c.name);
-  if (!sessCols.includes('repo_origin')) {
-    db.exec("ALTER TABLE sessions ADD COLUMN repo_origin TEXT");
-  }
-  const dsCols = db.prepare("PRAGMA table_info('daily_summary')").all().map(c => c.name);
-  if (!dsCols.includes('repo_origin')) {
-    db.exec(`
-      DROP TABLE IF EXISTS daily_summary_new;
-      CREATE TABLE daily_summary_new (
-        date          TEXT NOT NULL,
-        project       TEXT NOT NULL,
-        repo_origin   TEXT NOT NULL DEFAULT '',
-        session_count INTEGER DEFAULT 0,
-        prompt_count  INTEGER DEFAULT 0,
-        total_tokens  INTEGER DEFAULT 0,
-        total_cost    REAL DEFAULT 0.0,
-        top_model     TEXT,
-        PRIMARY KEY (date, repo_origin)
-      );
-      INSERT INTO daily_summary_new SELECT date, project, '', session_count, prompt_count, total_tokens, total_cost, top_model FROM daily_summary;
-      DROP TABLE daily_summary;
-      ALTER TABLE daily_summary_new RENAME TO daily_summary;
-      CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_summary(date);
-    `);
-  }
 
   return db;
 }
@@ -110,60 +87,38 @@ export function closeDb() {
   if (db) { db.close(); db = null; dbPath = null; }
 }
 
-// ── Session CRUD ──
+// ── Scan ingestion (single source of truth: jsonl-derived session facts) ──
 
-export function insertSession(session) {
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO sessions (id, project, project_path, repo_origin, branch, started_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(session.id, session.project, session.project_path, session.repo_origin, session.branch, session.started_at);
-}
+// Idempotent replace: a session is fully recomputed from its transcript on each
+// scan, so we delete its prior rows and re-insert. daily_summary / model / tool
+// aggregates are all derived at query time — no additive-delta bookkeeping.
+export function replaceSession(s) {
+  if (!db) throw new Error('DB not open');
+  db.prepare('DELETE FROM session_models WHERE session_id=?').run(s.id);
+  db.prepare('DELETE FROM session_tools WHERE session_id=?').run(s.id);
+  db.prepare('DELETE FROM session_skills WHERE session_id=?').run(s.id);
+  db.prepare('DELETE FROM sessions WHERE id=?').run(s.id);
+  db.prepare(`INSERT INTO sessions
+    (id, date, project, project_path, repo_origin, branch, started_at, ended_at,
+     prompt_count, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+     total_tokens, total_cost, top_model)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(s.id, s.date, s.project, s.project_path || null, s.repo_origin || '', s.branch || null,
+      s.started_at, s.ended_at || null, s.prompt_count || 0, s.input_tokens || 0, s.output_tokens || 0,
+      s.cache_read_tokens || 0, s.cache_creation_tokens || 0, s.total_tokens || 0, s.total_cost || 0, s.top_model || null);
 
-export function closeSession(id, endedAt) {
-  const stmt = db.prepare('UPDATE sessions SET ended_at = ? WHERE id = ?');
-  stmt.run(endedAt, id);
-}
-
-// ── Prompt CRUD ──
-
-export function insertPrompt(prompt) {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO prompts (id, session_id, turn_index, text, timestamp)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  stmt.run(prompt.id, prompt.session_id, prompt.turn_index, prompt.text, prompt.timestamp);
-}
-
-// ── Tool Call CRUD ──
-
-export function insertToolCall(tc) {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO tool_calls (id, session_id, prompt_id, tool_name, summary, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(tc.id, tc.session_id, tc.prompt_id || null, tc.tool_name, tc.summary, tc.timestamp);
-}
-
-// ── Daily Summary ──
-
-export function upsertDailySummary(date, project, data) {
-  const repoOrigin = data.repo_origin || '';
-  const existing = db.prepare('SELECT * FROM daily_summary WHERE date=? AND repo_origin=?').get(date, repoOrigin);
-  if (existing) {
-    db.prepare(`UPDATE daily_summary SET
-      session_count = session_count + ?,
-      prompt_count  = prompt_count + ?,
-      total_tokens  = total_tokens + ?,
-      total_cost    = total_cost + ?,
-      top_model     = COALESCE(?, top_model),
-      project       = ?
-      WHERE date=? AND repo_origin=?`)
-      .run(data.session_count, data.prompt_count, data.total_tokens, data.total_cost, data.top_model, project, date, repoOrigin);
-  } else {
-    db.prepare('INSERT INTO daily_summary (date, project, repo_origin, session_count, prompt_count, total_tokens, total_cost, top_model) VALUES (?,?,?,?,?,?,?,?)')
-      .run(date, project, repoOrigin, data.session_count, data.prompt_count, data.total_tokens, data.total_cost, data.top_model);
+  const mStmt = db.prepare(`INSERT INTO session_models
+    (session_id, model, requests, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost)
+    VALUES (?,?,?,?,?,?,?,?)`);
+  for (const m of (s.models || [])) {
+    mStmt.run(s.id, m.model, m.requests || 0, m.input || 0, m.output || 0, m.cache_read || 0, m.cache_creation || 0, m.cost || 0);
   }
+
+  const tStmt = db.prepare('INSERT INTO session_tools (session_id, tool_name, count) VALUES (?,?,?)');
+  for (const t of (s.tools || [])) tStmt.run(s.id, t.tool_name, t.count || 0);
+
+  const skStmt = db.prepare('INSERT INTO session_skills (session_id, skill_name, count) VALUES (?,?,?)');
+  for (const sk of (s.skills || [])) skStmt.run(s.id, sk.skill_name, sk.count || 0);
 }
 
 // ── Metadata ──
@@ -179,140 +134,126 @@ export function setMeta(key, value) {
   db.prepare('INSERT OR REPLACE INTO traceme_meta (key, value) VALUES (?, ?)').run(key, String(value));
 }
 
-// ── Takeover Tokens (idempotent delta, only touches total_tokens) ──
+// ── Takeover tokens (separate source: not jsonl-derived) ──
 
 export function upsertTakeoverTokens(date, project, tokens, repoOrigin = '') {
   if (!db) throw new Error('DB not open');
   db.prepare(`
-    INSERT INTO daily_summary (date, project, repo_origin, session_count, prompt_count, total_tokens, total_cost)
-    VALUES (?, ?, ?, 0, 0, ?, 0)
+    INSERT INTO daily_takeover (date, repo_origin, project, tokens)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(date, repo_origin) DO UPDATE SET
-      total_tokens = total_tokens + excluded.total_tokens,
+      tokens = tokens + excluded.tokens,
       project = excluded.project
-  `).run(date, project, repoOrigin, tokens);
+  `).run(date, repoOrigin, project, tokens);
 }
 
-// ── Queries ──
+function takeoverByRepo(date) {
+  const out = {};
+  for (const r of db.prepare('SELECT repo_origin, project, tokens FROM daily_takeover WHERE date=?').all(date)) {
+    out[r.repo_origin] = r;
+  }
+  return out;
+}
+
+// ── Derived queries (aggregate sessions at read time) ──
 
 export function queryDailySummary(date) {
-  const stmt = db.prepare('SELECT * FROM daily_summary WHERE date = ? ORDER BY total_cost DESC');
-  return stmt.all(date);
+  const rows = db.prepare(`
+    SELECT date, repo_origin,
+           MAX(project) AS project,
+           COUNT(*) AS session_count,
+           SUM(prompt_count) AS prompt_count,
+           SUM(total_tokens) AS total_tokens,
+           SUM(total_cost) AS total_cost
+    FROM sessions WHERE date=? GROUP BY repo_origin
+  `).all(date);
+
+  const byRepo = {};
+  for (const r of rows) {
+    r.top_model = topModelForRepo(date, r.repo_origin);
+    byRepo[r.repo_origin] = r;
+  }
+
+  // Fold in takeover tokens (separate source) on the matching repo bucket.
+  for (const [repo, tk] of Object.entries(takeoverByRepo(date))) {
+    if (byRepo[repo]) {
+      byRepo[repo].total_tokens += tk.tokens;
+    } else {
+      byRepo[repo] = { date, repo_origin: repo, project: tk.project, session_count: 0,
+        prompt_count: 0, total_tokens: tk.tokens, total_cost: 0, top_model: null };
+    }
+  }
+  return Object.values(byRepo).sort((a, b) => b.total_cost - a.total_cost);
 }
 
-export function queryTopPrompts(date, limit = 10) {
-  const stmt = db.prepare(`
-    SELECT p.*, s.project, s.repo_origin
-    FROM prompts p JOIN sessions s ON p.session_id = s.id
-    WHERE date(p.timestamp) = ?
-    ORDER BY p.cost_usd DESC
-    LIMIT ?
-  `);
-  return stmt.all(date, limit);
+function topModelForRepo(date, repoOrigin) {
+  const row = db.prepare(`
+    SELECT sm.model AS model, SUM(sm.requests) AS r
+    FROM session_models sm JOIN sessions s ON sm.session_id = s.id
+    WHERE s.date=? AND s.repo_origin=?
+    GROUP BY sm.model ORDER BY r DESC LIMIT 1
+  `).get(date, repoOrigin);
+  return row ? row.model : null;
 }
 
 export function queryToolUsage(date) {
-  const stmt = db.prepare(`
-    SELECT tool_name, COUNT(*) as count
-    FROM tool_calls
-    WHERE date(timestamp) = ?
-    GROUP BY tool_name
-    ORDER BY count DESC
-  `);
-  return stmt.all(date);
+  return db.prepare(`
+    SELECT st.tool_name AS tool_name, SUM(st.count) AS count
+    FROM session_tools st JOIN sessions s ON st.session_id = s.id
+    WHERE s.date=? GROUP BY st.tool_name ORDER BY count DESC
+  `).all(date);
 }
 
 export function queryModelBreakdown(date) {
-  const stmt = db.prepare('SELECT model, COUNT(*) as calls, SUM(input_tokens + output_tokens + COALESCE(cache_tokens, 0)) as tokens, SUM(cost_usd) as cost FROM prompts WHERE date(timestamp) = ? AND model IS NOT NULL GROUP BY model ORDER BY cost DESC');
-  return stmt.all(date);
+  return db.prepare(`
+    SELECT sm.model AS model,
+           SUM(sm.requests) AS calls,
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens,
+           SUM(sm.cost) AS cost
+    FROM session_models sm JOIN sessions s ON sm.session_id = s.id
+    WHERE s.date=? GROUP BY sm.model ORDER BY cost DESC
+  `).all(date);
 }
 
 export function querySessionStats(date) {
-  const stmt = db.prepare(`
-    SELECT s.project,
-           s.repo_origin,
-           COUNT(*) as sessions,
-           COALESCE(SUM(s.prompt_count), 0) as prompts,
-           COALESCE(SUM(s.total_tokens), 0) as tokens,
-           COALESCE(SUM(s.total_cost), 0) as cost
-    FROM sessions s
-    WHERE date(s.started_at) = ?
-    GROUP BY COALESCE(s.repo_origin, s.project_path, s.project)
-    ORDER BY cost DESC
-  `);
-  return stmt.all(date);
+  return db.prepare(`
+    SELECT MAX(project) AS project,
+           repo_origin,
+           COUNT(*) AS sessions,
+           COALESCE(SUM(prompt_count), 0) AS prompts,
+           COALESCE(SUM(total_tokens), 0) AS tokens,
+           COALESCE(SUM(total_cost), 0) AS cost
+    FROM sessions WHERE date=? GROUP BY repo_origin ORDER BY cost DESC
+  `).all(date);
+}
+
+// Per (skill, project) counts over a date range — powers `traceme insights`.
+export function querySkillUsage(from, to, projectLike = null) {
+  const params = [from, to];
+  let sql = `
+    SELECT ss.skill_name AS skill_name, s.project AS project, SUM(ss.count) AS count
+    FROM session_skills ss JOIN sessions s ON ss.session_id = s.id
+    WHERE s.date >= ? AND s.date <= ?`;
+  if (projectLike) { sql += ' AND s.project LIKE ?'; params.push(projectLike); }
+  sql += ' GROUP BY ss.skill_name, s.project';
+  return db.prepare(sql).all(...params);
 }
 
 export function queryDbStats() {
-  const tables = ['sessions', 'prompts', 'tool_calls', 'daily_summary'];
-  const stats = {};
-  for (const t of tables) {
-    const row = db.prepare(`SELECT COUNT(*) as count FROM ${t}`).get();
-    stats[t] = row.count;
-  }
-  return stats;
+  const sessions = db.prepare('SELECT COUNT(*) AS c FROM sessions').get().c;
+  const prompts = db.prepare('SELECT COALESCE(SUM(prompt_count),0) AS c FROM sessions').get().c;
+  const tool_calls = db.prepare('SELECT COALESCE(SUM(count),0) AS c FROM session_tools').get().c;
+  return { sessions, prompts, tool_calls };
 }
 
-export function nullifyOldPrompts(days) {
-  if (!db) throw new Error('DB not open');
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const result = db.prepare("UPDATE prompts SET text = NULL WHERE date(timestamp) < ? AND text IS NOT NULL").run(cutoffStr);
-  return result.changes;
+// ── Maintenance ──
+
+export function deleteSession(id) {
+  db.prepare('DELETE FROM session_models WHERE session_id=?').run(id);
+  db.prepare('DELETE FROM session_tools WHERE session_id=?').run(id);
+  return db.prepare('DELETE FROM sessions WHERE id=?').run(id).changes;
 }
 
-export function nullifyOldToolCalls(days) {
-  if (!db) throw new Error('DB not open');
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const result = db.prepare("UPDATE tool_calls SET summary = NULL WHERE date(timestamp) < ? AND summary IS NOT NULL").run(cutoffStr);
-  return result.changes;
-}
-
-export function deleteOldToolCalls(days) {
-  if (!db) throw new Error('DB not open');
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const result = db.prepare('DELETE FROM tool_calls WHERE date(timestamp) < ?').run(cutoffStr);
-  return result.changes;
-}
-
-export function countOldToolCalls(days) {
-  if (!db) throw new Error('DB not open');
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  return db.prepare('SELECT COUNT(*) as count FROM tool_calls WHERE date(timestamp) < ?').get(cutoffStr).count;
-}
-
-export function countOldPrompts(days, onlyWithText = false) {
-  if (!db) throw new Error('DB not open');
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  if (onlyWithText) {
-    return db.prepare('SELECT COUNT(*) as count FROM prompts WHERE date(timestamp) < ? AND text IS NOT NULL').get(cutoffStr).count;
-  }
-  return db.prepare('SELECT COUNT(*) as count FROM prompts WHERE date(timestamp) < ?').get(cutoffStr).count;
-}
-
-export function countOldPromptsDate(cutoffDate) {
-  return db.prepare('SELECT COUNT(*) as count FROM prompts WHERE date(timestamp) < ?').get(cutoffDate).count;
-}
-export function countOldPromptsWithTextDate(cutoffDate) {
-  return db.prepare('SELECT COUNT(*) as count FROM prompts WHERE date(timestamp) < ? AND text IS NOT NULL').get(cutoffDate).count;
-}
-export function countOldToolCallsDate(cutoffDate) {
-  return db.prepare('SELECT COUNT(*) as count FROM tool_calls WHERE date(timestamp) < ?').get(cutoffDate).count;
-}
-export function nullifyOldPromptsDate(cutoffDate) {
-  return db.prepare("UPDATE prompts SET text = NULL WHERE date(timestamp) < ? AND text IS NOT NULL").run(cutoffDate).changes;
-}
-export function nullifyOldToolCallsDate(cutoffDate) {
-  return db.prepare("UPDATE tool_calls SET summary = NULL WHERE date(timestamp) < ? AND summary IS NOT NULL").run(cutoffDate).changes;
-}
-export function deleteOldToolCallsDate(cutoffDate) {
-  return db.prepare('DELETE FROM tool_calls WHERE date(timestamp) < ?').run(cutoffDate).changes;
+export function allSessionIds() {
+  return db.prepare('SELECT id FROM sessions').all().map(r => r.id);
 }

@@ -17,7 +17,6 @@ report.
 - `--local-only` flag forces the old local-SQLite-only view (banner: "Local-only (no
   cross-device aggregate available)").
 - Default banner: "Aggregated across N device(s): a, b (as of aggregated_at)".
-- Top Expensive Prompts is ALWAYS local-only — prompt text is never synced (privacy invariant).
 - `verifyConsistency()` refactored to use `readMergedSnapshot()` instead of reading
   `merged/<date>.enc` from the sync repo working tree directly.
 - `TRACEME_KEY_FILE` env override (in `crypto.mjs`) lets tests force `isSyncSetup()` false

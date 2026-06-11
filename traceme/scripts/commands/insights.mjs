@@ -1,4 +1,4 @@
-import { openDb, queryModelBreakdown } from '../db.mjs';
+import { openDb, queryModelBreakdown, querySkillUsage } from '../db.mjs';
 import { readMergedSnapshot } from '../sync.mjs';
 import { todayISO } from '../lib.mjs';
 
@@ -21,13 +21,6 @@ function daysArray(from, to) {
   const end = new Date(to + 'T00:00:00');
   while (d <= end) { days.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
   return days;
-}
-
-function parseSkillName(summary) {
-  if (!summary) return null;
-  try { const p = JSON.parse(summary); return p.skill || null; } catch {}
-  const m = summary.match(/"skill"\s*:\s*"([^"]+)"/);
-  return m ? m[1] : summary.slice(0, 40);
 }
 
 export function cmdInsights(args, VERSION) {
@@ -84,8 +77,8 @@ export function cmdInsights(args, VERSION) {
         SELECT project, COUNT(*) as sessions, COALESCE(SUM(prompt_count),0) as prompts,
                COALESCE(SUM(total_tokens),0) as tokens, COALESCE(SUM(total_cost),0) as cost
         FROM sessions
-        WHERE date(started_at) = ?
-        GROUP BY COALESCE(repo_origin, project_path, project)
+        WHERE date = ?
+        GROUP BY repo_origin
       `).all(day);
     }
 
@@ -114,11 +107,11 @@ export function cmdInsights(args, VERSION) {
   const timeQuery = projectLike
     ? `SELECT s.project, s.started_at, s.ended_at, s.prompt_count
        FROM sessions s
-       WHERE date(s.started_at) >= ? AND date(s.started_at) <= ?
+       WHERE s.date >= ? AND s.date <= ?
          AND s.project LIKE ?`
     : `SELECT s.project, s.started_at, s.ended_at, s.prompt_count
        FROM sessions s
-       WHERE date(s.started_at) >= ? AND date(s.started_at) <= ?`;
+       WHERE s.date >= ? AND s.date <= ?`;
 
   const sessRows = projectLike
     ? db.prepare(timeQuery).all(from, to, projectLike)
@@ -146,32 +139,19 @@ export function cmdInsights(args, VERSION) {
   }
 
   // ═══════════════════════════════════════════════
-  // SKILL USAGE (local tool_calls table)
+  // SKILL USAGE (local session_skills table)
   // ═══════════════════════════════════════════════
-  const skillQuery = projectLike
-    ? `SELECT tc.summary, s.project
-       FROM tool_calls tc JOIN sessions s ON tc.session_id = s.id
-       WHERE tc.tool_name = 'Skill' AND tc.summary IS NOT NULL AND tc.summary != ''
-         AND date(tc.timestamp) >= ? AND date(tc.timestamp) <= ?
-         AND s.project LIKE ?`
-    : `SELECT tc.summary, s.project
-       FROM tool_calls tc JOIN sessions s ON tc.session_id = s.id
-       WHERE tc.tool_name = 'Skill' AND tc.summary IS NOT NULL AND tc.summary != ''
-         AND date(tc.timestamp) >= ? AND date(tc.timestamp) <= ?`;
-
-  const skillRows = projectLike
-    ? db.prepare(skillQuery).all(from, to, projectLike)
-    : db.prepare(skillQuery).all(from, to);
+  const skillRows = querySkillUsage(from, to, projectLike);
 
   const skillAgg = {};
   let totalSkillCalls = 0;
   for (const r of skillRows) {
-    const name = parseSkillName(r.summary);
+    const name = r.skill_name;
     if (!name) continue;
-    totalSkillCalls++;
+    totalSkillCalls += r.count;
     if (!skillAgg[name]) skillAgg[name] = { total: 0, projects: {} };
-    skillAgg[name].total++;
-    skillAgg[name].projects[r.project] = (skillAgg[name].projects[r.project] || 0) + 1;
+    skillAgg[name].total += r.count;
+    skillAgg[name].projects[r.project] = (skillAgg[name].projects[r.project] || 0) + r.count;
   }
 
   // ═══════════════════════════════════════════════
