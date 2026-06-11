@@ -3,10 +3,6 @@ name: traceme-merged-default
 description: traceme report/stats now default to main's cross-device merged aggregate via cached origin/main, fall back to local-only
 metadata:
   type: project
-created: 2026-06-10
-accessed: 2026-06-10
-tier: short
-access_count: 1
 ---
 
 `traceme report`/`traceme stats` now default to the cross-device aggregate (`merged/<date>.enc`

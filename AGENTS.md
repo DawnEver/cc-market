@@ -32,12 +32,16 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 |---|---|---|
 | `takeover/tests/lib.test.mjs` | 27 | provider config, model resolution, API, retry |
 | `takeover/tests/mcp-server.test.mjs` | 10 | TOOLS schema, JSON-RPC, validation |
-| `rem/tests/frontmatter.test.mjs` | 26 | frontmatter parsing, field get/set, tier, stamping |
+| `rem/tests/frontmatter.test.mjs` | 13 | frontmatter parsing, field get/set |
 | `rem/tests/date-path.test.mjs` | 16 | date formatting, path resolution, memory dir security |
-| `rem/tests/lib.test.mjs` | 20 | index parsing, constants, file collection, state, findProjectRoot |
+| `rem/tests/lib.test.mjs` | 17 | index parsing, constants, file collection, state, findProjectRoot |
+| `rem/tests/memory-state.test.mjs` | 13 | _meta.json state: load, save, bump, drop, self-heal, scope isolation |
+| `rem/tests/scope-validate.test.mjs` | 6 | scope isolation check/fix, intermediate file integrity |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
-| `rem/tests/migrations.test.mjs` | 5 | `migrate()`: legacy tasks dir cleanup, memory stamping, idempotence |
-| `sharp-review/tests/lib.test.mjs` | 19 | SR-ID parsing, module/category inference, frontmatter |
+| `rem/tests/migrations.test.mjs` | 5 | `migrate()`: volatile field stripping, _meta.json import, idempotence |
+| `rem/tests/task-lib.test.mjs` | 36 | scan, parse, markFinding, scanAllScopes, formatScopeReport |
+| `rem/tests/check-docs.test.mjs` | 29 | collectDocs, crossReference, formatReport, CLI |
+| `sharp-review/tests/lib.test.mjs` | 17 | SR-ID parsing, module/category inference, frontmatter |
 | `sharp-review/tests/manifest.test.mjs` | 42 | classifyLowValue, numstat/name-status parsing, buildManifest, decideMode, renderManifestText, extractHunkHeaders |
 | `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |

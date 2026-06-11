@@ -3,9 +3,6 @@ name: sharp-review-2026-06-07
 description: Sharp review findings — 26 total
 metadata:
   type: project
-created: 2026-06-07
-accessed: 2026-06-07
-tier: short
 ---
 
 # Sharp Review — 2026-06-07

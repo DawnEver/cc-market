@@ -3,9 +3,6 @@ name: deepseek-reviewer-added
 description: Reviewer B switched from a duplicate plain Claude agent to an independent DeepSeek perspective via takeover, for genuine model diversity across the 3 reviewers
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # DeepSeek Reviewer Added as Reviewer B in sharp-review-workflow.js

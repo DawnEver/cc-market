@@ -1,9 +1,6 @@
 ---
 name: dev-vs-runtime-context-invariant
 description: New cross-plugin invariant — plugin CLAUDE.md/AGENTS.md/.claude/rules are dev-only, not injected at skill runtime; fixed inlineDiffLimit drift caused by violating it
-created: 2026-06-10
-accessed: 2026-06-10
-tier: short
 ---
 
 # Dev context vs. runtime context invariant (2026-06-10)

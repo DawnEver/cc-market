@@ -3,9 +3,6 @@ name: watch-hang-windows
 description: watch.py --json hangs with no output on Windows — root causes and fixes applied
 metadata:
   type: project
-created: 2026-06-07
-accessed: 2026-06-07
-tier: short
 ---
 
 ## Problem

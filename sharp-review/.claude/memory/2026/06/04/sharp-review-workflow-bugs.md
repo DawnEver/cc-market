@@ -3,9 +3,6 @@ name: sharp-review-workflow-bugs
 description: sharp-review.js workflow fixes — Date.now() banned (pass args.date), schema must be object not array (BOTH FIXED)
 metadata:
   type: project
-created: 2026-06-04
-accessed: 2026-06-04
-tier: short
 ---
 
 ## Bug 1 — Date.now() / new Date() banned in workflows (FIXED)

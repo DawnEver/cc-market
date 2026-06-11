@@ -3,9 +3,6 @@ name: new-components-from-supervise
 description: Added LogScanner and ProgressTracker components, enhanced ProcessMonitor — extracted from supervise-jmag-task skill
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # New components extracted from supervise-jmag-task

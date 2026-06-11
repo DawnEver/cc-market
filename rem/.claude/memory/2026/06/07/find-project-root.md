@@ -3,9 +3,6 @@ name: find-project-root
 description: findProjectRoot() is the canonical project-root resolver — never use CLAUDE_PROJECT_DIR directly
 metadata:
   type: feedback
-created: 2026-06-07
-accessed: 2026-06-07
-tier: short
 ---
 
 # Project Root Resolution

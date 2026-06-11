@@ -1,9 +1,6 @@
 ---
 name: shared-bundle
 description: Bundled shared/ into each plugin for self-contained cc-market distribution — import path fix, pre-push automation, integrity tests
-created: 2026-06-09
-accessed: 2026-06-09
-tier: short
 ---
 
 # cc-market shared/ bundling (2026-06-09)

@@ -3,9 +3,6 @@ name: stamp-memory-truncated-date-bug
 description: stamp-memory.js truncated-date bug — root cause, fix, and all side effects resolved 2026-06-08
 metadata:
   type: project
-created: 2026-06-08
-accessed: 2026-06-08
-tier: short
 ---
 
 # stamp-memory.js Truncated-Date Bug — FIXED (2026-06-08)
