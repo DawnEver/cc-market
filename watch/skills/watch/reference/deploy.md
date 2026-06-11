@@ -20,7 +20,9 @@ Triggered when `report.watch.version_tracking.enabled` and
    - Runs each repo's `test_command` (or the global default)
    - **Only deploys repos with new commits** — unchanged repos are skipped
    - Fast-forwards the deploy branch to the tested commit (`git reset --hard
-     <tested-commit>`) — never commit fixes during deploy; hotfixes via normal PR flow
+     <tested-commit>`) — never commit fixes during deploy; hotfixes via normal PR flow.
+     If a hotfix is committed directly to the deploy branch anyway, see
+     `reference/backport.md` to merge it back into main.
    - If `enable_test_gate: true`: starts a test instance on `test_health_url`,
      health-checks it, then kills it. Returns `deploy_test_health_passed: true`.
      **The production service is NOT touched during this phase.**
