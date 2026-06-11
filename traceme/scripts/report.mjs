@@ -233,7 +233,7 @@ export function generateRangeReport(opts = {}) {
     dailyTrend.push({ date: day, ...daySummary });
 
     for (const r of filtered) {
-      const key = r.repo_origin || r.project;
+      const key = r.project || r.repo_origin;
       if (!aggregated[key]) {
         aggregated[key] = { project: r.project, sessions: 0, prompts: 0, tokens: 0, cost: 0 };
       }

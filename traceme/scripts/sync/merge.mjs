@@ -4,7 +4,7 @@ import { getDeviceId, git, ensureSyncRepo, isSyncSetup } from './repo.mjs';
 import { listRemoteSnapshots, readRemoteSnapshot } from './transfer.mjs';
 
 // Pure merge of daily_summary and tool_usage across multiple device snapshots.
-// keyFn(row) returns the grouping key (repo_origin or project).
+// keyFn(row) returns the grouping key (project or repo_origin).
 export function mergeSnapshots(snapshots, keyFn) {
   const daily = {}, tools = {};
   for (const snap of snapshots) {
@@ -28,7 +28,7 @@ export function mergeSnapshots(snapshots, keyFn) {
 }
 
 export function groupKey(row) {
-  return row.repo_origin || row.project;
+  return row.project || row.repo_origin;
 }
 
 // Read and merge all device snapshots for `date` from the cached `origin/main` ref —
