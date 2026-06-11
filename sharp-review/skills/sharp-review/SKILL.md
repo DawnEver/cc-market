@@ -56,7 +56,7 @@ Run `diff-manifest.js` — the ONLY allowed diff payload. Never run raw `git dif
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js"
 ```
 
-If the user specified a range, pass it through:
+By default, reviews uncommitted changes (staged + unstaged vs HEAD). If the user specified a range, pass it through:
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD"
@@ -66,7 +66,7 @@ Capture the JSON output. The script produces a size-bounded payload — each fie
 ```json
 {
   "mode": "review" | "agent" | "empty",
-  "range": "main...HEAD",
+  "range": "HEAD",
   "stats": { "files": 42, "insertions": 1234, "deletions": 567, "excluded": 9, "diffChars": 183421 },
   "diff": "...",            // only review mode (≤ inlineDiffLimit chars)
   "manifestText": "...",    // only agent mode (≤ 12k chars)
