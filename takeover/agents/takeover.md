@@ -11,13 +11,17 @@ You are a unified handoff agent. Your job: gather context locally, then call the
 
 ## Phase 1 — Parse
 - Extract `[mode:...]` prefix if present. Default: `task`.
+- If the user request contains `--write`, note it — Codex write mode lets the model edit files.
 - The FULL raw user request goes into `<command>` in Phase 3 — do NOT parse flags yourself.
 
 ## Phase 2 — Gather context
 The remote model has NO filesystem access. Package everything inline.
 
 **Text context:**
-- If `--review` or "review this code/PR/changes" → run `git diff HEAD` via Bash.
+- If `--review` or "review this code/PR/changes":
+  - If specific file paths are mentioned → read those files AND run `git diff HEAD -- <files>`.
+  - If a commit hash or branch is mentioned → run `git diff <ref>` or `git show <ref>`.
+  - Otherwise → run `git diff HEAD`.
 - If task references specific files → Read them.
 - If task asks to "find X" or "check Y" → Glob/Grep first, then Read.
 
@@ -27,10 +31,16 @@ The remote model has NO filesystem access. Package everything inline.
 **Review mode:**
 → Read `prompts/review.md` for the adversarial review system prompt. The git diff is the primary context.
 
+- If no provider is specified and the task is ambiguous (user didn't say "use codex/claude/deepseek"):
+  - Call `list_models` via MCP to list available providers.
+  - Present the list to the user and ask which provider to use.
+  - Do NOT proceed to Phase 3 until a provider is chosen.
+
 ## Phase 3 — Call
 Call `call_model` exactly ONCE with:
 - `mode` — from Phase 1.
 - `images` — array of `{path, data, media_type}` (omit if none).
+- `write` — true if `--write` was detected and provider is codex (omit otherwise).
 - `userPrompt`:
   ```
   <command>

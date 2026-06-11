@@ -24,6 +24,12 @@ export const PROVIDER_ENV_KEYS = [
   'ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES',
 ];
 
+// ── Claude binary resolution (cross-platform) ───────────────────────────────
+
+const claudeExe = process.platform === "win32"
+  ? path.join(os.homedir(), "nodejs", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+  : "claude";
+
 // ── Agent mode: spawn claude -p with provider env ────────────────────────────
 
 export function loadProviderEnv(provider, configPath = CONFIG_PATH) {
@@ -48,10 +54,9 @@ export function loadProviderEnv(provider, configPath = CONFIG_PATH) {
   return env;
 }
 
-export async function callAgentMode(provider, userPrompt, systemPrompt, model, configPath = CONFIG_PATH) {
+export async function callAgentMode(provider, userPrompt, systemPrompt, model, images = null, configPath = CONFIG_PATH) {
   const env = loadProviderEnv(provider, configPath);
 
-  // Resolve model tier if specified (e.g. "sonnet" → provider-specific name)
   if (model && provider !== 'claude') {
     const providerConfig = loadProviderConfig(provider);
     const resolved = resolveModel(providerConfig, model);
@@ -62,37 +67,13 @@ export async function callAgentMode(provider, userPrompt, systemPrompt, model, c
     ? `${systemPrompt}\n\n---\n\n${userPrompt}`
     : userPrompt;
 
-  const useStdin = fullPrompt.length > 1000;
+  const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
   process.stderr.write(`mcp-takeover: agent mode — spawning claude (provider=${provider} model=${model || 'default'})${useStdin ? ' [stdin]' : ''}...\n`);
 
-  return new Promise((resolve, reject) => {
-    const args = useStdin ? ['-p'] : ['-p', fullPrompt];
-    const winNoShell = process.platform === "win32" && useStdin;
-    const bin = winNoShell ? "claude.cmd" : "claude";
-    const child = spawn(bin, args, {
-      env,
-      stdio: [useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-      timeout: 300000,
-      shell: process.platform === "win32" && !useStdin,
-    });
-    if (useStdin) {
-      child.stdin.write(fullPrompt);
-      child.stdin.end();
-    }
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => (stdout += d));
-    child.stderr.on('data', (d) => (stderr += d));
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) {
-        const usage = extractUsageFromStderr(stderr);
-        resolve({ content: [{ type: 'text', text: stdout.trim() }], _usage: usage });
-      } else {
-        reject(new Error(`claude agent (${provider}) exited ${code}: ${stderr.trim()}`));
-      }
-    });
-  });
+  return stdinSpawnClaude(claudeExe, fullPrompt, useStdin, env, (code, stdout, stderr, usage) => {
+    if (code === 0) return { content: [{ type: 'text', text: stdout.trim() }], _usage: usage };
+    throw new Error(`claude agent (${provider}) exited ${code}: ${stderr.trim()}`);
+  }, images);
 }
 
 // ── Provider config ──────────────────────────────────────────────────────────
@@ -131,9 +112,6 @@ export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
 
 // ── Model resolution ─────────────────────────────────────────────────────────
 
-// Map logical tier names to provider-specific model names.
-// This prevents passing "sonnet"/"opus"/"haiku" literally to providers like
-// DeepSeek that only accept their own model name strings (e.g. deepseek-v4-flash).
 const TIER_MAP = { sonnet: 'defaultSonnet', opus: 'defaultOpus', haiku: 'defaultHaiku' };
 
 export function resolveModel(providerConfig, requestedModel) {
@@ -146,14 +124,6 @@ export function resolveModel(providerConfig, requestedModel) {
 
 // ── Command block parsing ──────────────────────────────────────────────────────
 
-/**
- * Parse a <command> block from userPrompt for --provider and --model flags.
- * The takeover agent embeds the raw user request in a <command> block so the
- * MCP server can parse flags deterministically — no LLM parsing needed.
- *
- * Returns { flags: { provider?, model? }, cleanPrompt: string }.
- * cleanPrompt has the <command> block stripped.
- */
 export function parseCommandBlock(prompt) {
   if (prompt == null) return { flags: {}, cleanPrompt: prompt || "" };
   const re = /^\s*<command>\s*\n?(.*?)\n?\s*<\/command>\s*\n?/s;
@@ -169,10 +139,11 @@ export function parseCommandBlock(prompt) {
   const modelMatch = cmdText.match(/--model\s+(\S+)/);
   if (modelMatch) flags.model = modelMatch[1];
 
-  // Mode flags — review is adversarial by default
   if (cmdText.match(/--review/)) flags.mode = "review";
   if (cmdText.match(/--image-edit/)) flags.mode = "image-edit";
   else if (cmdText.match(/--image/)) flags.mode = "image-generate";
+
+  if (cmdText.match(/--write/)) flags.write = true;
 
   const cleanPrompt = prompt.replace(re, "");
   return { flags, cleanPrompt };
@@ -202,7 +173,6 @@ function parseTokenCount(s) {
 }
 
 function extractUsageFromStderr(stderr) {
-  // Claude Code stderr: "  Tokens: 12.5k input, 3.2k output (15.7k total)"
   const m = stderr.match(/Tokens:\s+(\S+)\s+input,\s+(\S+)\s+output/);
   if (!m) return null;
   return { input_tokens: parseTokenCount(m[1]), output_tokens: parseTokenCount(m[2]) };
@@ -239,7 +209,6 @@ export function extractText(data) {
 export function listModels(configPath = CONFIG_PATH) {
   const lines = [];
 
-  // Native providers (no config needed)
   lines.push("claude   — Native Claude CLI (OAuth/Pro subscription)");
   lines.push("codex    — OpenAI Codex (via codex app-server; supports --review, --image, --write)");
 
@@ -275,18 +244,109 @@ export function listModels(configPath = CONFIG_PATH) {
   return lines.join("\n");
 }
 
+// ── Shared: spawn claude.exe with stdin (stream-json for large prompts) ─────
+
+function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = null) {
+  return new Promise((resolve, reject) => {
+    let stdout = "", stderr = "";
+
+    if (useStdin) {
+      const child = spawn(bin, ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], {
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 600000,
+        shell: false,
+      });
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("error", reject);
+      child.on("close", (code) => {
+        try {
+          const result = parseStreamJsonOutput(stdout);
+          const usage = extractUsageFromStderr(stderr) || result.usage;
+          resolve(onResult(code, result.text, stderr, usage));
+        } catch (e) {
+          reject(new Error(`claude CLI exited ${code}: ${e.message} — ${stderr.trim()}`));
+        }
+      });
+
+      // Build content: use proper image blocks when available (Anthropic API
+      // charges by pixel dimensions, not base64 size), otherwise plain text.
+      let content;
+      if (images && images.length > 0) {
+        content = [{ type: "text", text: fullPrompt }];
+        for (const img of images) {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: img.media_type || "image/png",
+              data: img.data,
+            },
+          });
+        }
+        process.stderr.write(`mcp-takeover: stream-json with ${images.length} image block(s)\n`);
+      } else {
+        content = fullPrompt;
+      }
+      const msg = JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n";
+      child.stdin.write(msg);
+      child.stdin.end();
+    } else {
+      // Small prompt: pass as command-line argument (simpler, no protocol overhead)
+      const child = spawn(bin, ["-p", fullPrompt], {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 300000,
+        shell: false,
+      });
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("error", reject);
+      child.on("close", (code) => {
+        try {
+          const usage = extractUsageFromStderr(stderr);
+          resolve(onResult(code, stdout, stderr, usage));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+  });
+}
+
+function parseStreamJsonOutput(raw) {
+  const lines = raw.split("\n").filter(l => l.trim());
+  let text = "";
+  let usage = null;
+  for (const line of lines) {
+    try {
+      const msg = JSON.parse(line);
+      if (msg.type === "assistant") {
+        // Extract text from assistant message content blocks
+        if (msg.message?.content) {
+          for (const block of (Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content])) {
+            if (block.type === "text" || typeof block === "string") {
+              text += (typeof block === "string" ? block : block.text || "");
+            }
+          }
+        }
+      } else if (msg.type === "result") {
+        if (msg.result) text += msg.result;
+        if (msg.usage) usage = msg.usage;
+      }
+    } catch {}
+  }
+  return { text: text.trim(), usage };
+}
+
 // ── Callers ──────────────────────────────────────────────────────────────────
 
 function isRetryable(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
 
-/**
- * Call an Anthropic-compatible Messages API with retry on transient errors.
- * When images are provided, constructs multimodal content blocks per the
- * Anthropic Messages API schema (type: "image" with base64 source).
- */
-export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null) {
+export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false) {
   if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${CONFIG_PATH}.`);
 
   const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
@@ -319,6 +379,8 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
   const maxRetries = 2;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (stream) body.stream = true;
+
     let res;
     try {
       res = await fetch(url, {
@@ -332,7 +394,6 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
         signal: AbortSignal.timeout(300000),
       });
     } catch (err) {
-      // Network error or timeout — retry if attempts remain
       if (attempt < maxRetries) {
         const delay = Math.pow(2, attempt) * 1000;
         process.stderr.write(`takeover: network error, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...\n`);
@@ -342,9 +403,19 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
       throw err;
     }
 
-    if (res.ok) return res.json();
+    if (res.ok) {
+      if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {
+        try {
+          return await parseSSEStream(res.body);
+        } catch (streamErr) {
+          process.stderr.write(`takeover: SSE streaming failed (${streamErr.message}), falling back to non-streaming...\n`);
+          delete body.stream;
+          continue;
+        }
+      }
+      return res.json();
+    }
 
-    // HTTP error — only retry transient status codes
     const errorText = await res.text();
     if (attempt < maxRetries && isRetryable(res.status)) {
       const delay = Math.pow(2, attempt) * 1000;
@@ -357,52 +428,63 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
   }
 }
 
-/**
- * Call Codex via app-server JSON-RPC. Prompt is sent in the turn/start message body.
- * Delegates to scripts/codex/task.mjs which spawns `codex app-server` directly.
- */
-export async function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false) {
+async function parseSSEStream(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let accumulatedText = "";
+  let usage = null;
+  let stopReason = null;
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    let currentEvent = null;
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (currentEvent === "content_block_delta") {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.delta?.type === "text_delta") {
+              accumulatedText += parsed.delta.text;
+              process.stderr.write(parsed.delta.text);
+            }
+          } catch {}
+        } else if (currentEvent === "message_delta") {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.usage) usage = parsed.usage;
+            if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
+          } catch {}
+        }
+      }
+      if (line === "") currentEvent = null;
+    }
+  }
+
+  return { content: [{ type: "text", text: accumulatedText }], stop_reason: stopReason, usage };
+}
+
+export async function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false, images = null) {
   const { runCodexTask } = await import("./codex/task.mjs");
   return runCodexTask(userPrompt, systemPrompt, model, writeMode, process.cwd(), (msg) => {
     process.stderr.write(`mcp-takeover[codex]: ${msg.slice(0, 200)}${msg.length > 200 ? "..." : ""}\n`);
-  });
+  }, images);
 }
 
-/**
- * Call native Claude CLI. Prompt delivered via stdin to avoid command-line length
- * limits (Windows ~32KB), which break large prompts like those carrying base64 images.
- */
-export function callNativeClaude(userPrompt, systemPrompt) {
-  return new Promise((resolve, reject) => {
-    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
-    const useStdin = fullPrompt.length > 1000;
-    const args = useStdin ? ["-p"] : ["-p", fullPrompt];
-    // On Windows with stdin pipe, spawn claude.cmd directly — using shell:true
-    // routes through cmd.exe which does not forward stdin to the child process.
-    const winNoShell = process.platform === "win32" && useStdin;
-    const bin = winNoShell ? "claude.cmd" : "claude";
-    const child = spawn(bin, args, {
-      env: process.env,
-      stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
-      timeout: 300000,
-      shell: process.platform === "win32" && !useStdin,
-    });
-    if (useStdin) {
-      child.stdin.write(fullPrompt);
-      child.stdin.end();
-    }
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        const usage = extractUsageFromStderr(stderr);
-        resolve({ content: [{ type: "text", text: stdout.trim() }], _usage: usage });
-      } else {
-        reject(new Error(`claude CLI exited ${code}: ${stderr.trim()}`));
-      }
-    });
-  });
+export function callNativeClaude(userPrompt, systemPrompt, images = null) {
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
+  const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
+  return stdinSpawnClaude(claudeExe, fullPrompt, useStdin, process.env, (code, stdout, stderr, usage) => {
+    if (code === 0) return { content: [{ type: "text", text: stdout.trim() }], _usage: usage };
+    throw new Error(`claude CLI exited ${code}: ${stderr.trim()}`);
+  }, images);
 }

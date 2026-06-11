@@ -1,6 +1,6 @@
 import { CodexAppServerClient } from "./app-server.mjs";
 
-export async function runCodexTask(prompt, systemPrompt, model, write = false, cwd, onProgress) {
+export async function runCodexTask(prompt, systemPrompt, model, write = false, cwd, onProgress, images = null) {
   const client = new CodexAppServerClient({ timeout: 600000 });
   await client.start();
 
@@ -8,7 +8,6 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
 
   const turnDone = new Promise((resolve) => {
     client.onNotification("turn/completed", (params) => {
-      // Extract token usage from turn completion (Codex returns usage data)
       result.usage = params?.usage || null;
       resolve();
     });
@@ -25,7 +24,6 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
       result.text += text;
       if (onProgress) onProgress(text);
     }
-    // Capture usage from final item if available
     if (item.usage && !result.usage) result.usage = item.usage;
   });
 
@@ -33,14 +31,22 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     const threadResp = await client.send("thread/start", { cwd: cwd || process.cwd() });
     const threadId = threadResp.thread?.id || threadResp.id;
 
-    const messages = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    const input = [];
+    if (systemPrompt) input.push({ type: "text", text: systemPrompt });
+    input.push({ type: "text", text: prompt });
+
+    // Append images as type=image items with data: URLs (codex v0.139+ protocol)
+    if (images && images.length > 0) {
+      for (const img of images) {
+        const mime = img.media_type || "image/png";
+        const dataUrl = `data:${mime};base64,${img.data}`;
+        input.push({ type: "image", url: dataUrl });
+      }
+    }
 
     const turnParams = {
       threadId,
-      messages,
-      input: messages,
+      input,
       tools: write ? undefined : { disabled: true },
     };
     if (model) turnParams.model = model;

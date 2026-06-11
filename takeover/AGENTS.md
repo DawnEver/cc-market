@@ -27,7 +27,6 @@ takeover/
 ├── scripts/
 │   ├── lib.mjs              Core: provider config, API callers, retry, flag parsing
 │   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model + list_models + codex_status
-│   ├── jobs.mjs             Background job lifecycle
 │   └── codex/
 │       ├── discovery.mjs    Codex binary detection
 │       ├── app-server.mjs   JSON-RPC 2.0 client for codex app-server
@@ -51,7 +50,6 @@ takeover/
 │   ├── discovery.test.mjs   Codex binary discovery
 │   ├── app-server.test.mjs  JSON-RPC client
 │   ├── image.test.mjs       Image gen/edit
-│   └── jobs.test.mjs        Job lifecycle
 ├── .claude/rules/           Injected every session (invariants only)
 ├── CLAUDE.md                Entry point → @AGENTS.md + @.claude/rules/*.md
 └── AGENTS.md                This file

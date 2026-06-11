@@ -67,8 +67,8 @@ export async function runCodexReview(diff, model, context, cwd) {
     const reviewParams = {
       threadId,
       target: reviewInput
-        ? { type: "custom", diff: reviewInput }
-        : { type: "uncommittedChanges" },
+        ? { type: "custom", diff: reviewInput, instructions: systemPrompt }
+        : { type: "uncommittedChanges", instructions: systemPrompt },
     };
     if (model) reviewParams.model = model;
 
