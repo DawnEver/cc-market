@@ -66,10 +66,12 @@ describe('rem migrate()', () => {
     assert.ok(meta['example.md']);
   });
 
-  test('returns no-op when .claude/ does not exist', async () => {
+  test('creates .gitignore even when .claude/ does not exist', async () => {
     const { changed, summary } = await migrate(projectRoot);
-    assert.equal(changed, false);
-    assert.deepEqual(summary, []);
+    // gitignore step runs regardless of .claude/ presence
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('added 5 gitignore entries')));
+    assert.equal(fs.existsSync(path.join(projectRoot, '.gitignore')), true);
   });
 
   test('removes stray legacy .claude/.retro_state.json', async () => {
@@ -81,6 +83,51 @@ describe('rem migrate()', () => {
     assert.equal(changed, true);
     assert.ok(summary.some(s => s.includes('.retro_state.json')));
     assert.equal(fs.existsSync(path.join(projectRoot, '.claude', '.retro_state.json')), false);
+  });
+
+  test('creates .gitignore with required entries when it does not exist', async () => {
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    assert.equal(fs.existsSync(gitignorePath), true);
+    const content = fs.readFileSync(gitignorePath, 'utf8');
+    assert.ok(content.includes('.claude/*'));
+    assert.ok(content.includes('!.claude/rules/**'));
+    assert.ok(content.includes('!.claude/memory/**'));
+    assert.ok(content.includes('.claude/rules/MEMORY.md'));
+    assert.ok(content.includes('**/_meta.json'));
+    assert.ok(summary.some(s => s.includes('added 5 gitignore entries')));
+  });
+
+  test('adds only missing gitignore entries when some exist', async () => {
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    fs.writeFileSync(gitignorePath, '.claude/*\nnode_modules/\n');
+
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    const content = fs.readFileSync(gitignorePath, 'utf8');
+    // Existing entries preserved
+    assert.ok(content.includes('.claude/*'));
+    assert.ok(content.includes('node_modules/'));
+    // Missing entries added
+    assert.ok(content.includes('!.claude/rules/**'));
+    assert.ok(content.includes('!.claude/memory/**'));
+    assert.ok(content.includes('.claude/rules/MEMORY.md'));
+    assert.ok(content.includes('**/_meta.json'));
+    assert.ok(summary.some(s => s.includes('added 4 gitignore entries')));
+  });
+
+  test('gitignore step is idempotent — no-op when all entries present', async () => {
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    fs.writeFileSync(gitignorePath, '.DS_Store\n.claude/*\n!.claude/rules/**\n!.claude/memory/**\n.claude/rules/MEMORY.md\n**/_meta.json\n');
+
+    const { changed } = await migrate(projectRoot);
+
+    // gitignore step should not trigger changed on its own (no .claude/ dir → no stamp either)
+    // If there's no .claude/ dir and all gitignore entries exist, it's a full no-op
+    assert.equal(changed, false);
   });
 
   test('converts flat YYYY-MM-DD/ memory dirs to nested YYYY/MM/DD/', async () => {
