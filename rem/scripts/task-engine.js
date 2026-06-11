@@ -5,17 +5,15 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { join, relative, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { todayISO, stampMissingFields } from '../lib.mjs';
+import { todayISO, findMemoryScope } from '../lib.mjs';
 import {
   ROOT,
-  isStale, checkFileModified,
-  groupByModule,
-  scanMemoryForFindings, scanManualTasks,
+  scanManualTasks,
+  scanAllScopes, formatScopeReport,
   markFinding,
 } from './task-lib.mjs';
 
 const PREFIX = '[task-engine]';
-const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 
 // Version from plugin.json (stable across cache updates)
 let VERSION = 'dev';
@@ -28,10 +26,17 @@ try {
 
 function handleAdd(args, today, implicitSummary) {
   let summary, severity = 'MEDIUM', module = 'manual';
+  // --scope flag support
+  const scopeIdx = args.indexOf('--scope');
+  let targetScope = findMemoryScope();
+  if (scopeIdx >= 0 && args[scopeIdx + 1]) {
+    targetScope = join(ROOT, args[scopeIdx + 1]);
+    args = args.filter((_, i) => i !== scopeIdx && i !== scopeIdx + 1);
+  }
+  const targetMemDir = join(targetScope, '.claude', 'memory');
 
   if (implicitSummary) {
     summary = implicitSummary;
-    // Parse optional flags from remaining args
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--severity' && args[i + 1]) severity = args[++i];
       else if (args[i] === '--module' && args[i + 1]) module = args[++i];
@@ -42,10 +47,9 @@ function handleAdd(args, today, implicitSummary) {
       summary = args[si + 1];
       if (!summary) { console.error(`${PREFIX} --summary value is required`); process.exit(1); }
     } else {
-      // Collect positional args (skip flags and their values)
       const positional = [];
       for (let i = 0; i < args.length; i++) {
-        if (args[i].startsWith('-')) { i++; continue; } // skip --flag value
+        if (args[i].startsWith('-')) { i++; continue; }
         positional.push(args[i]);
       }
       if (positional.length > 0) {
@@ -62,7 +66,7 @@ function handleAdd(args, today, implicitSummary) {
   }
 
   let seq = 1;
-  const existingTasks = scanManualTasks(MEMORY_DIR);
+  const existingTasks = scanManualTasks(targetMemDir);
   for (const id of existingTasks.map(t => t.id)) {
     if (!id.startsWith('MANUAL-')) continue;
     const num = parseInt(id.slice(-3), 10);
@@ -71,7 +75,7 @@ function handleAdd(args, today, implicitSummary) {
   const id = `MANUAL-${today.replace(/-/g, '')}-${String(seq).padStart(3, '0')}`;
 
   const dayPath = today.replace(/-/g, '/');
-  const dir = join(MEMORY_DIR, dayPath);
+  const dir = join(targetMemDir, dayPath);
   const manualFile = join(dir, 'manual.md');
 
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -86,20 +90,16 @@ function handleAdd(args, today, implicitSummary) {
       `description: Manual tasks created on ${today}`,
       'metadata:',
       '  type: project',
-      `created: ${today}`,
-      `accessed: ${today}`,
-      'tier: short',
       '---',
       '',
     ].join('\n');
     writeFileSync(manualFile, content + '\n', 'utf8');
-    stampMissingFields(manualFile);
-    content = readFileSync(manualFile, 'utf8').trimEnd();
   }
 
   content += `\n- [ ] ${id} [${severity}] ${summary} (${today})\n      module: ${module}\n`;
   writeFileSync(manualFile, content + '\n', 'utf8');
-  console.log(`${PREFIX} Added: ${id} [${severity}] ${summary} → memory/${dayPath}/manual.md`);
+  const relPath = relative(ROOT, manualFile).replace(/\\/g, '/');
+  console.log(`${PREFIX} Added: ${id} [${severity}] ${summary} → ${relPath}`);
 }
 
 // ── remove ──
@@ -107,12 +107,13 @@ function handleAdd(args, today, implicitSummary) {
 function handleRemove(id) {
   if (!id) { console.error(`${PREFIX} remove requires a task ID`); process.exit(1); }
 
-  // Try MANUAL-* first
-  const manualTasks = scanManualTasks(MEMORY_DIR);
+  const scope = findMemoryScope();
+  const memDir = join(scope, '.claude', 'memory');
+
+  const manualTasks = scanManualTasks(memDir);
   const manual = manualTasks.find(t => t.id === id);
 
   if (manual) {
-    // Find the manual.md that contains this task and remove the line
     let found = false;
     function walk(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -122,7 +123,6 @@ function handleRemove(id) {
         if (entry.name !== 'manual.md') continue;
         let content = readFileSync(full, 'utf8');
         if (!content.includes(id)) continue;
-        // Remove the task line(s): the `- [ ]` line and its trailing `module:` line
         const lines = content.split('\n');
         const filtered = [];
         let skip = false;
@@ -136,15 +136,14 @@ function handleRemove(id) {
           filtered.push(lines[i]);
         }
         writeFileSync(full, filtered.join('\n'), 'utf8');
-        console.log(`${PREFIX} Removed: ${id} from memory/${relative(MEMORY_DIR, full).replace(/\\/g, '/')}`);
+        console.log(`${PREFIX} Removed: ${id} from memory/${relative(memDir, full).replace(/\\/g, '/')}`);
         found = true;
         return;
       }
     }
-    walk(MEMORY_DIR);
+    walk(memDir);
     if (!found) console.error(`${PREFIX} Task ${id} not found in any manual.md`);
   } else if (id.startsWith('SR-')) {
-    // SR finding — mark as CLOSED in sharp-review.md
     let found = false;
     function walk(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -159,12 +158,12 @@ function handleRemove(id) {
           '$1**Status:** CLOSED'
         );
         writeFileSync(full, content, 'utf8');
-        console.log(`${PREFIX} Closed: ${id} in memory/${relative(MEMORY_DIR, full).replace(/\\/g, '/')}`);
+        console.log(`${PREFIX} Closed: ${id} in memory/${relative(memDir, full).replace(/\\/g, '/')}`);
         found = true;
         return;
       }
     }
-    walk(MEMORY_DIR);
+    walk(memDir);
     if (!found) console.error(`${PREFIX} Finding ${id} not found in any sharp-review.md`);
   } else {
     console.error(`${PREFIX} Unknown ID format: ${id}. Use SR-* or MANUAL-* ID.`);
@@ -175,62 +174,42 @@ function handleRemove(id) {
 
 // ── mark ──
 
-function handleMark(id, status, today) {
+function handleMark(id, status) {
   if (!id || !status) {
     console.error(`${PREFIX} mark requires <id> <open|fixed|closed>`);
     process.exit(1);
   }
-  const result = markFinding(MEMORY_DIR, id, status, today);
+  const scope = findMemoryScope();
+  const memDir = join(scope, '.claude', 'memory');
+  const result = markFinding(memDir, id, status);
   if (!result.found) {
     console.error(`${PREFIX} ${result.error}`);
     process.exit(1);
   }
-  const rel = relative(MEMORY_DIR, result.file).replace(/\\/g, '/');
+  const rel = relative(memDir, result.file).replace(/\\/g, '/');
   console.log(`${PREFIX} Marked ${id} as ${status.toUpperCase()} in memory/${rel}`);
 }
 
-// ── report (merged with check stats) ──
+// ── report (multi-scope) ──
 
 function handleReport(today) {
-  const memDir = join(ROOT, '.claude', 'memory');
-  if (!existsSync(memDir)) {
-    console.log(`${PREFIX} No memory directory — nothing to report`);
-    return;
-  }
-
-  const findings = scanMemoryForFindings(memDir);
-  const manual = scanManualTasks(memDir);
+  const { findings, manual } = scanAllScopes();
 
   if (findings.length === 0 && manual.length === 0) {
     console.log(`${PREFIX} No tasks found`);
     return;
   }
 
-  // Open items
-  const allOpen = [
-    ...findings.filter(f => f.status === 'open'),
-    ...manual.filter(t => t.status === 'open'),
-  ];
-
-  if (allOpen.length === 0) {
-    console.log(`${PREFIX} 0 open`);
+  const report = formatScopeReport(findings, manual, today);
+  if (!report.includes('total:')) {
+    // formatScopeReport returned minimal output — print stats directly
+    const openCount = findings.filter(f => f.status === 'open').length + manual.filter(t => t.status === 'open').length;
+    console.log(`${PREFIX} ${openCount} open`);
   } else {
-    const byMod = groupByModule(allOpen);
-    const sorted = [...byMod].sort(([a], [b]) => a.localeCompare(b));
-
-    console.log(`${PREFIX} ${allOpen.length} open`);
-    for (const [mod, items] of sorted) {
-      console.log(`  ## ${mod}`);
-      for (const f of items) {
-        const stale = isStale(f, today) ? ' ⚠ stale' : '';
-        const likely = checkFileModified(f, today) ? ' ⚠ likely-resolved' : '';
-        console.log(`  - [ ] ${f.id} [${f.severity}] ${f.summary} (${f.discovered})${stale}${likely}`);
-      }
-    }
-    console.log('');
+    console.log(report);
   }
 
-  // Stats summary
+  // Stats summary (single scope for now — legacy)
   const open = findings.filter(f => f.status === 'open').length;
   const fixed = findings.filter(f => f.status === 'fixed').length;
   const closed = findings.filter(f => f.status === 'closed').length;
@@ -254,6 +233,7 @@ Usage:
   todo add, -a <summary>    Add a manual task (explicit)
        --severity HIGH|MEDIUM|LOW   (default MEDIUM)
        --module name                (default 'manual')
+       --scope path                 target scope (default: auto-detect from cwd)
   todo remove, rm, -r <id>  Remove manual task or close SR finding
   todo mark <id> <status>   Set status: open | fixed | closed
   todo help                 Show this help`);
@@ -265,19 +245,16 @@ function main() {
   const args = process.argv.slice(2);
   const today = todayISO();
 
-  // No args → report
   if (args.length === 0) return handleReport(today);
 
   const cmd = args[0];
 
-  // Explicit subcommands
   if (cmd === '--add' || cmd === 'add' || cmd === '-a')    return handleAdd(args.slice(1), today, null);
   if (cmd === '--remove' || cmd === '--rm' || cmd === 'remove' || cmd === 'rm') return handleRemove(args[1]);
-  if (cmd === '--mark' || cmd === 'mark' || cmd === '-m') return handleMark(args[1], args[2], today);
+  if (cmd === '--mark' || cmd === 'mark' || cmd === '-m') return handleMark(args[1], args[2]);
   if (cmd === '--report' || cmd === 'report')    return handleReport(today);
   if (cmd === 'help' || cmd === '--help' || cmd === '-h') return handleHelp();
 
-  // Implicit add: treat all args as the summary
   handleAdd(args.slice(1), today, args.join(' '));
 }
 

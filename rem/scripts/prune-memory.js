@@ -3,14 +3,16 @@
 //   - Short-term (>90d stale or >20 count): evict from index
 //   - Long-term (not accessed since last prune): demote to short
 // Run: node scripts/prune-memory.js [--dry-run] [--evict-stale]
-// If MEMORY.md doesn't exist, exit — run stamp-memory.js first to initialize.
+// Called by SessionStart hook; runs scope-validate --fix first.
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  scopeMemoryDir as memoryDir, scopeIndexFile as indexFile, scopeRoot,
+  scopeRoot,
   MAX_ENTRIES, STALE_DAYS, DAY_MS,
-  getTier, setTier, setField, parseIndex, loadState, saveState, appendEvent, dayPrecision,
+  loadMemoryState, saveMemoryMeta, loadState, saveState, appendEvent, dayPrecision,
+  rebuildIndex, collectMemoryFiles, parseFrontmatter,
+  findAllScopes,
 } from '../lib.mjs';
 
 const dryRun = process.argv.includes('--dry-run');
@@ -21,40 +23,50 @@ const now = Date.now();
 const state = loadState();
 const lastPruneAt = state.prune.lastPruneAt || 0;
 
-if (!existsSync(indexFile)) {
-  console.log('[prune-memory] MEMORY.md not found — run stamp-memory.js first to initialize');
-  process.exit(0);
-}
+// Run scope-validate --fix first (ensures intermediate file integrity)
+import { execFileSync } from 'child_process';
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const validateScript = join(__dirname, 'scope-validate.mjs');
+try {
+  execFileSync('node', [validateScript, '--fix'], { cwd: scopeRoot, encoding: 'utf8', stdio: 'pipe' });
+} catch { /* non-zero exit on unfixable issues — continue with prune */ }
 
-// Parse index
-const content = readFileSync(indexFile, 'utf8');
-const { header, entries } = parseIndex(content);
+// Build entry list from memory state + disk files
+const memDir = join(scopeRoot, '.claude', 'memory');
+const stateMap = loadMemoryState(scopeRoot);
+const allMd = collectMemoryFiles(memDir);
 
-// Resolve tier from memory file frontmatter
-const resolveTier = (entry) => {
+const entries = [];
+for (const absPath of allMd) {
+  const relPath = absPath.replace(memDir, '').replace(/\\/g, '/').replace(/^\//, '');
+  if (relPath.startsWith('tasks/')) continue;
+
+  const meta = stateMap.get(relPath) || { accessed: '1970-01-01', count: 1, tier: 'short' };
+  if (meta.dropped) continue;
+
+  let title = relPath.split('/').pop().replace('.md', '');
   try {
-    const memContent = readFileSync(join(memoryDir, entry.path), 'utf8');
-    return getTier(memContent);
-  } catch { return 'short'; }
-};
+    const { fields } = parseFrontmatter(readFileSync(absPath, 'utf8'));
+    if (fields.name) title = fields.name;
+  } catch { /* use defaults */ }
 
-const writeTier = (entry, tier) => {
-  const memFile = join(memoryDir, entry.path);
-  let c = readFileSync(memFile, 'utf8');
-  c = setTier(c, tier);
-  writeFileSync(memFile, c, 'utf8');
-};
-
-// Classify entries
-const longTerm = [];
-const shortTerm = [];
-for (const e of entries) {
-  (resolveTier(e) === 'long' ? longTerm : shortTerm).push(e);
+  entries.push({
+    path: relPath,
+    title,
+    accessed: meta.accessed,
+    accessedDate: new Date(meta.accessed).getTime(),
+    tier: meta.tier || 'short',
+    count: meta.count || 1,
+  });
 }
+
+// Classify
+const longTerm = entries.filter(e => e.tier === 'long');
+const shortTerm = entries.filter(e => e.tier === 'short');
 
 // ── Long-term demotion ──
-// Demote if not accessed since last prune (needs 2 prune cycles to fully evict)
-// Compare at day precision to avoid demoting entries accessed same-day as prune
 const demoted = [];
 if (lastPruneAt > 0) {
   const lastPruneDay = dayPrecision(lastPruneAt);
@@ -68,16 +80,9 @@ if (lastPruneAt > 0) {
 if (demoted.length > 0) {
   console.log(`[prune-memory] ${demoted.length} long-term entries inactive since last prune → demoting to short:`);
   for (const e of demoted) {
-    console.log(`  ${e.date} ${e.path}`);
+    console.log(`  ${e.accessed} ${e.path}`);
     if (!dryRun) {
-      writeTier(e, 'short');
-      // Reset access_count so demoted entries must earn re-promotion with fresh accesses.
-      // Without this, an entry with access_count >= 3 bounces back immediately on the next
-      // rem-prep --promote run (demote-bounce bug).
-      const memFile = join(memoryDir, e.path);
-      let c = readFileSync(memFile, 'utf8');
-      c = setField(c, 'access_count', '1');
-      writeFileSync(memFile, c, 'utf8');
+      saveMemoryMeta(scopeRoot, e.path, { tier: 'short', count: 1 });
       shortTerm.push(e);
       appendEvent('demote', { path: e.path, previousTier: 'long', reason: 'inactive between prune cycles' });
     }
@@ -90,69 +95,66 @@ if (demoted.length > 0) {
 
 if (longTerm.length > 0) {
   console.log(`[prune-memory] ${longTerm.length} long-term entries (protected this cycle):`);
-  for (const e of longTerm) console.log(`  ${e.date} ${e.path}`);
+  for (const e of longTerm) console.log(`  ${e.accessed} ${e.path}`);
 }
 
 // ── Short-term eviction ──
-
-// Check stale (short-term only, >90d since last access)
 const stale = shortTerm.filter(e => now - e.accessedDate > STALE_DAYS * DAY_MS);
 if (stale.length > 0) {
   console.log(`[prune-memory] ${stale.length} stale short-term entries (>${STALE_DAYS}d):`);
   for (const e of stale) {
     const days = Math.round((now - e.accessedDate) / DAY_MS);
-    console.log(`  ${e.date} ${e.path} — last accessed ${days}d ago`);
+    console.log(`  ${e.accessed} ${e.path} — last accessed ${days}d ago`);
   }
   if (evictStale && !dryRun) {
-    console.log('[prune-memory] --evict-stale: removing stale entries from index');
+    console.log('[prune-memory] --evict-stale: dropping stale entries from index');
   }
 }
 
-// Check count (short-term only)
 const over = shortTerm.length - MAX_ENTRIES;
 if (over > 0) {
-  // Sort oldest-first for eviction (index is newest-first)
   const oldestFirst = [...shortTerm].sort((a, b) => a.accessedDate - b.accessedDate);
   const toDrop = oldestFirst.slice(0, over);
   console.log(`[prune-memory] ${shortTerm.length} short-term entries, dropping ${over} oldest:`);
   for (const e of toDrop) {
-    console.log(`  ${e.date} ${e.path}`);
+    console.log(`  ${e.accessed} ${e.path}`);
   }
 }
 
-// Build new index
-const removeLines = new Set();
-if (evictStale) stale.forEach(e => removeLines.add(e.line));
+// Apply evictions
+const dropSet = new Set();
+if (evictStale) stale.forEach(e => dropSet.add(e.path));
 if (over > 0) {
   const oldestFirst = [...shortTerm].sort((a, b) => a.accessedDate - b.accessedDate);
-  oldestFirst.slice(0, over).forEach(e => removeLines.add(e.line));
+  oldestFirst.slice(0, over).forEach(e => dropSet.add(e.path));
 }
 
-// Update prune stamp
 if (!dryRun) {
   state.prune.lastPruneAt = now;
   saveState(state);
+
+  for (const p of dropSet) {
+    appendEvent('evict', { path: p, reason: stale.find(e => e.path === p) ? 'stale-90d' : 'over-capacity' });
+  }
 }
 
-if (removeLines.size === 0 && demoted.length === 0) {
+if (dropSet.size === 0 && demoted.length === 0) {
   const total = longTerm.length + shortTerm.length;
   console.log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale, ${over > 0 ? over : 0} over limit`);
-  process.exit(0);
-}
-
-const keptEntries = entries.filter(e => !removeLines.has(e.line));
-const newContent = [...header, ...keptEntries.map(e => e.line)].join('\n') + '\n';
-
-if (dryRun) {
-  console.log('[prune-memory] --dry-run: would write:');
-  console.log(newContent);
+} else if (dryRun) {
+  console.log('[prune-memory] --dry-run: would drop ' + dropSet.size + ' entries');
 } else {
-  writeFileSync(indexFile, newContent, 'utf8');
-  // Log evicted entries
-  for (const e of entries) {
-    if (removeLines.has(e.line)) {
-      appendEvent('evict', { path: e.path, reason: stale.includes(e) ? 'stale-90d' : 'over-capacity' });
-    }
+  // Drop entries from state
+  for (const p of dropSet) {
+    saveMemoryMeta(scopeRoot, p, { dropped: evictStale ? 'stale-90d' : 'over-capacity' });
   }
-  console.log(`[prune-memory] removed ${removeLines.size} entries, ${keptEntries.length} remaining`);
+
+  // Rebuild index for all scopes
+  const scopes = findAllScopes();
+  for (const scope of scopes) {
+    rebuildIndex(scope);
+  }
+
+  const kept = entries.length - dropSet.size;
+  console.log(`[prune-memory] removed ${dropSet.size} entries, ${kept} remaining`);
 }

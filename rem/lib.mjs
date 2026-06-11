@@ -2,7 +2,7 @@
 // Single source of truth for paths, frontmatter, index format, file collection, state.
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join, dirname, resolve, relative } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from './shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from './shared/state.mjs';
 
@@ -31,8 +31,9 @@ export function findMemoryScope() {
   return root;
 }
 
-export function findAllScopes() {
-  const scopes = [repoRoot];
+export function findAllScopes(base) {
+  const root = base || repoRoot;
+  const scopes = [root];
   function walk(dir, depth) {
     if (depth > 4) return;
     try {
@@ -45,8 +46,26 @@ export function findAllScopes() {
       }
     } catch { /* permissions, etc. */ }
   }
-  walk(repoRoot, 0);
+  walk(root, 0);
   return scopes;
+}
+
+export function findChildScopes(scopeRoot) {
+  const children = [];
+  function walk(dir, depth) {
+    if (depth > 4) return;
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          const sub = join(dir, entry.name);
+          if (existsSync(join(sub, '.claude', 'memory'))) children.push(sub);
+          walk(sub, depth + 1);
+        }
+      }
+    } catch { /* permissions */ }
+  }
+  walk(scopeRoot, 0);
+  return children;
 }
 
 export const scopeRoot = findMemoryScope();
@@ -85,7 +104,6 @@ export function setField(content, key, value) {
   if (re.test(content)) {
     return content.replace(re, `${key}: ${value}`);
   }
-  // Insert after the last frontmatter field before closing ---
   const fmEnd = content.indexOf('\n---');
   if (fmEnd < 0) return content;
   const before = content.slice(0, fmEnd);
@@ -93,41 +111,9 @@ export function setField(content, key, value) {
   return before + `\n${key}: ${value}` + after;
 }
 
-export function getTier(content) {
-  return getField(content, 'tier') || 'short';
-}
-
-export function setTier(content, tier) {
-  return setField(content, 'tier', tier);
-}
-
-export function hasAllFields(content) {
-  return /^created:/m.test(content) && /^accessed:/m.test(content) && /^tier:/m.test(content);
-}
-
-export function stampMissingFields(filePath) {
-  const content = readFileSync(filePath, 'utf8');
-  if (hasAllFields(content)) return false;
-  const date = extractDateFromPath(filePath);
-  let updated = content;
-  if (!/^created:/m.test(updated)) updated = setField(updated, 'created', date);
-  if (!/^accessed:/m.test(updated)) updated = setField(updated, 'accessed', date);
-  if (!/^tier:/m.test(updated)) updated = setField(updated, 'tier', 'short');
-  writeFileSync(filePath, updated, 'utf8');
-  return true;
-}
-
-export function bumpAccessed(content, date) {
-  const oldAccessed = getField(content, 'accessed');
-  let updated = setField(content, 'accessed', date);
-  if (oldAccessed && oldAccessed !== date) {
-    updated = setField(updated, 'access_count', String(getAccessCount(content) + 1));
-  }
-  return updated;
-}
-
-export function getAccessCount(content) {
-  return parseInt(getField(content, 'access_count') || '1', 10);
+export function removeField(content, key) {
+  const re = new RegExp(`^${key}:.*\n?`, 'm');
+  return content.replace(re, '');
 }
 
 // ── Date helpers ──
@@ -148,10 +134,8 @@ export function dateToPath(date) {
 }
 
 export function extractDateFromPath(filePath) {
-  // Only match nested YYYY/MM/DD in path — flat YYYY-MM-DD is legacy and must be migrated.
   const m = filePath.match(/(\d{4})[\/\\](\d{2})[\/\\](\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  // Fallback: warn so miscategorised files are visible rather than silently misdated
   console.warn(`[warn] extractDateFromPath: no date segment in path, falling back to mtime/today: ${filePath}`);
   try {
     return statSync(filePath).mtime.toISOString().slice(0, 10);
@@ -170,14 +154,96 @@ export function isInsideMemoryDir(absPath) {
   return resolved.startsWith(memResolved + '\\') || resolved.startsWith(memResolved + '/') || resolved === memResolved;
 }
 
+// ── Memory state (_meta.json per date directory) ──
+
+function metaPath(scopeRoot, dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return join(scopeRoot, '.claude', 'memory', y, m, d, '_meta.json');
+}
+
+export function loadMemoryState(scopeRoot) {
+  const memDir = join(scopeRoot, '.claude', 'memory');
+  const map = new Map();
+  if (!existsSync(memDir)) return map;
+
+  function walk(dir) {
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.') || entry.name === 'tasks') continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (entry.name === '_meta.json') {
+          try {
+            const data = JSON.parse(readFileSync(full, 'utf8'));
+            const dateDir = relative(memDir, dirname(full)).replace(/\\/g, '/');
+            for (const [slug, meta] of Object.entries(data)) {
+              map.set(`${dateDir}/${slug}`, meta);
+            }
+          } catch { /* corrupt _meta.json — skip */ }
+        }
+      }
+    } catch { /* permissions */ }
+  }
+  walk(memDir);
+
+  // Backfill: .md files on disk but missing from _meta.json get defaults
+  const allMd = collectMemoryFiles(memDir);
+  for (const absPath of allMd) {
+    const relPath = relative(memDir, absPath).replace(/\\/g, '/');
+    if (relPath.startsWith('tasks/')) continue;
+    if (!map.has(relPath)) {
+      const date = extractDateFromPath(absPath);
+      map.set(relPath, { accessed: date, count: 1, tier: 'short' });
+    }
+  }
+
+  return map;
+}
+
+export function saveMemoryMeta(scopeRoot, relPath, patch) {
+  const date = extractDateFromPath(relPath);
+  const file = metaPath(scopeRoot, date);
+  const slug = relPath.split('/').pop();
+
+  let data = {};
+  if (existsSync(file)) {
+    try { data = JSON.parse(readFileSync(file, 'utf8')); } catch { /* start fresh */ }
+  } else {
+    mkdirSync(dirname(file), { recursive: true });
+  }
+
+  data[slug] = { ...(data[slug] || {}), ...patch };
+  writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+}
+
+export function getMemoryMeta(scopeRoot, relPath) {
+  const state = loadMemoryState(scopeRoot);
+  if (state.has(relPath)) return state.get(relPath);
+  const date = extractDateFromPath(relPath);
+  return { accessed: date, count: 1, tier: 'short' };
+}
+
+export function bumpAccessed(scopeRoot, relPath, date) {
+  const cur = getMemoryMeta(scopeRoot, relPath);
+  const count = cur.accessed !== date ? cur.count + 1 : cur.count;
+  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count });
+}
+
+export function dropFromIndex(scopeRoot, relPath, reason) {
+  saveMemoryMeta(scopeRoot, relPath, { dropped: reason });
+}
+
 // ── Index ──
 
 export const INDEX_HEADER = `# Memory Index
 
+<!-- GENERATED — do not hand-edit. Rebuilt by rebuildIndex() on each session start,
+     touch, prune, and stamp. Device-local (gitignored). -->
+
 <!--
 Three-tier memory system:
-  1. Rules (.claude/rules/)         — always injected, core behavioral constraints only
-  2. Long-term memory (tier: long)  — progressive disclosure, demoted to short if inactive between prune cycles
+  1. Rules (.claude/rules/)          — always injected, core behavioral constraints only
+  2. Long-term memory (tier: long)   — progressive disclosure, demoted to short if inactive between prune cycles
   3. Short-term memory (tier: short) — progressive disclosure, 90d eviction
 
 Promotion: run \`node scripts/touch-memory.js <path> --promote\` to upgrade short → long,
@@ -187,24 +253,121 @@ Prune:     run \`node scripts/prune-memory.js --evict-stale\` (short-term evicti
 Compact:   run \`node scripts/compact.js --check\` when index grows large
 
 Path format:  ../memory/YYYY/MM/DD/slug.md — nested per-day directories (required).
-              Flat YYYY-MM-DD/ directories are legacy and must be migrated via
-              \`migrate.mjs\`, which renames them to the nested form on disk.
 
-Frontmatter:
-  - created:      ISO date (parent folder date)
-  - accessed:     ISO date (bumped by touch-memory.js / rem-prep.js on reference)
-  - tier:         long | short (default short, promoted via touch-memory.js --promote)
-  - access_count: number of distinct days this file was referenced (default 1, incremented
-                   by bumpAccessed when accessed date advances; >=3 triggers auto-promotion)
+Frontmatter (content fields only):
+  - name:        short kebab-case slug (required)
+  - description: one-line summary (required)
+  - metadata.type: user | feedback | project | reference (required)
+
+Volatile metadata (accessed, count, tier, dropped) lives in gitignored
+_memory/YYYY/MM/DD/_meta.json per date directory — never in frontmatter.
 -->
 
 `;
+
+function buildIndexEntries(scopeRoot, state) {
+  const memDir = join(scopeRoot, '.claude', 'memory');
+  const entries = [];
+
+  for (const [relPath, meta] of state) {
+    if (meta.dropped) continue;
+    if (relPath.startsWith('tasks/')) continue;
+
+    const absPath = join(memDir, relPath);
+    let title = relPath.split('/').pop().replace('.md', '');
+    let created = extractDateFromPath(relPath);
+    let description = '';
+
+    if (existsSync(absPath)) {
+      try {
+        const content = readFileSync(absPath, 'utf8');
+        const { fields } = parseFrontmatter(content);
+        if (fields.name) title = fields.name;
+        if (fields.description) description = fields.description;
+      } catch { /* use defaults */ }
+    }
+
+    entries.push({
+      date: meta.accessed,
+      title,
+      path: relPath,
+      created,
+      accessed: meta.accessed,
+      accessedDate: parseDate(meta.accessed),
+      createdDate: parseDate(created),
+    });
+  }
+
+  // Also include .md files on disk not yet in state (first-time stamp)
+  const allMd = collectMemoryFiles(memDir);
+  const indexed = new Set(state.keys());
+  for (const absPath of allMd) {
+    const relPath = relative(memDir, absPath).replace(/\\/g, '/');
+    if (relPath.startsWith('tasks/')) continue;
+    if (indexed.has(relPath)) continue;
+
+    let title = relPath.split('/').pop().replace('.md', '');
+    const created = extractDateFromPath(absPath);
+    try {
+      const content = readFileSync(absPath, 'utf8');
+      const { fields } = parseFrontmatter(content);
+      if (fields.name) title = fields.name;
+    } catch { /* use defaults */ }
+
+    entries.push({
+      date: created,
+      title,
+      path: relPath,
+      created,
+      accessed: created,
+      accessedDate: parseDate(created),
+      createdDate: parseDate(created),
+    });
+  }
+
+  // Sort: accessed desc, tiebreak created desc
+  entries.sort((a, b) => b.accessedDate - a.accessedDate || b.createdDate - a.createdDate);
+  return entries;
+}
+
+export function rebuildIndex(scopeRoot) {
+  const rulesDir = join(scopeRoot, '.claude', 'rules');
+  const indexFile = join(rulesDir, 'MEMORY.md');
+  const state = loadMemoryState(scopeRoot);
+
+  const entries = buildIndexEntries(scopeRoot, state);
+
+  // Build Scoped section from child scopes
+  const children = findChildScopes(scopeRoot);
+  let scopedSection = '';
+  if (children.length > 0) {
+    scopedSection = '\n## Scoped\n\n';
+    for (const child of children) {
+      const childRel = relative(scopeRoot, child).replace(/\\/g, '/') || child;
+      scopedSection += `- ${childRel} → see ${childRel}/.claude/rules/MEMORY.md\n`;
+    }
+  }
+
+  // Build index
+  const lines = [INDEX_HEADER.trimEnd()];
+  if (scopedSection) lines.push(scopedSection);
+  lines.push('\n## Entries');
+  if (entries.length === 0) {
+    lines.push('\n_(no entries)_');
+  } else {
+    for (const e of entries) {
+      lines.push(formatIndexEntry(e));
+    }
+  }
+
+  if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
+  writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
+}
 
 // Regex to match and parse an index entry line
 const ENTRY_RE = /^-\s+\[(\d{4}-\d{2}-\d{2})\s+(.+?)\]\(\.\.\/memory\/(.+?\.md)\)\s*—\s*`created:\s*(\d{4}-\d{2}-\d{2}),\s*accessed:\s*(\d{4}-\d{2}-\d{2})`/;
 
 export function normalizeMemoryPath(relPath) {
-  // Convert legacy YYYY-MM-DD/slug.md → YYYY/MM/DD/slug.md
   return relPath.replace(/^(\d{4})-(\d{2})-(\d{2})\//, '$1/$2/$3/');
 }
 
@@ -224,17 +387,6 @@ export function parseIndexEntry(line) {
 
 export function formatIndexEntry(entry) {
   return `- [${entry.date} ${entry.title}](../memory/${entry.path}) — \`created: ${entry.created}, accessed: ${entry.accessed}\``;
-}
-
-// Returns updated content on match, null if the memory path wasn't found in the index.
-export function updateIndexAccessed(indexContent, memPath, newAccessed) {
-  const escaped = memPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Match the separator generically — em-dash, en-dash, or plain dash with optional spaces
-  const re = new RegExp(
-    `(\\]\\(\.\.\\/memory\\/${escaped}\\)\\s+.{1,3}\\s+\`created:\\s*[^,]+),\\s*accessed:\\s*[^\`]+\``
-  );
-  if (!re.test(indexContent)) return null;
-  return indexContent.replace(re, `$1, accessed: ${newAccessed}\``);
 }
 
 export function parseIndex(content) {

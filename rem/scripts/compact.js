@@ -14,11 +14,12 @@
 //   4. Model runs --execute → validates rules exist, clears index, logs summary
 
 import { SR_ID_RE } from '../shared/lib.mjs';
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
-  indexFile, rulesDir, remRulesDir, memoryDir, INDEX_HEADER, MAX_ENTRIES, collectMemoryFiles,
-  parseIndex, getTier, getAccessCount, getField,
+  scopeIndexFile as indexFile, remRulesDir, scopeMemoryDir as memoryDir,
+  scopeRoot, MAX_ENTRIES, collectMemoryFiles,
+  getMemoryMeta, getField, rebuildIndex, dropFromIndex,
 } from '../lib.mjs';
 
 const args = process.argv.slice(2);
@@ -47,28 +48,31 @@ if (mode === '--propose') {
     process.exit(0);
   }
   const content = readFileSync(indexFile, 'utf8');
-  const { entries } = parseIndex(content);
 
-  const result = entries.map(e => {
-    const memFile = join(memoryDir, e.path);
-    let tier = 'short';
-    let accessCount = 1;
+  // Extract paths from index
+  const pathRe = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
+  const indexedPaths = [];
+  let pm;
+  while ((pm = pathRe.exec(content)) !== null) {
+    indexedPaths.push(pm[1]);
+  }
+
+  const result = indexedPaths.map(p => {
+    const memFile = join(memoryDir, p);
+    const meta = getMemoryMeta(scopeRoot, p);
     let description = '';
     if (existsSync(memFile)) {
       try {
-        const memContent = readFileSync(memFile, 'utf8');
-        tier = getTier(memContent);
-        accessCount = getAccessCount(memContent);
-        description = getField(memContent, 'description') || '';
+        description = getField(readFileSync(memFile, 'utf8'), 'description') || '';
       } catch { /* use defaults */ }
     }
     return {
-      path: e.path,
-      title: e.title,
-      created: e.created,
-      accessed: e.accessed,
-      tier,
-      accessCount,
+      path: p,
+      title: p.split('/').pop().replace('.md', ''),
+      created: p.match(/(\d{4})\/(\d{2})\/(\d{2})/)?.slice(1).join('-') || '',
+      accessed: meta.accessed,
+      tier: meta.tier,
+      accessCount: meta.count,
       description,
     };
   });
@@ -109,7 +113,6 @@ if (mode === '--validate') {
 
 // ── --execute: validate + clear index ──
 if (mode === '--execute') {
-  // Parse --distilled <path1,path2,...>
   const distilledIdx = args.indexOf('--distilled');
   const distilledPaths = distilledIdx >= 0 && args[distilledIdx + 1]
     ? args[distilledIdx + 1].split(',').map(s => s.trim()).filter(Boolean)
@@ -133,7 +136,6 @@ if (mode === '--execute') {
     console.error('[compact] .claude/memory/ directory not found');
     process.exit(1);
   }
-  // Baseline: every path referenced in the index must still exist on disk
   const indexedPaths = [];
   const pathRe = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
   let pm;
@@ -149,46 +151,34 @@ if (mode === '--execute') {
   const memoryCount = collectMemoryFiles(memoryDir).length;
   console.log(`[compact] ${indexedPaths.length} indexed, ${memoryCount} total memory file(s)`);
 
-  // 3. Count entries before clear
+  // 3. Apply drops
   if (!existsSync(indexFile)) {
     console.log('[compact] MEMORY.md not found');
     process.exit(0);
   }
-  const content = readFileSync(indexFile, 'utf8');
-  const allLines = content.split('\n');
-  const entryLines = allLines.filter(l => /^-\s+\[/.test(l));
 
-  // 4. Clear index entries
+  const pathsToDrop = distilledPaths || indexedPaths;
+
   if (distilledPaths && distilledPaths.length > 0) {
-    // Granular mode: only remove entries that were distilled
-    const keepLines = [];
-    let removed = 0;
-    for (const line of entryLines) {
-      const pathMatch = line.match(/\]\(\.\.\/memory\/(.+?\.md)\)/);
-      if (pathMatch && distilledPaths.includes(pathMatch[1])) {
-        removed++;
-      } else {
-        keepLines.push(line);
-      }
+    // Granular mode: drop only distilled entries
+    for (const p of distilledPaths) {
+      dropFromIndex(scopeRoot, p, 'compacted');
     }
-    if (removed === 0) {
-      console.log('[compact] --distilled paths matched no index entries — nothing removed');
-      console.log(`  distilled: ${distilledPaths.join(', ')}`);
-      process.exit(0);
-    }
-    // Rebuild: header + undistilled entries
-    const headerLines = allLines.filter(l => !/^-\s+\[/.test(l));
-    writeFileSync(indexFile, [...headerLines, ...keepLines].join('\n') + '\n', 'utf8');
-    console.log(`[compact] removed ${removed}/${entryLines.length} distilled entries, ${keepLines.length} kept`);
+    console.log(`[compact] dropped ${distilledPaths.length}/${indexedPaths.length} distilled entries from index`);
   } else {
-    // Full mode: clear all entries (keep unified INDEX_HEADER)
-    writeFileSync(indexFile, INDEX_HEADER, 'utf8');
-    console.log(`[compact] cleared ${entryLines.length} index entries → MEMORY.md reset`);
+    // Full mode: drop all
+    for (const p of indexedPaths) {
+      dropFromIndex(scopeRoot, p, 'compacted');
+    }
+    console.log(`[compact] cleared ${indexedPaths.length} index entries`);
   }
-  // 5. Detect SR-ID findings being compacted → suggest resolution
-  const pathsToCheck = distilledPaths || indexedPaths;
+
+  // 4. Rebuild index
+  rebuildIndex(scopeRoot);
+
+  // 5. Detect SR-ID findings being compacted
   const srIds = [];
-  for (const p of pathsToCheck) {
+  for (const p of pathsToDrop) {
     const memFile = join(memoryDir, p);
     if (!existsSync(memFile)) continue;
     try {
@@ -201,7 +191,7 @@ if (mode === '--execute') {
   }
   if (srIds.length > 0) {
     console.log(`[compact] ${srIds.length} SR finding(s) compacted into rules:`);
-    console.log(`  → Mark resolved: edit **Status:** OPEN → **Status:** FIXED in the memory file, then post-review --rescan`);
+    console.log('  → Mark resolved: edit **Status:** OPEN → **Status:** FIXED in the memory file, then post-review --rescan');
   }
 
   console.log('[compact] done — memory consolidated into .claude/rules/rem/');

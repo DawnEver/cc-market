@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// Update `accessed` timestamp on a memory file AND its index entry.
+// Update `accessed` timestamp on a memory entry (in _meta.json state).
 // Usage: node scripts/touch-memory.js <relative-path> [--promote]
 //   --promote  also change tier from short → long (frequently accessed memories)
 //   e.g. node scripts/touch-memory.js 2026/06/03/takeover-plugin-v2.md --promote
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync } from 'fs';
 import {
-  memoryDir, indexFile, todayISO, bumpAccessed, setField, updateIndexAccessed,
+  todayISO, bumpAccessed, saveMemoryMeta, getMemoryMeta,
+  rebuildIndex, findMemoryScope,
   resolveMemoryPath, isInsideMemoryDir,
 } from '../lib.mjs';
 
@@ -26,44 +26,36 @@ if (!isInsideMemoryDir(file)) {
   process.exit(1);
 }
 
-// Update memory file
-let content;
-try { content = readFileSync(file, 'utf8'); } catch {
+if (!existsSync(file)) {
   console.error(`[touch-memory] file not found: .claude/memory/${target}`);
-  console.error('  Run: node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js');
   process.exit(1);
 }
+
+// Find which scope this file belongs to
+const scope = findMemoryScope();
+const relPath = target.replace(/\\/g, '/');
 
 const today = todayISO();
-let updated = bumpAccessed(content, today);
-if (!updated) {
-  console.error(`[touch-memory] no 'accessed:' field in ${target}`);
-  console.error('  Run: node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js');
-  process.exit(1);
-}
 
-let action = 'bumped';
+// Check current state
+const cur = getMemoryMeta(scope, relPath);
+const oldDropped = cur.dropped;
+
+// Bump accessed (touch clears dropped — re-indexes an evicted entry)
+bumpAccessed(scope, relPath, today);
+
+let action = oldDropped ? 're-indexed (was dropped) + bumped' : 'bumped';
+
 if (promote) {
-  const tierReplaced = setField(updated, 'tier', 'long');
-  if (tierReplaced !== updated) {
-    updated = tierReplaced;
-    action = 'promoted to long + bumped';
-  } else if (/^tier: long$/m.test(updated)) {
-    action = 'already long, bumped';
-  }
-}
-writeFileSync(file, updated, 'utf8');
-
-// Update index entry
-if (existsSync(indexFile)) {
-  let idx = readFileSync(indexFile, 'utf8');
-  const newIdx = updateIndexAccessed(idx, target, today);
-  if (newIdx !== null) {
-    if (newIdx !== idx) writeFileSync(indexFile, newIdx, 'utf8');
-    console.log(`[touch-memory] ${target} → ${action} (file + index)`);
+  saveMemoryMeta(scope, relPath, { tier: 'long' });
+  if (cur.tier === 'long') {
+    action = oldDropped ? 're-indexed + already long, bumped' : 'already long, bumped';
   } else {
-    console.warn(`[touch-memory] ${target} → ${action} (file only, index entry not found — may need manual update)`);
+    action = oldDropped ? 're-indexed + promoted to long + bumped' : 'promoted to long + bumped';
   }
-} else {
-  console.log(`[touch-memory] ${target} → ${action} (no index yet, run stamp-memory.js)`);
 }
+
+// Rebuild index
+rebuildIndex(scope);
+
+console.log(`[touch-memory] ${target} → ${action}`);

@@ -83,9 +83,6 @@ export function reviewFrontmatter(findings, date) {
     `description: ${desc}`,
     'metadata:',
     '  type: project',
-    `created: ${date}`,
-    `accessed: ${date}`,
-    'tier: short',
     '---',
   ].join('\n');
 }
