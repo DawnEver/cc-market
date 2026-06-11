@@ -6,6 +6,7 @@
 //   - flat YYYY-MM-DD/ memory directories → nested YYYY/MM/DD/ (migrateFlatDirs)
 //   - legacy .claude/memory/tasks/** directories cleaned up
 //   - stray state files left behind by plugins predating rem
+//   - .gitignore entries for rem-tracked .claude/ paths (_meta.json, memory, rules)
 //   - rebuildIndex for all scopes after migration
 
 import { existsSync, rmSync, mkdirSync, readdirSync, renameSync, readFileSync, writeFileSync } from 'fs';
@@ -164,6 +165,44 @@ function migrateVolatileFrontmatter(projectRoot) {
   return { changed, summary };
 }
 
+// Entries that must be in .gitignore for rem's memory/rules tracking to work:
+// - .claude/*  ignored by default, then selectively un-ignored
+// - .claude/rules/** tracked (shared config)
+// - .claude/memory/** tracked (memory content)
+// - .claude/rules/MEMORY.md ignored (device-local generated index)
+// - **/_meta.json ignored (volatile metadata)
+const REQUIRED_GITIGNORE_ENTRIES = [
+  '.claude/*',
+  '!.claude/rules/**',
+  '!.claude/memory/**',
+  '.claude/rules/MEMORY.md',
+  '**/_meta.json',
+];
+
+function ensureGitignore(projectRoot) {
+  const gitignorePath = join(projectRoot, '.gitignore');
+  let lines = [];
+  if (existsSync(gitignorePath)) {
+    lines = readFileSync(gitignorePath, 'utf8').split(/\r?\n/);
+  }
+
+  const existing = new Set(lines.map(l => l.trim()).filter(l => l !== ''));
+  const missing = REQUIRED_GITIGNORE_ENTRIES.filter(e => !existing.has(e));
+
+  if (missing.length === 0) return { changed: false, summary: [] };
+
+  // Append missing entries
+  for (const entry of missing) lines.push(entry);
+  // Trailing newline
+  lines.push('');
+  writeFileSync(gitignorePath, lines.join('\n'), 'utf8');
+
+  return {
+    changed: true,
+    summary: [`added ${missing.length} gitignore entr${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')}`],
+  };
+}
+
 export async function migrate(projectRoot) {
   const summary = [];
   let changed = false;
@@ -202,6 +241,13 @@ export async function migrate(projectRoot) {
       changed = true;
       summary.push(`removed stray legacy .claude/${name}`);
     }
+  }
+
+  // Step 4: Ensure .gitignore covers rem-tracked .claude/ paths
+  const gitignore = ensureGitignore(projectRoot);
+  if (gitignore.changed) {
+    changed = true;
+    summary.push(...gitignore.summary);
   }
 
   return { changed, summary };
