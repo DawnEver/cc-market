@@ -1,7 +1,21 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
-import { CodexAppServerClient } from "../scripts/codex/app-server.mjs";
+import { CodexAppServerClient, CLIENT_VERSION } from "../scripts/codex/app-server.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+describe("CLIENT_VERSION", () => {
+  test("matches plugin.json version (no hardcoded drift)", () => {
+    const { version } = JSON.parse(
+      readFileSync(join(__dirname, "..", ".claude-plugin", "plugin.json"), "utf8"),
+    );
+    assert.equal(CLIENT_VERSION, version);
+  });
+});
 
 describe("CodexAppServerClient constructor", () => {
   test("sets default timeout to 600000", () => {

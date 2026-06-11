@@ -80,6 +80,18 @@ export const TOOLS = [
           type: "string",
           description: "The user message or task to hand off.",
         },
+        images: {
+          type: "array",
+          description: "Optional image attachments. Each image is base64-encoded with a media type.",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Original file path (for reference)" },
+              data: { type: "string", description: "Base64-encoded image data" },
+              media_type: { type: "string", description: "MIME type, e.g. image/png, image/jpeg" },
+            },
+          },
+        },
       },
       required: ["userPrompt"],
     },
@@ -107,7 +119,7 @@ export const TOOLS = [
 // ── Tool handlers ─────────────────────────────────────────────────
 
 export async function handleCallModel(args) {
-  let { provider, model, mode, systemPrompt: customSystem, userPrompt, write } = args;
+  let { provider, model, mode, systemPrompt: customSystem, userPrompt, write, images } = args;
 
   // Parse <command> block from userPrompt — authoritative flag source.
   // The agent may have parsed flags incorrectly (or not at all); the
@@ -129,16 +141,48 @@ export async function handleCallModel(args) {
     systemPrompt = buildPrompt(mode, userPrompt).systemPrompt;
   }
 
+  // Resolve images: agent passes file paths; MCP server reads and base64-encodes.
+  // This avoids the agent having to shuttle multi-MB base64 strings through tool calls.
+  const resolvedImages = [];
+  if (images && images.length > 0) {
+    const extToMime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' };
+    for (const img of images) {
+      if (img.data) {
+        resolvedImages.push(img);
+      } else if (img.path) {
+        try {
+          const raw = readFileSync(img.path);
+          const ext = (img.path.match(/\.\w+$/i) || ['.png'])[0].toLowerCase();
+          resolvedImages.push({
+            path: img.path,
+            data: raw.toString('base64'),
+            media_type: img.media_type || extToMime[ext] || 'image/png',
+          });
+        } catch (e) {
+          process.stderr.write(`mcp-takeover: failed to read image ${img.path}: ${e.message}\n`);
+        }
+      }
+    }
+  }
+
+  // Embed images as data URIs for stdin-based callers (claude native, agent mode, codex task).
+  // API-based callers receive structured image blocks instead.
+  const imageURIs = resolvedImages.length > 0
+    ? resolvedImages.map(img => `data:${img.media_type};base64,${img.data}`).join('\n')
+    : '';
+
   const providerConfig = loadProviderConfig(provider);
 
   // ── Agent mode: full tool access via provider-specific runtime ──
   if (mode === 'agent') {
     process.stderr.write(`mcp-takeover: agent mode — provider=${provider} model=${model || '(none)'}\n`);
     let data;
+    const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
     if (providerConfig.provider === 'codex') {
-      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write);
+      data = await callCodexCompanion(promptWithImages, systemPrompt, model || null, !!write);
     } else {
-      data = await callAgentMode(provider, userPrompt, systemPrompt, model || null);
+      data = await callAgentMode(provider, promptWithImages, systemPrompt, model || null);
     }
     return { content: [{ type: 'text', text: extractText(data) }] };
   }
@@ -151,13 +195,15 @@ export async function handleCallModel(args) {
     );
   }
 
+  const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
+
   let data;
   let resolvedModel = model || null;
   if (providerConfig.provider === "codex") {
     if (mode === "review") {
       process.stderr.write(`mcp-takeover: codex review (adversarial)...\n`);
       const { runCodexReview } = await import("./codex/review.mjs");
-      data = await runCodexReview(userPrompt, model || null, null, process.cwd());
+      data = await runCodexReview(promptWithImages, model || null, null, process.cwd());
     } else if (mode === "image-generate") {
       process.stderr.write(`mcp-takeover: codex image generate...\n`);
       const { generateImage } = await import("./codex/image.mjs");
@@ -172,17 +218,17 @@ export async function handleCallModel(args) {
       process.stderr.write(
         `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}...\n`
       );
-      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write);
+      data = await callCodexCompanion(promptWithImages, systemPrompt, model || null, !!write);
     }
   } else if (providerConfig.native) {
     process.stderr.write("mcp-takeover: calling claude (native CLI)...\n");
-    data = await callNativeClaude(userPrompt, systemPrompt);
+    data = await callNativeClaude(promptWithImages, systemPrompt);
   } else {
     resolvedModel = resolveModel(providerConfig, model || null);
     process.stderr.write(
       `mcp-takeover: calling ${resolvedModel} (${provider})...\n`
     );
-    data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt);
+    data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, promptWithImages, resolvedImages.length > 0 ? resolvedImages : null);
     const usage = data.usage || {};
     process.stderr.write(
       `mcp-takeover: ${data.stop_reason || "done"}, ` +

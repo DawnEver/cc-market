@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { findCodexBinary } from "./discovery.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+export const CLIENT_VERSION = JSON.parse(
+  readFileSync(join(__dirname, "..", "..", ".claude-plugin", "plugin.json"), "utf8"),
+).version;
 
 export class CodexAppServerClient {
   constructor(opts = {}) {
@@ -55,7 +63,7 @@ export class CodexAppServerClient {
 
     const initResult = await this.send("initialize", {
       protocolVersion: "1.0",
-      clientInfo: { name: "takeover", version: "2.2.0" },
+      clientInfo: { name: "takeover", version: CLIENT_VERSION },
       capabilities: {
         optOutNotificationMethods: [
           "item/agentMessage/delta",

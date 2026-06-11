@@ -148,10 +148,10 @@ function migrateVolatileFrontmatter(projectRoot) {
             let accessed = null, count = 1, tier = 'short', created = null;
 
             // Check for volatile fields in frontmatter
-            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
             if (fmMatch) {
               const fm = fmMatch[1];
-              for (const line of fm.split('\n')) {
+              for (const line of fm.split(/\r?\n/)) {
                 const kv = line.match(/^(\w+):\s*(.*)/);
                 if (!kv) continue;
                 if (kv[1] === 'accessed') { accessed = kv[2].trim(); hasVolatile = true; }
