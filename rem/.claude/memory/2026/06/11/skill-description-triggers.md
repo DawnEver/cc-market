@@ -3,9 +3,6 @@ name: skill-description-triggers
 description: Skill description wording drives false triggering — broad task verbs ("resolve tasks") fired /todo on plain "go do X" requests; add explicit negative triggers
 metadata:
   type: feedback
-created: 2026-06-11
-accessed: 2026-06-11
-tier: short
 ---
 
 The `/todo` skill (rem) was wrongly triggered by the user saying "去做" / "go do X" —

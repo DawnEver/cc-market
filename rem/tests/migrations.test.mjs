@@ -70,7 +70,7 @@ describe('rem migrate()', () => {
     const { changed, summary } = await migrate(projectRoot);
     // gitignore step runs regardless of .claude/ presence
     assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('added 5 gitignore entries')));
+    assert.ok(summary.some(s => s.includes('rem gitignore ignore')));
     assert.equal(fs.existsSync(path.join(projectRoot, '.gitignore')), true);
   });
 
@@ -85,49 +85,62 @@ describe('rem migrate()', () => {
     assert.equal(fs.existsSync(path.join(projectRoot, '.claude', '.retro_state.json')), false);
   });
 
-  test('creates .gitignore with required entries when it does not exist', async () => {
+  // rem owns ONLY ignores for the artifacts it generates — the broader .claude
+  // structure template is the root migrate skill's concern.
+  const REM_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json'];
+
+  test('ensures rem generated-artifact ignores when .gitignore does not exist', async () => {
     const { changed, summary } = await migrate(projectRoot);
 
     assert.equal(changed, true);
     const gitignorePath = path.join(projectRoot, '.gitignore');
     assert.equal(fs.existsSync(gitignorePath), true);
-    const content = fs.readFileSync(gitignorePath, 'utf8');
-    assert.ok(content.includes('.claude/*'));
-    assert.ok(content.includes('!.claude/rules/**'));
-    assert.ok(content.includes('!.claude/memory/**'));
-    assert.ok(content.includes('.claude/rules/MEMORY.md'));
-    assert.ok(content.includes('**/_meta.json'));
-    assert.ok(summary.some(s => s.includes('added 5 gitignore entries')));
+    const present = new Set(fs.readFileSync(gitignorePath, 'utf8').split('\n').map(l => l.trim()));
+    for (const e of REM_IGNORES) assert.ok(present.has(e), `missing ${e}`);
+    assert.ok(summary.some(s => s.includes('rem gitignore ignore')));
   });
 
-  test('adds only missing gitignore entries when some exist', async () => {
+  test('appends only missing rem ignores, preserves everything else', async () => {
     const gitignorePath = path.join(projectRoot, '.gitignore');
-    fs.writeFileSync(gitignorePath, '.claude/*\nnode_modules/\n');
+    // Host project already has its own .claude structure rules + one of rem's ignores.
+    fs.writeFileSync(gitignorePath, '**/.claude/**\n!**/.claude/memory/\n!**/.claude/memory/**\nnode_modules/\n**/_meta.json\n');
+
+    const { changed } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    const content = fs.readFileSync(gitignorePath, 'utf8');
+    assert.ok(content.includes('node_modules/'));            // unrelated entry kept
+    assert.ok(content.includes('**/.claude/**'));            // host's structure rules untouched
+    assert.ok(content.includes('**/.claude/rules/MEMORY.md')); // the missing rem ignore added
+    // rem never strips others — _meta.json kept, MEMORY.md appended after it.
+    const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+    assert.equal(lines[lines.length - 1], '**/.claude/rules/MEMORY.md');
+  });
+
+  test('gitignore step is idempotent — no-op when rem ignores already present', async () => {
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    fs.writeFileSync(gitignorePath, '.DS_Store\n' + REM_IGNORES.join('\n') + '\n');
+
+    const { changed } = await migrate(projectRoot);
+
+    // No .claude/ dir → no stamp; rem ignores already present → gitignore no-op → full no-op.
+    assert.equal(changed, false);
+  });
+
+  test('removes legacy .claude/tasks/ and .claude/memory/tasks/ across scopes', async () => {
+    const taskArchive = path.join(projectRoot, '.claude', 'tasks', 'archive', '2026', '05');
+    fs.mkdirSync(taskArchive, { recursive: true });
+    fs.writeFileSync(path.join(taskArchive, '30.md'), 'x');
+    const memTasks = path.join(projectRoot, '.claude', 'memory', 'tasks');
+    fs.mkdirSync(memTasks, { recursive: true });
+    fs.writeFileSync(path.join(memTasks, 'old.md'), 'x');
 
     const { changed, summary } = await migrate(projectRoot);
 
     assert.equal(changed, true);
-    const content = fs.readFileSync(gitignorePath, 'utf8');
-    // Existing entries preserved
-    assert.ok(content.includes('.claude/*'));
-    assert.ok(content.includes('node_modules/'));
-    // Missing entries added
-    assert.ok(content.includes('!.claude/rules/**'));
-    assert.ok(content.includes('!.claude/memory/**'));
-    assert.ok(content.includes('.claude/rules/MEMORY.md'));
-    assert.ok(content.includes('**/_meta.json'));
-    assert.ok(summary.some(s => s.includes('added 4 gitignore entries')));
-  });
-
-  test('gitignore step is idempotent — no-op when all entries present', async () => {
-    const gitignorePath = path.join(projectRoot, '.gitignore');
-    fs.writeFileSync(gitignorePath, '.DS_Store\n.claude/*\n!.claude/rules/**\n!.claude/memory/**\n.claude/rules/MEMORY.md\n**/_meta.json\n');
-
-    const { changed } = await migrate(projectRoot);
-
-    // gitignore step should not trigger changed on its own (no .claude/ dir → no stamp either)
-    // If there's no .claude/ dir and all gitignore entries exist, it's a full no-op
-    assert.equal(changed, false);
+    assert.ok(summary.some(s => s.includes('legacy task dir')));
+    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', 'tasks')), false);
+    assert.equal(fs.existsSync(memTasks), false);
   });
 
   test('converts flat YYYY-MM-DD/ memory dirs to nested YYYY/MM/DD/', async () => {

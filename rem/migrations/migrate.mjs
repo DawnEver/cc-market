@@ -4,7 +4,9 @@
 // Folds in past breaking changes:
 //   - volatile frontmatter fields (created/accessed/access_count/tier) → _meta.json per date dir
 //   - flat YYYY-MM-DD/ memory directories → nested YYYY/MM/DD/ (migrateFlatDirs)
-//   - legacy .claude/memory/tasks/** directories cleaned up
+//   - legacy task directories (.claude/tasks/, .claude/memory/tasks/) removed
+//     across all scopes (cleanupLegacyTasks) — the task system was retired; tasks
+//     now live solely in sharp-review findings
 //   - stray state files left behind by plugins predating rem
 //   - .gitignore entries for rem-tracked .claude/ paths (_meta.json, memory, rules)
 //   - rebuildIndex for all scopes after migration
@@ -46,6 +48,28 @@ function migrateFlatDirs(projectRoot) {
   return {
     changed: moved.length > 0,
     summary: moved.length > 0 ? [`migrated ${moved.length} flat memory director${moved.length === 1 ? 'y' : 'ies'} to nested format`] : [],
+  };
+}
+
+// Remove retired task directories across every scope. The task system was removed
+// (tasks now live in sharp-review findings) — these dirs are dead weight. Idempotent.
+function cleanupLegacyTasks(projectRoot) {
+  const removed = [];
+  // findAllMemoryScopes keys off .claude/memory; also check projectRoot's bare .claude.
+  const scopes = new Set(findAllMemoryScopes(projectRoot));
+  scopes.add(projectRoot);
+  for (const scope of scopes) {
+    for (const rel of [join('.claude', 'tasks'), join('.claude', 'memory', 'tasks')]) {
+      const dir = join(scope, rel);
+      if (!existsSync(dir)) continue;
+      rmSync(dir, { recursive: true, force: true });
+      const label = scope === projectRoot ? rel : join(scope.slice(projectRoot.length + 1), rel);
+      removed.push(label.replace(/\\/g, '/'));
+    }
+  }
+  return {
+    changed: removed.length > 0,
+    summary: removed.length > 0 ? [`removed ${removed.length} legacy task dir(s): ${removed.join(', ')}`] : [],
   };
 }
 
@@ -165,42 +189,32 @@ function migrateVolatileFrontmatter(projectRoot) {
   return { changed, summary };
 }
 
-// Entries that must be in .gitignore for rem's memory/rules tracking to work:
-// - .claude/*  ignored by default, then selectively un-ignored
-// - .claude/rules/** tracked (shared config)
-// - .claude/memory/** tracked (memory content)
-// - .claude/rules/MEMORY.md ignored (device-local generated index)
-// - **/_meta.json ignored (volatile metadata)
-const REQUIRED_GITIGNORE_ENTRIES = [
-  '.claude/*',
-  '!.claude/rules/**',
-  '!.claude/memory/**',
-  '.claude/rules/MEMORY.md',
-  '**/_meta.json',
-];
+// rem owns ONLY the ignores for the two artifacts it generates: the device-local
+// MEMORY.md index and the volatile _meta.json shards. The broader .claude structure
+// template (base `**/.claude/**` exclusion + agents/skills/commands/workflows/settings
+// re-includes) is global Claude-Code policy owned by the root `migrate` skill — a
+// plugin must not blanket-ignore a host project's .claude. These two lines are plain
+// ignores valid in any project (no re-include ordering needed), and the root skill,
+// when present, already emits them LAST in its template, so this no-ops there.
+//
+// Consequence: rem alone does NOT repair a broken structure block (e.g. a dir-only
+// `!**/.claude/memory/` that leaves nested files ignored). That fix lives in the root
+// `migrate` skill's CLAUDE_GITIGNORE_TEMPLATE — run `migrate` to apply it. A project
+// that only installs rem just gets its two generated artifacts ignored.
+const REM_GENERATED_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json'];
 
 function ensureGitignore(projectRoot) {
   const gitignorePath = join(projectRoot, '.gitignore');
-  let lines = [];
-  if (existsSync(gitignorePath)) {
-    lines = readFileSync(gitignorePath, 'utf8').split(/\r?\n/);
-  }
-
-  const existing = new Set(lines.map(l => l.trim()).filter(l => l !== ''));
-  const missing = REQUIRED_GITIGNORE_ENTRIES.filter(e => !existing.has(e));
-
+  const original = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf8') : '';
+  const present = new Set(original.split(/\r?\n/).map(l => l.trim()));
+  const missing = REM_GENERATED_IGNORES.filter(e => !present.has(e));
   if (missing.length === 0) return { changed: false, summary: [] };
 
-  // Append missing entries
-  for (const entry of missing) lines.push(entry);
-  // Trailing newline
-  lines.push('');
-  writeFileSync(gitignorePath, lines.join('\n'), 'utf8');
-
-  return {
-    changed: true,
-    summary: [`added ${missing.length} gitignore entr${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')}`],
-  };
+  const kept = original.split(/\r?\n/);
+  while (kept.length && kept[kept.length - 1].trim() === '') kept.pop();
+  const next = [...kept, ...(kept.length ? [''] : []), ...missing, ''].join('\n');
+  writeFileSync(gitignorePath, next, 'utf8');
+  return { changed: true, summary: [`ensured ${missing.length} rem gitignore ignore(s): ${missing.join(', ')}`] };
 }
 
 export async function migrate(projectRoot) {
@@ -233,7 +247,14 @@ export async function migrate(projectRoot) {
     } catch { /* stamp failed — non-fatal */ }
   }
 
-  // Step 3: Clean up legacy state files
+  // Step 3: Remove retired task directories across all scopes
+  const taskCleanup = cleanupLegacyTasks(projectRoot);
+  if (taskCleanup.changed) {
+    changed = true;
+    summary.push(...taskCleanup.summary);
+  }
+
+  // Step 4: Clean up legacy state files
   for (const name of LEGACY_STATE_FILES) {
     const file = join(projectRoot, '.claude', name);
     if (existsSync(file)) {
@@ -243,7 +264,7 @@ export async function migrate(projectRoot) {
     }
   }
 
-  // Step 4: Ensure .gitignore covers rem-tracked .claude/ paths
+  // Step 5: Ensure .gitignore covers rem-tracked .claude/ paths
   const gitignore = ensureGitignore(projectRoot);
   if (gitignore.changed) {
     changed = true;
