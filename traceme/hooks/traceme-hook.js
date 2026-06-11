@@ -93,6 +93,16 @@ async function main() {
         } catch (e) {
           logError(`takeover trace ingest failed: ${e.message}`);
         }
+
+        // Push encrypted daily snapshot to sync repo (non-blocking)
+        try {
+          const { hasKey } = await import('../scripts/crypto.mjs');
+          if (hasKey()) {
+            const syncUrl = new URL('../scripts/sync.mjs', import.meta.url).href;
+            const { pushSnapshot } = await import(syncUrl);
+            await pushSnapshot();
+          }
+        } catch {} // never fail — observability must be invisible
         break;
       }
     }

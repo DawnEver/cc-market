@@ -1,12 +1,12 @@
 {
-  "description": "TraceMe observability hooks — capture session context, tool usage, prompt metadata, and parse transcript for token/cost data at session end.",
+  "description": "TraceMe observability hooks — capture session context, tool usage, prompt metadata, parse transcript for token/cost data, and push encrypted daily snapshot at session end.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ingest-hook.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
             "timeout": 5
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ingest-hook.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
             "timeout": 3
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ingest-hook.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
             "timeout": 3
           }
         ]
@@ -39,12 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ingest-hook.js\"",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-hook.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
             "timeout": 15
           }
         ]
@@ -55,12 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ingest-hook.js\"",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-hook.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/traceme-hook.js\"",
             "timeout": 15
           }
         ]

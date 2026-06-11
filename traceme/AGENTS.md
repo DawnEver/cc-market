@@ -17,8 +17,8 @@ SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
 
 | File | Role |
 |------|------|
-| `hooks/ingest-hook.js` | Reads stdin JSON, routes by event type, writes to DB |
-| `hooks/hooks.json` | Registers SessionStart, UserPromptSubmit, PreToolUse, SessionEnd |
+| `hooks/traceme-hook.js` | Reads stdin JSON, routes by event type, writes to DB; sync push at session end |
+| `hooks/hooks.json` | Registers SessionStart, UserPromptSubmit, PreToolUse, Stop, SessionEnd |
 | `scripts/db.mjs` | SQLite wrapper: schema, CRUD, queries |
 | `scripts/ingest.mjs` | Transcript JSONL parser: extracts api_request token/cost data |
 | `scripts/report.mjs` | Markdown report generator: per-project stats, top prompts, tool/skill usage |
@@ -29,9 +29,8 @@ SessionEnd → parse transcript JSONL, backfill token/cost, update daily summary
 
 ## Data Flow
 
-1. Hook → `ingest-hook.js` → `db.mjs` → `~/.claude/traceme/traceme.db`
-2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary.
-   SessionEnd → `sync-hook.js` → `sync.mjs` → push per-device file to main (no aggregate step needed)
+1. Hook → `traceme-hook.js` → `db.mjs` → `~/.claude/traceme/traceme.db`
+2. SessionEnd → `ingest.mjs` parses transcript → backfills token/cost → updates daily_summary, then `sync.mjs` pushes per-device file to main (no aggregate step needed)
 3. CLI/Skill → `report.mjs` → reads all device files in the date directory from cached `origin/main`, merges in memory; falls back to local SQLite (`db.mjs` queries) when no synced data exists for the date or `--local-only` is passed. Top Expensive Prompts is always local-only (prompt text is never synced).
 
 ## Multi-Device Encrypted Sync
@@ -84,10 +83,10 @@ cached `origin/main` ref by default (via `sync.readMergedSnapshot`) and merge in
 labeling output with the contributing devices. Pass `--local-only` to force local-SQLite-only
 output (e.g. before any sync has run, or to inspect just this device's data).
 
-Auto-sync: `hooks/sync-hook.js` fires on Stop/SessionEnd — pushes today's per-device snapshot
-directly to `main`. Report reads all device files in the date directory and merges in memory.
-No separate aggregate step needed. Remote resolves from `TRACEME_SYNC_REMOTE` env var, falling
-back to the sync repo's `origin` if unset.
+Auto-sync runs at the end of Stop/SessionEnd processing in `hooks/traceme-hook.js` — pushes
+today's per-device snapshot directly to `main`. Report reads all device files in the date
+directory and merges in memory. No separate aggregate step needed. Remote resolves from
+`TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's `origin` if unset.
 
 ### Key Files
 | File | Role |
@@ -95,7 +94,6 @@ back to the sync repo's `origin` if unset.
 | `scripts/crypto.mjs` | Zero-dep AES-256-GCM encryption (Node `crypto`, no external CLI) |
 | `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, verify, backfill, `readMergedSnapshot` |
 | `scripts/migrate-legacy-paths.mjs` | One-time, manual: re-paths existing remote `YYYY-MM-DD.enc` snapshots to `YYYY/MM/DD.enc`. Not part of the CLI — `node scripts/migrate-legacy-paths.mjs` |
-| `hooks/sync-hook.js` | Auto-sync hook: fires on session end, pushes today's per-device snapshot to `main` |
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
 | `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
 
