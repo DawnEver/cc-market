@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 // REM preparation script — runs before /rem skill, does all mechanical work:
 //   1. Show recent prune events from unified state
-//   2. Scan transcript for .claude/memory/ file reads → batch bump accessed
-//   3. For touched files, check git log commit frequency → suggest promotions
+//   2. Scan transcript for .claude/memory/ file reads → batch bump accessed (in state)
+//   3. For touched files, check access count → suggest promotions
 //   4. Check if compact is needed
 //
 // Usage: node rem-prep.js [--transcript <path>] [--promote]
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
-  scopeMemoryDir, scopeIndexFile, findAllScopes, loadState,
-  todayISO, bumpAccessed, getTier, getAccessCount, setField, MAX_ENTRIES,
-  resolveMemoryPath, isInsideMemoryDir, updateIndexAccessed,
+  scopeIndexFile, findAllScopes, loadState,
+  todayISO, bumpAccessed, getMemoryMeta, saveMemoryMeta, MAX_ENTRIES, rebuildIndex,
 } from '../lib.mjs';
 
 const args = process.argv.slice(2);
@@ -61,29 +60,20 @@ if (transcriptPath && existsSync(transcriptPath)) {
   } catch { /* transcript parse error — skip */ }
 }
 
+const touchedScopes = new Set();
+
 if (touchedFiles.size === 0) {
   console.log('  (no memory files read this session)');
 } else {
   const scopes = findAllScopes();
   for (const f of touchedFiles) {
-    // Search all scopes for the file
     let found = false;
     for (const scope of scopes) {
       const memFile = join(scope, '.claude', 'memory', f);
       if (!existsSync(memFile)) continue;
       found = true;
-      let content = readFileSync(memFile, 'utf8');
-      content = bumpAccessed(content, today);
-      writeFileSync(memFile, content, 'utf8');
-      // Update that scope's index
-      const idxFile = join(scope, '.claude', 'rules', 'MEMORY.md');
-      if (existsSync(idxFile)) {
-        const origIdx = readFileSync(idxFile, 'utf8');
-        const newIdx = updateIndexAccessed(origIdx, f, today);
-        if (newIdx !== null && newIdx !== origIdx) {
-          writeFileSync(idxFile, newIdx, 'utf8');
-        }
-      }
+      bumpAccessed(scope, f, today);
+      touchedScopes.add(scope);
       console.log(`  ✓ ${f} → accessed: ${today} (${scope === process.env.CLAUDE_PROJECT_DIR ? 'global' : 'scoped'})`);
       break;
     }
@@ -105,7 +95,7 @@ if (transcriptPath && existsSync(transcriptPath)) {
       const text = JSON.stringify(entry);
       let m;
       while ((m = SR_RE.exec(text)) !== null) {
-        const dateStr = m[1]; // YYYYMMDD
+        const dateStr = m[1];
         const dateDir = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
         touchedSRIds.add({ id: m[0], dateDir, seq: m[3] });
       }
@@ -123,11 +113,11 @@ if (touchedSRIds.size === 0) {
 
     for (const scope of scopes) {
       const scopeMem = join(scope, '.claude', 'memory');
-      const expectedPath = join(scopeMem, dateDir, filename);
+      const expectedPath = join(scopeMem, dateDir.replace(/-/g, '/'), filename);
       if (existsSync(expectedPath)) {
         found = true;
       } else {
-        // Fallback: search all date directories in this scope
+        // Fallback: search all date directories
         try {
           for (const dirEntry of readdirSync(scopeMem, { withFileTypes: true })) {
             if (!dirEntry.isDirectory() || dirEntry.name.startsWith('.') || dirEntry.name === 'tasks') continue;
@@ -137,20 +127,11 @@ if (touchedSRIds.size === 0) {
       }
 
       if (found) {
-        const relPath = `${dateDir}/${filename}`;
+        const relPath = `${dateDir.replace(/-/g, '/')}/${filename}`;
         const memFile = join(scopeMem, relPath);
         if (existsSync(memFile)) {
-          let content = readFileSync(memFile, 'utf8');
-          content = bumpAccessed(content, today);
-          writeFileSync(memFile, content, 'utf8');
-          const idxFile = join(scope, '.claude', 'rules', 'MEMORY.md');
-          if (existsSync(idxFile)) {
-            const origIdx = readFileSync(idxFile, 'utf8');
-            const newIdx = updateIndexAccessed(origIdx, relPath, today);
-            if (newIdx !== null && newIdx !== origIdx) {
-              writeFileSync(idxFile, newIdx, 'utf8');
-            }
-          }
+          bumpAccessed(scope, relPath, today);
+          touchedScopes.add(scope);
           console.log(`  ✓ ${id} → accessed: ${today}`);
         }
         break;
@@ -163,10 +144,10 @@ if (touchedSRIds.size === 0) {
 // ── 3. Promotion suggestions ──
 console.log('\n─── Promotion candidates ──');
 let promoted = 0;
-const allScopes = findAllScopes();
+const allScopesForPromo = findAllScopes();
 
 function findInScopes(relPath) {
-  for (const scope of allScopes) {
+  for (const scope of allScopesForPromo) {
     const p = join(scope, '.claude', 'memory', relPath);
     if (existsSync(p)) return { file: p, scope };
   }
@@ -176,20 +157,17 @@ function findInScopes(relPath) {
 for (const f of touchedFiles) {
   const found = findInScopes(f);
   if (!found) continue;
-  const { file: memFile } = found;
+  const { scope } = found;
 
-  const content = readFileSync(memFile, 'utf8');
-  const currentTier = getTier(content);
-  if (currentTier === 'long') continue;
+  const meta = getMemoryMeta(scope, f);
+  if (meta.tier === 'long') continue;
+  if (meta.dropped) continue;
 
-  const accessCount = getAccessCount(content);
-  if (accessCount >= 3) {
-    console.log(`  ↑ ${f} (accessed ${accessCount}x, currently ${currentTier})`);
+  if (meta.count >= 3) {
+    console.log(`  ↑ ${f} (accessed ${meta.count}x, currently ${meta.tier})`);
     if (autoPromote) {
-      let c = content;
-      c = setField(c, 'accessed', today);
-      c = setField(c, 'tier', 'long');
-      writeFileSync(memFile, c, 'utf8');
+      saveMemoryMeta(scope, f, { tier: 'long' });
+      touchedScopes.add(scope);
       promoted++;
     }
   }
@@ -198,22 +176,20 @@ for (const f of touchedFiles) {
 // Also check SR-ID memory files for promotion
 if (touchedSRIds.size > 0) {
   for (const { id, dateDir } of touchedSRIds) {
-    const relPath = `${dateDir}/${id}.md`;
+    const relPath = `${dateDir.replace(/-/g, '/')}/${id}.md`;
     const found = findInScopes(relPath);
     if (!found) continue;
-    const { file: memFile } = found;
-    const content = readFileSync(memFile, 'utf8');
-    const currentTier = getTier(content);
-    if (currentTier === 'long') continue;
+    const { scope } = found;
 
-    const accessCount = getAccessCount(content);
-    if (accessCount >= 3) {
-      console.log(`  ↑ ${id} → promotion candidate (accessed ${accessCount}x, currently ${currentTier})`);
+    const meta = getMemoryMeta(scope, relPath);
+    if (meta.tier === 'long') continue;
+    if (meta.dropped) continue;
+
+    if (meta.count >= 3) {
+      console.log(`  ↑ ${id} → promotion candidate (accessed ${meta.count}x, currently ${meta.tier})`);
       if (autoPromote) {
-        let c = content;
-        c = setField(c, 'accessed', today);
-        c = setField(c, 'tier', 'long');
-        writeFileSync(memFile, c, 'utf8');
+        saveMemoryMeta(scope, relPath, { tier: 'long' });
+        touchedScopes.add(scope);
         promoted++;
       }
     }
@@ -229,14 +205,21 @@ if (promoted > 0) {
 // ── 4. Compact check ──
 console.log('\n─── Compact status ──');
 if (existsSync(scopeIndexFile)) {
-  const entries = readFileSync(scopeIndexFile, 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
-  if (entries.length >= MAX_ENTRIES) {
-    console.log(`  ⚠ ${entries.length} entries — compact recommended`);
-  } else {
-    console.log(`  ✓ ${entries.length} entries (<${MAX_ENTRIES}) — no compact needed`);
-  }
+  try {
+    const entries = readFileSync(scopeIndexFile, 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
+    if (entries.length >= MAX_ENTRIES) {
+      console.log(`  ⚠ ${entries.length} entries — compact recommended`);
+    } else {
+      console.log(`  ✓ ${entries.length} entries (<${MAX_ENTRIES}) — no compact needed`);
+    }
+  } catch { console.log('  (error reading MEMORY.md)'); }
 } else {
   console.log('  (no MEMORY.md yet)');
+}
+
+// Rebuild index for all touched scopes
+for (const scope of touchedScopes) {
+  rebuildIndex(scope);
 }
 
 console.log('\n[rem-prep] done');

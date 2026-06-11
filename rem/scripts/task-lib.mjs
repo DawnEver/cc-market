@@ -2,9 +2,10 @@
 // Used by task-engine.js (CLI) and callable from post-review.js / tests.
 
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { DAY_MS } from '../lib.mjs';
-import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown, todayISO } from '../shared/lib.mjs';
+import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown } from '../shared/lib.mjs';
+import { findAllScopes, extractDateFromPath } from '../lib.mjs';
 
 // ── Paths ──
 
@@ -173,6 +174,97 @@ export function scanManualTasks(memDir) {
   return tasks;
 }
 
+// ── Multi-scope scanning ──
+
+export function scanAllScopes() {
+  const scopes = findAllScopes();
+  const allFindings = [];
+  const allManual = [];
+
+  for (const scope of scopes) {
+    const memDir = join(scope, '.claude', 'memory');
+    const findings = scanMemoryForFindings(memDir);
+    const manual = scanManualTasks(memDir);
+
+    for (const f of findings) f._scopeRoot = scope;
+    for (const t of manual) t._scopeRoot = scope;
+
+    allFindings.push(...findings);
+    allManual.push(...manual);
+  }
+
+  return { findings: allFindings, manual: allManual };
+}
+
+export function formatScopeReport(allFindings, allManual, today) {
+  const lines = [];
+  const PREFIX = '[task-engine]';
+
+  // Group by scope
+  const byScope = new Map();
+  for (const f of allFindings) {
+    const scope = f._scopeRoot;
+    if (!byScope.has(scope)) byScope.set(scope, { findings: [], manual: [] });
+    byScope.get(scope).findings.push(f);
+  }
+  for (const t of allManual) {
+    const scope = t._scopeRoot;
+    if (!byScope.has(scope)) byScope.set(scope, { findings: [], manual: [] });
+    byScope.get(scope).manual.push(t);
+  }
+
+  if (byScope.size === 0) {
+    lines.push(`${PREFIX} No tasks found`);
+    return lines.join('\n');
+  }
+
+  let totalOpen = 0;
+  let totalFindings = 0;
+  let totalManual = 0;
+
+  for (const [scope, { findings, manual }] of byScope) {
+    const scopeRel = relative(ROOT, scope).replace(/\\/g, '/') || '.';
+    const allOpen = [
+      ...findings.filter(f => f.status === 'open'),
+      ...manual.filter(t => t.status === 'open'),
+    ];
+
+    if (allOpen.length === 0 && findings.length === 0 && manual.length === 0) continue;
+
+    totalOpen += allOpen.length;
+    totalFindings += findings.length;
+    totalManual += manual.length;
+
+    lines.push(`${PREFIX} scope: ${scopeRel} (${allOpen.length} open)`);
+
+    if (allOpen.length > 0) {
+      const byMod = groupByModule(allOpen);
+      const sorted = [...byMod].sort(([a], [b]) => a.localeCompare(b));
+
+      for (const [mod, items] of sorted) {
+        lines.push(`  ## ${mod}`);
+        for (const f of items) {
+          const stale = isStale(f, today) ? ' ⚠ stale' : '';
+          const likely = checkFileModified(f, today) ? ' ⚠ likely-resolved' : '';
+          lines.push(`  - [ ] ${f.id} [${f.severity}] ${f.summary} (${f.discovered})${stale}${likely}`);
+        }
+      }
+    }
+    lines.push('');
+  }
+
+  const scopeCount = [...byScope].filter(([_, v]) =>
+    v.findings.length > 0 || v.manual.length > 0
+  ).length;
+
+  const parts = [];
+  if (totalFindings > 0) parts.push(`${totalFindings} findings`);
+  if (totalManual > 0) parts.push(`${totalManual} manual`);
+  lines.push(`${PREFIX} total: ${totalOpen} open${parts.length > 0 ? ` (${parts.join(', ')})` : ''} across ${scopeCount} scope${scopeCount !== 1 ? 's' : ''}`);
+
+  return lines.join('\n');
+}
+
 // ── Mark status (open/fixed/closed) ──
 
 const VALID_STATUSES = ['open', 'fixed', 'closed'];
@@ -190,7 +282,7 @@ function walkFiles(dir, fileName, visit) {
   return false;
 }
 
-function markSRFinding(memDir, id, status, today) {
+function markSRFinding(memDir, id, status) {
   let target = null;
   walkFiles(memDir, 'sharp-review.md', full => {
     const content = readFileSync(full, 'utf8');
@@ -206,12 +298,12 @@ function markSRFinding(memDir, id, status, today) {
 
   if (!target) return { found: false, error: `Finding ${id} not found in any sharp-review.md` };
 
-  // Re-derive frontmatter and archive newly-fixed findings
-  const date = todayISO(today);
+  // Re-derive frontmatter — use path date, not today
   const content = readFileSync(target, 'utf8');
-  const findings = parseFindingsFromMarkdown(content, date);
+  const pathDate = extractDateFromPath(target);
+  const findings = parseFindingsFromMarkdown(content, pathDate);
   if (findings.length > 0) {
-    const updatedFrontmatter = reviewFrontmatter(findings, date);
+    const updatedFrontmatter = reviewFrontmatter(findings, pathDate);
     const body = content.slice(content.indexOf('\n---\n') + 5);
     writeFileSync(target, `${updatedFrontmatter}\n${body}`, 'utf8');
   }
@@ -238,15 +330,12 @@ function markManualTask(memDir, id, status) {
   return { found: true, file: target, id, status };
 }
 
-// Mark a finding (SR-* or MANUAL-*) as open / fixed / closed.
-// SR-fixed also re-derives frontmatter and archives the finding.
-export function markFinding(memDir, id, status, today) {
+export function markFinding(memDir, id, status) {
   const norm = (status || '').toLowerCase();
   if (!VALID_STATUSES.includes(norm)) {
     return { found: false, error: `Invalid status: ${status} (expected open|fixed|closed)` };
   }
-  if (id.startsWith('SR-')) return markSRFinding(memDir, id, norm, today);
+  if (id.startsWith('SR-')) return markSRFinding(memDir, id, norm);
   if (id.startsWith('MANUAL-')) return markManualTask(memDir, id, norm);
   return { found: false, error: `Unknown ID format: ${id} (expected SR-* or MANUAL-* ID)` };
 }
-

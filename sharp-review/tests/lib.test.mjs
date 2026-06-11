@@ -84,8 +84,7 @@ describe('reviewFrontmatter', () => {
     const fm = reviewFrontmatter(findings, '2026-06-07');
     assert.ok(fm.includes('name: sharp-review-2026-06-07'));
     assert.ok(fm.includes('3 total'));
-    assert.ok(fm.includes('created: 2026-06-07'));
-    assert.ok(fm.includes('tier: short'));
+    assert.ok(fm.includes('name: sharp-review-2026-06-07'));
   });
 
   it('handles empty findings', () => {

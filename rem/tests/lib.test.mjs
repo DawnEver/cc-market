@@ -12,7 +12,6 @@ import os from "node:os";
 import {
   parseIndexEntry,
   formatIndexEntry,
-  updateIndexAccessed,
   parseIndex,
   INDEX_HEADER,
   MAX_ENTRIES,
@@ -67,40 +66,6 @@ describe("formatIndexEntry", () => {
   });
 });
 
-describe("updateIndexAccessed", () => {
-  test("updates accessed date in matching entry", () => {
-    const index = [
-      "# Memory Index",
-      "",
-      "- [2026-06-03 Test Entry](../memory/2026/06/03/test-entry.md) — `created: 2026-06-03, accessed: 2026-06-01`",
-      "- [2026-06-02 Other](../memory/2026/06/02/other.md) — `created: 2026-06-02, accessed: 2026-06-02`",
-      "",
-    ].join("\n");
-    const result = updateIndexAccessed(index, "2026/06/03/test-entry.md", "2026-06-03");
-    assert.notEqual(result, null);
-    assert.ok(result.includes("accessed: 2026-06-03"));
-    assert.ok(!result.includes("accessed: 2026-06-01"));
-    // Other entry unchanged
-    assert.ok(result.includes("accessed: 2026-06-02"));
-  });
-
-  test("returns null when path not found in index", () => {
-    const index = [
-      "# Memory Index",
-      "- [2026-06-03 Test](../memory/2026/06/03/test.md) — `created: 2026-06-03, accessed: 2026-06-03`",
-    ].join("\n");
-    assert.equal(updateIndexAccessed(index, "nonexistent/file.md", "2026-06-03"), null);
-  });
-
-  test("handles paths with regex special characters", () => {
-    const index = [
-      "- [2026-06-03 Special+Chars](../memory/2026/06/03/special+chars.md) — `created: 2026-06-03, accessed: 2026-06-01`",
-    ].join("\n");
-    const result = updateIndexAccessed(index, "2026/06/03/special+chars.md", "2026-06-03");
-    assert.notEqual(result, null);
-    assert.ok(result.includes("accessed: 2026-06-03"));
-  });
-});
 
 describe("parseIndex", () => {
   test("separates header and entries", () => {

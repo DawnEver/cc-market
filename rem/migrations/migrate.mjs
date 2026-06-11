@@ -2,27 +2,27 @@
 // Idempotent — safe to re-run; no-op once a project is current.
 //
 // Folds in past breaking changes:
-//   - memory frontmatter (name/description/created/accessed/tier) + dated YYYY/MM/DD dirs
-//     (delegated to stamp-memory.js, which already does this idempotently)
+//   - volatile frontmatter fields (created/accessed/access_count/tier) → _meta.json per date dir
 //   - flat YYYY-MM-DD/ memory directories → nested YYYY/MM/DD/ (migrateFlatDirs)
 //   - legacy .claude/memory/tasks/** directories cleaned up
-//   - removal of stray state files left behind by plugins predating rem
-//     (e.g. .claude/.retro_state.json, superseded by .claude/.rem-state.json)
+//   - stray state files left behind by plugins predating rem
+//   - rebuildIndex for all scopes after migration
 
-import { existsSync, rmSync, mkdirSync, readdirSync, renameSync } from 'fs';
+import { existsSync, rmSync, mkdirSync, readdirSync, renameSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Stray .claude/ files left behind by plugins predating rem — safe to delete,
-// their data has no successor format and was never load-bearing.
+// Stray .claude/ files left behind by plugins predating rem
 const LEGACY_STATE_FILES = ['.retro_state.json'];
 
-// Regex for flat YYYY-MM-DD directory names (legacy, must be migrated to nested YYYY/MM/DD/)
+// Regex for flat YYYY-MM-DD directory names
 const FLAT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Volatile frontmatter fields to strip → move to _meta.json
+const VOLATILE_FIELDS = ['created', 'accessed', 'access_count', 'tier'];
 
 function migrateFlatDirs(projectRoot) {
   const memoryDir = join(projectRoot, '.claude', 'memory');
@@ -48,36 +48,153 @@ function migrateFlatDirs(projectRoot) {
   };
 }
 
+function findAllMemoryScopes(root) {
+  const scopes = [root];
+  function walk(dir, depth) {
+    if (depth > 4) return;
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          const sub = join(dir, entry.name);
+          if (existsSync(join(sub, '.claude', 'memory'))) scopes.push(sub);
+          walk(sub, depth + 1);
+        }
+      }
+    } catch { /* permissions */ }
+  }
+  walk(root, 0);
+  return scopes;
+}
+
+function extractDateFromPath(filePath) {
+  const m = filePath.match(/(\d{4})[\/\\](\d{2})[\/\\](\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+
+function migrateVolatileFrontmatter(projectRoot) {
+  const summary = [];
+  let changed = false;
+  const scopes = findAllMemoryScopes(projectRoot);
+
+  for (const scope of scopes) {
+    const memDir = join(scope, '.claude', 'memory');
+    if (!existsSync(memDir)) continue;
+
+    const metaByDate = new Map(); // dateStr → { slug: meta }
+
+    function walk(dir) {
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.name.startsWith('.')) continue;
+          const full = join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (entry.name === 'tasks') continue;
+            walk(full);
+          } else if (entry.name.endsWith('.md')) {
+            const content = readFileSync(full, 'utf8');
+            let hasVolatile = false;
+            let accessed = null, count = 1, tier = 'short', created = null;
+
+            // Check for volatile fields in frontmatter
+            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            if (fmMatch) {
+              const fm = fmMatch[1];
+              for (const line of fm.split('\n')) {
+                const kv = line.match(/^(\w+):\s*(.*)/);
+                if (!kv) continue;
+                if (kv[1] === 'accessed') { accessed = kv[2].trim(); hasVolatile = true; }
+                if (kv[1] === 'access_count') { count = parseInt(kv[2].trim(), 10) || 1; hasVolatile = true; }
+                if (kv[1] === 'tier') { tier = kv[2].trim(); hasVolatile = true; }
+                if (kv[1] === 'created') { created = kv[2].trim(); hasVolatile = true; }
+              }
+            }
+
+            const dateStr = extractDateFromPath(full) || (created || '1970-01-01');
+            const slug = entry.name;
+
+            if (!metaByDate.has(dateStr)) metaByDate.set(dateStr, {});
+            metaByDate.get(dateStr)[slug] = {
+              accessed: accessed || dateStr,
+              count,
+              tier,
+            };
+
+            // Strip volatile fields from frontmatter
+            if (hasVolatile) {
+              let updated = content;
+              for (const field of VOLATILE_FIELDS) {
+                updated = updated.replace(new RegExp(`^${field}:.*\n?`, 'm'), '');
+              }
+              writeFileSync(full, updated, 'utf8');
+              changed = true;
+            }
+          }
+        }
+      } catch { /* permissions */ }
+    }
+    walk(memDir);
+
+    // Also handle files on disk not in index → mark as pre-migration-evicted
+    // (we don't have old index to compare against, so check existing _meta.json)
+    for (const [dateStr, entries] of metaByDate) {
+      const [y, m, d] = dateStr.split('-');
+      const metaFile = join(memDir, y, m, d, '_meta.json');
+
+      let existing = {};
+      if (existsSync(metaFile)) {
+        try { existing = JSON.parse(readFileSync(metaFile, 'utf8')); } catch { /* start fresh */ }
+      }
+
+      // Merge: don't overwrite existing entries
+      for (const [slug, meta] of Object.entries(entries)) {
+        if (!existing[slug]) {
+          existing[slug] = meta;
+        }
+      }
+
+      if (Object.keys(entries).length > 0) {
+        mkdirSync(dirname(metaFile), { recursive: true });
+        writeFileSync(metaFile, JSON.stringify(existing, null, 2), 'utf8');
+      }
+    }
+  }
+
+  if (changed) summary.push('migrated volatile frontmatter fields to _meta.json per scope');
+  return { changed, summary };
+}
+
 export async function migrate(projectRoot) {
   const summary = [];
   let changed = false;
 
-  // Step 1: Migrate flat YYYY-MM-DD/ memory dirs → nested YYYY/MM/DD/ (before stamp-memory
-  // re-indexes them — so stamp-memory sees the correct nested paths).
+  // Step 0: Migrate volatile frontmatter → _meta.json (before stamp rebuilds index)
+  const volatileMigration = migrateVolatileFrontmatter(projectRoot);
+  if (volatileMigration.changed) {
+    changed = true;
+    summary.push(...volatileMigration.summary);
+  }
+
+  // Step 1: Migrate flat YYYY-MM-DD/ memory dirs → nested YYYY/MM/DD/
   const flatMigration = migrateFlatDirs(projectRoot);
   if (flatMigration.changed) {
     changed = true;
     summary.push(...flatMigration.summary);
   }
 
+  // Step 2: Run stamp-memory to rebuild indexes
   const stampScript = join(__dirname, '..', 'scripts', 'stamp-memory.js');
   if (existsSync(stampScript) && existsSync(join(projectRoot, '.claude'))) {
-    const out = execFileSync('node', [stampScript], { cwd: projectRoot, encoding: 'utf8' });
-    const stamped = out.match(/\[stamp-memory\]\s+(\d+)\s+stamped/);
-    if (stamped && Number(stamped[1]) > 0) {
-      changed = true;
-      summary.push(`stamped ${stamped[1]} memory file(s) with missing frontmatter`);
-    }
-    if (/\[stamp-memory\]\s+added\s+\d+\s+entries/.test(out)) {
-      changed = true;
-      summary.push('added newly-discovered memory files to MEMORY.md index');
-    }
-    if (/\[stamp-memory\]\s+removed\s+\d+\s+broken entries/.test(out)) {
-      changed = true;
-      summary.push('removed broken entries from MEMORY.md index');
-    }
+    try {
+      const out = execFileSync('node', [stampScript], { cwd: projectRoot, encoding: 'utf8' });
+      if (/\[stamp-memory\]/.test(out)) {
+        changed = true;
+        summary.push('rebuilt MEMORY.md indexes for all scopes');
+      }
+    } catch { /* stamp failed — non-fatal */ }
   }
 
+  // Step 3: Clean up legacy state files
   for (const name of LEGACY_STATE_FILES) {
     const file = join(projectRoot, '.claude', name);
     if (existsSync(file)) {

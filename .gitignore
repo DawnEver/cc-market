@@ -2,3 +2,5 @@
 .claude/*
 !.claude/rules/
 !.claude/memory/
+**/.claude/rules/MEMORY.md
+**/_meta.json

@@ -232,9 +232,6 @@ describe("scanMemoryForFindings", () => {
       "description: Sharp review findings — 2 total",
       "metadata:",
       "  type: project",
-      "created: 2026-06-09",
-      "accessed: 2026-06-09",
-      "tier: short",
       "---",
       "",
       "## Review 2026-06-09",
@@ -375,9 +372,6 @@ describe("markFinding", () => {
       "description: Sharp review findings — 1 total",
       "metadata:",
       "  type: project",
-      "created: 2026-06-09",
-      "accessed: 2026-06-09",
-      "tier: short",
       "---",
       "",
       "### [SR-20260609-901] [HIGH] test/file.js — A serious bug",
@@ -387,7 +381,7 @@ describe("markFinding", () => {
       "- **Suggestion:** Fix it",
     ].join("\n"), "utf8");
 
-    const result = markFinding(tmpDir, "SR-20260609-901", "fixed", "2026-06-09");
+    const result = markFinding(tmpDir, "SR-20260609-901", "fixed");
     assert.equal(result.found, true);
     assert.equal(result.file, file);
 
@@ -402,7 +396,7 @@ describe("markFinding", () => {
       "- **Status:** FIXED",
     ].join("\n"), "utf8");
 
-    const result = markFinding(tmpDir, "SR-20260609-901", "open", "2026-06-09");
+    const result = markFinding(tmpDir, "SR-20260609-901", "open");
     assert.equal(result.found, true);
     assert.match(fs.readFileSync(file, "utf8"), /\*\*Status:\*\*\s*OPEN/);
   });
@@ -414,7 +408,7 @@ describe("markFinding", () => {
       "- **Status:** OPEN",
     ].join("\n"), "utf8");
 
-    const result = markFinding(tmpDir, "SR-20260609-999", "fixed", "2026-06-09");
+    const result = markFinding(tmpDir, "SR-20260609-999", "fixed");
     assert.equal(result.found, false);
     assert.match(result.error, /not found/);
   });
@@ -425,23 +419,23 @@ describe("markFinding", () => {
     const file = path.join(dayDir, "manual.md");
     fs.writeFileSync(file, "- [ ] MANUAL-20260609-001 [LOW] Write docs (2026-06-09)\n", "utf8");
 
-    const fixed = markFinding(tmpDir, "MANUAL-20260609-001", "fixed", "2026-06-09");
+    const fixed = markFinding(tmpDir, "MANUAL-20260609-001", "fixed");
     assert.equal(fixed.found, true);
     assert.match(fs.readFileSync(file, "utf8"), /- \[x\] MANUAL-20260609-001/);
 
-    const reopened = markFinding(tmpDir, "MANUAL-20260609-001", "open", "2026-06-09");
+    const reopened = markFinding(tmpDir, "MANUAL-20260609-001", "open");
     assert.equal(reopened.found, true);
     assert.match(fs.readFileSync(file, "utf8"), /- \[ \] MANUAL-20260609-001/);
   });
 
   test("rejects invalid status", () => {
-    const result = markFinding(tmpDir, "SR-20260609-901", "wat", "2026-06-09");
+    const result = markFinding(tmpDir, "SR-20260609-901", "wat");
     assert.equal(result.found, false);
     assert.match(result.error, /Invalid status/);
   });
 
   test("rejects unknown id format", () => {
-    const result = markFinding(tmpDir, "FOO-001", "fixed", "2026-06-09");
+    const result = markFinding(tmpDir, "FOO-001", "fixed");
     assert.equal(result.found, false);
     assert.match(result.error, /Unknown ID format/);
   });

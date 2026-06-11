@@ -21,25 +21,7 @@ describe('rem migrate()', () => {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  test('stamps memory files missing frontmatter fields via stamp-memory', async () => {
-    const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
-    fs.mkdirSync(dayDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dayDir, 'example.md'),
-      '---\nname: example\ndescription: an example memory\n---\n\nbody\n',
-    );
-
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('stamped')));
-    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
-    assert.match(content, /^created:/m);
-    assert.match(content, /^accessed:/m);
-    assert.match(content, /^tier:/m);
-  });
-
-  test('is a no-op (changed: false) once a project is current', async () => {
+  test('strips volatile fields and imports into _meta.json', async () => {
     const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
     fs.mkdirSync(dayDir, { recursive: true });
     fs.writeFileSync(
@@ -47,11 +29,41 @@ describe('rem migrate()', () => {
       '---\nname: example\ndescription: an example memory\ncreated: 2026-06-10\naccessed: 2026-06-10\ntier: short\n---\n\nbody\n',
     );
 
-    await migrate(projectRoot); // first pass creates the index, etc.
-    const { changed, summary } = await migrate(projectRoot); // second pass should be a no-op
+    const { changed } = await migrate(projectRoot);
 
-    assert.equal(changed, false);
-    assert.deepEqual(summary, []);
+    assert.equal(changed, true);
+    // Volatile fields stripped from frontmatter
+    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
+    assert.equal(content.includes('created:'), false);
+    assert.equal(content.includes('accessed:'), false);
+    assert.equal(content.includes('tier:'), false);
+    // _meta.json created with migrated data
+    const metaFile = path.join(dayDir, '_meta.json');
+    assert.equal(fs.existsSync(metaFile), true);
+    const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+    assert.ok(meta['example.md']);
+    assert.equal(meta['example.md'].tier, 'short');
+  });
+
+  test('is idempotent — second run does not re-import already migrated fields', async () => {
+    const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
+    fs.mkdirSync(dayDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dayDir, 'example.md'),
+      '---\nname: example\ndescription: an example memory\ncreated: 2026-06-10\naccessed: 2026-06-10\ntier: short\n---\n\nbody\n',
+    );
+
+    await migrate(projectRoot);
+    // Second run: volatile fields already stripped, _meta.json already exists
+    await migrate(projectRoot);
+
+    // frontmatter should still be clean
+    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
+    assert.equal(content.includes('created:'), false);
+    assert.equal(content.includes('accessed:'), false);
+    // _meta.json still intact
+    const meta = JSON.parse(fs.readFileSync(path.join(dayDir, '_meta.json'), 'utf8'));
+    assert.ok(meta['example.md']);
   });
 
   test('returns no-op when .claude/ does not exist', async () => {
