@@ -110,6 +110,11 @@ export class CodexAppServerClient {
     }
   }
 
+  clearNotifications(method) {
+    if (method) this.notificationHandlers.delete(method);
+    else this.notificationHandlers.clear();
+  }
+
   async stop() {
     if (this._closed) return;
     try { await this.send("shutdown", {}); } catch {}
@@ -140,4 +145,39 @@ export class CodexAppServerClient {
       for (const h of handlers) h(msg.params);
     }
   }
+}
+
+// ── Shared client singleton ─────────────────────────────────────────
+
+let _sharedClient = null;
+let _lock = Promise.resolve();
+
+export async function getSharedClient(opts = {}) {
+  if (!_sharedClient || _sharedClient._closed) {
+    _sharedClient = new CodexAppServerClient(opts);
+    await _sharedClient.start();
+  }
+  return _sharedClient;
+}
+
+export async function resetSharedClient() {
+  if (_sharedClient && !_sharedClient._closed) {
+    try { await _sharedClient.stop(); } catch {}
+  }
+  _sharedClient = null;
+}
+
+export function withSharedClient(fn) {
+  const prev = _lock;
+  let release;
+  _lock = new Promise(resolve => { release = resolve; });
+
+  return prev.then(async () => {
+    try {
+      const client = await getSharedClient();
+      return await fn(client);
+    } finally {
+      release();
+    }
+  });
 }

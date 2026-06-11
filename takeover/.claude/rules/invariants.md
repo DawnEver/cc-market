@@ -50,6 +50,10 @@ Always-injected behavioral constraints for working on the takeover plugin.
 - `--provider X` → provider override
 - `--model X` → model override
 
+## Codex + Foundry
+
+Codex uses OpenAI API protocol internally (auth via `codex login`, not API keys). Foundry is an Anthropic API proxy concept (`ANTHROPIC_FOUNDRY_BASE_URL` / `ANTHROPIC_FOUNDRY_API_KEY`). These are incompatible protocols. `loadProviderConfig("codex")` always returns `{ native: true }` — no config read, no Foundry routing. Configure codex proxy at the CLI level (`codex config`), not through takeover's provider config.
+
 ## Tests
 
 Run: `node --test cc-market/takeover/tests/*.test.mjs`. Pre-commit hook enforces.

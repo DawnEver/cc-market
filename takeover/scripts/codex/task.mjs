@@ -1,8 +1,15 @@
 import { CodexAppServerClient } from "./app-server.mjs";
 
-export async function runCodexTask(prompt, systemPrompt, model, write = false, cwd, onProgress, images = null) {
-  const client = new CodexAppServerClient({ timeout: 600000 });
-  await client.start();
+export async function runCodexTask(prompt, systemPrompt, model, write = false, cwd, onProgress, images = null, client = null) {
+  const ownClient = !client;
+  if (ownClient) {
+    client = new CodexAppServerClient({ timeout: 600000 });
+    await client.start();
+  } else {
+    client.clearNotifications("turn/completed");
+    client.clearNotifications("thread/started");
+    client.clearNotifications("item/completed");
+  }
 
   const result = { text: "", threadId: null, turnId: null, usage: null };
 
@@ -59,11 +66,17 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     );
     await Promise.race([turnDone, timeout]);
   } catch (err) {
-    await client.stop();
+    client.clearNotifications("turn/completed");
+    client.clearNotifications("thread/started");
+    client.clearNotifications("item/completed");
+    if (ownClient) await client.stop();
     throw err;
   }
 
-  await client.stop();
+  client.clearNotifications("turn/completed");
+  client.clearNotifications("thread/started");
+  client.clearNotifications("item/completed");
+  if (ownClient) await client.stop();
   return {
     content: [{ type: "text", text: result.text.trim() || "(no output)" }],
     threadId: result.threadId,

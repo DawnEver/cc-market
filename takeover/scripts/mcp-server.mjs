@@ -13,11 +13,11 @@ import {
   parseCommandBlock,
   callAnthropicAPI,
   callCodexCompanion,
-  callNativeClaude,
-  callAgentMode,
+  spawnClaudeP,
   emitTakeoverTrace,
   checkCodexStatus,
 } from "./lib.mjs";
+import { withSharedClient } from "./codex/app-server.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginJson = JSON.parse(readFileSync(join(__dirname, "..", ".claude-plugin", "plugin.json"), "utf8"));
@@ -190,9 +190,10 @@ export async function handleCallModel(args) {
     process.stderr.write(`mcp-takeover: agent mode — provider=${provider} model=${model || '(none)'}\n`);
     let data;
     if (providerConfig.provider === 'codex') {
-      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, resolvedImages.length > 0 ? resolvedImages : null);
+      data = await withSharedClient(client =>
+        callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, resolvedImages.length > 0 ? resolvedImages : null, client));
     } else {
-      data = await callAgentMode(provider, userPrompt, systemPrompt, model || null, resolvedImages.length > 0 ? resolvedImages : null);
+      data = await spawnClaudeP(userPrompt, { provider, model: model || null, systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null });
     }
     return { content: [{ type: 'text', text: extractText(data) }] };
   }
@@ -214,30 +215,26 @@ export async function handleCallModel(args) {
     if (mode === "review") {
       process.stderr.write(`mcp-takeover: codex review (adversarial)...\n`);
       const { runCodexReview } = await import("./codex/review.mjs");
-      data = await runCodexReview(promptWithImages, model || null, null, process.cwd());
+      data = await withSharedClient(client =>
+        runCodexReview(promptWithImages, model || null, null, process.cwd(), client));
     } else if (mode === "image-generate") {
       process.stderr.write(`mcp-takeover: codex image generate...\n`);
       const { generateImage } = await import("./codex/image.mjs");
       data = await generateImage(userPrompt);
     } else if (mode === "image-edit") {
       process.stderr.write(`mcp-takeover: codex image edit...\n`);
-      const { editImage } = await import("./codex/image.mjs");
-      const imagePath = systemPrompt || userPrompt.split(/\s+/)[0];
-      const editPrompt = systemPrompt ? userPrompt : userPrompt.replace(/^\S+\s*/, "");
-      data = await editImage(editPrompt, imagePath);
+      const { handleImageEdit } = await import("./codex/image.mjs");
+      data = await handleImageEdit(userPrompt, systemPrompt);
     } else {
       process.stderr.write(
         `mcp-takeover: calling codex (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`
       );
-      data = await callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, hasImages ? resolvedImages : null);
+      data = await withSharedClient(client =>
+        callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, hasImages ? resolvedImages : null, client));
     }
   } else if (providerConfig.native) {
     process.stderr.write("mcp-takeover: calling claude (native CLI)...\n");
-    // claude.exe -p with stream-json doesn't support image content blocks.
-    // Embed as data URI in text instead — caller is responsible for keeping
-    // total token count within model context limits.
-    const promptWithImagesNative = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
-    data = await callNativeClaude(promptWithImagesNative, systemPrompt, null);
+    data = await spawnClaudeP(userPrompt, { systemPrompt, images: hasImages ? resolvedImages : null });
   } else {
     resolvedModel = resolveModel(providerConfig, model || null);
     process.stderr.write(

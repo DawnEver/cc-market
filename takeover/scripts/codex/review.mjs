@@ -26,9 +26,15 @@ Report only material findings. Do not include style feedback, naming feedback, o
 For each finding include: severity (critical/high/medium/low), title, description, file path, and recommendation. Be concrete — cite specific lines where possible.`;
 }
 
-export async function runCodexReview(diff, model, context, cwd) {
-  const client = new CodexAppServerClient({ timeout: 600000 });
-  await client.start();
+export async function runCodexReview(diff, model, context, cwd, client = null) {
+  const ownClient = !client;
+  if (ownClient) {
+    client = new CodexAppServerClient({ timeout: 600000 });
+    await client.start();
+  } else {
+    client.clearNotifications("turn/completed");
+    client.clearNotifications("item/completed");
+  }
 
   const systemPrompt = loadReviewPrompt();
   let reviewInput = diff || "";
@@ -79,11 +85,15 @@ export async function runCodexReview(diff, model, context, cwd) {
     );
     await Promise.race([reviewDone, timeout]);
   } catch (err) {
-    await client.stop();
+    client.clearNotifications("turn/completed");
+    client.clearNotifications("item/completed");
+    if (ownClient) await client.stop();
     throw err;
   }
 
-  await client.stop();
+  client.clearNotifications("turn/completed");
+  client.clearNotifications("item/completed");
+  if (ownClient) await client.stop();
 
   return {
     content: [{ type: "text", text: resultText.trim() || "(no findings — review may have completed without text output)" }],
