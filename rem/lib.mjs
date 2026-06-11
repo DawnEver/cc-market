@@ -79,14 +79,14 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 
 // ── Frontmatter ──
 
-const FM_RE = /^---\n([\s\S]*?)\n---/;
+const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 export function parseFrontmatter(content) {
   const m = content.match(FM_RE);
   if (!m) return { fm: '', body: content, fields: {} };
   const fm = m[1];
   const fields = {};
-  for (const line of fm.split('\n')) {
+  for (const line of fm.split(/\r?\n/)) {
     const kv = line.match(/^(\w+):\s*(.*)/);
     if (kv) fields[kv[1]] = kv[2].trim();
   }
@@ -104,7 +104,7 @@ export function setField(content, key, value) {
   if (re.test(content)) {
     return content.replace(re, `${key}: ${value}`);
   }
-  const fmEnd = content.indexOf('\n---');
+  const fmEnd = content.search(/\r?\n---/);
   if (fmEnd < 0) return content;
   const before = content.slice(0, fmEnd);
   const after = content.slice(fmEnd);

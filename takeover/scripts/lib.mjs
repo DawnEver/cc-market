@@ -62,15 +62,23 @@ export async function callAgentMode(provider, userPrompt, systemPrompt, model, c
     ? `${systemPrompt}\n\n---\n\n${userPrompt}`
     : userPrompt;
 
-  process.stderr.write(`mcp-takeover: agent mode — spawning claude -p (provider=${provider} model=${model || 'default'})...\n`);
+  const useStdin = fullPrompt.length > 1000;
+  process.stderr.write(`mcp-takeover: agent mode — spawning claude (provider=${provider} model=${model || 'default'})${useStdin ? ' [stdin]' : ''}...\n`);
 
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', ['-p', fullPrompt], {
+    const args = useStdin ? ['-p'] : ['-p', fullPrompt];
+    const winNoShell = process.platform === "win32" && useStdin;
+    const bin = winNoShell ? "claude.cmd" : "claude";
+    const child = spawn(bin, args, {
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       timeout: 300000,
-      shell: process.platform === 'win32',
+      shell: process.platform === "win32" && !useStdin,
     });
+    if (useStdin) {
+      child.stdin.write(fullPrompt);
+      child.stdin.end();
+    }
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => (stdout += d));
@@ -275,16 +283,36 @@ function isRetryable(status) {
 
 /**
  * Call an Anthropic-compatible Messages API with retry on transient errors.
+ * When images are provided, constructs multimodal content blocks per the
+ * Anthropic Messages API schema (type: "image" with base64 source).
  */
-export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt) {
+export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null) {
   if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${CONFIG_PATH}.`);
 
   const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
   const url = `${baseUrl}/messages`;
+
+  let content;
+  if (images && images.length > 0) {
+    content = [{ type: "text", text: userPrompt }];
+    for (const img of images) {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: img.media_type || "image/png",
+          data: img.data,
+        },
+      });
+    }
+  } else {
+    content = userPrompt;
+  }
+
   const body = {
     model,
     max_tokens: 16000,
-    messages: [{ role: "user", content: userPrompt }],
+    messages: [{ role: "user", content }],
   };
   if (systemPrompt) body.system = systemPrompt;
 
@@ -341,17 +369,28 @@ export async function callCodexCompanion(userPrompt, systemPrompt, model, writeM
 }
 
 /**
- * Call native Claude CLI via `claude -p`.
+ * Call native Claude CLI. Prompt delivered via stdin to avoid command-line length
+ * limits (Windows ~32KB), which break large prompts like those carrying base64 images.
  */
 export function callNativeClaude(userPrompt, systemPrompt) {
   return new Promise((resolve, reject) => {
     const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${userPrompt}` : userPrompt;
-    const child = spawn("claude", ["-p", fullPrompt], {
+    const useStdin = fullPrompt.length > 1000;
+    const args = useStdin ? ["-p"] : ["-p", fullPrompt];
+    // On Windows with stdin pipe, spawn claude.cmd directly — using shell:true
+    // routes through cmd.exe which does not forward stdin to the child process.
+    const winNoShell = process.platform === "win32" && useStdin;
+    const bin = winNoShell ? "claude.cmd" : "claude";
+    const child = spawn(bin, args, {
       env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
       timeout: 300000,
-      shell: process.platform === "win32",
+      shell: process.platform === "win32" && !useStdin,
     });
+    if (useStdin) {
+      child.stdin.write(fullPrompt);
+      child.stdin.end();
+    }
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));

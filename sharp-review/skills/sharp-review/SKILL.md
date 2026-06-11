@@ -127,10 +127,10 @@ This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, th
 ### Step 4 — Resolve findings
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/../rem/scripts/task-engine.js" mark <SR-ID> fixed
+todo mark <SR-ID> fixed
 ```
 
-This flips `**Status:** OPEN` → `FIXED` and re-derives the frontmatter — equivalent to hand-editing + `post-review.js --rescan`.
+This flips `**Status:** OPEN` → `FIXED` in `sharp-review.md` and re-derives the frontmatter — equivalent to hand-editing + `post-review.js --rescan`. (`todo` is the rem-owned CLI; sharp-review never calls `task-engine.js` directly.)
 
 For the full file-ownership table (where findings, archives, and manual tasks live) → `reference/task-system.md`.
 

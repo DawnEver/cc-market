@@ -40,6 +40,7 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     const turnParams = {
       threadId,
       messages,
+      input: messages,
       tools: write ? undefined : { disabled: true },
     };
     if (model) turnParams.model = model;
