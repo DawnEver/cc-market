@@ -32,8 +32,8 @@ describe('Report Generator', () => {
     db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
       VALUES (?,?,?,?,?)`).run('tr3', 'sess-r1', 'Read', 'Read src/auth.js', '2026-06-09T10:31:00Z');
 
-    db.prepare(`INSERT OR REPLACE INTO daily_summary (date, project, session_count, prompt_count, total_tokens, total_cost, top_model)
-      VALUES (?,?,?,?,?,?,?)`).run('2026-06-09', 'my-project', 1, 2, 12000, 0.045, 'claude-sonnet-4');
+    db.prepare(`INSERT OR REPLACE INTO daily_summary (date, project, repo_origin, session_count, prompt_count, total_tokens, total_cost, top_model)
+      VALUES (?,?,?,?,?,?,?,?)`).run('2026-06-09', 'my-project', 'github.com/user/my-project', 1, 2, 12000, 0.045, 'claude-sonnet-4');
   });
 
   after(() => {
@@ -45,7 +45,7 @@ describe('Report Generator', () => {
   });
 
   it('should generate a daily report with project stats', () => {
-    const report = generateReport('2026-06-09');
+    const report = generateReport('2026-06-09', { local: true });
     assert.ok(report.includes('TraceMe Report'));
     assert.ok(report.includes('my-project'));
     assert.ok(report.includes('$0.045'), `Cost not found. Report: ${report.slice(0, 500)}`);
@@ -75,8 +75,8 @@ describe('Report Generator', () => {
       devices: ['linxu-win', 'linxu-mac'],
       aggregated_at: '2026-06-09T23:00:00Z',
       daily_summary: [
-        { project: 'my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
-        { project: 'other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' },
+        { project: 'my-project', repo_origin: 'github.com/user/my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
+        { project: 'other-project', repo_origin: 'github.com/other/other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' },
       ],
       sessions: [],
       tool_usage: [{ tool_name: 'Edit', count: 5 }],
@@ -94,12 +94,20 @@ describe('Report Generator', () => {
     assert.ok(report.includes('Refactor the auth module'));
   });
 
-  it('should generate stats from merged data when available', () => {
+  it('should generate stats from local DB (always local-only)', () => {
+    // Without merged data → local-only label
+    const stats = generateStats({ local: true });
+    assert.ok(stats.includes('TraceMe Stats'));
+    assert.ok(stats.includes('Today (local only)'));
+    assert.ok(stats.includes('1 sessions'));
+  });
+
+  it('should show cross-device stats when merged data is available', () => {
     const merged = {
       devices: ['linxu-win', 'linxu-mac'],
       aggregated_at: '2026-06-09T23:00:00Z',
       daily_summary: [
-        { project: 'my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
+        { project: 'my-project', repo_origin: 'github.com/user/my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
       ],
       sessions: [],
       tool_usage: [],
@@ -107,7 +115,9 @@ describe('Report Generator', () => {
     };
 
     const stats = generateStats({ mergedSnapshot: merged });
-    assert.ok(stats.includes('linxu-win, linxu-mac'));
+    assert.ok(stats.includes('TraceMe Stats'));
+    assert.ok(stats.includes('cross-device'));
+    assert.ok(stats.includes('2 device(s): linxu-win, linxu-mac'));
     assert.ok(stats.includes('3 sessions'));
   });
 });

@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import {
   openDb, closeDb,
   insertSession, closeSession,
-  insertPrompt, batchUpdatePromptTokens,
+  insertPrompt,
   insertToolCall,
   upsertDailySummary,
   queryDailySummary, queryTopPrompts, queryToolUsage, querySessionStats
@@ -29,6 +29,7 @@ describe('DB Layer', { concurrency: 1 }, () => {
       id: 'sess-001',
       project: 'test-project',
       project_path: '/home/user/test-project',
+      repo_origin: 'github.com/user/test-project',
       branch: 'main',
       started_at: '2026-06-09T10:00:00Z'
     });
@@ -38,10 +39,12 @@ describe('DB Layer', { concurrency: 1 }, () => {
   it('should insert and update prompts', () => {
     insertPrompt({ id: 'sess-001_0', session_id: 'sess-001', turn_index: 0, text: 'Write a function', timestamp: '2026-06-09T10:01:00Z' });
     insertPrompt({ id: 'sess-001_1', session_id: 'sess-001', turn_index: 1, text: 'Fix the bug', timestamp: '2026-06-09T10:30:00Z' });
-    batchUpdatePromptTokens([
-      { id: 'sess-001_0', input_tokens: 500, output_tokens: 300, cache_tokens: 100, cost_usd: 0.05, model: 'claude-sonnet-4', duration_ms: 2500 },
-      { id: 'sess-001_1', input_tokens: 800, output_tokens: 400, cache_tokens: 200, cost_usd: 0.08, model: 'claude-sonnet-4', duration_ms: 3200 }
-    ]);
+    // Update prompts directly (batchUpdatePromptTokens removed as dead code)
+    const db = openDb({ path: TEST_DB });
+    db.prepare('UPDATE prompts SET input_tokens=?, output_tokens=?, cache_tokens=?, cost_usd=?, model=?, duration_ms=? WHERE id=?')
+      .run(500, 300, 100, 0.05, 'claude-sonnet-4', 2500, 'sess-001_0');
+    db.prepare('UPDATE prompts SET input_tokens=?, output_tokens=?, cache_tokens=?, cost_usd=?, model=?, duration_ms=? WHERE id=?')
+      .run(800, 400, 200, 0.08, 'claude-sonnet-4', 3200, 'sess-001_1');
   });
 
   it('should insert tool calls', () => {
@@ -51,7 +54,7 @@ describe('DB Layer', { concurrency: 1 }, () => {
   });
 
   it('should upsert daily summary', () => {
-    upsertDailySummary('2026-06-09', 'test-project', { session_count: 1, prompt_count: 2, total_tokens: 2300, total_cost: 0.13, top_model: 'claude-sonnet-4' });
+    upsertDailySummary('2026-06-09', 'test-project', { session_count: 1, prompt_count: 2, total_tokens: 2300, total_cost: 0.13, top_model: 'claude-sonnet-4', repo_origin: 'github.com/user/test-project' });
   });
 
   it('should query daily summary', () => {

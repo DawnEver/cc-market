@@ -28,6 +28,22 @@ describe('Crypto (AES-256-GCM)', () => {
     assert.equal(hasKey(), true);
   });
 
+  it('setKey should write a valid key and reject invalid formats', async () => {
+    try { unlinkSync(process.env.TRACEME_KEY_FILE); } catch {}
+    const { setKey, hasKey } = await import(cryptoModPath);
+    const key = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
+    setKey(key);
+    assert.equal(hasKey(), true);
+    // Re-import to verify key file was written (getKey reads from file)
+    const { encrypt, decrypt } = await import(cryptoModPath);
+    const armor = encrypt('test with imported key');
+    assert.equal(decrypt(armor), 'test with imported key');
+    // Invalid formats
+    assert.throws(() => setKey('too-short'), /64 hex/);
+    assert.throws(() => setKey('gg' + '0'.repeat(62)), /64 hex/);
+    assert.throws(() => setKey(''), /64 hex/);
+  });
+
   it('encrypt/decrypt round-trip', async () => {
     const { encrypt, decrypt } = await import(cryptoModPath);
     const payload = JSON.stringify({ date: '2026-06-09', tokens: 145313116, cost: 2.8922 });

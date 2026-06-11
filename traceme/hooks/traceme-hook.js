@@ -1,5 +1,5 @@
-import { openDb, closeDb, insertSession, insertPrompt, insertToolCall, closeSession, upsertDailySummary } from '../scripts/db.mjs';
-import { getGitBranch, getProjectRoot, getProjectName, todayISO, summarizeToolInput, ERROR_LOG } from '../scripts/lib.mjs';
+import { openDb, closeDb, insertSession, insertPrompt, insertToolCall, closeSession, upsertTakeoverTokens, getMeta, setMeta } from '../scripts/db.mjs';
+import { getGitBranch, getProjectRoot, getProjectName, getGitRemote, normalizeRemoteUrl, todayISO, summarizeToolInput, ERROR_LOG, rotateErrorLog } from '../scripts/lib.mjs';
 import { scanTakeoverTraces, ingestTranscript } from '../scripts/ingest.mjs';
 import { appendFileSync } from 'node:fs';
 
@@ -13,6 +13,8 @@ async function main() {
   const input = JSON.parse(Buffer.concat(chunks).toString());
   const event = input.hook_event_name;
 
+  rotateErrorLog();
+
   try {
     const db = openDb();
 
@@ -22,14 +24,34 @@ async function main() {
         const branch = getGitBranch(cwd);
         const projectPath = getProjectRoot(cwd);
         const project = getProjectName(cwd);
+        const remoteUrl = getGitRemote(cwd);
+        const repoOrigin = remoteUrl ? normalizeRemoteUrl(remoteUrl) : projectPath;
 
         insertSession({
           id: input.session_id,
           project,
           project_path: projectPath,
+          repo_origin: repoOrigin,
           branch,
           started_at: new Date().toISOString()
         });
+
+        // Pull cross-device data so report/stats see other devices' latest
+        try {
+          const { hasKey } = await import('../scripts/crypto.mjs');
+          if (hasKey() && process.env.TRACEME_SYNC_REMOTE) {
+            const syncUrl = new URL('../scripts/sync.mjs', import.meta.url).href;
+            const { pullSnapshots } = await import(syncUrl);
+            for (let i = 0; i < 7; i++) {
+              const d = new Date();
+              d.setDate(d.getDate() - i);
+              const dateStr = d.toISOString().slice(0, 10);
+              await pullSnapshots(dateStr);
+            }
+          }
+        } catch (e) {
+          logError(`SessionStart auto-pull failed: ${e.message}`);
+        }
         break;
       }
 
@@ -63,9 +85,15 @@ async function main() {
 
       case 'Stop':
       case 'SessionEnd': {
-        // Idempotency: skip if session already has token data
-        const s = db.prepare('SELECT total_tokens FROM sessions WHERE id=?').get(input.session_id);
-        if (s && s.total_tokens > 0) break;
+        const stopKey = `stop_processed_${input.session_id}`;
+        if (getMeta(stopKey) === '1') break;
+        setMeta(stopKey, '1');
+
+        // Idempotency: skip if session already ended
+        const s = db.prepare('SELECT ended_at FROM sessions WHERE id=?').get(input.session_id);
+        if (s && s.ended_at) break;
+
+        const session = db.prepare('SELECT project, repo_origin, started_at FROM sessions WHERE id=?').get(input.session_id);
 
         closeSession(input.session_id, new Date().toISOString());
 
@@ -77,17 +105,14 @@ async function main() {
 
         // Ingest takeover traces (NDJSON contract, no code dependency)
         try {
-          const date = todayISO();
-          const { totalTokens } = scanTakeoverTraces(date);
-          if (totalTokens > 0) {
-            const session = db.prepare('SELECT project FROM sessions WHERE id=?').get(input.session_id);
-            if (session) {
-              upsertDailySummary(date, session.project, {
-                session_count: 0,
-                prompt_count: 0,
-                total_tokens: totalTokens,
-                total_cost: 0,
-              });
+          if (session) {
+            const date = session.started_at.slice(0, 10);
+            const takeoverKey = `takeover_ts_${date}`;
+            const lastTs = getMeta(takeoverKey);
+            const { totalTokens, maxTs } = scanTakeoverTraces(date, lastTs);
+            if (totalTokens > 0) {
+              if (maxTs) setMeta(takeoverKey, maxTs);
+              upsertTakeoverTokens(date, session.project, totalTokens, session.repo_origin || '');
             }
           }
         } catch (e) {
@@ -102,7 +127,9 @@ async function main() {
             const { pushSnapshot } = await import(syncUrl);
             await pushSnapshot();
           }
-        } catch {} // never fail — observability must be invisible
+        } catch (e) {
+          logError(`auto-sync push failed: ${e.message}`);
+        }
         break;
       }
     }

@@ -14,12 +14,14 @@ const TEST_DB = join(tmpdir(), `traceme-sync-${randomUUID()}.db`);
 describe('Sync Data Dump/Import', () => {
   before(() => {
     process.env.TRACEME_DB_PATH = TEST_DB;
+    // Set before first import so crypto.mjs captures the test key path, not the real one
+    process.env.TRACEME_KEY_FILE = join(tmpdir(), `traceme-no-key-${randomUUID()}.txt`);
     // Seed test data
     const db = openDb({ path: TEST_DB });
     db.prepare(`INSERT OR REPLACE INTO sessions (id, project, project_path, branch, started_at, prompt_count, total_tokens, total_cost)
       VALUES (?,?,?,?,?,?,?,?)`).run('sess-s1', 'my-project', '/home/user/my-project', 'main', '2026-06-09T10:00:00Z', 5, 25000, 0.095);
-    db.prepare(`INSERT OR REPLACE INTO daily_summary (date, project, session_count, prompt_count, total_tokens, total_cost, top_model)
-      VALUES (?,?,?,?,?,?,?)`).run('2026-06-09', 'my-project', 1, 5, 25000, 0.095, 'claude-sonnet-4');
+    db.prepare(`INSERT OR REPLACE INTO daily_summary (date, project, repo_origin, session_count, prompt_count, total_tokens, total_cost, top_model)
+      VALUES (?,?,?,?,?,?,?,?)`).run('2026-06-09', 'my-project', 'github.com/user/my-project', 1, 5, 25000, 0.095, 'claude-sonnet-4');
     db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
       VALUES (?,?,?,?,?)`).run('t1', 'sess-s1', 'Edit', 'Edit src/a.js', '2026-06-09T10:02:00Z');
     db.prepare(`INSERT OR REPLACE INTO tool_calls (id, session_id, tool_name, summary, timestamp)
@@ -29,6 +31,7 @@ describe('Sync Data Dump/Import', () => {
   after(() => {
     closeDb();
     delete process.env.TRACEME_DB_PATH;
+    delete process.env.TRACEME_KEY_FILE;
     try { unlinkSync(TEST_DB); } catch {}
     try { unlinkSync(TEST_DB + '-wal'); } catch {}
     try { unlinkSync(TEST_DB + '-shm'); } catch {}
@@ -45,6 +48,7 @@ describe('Sync Data Dump/Import', () => {
     assert.ok(data.generated_at);
     assert.equal(data.daily_summary.length, 1);
     assert.equal(data.daily_summary[0].project, 'my-project');
+    assert.equal(data.daily_summary[0].repo_origin, 'github.com/user/my-project');
     assert.equal(data.daily_summary[0].total_tokens, 25000);
     assert.equal(data.sessions.length, 1);
     assert.equal(data.sessions[0].project, 'my-project');
@@ -52,6 +56,8 @@ describe('Sync Data Dump/Import', () => {
     assert.equal(data.sessions[0].text, undefined);
     // project_path must NOT be in sessions
     assert.equal(data.sessions[0].project_path, undefined);
+    // repo_origin must NOT be undefined (may be null for pre-migration data)
+    assert.equal('repo_origin' in data.sessions[0], true);
     assert.equal(data.tool_usage.length, 2);
   });
 
@@ -63,12 +69,12 @@ describe('Sync Data Dump/Import', () => {
       device: 'linxu-mac',
       generated_at: '2026-06-09T23:00:00Z',
       daily_summary: [
-        { project: 'my-project', session_count: 2, prompt_count: 8, total_tokens: 30000, total_cost: 0.12, top_model: 'claude-opus-4' },
-        { project: 'other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' },
+        { project: 'my-project', repo_origin: 'github.com/user/my-project', session_count: 2, prompt_count: 8, total_tokens: 30000, total_cost: 0.12, top_model: 'claude-opus-4' },
+        { project: 'other-project', repo_origin: 'github.com/other/other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' },
       ],
       sessions: [
-        { id: 'sess-m1', project: 'my-project', branch: 'feat/x', started_at: '2026-06-09T14:00:00Z', ended_at: '2026-06-09T15:00:00Z', prompt_count: 4, total_tokens: 15000, total_cost: 0.06 },
-        { id: 'sess-m2', project: 'other-project', branch: 'main', started_at: '2026-06-09T16:00:00Z', ended_at: '2026-06-09T17:00:00Z', prompt_count: 3, total_tokens: 10000, total_cost: 0.04 },
+        { id: 'sess-m1', project: 'my-project', repo_origin: 'github.com/user/my-project', branch: 'feat/x', started_at: '2026-06-09T14:00:00Z', ended_at: '2026-06-09T15:00:00Z', prompt_count: 4, total_tokens: 15000, total_cost: 0.06 },
+        { id: 'sess-m2', project: 'other-project', repo_origin: 'github.com/other/other-project', branch: 'main', started_at: '2026-06-09T16:00:00Z', ended_at: '2026-06-09T17:00:00Z', prompt_count: 3, total_tokens: 10000, total_cost: 0.04 },
       ],
       tool_usage: [{ tool_name: 'Edit', count: 3 }, { tool_name: 'Grep', count: 2 }],
       skill_usage: [{ skill_name: 'code-review', count: 1 }],
@@ -99,8 +105,8 @@ describe('Sync Data Dump/Import', () => {
     // Re-import same foreign data
     const sameData = {
       version: 1, date: '2026-06-09', device: 'linxu-mac',
-      daily_summary: [{ project: 'other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' }],
-      sessions: [{ id: 'sess-m1', project: 'my-project', branch: 'feat/x', started_at: '2026-06-09T14:00:00Z', prompt_count: 4, total_tokens: 15000, total_cost: 0.06 }],
+      daily_summary: [{ project: 'other-project', repo_origin: 'github.com/other/other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' }],
+      sessions: [{ id: 'sess-m1', project: 'my-project', repo_origin: 'github.com/user/my-project', branch: 'feat/x', started_at: '2026-06-09T14:00:00Z', prompt_count: 4, total_tokens: 15000, total_cost: 0.06 }],
       tool_usage: [],
       skill_usage: [],
     };
@@ -121,13 +127,12 @@ describe('Sync Data Dump/Import', () => {
 
   describe('readMergedSnapshot / verifyConsistency without sync configured', () => {
     before(() => {
-      // Point at a key file that doesn't exist so isSyncSetup() is false,
-      // regardless of any real sync setup on the host machine.
-      process.env.TRACEME_KEY_FILE = join(tmpdir(), `traceme-no-key-${randomUUID()}.txt`);
+      // Unset remote so getRemote() returns null, making isSyncSetup() false
+      process.env.TRACEME_SYNC_REMOTE = '';
     });
 
     after(() => {
-      delete process.env.TRACEME_KEY_FILE;
+      delete process.env.TRACEME_SYNC_REMOTE;
     });
 
     it('readMergedSnapshot returns null when sync is not set up', async () => {

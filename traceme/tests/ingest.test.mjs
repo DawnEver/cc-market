@@ -36,7 +36,7 @@ describe('Transcript Ingest', () => {
   });
 
   it('should ingest a transcript and populate session totals', () => {
-    insertSession({ id: sessionId, project: 'my-project', project_path: '/home/user/my-project', branch: 'feat/x', started_at: '2026-06-09T10:00:00Z' });
+    insertSession({ id: sessionId, project: 'my-project', project_path: '/home/user/my-project', repo_origin: 'github.com/user/my-project', branch: 'feat/x', started_at: '2026-06-09T10:00:00Z' });
 
     const transcriptPath = join(tmpdir(), `traceme-test-${randomUUID()}.jsonl`);
     writeFileSync(transcriptPath, makeSampleTranscript(sessionId));
