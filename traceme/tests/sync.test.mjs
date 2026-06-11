@@ -80,29 +80,26 @@ describe('Sync Data Dump/Import', () => {
       skill_usage: [{ skill_name: 'code-review', count: 1 }],
     };
 
+    const before = JSON.stringify(queryDailySummary('2026-06-09'));
+    const sessBefore = openDb().prepare("SELECT count(*) c FROM sessions WHERE date(started_at)='2026-06-09'").get().c;
+
     importDailyData(foreignData);
 
     const db = openDb();
-    // Should now have both projects
-    const summary = queryDailySummary('2026-06-09');
-    assert.equal(summary.length, 2);
-    const myProj = summary.find(r => r.project === 'my-project');
-    assert.ok(myProj);
-    // Local had 1 session, foreign had 2 — SUM aggregates to 3 across devices
-    assert.equal(myProj.session_count, 3);
+    // Foreign data must NOT be written into local SQLite — local holds this
+    // device only; cross-device numbers are merged in memory from .enc files.
+    assert.equal(JSON.stringify(queryDailySummary('2026-06-09')), before);
 
-    // New session should be inserted (foreign sessions)
-    const allSessions = db.prepare("SELECT * FROM sessions WHERE date(started_at)='2026-06-09'").all();
-    assert.equal(allSessions.length, 3); // 1 local + 2 foreign
+    const allSessions = db.prepare("SELECT count(*) c FROM sessions WHERE date(started_at)='2026-06-09'").get().c;
+    assert.equal(allSessions, sessBefore);
 
     // Original local session intact
     const localSess = db.prepare('SELECT * FROM sessions WHERE id=?').get('sess-s1');
     assert.equal(localSess.total_tokens, 25000);
   });
 
-  it('should not re-insert duplicate sessions', async () => {
+  it('should be idempotent — repeated import never mutates local totals', async () => {
     const { importDailyData } = await import('../scripts/sync.mjs');
-    // Re-import same foreign data
     const sameData = {
       version: 1, date: '2026-06-09', device: 'linxu-mac',
       daily_summary: [{ project: 'other-project', repo_origin: 'github.com/other/other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' }],
@@ -110,12 +107,12 @@ describe('Sync Data Dump/Import', () => {
       tool_usage: [],
       skill_usage: [],
     };
+    const before = JSON.stringify(queryDailySummary('2026-06-09'));
     importDailyData(sameData);
-
-    const db = openDb();
-    const allSessions = db.prepare("SELECT * FROM sessions WHERE date(started_at)='2026-06-09'").all();
-    // Still 3 — no duplicates
-    assert.equal(allSessions.length, 3);
+    importDailyData(sameData);
+    importDailyData(sameData);
+    // Three pulls of the same snapshot — local totals are unchanged.
+    assert.equal(JSON.stringify(queryDailySummary('2026-06-09')), before);
   });
 
   it('should return empty dump for date with no data', async () => {

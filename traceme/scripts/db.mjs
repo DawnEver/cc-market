@@ -84,6 +84,7 @@ export function openDb(opts = {}) {
   const dsCols = db.prepare("PRAGMA table_info('daily_summary')").all().map(c => c.name);
   if (!dsCols.includes('repo_origin')) {
     db.exec(`
+      DROP TABLE IF EXISTS daily_summary_new;
       CREATE TABLE daily_summary_new (
         date          TEXT NOT NULL,
         project       TEXT NOT NULL,

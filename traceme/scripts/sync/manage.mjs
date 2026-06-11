@@ -132,9 +132,11 @@ export async function purgeLocalData() {
   db.exec('DELETE FROM sessions');
   db.exec('DELETE FROM daily_summary');
 
-  // Re-import from remote
-  console.log('Cleared local data. Re-importing from sync remote...');
+  // Refresh the cached origin/main ref so merged reports reflect the remote.
+  // Foreign data is never written back into local SQLite (see importDailyData) —
+  // cross-device numbers come from the in-memory merge of `.enc` files.
+  console.log('Cleared local data. Refreshing sync remote...');
   pullAllSnapshots();
 
-  console.log('Purge complete. Local data now matches sync remote.');
+  console.log('Purge complete. Local SQLite now holds this device only; cross-device data is read from the merged snapshot.');
 }
