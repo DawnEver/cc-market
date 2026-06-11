@@ -11,6 +11,7 @@ import {
   isStale, checkFileModified,
   groupByModule,
   scanMemoryForFindings, scanManualTasks,
+  markFinding,
 } from './task-lib.mjs';
 
 const PREFIX = '[task-engine]';
@@ -172,6 +173,22 @@ function handleRemove(id) {
   process.exit(0);
 }
 
+// ── mark ──
+
+function handleMark(id, status, today) {
+  if (!id || !status) {
+    console.error(`${PREFIX} mark requires <id> <open|fixed|closed>`);
+    process.exit(1);
+  }
+  const result = markFinding(MEMORY_DIR, id, status, today);
+  if (!result.found) {
+    console.error(`${PREFIX} ${result.error}`);
+    process.exit(1);
+  }
+  const rel = relative(MEMORY_DIR, result.file).replace(/\\/g, '/');
+  console.log(`${PREFIX} Marked ${id} as ${status.toUpperCase()} in memory/${rel}`);
+}
+
 // ── report (merged with check stats) ──
 
 function handleReport(today) {
@@ -238,6 +255,7 @@ Usage:
        --severity HIGH|MEDIUM|LOW   (default MEDIUM)
        --module name                (default 'manual')
   todo remove, rm, -r <id>  Remove manual task or close SR finding
+  todo mark <id> <status>   Set status: open | fixed | closed
   todo help                 Show this help`);
 }
 
@@ -255,6 +273,7 @@ function main() {
   // Explicit subcommands
   if (cmd === '--add' || cmd === 'add' || cmd === '-a')    return handleAdd(args.slice(1), today, null);
   if (cmd === '--remove' || cmd === '--rm' || cmd === 'remove' || cmd === 'rm') return handleRemove(args[1]);
+  if (cmd === '--mark' || cmd === 'mark' || cmd === '-m') return handleMark(args[1], args[2], today);
   if (cmd === '--report' || cmd === 'report')    return handleReport(today);
   if (cmd === 'help' || cmd === '--help' || cmd === '-h') return handleHelp();
 

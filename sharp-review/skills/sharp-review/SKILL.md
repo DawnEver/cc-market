@@ -122,11 +122,15 @@ Then run post-review.js via PowerShell:
 node "<CLAUDE_PLUGIN_ROOT>/scripts/post-review.js" --date <YYYY-MM-DD> --findings "$env:TEMP/claude-sharp-review/findings.json" --markdown "$env:TEMP/claude-sharp-review/review.md"
 ```
 
-This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, runs stamp-memory.js, then archives resolved findings to `.claude/tasks/archive/YYYY/MM/DD.md`.
+This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
 
 ### Step 4 — Resolve findings
 
-Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then run `post-review.js --rescan --date YYYY-MM-DD` to archive it.
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/../rem/scripts/task-engine.js" mark <SR-ID> fixed
+```
+
+This flips `**Status:** OPEN` → `FIXED` and re-derives the frontmatter — equivalent to hand-editing + `post-review.js --rescan`.
 
 For the full file-ownership table (where findings, archives, and manual tasks live) → `reference/task-system.md`.
 
@@ -140,9 +144,10 @@ Do NOT dump findings in chat.
 
 After the review:
 
-1. Run `todo` — review open findings against code changed in this session. Mark resolved ones as FIXED.
-2. Flag stale items (> 90d untouched) — `todo` report shows `⚠ stale` markers.
-3. Check in-flight Codex tasks via `TaskGet` — do not mark feature complete until verified.
+1. Run `todo` — review open findings against code changed in this session. Items the review touched show `⚠ likely-resolved`.
+2. For each finding you fixed AND verified (tests pass / behavior confirmed) in this session, run `todo mark <SR-ID> fixed` immediately — do not leave it for the next review to rediscover. Do NOT mark a finding fixed if you only changed the file without confirming the issue is resolved.
+3. Flag stale items (> 90d untouched) — `todo` report shows `⚠ stale` markers.
+4. Check in-flight Codex tasks via `TaskGet` — do not mark feature complete until verified.
 
 ## Usage
 

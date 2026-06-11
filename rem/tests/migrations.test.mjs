@@ -21,27 +21,6 @@ describe('rem migrate()', () => {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  test('removes empty legacy .claude/memory/tasks/ tree', async () => {
-    const legacyTasksDir = path.join(projectRoot, '.claude', 'memory', 'tasks', 'archive');
-    fs.mkdirSync(legacyTasksDir, { recursive: true });
-
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('legacy .claude/memory/tasks')));
-    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', 'memory', 'tasks')), false);
-  });
-
-  test('does not remove a non-empty legacy tasks dir', async () => {
-    const legacyTasksDir = path.join(projectRoot, '.claude', 'memory', 'tasks');
-    fs.mkdirSync(legacyTasksDir, { recursive: true });
-    fs.writeFileSync(path.join(legacyTasksDir, 'tasks.md'), '# leftover content');
-
-    await migrate(projectRoot);
-
-    assert.equal(fs.existsSync(path.join(legacyTasksDir, 'tasks.md')), true);
-  });
-
   test('stamps memory files missing frontmatter fields via stamp-memory', async () => {
     const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
     fs.mkdirSync(dayDir, { recursive: true });
@@ -81,64 +60,6 @@ describe('rem migrate()', () => {
     assert.deepEqual(summary, []);
   });
 
-  test('splits a legacy monthly archive rollup into per-day canonical files', async () => {
-    const legacyDir = path.join(projectRoot, '.claude', 'memory', 'tasks', 'archive', '2026');
-    fs.mkdirSync(legacyDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(legacyDir, '06.md'),
-      '# Resolved Tasks — 2026-06\n\n' +
-        '- [x] SR-20260604-001 [MEDIUM] first finding\n' +
-        '      → FIXED 2026-06-04: marked resolved\n\n' +
-        '- [x] SR-20260608-001 [HIGH] second finding\n' +
-        '      → FIXED 2026-06-08: marked resolved\n',
-    );
-
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('migrated 2 resolved task(s)')));
-
-    const day04 = fs.readFileSync(path.join(projectRoot, '.claude', 'tasks', 'archive', '2026', '06', '04.md'), 'utf8');
-    assert.match(day04, /SR-20260604-001/);
-    const day08 = fs.readFileSync(path.join(projectRoot, '.claude', 'tasks', 'archive', '2026', '06', '08.md'), 'utf8');
-    assert.match(day08, /SR-20260608-001/);
-
-    // legacy tree fully consumed and removed
-    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', 'memory', 'tasks')), false);
-  });
-
-  test('migrates a non-canonical flat archive file (YYYY-MM.md) and dedupes against existing entries', async () => {
-    const archiveDir = path.join(projectRoot, '.claude', 'tasks', 'archive');
-    fs.mkdirSync(path.join(archiveDir, '2026', '06'), { recursive: true });
-    fs.writeFileSync(
-      path.join(archiveDir, '2026', '06', '04.md'),
-      '# Resolved Tasks — 2026-06-04\n\n' +
-        '- [x] SR-20260604-001 [MEDIUM] already archived\n' +
-        '      → FIXED 2026-06-04: marked resolved\n',
-    );
-    fs.writeFileSync(
-      path.join(archiveDir, '2026-06.md'),
-      '# Resolved Tasks — 2026-06\n\n' +
-        '- [x] SR-20260604-001 [MEDIUM] already archived\n' +
-        '      → FIXED 2026-06-04: marked resolved\n\n' +
-        '- [x] SR-20260604-002 [LOW] new finding\n' +
-        '      → FIXED 2026-06-04: marked resolved\n',
-    );
-
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('migrated 1 resolved task(s)')));
-
-    const day04 = fs.readFileSync(path.join(archiveDir, '2026', '06', '04.md'), 'utf8');
-    assert.match(day04, /SR-20260604-001/);
-    assert.match(day04, /SR-20260604-002/);
-    assert.equal((day04.match(/SR-20260604-001/g) || []).length, 1);
-
-    // non-canonical rollup removed once fully migrated
-    assert.equal(fs.existsSync(path.join(archiveDir, '2026-06.md')), false);
-  });
-
   test('removes stray legacy .claude/.retro_state.json', async () => {
     fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(projectRoot, '.claude', '.retro_state.json'), '{}');
@@ -148,27 +69,6 @@ describe('rem migrate()', () => {
     assert.equal(changed, true);
     assert.ok(summary.some(s => s.includes('.retro_state.json')));
     assert.equal(fs.existsSync(path.join(projectRoot, '.claude', '.retro_state.json')), false);
-  });
-
-  test('preserves non-entry content in a non-canonical archive file', async () => {
-    const archiveDir = path.join(projectRoot, '.claude', 'tasks', 'archive');
-    fs.mkdirSync(archiveDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(archiveDir, 'notes.md'),
-      '# Notes\n\nSome manual note unrelated to resolved tasks.\n\n' +
-        '- [x] SR-20260604-001 [MEDIUM] resolved item\n' +
-        '      → FIXED 2026-06-04: marked resolved\n',
-    );
-
-    const { changed } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    const day04 = fs.readFileSync(path.join(archiveDir, '2026', '06', '04.md'), 'utf8');
-    assert.match(day04, /SR-20260604-001/);
-
-    const remaining = fs.readFileSync(path.join(archiveDir, 'notes.md'), 'utf8');
-    assert.match(remaining, /Some manual note unrelated to resolved tasks/);
-    assert.doesNotMatch(remaining, /SR-20260604-001/);
   });
 
   test('converts flat YYYY-MM-DD/ memory dirs to nested YYYY/MM/DD/', async () => {

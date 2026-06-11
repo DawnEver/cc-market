@@ -35,7 +35,6 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 ## Output
 
 - `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter (sole source of truth)
-- `.claude/tasks/archive/YYYY/MM/DD.md` — resolved findings archived here
 - `.claude/rules/MEMORY.md` — one index entry per session (stamp-memory.js)
 - `todo` / `todo report` — scan memory directly; no derived `tasks.md`
 

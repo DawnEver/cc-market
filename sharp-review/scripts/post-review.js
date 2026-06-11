@@ -6,32 +6,17 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
-import { homedir } from 'os';
+import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import { reviewFrontmatter, parseFindingsFromMarkdown } from '../lib.mjs';
+import { resolvePluginDir } from '../shared/lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 
-// Resolve another cc-market plugin's root dir. Relative paths like
-// `../../rem` break once plugins are cached under versioned dirs
-// (cc-market/<plugin>/<version>/), so fall back to installed_plugins.json.
-function resolvePluginDir(name) {
-  const flatCandidate = join(__dirname, '..', '..', name); // dev/flat repo layout
-  if (existsSync(join(flatCandidate, '.claude-plugin', 'plugin.json'))) return flatCandidate;
-
-  const installedPath = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
-  const data = JSON.parse(readFileSync(installedPath, 'utf8'));
-  const entries = data.plugins?.[`${name}@cc-market`];
-  if (!entries?.length) throw new Error(`Cannot resolve plugin dir for ${name}@cc-market`);
-  return entries.reduce((a, b) => new Date(a.installedAt) > new Date(b.installedAt) ? a : b).installPath;
-}
-
-const REM_DIR = resolvePluginDir('rem');
+const REM_DIR = resolvePluginDir('rem', __dirname);
 const STAMP_SCRIPT = join(REM_DIR, 'scripts', 'stamp-memory.js');
-const { archiveResolved } = await import(pathToFileURL(join(REM_DIR, 'scripts', 'task-lib.mjs')).href);
 
 // ── Parse args ──
 
@@ -64,7 +49,6 @@ if (rescan) {
   writeFileSync(memFile, `${updatedFrontmatter}\n${body}`, 'utf8');
   console.log(`[post-review] Rescanned: ${findings.length} findings, frontmatter updated`);
 
-  archiveResolved(findings, date, '[post-review]');
   const open = findings.filter(f => f.status !== 'fixed' && f.status !== 'FIXED').length;
   console.log(`[post-review] Done — ${findings.length} findings, ${open} open`);
   process.exit(0);
@@ -118,8 +102,6 @@ try {
 } catch (e) {
   console.error(`[post-review] stamp-memory.js failed: ${e.stderr || e.message}`);
 }
-
-archiveResolved(findings, date, '[post-review]');
 
 const open = findings.filter(f => f.status !== 'fixed' && f.status !== 'FIXED').length;
 console.log(`[post-review] Done — ${findings.length} findings, ${open} open`);

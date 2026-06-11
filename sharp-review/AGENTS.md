@@ -22,8 +22,7 @@ Stop → sharp-review-hook.js
                ├── Merge & dedup (≥2 reviewers = high confidence)
                └── post-review.js:
                      ├── Write .claude/memory/YYYY/MM/DD/sharp-review.md (single file w/ rem frontmatter)
-                     ├── stamp-memory.js → index in MEMORY.md
-                     └── archiveResolved() → .claude/tasks/archive/YYYY/MM/DD.md
+                     └── stamp-memory.js → index in MEMORY.md
 
 Generalized content review (external consumers):
   Caller → Workflow(sharp-review-workflow.js, { contentType: "content", content, reviewScope, findingSchema, reviewers, pickStrategy: "all", ... })
@@ -53,7 +52,7 @@ sharp-review/
 ├── skills/sharp-review/SKILL.md /sharp-review skill definition
 ├── scripts/
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
-│   ├── post-review.js                Write memory entry → stamp → archive resolved
+│   ├── post-review.js                Write memory entry → stamp
 │   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
 ├── lib.mjs                       SR-specific logic: frontmatter, markdown parsing, category inference, diff manifest
 ├── tests/                        Tests (node:test)
@@ -96,7 +95,7 @@ See `.claude/rules/invariants.md` (always-injected) for diff manifest, workflow 
 
 ## Task System
 
-Sharp-review owns findings end-to-end. `post-review.js` writes `sharp-review.md`, stamps memory, and directly archives resolved findings — no delegation to `task-engine.js`. The `todo` CLI (owned by rem) scans memory files on the fly for reporting.
+Sharp-review owns findings end-to-end. `post-review.js` writes `sharp-review.md` and stamps memory — no delegation to `task-engine.js`. The `todo` CLI (owned by rem) scans memory files on the fly for reporting.
 
 Full file-ownership table → `skills/sharp-review/reference/task-system.md`.
 
