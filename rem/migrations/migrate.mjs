@@ -5,9 +5,7 @@
 //   - memory frontmatter (name/description/created/accessed/tier) + dated YYYY/MM/DD dirs
 //     (delegated to stamp-memory.js, which already does this idempotently)
 //   - flat YYYY-MM-DD/ memory directories → nested YYYY/MM/DD/ (migrateFlatDirs)
-//   - resolved task archives must live at .claude/tasks/archive/YYYY/MM/DD.md — legacy
-//     .claude/memory/tasks/** content and non-conforming archive rollups (e.g. YYYY/MM.md,
-//     YYYY-MM.md) are folded into that layout, deduped by ID
+//   - legacy .claude/memory/tasks/** directories cleaned up
 //   - removal of stray state files left behind by plugins predating rem
 //     (e.g. .claude/.retro_state.json, superseded by .claude/.rem-state.json)
 
@@ -15,7 +13,7 @@ import { existsSync, rmSync, mkdirSync, readdirSync, renameSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
-import { migrateLegacyArchives } from './legacy-archive.mjs';
+
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -78,12 +76,6 @@ export async function migrate(projectRoot) {
       changed = true;
       summary.push('removed broken entries from MEMORY.md index');
     }
-  }
-
-  const archives = migrateLegacyArchives(projectRoot);
-  if (archives.changed) {
-    changed = true;
-    summary.push(...archives.summary);
   }
 
   for (const name of LEGACY_STATE_FILES) {

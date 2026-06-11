@@ -16,9 +16,8 @@ import {
   isStale, detectScale,
   parseExistingTasks,
   groupByModule, groupByCategory,
-  archiveResolved,
   scanMemoryForFindings, scanManualTasks,
-  ARCHIVE_DIR,
+  markFinding,
 } from "../scripts/task-lib.mjs";
 
 // ── Constants ────────────────────────────────────────────────────────────────────
@@ -348,112 +347,105 @@ describe("scanManualTasks", () => {
   });
 });
 
-// ── archiveResolved (integration — writes to real project archive) ──────────────
+// ── markFinding ────────────────────────────────────────────────────────────────
 
-describe("archiveResolved", () => {
-  let savedFiles = new Map(); // path → content (or null if didn't exist)
-  const TEST_IDS = ["TEST-ARCHIVE-001", "TEST-ARCHIVE-002", "TEST-ARCHIVE-003", "TEST-ARCHIVE-004"];
+describe("markFinding", () => {
+  let tmpDir;
 
   beforeEach(() => {
-    // Snapshot archive files that may be touched (YYYY/MM/DD.md structure)
-    const days = ["2026/06/08", "2026/05/30", "2026/06/09", "2026/07/01"];
-    for (const d of days) {
-      const f = path.join(ARCHIVE_DIR, `${d}.md`);
-      if (fs.existsSync(f)) {
-        savedFiles.set(f, fs.readFileSync(f, "utf8"));
-      } else {
-        savedFiles.set(f, null);
-      }
-    }
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "task-lib-test-"));
   });
 
   afterEach(() => {
-    for (const [f, content] of savedFiles) {
-      if (content === null) {
-        if (fs.existsSync(f)) {
-          const current = fs.readFileSync(f, "utf8");
-          if (TEST_IDS.some(id => current.includes(id))) {
-            // Remove lines containing TEST_ ids
-            const cleaned = current.split('\n').filter(l => !TEST_IDS.some(id => l.includes(id))).join('\n').trim();
-            if (cleaned.replace(/^# .+\n*/, '').trim() === '') {
-              // Only header left — remove file and empty parent dirs
-              fs.unlinkSync(f);
-            } else {
-              fs.writeFileSync(f, cleaned + '\n', "utf8");
-            }
-          }
-        }
-      } else {
-        fs.writeFileSync(f, content, "utf8");
-      }
-    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("creates archive files grouped by day", () => {
-    const findings = [
-      { id: "TEST-ARCHIVE-001", severity: "HIGH", status: "fixed", summary: "Bug A", discovered: "2026-06-08" },
-      { id: "TEST-ARCHIVE-002", severity: "MEDIUM", status: "fixed", summary: "Bug B", discovered: "2026-05-30" },
-    ];
-    archiveResolved(findings, "2026-06-09", "[test]");
+  function writeReview(content) {
+    const dayDir = path.join(tmpDir, "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    const file = path.join(dayDir, "sharp-review.md");
+    fs.writeFileSync(file, content, "utf8");
+    return file;
+  }
 
-    const junFile = path.join(ARCHIVE_DIR, "2026/06/08.md");
-    assert.ok(fs.existsSync(junFile));
-    const junContent = fs.readFileSync(junFile, "utf8");
-    assert.ok(junContent.includes("TEST-ARCHIVE-001"));
-    assert.ok(junContent.includes("Bug A"));
+  test("marks SR finding fixed and updates frontmatter", () => {
+    const file = writeReview([
+      "---",
+      "name: sharp-review-2026-06-09",
+      "description: Sharp review findings — 1 total",
+      "metadata:",
+      "  type: project",
+      "created: 2026-06-09",
+      "accessed: 2026-06-09",
+      "tier: short",
+      "---",
+      "",
+      "### [SR-20260609-901] [HIGH] test/file.js — A serious bug",
+      "- **Category:** Bug",
+      "- **Module:** engine",
+      "- **Status:** OPEN",
+      "- **Suggestion:** Fix it",
+    ].join("\n"), "utf8");
 
-    const mayFile = path.join(ARCHIVE_DIR, "2026/05/30.md");
-    assert.ok(fs.existsSync(mayFile));
-    const mayContent = fs.readFileSync(mayFile, "utf8");
-    assert.ok(mayContent.includes("TEST-ARCHIVE-002"));
-    assert.ok(mayContent.includes("Bug B"));
+    const result = markFinding(tmpDir, "SR-20260609-901", "fixed", "2026-06-09");
+    assert.equal(result.found, true);
+    assert.equal(result.file, file);
+
+    const content = fs.readFileSync(file, "utf8");
+    assert.match(content, /\*\*Status:\*\*\s*FIXED/);
   });
 
-  test("does not duplicate entries already in archive", () => {
-    const dayFile = path.join(ARCHIVE_DIR, "2026/06/08.md");
-    const dir = path.dirname(dayFile);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const existing = fs.existsSync(dayFile) ? fs.readFileSync(dayFile, "utf8") : "# Resolved Tasks — 2026-06-08\n";
-    if (!existing.includes("TEST-ARCHIVE-003")) {
-      fs.writeFileSync(dayFile, existing.trimEnd() + "\n\n- [x] TEST-ARCHIVE-003 [LOW] Already there\n      → FIXED 2026-06-09: marked resolved\n\n", "utf8");
-    }
+  test("marks SR finding open", () => {
+    const file = writeReview([
+      "---", "name: sharp-review-2026-06-09", "---",
+      "### [SR-20260609-901] [HIGH] test/file.js — A serious bug",
+      "- **Status:** FIXED",
+    ].join("\n"), "utf8");
 
-    const findings = [
-      { id: "TEST-ARCHIVE-003", severity: "LOW", status: "fixed", summary: "Already there", discovered: "2026-06-08" },
-      { id: "TEST-ARCHIVE-004", severity: "HIGH", status: "fixed", summary: "New bug", discovered: "2026-06-09" },
-    ];
-    archiveResolved(findings, "2026-06-09", "[test]");
-
-    const content = fs.readFileSync(dayFile, "utf8");
-    const count = [...content.matchAll(/TEST-ARCHIVE-003/g)].length;
-    assert.equal(count, 1);
-    // TEST-ARCHIVE-004 goes to its own day file
-    const day2File = path.join(ARCHIVE_DIR, "2026/06/09.md");
-    assert.ok(fs.existsSync(day2File));
-    assert.ok(fs.readFileSync(day2File, "utf8").includes("TEST-ARCHIVE-004"));
+    const result = markFinding(tmpDir, "SR-20260609-901", "open", "2026-06-09");
+    assert.equal(result.found, true);
+    assert.match(fs.readFileSync(file, "utf8"), /\*\*Status:\*\*\s*OPEN/);
   });
 
-  test("skips when no resolved findings", () => {
-    const findings = [
-      { id: "TEST-ARCHIVE-001", severity: "HIGH", status: "open", summary: "Still open", discovered: "2026-06-08" },
-    ];
-    archiveResolved(findings, "2026-06-09", "[test]");
-    for (const f of savedFiles.keys()) {
-      if (fs.existsSync(f)) {
-        assert.ok(!fs.readFileSync(f, "utf8").includes("Still open"));
-      }
-    }
+  test("returns error for unknown SR id", () => {
+    writeReview([
+      "---", "name: sharp-review-2026-06-09", "---",
+      "### [SR-20260609-901] [HIGH] test/file.js — A serious bug",
+      "- **Status:** OPEN",
+    ].join("\n"), "utf8");
+
+    const result = markFinding(tmpDir, "SR-20260609-999", "fixed", "2026-06-09");
+    assert.equal(result.found, false);
+    assert.match(result.error, /not found/);
   });
 
-  test("resolvedDate overrides day grouping", () => {
-    const findings = [
-      { id: "TEST-ARCHIVE-001", severity: "HIGH", status: "fixed", summary: "Dated bug", discovered: "2026-06-08", resolvedDate: "2026-07-01" },
-    ];
-    archiveResolved(findings, "2026-06-09", "[test]");
-    const julFile = path.join(ARCHIVE_DIR, "2026/07/01.md");
-    assert.ok(fs.existsSync(julFile));
-    assert.ok(fs.readFileSync(julFile, "utf8").includes("TEST-ARCHIVE-001"));
+  test("toggles MANUAL task checkbox", () => {
+    const dayDir = path.join(tmpDir, "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    const file = path.join(dayDir, "manual.md");
+    fs.writeFileSync(file, "- [ ] MANUAL-20260609-001 [LOW] Write docs (2026-06-09)\n", "utf8");
+
+    const fixed = markFinding(tmpDir, "MANUAL-20260609-001", "fixed", "2026-06-09");
+    assert.equal(fixed.found, true);
+    assert.match(fs.readFileSync(file, "utf8"), /- \[x\] MANUAL-20260609-001/);
+
+    const reopened = markFinding(tmpDir, "MANUAL-20260609-001", "open", "2026-06-09");
+    assert.equal(reopened.found, true);
+    assert.match(fs.readFileSync(file, "utf8"), /- \[ \] MANUAL-20260609-001/);
+  });
+
+  test("rejects invalid status", () => {
+    const result = markFinding(tmpDir, "SR-20260609-901", "wat", "2026-06-09");
+    assert.equal(result.found, false);
+    assert.match(result.error, /Invalid status/);
+  });
+
+  test("rejects unknown id format", () => {
+    const result = markFinding(tmpDir, "FOO-001", "fixed", "2026-06-09");
+    assert.equal(result.found, false);
+    assert.match(result.error, /Unknown ID format/);
   });
 });
+
 
 

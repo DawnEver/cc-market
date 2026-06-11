@@ -31,14 +31,19 @@ Generates a `MANUAL-YYYYMMDD-NNN` ID and writes to `.claude/memory/YYYY/MM/DD/ma
 node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" check
 ```
 
-### `/todo resolve <SR-ID>` — Resolve a finding
-
-1. Edit `.claude/memory/YYYY/MM/DD/sharp-review.md`: `**Status:** OPEN` → `**Status:** FIXED`
-2. Run `post-review.js --rescan --date YYYY-MM-DD` to archive the finding
+### `/todo mark <id> <open|fixed|closed>` — Set a finding's status
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/../sharp-review/scripts/post-review.js" --rescan --date YYYY-MM-DD
+node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" mark SR-20260610-003 fixed
 ```
+
+- `SR-*` IDs: flips `**Status:**` in `sharp-review.md`. Marking `fixed` also re-derives the
+  frontmatter — equivalent to hand-editing + `post-review.js --rescan`.
+- `MANUAL-*` IDs: toggles the `- [ ]` / `- [x]` checkbox in `manual.md` (`open` → unchecked,
+  `fixed`/`closed` → checked).
+
+Agents should run this immediately after fixing AND verifying a finding (tests pass,
+behavior confirmed) — don't leave it for the next review to rediscover.
 
 ## Architecture
 
@@ -46,10 +51,10 @@ node "${CLAUDE_PLUGIN_ROOT}/../sharp-review/scripts/post-review.js" --rescan --d
 /todo (hosted by rem)
   ├── /todo          → task-engine.js report (scans memory directly)
   ├── /todo add      → task-engine.js add --summary "..." (writes manual.md)
-  ├── /todo check    → task-engine.js check
-  └── /todo resolve  → edit sharp-review.md → post-review.js --rescan
+  ├── /todo mark     → task-engine.js mark <id> <open|fixed|closed>
+  └── /todo check    → task-engine.js check
 ```
 
-**Rem** owns the task engine: report, add, check.
+**Rem** owns the task engine: report, add, check, mark.
 
-**Sharp-review** owns findings: post-review.js writes `sharp-review.md` and archives resolved findings to `.claude/tasks/archive/YYYY/MM/DD.md`.
+**Sharp-review** owns findings: post-review.js writes `sharp-review.md` with rem frontmatter.

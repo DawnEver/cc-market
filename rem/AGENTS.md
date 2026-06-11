@@ -22,7 +22,7 @@ SessionStart → prune-memory.js --evict-stale
     ├── /todo        → task-engine.js report  (scans memory directly)
     ├── /todo add    → task-engine.js add --summary "..."
     ├── /todo remove → task-engine.js remove <id>  (or close SR-*)
-    ├── /todo resolve → edit sharp-review.md → post-review.js --rescan
+    ├── /todo mark   → task-engine.js mark <id> <open|fixed|closed>
     └── /todo check  → task-engine.js report  (report includes stats)
 ```
 
@@ -44,7 +44,7 @@ rem/
 │   ├── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
 │   ├── check-docs.js         Doc freshness check at compact time
 │   ├── task-lib.mjs          Task pure logic: scan, parse, archive, report helpers
-│   └── task-engine.js        Task CLI (todo): report, add, remove, help
+│   └── task-engine.js        Task CLI (todo): report, add, remove, mark, help
 ├── skills/
 │   ├── rem/SKILL.md         /rem skill definition and workflow
 │   └── todo/SKILL.md         /todo skill — user-facing task management

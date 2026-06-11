@@ -11,4 +11,4 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | `rem-prep.js` | Pre-REM automation: event log, batch touch, auto-promote, compact check | `--transcript <path>`, `--promote` |
 | `check-docs.js` | Doc freshness check at compact time | `--json` |
 | `task-engine.js` | Task CLI (`/todo`) | `report`, `add`, `remove`, `help` |
-| `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, archiveResolved, groupBy* |
+| `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, markFinding, groupBy* |

@@ -1,15 +1,14 @@
 // task-lib.mjs — pure task management logic (owned by rem)
 // Used by task-engine.js (CLI) and callable from post-review.js / tests.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { DAY_MS } from '../lib.mjs';
+import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown, todayISO } from '../shared/lib.mjs';
 
 // ── Paths ──
 
 export const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-export const TASKS_DIR = join(ROOT, '.claude', 'tasks');
-export const ARCHIVE_DIR = join(TASKS_DIR, 'archive');
 export const STALE_DAYS = 90;
 
 // ── Helpers ──
@@ -93,8 +92,6 @@ export function groupByCategory(findings) {
 
 // ── Sharp-review finding scanning ──
 
-import { SR_FINDING_HDR_RE, SR_STATUS_RE } from '../shared/lib.mjs';
-
 const SR_MODULE_RE = /^\s*-?\s*\*\*Module:\*\*\s*(.+)/m;
 
 export function scanMemoryForFindings(memDir) {
@@ -176,50 +173,80 @@ export function scanManualTasks(memDir) {
   return tasks;
 }
 
-// ── Archive ──
+// ── Mark status (open/fixed/closed) ──
 
-export function archiveResolved(findings, today, logPrefix = '[task-engine]') {
-  const resolved = findings.filter(f => ['fixed', 'resolved'].includes((f.status || '').toLowerCase()));
-  if (resolved.length === 0) return;
+const VALID_STATUSES = ['open', 'fixed', 'closed'];
 
-  const byDay = new Map();
-  for (const f of resolved) {
-    const day = f.resolvedDate || f.discovered || today;
-    if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day).push(f);
+function walkFiles(dir, fileName, visit) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (walkFiles(full, fileName, visit)) return true;
+      continue;
+    }
+    if (entry.name === fileName && visit(full)) return true;
   }
-
-  for (const [day, items] of byDay) {
-    const dayPath = day.replace(/-/g, '/'); // 2026-06-09 → 2026/06/09
-    const dir = join(ARCHIVE_DIR, dayPath.split('/').slice(0, 2).join('/')); // 2026/06
-    const archiveFile = join(ARCHIVE_DIR, `${dayPath}.md`); // 2026/06/09.md
-
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-    let existing = '';
-    if (existsSync(archiveFile)) {
-      existing = readFileSync(archiveFile, 'utf8');
-    }
-
-    const newLines = [];
-    for (const f of items) {
-      if (existing.includes(f.id)) continue;
-      newLines.push(`- [x] ${f.id} [${f.severity}] ${f.summary}`);
-      newLines.push(`      → FIXED ${today}: ${f.resolutionNote || 'marked resolved'}`);
-      newLines.push('');
-    }
-
-    if (newLines.length === 0) continue;
-
-    if (!existing) {
-      const header = `# Resolved Tasks — ${day}\n\n`;
-      writeFileSync(archiveFile, header + newLines.join('\n') + '\n', 'utf8');
-    } else {
-      writeFileSync(archiveFile, existing.trimEnd() + '\n\n' + newLines.join('\n') + '\n', 'utf8');
-    }
-    const archivedCount = newLines.filter(l => l.startsWith('- [x]')).length;
-    console.log(`${logPrefix} Archived ${archivedCount} items → archive/${dayPath}.md`);
-  }
+  return false;
 }
 
+function markSRFinding(memDir, id, status, today) {
+  let target = null;
+  walkFiles(memDir, 'sharp-review.md', full => {
+    const content = readFileSync(full, 'utf8');
+    if (!content.includes(`[${id}]`)) return false;
+    const updated = content.replace(
+      new RegExp(`(### \\[${id}\\][\\s\\S]*?)\\*\\*Status:\\*\\*\\s*\\w+`),
+      `$1**Status:** ${status.toUpperCase()}`
+    );
+    writeFileSync(full, updated, 'utf8');
+    target = full;
+    return true;
+  });
+
+  if (!target) return { found: false, error: `Finding ${id} not found in any sharp-review.md` };
+
+  // Re-derive frontmatter and archive newly-fixed findings
+  const date = todayISO(today);
+  const content = readFileSync(target, 'utf8');
+  const findings = parseFindingsFromMarkdown(content, date);
+  if (findings.length > 0) {
+    const updatedFrontmatter = reviewFrontmatter(findings, date);
+    const body = content.slice(content.indexOf('\n---\n') + 5);
+    writeFileSync(target, `${updatedFrontmatter}\n${body}`, 'utf8');
+  }
+
+  return { found: true, file: target, id, status };
+}
+
+function markManualTask(memDir, id, status) {
+  let target = null;
+  const checked = status === 'open' ? ' ' : 'x';
+  walkFiles(memDir, 'manual.md', full => {
+    const content = readFileSync(full, 'utf8');
+    if (!content.includes(id)) return false;
+    const updated = content.replace(
+      new RegExp(`- \\[[ x]\\] (${id}\\b)`),
+      `- [${checked}] $1`
+    );
+    writeFileSync(full, updated, 'utf8');
+    target = full;
+    return true;
+  });
+
+  if (!target) return { found: false, error: `Task ${id} not found in any manual.md` };
+  return { found: true, file: target, id, status };
+}
+
+// Mark a finding (SR-* or MANUAL-*) as open / fixed / closed.
+// SR-fixed also re-derives frontmatter and archives the finding.
+export function markFinding(memDir, id, status, today) {
+  const norm = (status || '').toLowerCase();
+  if (!VALID_STATUSES.includes(norm)) {
+    return { found: false, error: `Invalid status: ${status} (expected open|fixed|closed)` };
+  }
+  if (id.startsWith('SR-')) return markSRFinding(memDir, id, norm, today);
+  if (id.startsWith('MANUAL-')) return markManualTask(memDir, id, norm);
+  return { found: false, error: `Unknown ID format: ${id} (expected SR-* or MANUAL-* ID)` };
+}
 
