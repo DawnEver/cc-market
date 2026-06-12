@@ -21,7 +21,6 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 import bootstrap; bootstrap.ensure()
 
 from core import pidfile
-from core.anomalies import is_ai_only
 from core.config import load_config as load_main_config
 from core.remediate import apply_remedies
 from core.state import load_state, save_state, track_anomaly as track
@@ -63,17 +62,6 @@ def _wake_claude(project_dir: Path, config: dict, reason: str, detail: str,
     wd = config['watchd']
     log_file = wd['log_file']
     types = sorted(anomaly_types or [])
-    ai_only = is_ai_only(types)
-
-    # Parked AI-only anomalies (cron_stale/cron_marker_missing) have no shell remedy and
-    # may persist indefinitely. Writing a trigger for them every poll floods the real-time
-    # layers (trigger-watch + in-session Monitor) with events nothing can act on. Skip the
-    # trigger entirely — the live /watch:watch loop refreshes cron on its own cadence.
-    if ai_only and wd.get('suppress_ai_only_triggers', True):
-        _log(project_dir, log_file, 'info',
-             f'Suppressing AI-only trigger ({", ".join(types)}) — no shell remedy, '
-             f'handled by the in-session loop')
-        return
 
     if dry_run:
         _log(project_dir, log_file, 'info', f'[DRYRUN] Would wake Claude: {reason} — {detail}')
@@ -82,7 +70,7 @@ def _wake_claude(project_dir: Path, config: dict, reason: str, detail: str,
     trigger.parent.mkdir(parents=True, exist_ok=True)
     trigger.write_text(json.dumps({
         'reason': reason, 'detail': detail,
-        'anomaly_types': types, 'ai_only': ai_only,
+        'anomaly_types': types,
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'project_dir': str(project_dir),
     }, ensure_ascii=False) + '\n', encoding='utf-8')
@@ -138,11 +126,9 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
     else:
         # Headless auto-remediation: when enabled, watchd applies the same
         # deterministic remedy chains the AI loop would (deploy → test gate →
-        # rollback-on-failure → build/restart) entirely in-process. AI-only
-        # anomalies (cron_*) have no shell remedy, so they still fall through
-        # to _wake_claude. A mixed batch is remediated for its actionable part.
+        # rollback-on-failure → build/restart) entirely in-process.
         auto = wd.get('auto_remediate', False)
-        if auto and anomalies and not is_ai_only(anomaly_types) and not dry_run:
+        if auto and anomalies and not dry_run:
             # Refresh heartbeat first — remediation (deploy) can run for minutes
             # and we must not read as stale meanwhile.
             _write_heartbeat(project_dir, wd['heartbeat_file'])

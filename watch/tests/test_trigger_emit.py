@@ -69,41 +69,5 @@ class TestTriggerEmit(unittest.TestCase):
         self.assertEqual(buf.getvalue(), '')
 
 
-    def _run_once(self, payload_json, extra_args=None):
-        """Drive one poll over a changed trigger and capture stdout."""
-        self.trigger.write_text('{"reason": "old", "detail": "x"}', encoding='utf-8')
-        self.trigger.write_text(payload_json, encoding='utf-8')
-        buf = io.StringIO()
-        argv = ['--project-dir', str(self.project), '--once'] + (extra_args or [])
-        with patch.object(trigger_emit.time, 'sleep', lambda _x: None), \
-             redirect_stdout(buf):
-            try:
-                with patch.object(trigger_emit, '_mtime', side_effect=[1000.0, 2000.0]):
-                    trigger_emit.main(argv)
-            except StopIteration:
-                pass  # --once never reached because the event was filtered out
-        return buf.getvalue()
-
-    def test_ignore_ai_only_skips_ai_only_trigger(self):
-        out = self._run_once(
-            '{"reason": "anomalies_detected", "detail": "cron", '
-            '"anomaly_types": ["cron_stale"], "ai_only": true}',
-            extra_args=['--ignore-ai-only'])
-        self.assertEqual(out, '')
-
-    def test_ignore_ai_only_still_emits_actionable(self):
-        out = self._run_once(
-            '{"reason": "anomalies_detected", "detail": "down", '
-            '"anomaly_types": ["endpoint_unreachable"], "ai_only": false}',
-            extra_args=['--ignore-ai-only'])
-        self.assertIn('ANOMALY trigger: anomalies_detected', out)
-
-    def test_without_flag_emits_ai_only(self):
-        out = self._run_once(
-            '{"reason": "anomalies_detected", "detail": "cron", '
-            '"anomaly_types": ["cron_stale"], "ai_only": true}')
-        self.assertIn('ANOMALY trigger: anomalies_detected', out)
-
-
 if __name__ == '__main__':
     unittest.main()

@@ -154,5 +154,41 @@ class TestRecoverService(_OneRepoFixture):
         self.assertEqual(_head(self.deploy_wt), self.commitA)  # recovery ran → rolled back
 
 
+class TestFetchBlindness(_OneRepoFixture):
+    """A failed `git fetch` must not masquerade as 'no new version' — after a
+    streak it escalates to fetch_unreachable; a recovered fetch clears the streak."""
+
+    def _break_remote(self):
+        _git(self.work, 'remote', 'set-url', 'origin',
+             str(Path(self.tmp.name) / 'nonexistent.git'))
+
+    def _restore_remote(self):
+        _git(self.work, 'remote', 'set-url', 'origin', str(self.remote))
+
+    def test_streak_escalates_then_clears(self):
+        self._break_remote()
+        state: dict = {}
+        # First two failures: streak grows but no anomaly yet (default escalate_after=3).
+        for expected in (1, 2):
+            result = GitVersion().check(self.comp_cfg, self.global_cfg, state)
+            self.assertEqual(state['_fetch_fail_streak'], expected)
+            self.assertNotIn('fetch_unreachable', [a.type for a in result.anomalies])
+        # Third consecutive failure escalates.
+        result = GitVersion().check(self.comp_cfg, self.global_cfg, state)
+        self.assertIn('fetch_unreachable', [a.type for a in result.anomalies])
+        # A recovered fetch clears the streak entirely.
+        self._restore_remote()
+        result = GitVersion().check(self.comp_cfg, self.global_cfg, state)
+        self.assertNotIn('_fetch_fail_streak', state)
+        self.assertNotIn('fetch_unreachable', [a.type for a in result.anomalies])
+
+    def test_custom_escalate_after(self):
+        cfg = {**self.comp_cfg, 'deploy': {**self.comp_cfg['deploy'],
+                                           'fetch_fail_escalate_after': 1}}
+        self._break_remote()
+        result = GitVersion().check(cfg, self.global_cfg, {})
+        self.assertIn('fetch_unreachable', [a.type for a in result.anomalies])
+
+
 if __name__ == '__main__':
     unittest.main()

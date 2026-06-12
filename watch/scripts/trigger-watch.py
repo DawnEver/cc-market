@@ -23,9 +23,8 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 import bootstrap; bootstrap.ensure()
 
 from core import pidfile
-from core.anomalies import AI_ONLY_ANOMALY_TYPES
 from core.config import load_config
-from core.log import append_report, get_last_report
+from core.log import append_report
 
 LOG_FILE = '.claude/watch/logs/trigger-watch.jsonl'
 PIDFILE = 'trigger-watch.pid'
@@ -75,44 +74,6 @@ def _run_ai_loop(project_dir: Path, dry_run: bool = False) -> bool:
         return False
 
 
-def _report_has_ai_only_anomaly(project_dir: Path, config: dict) -> bool:
-    report = get_last_report(project_dir, log_file=config['logging']['log_file'])
-    if not report:
-        return False
-    return any(a.get('type') in AI_ONLY_ANOMALY_TYPES for a in report.get('anomalies', []))
-
-
-def _run_claude_headless(project_dir: Path, dry_run: bool = False) -> bool:
-    """Spawn a headless `claude -p "/watch:watch"` so an agent with CronCreate/CronList
-    access can refresh the durable schedule (see components/cron_freshness.py)."""
-    cmd = ['claude', '-p', '/watch:watch']
-    if dry_run:
-        _log(project_dir, 'info', f'[DRYRUN] Would run: {" ".join(cmd)} (cwd={project_dir})')
-        return True
-    _log(project_dir, 'info', 'Running headless `claude -p "/watch:watch"` to refresh CronCreate...')
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=900,
-        )
-        if result.stdout:
-            _log(project_dir, 'info', f'claude -p: {result.stdout.strip()[:500]}')
-        if result.stderr:
-            _log(project_dir, 'warn', f'claude -p stderr: {result.stderr.strip()[:500]}')
-        if result.returncode != 0:
-            _log(project_dir, 'error', f'claude -p exited with code {result.returncode}')
-        return result.returncode == 0
-    except FileNotFoundError:
-        _log(project_dir, 'warn', '`claude` CLI not found on PATH — skipping headless escalation')
-        return False
-    except subprocess.TimeoutExpired:
-        _log(project_dir, 'error', 'claude -p "/watch:watch" timed out after 900s')
-        return False
-
-
 def _poll(project_dir: Path, config: dict, last_mtime: float,
           dry_run: bool = False) -> float:
     trigger_path = project_dir / config['watchd']['trigger_file']
@@ -130,10 +91,6 @@ def _poll(project_dir: Path, config: dict, last_mtime: float,
             _log(project_dir, 'warn', 'Trigger file changed but unreadable')
 
         success = _run_ai_loop(project_dir, dry_run)
-
-        if success and config['watchd'].get('enable_headless_ai_escalation') \
-                and _report_has_ai_only_anomaly(project_dir, config):
-            success = _run_claude_headless(project_dir, dry_run)
 
         if success:
             _ack_trigger(project_dir, trigger_ts, 'trigger-watch')

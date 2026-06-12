@@ -16,7 +16,7 @@ no `claude -p` dependency. All context lives in filesystem state (`state/*.json`
 `trigger_ack.json`. Supports `--interval 15` (default), `--once`, and `--dry-run`. Logs to
 `.claude/watch/logs/trigger-watch.jsonl`.
 
-## Three complementary mechanisms
+## Two complementary mechanisms
 
 - **trigger-watch.py** — daemon-driven, session-independent base layer: watchd writes
   `trigger.json` on anomaly → trigger-watch runs the AI check (`scripts/watch.py`)
@@ -25,14 +25,13 @@ no `claude -p` dependency. All context lives in filesystem state (`state/*.json`
 - **Monitor + trigger-emit.py** — in-session real-time layer: while a live `/watch:watch`
   session is alive, it arms a `Monitor` whose command is `scripts/trigger-emit.py`
   (pure stdlib; prints one line per `trigger.json` change). The session then handles the
-  trigger itself with full tool access — strictly better than headless `claude -p`, which
-  can't answer permission prompts. Armed in SKILL.md Step 6; skipped in headless/cron runs.
-- **CronCreate** — interval-driven: durable cron calls `/watch:watch` every 12h
-  (configurable), self-refreshes to reset 7-day TTL.
+  trigger itself with full tool access. Armed in SKILL.md Step 5; skipped in
+  non-interactive runs.
 
 These layer rather than compete: trigger-watch covers "no session alive", Monitor upgrades
-"session alive" to real-time full-capability handling, and CronCreate guarantees a periodic
-floor. Reacting twice is harmless — `scripts/watch.py` remedies are idempotent.
+"session alive" to real-time full-capability handling. The periodic polling floor is the
+`watchd` daemon itself (`watchd.interval`). Reacting twice is harmless — `scripts/watch.py`
+remedies are idempotent.
 
 ### Process-identity note (cross-platform)
 
@@ -45,23 +44,7 @@ write their own pidfile (`state/watchd.pid`, `state/trigger-watch.pid`) *after* 
 worker also reaps the Windows wait-stub parent. `trigger-emit.py` sidesteps this entirely by
 not importing bootstrap (pure stdlib, no re-exec).
 
-## AI-only anomalies and headless escalation
-
-Most anomalies are fixed by shell-executable remedies (restart, rollback, deploy) —
-`scripts/watch.py` handles these without any LLM involved. A small set of anomaly
-types have **no shell remedy**, because the only fix requires agent-only tools
-(CronCreate/CronList): `cron_stale` and `cron_marker_missing`, raised by
-`components/cron_freshness.py` (see `scheduling.md` Step 5).
-
-When `trigger-watch.py` handles a trigger:
-1. It always runs `scripts/watch.py` first (pure script, as before).
-2. If the resulting health report still contains an `AI_ONLY_ANOMALY_TYPES` anomaly
-   AND `watchd.enable_headless_ai_escalation: true` is set, it additionally spawns
-   `claude -p "/watch:watch"` (`cwd` = project dir) — a real agent session that can
-   run CronList/CronCreate and rewrite `state/cron_refresh.json`.
-3. If `enable_headless_ai_escalation` is false (default) or the `claude` CLI isn't on
-   PATH, this step is skipped — the anomaly still escalates via email/webhook
-   (`cron_freshness` remedy `escalate_after: 1`), so a human is notified to run
-   `/watch:watch` manually.
-
-For one-off manual triggers, run `/watch:watch` directly.
+When `trigger-watch.py` handles a trigger it runs `scripts/watch.py` (the full check loop),
+then writes `trigger_ack.json` on success. All remedies are shell-executable (restart,
+rollback, deploy) — no LLM involvement is required. For one-off manual triggers, run
+`/watch:watch` directly.
