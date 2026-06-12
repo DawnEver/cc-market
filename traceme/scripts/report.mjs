@@ -137,12 +137,16 @@ export function generateReport(date, opts = {}) {
   lines.push(`| **Total** | **${totalSessions}** | **${totalPrompts}** | **${fmt(totalTokens)}** | **${fmtCost(totalCost)}** |`);
   lines.push('');
 
-  const modelBreakdown = queryModelBreakdown(date);
+  // Cross-device per-model breakdown when available (synced model_facts), else local.
+  const modelBreakdown = (merged && merged.model_facts && merged.model_facts.length)
+    ? merged.model_facts : queryModelBreakdown(date);
   if (modelBreakdown.length > 0) {
     lines.push('## Cost by Model');
     if (merged) {
       lines.push('');
-      lines.push('_Local device only — model data not synced_');
+      lines.push(merged.model_facts && merged.model_facts.length
+        ? `_Cross-device (${merged.devices.length} device(s))_`
+        : '_Local device only — older snapshots predate per-model sync_');
     }
     lines.push('');
     lines.push('| Model | Calls | Tokens | Cost |');

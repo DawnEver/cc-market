@@ -33,6 +33,10 @@ function sampleData() {
       { date: '2026-06-09', device: 'me@desktop', project: 'other', sessions: 3,
         prompts: 12, tokens: 90000, cost: 0.3, top_model: 'claude-opus-4-8' },
     ],
+    deviceModelFacts: [
+      { date: '2026-06-09', device: 'me@desktop', project: 'other', model: 'claude-opus-4-8',
+        requests: 8, tokens: 88000, all_tokens: 90000, cost: 0.3 },
+    ],
   };
 }
 
@@ -71,6 +75,7 @@ describe('Dashboard HTML builder', () => {
   it('carries cross-device data and local-device markers', () => {
     const payload = html.slice(html.indexOf('window.__TRACEME__'));
     assert.ok(payload.includes('deviceFacts'));
+    assert.ok(payload.includes('deviceModelFacts'), 'cross-device per-model facts carried');
     assert.ok(payload.includes('me@desktop') && payload.includes('me@laptop'));
     assert.ok(payload.includes('localDevice'));
     // per-model/skill/category panels are flagged local-device only

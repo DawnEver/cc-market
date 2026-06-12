@@ -135,11 +135,19 @@ today's per-device snapshot directly to `main`. Report reads all device files in
 directory and merges in memory. No separate aggregate step needed. Remote resolves from
 `TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's `origin` if unset.
 
+The snapshot carries `daily_summary` (incl. `billable_tokens`/`cache_read_tokens`), `tool_usage`,
+`model_facts` (per project×model components — lights up cross-device per-model views), and
+`sessions`. `merge.mjs` has ONE low-level reader, `loadDeviceSnapshots({from,to,skipSelf})`
+(cached `origin/main`, no network); `readMergedSnapshot(date)` (per-day merge, for report/insights)
+and `readDeviceFacts(from,to)` (per-device rows + per-device `modelFacts`, for the dashboard's
+all-devices vs. single-device view) are both built on it. The local device is excluded from
+`readDeviceFacts` — the live DB represents it, avoiding a double-count against its pushed snapshot.
+
 ### Key Files
 | File | Role |
 |------|------|
 | `scripts/crypto.mjs` | Zero-dep AES-256-GCM encryption (Node `crypto`, no external CLI) |
-| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, verify, backfill, `readMergedSnapshot` |
+| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, verify, backfill, `readMergedSnapshot`, `readDeviceFacts` |
 | `scripts/migrate-legacy-paths.mjs` | One-time, manual: re-paths existing remote `YYYY-MM-DD.enc` snapshots to `YYYY/MM/DD.enc`. Not part of the CLI — `node scripts/migrate-legacy-paths.mjs` |
 | `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
 | `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |

@@ -52,6 +52,11 @@ describe('Sync Data Dump/Import', () => {
     assert.equal(data.daily_summary[0].project, 'my-project');
     assert.equal(data.daily_summary[0].repo_origin, 'github.com/user/my-project');
     assert.equal(data.daily_summary[0].total_tokens, 25000);
+    assert.equal(data.daily_summary[0].billable_tokens, 24500); // 18000+6500+0, excludes cache_read
+    // per-model facts sync so cross-device per-model views work
+    assert.ok(data.model_facts.length >= 1);
+    assert.equal(data.model_facts[0].model, 'claude-sonnet-4-6');
+    assert.ok('input' in data.model_facts[0] && 'output' in data.model_facts[0]);
     assert.equal(data.sessions.length, 1);
     assert.equal(data.sessions[0].project, 'my-project');
     // Prompt text must NOT be in sessions
@@ -150,7 +155,7 @@ describe('Sync Data Dump/Import', () => {
     it('readDeviceFacts returns empty when sync is not set up', async () => {
       const { readDeviceFacts } = await import('../scripts/sync.mjs');
       const r = readDeviceFacts('2026-06-01', '2026-06-09');
-      assert.deepEqual(r, { facts: [], devices: [] });
+      assert.deepEqual(r, { facts: [], modelFacts: [], devices: [] });
     });
   });
 });

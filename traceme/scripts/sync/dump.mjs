@@ -1,4 +1,4 @@
-import { openDb, queryDailySummary, queryToolUsage } from '../db.mjs';
+import { openDb, queryDailySummary, queryToolUsage, queryModelFacts } from '../db.mjs';
 import { getDeviceId } from './repo.mjs';
 
 export function dumpDailyData(date) {
@@ -20,6 +20,12 @@ export function dumpDailyData(date) {
       top_model: r.top_model
     })),
     tool_usage: queryToolUsage(date),
+    // Per (project, model) token components — lights up cross-device per-model views.
+    model_facts: queryModelFacts(date, date).map(r => ({
+      project: r.project, model: r.model, requests: r.requests,
+      input: r.input, output: r.output, cache_read: r.cache_read, cache_creation: r.cache_creation,
+      cost: Math.round(r.cost * 100000) / 100000,
+    })),
     sessions: db.prepare(`
       SELECT id, project, repo_origin, branch, started_at, ended_at, prompt_count, total_tokens, total_cost
       FROM sessions WHERE date = ?

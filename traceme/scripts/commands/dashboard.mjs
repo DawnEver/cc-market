@@ -224,7 +224,7 @@ const CLIENT_JS = String.raw`
     renderTrend(tr);
     renderBreakdown(tr, cf);
     renderCatChart(cf);
-    renderModelTable(tr);
+    renderModelTable();
     renderProjectTable(tr, sr);
     renderSkillTable(kf);
   }
@@ -348,14 +348,27 @@ const CLIENT_JS = String.raw`
 
   function sortRows(rows, key) { return rows.sort(function (a, b) { var x = a[key], y = b[key]; return typeof x === 'string' ? String(x).localeCompare(y) : y - x; }); }
 
-  function renderModelTable(tr) {
-    // per-model breakdown is local-only (not synced) — aggregate just the local rows
+  // Cross-device per-model rows: local from live modelFacts (billable), foreign from synced
+  // deviceModelFacts. Foreign cost is the pushing device's price at push time.
+  function modelRows() {
+    var rows = [];
+    if (localOn()) D.modelFacts.forEach(function (r) {
+      if (!inRange(r)) return;
+      rows.push({ model: r.model, requests: r.requests, tokens: billable(r), cost: r.cost });
+    });
+    (D.deviceModelFacts || []).forEach(function (r) {
+      if (!state.devices.has(r.device) || !inRange(r)) return;
+      rows.push({ model: r.model, requests: r.requests, tokens: r.tokens, cost: r.cost });
+    });
+    return rows;
+  }
+
+  function renderModelTable() {
     var note = document.getElementById('local-note-model');
-    if (!localOn()) { fillTable('modeltbl', [], null); note.textContent = '(local device not selected)'; return; }
-    note.textContent = '(local device only — per-model data isn’t synced)';
+    var foreign = (D.deviceModelFacts || []).length > 0 && !localOnly();
+    note.textContent = foreign ? '(cross-device; foreign cost priced at push time)' : '(local device only — per-model data syncs once other devices re-push)';
     var agg = {};
-    tr.forEach(function (r) {
-      if (!r.local) return;
+    modelRows().forEach(function (r) {
       var a = agg[r.model] || (agg[r.model] = { model: r.model, requests: 0, tokens: 0, cost: 0 });
       a.requests += r.requests; a.tokens += r.tokens; a.cost += r.cost;
     });
@@ -492,9 +505,9 @@ export function cmdDashboard(args, VERSION) {
   const skillFacts = querySkillFacts(from, to);
   const sessionFacts = querySessionFacts(from, to);
 
-  // Cross-device: foreign devices' synced per-project daily facts (local device is the live DB above).
-  let deviceFacts = [], foreignDevices = [];
-  try { ({ facts: deviceFacts, devices: foreignDevices } = readDeviceFacts(from, to)); } catch {}
+  // Cross-device: foreign devices' synced per-project daily + per-model facts (local device is the live DB above).
+  let deviceFacts = [], deviceModelFacts = [], foreignDevices = [];
+  try { ({ facts: deviceFacts, modelFacts: deviceModelFacts, devices: foreignDevices } = readDeviceFacts(from, to)); } catch {}
   let localDevice = 'local';
   try { localDevice = getDeviceId(); } catch {}
   const devices = [localDevice, ...foreignDevices.filter(d => d !== localDevice)];
@@ -512,7 +525,7 @@ export function cmdDashboard(args, VERSION) {
       generatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
       projects, models, devices, localDevice,
     },
-    modelFacts, categoryFacts, skillFacts, sessionFacts, deviceFacts,
+    modelFacts, categoryFacts, skillFacts, sessionFacts, deviceFacts, deviceModelFacts,
   };
 
   const html = buildDashboardHtml(data);
