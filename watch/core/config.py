@@ -120,6 +120,10 @@ def load_config(project_dir: str | Path, config_path: str | None = None) -> dict
     # 4. Validate cross-field constraints
     _validate_config(config)
 
+    # 5. Stamp the project dir so components resolve paths against the project,
+    #    not the caller's cwd (watchd's cwd need not be the project).
+    config['_project_dir'] = str(project)
+
     return config
 
 

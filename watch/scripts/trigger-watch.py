@@ -24,7 +24,7 @@ import bootstrap; bootstrap.ensure()
 
 from core import pidfile
 from core.config import load_config
-from core.log import append_report
+from core.log import log_event
 
 LOG_FILE = '.claude/watch/logs/trigger-watch.jsonl'
 PIDFILE = 'trigger-watch.pid'
@@ -32,10 +32,7 @@ WATCH_PY = _PLUGIN_ROOT / 'scripts' / 'watch.py'
 
 
 def _log(project_dir: Path, level: str, msg: str) -> None:
-    ts = datetime.now(timezone.utc).isoformat()
-    print(f'[{ts}] {level}: {msg}')
-    append_report({'ts': ts, 'level': level, 'msg': msg}, project_dir,
-                  log_file=LOG_FILE, max_entries=0)
+    log_event(project_dir, LOG_FILE, level, msg)
 
 
 def _ack_trigger(project_dir: Path, trigger_ts: str, handled_by: str) -> None:

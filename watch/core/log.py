@@ -3,7 +3,20 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def log_event(project_dir: Path, log_file: str, level: str, msg: str) -> None:
+    """Print a timestamped line and append it to the given JSONL log.
+
+    Shared by watchd (watchd/daemon.py) and trigger-watch (scripts/trigger-watch.py),
+    which keep thin signature adapters around this body.
+    """
+    ts = datetime.now(timezone.utc).isoformat()
+    print(f'[{ts}] {level}: {msg}')
+    append_report({'ts': ts, 'level': level, 'msg': msg}, project_dir,
+                  log_file=log_file, max_entries=0)
 
 
 def append_report(report: dict, project_dir: Path,
