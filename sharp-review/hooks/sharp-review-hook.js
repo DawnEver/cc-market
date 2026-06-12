@@ -62,7 +62,7 @@ function appendClassifierMemory(entry) {
 
 function getChangedFiles() {
   try {
-    const out = execSync('git status --porcelain', { cwd: projectDir, timeout: 5000 }).toString();
+    const out = execSync('git status --porcelain', { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     return out.split('\n').map(l => l.slice(3).trim()).filter(Boolean);
   } catch { return []; }
 }
@@ -90,7 +90,7 @@ function gitRefExists(ref) {
 
 function getDiffStat(sinceRef) {
   try {
-    const out = execSync(`git diff --shortstat ${sinceRef}`, { cwd: projectDir, timeout: 5000 }).toString();
+    const out = execSync(`git diff --shortstat ${sinceRef}`, { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     const m = out.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
     if (!m) return { lines: 0, files: 0 };
     const files = parseInt(m[1], 10) || 0;
