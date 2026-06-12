@@ -90,6 +90,45 @@ export function readMergedSnapshot(date, opts = {}) {
   };
 }
 
+// Per-device daily facts across a date range — for the dashboard's multi-device view.
+// Unlike readMergedSnapshot (which sums devices together per day), this keeps each device's
+// rows separate so the UI can show "all devices" vs. a single device. The LOCAL device is
+// deliberately excluded — it is represented by the always-current live local DB facts, so
+// including its (throttle-lagged) pushed snapshot here would double-count and stale it.
+// Returns { facts, devices }; empty when sync isn't set up. Relies on the cached origin/main
+// ref (no network) — same freshness contract as report/readMergedSnapshot.
+export function readDeviceFacts(from, to) {
+  const empty = { facts: [], devices: [] };
+  if (!isSyncSetup()) return empty;
+  ensureSyncRepo();
+  if (git(['rev-parse', '--verify', '--quiet', 'origin/main'], { ignoreError: true }).status !== 0) return empty;
+
+  const self = getDeviceId();
+  const facts = [];
+  const devices = new Set();
+  for (const file of listRemoteSnapshots()) {
+    const parts = file.split('/');
+    if (parts.length < 4) continue;
+    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
+    if (date < from || date > to) continue;
+    const deviceName = parts[3].replace('.enc', '');
+    if (deviceName === self) continue;
+
+    const data = readRemoteSnapshot(file);
+    if (!data) continue;
+    const device = data.device || deviceName;
+    devices.add(device);
+    for (const r of (data.daily_summary || [])) {
+      facts.push({
+        date, device, project: r.project,
+        sessions: r.session_count || 0, prompts: r.prompt_count || 0,
+        tokens: r.total_tokens || 0, cost: r.total_cost || 0, top_model: r.top_model || null,
+      });
+    }
+  }
+  return { facts, devices: [...devices] };
+}
+
 export function verifyConsistency(date) {
   date = date || todayISO();
 

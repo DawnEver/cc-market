@@ -146,5 +146,11 @@ describe('Sync Data Dump/Import', () => {
       assert.equal(result.consistent, null);
       assert.ok(result.local.tokens >= 0);
     });
+
+    it('readDeviceFacts returns empty when sync is not set up', async () => {
+      const { readDeviceFacts } = await import('../scripts/sync.mjs');
+      const r = readDeviceFacts('2026-06-01', '2026-06-09');
+      assert.deepEqual(r, { facts: [], devices: [] });
+    });
   });
 });

@@ -28,7 +28,7 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 | `scripts/db.mjs` | SQLite wrapper: schema, `replaceSession`, derived queries |
 | `scripts/ingest.mjs` | Takeover NDJSON trace scanner (only non-transcript source) |
 | `scripts/report.mjs` | Markdown report generator: per-project stats, model/tool usage |
-| `scripts/commands/dashboard.mjs` | `dashboard` command: interactive HTML dashboard — embeds a 90-day flat fact table, renders/filters client-side with ECharts (CDN); `buildDashboardHtml` exported for tests |
+| `scripts/commands/dashboard.mjs` | `dashboard` command: interactive HTML dashboard — embeds a 90-day flat fact table + per-device synced facts, renders/filters client-side with ECharts (CDN) incl. all-devices vs. single-device view; `buildDashboardHtml` exported for tests |
 | `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights, dashboard |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
@@ -149,4 +149,4 @@ excluded) → `skills/traceme/reference/sync.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-49 tests: DB derived queries incl. category/per-model-day/daily + `categorizeTool` (9), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged (6), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls, data-honesty labels, JSON escaping (7), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.
+52 tests: DB derived queries incl. category + flat fact tables + `categorizeTool` (9), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged + `readDeviceFacts` (7), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping (9), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.

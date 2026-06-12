@@ -36,10 +36,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open  # Writ
 ```
 
 It writes `~/.claude/traceme/dashboard.html` and opens it. The page embeds the **last 90 days**
-of local data and renders with **Apache ECharts (loaded from a CDN — needs internet on first
-open)**. Everything is filtered in-browser, no CLI re-run: pick the **date range**, filter by one
-or more **projects**, switch grouping **by model / project / category**, toggle the calendar
-intensity between **billable tokens and cost**, and toggle the **cache_read** layer.
+of data and renders with **Apache ECharts (loaded from a CDN — needs internet on first open)**.
+Everything is filtered in-browser, no CLI re-run: pick the **date range**, filter by one or more
+**projects** and **devices** (all devices vs. a single device, when sync is set up), switch
+grouping **by model / project / device / category**, toggle the calendar intensity between
+**billable tokens and cost**, and toggle the **cache_read** layer.
+
+Cross-device: the token/cost/session/calendar/trend views combine the local live DB with each
+foreign device's synced snapshots. Only tokens/cost/session counts are synced — **per-model,
+tool-category, and skill breakdowns plus "Elapsed" are local-device only** (those panels carry a
+note and the basis/cache_read toggles appear only in single-local-device mode).
 
 Honesty notes baked into the view: the calendar/trend default to *billable* tokens
 (`input+output+cache_creation`) — re-read cache is excluded unless toggled, so idle big-context

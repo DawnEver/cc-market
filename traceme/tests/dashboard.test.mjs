@@ -8,6 +8,7 @@ function sampleData() {
       from: '2026-03-13', to: '2026-06-11', version: 'v1.2.3',
       generatedAt: '2026-06-11 12:00',
       projects: ['my-app', 'other'], models: ['claude-opus-4-8', 'claude-sonnet-4-6'],
+      devices: ['me@laptop', 'me@desktop'], localDevice: 'me@laptop',
     },
     modelFacts: [
       { date: '2026-06-08', project: 'my-app', model: 'claude-sonnet-4-6', requests: 10,
@@ -27,6 +28,10 @@ function sampleData() {
     sessionFacts: [
       { date: '2026-06-08', project: 'my-app', started_at: '2026-06-08T10:00:00Z',
         ended_at: '2026-06-08T12:30:00Z', prompt_count: 20, total_tokens: 43500, total_cost: 0.2 },
+    ],
+    deviceFacts: [
+      { date: '2026-06-09', device: 'me@desktop', project: 'other', sessions: 3,
+        prompts: 12, tokens: 90000, cost: 0.3, top_model: 'claude-opus-4-8' },
     ],
   };
 }
@@ -54,10 +59,23 @@ describe('Dashboard HTML builder', () => {
     assert.ok(payload.includes('cache_creation') && payload.includes('cache_read'));
   });
 
-  it('renders interactive controls (date range, projects, group-by)', () => {
+  it('renders interactive controls (date range, projects, devices, group-by)', () => {
     assert.ok(html.includes('id="from"') && html.includes('id="to"'));
     assert.ok(html.includes('id="projmenu"'));
+    assert.ok(html.includes('id="devmenu"'));
     assert.ok(html.includes('id="groupby"'));
+    // group-by exposes a Device dimension
+    assert.ok(/data-v="device"/.test(html));
+  });
+
+  it('carries cross-device data and local-device markers', () => {
+    const payload = html.slice(html.indexOf('window.__TRACEME__'));
+    assert.ok(payload.includes('deviceFacts'));
+    assert.ok(payload.includes('me@desktop') && payload.includes('me@laptop'));
+    assert.ok(payload.includes('localDevice'));
+    // per-model/skill/category panels are flagged local-device only
+    assert.ok(html.includes('local-note-model'));
+    assert.ok(html.includes("local device only"));
   });
 
   it('renders the signature chart sections', () => {
