@@ -33,92 +33,95 @@ export function groupKey(row) {
   return row.project || row.repo_origin;
 }
 
-// Read and merge all device snapshots for `date` from the cached `origin/main` ref —
-// no network call (relies on a prior `git fetch` from pushSnapshot/pullSnapshots).
-// Returns null if sync isn't set up, origin/main was never fetched, or no snapshots exist for the date.
-//
-// Options:
-//   skipSelf: if true, exclude the current device from the merge (used by verifyConsistency
-//             to avoid comparing local vs. local+foreign).
-export function readMergedSnapshot(date, opts = {}) {
-  date = date || todayISO();
+// ── Single low-level reader for both the merged (per-date) and per-device (range) views ──
+// Reads each device's `.enc` for the date(s) from the cached `origin/main` ref (no network).
+// Returns null when sync isn't set up or origin/main was never fetched; otherwise
+// { fetched_at, snapshots: [{ device, date, data }] } (snapshots may be empty).
+//   from/to: inclusive date range (pass the same date for a single day — uses the date dir).
+//   skipSelf: drop the current device (it is represented by the live local DB elsewhere).
+function loadDeviceSnapshots({ from, to, skipSelf }) {
   if (!isSyncSetup()) return null;
-
   ensureSyncRepo();
-
-  const ref = git(['rev-parse', '--verify', '--quiet', 'origin/main'], { ignoreError: true });
-  if (ref.status !== 0) return null;
+  if (git(['rev-parse', '--verify', '--quiet', 'origin/main'], { ignoreError: true }).status !== 0) return null;
 
   const lastCommit = git(['log', '-1', '--format=%cI', 'origin/main'], { ignoreError: true });
   const fetched_at = lastCommit.status === 0 ? lastCommit.stdout.trim() : null;
 
-  const [y, m, d] = date.split('-');
-  const dir = `${y}/${m}/${d}`;
-  const encFiles = listRemoteSnapshots(dir);
+  // Single-day hot path (report/insights call per day) scopes the listing to the date dir.
+  const single = from === to;
+  const files = single ? listRemoteSnapshots(from.split('-').join('/')) : listRemoteSnapshots();
 
-  if (encFiles.length === 0) return null;
-
-  const devices = [];
+  const self = getDeviceId();
   const snapshots = [];
-  const allSessions = [];
-
-  for (const file of encFiles) {
-    const deviceName = file.split('/').pop().replace('.enc', '');
-    if (opts.skipSelf && deviceName === getDeviceId()) continue;
-
+  for (const file of files) {
+    const parts = file.split('/');
+    if (parts.length < 4) continue;
+    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
+    if (!single && (date < from || date > to)) continue;
+    const deviceName = parts[3].replace('.enc', '');
+    if (skipSelf && deviceName === self) continue;
     const data = readRemoteSnapshot(file);
     if (!data) continue;
-
-    devices.push(data.device || deviceName);
-    snapshots.push(data);
-    allSessions.push(...(data.sessions || []));
+    snapshots.push({ device: data.device || deviceName, date, data });
   }
+  return { fetched_at, snapshots };
+}
 
-  if (devices.length === 0) return null;
+// Read and merge all device snapshots for `date`. Returns null if sync isn't set up,
+// origin/main was never fetched, or no snapshots exist for the date.
+//   skipSelf: exclude the current device (used by verifyConsistency to compare local vs foreign).
+export function readMergedSnapshot(date, opts = {}) {
+  date = date || todayISO();
+  const loaded = loadDeviceSnapshots({ from: date, to: date, skipSelf: opts.skipSelf });
+  if (!loaded || loaded.snapshots.length === 0) return null;
 
+  const snapshots = loaded.snapshots.map(s => s.data);
   const merged = mergeSnapshots(snapshots, groupKey);
   merged.version = 1;
   merged.date = date;
   merged.aggregated_at = new Date().toISOString();
-  merged.devices = devices;
-  merged.sessions = allSessions;
+  merged.devices = loaded.snapshots.map(s => s.device);
+  merged.sessions = snapshots.flatMap(d => d.sessions || []);
 
-  // Convert maps to arrays for JSON
   return {
     ...merged,
-    fetched_at,
+    fetched_at: loaded.fetched_at,
     daily_summary: Object.values(merged.daily_summary),
     tool_usage: Object.entries(merged.tool_usage).map(([k, v]) => ({ tool_name: k, count: v })),
+    model_facts: mergeModelFacts(loaded.snapshots),
   };
 }
 
+// Aggregate per-device model_facts into cross-device per-model totals (cost recomputed by the
+// caller is not possible across devices — uses each device's pushed cost). Empty for older
+// snapshots that predate model_facts.
+function mergeModelFacts(snapshots) {
+  const agg = {};
+  for (const { data } of snapshots) {
+    for (const r of (data.model_facts || [])) {
+      const a = agg[r.model] || (agg[r.model] = { model: r.model, calls: 0, tokens: 0, cost: 0 });
+      a.calls += r.requests || 0;
+      a.tokens += (r.input || 0) + (r.output || 0) + (r.cache_creation || 0); // billable basis
+      a.cost += r.cost || 0;
+    }
+  }
+  return Object.values(agg).sort((a, b) => b.cost - a.cost);
+}
+
 // Per-device daily facts across a date range — for the dashboard's multi-device view.
-// Unlike readMergedSnapshot (which sums devices together per day), this keeps each device's
-// rows separate so the UI can show "all devices" vs. a single device. The LOCAL device is
-// deliberately excluded — it is represented by the always-current live local DB facts, so
-// including its (throttle-lagged) pushed snapshot here would double-count and stale it.
-// Returns { facts, devices }; empty when sync isn't set up. Relies on the cached origin/main
-// ref (no network) — same freshness contract as report/readMergedSnapshot.
+// Keeps each device's rows separate (vs. readMergedSnapshot which sums devices per day) so the
+// UI can show "all devices" vs. a single device. The LOCAL device is deliberately excluded — it
+// is represented by the always-current live local DB facts, so including its (throttle-lagged)
+// pushed snapshot would double-count and stale it. `modelFacts` carries per-device per-model
+// rows (empty for snapshots predating the model_facts field).
+// Returns { facts, modelFacts, devices }; empty when sync isn't set up.
 export function readDeviceFacts(from, to) {
-  const empty = { facts: [], devices: [] };
-  if (!isSyncSetup()) return empty;
-  ensureSyncRepo();
-  if (git(['rev-parse', '--verify', '--quiet', 'origin/main'], { ignoreError: true }).status !== 0) return empty;
+  const empty = { facts: [], modelFacts: [], devices: [] };
+  const loaded = loadDeviceSnapshots({ from, to, skipSelf: true });
+  if (!loaded) return empty;
 
-  const self = getDeviceId();
-  const facts = [];
-  const devices = new Set();
-  for (const file of listRemoteSnapshots()) {
-    const parts = file.split('/');
-    if (parts.length < 4) continue;
-    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
-    if (date < from || date > to) continue;
-    const deviceName = parts[3].replace('.enc', '');
-    if (deviceName === self) continue;
-
-    const data = readRemoteSnapshot(file);
-    if (!data) continue;
-    const device = data.device || deviceName;
+  const facts = [], modelFacts = [], devices = new Set();
+  for (const { device, date, data } of loaded.snapshots) {
     devices.add(device);
     for (const r of (data.daily_summary || [])) {
       facts.push({
@@ -128,8 +131,17 @@ export function readDeviceFacts(from, to) {
         cost: r.total_cost || 0, top_model: r.top_model || null,
       });
     }
+    for (const r of (data.model_facts || [])) {
+      modelFacts.push({
+        date, device, project: r.project, model: r.model,
+        requests: r.requests || 0,
+        tokens: (r.input || 0) + (r.output || 0) + (r.cache_creation || 0), // billable
+        all_tokens: (r.input || 0) + (r.output || 0) + (r.cache_read || 0) + (r.cache_creation || 0),
+        cost: r.cost || 0,
+      });
+    }
   }
-  return { facts, devices: [...devices] };
+  return { facts, modelFacts, devices: [...devices] };
 }
 
 export function verifyConsistency(date) {
