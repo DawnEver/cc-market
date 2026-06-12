@@ -1,4 +1,11 @@
-"""Multi-repo version tracking component — known-good snapshots, worktree deploy gate."""
+"""Multi-repo version tracking — one-way deploy: main → known-good → deploy worktree.
+
+Strict model: all development/testing happens on the `main` branch (the watchd
+working tree). A new main commit is tested in an isolated staging worktree; on
+pass it becomes known-good and is pushed into a dedicated *deploy worktree*
+(`deploy_path`) that runs production. The deploy branch is never edited by hand —
+on any production problem it is reset back to known-good. No backport, no hotfix.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +18,7 @@ from pathlib import Path
 from components.base import Action, Anomaly, CheckResult, Component, RemedyStep
 
 
-# ── Module-level helpers (shared with deploy/backport modules) ──────────
+# ── Known-good snapshot ─────────────────────────────────────────────────
 
 def known_good_path(comp_cfg: dict, project: Path) -> Path:
     return project / comp_cfg.get('known_good_file', '.claude/watch/known-good.json')
@@ -28,20 +35,71 @@ def load_known(comp_cfg: dict, project: Path) -> dict[str, str]:
         return {}
 
 
-def save_known(comp_cfg: dict, project: Path, commits: dict[str, str],
-               stable_checks: int = 0) -> None:
+def save_known(comp_cfg: dict, project: Path, commits: dict[str, str]) -> None:
     path = known_good_path(comp_cfg, project)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         'updated_at': datetime.now(timezone.utc).isoformat(),
-        'stable_checks': stable_checks,
         'repos': commits,
     }
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n',
                     encoding='utf-8')
 
 
+# ── Failed-commit tracking (escalate after N distinct failed deploys) ───
+
+def failures_path(comp_cfg: dict, project: Path) -> Path:
+    return project / comp_cfg.get('deploy_failures_file',
+                                  '.claude/watch/state/deploy_failures.json')
+
+
+def load_failures(comp_cfg: dict, project: Path) -> list[str]:
+    path = failures_path(comp_cfg, project)
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding='utf-8')).get('signatures', [])
+    except Exception:
+        return []
+
+
+def record_failure(comp_cfg: dict, project: Path, signature: str) -> list[str]:
+    """Append a distinct failed-deploy signature; return the full list."""
+    sigs = load_failures(comp_cfg, project)
+    if signature and signature not in sigs:
+        sigs.append(signature)
+    path = failures_path(comp_cfg, project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'signatures': sigs,
+    }, ensure_ascii=False) + '\n', encoding='utf-8')
+    return sigs
+
+
+def clear_failures(comp_cfg: dict, project: Path) -> None:
+    path = failures_path(comp_cfg, project)
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def deploy_signature(changed_heads: dict[str, str]) -> str:
+    """Stable signature of a would-be deploy (the set of target commits)."""
+    return json.dumps(sorted(changed_heads.items()))
+
+
+# ── Worktree / path helpers ─────────────────────────────────────────────
+
+def deploy_path(repo: dict, project: Path) -> Path:
+    """The production (deploy) worktree for a repo. Falls back to `path`."""
+    return (project / repo.get('deploy_path', repo['path'])).resolve()
+
+
 def current_heads(comp_cfg: dict, project: Path) -> dict[str, str]:
+    """HEAD of each repo's main working tree (`path`)."""
     heads: dict[str, str] = {}
     for repo in comp_cfg.get('repositories', []):
         repo_path = (project / repo['path']).resolve()
@@ -52,6 +110,40 @@ def current_heads(comp_cfg: dict, project: Path) -> dict[str, str]:
         except Exception:
             pass
     return heads
+
+
+def remote_heads(comp_cfg: dict, project: Path, fetch: bool = True) -> dict[str, str]:
+    """Remote tracking HEAD (`<remote>/<branch>`) of each repo, optionally fetching."""
+    heads: dict[str, str] = {}
+    for repo in comp_cfg.get('repositories', []):
+        repo_path = (project / repo['path']).resolve()
+        if not repo_path.is_dir():
+            continue
+        remote = repo.get('remote', 'origin')
+        branch = repo.get('branch', 'main')
+        if fetch:
+            try:
+                subprocess.run(['git', 'fetch', remote], cwd=repo_path,
+                               check=True, capture_output=True, timeout=30)
+            except Exception:
+                pass
+        try:
+            heads[repo['name']] = subprocess.check_output(
+                ['git', 'rev-parse', f'{remote}/{branch}'],
+                cwd=repo_path, text=True, timeout=5).strip()
+        except Exception:
+            pass
+    return heads
+
+
+def changed_targets(comp_cfg: dict, project: Path,
+                    fetch: bool = True) -> tuple[dict[str, str], dict[str, str]]:
+    """Return (all_targets, changed) where `changed` is the subset of repos
+    whose remote main head differs from known-good."""
+    known = load_known(comp_cfg, project)
+    targets = remote_heads(comp_cfg, project, fetch=fetch)
+    changed = {n: h for n, h in targets.items() if known.get(n) != h}
+    return targets, changed
 
 
 def health_check_url(url: str, timeout: int, interval: float = 2.0) -> bool:
@@ -85,37 +177,36 @@ def remove_worktree(staging_path: Path, repo_path: Path) -> None:
 
 
 def rollback_repos(comp_cfg: dict, project: Path) -> bool:
-    """Rollback all repos to known-good versions on deploy branch."""
+    """Reset every deploy worktree (`deploy_path`) back to known-good. The deploy
+    branch is force-reset; main working trees are never touched."""
     known = load_known(comp_cfg, project)
     if not known:
         print('[git_version] No known-good versions recorded.')
         return False
 
-    deploy_cfg = comp_cfg.get('deploy', {})
-    deploy_branch = deploy_cfg.get('deploy_branch', 'deploy')
-    repos = comp_cfg.get('repositories', [])
     ok = True
-    for repo in repos:
+    for repo in comp_cfg.get('repositories', []):
         name = repo['name']
         target = known.get(name)
         if not target:
             continue
-        repo_path = (project / repo['path']).resolve()
-        current = None
+        dpath = deploy_path(repo, project)
+        if not dpath.is_dir():
+            print(f'[git_version]   [{name}] deploy_path missing: {dpath}')
+            ok = False
+            continue
         try:
             current = subprocess.check_output(['git', 'rev-parse', 'HEAD'],
-                                              cwd=repo_path, text=True, timeout=5).strip()
+                                              cwd=dpath, text=True, timeout=5).strip()
         except Exception:
-            pass
+            current = None
         if current == target:
             print(f'[git_version]   [{name}] already at {target[:8]}')
             continue
         print(f'[git_version] Rollback [{name}]: {current[:8] if current else "?"} -> {target[:8]}')
         try:
-            subprocess.run(['git', 'checkout', '-f', deploy_branch],
-                           cwd=repo_path, check=True, capture_output=True, timeout=10)
             subprocess.run(['git', 'reset', '--hard', target],
-                           cwd=repo_path, check=True, capture_output=True, timeout=10)
+                           cwd=dpath, check=True, capture_output=True, timeout=10)
             print(f'[git_version]   [{name}] OK')
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] FAILED: {e.stderr}')
@@ -127,228 +218,82 @@ def rollback_repos(comp_cfg: dict, project: Path) -> bool:
 
 class GitVersion(Component):
     name = 'git_version'
-    description = 'Multi-repo version tracking — known-good snapshots, worktree test gate, rollback'
+    description = 'One-way deploy — main tested → known-good → deploy worktree; rollback only'
 
     def check(self, comp_cfg: dict, global_cfg: dict, state: dict) -> CheckResult:
-        """Check if new commits exist on remote vs known-good."""
         repos = comp_cfg.get('repositories', [])
         project = Path(global_cfg.get('_project_dir', '.'))
         result = CheckResult()
-
         if not repos:
             return result
 
-        known = load_known(comp_cfg, project)
-
         kg_path = known_good_path(comp_cfg, project)
-        kg_meta: dict = {}
         if kg_path.exists():
             try:
-                kg_meta = json.loads(kg_path.read_text(encoding='utf-8'))
-            except Exception:
-                pass
-        result.data['stable_checks'] = kg_meta.get('stable_checks', 0)
-        result.data['last_updated'] = kg_meta.get('updated_at')
-
-        total_new = 0
-        details: list[str] = []
-        deploy_branch = comp_cfg.get('deploy', {}).get('deploy_branch', 'deploy')
-        total_deploy_ahead = 0
-        deploy_ahead_details: list[str] = []
-        total_local_unverified = 0
-        local_unverified_details: list[str] = []
-
-        for repo in repos:
-            name = repo['name']
-            branch = repo.get('branch', 'main')
-            remote = repo.get('remote', 'origin')
-            repo_path = (project / repo['path']).resolve()
-            if not repo_path.is_dir():
-                continue
-
-            # Fetch
-            try:
-                subprocess.run(['git', 'fetch', remote], cwd=repo_path,
-                               check=True, capture_output=True, timeout=30)
+                result.data['last_updated'] = json.loads(
+                    kg_path.read_text(encoding='utf-8')).get('updated_at')
             except Exception:
                 pass
 
-            # Get remote HEAD
-            try:
-                remote_head = subprocess.check_output(
-                    ['git', 'rev-parse', f'{remote}/{branch}'],
-                    cwd=repo_path, text=True, timeout=5,
-                ).strip()
-            except Exception:
-                continue
+        targets, changed = changed_targets(comp_cfg, project, fetch=True)
+        for name, head in targets.items():
+            result.metrics[f'{name}_changed'] = int(name in changed)
+            if name in changed:
+                result.data[f'{name}_target'] = head
 
-            # Detect hotfixes landed directly on deploy branch
-            try:
-                remote_deploy_head = subprocess.check_output(
-                    ['git', 'rev-parse', f'{remote}/{deploy_branch}'],
-                    cwd=repo_path, text=True, timeout=5,
-                ).strip()
-            except Exception:
-                remote_deploy_head = None
+        sig = deploy_signature(changed)
+        failures = load_failures(comp_cfg, project)
+        max_failed = comp_cfg.get('deploy', {}).get('max_failed_commits', 3)
 
-            deploy_ahead = 0
-            if remote_deploy_head and remote_deploy_head != remote_head:
-                try:
-                    deploy_ahead = int(subprocess.check_output(
-                        ['git', 'rev-list', '--count', f'{remote_head}..{remote_deploy_head}'],
-                        cwd=repo_path, text=True, timeout=5,
-                    ).strip())
-                except Exception:
-                    deploy_ahead = 0
+        detail = ', '.join(f'{n}: {h[:8]}' for n, h in changed.items()) or 'none'
+        result.metrics['new_commits'] = len(changed)
+        result.data['new_commits_detail'] = detail
+        result.metrics['failed_commits'] = len(failures)
 
-            result.metrics[f'{name}_deploy_ahead'] = deploy_ahead
-            if deploy_ahead > 0:
-                total_deploy_ahead += deploy_ahead
-                deploy_ahead_details.append(f'{name}: +{deploy_ahead}')
-                try:
-                    log_out = subprocess.check_output(
-                        ['git', 'log', '--oneline', f'{remote_head}..{remote_deploy_head}'],
-                        cwd=repo_path, text=True, timeout=5,
-                    ).strip()
-                    result.data[f'{name}_deploy_ahead_pending'] = log_out.split('\n') if log_out else []
-                except Exception:
-                    result.data[f'{name}_deploy_ahead_pending'] = []
-
-            known_commit = known.get(name)
-            if known_commit:
-                try:
-                    ahead = subprocess.check_output(
-                        ['git', 'rev-list', '--count', f'{known_commit}..{remote_head}'],
-                        cwd=repo_path, text=True, timeout=5,
-                    ).strip()
-                    count = int(ahead)
-                except Exception:
-                    count = 0
-            else:
-                count = 1
-
-            if count > 0:
-                total_new += count
-                details.append(f'{name}: +{count}')
-                result.data[f'{name}_new_head'] = remote_head
-                if known_commit:
-                    try:
-                        log_out = subprocess.check_output(
-                            ['git', 'log', '--oneline', f'{known_commit}..{remote_head}'],
-                            cwd=repo_path, text=True, timeout=5,
-                        ).strip()
-                        result.data[f'{name}_pending'] = log_out.split('\n') if log_out else []
-                    except Exception:
-                        result.data[f'{name}_pending'] = []
-
-            result.metrics[f'{name}_new_commits'] = count
-
-            # Local commits sitting on the deploy branch that are ahead of the
-            # known-good snapshot — e.g. a manual hotfix committed directly to
-            # deploy. These need verification (test) before being marked stable.
-            local_unverified = 0
-            if known_commit:
-                try:
-                    local_head = subprocess.check_output(
-                        ['git', 'rev-parse', 'HEAD'],
-                        cwd=repo_path, text=True, timeout=5,
-                    ).strip()
-                except Exception:
-                    local_head = None
-                if local_head and local_head != known_commit:
-                    is_ancestor = subprocess.run(
-                        ['git', 'merge-base', '--is-ancestor', known_commit, local_head],
-                        cwd=repo_path, capture_output=True, timeout=5,
-                    ).returncode == 0
-                    if is_ancestor:
-                        try:
-                            local_unverified = int(subprocess.check_output(
-                                ['git', 'rev-list', '--count', f'{known_commit}..{local_head}'],
-                                cwd=repo_path, text=True, timeout=5,
-                            ).strip())
-                        except Exception:
-                            local_unverified = 0
-                        if local_unverified > 0:
-                            total_local_unverified += local_unverified
-                            local_unverified_details.append(f'{name}: +{local_unverified}')
-                            result.data[f'{name}_local_head'] = local_head
-            result.metrics[f'{name}_local_unverified'] = local_unverified
-
-        result.metrics['new_commits'] = total_new
-        result.data['new_commits'] = total_new
-        result.data['new_commits_detail'] = ', '.join(details) if details else 'none'
-        state['_git_new_commits'] = total_new
-        state['_git_detail'] = result.data['new_commits_detail']
-        state['_git_new_repos'] = details
-
-        if total_new > 0:
+        # New deployable version — but suppress if this exact target already
+        # failed its gate (await a fresh fix commit instead of retry-spinning).
+        if changed and sig not in failures:
             result.anomalies.append(Anomaly(
                 type='new_version_available', severity='warning',
-                value=total_new,
-                message=f'New commits on remote: {result.data["new_commits_detail"]}',
+                value=len(changed),
+                message=f'New tested-on-main version pending deploy: {detail}',
             ))
 
-        result.metrics['deploy_ahead_total'] = total_deploy_ahead
-        result.data['deploy_ahead_detail'] = ', '.join(deploy_ahead_details) if deploy_ahead_details else 'none'
-        if total_deploy_ahead > 0:
+        # Distinct failed commits piled up → escalate to a human.
+        if len(failures) >= max_failed:
             result.anomalies.append(Anomaly(
-                type='deploy_ahead_of_main', severity='warning',
-                value=total_deploy_ahead,
-                message=f'{deploy_branch} branch ahead of main: {result.data["deploy_ahead_detail"]}',
+                type='deploy_failed', severity='critical',
+                value=len(failures), threshold=max_failed,
+                message=(f'{len(failures)} distinct main commits failed the deploy '
+                         f'gate — fix on main is not converging; manual attention needed'),
             ))
-
-        result.metrics['local_unverified_total'] = total_local_unverified
-        result.data['local_unverified_detail'] = (
-            ', '.join(local_unverified_details) if local_unverified_details else 'none')
-        if total_local_unverified > 0:
-            result.anomalies.append(Anomaly(
-                type='local_changes_unverified', severity='warning',
-                value=total_local_unverified,
-                message=(f'Local commits on {deploy_branch} not verified against '
-                         f'known-good: {result.data["local_unverified_detail"]}'),
-            ))
-
         return result
 
     def remedies(self) -> dict[str, list[RemedyStep]]:
         return {
-            'new_version_available': [
-                RemedyStep(action='deploy'),
-            ],
-            'deploy_ahead_of_main': [
-                RemedyStep(action='backport_deploy'),
-            ],
-            'local_changes_unverified': [
-                RemedyStep(action='verify_mark_stable'),
-            ],
+            'new_version_available': [RemedyStep(action='deploy')],
+            'deploy_failed': [RemedyStep(action='notify', escalate_after=1)],
         }
 
     def actions(self) -> dict[str, Action]:
         return {
             'deploy': Action(
-                description='Worktree-based deploy: fetch -> test -> apply or reject',
-                command='__deploy__',
-                timeout=600,
+                description='Test new main commit in staging; on pass swap deploy '
+                            'worktree + restart production; rollback/record on fail',
+                command='__deploy__', timeout=900,
             ),
             'rollback': Action(
-                description='Rollback all repos to known-good versions',
-                command='__rollback__',
-                timeout=60,
+                description='Reset deploy worktrees to known-good',
+                command='__rollback__', timeout=120,
             ),
-            'mark_stable': Action(
-                description='Mark current HEAD as known-good',
-                command='__mark_stable__',
-                timeout=30,
+            'recover_service': Action(
+                description='Restart production up to N times, else rollback to '
+                            'known-good and restart; escalate if still unhealthy',
+                command='__recover__', timeout=300,
             ),
-            'backport_deploy': Action(
-                description='Merge deploy-branch hotfixes back into main: worktree merge -> test -> push',
-                command='__backport__',
-                timeout=600,
-            ),
-            'verify_mark_stable': Action(
-                description='Test local deploy-branch commits in a worktree; mark known-good on pass',
-                command='__verify_mark__',
-                timeout=600,
+            'notify': Action(
+                description='No-op whose failure-escalation sends the alert',
+                command='exit 0', shell=True, timeout=10,
             ),
         }
 
@@ -357,52 +302,13 @@ class GitVersion(Component):
     def execute_action(self, action_name: str, comp_cfg: dict, global_cfg: dict,
                        project: Path, context: dict) -> bool:
         if action_name == 'deploy':
-            return self._deploy(comp_cfg, global_cfg, project, context)
-        elif action_name == 'rollback':
-            return self._rollback(comp_cfg, global_cfg, project)
-        elif action_name == 'mark_stable':
-            return self._mark_stable(comp_cfg, project)
-        elif action_name == 'backport_deploy':
-            return self._backport(comp_cfg, global_cfg, project, context)
-        elif action_name == 'verify_mark_stable':
-            return self._verify_mark_stable(comp_cfg, project, context)
+            from components.git_version_deploy import deploy_repos
+            return deploy_repos(comp_cfg, project, context)
+        if action_name == 'rollback':
+            return rollback_repos(comp_cfg, project)
+        if action_name == 'recover_service':
+            from components.git_version_deploy import recover_service
+            return recover_service(comp_cfg, project, context)
+        if action_name == 'notify':
+            return True
         return False
-
-    def _deploy(self, comp_cfg: dict, _global_cfg: dict, project: Path,
-                context: dict) -> bool:
-        from components.git_version_deploy import deploy_repos
-        return deploy_repos(comp_cfg, project, context)
-
-    def _rollback(self, comp_cfg: dict, global_cfg: dict, project: Path) -> bool:
-        return rollback_repos(comp_cfg, project)
-
-    def _backport(self, comp_cfg: dict, global_cfg: dict, project: Path,
-                  context: dict) -> bool:
-        from components.git_version_backport import backport_deploy
-        return backport_deploy(comp_cfg, project, context)
-
-    def _verify_mark_stable(self, comp_cfg: dict, project: Path,
-                            context: dict) -> bool:
-        from components.git_version_deploy import verify_and_mark_stable
-        return verify_and_mark_stable(comp_cfg, project, context)
-
-    def _mark_stable(self, comp_cfg: dict, project: Path) -> bool:
-        """Mark current HEADs as known-good with incremented stable_checks."""
-        commits = current_heads(comp_cfg, project)
-        if not commits:
-            return False
-
-        known = load_known(comp_cfg, project)
-        stable = 0
-        if known == commits:
-            path = known_good_path(comp_cfg, project)
-            if path.exists():
-                try:
-                    old = json.loads(path.read_text(encoding='utf-8'))
-                    stable = old.get('stable_checks', 0) + 1
-                except Exception:
-                    pass
-
-        save_known(comp_cfg, project, commits, stable_checks=stable)
-        print(f'[git_version] Known-good updated (stable_checks={stable})')
-        return True

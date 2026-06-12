@@ -34,6 +34,8 @@ DEFAULTS: dict[str, Any] = {
         'test_start_action': '',
         'test_kill_action': '',
         'test_prestart_sleep': 5,
+        'max_failed_commits': 3,     # distinct failed main commits → escalate
+        'restart_attempts': 2,       # recover ladder: restarts before rollback
     },
     'alerts': {
         'email': {'enabled': False, 'host': 'localhost', 'port': 25,
