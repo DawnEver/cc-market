@@ -133,6 +133,26 @@ class TestRecoverService(_OneRepoFixture):
         self.assertFalse(ok)                                   # known-good not serving → escalate
         self.assertEqual(_head(self.deploy_wt), self.commitA)  # rolled back to known-good
 
+    def test_health_anomaly_delegates_recovery_to_git_version(self):
+        """A non-git_version anomaly source (http_health) must still route the
+        recover_service action to git_version via the owner-lookup fallback."""
+        from components.registry import create_registry
+        from core.actions import _execute_action
+        _git(self.deploy_wt, 'reset', '--hard', self.commitB)
+        gv = {**self.comp_cfg, 'enabled': True}
+        gv['deploy'] = {**gv['deploy'],
+                        'production_health_url': ['http://127.0.0.1:1/'],
+                        'restart_attempts': 1, 'test_health_timeout': 1,
+                        'test_prestart_sleep': 0}
+        cfg = {'components': {'git_version': gv}, '_project_dir': str(self.work)}
+        reg = create_registry(cfg, self.work)
+        action = reg.get_action('recover_service')
+        context = {'_registry': reg}
+        ok = _execute_action(action, self.work, reg,
+                             'http_health.endpoint_unreachable', context)
+        self.assertFalse(ok)
+        self.assertEqual(_head(self.deploy_wt), self.commitA)  # recovery ran → rolled back
+
 
 if __name__ == '__main__':
     unittest.main()

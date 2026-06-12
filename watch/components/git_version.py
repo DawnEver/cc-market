@@ -289,7 +289,7 @@ class GitVersion(Component):
             'recover_service': Action(
                 description='Restart production up to N times, else rollback to '
                             'known-good and restart; escalate if still unhealthy',
-                command='__recover__', timeout=300,
+                command='__recover_service__', timeout=300,
             ),
             'notify': Action(
                 description='No-op whose failure-escalation sends the alert',
