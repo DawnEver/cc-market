@@ -14,6 +14,7 @@ sys.path.insert(0, str(_HERE.parent / 'scripts'))
 
 from components.versioning.git_version import (
     GitVersion,
+    deploy_drift,
     deploy_signature,
     load_failures,
     load_known,
@@ -115,6 +116,26 @@ class TestOneWayDeploy(_OneRepoFixture):
             record_failure(self.comp_cfg, self.work, s)
         result = GitVersion().check(self.comp_cfg, self.global_cfg, {})
         self.assertIn('deploy_failed', [a.type for a in result.anomalies])
+
+
+class TestDeployReadOnly(_OneRepoFixture):
+    def test_clean_deploy_no_drift(self):
+        self.assertEqual(deploy_drift(self.comp_cfg, self.work), [])
+        result = GitVersion().check(self.comp_cfg, self.global_cfg, {})
+        self.assertNotIn('deploy_worktree_dirty', [a.type for a in result.anomalies])
+
+    def test_uncommitted_change_flagged(self):
+        (self.deploy_wt / 'f.txt').write_text('hand-edit\n', encoding='utf-8')
+        drift = deploy_drift(self.comp_cfg, self.work)
+        self.assertTrue(any('uncommitted' in why for _, why in drift))
+        result = GitVersion().check(self.comp_cfg, self.global_cfg, {})
+        self.assertIn('deploy_worktree_dirty', [a.type for a in result.anomalies])
+
+    def test_direct_commit_on_deploy_flagged(self):
+        (self.deploy_wt / 'g.txt').write_text('x\n', encoding='utf-8')
+        _git(self.deploy_wt, 'add', '.'); _git(self.deploy_wt, 'commit', '-m', 'direct')
+        drift = deploy_drift(self.comp_cfg, self.work)
+        self.assertTrue(any('not reachable' in why for _, why in drift))
 
 
 class TestRecoverService(_OneRepoFixture):

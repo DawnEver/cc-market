@@ -181,9 +181,16 @@ actions:
   restart_backend:
     kill_port: 8000                   # int | str | list — port(s) to free
     kill_pattern: "uvicorn"           # optional process-name pattern
-    start_cmd: "python -m my_server"  # spawned detached
+    setup_cmd: "yarn install"         # optional one-shot init, run once per
+                                      # start_dir before the first start_cmd
+                                      # (e.g. install deps in a fresh worktree)
+    start_cmd: "python -m my_server --port 8000"  # spawned detached
     start_dir: "../deploy"            # cwd (default: project dir)
     start_log: ".claude/watch/logs/backend.log"
+    verify_port: 8000                 # after start, confirm the process is
+                                      # actually LISTENing here — catches a
+                                      # start_cmd that bound the wrong port
+    verify_timeout: 10                # seconds to wait for verify_port
     wait: 3
 
   # 3. Composition form — run other named actions in order (no duplicated commands).

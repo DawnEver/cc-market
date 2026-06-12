@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
+import socket
 import subprocess
 import sys
 import time
@@ -13,6 +16,53 @@ from components.base import Action, run_command
 # file's location so config never globs ~/.claude/plugins/... (install-root and
 # cache-layout fragile) to find them.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / 'scripts' / 'helpers'
+
+# Marker recording the last setup_cmd that succeeded in a start_dir, so a
+# one-shot init (yarn install / uv sync) runs once per worktree, not per restart.
+_SETUP_MARKER = '.watch-setup-done'
+
+
+def _port_listening(port: int, timeout: float) -> bool:
+    """Cross-platform: is something accepting TCP connections on this port?
+
+    Polls loopback (IPv4 then IPv6) until a connect succeeds or the deadline
+    passes. Stdlib only — no netstat/ss/lsof parsing, so it behaves the same on
+    Windows, Linux, and macOS regardless of which host the server bound to."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for family, addr in ((socket.AF_INET, '127.0.0.1'),
+                             (socket.AF_INET6, '::1')):
+            try:
+                with socket.socket(family, socket.SOCK_STREAM) as s:
+                    s.settimeout(1.0)
+                    if s.connect_ex((addr, port)) == 0:
+                        return True
+            except OSError:
+                pass
+        time.sleep(0.5)
+    return False
+
+
+def _run_setup(action: Action, cwd: Path) -> bool:
+    """Run setup_cmd once per (start_dir, command). Idempotent: a marker file in
+    the start_dir records the command's hash; a matching marker skips the run.
+    Returns True when setup is satisfied (already done, just done, or none)."""
+    if not action.setup_cmd:
+        return True
+    marker = cwd / _SETUP_MARKER
+    digest = hashlib.sha256(action.setup_cmd.encode('utf-8')).hexdigest()
+    if marker.exists() and marker.read_text(encoding='utf-8').strip() == digest:
+        return True
+    print(f'    setup ({action.setup_cmd[:60]}) ...', file=sys.stderr)
+    rc, out, err = run_command(action.setup_cmd, shell=True, cwd=str(cwd),
+                               timeout=action.timeout)
+    if rc != 0:
+        print(f'    setup failed [{action.setup_cmd[:60]}]: {err or out}', file=sys.stderr)
+        return False
+    with contextlib.suppress(OSError):
+        cwd.mkdir(parents=True, exist_ok=True)
+        marker.write_text(digest, encoding='utf-8')
+    return True
 
 
 def _run_script(script: str, args: list[str], cwd: Path,
@@ -43,8 +93,12 @@ def _exec_managed(action: Action, project_dir: Path) -> bool:
                     project_dir, timeout=20)
 
     if action.start_cmd:
-        time.sleep(action.wait)
         cwd = (project_dir / action.start_dir).resolve() if action.start_dir else project_dir
+        # One-shot init (e.g. yarn install) so a fresh deploy worktree without
+        # node_modules / a virtualenv self-heals on first start instead of failing.
+        if not _run_setup(action, cwd):
+            return False
+        time.sleep(action.wait)
         args = ['--project-dir', str(cwd), '--cmd', action.start_cmd]
         if action.start_log:
             args += ['--log', str(project_dir / action.start_log)]
@@ -54,6 +108,24 @@ def _exec_managed(action: Action, project_dir: Path) -> bool:
             return False
         if out:
             print(f'    {out}', file=sys.stderr)
+
+        # Verify the process bound the port it was supposed to. A start_cmd that
+        # silently binds the wrong port (missing --port flag) otherwise looks
+        # "started" while the health check hits a dead port.
+        vports = action.verify_port if isinstance(action.verify_port, list) else (
+            [action.verify_port] if action.verify_port is not None else [])
+        for vp in vports:
+            try:
+                port = int(vp)
+            except (TypeError, ValueError):
+                print(f'    verify_port: invalid port {vp!r}', file=sys.stderr)
+                return False
+            if not _port_listening(port, action.verify_timeout):
+                print(f'    verify_port FAILED: nothing listening on {port} after '
+                      f'{action.verify_timeout}s — start_cmd bound the wrong port?',
+                      file=sys.stderr)
+                return False
+            print(f'    verify_port OK: listening on {port}', file=sys.stderr)
     return True
 
 

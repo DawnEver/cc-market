@@ -44,9 +44,17 @@ class Action:
     # project-agnostic. start_dir / start_log are relative to the project dir.
     kill_port: str | int | list | None = None  # port(s) to free before (re)starting
     kill_pattern: str | None = None            # process-name pattern to kill
+    setup_cmd: str | None = None               # one-shot idempotent init before the
+                                               # first start_cmd (e.g. `yarn install`,
+                                               # `uv sync`); skipped once it has
+                                               # succeeded for the current command
     start_cmd: str | None = None               # command to spawn detached
-    start_dir: str | None = None               # cwd for start_cmd (rel. to project dir)
+    start_dir: str | None = None               # cwd for setup_cmd/start_cmd (rel. to project dir)
     start_log: str | None = None               # stdout/stderr log (rel. to project dir)
+    verify_port: str | int | list | None = None  # after start, confirm the process is
+                                               # actually LISTENing on this port — catches
+                                               # a start_cmd that binds the wrong port
+    verify_timeout: int = 10                   # seconds to wait for verify_port to come up
     steps: list[str] | None = None             # compose other named actions in order
 
 

@@ -61,6 +61,47 @@ class TestManagedService(unittest.TestCase):
         self.assertFalse(actions._execute_action(a, Path(tempfile.gettempdir())))
 
 
+class TestSetupAndVerify(unittest.TestCase):
+    def setUp(self):
+        self._calls: list[tuple[str, list[str]]] = []
+        self._orig = (actions._run_script, actions.time.sleep,
+                      actions.run_command, actions._port_listening)
+        actions._run_script = lambda s, a, c, t: (self._calls.append((s, list(a))), (0, 'ok', ''))[1]
+        actions.time.sleep = lambda s: None
+        self._tmp = tempfile.TemporaryDirectory()
+        self.proj = Path(self._tmp.name)
+
+    def tearDown(self):
+        (actions._run_script, actions.time.sleep,
+         actions.run_command, actions._port_listening) = self._orig
+        self._tmp.cleanup()
+
+    def test_setup_cmd_runs_once_then_skips(self):
+        runs: list[str] = []
+        actions.run_command = lambda cmd, **kw: (runs.append(cmd), (0, '', ''))[1]
+        a = Action(start_cmd='python -m app', start_dir='svc', setup_cmd='yarn install')
+        self.assertTrue(actions._execute_action(a, self.proj))
+        self.assertTrue(actions._execute_action(a, self.proj))  # marker present now
+        self.assertEqual(runs, ['yarn install'])  # ran exactly once
+        self.assertTrue((self.proj / 'svc' / '.watch-setup-done').exists())
+
+    def test_setup_failure_aborts_start(self):
+        actions.run_command = lambda cmd, **kw: (1, '', 'no network')
+        a = Action(start_cmd='python -m app', start_dir='svc', setup_cmd='yarn install')
+        self.assertFalse(actions._execute_action(a, self.proj))
+        self.assertFalse(any(s == 'start-server.py' for s, _ in self._calls))
+
+    def test_verify_port_failure_fails_action(self):
+        actions._port_listening = lambda port, timeout: False
+        a = Action(start_cmd='python -m app', verify_port=7001, verify_timeout=1)
+        self.assertFalse(actions._execute_action(a, self.proj))
+
+    def test_verify_port_success(self):
+        actions._port_listening = lambda port, timeout: True
+        a = Action(start_cmd='python -m app', verify_port=7001, verify_timeout=1)
+        self.assertTrue(actions._execute_action(a, self.proj))
+
+
 class TestComposition(unittest.TestCase):
     def test_steps_run_subactions_in_order(self):
         reg = ComponentRegistry()

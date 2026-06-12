@@ -51,6 +51,14 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
   python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --action rollback
   ```
 
+**On `deploy_worktree_dirty`:**
+- The deploy worktree must be read-only (watchd resets it to known-good; nobody edits
+  it by hand). The anomaly message names which repo and why — uncommitted changes or
+  commit(s) made directly on the deploy branch.
+- Do NOT auto-`reset --hard` it: that silently destroys the work. Tell the user, and
+  if the change is wanted, port it to `main` (the source of truth) so the next deploy
+  carries it. The next deploy/rollback will overwrite the worktree regardless.
+
 **On `degraded` (general):**
 - If any anomaly has type `daemon_not_running` or `daemon_heartbeat_stale` / `daemon_heartbeat_missing`:
   1. The loop has already attempted auto-restart (if `watchd.auto_restart` is enabled in config)
