@@ -25,15 +25,15 @@ Multi-model AI orchestration via MCP. Routes tasks to Claude, Codex, DeepSeek, o
 ```
 takeover/
 ├── scripts/
-│   ├── lib.mjs              Core: provider config, API callers, retry, flag parsing
-│   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model + list_models + codex_status
+│   ├── lib.mjs              Core: provider config (cached 60s TTL), error taxonomy, API callers, retry, flag parsing
+│   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model (provider dispatch map) + list_models + codex_status
 │   └── codex/
 │       ├── discovery.mjs    Codex binary detection
-│       ├── app-server.mjs   JSON-RPC 2.0 client for codex app-server
-│       ├── task.mjs         Task execution with streaming (replaces callCodexCompanion)
+│       ├── app-server.mjs   JSON-RPC 2.0 client with lock timeout (30s)
+│       ├── task.mjs         Task execution with streaming
 │       ├── review.mjs       Adversarial code review via review/start
 │       └── image.mjs        Image gen/edit via codex exec --full-auto
-├── agents/takeover.md       Subagent: context gathering + handoff
+├── agents/takeover.md       Subagent: context gathering (50K char budget) + handoff
 ├── commands/
 │   ├── continue.md          /takeover:continue (--review, --image, --image-edit)
 │   ├── models.md            /takeover:models

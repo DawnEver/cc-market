@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const defaultConfigPath = path.join(os.homedir(), ".claude", "claude_env_settings.json");
-export const CONFIG_PATH = process.env.TAKEOVER_CONFIG_PATH || defaultConfigPath;
+export const getConfigPath = () => process.env.TAKEOVER_CONFIG_PATH || defaultConfigPath;
 
 // ── Provider env keys (mirrors scripts/runtime/cc.js) ────────────────────────
 
@@ -32,7 +32,7 @@ const claudeExe = process.platform === "win32"
 
 // ── Agent mode: spawn claude -p with provider env ────────────────────────────
 
-export function loadProviderEnv(provider, configPath = CONFIG_PATH) {
+export function loadProviderEnv(provider, configPath = getConfigPath()) {
   const env = { ...process.env };
   for (const key of PROVIDER_ENV_KEYS) delete env[key];
 
@@ -55,8 +55,8 @@ export function loadProviderEnv(provider, configPath = CONFIG_PATH) {
 }
 
 export async function spawnClaudeP(userPrompt, opts = {}) {
-  const { provider, model, systemPrompt, images, configPath } = opts;
-  const cfgPath = configPath || CONFIG_PATH;
+  const { provider, model, systemPrompt, images, configPath, signal } = opts;
+  const cfgPath = configPath || getConfigPath();
   let env;
   const label = provider || 'claude';
 
@@ -80,14 +80,19 @@ export async function spawnClaudeP(userPrompt, opts = {}) {
   return stdinSpawnClaude(claudeExe, fullPrompt, useStdin, env, (code, stdout, stderr, usage) => {
     if (code === 0) return { content: [{ type: 'text', text: stdout.trim() }], _usage: usage };
     throw new Error(`claude CLI (${label}) exited ${code}: ${stderr.trim()}`);
-  }, images);
+  }, images, signal);
 }
 
 // ── Provider config ──────────────────────────────────────────────────────────
 
-export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
+const _configCache = new Map();
+
+export function loadProviderConfig(provider, configPath = getConfigPath()) {
   if (provider === "codex") return { native: true, provider: "codex" };
   if (provider === "claude") return { native: true, provider: "claude" };
+
+  const cached = _configCache.get(`${provider}:${configPath}`);
+  if (cached && Date.now() - cached.ts < 60000) return cached.config;
 
   if (!fs.existsSync(configPath)) {
     throw new Error(
@@ -114,8 +119,12 @@ export function loadProviderConfig(provider, configPath = CONFIG_PATH) {
   if (!baseUrl) throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_BASE_URL" : "ANTHROPIC_BASE_URL"} in ${configPath}.`);
   if (!token)   throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_API_KEY" : "ANTHROPIC_AUTH_TOKEN"} in ${configPath}.`);
 
-  return { native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku };
+  const result = { native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku };
+  _configCache.set(`${provider}:${configPath}`, { config: result, ts: Date.now() });
+  return result;
 }
+
+export function clearConfigCache() { _configCache.clear(); }
 
 // ── Model resolution ─────────────────────────────────────────────────────────
 
@@ -192,6 +201,33 @@ export function emitTakeoverTrace(entry) {
   } catch {}
 }
 
+// ── Error taxonomy ──────────────────────────────────────────────────────────
+
+export class TakeoverError extends Error {
+  constructor(message, { code, retryable = false } = {}) {
+    super(message);
+    this.name = 'TakeoverError';
+    this.code = code || 'TAKEOVER_ERROR';
+    this.retryable = retryable;
+  }
+}
+
+export class ConfigError extends TakeoverError {
+  constructor(message) { super(message, { code: 'CONFIG_ERROR', retryable: false }); this.name = 'ConfigError'; }
+}
+
+export class ProviderError extends TakeoverError {
+  constructor(message, retryable = false) { super(message, { code: 'PROVIDER_ERROR', retryable }); this.name = 'ProviderError'; }
+}
+
+export class TimeoutError extends TakeoverError {
+  constructor(message) { super(message, { code: 'TIMEOUT_ERROR', retryable: true }); this.name = 'TimeoutError'; }
+}
+
+export class AuthError extends TakeoverError {
+  constructor(message) { super(message, { code: 'AUTH_ERROR', retryable: false }); this.name = 'AuthError'; }
+}
+
 // ── Codex integration ────────────────────────────────────────────────────────
 
 export { findCodexBinary, checkCodexStatus } from "./codex/discovery.mjs";
@@ -213,7 +249,7 @@ export function extractText(data) {
 
 // ── Model listing ────────────────────────────────────────────────────────────
 
-export function listModels(configPath = CONFIG_PATH) {
+export function listModels(configPath = getConfigPath()) {
   const lines = [];
 
   lines.push("claude   — Native Claude CLI (OAuth/Pro subscription)");
@@ -253,21 +289,50 @@ export function listModels(configPath = CONFIG_PATH) {
 
 // ── Shared: spawn claude.exe with stdin (stream-json for large prompts) ─────
 
-function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = null) {
+function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = null, signal = null) {
   return new Promise((resolve, reject) => {
     let stdout = "", stderr = "";
 
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      reject(new Error('Request cancelled'));
+    };
+    if (signal) {
+      if (signal.aborted) { reject(new Error('Request cancelled')); return; }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    let child;
     if (useStdin) {
-      const child = spawn(bin, ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], {
+      child = spawn(bin, ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], {
         env,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 600000,
         shell: false,
       });
-      child.stdout.on("data", (d) => (stdout += d));
+      child.stdout.on("data", (d) => {
+        stdout += d;
+        // Stream text progress: parse each complete line as it arrives
+        const lines = d.toString().split('\n').filter(l => l.trim());
+        for (const line of lines) {
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === 'assistant' && msg.message?.content) {
+              const blocks = Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content];
+              for (const block of blocks) {
+                const text = typeof block === 'string' ? block : (block.text || '');
+                if (text) process.stderr.write(text);
+              }
+            } else if (msg.type === 'result' && msg.result) {
+              process.stderr.write(msg.result);
+            }
+          } catch {}
+        }
+      });
       child.stderr.on("data", (d) => (stderr += d));
-      child.on("error", reject);
+      child.on("error", (err) => { if (signal) signal.removeEventListener('abort', onAbort); reject(err); });
       child.on("close", (code) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
         try {
           const result = parseStreamJsonOutput(stdout);
           const usage = extractUsageFromStderr(stderr) || result.usage;
@@ -277,8 +342,6 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
         }
       });
 
-      // Build content: use proper image blocks when available (Anthropic API
-      // charges by pixel dimensions, not base64 size), otherwise plain text.
       let content;
       if (images && images.length > 0) {
         content = [{ type: "text", text: fullPrompt }];
@@ -300,8 +363,7 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
       child.stdin.write(msg);
       child.stdin.end();
     } else {
-      // Small prompt: pass as command-line argument (simpler, no protocol overhead)
-      const child = spawn(bin, ["-p", fullPrompt], {
+      child = spawn(bin, ["-p", fullPrompt], {
         env,
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 300000,
@@ -309,8 +371,9 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
       });
       child.stdout.on("data", (d) => (stdout += d));
       child.stderr.on("data", (d) => (stderr += d));
-      child.on("error", reject);
+      child.on("error", (err) => { if (signal) signal.removeEventListener('abort', onAbort); reject(err); });
       child.on("close", (code) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
         try {
           const usage = extractUsageFromStderr(stderr);
           resolve(onResult(code, stdout, stderr, usage));
@@ -347,14 +410,35 @@ function parseStreamJsonOutput(raw) {
   return { text: text.trim(), usage };
 }
 
+// ── Structured request logging (ndjson to stderr) ──────────────────────────
+
+let _requestSeq = 0;
+
+export function logTakeoverRequest(startTs, provider, model, mode, status, { durationMs, inputTokens, outputTokens, error } = {}) {
+  _requestSeq++;
+  const entry = {
+    ts: startTs,
+    request_id: `tk-${startTs.replace(/[^0-9]/g, '').slice(0, 14)}-${String(_requestSeq).padStart(4, '0')}`,
+    provider,
+    model: model || 'default',
+    mode: mode || 'task',
+    status,
+    duration_ms: durationMs,
+    input_tokens: inputTokens || 0,
+    output_tokens: outputTokens || 0,
+    ...(error ? { error: error.slice(0, 200) } : {}),
+  };
+  process.stderr.write(JSON.stringify(entry) + '\n');
+}
+
 // ── Callers ──────────────────────────────────────────────────────────────────
 
 function isRetryable(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
 
-export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false) {
-  if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${CONFIG_PATH}.`);
+export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null) {
+  if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${getConfigPath()}.`);
 
   const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
   const url = `${baseUrl}/messages`;
@@ -388,6 +472,8 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (stream) body.stream = true;
 
+    const fetchSignal = signal || AbortSignal.timeout(300000);
+
     let res;
     try {
       res = await fetch(url, {
@@ -398,9 +484,10 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(300000),
+        signal: fetchSignal,
       });
     } catch (err) {
+      if (signal?.aborted) throw new Error('Request cancelled');
       if (attempt < maxRetries) {
         const delay = Math.pow(2, attempt) * 1000;
         process.stderr.write(`takeover: network error, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...\n`);

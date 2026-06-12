@@ -207,7 +207,7 @@ export function decideMode(filteredDiffChars, limit) {
 }
 
 // Render manifest as markdown table + hunk headers, capped at MANIFEST_TEXT_BUDGET.
-export function renderManifestText(entries, { range } = {}) {
+export function renderManifestText(entries, { range, subPath } = {}) {
   if (!entries.length) return '';
 
   // Sort by churn descending, then limit
@@ -218,6 +218,7 @@ export function renderManifestText(entries, { range } = {}) {
   const lines = [];
   lines.push(`## Changed files (${entries.length}${overflow ? `, +${overflow} more` : ''})`);
   if (range) lines.push(`Range: \`${range}\``);
+  if (subPath) lines.push(`Scope: \`${subPath}\``);
   lines.push('');
   lines.push('| # | Status | +/- | Churn | File |');
   lines.push('|---|--------|-----|-------|------|');

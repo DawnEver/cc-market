@@ -116,7 +116,7 @@ function buildCodeReviewPrompt(reviewer, args) {
   const scope = args.reviewScope || DEFAULT_REVIEW_SCOPE;
   const findingsFormat = buildFindingsFormat(args.findingSchema || DEFAULT_FINDING);
   const takeoverMode = args.mode === 'agent' ? 'agent' : 'review';
-  const prefix = `Range: ${args.range}. ${args.excludedSummary || ''}`;
+  const prefix = `Range: ${args.range}.${args.path ? ` Scope: ${args.path}.` : ''} ${args.excludedSummary || ''}`;
 
   if (args.mode === 'review') {
     const reviewBody = `${prefix}
@@ -254,7 +254,7 @@ if (pickStrategy === 'all') {
 const promptBuilder = contentType === 'content' ? buildContentReviewPrompt : buildCodeReviewPrompt;
 
 if (contentType === 'code') {
-  log(`Mode: ${args.mode} | Range: ${args.range} | ${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions} | ${args.excludedSummary || 'no files excluded'}`);
+  log(`Mode: ${args.mode} | Range: ${args.range}${args.path ? ` | Scope: ${args.path}` : ''} | ${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions} | ${args.excludedSummary || 'no files excluded'}`);
 } else {
   log(`Content review mode | ${active.length} reviewers | ${args.content.length} chars of content`);
 }

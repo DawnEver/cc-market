@@ -56,17 +56,22 @@ Run `diff-manifest.js` — the ONLY allowed diff payload. Never run raw `git dif
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js"
 ```
 
-By default, reviews uncommitted changes (staged + unstaged vs HEAD). If the user specified a range, pass it through:
+By default, reviews uncommitted changes (staged + unstaged vs HEAD). If the user specified a range or path filter, pass it through:
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD"
+node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --path "src/components"
+node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD" --path "src/components"
 ```
+
+`--path` restricts the review to a subfolder or file — only changes under that path are included. Combine with `--range` to review a specific module's history.
 
 Capture the JSON output. The script produces a size-bounded payload — each field is construction-guaranteed to stay under safe limits:
 ```json
 {
   "mode": "review" | "agent" | "empty",
   "range": "HEAD",
+  "path": "src/components",       // only when --path is provided
   "stats": { "files": 42, "insertions": 1234, "deletions": 567, "excluded": 9, "diffChars": 183421 },
   "diff": "...",            // only review mode (≤ inlineDiffLimit chars)
   "manifestText": "...",    // only agent mode (≤ 12k chars)
@@ -87,6 +92,7 @@ Workflow({
     date: "<YYYY-MM-DD today>",
     mode: result.mode,
     range: result.range,
+    path: result.path,              // only when --path was used
     stats: result.stats,
     diff: result.diff,              // only in review mode
     manifestText: result.manifestText, // only in agent mode
