@@ -112,9 +112,17 @@ def current_heads(comp_cfg: dict, project: Path) -> dict[str, str]:
     return heads
 
 
-def remote_heads(comp_cfg: dict, project: Path, fetch: bool = True) -> dict[str, str]:
-    """Remote tracking HEAD (`<remote>/<branch>`) of each repo, optionally fetching."""
+def remote_heads(comp_cfg: dict, project: Path,
+                 fetch: bool = True) -> tuple[dict[str, str], list[str]]:
+    """Remote tracking HEAD (`<remote>/<branch>`) of each repo, optionally fetching.
+
+    Returns (heads, fetch_failed) where fetch_failed lists repos whose `git fetch`
+    did not succeed after retries. This matters because on fetch failure the stale
+    local remote-tracking ref still resolves — silently masking new upstream commits
+    as "no change". Callers escalate persistent fetch_failed so the blindness is loud.
+    """
     heads: dict[str, str] = {}
+    fetch_failed: list[str] = []
     for repo in comp_cfg.get('repositories', []):
         repo_path = (project / repo['path']).resolve()
         if not repo_path.is_dir():
@@ -124,31 +132,36 @@ def remote_heads(comp_cfg: dict, project: Path, fetch: bool = True) -> dict[str,
         if fetch:
             # git fetch against this remote is flaky (auth/network) and often
             # only succeeds on a later attempt — retry a few times.
+            ok = False
             for attempt in range(3):
                 r = subprocess.run(['git', 'fetch', remote], cwd=repo_path,
                                    capture_output=True, text=True, timeout=30)
                 if r.returncode == 0:
+                    ok = True
                     break
                 if attempt == 2:
                     print(f'[git_version] fetch {remote} failed for {repo["name"]} '
                           f'after 3 attempts: {r.stderr.strip()[:200]}')
+            if not ok:
+                fetch_failed.append(repo['name'])
         try:
             heads[repo['name']] = subprocess.check_output(
                 ['git', 'rev-parse', f'{remote}/{branch}'],
                 cwd=repo_path, text=True, timeout=5).strip()
         except Exception:
             pass
-    return heads
+    return heads, fetch_failed
 
 
-def changed_targets(comp_cfg: dict, project: Path,
-                    fetch: bool = True) -> tuple[dict[str, str], dict[str, str]]:
-    """Return (all_targets, changed) where `changed` is the subset of repos
-    whose remote main head differs from known-good."""
+def changed_targets(comp_cfg: dict, project: Path, fetch: bool = True
+                    ) -> tuple[dict[str, str], dict[str, str], list[str]]:
+    """Return (all_targets, changed, fetch_failed) where `changed` is the subset of
+    repos whose remote main head differs from known-good, and `fetch_failed` lists
+    repos whose fetch did not succeed (their head may be stale → not trustworthy)."""
     known = load_known(comp_cfg, project)
-    targets = remote_heads(comp_cfg, project, fetch=fetch)
+    targets, fetch_failed = remote_heads(comp_cfg, project, fetch=fetch)
     changed = {n: h for n, h in targets.items() if known.get(n) != h}
-    return targets, changed
+    return targets, changed, fetch_failed
 
 
 def health_check_url(url: str, timeout: int, interval: float = 2.0) -> bool:
@@ -240,11 +253,32 @@ class GitVersion(Component):
             except Exception:
                 pass
 
-        targets, changed = changed_targets(comp_cfg, project, fetch=True)
+        targets, changed, fetch_failed = changed_targets(comp_cfg, project, fetch=True)
         for name, head in targets.items():
             result.metrics[f'{name}_changed'] = int(name in changed)
             if name in changed:
                 result.data[f'{name}_target'] = head
+
+        # Fetch blindness — a failed `git fetch` leaves a stale remote-tracking ref,
+        # so new upstream commits look like "no change" (changed=={}). Distinguish it
+        # from a genuine no-op: count a streak and escalate only after a few rounds so
+        # a single transient flake doesn't false-alarm.
+        deploy_cfg = comp_cfg.get('deploy', {})
+        if fetch_failed:
+            streak = state.get('_fetch_fail_streak', 0) + 1
+            state['_fetch_fail_streak'] = streak
+            result.metrics['fetch_fail_streak'] = streak
+            escalate_after = deploy_cfg.get('fetch_fail_escalate_after', 3)
+            if streak >= escalate_after:
+                result.anomalies.append(Anomaly(
+                    type='fetch_unreachable', severity='critical',
+                    value=streak, threshold=escalate_after,
+                    message=(f'git fetch failed {streak} poll(s) in a row for '
+                             f'{", ".join(fetch_failed)} — watchd cannot see new '
+                             f'commits, deploy detection is blind'),
+                ))
+        else:
+            state.pop('_fetch_fail_streak', None)
 
         sig = deploy_signature(changed)
         failures = load_failures(comp_cfg, project)
@@ -278,6 +312,7 @@ class GitVersion(Component):
         return {
             'new_version_available': [RemedyStep(action='deploy')],
             'deploy_failed': [RemedyStep(action='notify', escalate_after=1)],
+            'fetch_unreachable': [RemedyStep(action='notify', escalate_after=1)],
         }
 
     def actions(self) -> dict[str, Action]:

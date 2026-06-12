@@ -7,27 +7,20 @@ Single YAML config per project. Pluggable components. Isolated uv venv.
 
 ```
 watchd (Python daemon, runs 24/7)
-  │  Every 5 min: git fetch + health ping + disk + process + cron_freshness
+  │  Every poll: git fetch + health ping + disk + process checks
   │  Zero AI tokens. Only wakes AI on anomaly.
-  │  cron_freshness checks state/cron_refresh.json — catches a /watch:watch
-  │  that stopped refreshing CronCreate, independent of agent memory.
   │  On fail_threshold exceeded → writes trigger.json
   │
   ▼
 trigger-watch.py (standalone poller, always-on terminal)
   │  Polls trigger.json every 15s. On change → runs watch.py directly.
   │  No Claude Code dependency. Survives session restarts.
-  │  If the report still has an AI-only anomaly (cron_stale,
-  │  cron_marker_missing) and enable_headless_ai_escalation is set,
-  │  additionally spawns `claude -p "/watch:watch"`.
   │
   ▼
-/watch:watch (Claude Code AI loop, 12h cron or on-demand)
+/watch:watch (Claude Code AI loop, on-demand or in-session)
   │  Full component check + anomaly detection
   │  Remedies: restart, rollback, worktree deploy
   │  Alert escalation: email/webhook
-  │  Step 5: always refreshes durable CronCreate, verifies via CronList,
-  │  and writes state/cron_refresh.json (the marker cron_freshness checks)
   │
   ▼
 alert-hook.js (Claude Code hook)
@@ -55,7 +48,6 @@ components/              # Pluggable health checks — flat Python modules
   git_version.py         #   Multi-repo version tracking + worktree deploy
   disk_usage.py          #   Disk usage check
   watchd_heartbeat.py    #   Daemon heartbeat freshness check
-  cron_freshness.py      #   CronCreate refresh marker freshness check
   log_scanner.py         #   Cross-platform log tail scanner for error patterns
   progress_tracker.py    #   JSON progress file monitor with stall detection
 watchd/

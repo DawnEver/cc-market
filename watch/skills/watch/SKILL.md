@@ -86,31 +86,19 @@ Check `report.escalation.alerts_sent_this_cycle` before sending — avoid duplic
 Escalation paths outside this single invocation (see `reference/trigger-watch.md`):
 - **trigger-watch.py** (session-independent daemon) polls `trigger.json` and runs
   `scripts/watch.py` directly — the always-on base layer.
-- **Monitor** (in-session, real-time) — armed in Step 6 below, lets *this* live session
+- **Monitor** (in-session, real-time) — armed in Step 5 below, lets *this* live session
   react the moment a new trigger lands, with full tool access.
 
-## Step 5: Schedule Next Check
+## Step 5: Arm the in-session real-time bridge (interactive sessions only)
 
-**Always run this step, every invocation — never skip it.** Refresh the durable
-CronCreate to guarantee the next check fires, interval depending on healthy/degraded
-status (this self-refreshing pattern resets the 7-day expiry clock every cycle). After
-CronCreate, verify via CronList that the entry exists, then write
-`.claude/watch/state/cron_refresh.json` — this marker is checked by the pure-script
-`cron_freshness` component every 5 minutes, so a skipped or failed refresh is detected
-and escalated even if this step is forgotten. Full interval lookup, cron-expression
-calculation, verification, and marker procedure → `reference/scheduling.md`.
-
-## Step 6: Arm the in-session real-time bridge (interactive sessions only)
-
-When this skill runs in a **live, interactive session** (not a headless `claude -p` /
-cron invocation), arm a persistent `Monitor` so you react to new anomalies the instant
-watchd raises them — instead of waiting for the next cron poll. This is the full-capability
+When this skill runs in a **live, interactive session**, arm a persistent `Monitor` so
+you react to new anomalies the instant watchd raises them. This is the full-capability
 counterpart to the `trigger-watch.py` daemon: while you are alive, you handle triggers
 yourself with every tool available.
 
 ```
 Monitor(
-  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5 --ignore-ai-only",
+  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5",
   description="watch trigger.json — anomalies raised by watchd",
   persistent=true,
 )
@@ -119,15 +107,14 @@ Monitor(
 `trigger-emit.py` is pure stdlib (no venv re-exec) and prints one `ANOMALY trigger: …`
 line per change to `trigger.json`. When such an event arrives, re-run this skill from
 Step 1 to handle it. Guidance:
-- Pass `--ignore-ai-only` so parked AI-only anomalies (`cron_stale` / `cron_marker_missing`,
-  no shell remedy) never wake the Monitor — this live loop already refreshes cron on its own
-  cadence, and watchd suppresses those triggers by default (`watchd.suppress_ai_only_triggers`).
-  Drop the flag only if you want the session to react to every trigger watchd does write.
 - Arm it **once** per session. If a Monitor for `trigger.json` is already running, do not start another.
-- **Skip this step entirely** in headless/cron runs — there is no session to keep reactive,
-  and the `trigger-watch.py` daemon already covers that case.
+- **Skip this step entirely** in non-interactive runs — there is no session to keep
+  reactive, and the `trigger-watch.py` daemon already covers that case.
 - Reacting is idempotent: `scripts/watch.py` remedies are safe to re-run even if the
   standalone daemon also handled the same trigger.
+
+Polling cadence is entirely owned by the `watchd` daemon (`watchd.interval`) plus
+`trigger-watch.py`; there is no Claude-session cron dependency.
 
 ## Logging
 

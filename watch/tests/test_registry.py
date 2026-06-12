@@ -121,7 +121,7 @@ class TestDiscoverBuiltin(unittest.TestCase):
     def test_all_builtins_default_enabled(self):
         reg = ComponentRegistry()
         discover_builtin(reg)
-        self.assertEqual(len(reg.enabled()), 9)
+        self.assertEqual(len(reg.enabled()), 8)
 
 
 class TestDiscoverYaml(unittest.TestCase):

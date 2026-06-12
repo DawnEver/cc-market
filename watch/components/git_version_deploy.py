@@ -36,10 +36,15 @@ def _all_healthy(urls: list[str], timeout: int) -> bool:
     return all(health_check_url(u, timeout) for u in urls) if urls else True
 
 
-def _run_restart(comp_cfg: dict, project: Path, context: dict) -> None:
-    """Execute the configured production restart action, if any."""
+def _run_restart(comp_cfg: dict, project: Path, context: dict,
+                 action_key: str = 'production_restart_action') -> None:
+    """Execute a configured restart action. `action_key` selects which one:
+    the deploy chain uses `production_restart_action` (rebuilds the frontend, since
+    new code shipped); the recovery ladder uses `recover_restart_action` (preview
+    only, no rebuild — the dist/ is already built) and falls back to the deploy one."""
     registry = context.get('_registry')
-    action_name = comp_cfg.get('deploy', {}).get('production_restart_action', '')
+    deploy_cfg = comp_cfg.get('deploy', {})
+    action_name = deploy_cfg.get(action_key) or deploy_cfg.get('production_restart_action', '')
     if not (registry and action_name and hasattr(registry, 'get_action')):
         return
     act = registry.get_action(action_name)
@@ -62,7 +67,7 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
         print('[git_version] No repositories configured.')
         return False
 
-    targets, changed = changed_targets(comp_cfg, project, fetch=True)
+    targets, changed, _ = changed_targets(comp_cfg, project, fetch=True)
     known = load_known(comp_cfg, project)
     repos_to_deploy = [r for r in repos if r['name'] in changed]
     if not repos_to_deploy:
@@ -267,11 +272,13 @@ def recover_service(comp_cfg: dict, project: Path, context: dict) -> bool:
         prod_urls = [prod_urls]
     attempts = deploy_cfg.get('restart_attempts', 2)
     htimeout = deploy_cfg.get('test_health_timeout', 30)
-    prestart = deploy_cfg.get('test_prestart_sleep', 5)
+    # Recovery restarts are preview-only (no rebuild), so they come up in seconds —
+    # don't inherit the deploy gate's long staging sleep.
+    prestart = deploy_cfg.get('recover_prestart_sleep', 5)
 
     for i in range(attempts):
         print(f'[git_version] Recovery restart attempt {i + 1}/{attempts}...')
-        _run_restart(comp_cfg, project, context)
+        _run_restart(comp_cfg, project, context, 'recover_restart_action')
         time.sleep(prestart)
         if _all_healthy(prod_urls, htimeout):
             context['recovered'] = f'restart#{i + 1}'
@@ -280,7 +287,7 @@ def recover_service(comp_cfg: dict, project: Path, context: dict) -> bool:
 
     print('[git_version] Restarts exhausted — rolling back to known-good.')
     rollback_repos(comp_cfg, project)
-    _run_restart(comp_cfg, project, context)
+    _run_restart(comp_cfg, project, context, 'recover_restart_action')
     time.sleep(prestart)
     if _all_healthy(prod_urls, htimeout):
         context['recovered'] = 'rollback'

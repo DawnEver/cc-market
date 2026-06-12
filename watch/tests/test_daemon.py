@@ -236,7 +236,7 @@ class TestRestartWatchd(unittest.TestCase):
 
 
 class TestWakeClaudeTriggerPayload(unittest.TestCase):
-    """_wake_claude — payload enrichment and AI-only suppression."""
+    """_wake_claude — trigger payload enrichment."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -254,35 +254,13 @@ class TestWakeClaudeTriggerPayload(unittest.TestCase):
     def _trigger_path(self):
         return self.project / '.claude' / 'watch' / 'trigger.json'
 
-    def test_actionable_anomaly_writes_trigger_with_types(self):
+    def test_anomaly_writes_trigger_with_types(self):
         self.daemon._wake_claude(
             self.project, self.config, 'anomalies_detected', 'x',
             anomaly_types={'endpoint_unreachable'})
         payload = json.loads(self._trigger_path().read_text(encoding='utf-8'))
         self.assertEqual(payload['anomaly_types'], ['endpoint_unreachable'])
-        self.assertFalse(payload['ai_only'])
-
-    def test_ai_only_anomaly_suppressed_by_default(self):
-        self.daemon._wake_claude(
-            self.project, self.config, 'anomalies_detected', 'x',
-            anomaly_types={'cron_stale'})
-        self.assertFalse(self._trigger_path().exists())
-
-    def test_mixed_anomaly_not_suppressed(self):
-        self.daemon._wake_claude(
-            self.project, self.config, 'anomalies_detected', 'x',
-            anomaly_types={'cron_stale', 'endpoint_unreachable'})
-        payload = json.loads(self._trigger_path().read_text(encoding='utf-8'))
-        self.assertFalse(payload['ai_only'])
-        self.assertIn('cron_stale', payload['anomaly_types'])
-
-    def test_ai_only_written_when_suppression_disabled(self):
-        cfg = {'watchd': dict(self.config['watchd'], suppress_ai_only_triggers=False)}
-        self.daemon._wake_claude(
-            self.project, cfg, 'anomalies_detected', 'x',
-            anomaly_types={'cron_stale'})
-        payload = json.loads(self._trigger_path().read_text(encoding='utf-8'))
-        self.assertTrue(payload['ai_only'])
+        self.assertEqual(payload['reason'], 'anomalies_detected')
 
 
 if __name__ == '__main__':
