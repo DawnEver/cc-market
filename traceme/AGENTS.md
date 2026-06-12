@@ -49,6 +49,10 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
    `origin/main`, merges in memory; falls back to local SQLite queries when no synced data
    exists or `--local` is passed.
 
+`sessions.active_min` is hands-on time: the sum of consecutive message-timestamp gaps under a
+10-min idle cutoff (derived in `scan.mjs`). Unlike elapsed (`ended_at − started_at`), idle gaps
+don't count — reports surface both ("Active" vs "Elapsed"). Local-only; not synced.
+
 Schema (all per-session, recomputed on each scan): `sessions` (one row per transcript) +
 `session_models` / `session_tools` / `session_skills` / `session_categories` breakdowns.
 `session_categories` buckets by tool category for the dashboard's Plugins/Subagents/MCPs view.

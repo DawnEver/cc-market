@@ -44,6 +44,7 @@ export function parseSession(entries) {
   const tools = {};
   const skills = {};
   let input = 0, output = 0, cacheRead = 0, cacheCreate = 0, cost = 0;
+  const stamps = []; // all message timestamps — active time sums only the gaps under the idle cutoff
 
   // Category buckets (Plugins/Subagents/MCPs). Two DISTINCT units, never summed together:
   // `tokens` holds real tokens (subagent sidechain usage); `bytes_est` holds the tool_result
@@ -62,6 +63,7 @@ export function parseSession(entries) {
     if (e.timestamp) {
       if (!started || e.timestamp < started) started = e.timestamp;
       if (!ended || e.timestamp > ended) ended = e.timestamp;
+      stamps.push(e.timestamp);
     }
     if (isRealPrompt(e)) promptCount++;
 
@@ -118,8 +120,18 @@ export function parseSession(entries) {
   if (!started) return null;
   const total = input + output + cacheRead + cacheCreate;
   const topModel = Object.entries(models).sort((a, b) => b[1].requests - a[1].requests)[0]?.[0] || null;
+  // Active minutes: sum consecutive-message gaps under a 10-min idle cutoff. Approximates
+  // hands-on time — unlike elapsed (max−min), an hour of idle between turns doesn't count.
+  const ACTIVE_GAP_MS = 10 * 60 * 1000;
+  stamps.sort();
+  let activeMs = 0;
+  for (let i = 1; i < stamps.length; i++) {
+    const gap = new Date(stamps[i]) - new Date(stamps[i - 1]);
+    if (gap > 0 && gap <= ACTIVE_GAP_MS) activeMs += gap;
+  }
+  const activeMin = Math.round(activeMs / 60000);
   return {
-    cwd, branch, started, ended, promptCount,
+    cwd, branch, started, ended, promptCount, activeMin,
     input, output, cacheRead, cacheCreate, total, cost, topModel,
     models: Object.entries(models).map(([model, m]) => ({ model, ...m })),
     tools: Object.entries(tools).map(([tool_name, count]) => ({ tool_name, count })),
@@ -148,6 +160,7 @@ function scanOne(path, sessionId) {
     branch: p.branch,
     started_at: p.started,
     ended_at: p.ended,
+    active_min: p.activeMin,
     prompt_count: p.promptCount,
     input_tokens: p.input,
     output_tokens: p.output,
