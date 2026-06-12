@@ -11,7 +11,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 sys.path.insert(0, str(_HERE.parent / 'scripts'))
 
-from components.progress_tracker import ProgressTracker
+from components.progress.progress_tracker import ProgressTracker
 
 
 class TestProgressTracker(unittest.TestCase):

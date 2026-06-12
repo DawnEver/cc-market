@@ -16,6 +16,12 @@ Scaffold a `.claude/watch/config.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with 
    - **process**: Long-running process monitoring (processes + probes + delta).
    - **full**: All sections enabled, everything commented.
 3. Write the config file with the project name from git or directory name as `instance.name`.
+   When scaffolding the `actions:` section, use one of the three documented forms (see
+   README "Actions"): **shell** (`kill`/`start`/`wait`), **managed-service**
+   (`kill_port`/`kill_pattern`/`start_cmd`/`start_dir`/`start_log`/`wait`), or
+   **composition** (`steps: [...]`). Named actions are run by the supervision loop and can
+   also be invoked directly with
+   `python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --action <name> --project-dir ${CLAUDE_PROJECT_DIR}`.
 4. Remind about Python dependencies:
    - `pip install pyyaml` (required)
    - `pip install psutil` (only if using process_monitor component)
@@ -24,9 +30,9 @@ Scaffold a `.claude/watch/config.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with 
    - Check if watchd is already running by reading `.claude/watch/logs/daemon.jsonl` — if the last entry timestamp is within 600 seconds (2 × 300s default interval), the daemon is alive.
    - If NOT running, spawn it detached:
      ```
-     python ${CLAUDE_PLUGIN_ROOT}/scripts/start-server.py \
+     python ${CLAUDE_PLUGIN_ROOT}/scripts/helpers/start-server.py \
        --project-dir ${CLAUDE_PROJECT_DIR} \
-       --cmd "python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir ${CLAUDE_PROJECT_DIR}"
+       --cmd "python ${CLAUDE_PLUGIN_ROOT}/scripts/daemon/daemon.py --project-dir ${CLAUDE_PROJECT_DIR}"
      ```
    - Wait 2 seconds, then verify `daemon.jsonl` has a new entry with a recent timestamp.
    - Report: "watchd daemon is running (PID from heartbeat)" or "WARNING: watchd failed to start — check Python and venv."

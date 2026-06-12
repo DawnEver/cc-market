@@ -12,7 +12,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 sys.path.insert(0, str(_HERE.parent / 'scripts'))
 
-from components.git_version import (
+from components.versioning.git_version import (
     GitVersion,
     deploy_signature,
     load_failures,
@@ -188,6 +188,85 @@ class TestFetchBlindness(_OneRepoFixture):
         self._break_remote()
         result = GitVersion().check(cfg, self.global_cfg, {})
         self.assertIn('fetch_unreachable', [a.type for a in result.anomalies])
+
+
+class TestDeploySafety(_OneRepoFixture):
+    def test_atomic_writes_and_locking_roundtrip(self):
+        from core.state import atomic_write_text, file_lock
+        target = self.work / '.claude' / 'watch' / 'state' / 'x.json'
+        with file_lock(target) as got:
+            self.assertTrue(got)
+            atomic_write_text(target, '{"a": 1}\n')
+        self.assertEqual(target.read_text(encoding='utf-8'), '{"a": 1}\n')
+        # No temp/lock files left behind.
+        leftovers = [p.name for p in target.parent.iterdir()
+                     if p.name != 'x.json']
+        self.assertEqual(leftovers, [])
+
+    def test_file_lock_reentrant_blocking_with_stale_takeover(self):
+        from core.state import file_lock
+        target = self.work / '.claude' / 'watch' / 'state' / 'y.json'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Simulate a stale lock owned by a dead PID — should be taken over fast.
+        lock = target.with_name(target.name + '.lock')
+        lock.write_text('2147480000', encoding='ascii')  # almost certainly dead
+        with file_lock(target, timeout=2.0) as got:
+            self.assertTrue(got)
+
+    def test_concurrent_record_failure_no_lost_update(self):
+        import threading
+        sigs = [f'sig{i}' for i in range(12)]
+        threads = [threading.Thread(target=record_failure,
+                                    args=(self.comp_cfg, self.work, s)) for s in sigs]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(sorted(load_failures(self.comp_cfg, self.work)), sorted(sigs))
+
+    def test_classify_fetch_error(self):
+        from components.versioning.git_version import classify_fetch_error
+        self.assertEqual(classify_fetch_error('fatal: Authentication failed for x'), 'auth')
+        self.assertEqual(classify_fetch_error('Could not resolve host: github.com'), 'network')
+        self.assertEqual(classify_fetch_error("fatal: 'x' does not appear to be a git repository"), 'corrupt')
+        self.assertEqual(classify_fetch_error('something weird'), 'unknown')
+
+    def test_fetch_failed_carries_reason(self):
+        from components.versioning.git_version import remote_heads
+        _git(self.work, 'remote', 'set-url', 'origin',
+             str(Path(self.tmp.name) / 'nonexistent.git'))
+        _, failed = remote_heads(self.comp_cfg, self.work, fetch=True)
+        self.assertTrue(failed)
+        self.assertIn('repo (', failed[0])
+
+    def test_remove_worktree_idempotent(self):
+        from components.versioning.git_version import remove_worktree
+        # Removing a path that does not exist must not raise.
+        remove_worktree(self.work / 'no-such-wt', self.work)
+
+    def test_second_concurrent_deploy_bails(self):
+        from components.versioning.git_version_deploy import _deploy_lock, deploy_repos
+        # Hold the deploy lock, then a deploy attempt must bail without deploying.
+        with _deploy_lock(self.work) as held:
+            self.assertTrue(held)
+            ok = deploy_repos(self.comp_cfg, self.work, {})
+            self.assertFalse(ok)
+        # Production untouched (still at A).
+        self.assertEqual(_head(self.deploy_wt), self.commitA)
+
+    def test_deploy_writes_audit_trail(self):
+        import json as _json
+        ok = GitVersion().execute_action('deploy', self.comp_cfg, self.global_cfg,
+                                         self.work, {})
+        self.assertTrue(ok)
+        audit = self.work / '.claude' / 'watch' / 'logs' / 'deploy.jsonl'
+        self.assertTrue(audit.exists())
+        events = [_json.loads(line) for line in
+                  audit.read_text(encoding='utf-8').splitlines()]
+        phases = [e['phase'] for e in events]
+        self.assertIn('start', phases)
+        self.assertIn('complete', phases)
+        self.assertEqual(events[-1]['outcome'], 'passed')
 
 
 if __name__ == '__main__':

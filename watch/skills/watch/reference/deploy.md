@@ -14,7 +14,7 @@ no hotfix-on-deploy.
 
 2. Run the `deploy` action (it is the remedy for `new_version_available`):
    ```bash
-   python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py \
+   python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
      --project-dir ${CLAUDE_PROJECT_DIR} --action deploy
    ```
    Internally:

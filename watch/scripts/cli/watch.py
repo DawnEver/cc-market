@@ -3,14 +3,19 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_PLUGIN_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_PLUGIN_ROOT))
+sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
+
 import bootstrap
 bootstrap.ensure()
 
 import argparse
 import json
 import os
-import sys
-from pathlib import Path
 
 from core.config import load_config
 from core.loop import run

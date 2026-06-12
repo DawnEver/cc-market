@@ -21,7 +21,7 @@ For the full `.claude/watch/` file map and the `watchd:` config schema → `refe
 
 Run the unified monitor:
 ```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py \
+python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
   --project-dir ${CLAUDE_PROJECT_DIR} \
   --json
 ```
@@ -48,7 +48,7 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
 **On `degraded` (anomaly after recent deploy):**
 - Check `report.escalation.remedies_attempted` — if a recent deploy failed, consider rollback:
   ```bash
-  python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --action rollback
+  python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --action rollback
   ```
 
 **On `degraded` (general):**
@@ -75,7 +75,7 @@ Use `report.history.deltas` to detect trends:
 
 When `escalate_after` threshold is reached:
 ```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
+python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/send_alert.py \
   --config .claude/watch/config.yaml \
   --subject "Anomaly: <type> (x<count> consecutive)" \
   --body "<monitor JSON>"
@@ -85,7 +85,7 @@ Check `report.escalation.alerts_sent_this_cycle` before sending — avoid duplic
 
 Escalation paths outside this single invocation (see `reference/trigger-watch.md`):
 - **trigger-watch.py** (session-independent daemon) polls `trigger.json` and runs
-  `scripts/watch.py` directly — the always-on base layer.
+  `scripts/cli/watch.py` directly — the always-on base layer.
 - **Monitor** (in-session, real-time) — armed in Step 5 below, lets *this* live session
   react the moment a new trigger lands, with full tool access.
 
@@ -98,7 +98,7 @@ yourself with every tool available.
 
 ```
 Monitor(
-  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5",
+  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5",
   description="watch trigger.json — anomalies raised by watchd",
   persistent=true,
 )
@@ -110,7 +110,7 @@ Step 1 to handle it. Guidance:
 - Arm it **once** per session. If a Monitor for `trigger.json` is already running, do not start another.
 - **Skip this step entirely** in non-interactive runs — there is no session to keep
   reactive, and the `trigger-watch.py` daemon already covers that case.
-- Reacting is idempotent: `scripts/watch.py` remedies are safe to re-run even if the
+- Reacting is idempotent: `scripts/cli/watch.py` remedies are safe to re-run even if the
   standalone daemon also handled the same trigger.
 
 Polling cadence is entirely owned by the `watchd` daemon (`watchd.interval`) plus

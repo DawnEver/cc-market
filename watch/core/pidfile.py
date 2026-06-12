@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-platform single-instance pidfile guard.
 
-Shared by watchd (watchd/daemon.py) and trigger-watch (scripts/trigger-watch.py).
+Shared by watchd (scripts/daemon/daemon.py) and trigger-watch (scripts/daemon/trigger-watch.py).
 Both re-exec into a managed venv via ``bootstrap.ensure()`` *before* calling
 ``acquire()``, so the PID written here is the real, post-exec worker PID — which is
 what makes external start/stop tooling deterministic.

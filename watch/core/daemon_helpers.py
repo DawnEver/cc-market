@@ -63,8 +63,8 @@ def _restart_watchd(project: Path, config: dict) -> bool:
     Returns True if start-server.py exited with code 0."""
     wd = config.get('watchd', {})
     plugin_root = Path(__file__).resolve().parent.parent  # core/ -> watch/
-    start_server = plugin_root / 'scripts' / 'start-server.py'
-    daemon_py = plugin_root / 'watchd' / 'daemon.py'
+    start_server = plugin_root / 'scripts' / 'helpers' / 'start-server.py'
+    daemon_py = plugin_root / 'scripts' / 'daemon' / 'daemon.py'
 
     # start-server.py handles cross-platform detached spawning
     inner = f'python {daemon_py} --project-dir {project}'

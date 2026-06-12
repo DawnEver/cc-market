@@ -67,11 +67,15 @@ class ComponentRegistry:
 
 
 def discover_builtin(registry: ComponentRegistry) -> None:
-    """Load all built-in components from flat .py files."""
-    for f in sorted(_COMPONENT_DIR.glob('*.py')):
+    """Load all built-in components, recursing into functional subpackages."""
+    for f in sorted(_COMPONENT_DIR.rglob('*.py')):
+        if '__pycache__' in f.parts:
+            continue
         if f.name.startswith('_') or f.name in ('base.py', 'registry.py'):
             continue
-        _load_module(f, registry)
+        rel = f.relative_to(_COMPONENT_DIR).with_suffix('')
+        modname = 'components.' + '.'.join(rel.parts)
+        _load_module(f, registry, modname)
 
 
 def discover_yaml(registry: ComponentRegistry, config: dict) -> None:
@@ -91,18 +95,17 @@ def discover_project(registry: ComponentRegistry, project_dir: Path) -> None:
     if not custom_dir.is_dir():
         return
     for f in sorted(custom_dir.glob('*.py')):
-        _load_module(f, registry)
+        _load_module(f, registry, f'components.{f.stem}')
 
 
-def _load_module(path: Path, registry: ComponentRegistry) -> None:
+def _load_module(path: Path, registry: ComponentRegistry, modname: str) -> None:
     """Load a Python module and register any Component subclasses found."""
-    name = path.stem
     try:
-        spec = importlib.util.spec_from_file_location(f'components.{name}', str(path))
+        spec = importlib.util.spec_from_file_location(modname, str(path))
         if spec is None or spec.loader is None:
             return
         mod = importlib.util.module_from_spec(spec)
-        sys.modules[f'components.{name}'] = mod
+        sys.modules[modname] = mod
         spec.loader.exec_module(mod)
         for attr in dir(mod):
             obj = getattr(mod, attr)

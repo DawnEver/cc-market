@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_PLUGIN_ROOT = _HERE.parent
+_PLUGIN_ROOT = _HERE.parent.parent
 sys.path.insert(0, str(_PLUGIN_ROOT))
 sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 
@@ -28,7 +28,7 @@ from core.log import log_event
 
 LOG_FILE = '.claude/watch/logs/trigger-watch.jsonl'
 PIDFILE = 'trigger-watch.pid'
-WATCH_PY = _PLUGIN_ROOT / 'scripts' / 'watch.py'
+WATCH_PY = _PLUGIN_ROOT / 'scripts' / 'cli' / 'watch.py'
 
 
 def _log(project_dir: Path, level: str, msg: str) -> None:

@@ -10,7 +10,7 @@ from pathlib import Path
 def log_event(project_dir: Path, log_file: str, level: str, msg: str) -> None:
     """Print a timestamped line and append it to the given JSONL log.
 
-    Shared by watchd (watchd/daemon.py) and trigger-watch (scripts/trigger-watch.py),
+    Shared by watchd (scripts/daemon/daemon.py) and trigger-watch (scripts/daemon/trigger-watch.py),
     which keep thin signature adapters around this body.
     """
     ts = datetime.now(timezone.utc).isoformat()

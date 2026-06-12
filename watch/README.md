@@ -6,7 +6,7 @@ A Claude Code plugin for zero-touch server and long-running task supervision.
 
 ```bash
 # 1. Install plugin
-/plugin install rem@cc-market
+/plugin install watch@cc-market
 
 # 2. Python environment is auto-managed — first run creates:
 #    ~/.local/share/claude/watch/venv/   (uv venv)
@@ -17,7 +17,7 @@ A Claude Code plugin for zero-touch server and long-running task supervision.
 # 4. Edit .claude/watch/config.yaml
 
 # 5. /watch:setup already started the daemon. Verify:
-python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir . --once
+python ${CLAUDE_PLUGIN_ROOT}/scripts/daemon/daemon.py --project-dir . --once
 
 # 6. Start the AI supervision loop (full check + auto-repair, every 12h)
 /loop 12h /watch:watch
@@ -29,7 +29,7 @@ python ${CLAUDE_PLUGIN_ROOT}/watchd/daemon.py --project-dir . --once
 ## Architecture
 
 ```
-watchd.js (lightweight daemon, runs 24/7)
+scripts/daemon/daemon.py (lightweight Python daemon, runs 24/7)
   │  Every 5 min: git fetch + health ping
   │  Only wakes AI on anomaly or new commits
   │

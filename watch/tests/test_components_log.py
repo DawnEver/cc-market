@@ -10,7 +10,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 sys.path.insert(0, str(_HERE.parent / 'scripts'))
 
-from components.log_scanner import LogScanner
+from components.resources.log_scanner import LogScanner
 
 
 class TestLogScanner(unittest.TestCase):
