@@ -1,4 +1,5 @@
-"""Worktree-based deploy gate — extracted from git_version.py."""
+"""One-way deploy gate — test new main commit in staging, then swap the deploy
+worktree to it and restart production. No backport, no deploy-branch edits."""
 
 from __future__ import annotations
 
@@ -8,112 +9,145 @@ import time
 from pathlib import Path
 
 from components.git_version import (
-    current_heads,
+    changed_targets,
+    clear_failures,
+    deploy_path,
+    deploy_signature,
     health_check_url,
     load_known,
+    record_failure,
     remove_worktree,
     rollback_repos,
     save_known,
 )
 
 
+def _nest_map(repos: list[dict]) -> dict[str, list[dict]]:
+    """host repo name → list of repos that must be nested inside its worktree."""
+    nests: dict[str, list[dict]] = {}
+    for r in repos:
+        host = r.get('nest_into')
+        if host:
+            nests.setdefault(host, []).append(r)
+    return nests
+
+
+def _all_healthy(urls: list[str], timeout: int) -> bool:
+    return all(health_check_url(u, timeout) for u in urls) if urls else True
+
+
+def _run_restart(comp_cfg: dict, project: Path, context: dict) -> None:
+    """Execute the configured production restart action, if any."""
+    registry = context.get('_registry')
+    action_name = comp_cfg.get('deploy', {}).get('production_restart_action', '')
+    if not (registry and action_name and hasattr(registry, 'get_action')):
+        return
+    act = registry.get_action(action_name)
+    if not act:
+        return
+    from core.actions import _execute_action
+    print(f'[git_version] Restarting production via {action_name}...')
+    _execute_action(act, project, registry, '', context)
+
+
 def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
-    """Worktree-based deployment gate with optional test-port verification.
-
-    Phase 1: Filter — only deploy repos with new commits.
-    Phase 2: Test  — worktree per changed repo, run per-repo test_command.
-    Phase 3: Apply — fast-forward deploy branch to tested commit.
-    Phase 4: Gate  — start test instance on alternate port, health-check,
-               then signal ready for production swap (or revert on failure).
-    """
+    """Test changed main commits in staging worktrees, then swap deploy
+    worktrees and restart production. Records a distinct failure signature on
+    any gate failure (production is never left broken)."""
     deploy_cfg = comp_cfg.get('deploy', {})
-    staging_base = project / deploy_cfg.get('staging_dir', '.watch-staging')
-    test_cmd = deploy_cfg.get('test_command', '')
-    deploy_branch = deploy_cfg.get('deploy_branch', 'deploy')
     repos = comp_cfg.get('repositories', [])
-
-    if not test_cmd or not repos:
-        print('[git_version] No test_command or repositories configured.')
+    test_cmd = deploy_cfg.get('test_command', '')
+    staging_base = project / deploy_cfg.get('staging_dir', '.watch-staging')
+    if not repos:
+        print('[git_version] No repositories configured.')
         return False
 
-    # ── Phase 1: Get target commits, filter to only changed repos ──
+    targets, changed = changed_targets(comp_cfg, project, fetch=True)
     known = load_known(comp_cfg, project)
-    new_heads: dict[str, str] = {}
-    repos_to_deploy: list[dict] = []
-    for repo in repos:
-        name = repo['name']
-        branch = repo.get('branch', 'main')
-        remote = repo.get('remote', 'origin')
-        repo_path = (project / repo['path']).resolve()
-        if not repo_path.is_dir():
-            continue
-        try:
-            target = subprocess.check_output(
-                ['git', 'rev-parse', f'{remote}/{branch}'],
-                cwd=repo_path, text=True, timeout=5,
-            ).strip()
-        except Exception:
-            continue
-        new_heads[name] = target
-        if known.get(name) != target:
-            repos_to_deploy.append(repo)
-
+    repos_to_deploy = [r for r in repos if r['name'] in changed]
     if not repos_to_deploy:
         print('[git_version] All repos already at known-good. Nothing to deploy.')
         return True
-
+    sig = deploy_signature(changed)
+    nests = _nest_map(repos)
     print(f'[git_version] Deploying {len(repos_to_deploy)} repo(s): '
           f'{", ".join(r["name"] for r in repos_to_deploy)}')
 
-    # ── Phase 2: Worktree per changed repo, run per-repo test_command ──
+    def _fail(reason: str) -> bool:
+        sigs = record_failure(comp_cfg, project, sig)
+        context['deploy_result'] = 'failed'
+        context['deploy_failure_reason'] = reason
+        print(f'[git_version] Deploy ABORTED — {reason} '
+              f'({len(sigs)} distinct failed commit(s)).')
+        return False
+
+    # ── Phase 1: staging worktrees (+ nested dependencies) ──
     staging_dirs: dict[str, Path] = {}
+    nested_paths: list[tuple[Path, Path]] = []  # (nest_worktree, owning_repo_main_tree)
+
+    def _cleanup() -> None:
+        for npath, nmain in nested_paths:
+            remove_worktree(npath, nmain)
+        for nm, st in staging_dirs.items():
+            main_tree = (project / next(
+                r['path'] for r in repos_to_deploy if r['name'] == nm)).resolve()
+            remove_worktree(st, main_tree)
 
     for repo in repos_to_deploy:
         name = repo['name']
-        repo_path = (project / repo['path']).resolve()
-        target = new_heads[name]
+        main_tree = (project / repo['path']).resolve()
         staging = staging_base / name
-
         if staging.exists():
-            remove_worktree(staging, repo_path)
-
-        print(f'[git_version]   [{name}] worktree at {staging} ({target[:8]})')
+            remove_worktree(staging, main_tree)
         try:
-            subprocess.run(
-                ['git', 'worktree', 'add', '--detach', str(staging), target],
-                cwd=repo_path, check=True, capture_output=True, text=True, timeout=30,
-            )
+            subprocess.run(['git', 'worktree', 'add', '--detach', str(staging), changed[name]],
+                           cwd=main_tree, check=True, capture_output=True, text=True, timeout=30)
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] worktree FAILED: {e.stderr}')
-            for n, d in staging_dirs.items():
-                remove_worktree(d, (project / next(
-                    r['path'] for r in repos_to_deploy if r['name'] == n)).resolve())
-            context['deploy_result'] = 'failed'
-            context['deploy_failure_reason'] = f'Worktree creation failed for {name}'
-            return False
-
+            _cleanup()
+            return _fail(f'staging worktree creation failed for {name}')
         staging_dirs[name] = staging
+        print(f'[git_version]   [{name}] staging {staging} ({changed[name][:8]})')
 
-    # Run per-repo test_command (or global fallback)
-    tests_ok = True
+        # Nest dependencies (e.g. lib at usr/lib) so the host's tests can import them.
+        for dep in nests.get(name, []):
+            dep_main = (project / dep['path']).resolve()
+            rel = os.path.relpath(dep_main, main_tree)
+            dep_target = changed.get(dep['name']) or known.get(dep['name'])
+            nest_at = staging / rel
+            if not dep_target:
+                print(f'[git_version]   [{name}] nest {dep["name"]}: no target, skip')
+                continue
+            if nest_at.exists():
+                remove_worktree(nest_at, dep_main)
+            try:
+                subprocess.run(['git', 'worktree', 'add', '--detach', str(nest_at), dep_target],
+                               cwd=dep_main, check=True, capture_output=True, text=True, timeout=30)
+                nested_paths.append((nest_at, dep_main))
+                print(f'[git_version]   [{name}] nested {dep["name"]} at {rel} ({dep_target[:8]})')
+            except subprocess.CalledProcessError as e:
+                print(f'[git_version]   [{name}] nest FAILED: {e.stderr}')
+                _cleanup()
+                return _fail(f'nesting {dep["name"]} into {name} failed')
+
+    # ── Phase 2: unit tests in staging ──
     test_env = os.environ.copy()
     test_env['WATCH_PROJECT_ROOT'] = str(project)
+    tests_ok = True
     for repo in repos_to_deploy:
         name = repo['name']
         staging = staging_dirs[name]
         repo_test_cmd = repo.get('test_command', test_cmd)
-
+        if not repo_test_cmd:
+            continue
         test_env['WATCH_STAGING'] = str(staging)
-        env_key = 'WATCH_STAGING_' + name.upper().replace('-', '_').replace(' ', '_')
-        test_env[env_key] = str(staging)
-
+        test_env['WATCH_STAGING_' + name.upper().replace('-', '_').replace(' ', '_')] = str(staging)
         print(f'[git_version]   [{name}] test: {repo_test_cmd}')
         t0 = time.time()
         try:
             r = subprocess.run(repo_test_cmd, shell=True, cwd=staging,
                                capture_output=True, text=True,
-                               timeout=deploy_cfg.get('test_timeout', 300),
-                               env=test_env)
+                               timeout=deploy_cfg.get('test_timeout', 300), env=test_env)
             elapsed = time.time() - t0
             if r.returncode != 0:
                 tests_ok = False
@@ -122,72 +156,71 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
                     print(r.stdout[-1500:])
                 if r.stderr:
                     print(r.stderr[-1500:])
-            else:
-                print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
+                break
+            print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
         except subprocess.TimeoutExpired:
             print(f'[git_version]   [{name}] Tests TIMED OUT')
             tests_ok = False
-
-        if not tests_ok:
             break
 
-    # ── Cleanup all worktrees ──
-    for name, staging in staging_dirs.items():
-        repo_path = (project / next(
-            r['path'] for r in repos_to_deploy if r['name'] == name)).resolve()
-        remove_worktree(staging, repo_path)
+    # ── Phase 3: optional port health gate (test instance from staging) ──
+    gate_ok = True
+    if tests_ok and deploy_cfg.get('enable_test_gate', False):
+        # Expose primary staging dir so the start action can launch staging code.
+        primary = repos_to_deploy[0]
+        os.environ['WATCH_STAGING'] = str(staging_dirs[primary['name']])
+        gate_ok = _port_gate(deploy_cfg, project, context)
+
+    _cleanup()
 
     if not tests_ok:
-        context['deploy_result'] = 'failed'
-        context['deploy_failure_reason'] = (
-            'Tests failed in worktree staging. The deploy branch was NOT updated. '
-            'The main service continues running from the previous known-good version.'
-        )
-        context['deploy_failed_commits'] = str({k: v[:8] for k, v in new_heads.items()})
-        print(f'[git_version] Deploy ABORTED — tests failed.')
-        return False
+        return _fail('unit tests failed in staging — production untouched')
+    if not gate_ok:
+        return _fail('port health gate failed in staging — production untouched')
 
-    # ── Phase 3: Fast-forward deploy branch for each changed repo ──
-    print(f'[git_version] Applying to {deploy_branch} branch...')
+    # ── Phase 4: swap deploy worktrees to the tested commits ──
+    print('[git_version] Applying tested commits to deploy worktrees...')
     for repo in repos_to_deploy:
         name = repo['name']
-        tracking_branch = repo.get('branch', 'main')
-        repo_path = (project / repo['path']).resolve()
-        target = new_heads[name]
+        dpath = deploy_path(repo, project)
+        target = changed[name]
+        if not dpath.is_dir():
+            return _fail(f'deploy_path missing for {name}: {dpath}')
         try:
-            r = subprocess.run(['git', 'rev-parse', '--verify', deploy_branch],
-                              cwd=repo_path, capture_output=True, timeout=5)
-            if r.returncode != 0:
-                subprocess.run(
-                    ['git', 'checkout', '-b', deploy_branch, f'origin/{tracking_branch}'],
-                    cwd=repo_path, check=True, capture_output=True, timeout=10)
-            else:
-                subprocess.run(['git', 'checkout', '-f', deploy_branch],
-                              cwd=repo_path, check=True, capture_output=True, timeout=10)
             subprocess.run(['git', 'reset', '--hard', target],
-                          cwd=repo_path, check=True, capture_output=True, timeout=10)
-            print(f'[git_version]   [{name}] {deploy_branch} -> {target[:8]}')
+                           cwd=dpath, check=True, capture_output=True, text=True, timeout=15)
+            print(f'[git_version]   [{name}] deploy worktree -> {target[:8]}')
         except subprocess.CalledProcessError as e:
-            print(f'[git_version]   [{name}] FAILED: {e.stderr}')
+            print(f'[git_version]   [{name}] apply FAILED: {e.stderr}')
             rollback_repos(comp_cfg, project)
-            context['deploy_result'] = 'failed'
-            context['deploy_failure_reason'] = f'Failed to update deploy branch for {name}'
-            return False
+            return _fail(f'failed to update deploy worktree for {name}')
 
-    # Update known-good for ALL repos (including unchanged ones)
-    save_known(comp_cfg, project, new_heads, stable_checks=0)
+    # ── Phase 5: restart production and verify health ──
+    prod_urls = deploy_cfg.get('production_health_url', [])
+    if isinstance(prod_urls, str):
+        prod_urls = [prod_urls]
+    if comp_cfg.get('deploy', {}).get('production_restart_action'):
+        _run_restart(comp_cfg, project, context)
+        time.sleep(deploy_cfg.get('test_prestart_sleep', 5))
+        if not _all_healthy(prod_urls, deploy_cfg.get('test_health_timeout', 30)):
+            print('[git_version] Production unhealthy after deploy — rolling back.')
+            rollback_repos(comp_cfg, project)
+            _run_restart(comp_cfg, project, context)
+            return _fail('production failed health check after deploy — rolled back')
+
+    save_known(comp_cfg, project, targets)
+    clear_failures(comp_cfg, project)
     context['deploy_result'] = 'passed'
     context['deploy_branch_updated'] = True
-    print(f'[git_version] Deploy branch updated. Known-good saved (stable_checks=0).')
+    print('[git_version] Deploy complete. Known-good updated; failure counter cleared.')
+    return True
 
-    # ── Phase 4: Test-port gate (optional) ──
-    enable_test_gate = deploy_cfg.get('enable_test_gate', False)
+
+def _port_gate(deploy_cfg: dict, project: Path, context: dict) -> bool:
+    """Start a test instance, health-check it, kill it. Returns True if healthy."""
     raw_url = deploy_cfg.get('test_health_url', '')
-    if not enable_test_gate or not raw_url:
-        print(f'[git_version] Test gate disabled — production restart delegated to SKILL.md.')
+    if not raw_url:
         return True
-
-    # Normalise to list of gate dicts
     if isinstance(raw_url, str):
         raw_url = [raw_url]
     raw_start = deploy_cfg.get('test_start_action', '')
@@ -196,148 +229,66 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
         raw_start = [raw_start] * len(raw_url)
     if isinstance(raw_kill, str):
         raw_kill = [raw_kill] * len(raw_url)
-    gates = [
-        {
-            'health_url': u,
-            'start_action': raw_start[i] if i < len(raw_start) else '',
-            'kill_action': raw_kill[i] if i < len(raw_kill) else '',
-        }
-        for i, u in enumerate(raw_url)
-    ]
 
     registry = context.get('_registry')
-    prestart_sleep = deploy_cfg.get('test_prestart_sleep', 5)
-    health_timeout = deploy_cfg.get('test_health_timeout', 30)
+    prestart = deploy_cfg.get('test_prestart_sleep', 5)
+    htimeout = deploy_cfg.get('test_health_timeout', 30)
+    from core.actions import _execute_action
 
-    for gate in gates:
-        health_url = gate['health_url']
-        start_action = gate.get('start_action', '')
-        kill_action = gate.get('kill_action', '')
-
+    for i, url in enumerate(raw_url):
+        start_action = raw_start[i] if i < len(raw_start) else ''
+        kill_action = raw_kill[i] if i < len(raw_kill) else ''
         if registry and start_action:
-            start_act = registry.get_action(start_action) if hasattr(registry, 'get_action') else None
-            if start_act:
+            act = registry.get_action(start_action)
+            if act:
                 print(f'[git_version] Starting test instance via {start_action}...')
-                from core.actions import _execute_action
-                _execute_action(start_act, project, registry, '', context)
-        time.sleep(prestart_sleep)
-
-        print(f'[git_version] Health-checking test instance at {health_url}...')
-        test_healthy = health_check_url(health_url, health_timeout)
-
+                _execute_action(act, project, registry, '', context)
+        time.sleep(prestart)
+        print(f'[git_version] Health-checking test instance at {url}...')
+        healthy = health_check_url(url, htimeout)
         if registry and kill_action:
-            kill_act = registry.get_action(kill_action) if hasattr(registry, 'get_action') else None
-            if kill_act:
-                from core.actions import _execute_action
-                _execute_action(kill_act, project, registry, '', context)
-
-        if not test_healthy:
-            print(f'[git_version] Test instance health check FAILED at {health_url}')
-            rollback_repos(comp_cfg, project)
-            context['deploy_result'] = 'failed_test_health'
-            context['deploy_failure_reason'] = (
-                f'Test instance at {health_url} did not become healthy. '
-                'Deploy branch reverted to known-good. Production service was NOT touched.'
-            )
+            act = registry.get_action(kill_action)
+            if act:
+                _execute_action(act, project, registry, '', context)
+        if not healthy:
+            print(f'[git_version] Test instance health check FAILED at {url}')
             return False
-
-        print(f'[git_version] Test gate PASSED: {health_url}')
-
-    context['deploy_test_health_passed'] = True
-    print(f'[git_version] All test gates passed. Production restart delegated to SKILL.md.')
+        print(f'[git_version] Test gate PASSED: {url}')
     return True
 
 
-def verify_and_mark_stable(comp_cfg: dict, project: Path, context: dict) -> bool:
-    """Verify local deploy-branch commits in an isolated worktree, then mark
-    them known-good on success. Used by the `local_changes_unverified` remedy:
-    a manual hotfix committed to the deploy branch gets tested before becoming
-    the new rollback target. Known-good is left untouched on failure.
-    """
+def recover_service(comp_cfg: dict, project: Path, context: dict) -> bool:
+    """Production health recovery ladder: restart up to `restart_attempts` times;
+    if still unhealthy, roll the deploy worktrees back to known-good and restart
+    once more. Returns False (→ escalate) only if known-good itself won't run."""
     deploy_cfg = comp_cfg.get('deploy', {})
-    test_cmd = deploy_cfg.get('test_command', '')
-    repos = comp_cfg.get('repositories', [])
-    if not test_cmd or not repos:
-        print('[git_version] No test_command or repositories configured.')
-        return False
+    prod_urls = deploy_cfg.get('production_health_url', [])
+    if isinstance(prod_urls, str):
+        prod_urls = [prod_urls]
+    attempts = deploy_cfg.get('restart_attempts', 2)
+    htimeout = deploy_cfg.get('test_health_timeout', 30)
+    prestart = deploy_cfg.get('test_prestart_sleep', 5)
 
-    heads = current_heads(comp_cfg, project)
-    known = load_known(comp_cfg, project)
-    repos_to_test = [r for r in repos
-                     if heads.get(r['name']) and heads.get(r['name']) != known.get(r['name'])]
-    if not repos_to_test:
-        print('[git_version] Local HEADs already match known-good. Nothing to verify.')
+    for i in range(attempts):
+        print(f'[git_version] Recovery restart attempt {i + 1}/{attempts}...')
+        _run_restart(comp_cfg, project, context)
+        time.sleep(prestart)
+        if _all_healthy(prod_urls, htimeout):
+            context['recovered'] = f'restart#{i + 1}'
+            print('[git_version] Production healthy after restart.')
+            return True
+
+    print('[git_version] Restarts exhausted — rolling back to known-good.')
+    rollback_repos(comp_cfg, project)
+    _run_restart(comp_cfg, project, context)
+    time.sleep(prestart)
+    if _all_healthy(prod_urls, htimeout):
+        context['recovered'] = 'rollback'
+        print('[git_version] Production healthy after rollback to known-good.')
         return True
 
-    staging_base = project / deploy_cfg.get('staging_dir', '.watch-staging')
-    staging_dirs: dict[str, Path] = {}
-    tests_ok = True
-    test_env = os.environ.copy()
-    test_env['WATCH_PROJECT_ROOT'] = str(project)
-
-    for repo in repos_to_test:
-        name = repo['name']
-        repo_path = (project / repo['path']).resolve()
-        target = heads[name]
-        staging = staging_base / name
-
-        if staging.exists():
-            remove_worktree(staging, repo_path)
-        try:
-            subprocess.run(
-                ['git', 'worktree', 'add', '--detach', str(staging), target],
-                cwd=repo_path, check=True, capture_output=True, text=True, timeout=30,
-            )
-        except subprocess.CalledProcessError as e:
-            print(f'[git_version]   [{name}] worktree FAILED: {e.stderr}')
-            tests_ok = False
-            break
-        staging_dirs[name] = staging
-
-        repo_test_cmd = repo.get('test_command', test_cmd)
-        test_env['WATCH_STAGING'] = str(staging)
-        env_key = 'WATCH_STAGING_' + name.upper().replace('-', '_').replace(' ', '_')
-        test_env[env_key] = str(staging)
-
-        print(f'[git_version]   [{name}] verify test: {repo_test_cmd}')
-        t0 = time.time()
-        try:
-            r = subprocess.run(repo_test_cmd, shell=True, cwd=staging,
-                               capture_output=True, text=True,
-                               timeout=deploy_cfg.get('test_timeout', 300),
-                               env=test_env)
-            elapsed = time.time() - t0
-            if r.returncode != 0:
-                tests_ok = False
-                print(f'[git_version]   [{name}] Tests FAILED ({elapsed:.0f}s)')
-                if r.stdout:
-                    print(r.stdout[-1500:])
-                if r.stderr:
-                    print(r.stderr[-1500:])
-            else:
-                print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
-        except subprocess.TimeoutExpired:
-            print(f'[git_version]   [{name}] Tests TIMED OUT')
-            tests_ok = False
-
-        if not tests_ok:
-            break
-
-    for name, staging in staging_dirs.items():
-        repo_path = (project / next(
-            r['path'] for r in repos_to_test if r['name'] == name)).resolve()
-        remove_worktree(staging, repo_path)
-
-    if not tests_ok:
-        context['deploy_result'] = 'failed'
-        context['deploy_failure_reason'] = (
-            'Local deploy-branch changes failed verification tests. '
-            'Known-good was NOT updated.')
-        print('[git_version] Verify ABORTED — tests failed. Known-good unchanged.')
-        return False
-
-    save_known(comp_cfg, project, heads, stable_checks=0)
-    context['deploy_result'] = 'passed'
-    context['known_good_updated'] = True
-    print('[git_version] Local changes verified. Known-good updated (stable_checks=0).')
-    return True
+    context['deploy_failure_reason'] = (
+        f'Production still unhealthy after {attempts} restart(s) and a rollback to '
+        f'known-good — the known-good version itself is not serving.')
+    print('[git_version] Recovery FAILED — known-good not serving. Escalating.')
+    return False

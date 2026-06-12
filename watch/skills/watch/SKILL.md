@@ -37,12 +37,12 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
 ### Step 2: Branch on status
 
 **On `healthy`:**
-- If `report.watch.version_tracking.enabled` and `report.components.git_version.data.new_commits > 0`
+- If `report.watch.version_tracking.enabled` and `report.components.git_version.metrics.new_commits > 0`
   for any repo → run the deploy/test-gate/restart procedure in `reference/deploy.md`,
   then go to Step 5 (`normal` interval).
-- If `report.components.git_version.metrics.deploy_ahead_total > 0` (a hotfix landed
-  directly on the deploy branch) → run the backport procedure in `reference/backport.md`,
-  then go to Step 5 (`normal` interval).
+- If `report.components.git_version.metrics.failed_commits >= max_failed_commits` (the
+  fix on main is not converging) → escalate to a human; the deploy is one-way
+  (main → known-good → deploy worktree), there is no hotfix/backport path.
 - Otherwise go straight to Step 5 (`normal` interval).
 
 **On `degraded` (anomaly after recent deploy):**

@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument('--status', action='store_true',
                    help='Check daemon liveness via PID file (OS-level, no TaskGet needed)')
     p.add_argument('--action', default=None,
-                   help='Execute a named action directly (deploy, rollback, mark_stable) '
+                   help='Execute a named action directly (deploy, rollback, recover_service) '
                         'without re-running the full check loop')
     args = p.parse_args(argv)
 
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> None:
 
 def _execute_named_action(project_dir: Path, action_name: str,
                         json_output: bool = False) -> None:
-    """Execute a named component action (deploy/rollback/mark_stable) directly."""
+    """Execute a named component action (deploy/rollback/recover_service) directly."""
     from core.config import load_config
     from components.registry import create_registry
 
