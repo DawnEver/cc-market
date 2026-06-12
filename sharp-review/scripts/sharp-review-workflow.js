@@ -197,24 +197,29 @@ If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`
 
 // ── Main ──
 
+// Normalize args: tolerate a JSON-encoded string payload. Some Workflow callers pass
+// `args` as a stringified object instead of a real JSON value, which silently strips
+// every field (args.stats → undefined) and dead-ends the run. Parse it back here.
+const A = typeof args === 'string' ? JSON.parse(args) : (args || {});
+
 // Resolve config with fallbacks
-const contentType = args.contentType || 'code';
-const findingSchema = args.findingSchema || DEFAULT_FINDING;
+const contentType = A.contentType || 'code';
+const findingSchema = A.findingSchema || DEFAULT_FINDING;
 const findingsSchema = buildFindingsSchema(findingSchema);
-const reviewers = args.reviewers || DEFAULT_REVIEWERS;
-const pickStrategy = args.pickStrategy || 'day-mod';
-const dedupKeyFields = args.dedupKeyFields || DEFAULT_DEDUP_KEY_FIELDS;
+const reviewers = A.reviewers || DEFAULT_REVIEWERS;
+const pickStrategy = A.pickStrategy || 'day-mod';
+const dedupKeyFields = A.dedupKeyFields || DEFAULT_DEDUP_KEY_FIELDS;
 
 // Validate required args
 if (contentType === 'code') {
-  if (!args.stats || typeof args.stats.files !== 'number') {
-    const err = `sharp-review-workflow: args.stats is required for code mode (got ${JSON.stringify(args.stats)}). The caller must pass diff-manifest.js output fields verbatim.`;
+  if (!A.stats || typeof A.stats.files !== 'number') {
+    const err = `sharp-review-workflow: args.stats is required for code mode (got ${JSON.stringify(A.stats)}). The caller must pass diff-manifest.js output fields verbatim (as a JSON object, not a stringified one).`;
     log(err);
     return { error: 'missing-stats', reason: err };
   }
 } else if (contentType === 'content') {
-  if (!args.content || typeof args.content !== 'string' || args.content.trim().length === 0) {
-    const err = `sharp-review-workflow: args.content is required for content mode (got ${typeof args.content}).`;
+  if (!A.content || typeof A.content !== 'string' || A.content.trim().length === 0) {
+    const err = `sharp-review-workflow: args.content is required for content mode (got ${typeof A.content}).`;
     log(err);
     return { error: 'missing-content', reason: err };
   }
@@ -230,7 +235,7 @@ if (pickStrategy === 'all') {
   active = [...reviewers];
 } else {
   // day-mod: pick 2 of N deterministically from date
-  const day = parseInt((args.date || '2026-06-09').slice(-2), 10) || 9;
+  const day = parseInt((A.date || '2026-06-09').slice(-2), 10) || 9;
   const n = reviewers.length;
   if (n <= 2) {
     active = [...reviewers];
@@ -254,15 +259,15 @@ if (pickStrategy === 'all') {
 const promptBuilder = contentType === 'content' ? buildContentReviewPrompt : buildCodeReviewPrompt;
 
 if (contentType === 'code') {
-  log(`Mode: ${args.mode} | Range: ${args.range}${args.path ? ` | Scope: ${args.path}` : ''} | ${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions} | ${args.excludedSummary || 'no files excluded'}`);
+  log(`Mode: ${A.mode} | Range: ${A.range}${A.path ? ` | Scope: ${A.path}` : ''} | ${A.stats.files} files, +${A.stats.insertions}/-${A.stats.deletions} | ${A.excludedSummary || 'no files excluded'}`);
 } else {
-  log(`Content review mode | ${active.length} reviewers | ${args.content.length} chars of content`);
+  log(`Content review mode | ${active.length} reviewers | ${A.content.length} chars of content`);
 }
 log(`Launching ${active.length} parallel reviewers (${active.map(r => r.name).join(' + ')})...`);
 
 const raw = await parallel(active.map(r => () =>
   agent(
-    promptBuilder(r, args),
+    promptBuilder(r, A),
     { label: `Reviewer ${r.key} (${r.name})`, phase: 'Review', schema: findingsSchema }
   )
 )).catch(() => active.map(() => null));
@@ -293,8 +298,8 @@ for (const f of allFindings) {
   grouped.get(k).push(f);
 }
 
-const today = (args.date || '2026-06-04').replace(/-/g, '');
-const idPrefix = args.idPrefix || ID_PREFIX;
+const today = (A.date || '2026-06-04').replace(/-/g, '');
+const idPrefix = A.idPrefix || ID_PREFIX;
 const merged = [];
 let seq = 0;
 
@@ -321,7 +326,7 @@ log(`${merged.length} unique findings (${merged.filter(f => f.confidence.include
 
 // ── Render markdown ──
 
-const dateStr = args.date || '2026-06-04';
+const dateStr = A.date || '2026-06-04';
 const timestamp = dateStr + ' (session)';
 const reviewFile = `.claude/memory/${dateStr.replace(/-/g, '/')}/sharp-review.md`;
 
