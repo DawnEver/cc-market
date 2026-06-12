@@ -47,10 +47,12 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
 | `traceme/tests/crypto.test.mjs` | 9 | AES-256-GCM encrypt/decrypt |
-| `traceme/tests/db.test.mjs` | 7 | replaceSession, derived daily/model/tool/skill queries, takeover fold-in |
-| `traceme/tests/scan.test.mjs` | 4 | transcript scan: token aggregation, message-id dedup, cursor skip, idempotent re-scan |
+| `traceme/tests/db.test.mjs` | 9 | replaceSession, derived daily/model/tool/skill/category queries, `categorizeTool`, takeover fold-in |
+| `traceme/tests/scan.test.mjs` | 5 | transcript scan: token aggregation, message-id dedup, cursor skip, idempotent re-scan, category bucketing |
 | `traceme/tests/report.test.mjs` | 7 | generateReport/generateStats, merged vs local-only data source |
+| `traceme/tests/dashboard.test.mjs` | 7 | buildDashboardHtml: ECharts CDN, flat fact-table payload, interactive controls, data-honesty labels, embedded-JSON escaping |
 | `traceme/tests/sync.test.mjs` | 6 | dump/import, readMergedSnapshot, verifyConsistency |
+| `traceme/tests/pricing.test.mjs` | 6 | model matching: dot/dash canonicalization, longest-prefix, aliases, fallback, calcCost |
 
 All JS tests (`*.test.mjs`) run via pre-commit hook. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 

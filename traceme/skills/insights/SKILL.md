@@ -28,18 +28,25 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" insights --project NAME  # 
 
 ## Visual Dashboard
 
-For an interactive, graphical view of the same multi-day data, generate the HTML dashboard:
+For a fully interactive, graphical view, generate the HTML dashboard:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --days 30  # Generate & open in browser
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard            # Generate & open in browser
 node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open  # Write file only
 ```
 
-It writes a self-contained page to `~/.claude/traceme/dashboard.html` and opens it — a
-model-usage calendar heatmap, a tokens-per-day-by-model curve, and a Plugins/Subagents/MCPs
-token breakdown, plus model/project/skill tables. Click **Refresh** after re-running the
-command to see fresh data. Run `traceme rescan --all` once first to backfill the category
-breakdown for older sessions.
+It writes `~/.claude/traceme/dashboard.html` and opens it. The page embeds the **last 90 days**
+of local data and renders with **Apache ECharts (loaded from a CDN — needs internet on first
+open)**. Everything is filtered in-browser, no CLI re-run: pick the **date range**, filter by one
+or more **projects**, switch grouping **by model / project / category**, toggle the calendar
+intensity between **billable tokens and cost**, and toggle the **cache_read** layer.
+
+Honesty notes baked into the view: the calendar/trend default to *billable* tokens
+(`input+output+cache_creation`) — re-read cache is excluded unless toggled, so idle big-context
+sessions don't look huge; the tool-category chart keeps `subagent` (actual tokens) separate from
+MCP/plugin/builtin (a coarse `≈ result-bytes` estimate — not comparable, no shared %); "Elapsed"
+is gross wall-clock (includes idle), with sessions bucketed by their start day. Run
+`traceme rescan --all` once to backfill older sessions, then re-run `dashboard`.
 
 ## Data Source
 
