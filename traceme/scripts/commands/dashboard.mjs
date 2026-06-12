@@ -5,6 +5,7 @@ import {
   queryModelFacts, queryCategoryFacts, querySkillFacts, querySessionFacts, openDb,
 } from '../db.mjs';
 import { scanAll } from '../scan.mjs';
+import { readDeviceFacts, getDeviceId } from '../sync.mjs';
 import { todayISO, getDbPath } from '../lib.mjs';
 
 const ECHARTS_CDN = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
@@ -68,7 +69,7 @@ export function buildDashboardHtml(data) {
 <header>
   <div>
     <h1>TraceMe Dashboard</h1>
-    <div class="sub">data ${meta.from} → ${meta.to} · 90-day window · local device · generated ${esc(meta.generatedAt)}</div>
+    <div class="sub">data ${meta.from} → ${meta.to} · 90-day window · ${meta.devices.length} device${meta.devices.length !== 1 ? 's' : ''} · generated ${esc(meta.generatedAt)}</div>
   </div>
 </header>
 
@@ -78,9 +79,12 @@ export function buildDashboardHtml(data) {
   <div class="ctl"><label>Projects</label>
     <div class="projbox" id="projbox"><button id="projbtn" type="button">All projects ▾</button><div class="menu" id="projmenu"></div></div>
   </div>
+  <div class="ctl" id="devicectl"><label>Devices</label>
+    <div class="projbox" id="devbox"><button id="devbtn" type="button">All devices ▾</button><div class="menu" id="devmenu"></div></div>
+  </div>
   <div class="ctl"><label>Group by</label>
     <div class="seg" id="groupby">
-      <button data-v="model" class="on">Model</button><button data-v="project">Project</button><button data-v="category">Category</button>
+      <button data-v="model" class="on">Model</button><button data-v="project">Project</button><button data-v="device">Device</button><button data-v="category">Category</button>
     </div>
   </div>
   <div class="ctl"><label>Trend basis</label>
@@ -104,16 +108,16 @@ export function buildDashboardHtml(data) {
 <h2>Breakdown <span class="sub">(selected range)</span></h2>
 <div class="chart" id="breakdown"></div>
 
-<h2>Tool-Category Tokens <span class="sub">(subagent = actual tokens · MCP/plugin/builtin ≈ result bytes, coarse estimate — not comparable, no shared %)</span></h2>
+<h2>Tool-Category Tokens <span class="sub" id="local-note-cat">(local device only · subagent = actual tokens · MCP/plugin/builtin ≈ result bytes, coarse estimate — not comparable, no shared %)</span></h2>
 <div class="chart" id="catchart"></div>
 
-<h2>Model Usage</h2>
+<h2>Model Usage <span class="sub" id="local-note-model">(local device only — per-model data isn't synced)</span></h2>
 <table id="modeltbl"><thead><tr><th data-k="model">Model</th><th data-k="requests">Calls</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th></tr></thead><tbody></tbody></table>
 
-<h2>Project Usage <span class="sub">(Elapsed = gross wall-clock incl. idle; sessions bucketed by start day)</span></h2>
+<h2>Project Usage <span class="sub">(Elapsed = gross wall-clock incl. idle, local only; sessions bucketed by start day)</span></h2>
 <table id="projtbl"><thead><tr><th data-k="project">Project</th><th data-k="sessions">Sessions</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th><th data-k="elapsedMin">Elapsed</th></tr></thead><tbody></tbody></table>
 
-<h2>Skill Usage</h2>
+<h2>Skill Usage <span class="sub" id="local-note-skill">(local device only — skill data isn't synced)</span></h2>
 <table id="skilltbl"><thead><tr><th data-k="name">Skill</th><th data-k="total">Uses</th></tr></thead><tbody></tbody></table>
 
 <footer>TraceMe ${esc(meta.version)} · local-device data, 90-day window · run <code>traceme rescan --all</code> to backfill older sessions, then re-run <code>traceme dashboard</code>.</footer>
@@ -145,9 +149,11 @@ const CLIENT_JS = String.raw`
   var CAT_LABELS = { subagent: 'Subagents', mcp: 'MCPs', plugin: 'Plugins', builtin: 'Built-in' };
 
   // ── controls state ──
+  var LOCAL = D.meta.localDevice;
   var state = {
     from: D.meta.from, to: D.meta.to,
     projects: new Set(D.meta.projects),
+    devices: new Set(D.meta.devices),
     groupBy: 'model', basis: 'billable', cacheRead: false,
     sort: { model: 'tokens', project: 'tokens', skill: 'total' },
   };
@@ -158,13 +164,48 @@ const CLIENT_JS = String.raw`
     if (iso(from) >= D.meta.from) state.from = iso(from);
   })();
 
+  function localOnly() { return state.devices.size === 1 && state.devices.has(LOCAL); }
+  function localOn() { return state.devices.has(LOCAL); }
   var billable = function (r) { return r.input + r.output + r.cache_creation; };
   var inRange = function (r) { return r.date >= state.from && r.date <= state.to && state.projects.has(r.project); };
+
+  // Unified per-(date,project,device) token rows: local from live modelFacts (with components),
+  // foreign from synced deviceFacts (totals only). billable === tokens for foreign (no split).
+  function tokenRows() {
+    var rows = [];
+    if (localOn()) D.modelFacts.forEach(function (r) {
+      if (!inRange(r)) return;
+      rows.push({ date: r.date, project: r.project, device: LOCAL, model: r.model,
+        tokens: r.tokens, billable: billable(r), cache_read: r.cache_read, cost: r.cost, requests: r.requests, local: true });
+    });
+    D.deviceFacts.forEach(function (r) {
+      if (!state.devices.has(r.device) || !inRange(r)) return;
+      rows.push({ date: r.date, project: r.project, device: r.device, model: r.top_model || '(unknown)',
+        tokens: r.tokens, billable: r.tokens, cache_read: 0, cost: r.cost, requests: 0, local: false });
+    });
+    return rows;
+  }
+  // Unified session rows: local sessions carry timestamps (→ elapsed); foreign carry counts only.
+  function sessionRows() {
+    var rows = [];
+    if (localOn()) D.sessionFacts.forEach(function (s) {
+      if (!inRange(s)) return;
+      rows.push({ project: s.project, device: LOCAL, sessions: 1, prompts: s.prompt_count,
+        started_at: s.started_at, ended_at: s.ended_at, local: true });
+    });
+    D.deviceFacts.forEach(function (r) {
+      if (!state.devices.has(r.device) || !inRange(r)) return;
+      rows.push({ project: r.project, device: r.device, sessions: r.sessions, prompts: r.prompts, local: false });
+    });
+    return rows;
+  }
+  // Trend uses billable basis only when every row has it (local-only); else total tokens.
+  function tokTrend(r) { return localOnly() ? r.billable : r.tokens; }
+  function dimOf(r) { return state.groupBy === 'project' ? r.project : state.groupBy === 'device' ? r.device : r.model; }
 
   var charts = {};
   function chart(id) { if (!charts[id]) charts[id] = echarts.init(document.getElementById(id), 'dark'); return charts[id]; }
 
-  // ── aggregation ──
   function days() {
     var out = [], d = new Date(state.from + 'T00:00:00'), end = new Date(state.to + 'T00:00:00');
     while (d <= end) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
@@ -172,52 +213,54 @@ const CLIENT_JS = String.raw`
   }
 
   function render() {
-    var mf = D.modelFacts.filter(inRange);
-    var sf = D.sessionFacts.filter(inRange);
+    var tr = tokenRows(), sr = sessionRows();
     var cf = D.categoryFacts.filter(inRange);
     var kf = D.skillFacts.filter(inRange);
-    renderCards(mf, sf);
-    renderCalendar(mf);
-    renderTrend(mf);
-    renderBreakdown(mf, cf);
+    // toggles that only make sense for a single (local) device
+    document.getElementById('basis').parentNode.style.display = localOnly() ? '' : 'none';
+    document.getElementById('cacheread').parentNode.style.display = localOnly() ? '' : 'none';
+    renderCards(tr, sr);
+    renderCalendar(tr);
+    renderTrend(tr);
+    renderBreakdown(tr, cf);
     renderCatChart(cf);
-    renderModelTable(mf);
-    renderProjectTable(mf, sf);
+    renderModelTable(tr);
+    renderProjectTable(tr, sr);
     renderSkillTable(kf);
   }
 
-  function renderCards(mf, sf) {
+  function renderCards(tr, sr) {
     var tokens = 0, billableTok = 0, cost = 0;
-    mf.forEach(function (r) { tokens += r.tokens; billableTok += billable(r); cost += r.cost; });
-    var now = Date.now(), elapsedMin = 0, prompts = 0;
-    var sessions = sf.length, projects = {};
-    sf.forEach(function (s) {
-      projects[s.project] = 1; prompts += s.prompt_count;
-      var start = new Date(s.started_at).getTime();
-      var end = s.ended_at ? new Date(s.ended_at).getTime() : now;
-      var m = Math.round((end - start) / 60000);
-      if (!s.ended_at && m > 240) m = 240;
-      elapsedMin += Math.max(0, m);
+    tr.forEach(function (r) { tokens += r.tokens; billableTok += r.billable; cost += r.cost; });
+    var now = Date.now(), elapsedMin = 0, prompts = 0, sessions = 0, projects = {}, devices = {};
+    sr.forEach(function (s) {
+      projects[s.project] = 1; devices[s.device] = 1; prompts += s.prompts; sessions += s.sessions;
+      if (s.local && s.started_at) {
+        var start = new Date(s.started_at).getTime();
+        var end = s.ended_at ? new Date(s.ended_at).getTime() : now;
+        var m = Math.round((end - start) / 60000);
+        if (!s.ended_at && m > 240) m = 240;
+        elapsedMin += Math.max(0, m);
+      }
     });
-    var cards = [
-      ['Tokens', fmt(tokens)], ['Billable', fmt(billableTok)], ['Cost', fmtCost(cost)],
-      ['Sessions', sessions], ['Prompts', prompts], ['Elapsed', fmtDur(elapsedMin)],
-      ['Projects', Object.keys(projects).length],
-    ];
+    var cards = [['Tokens', fmt(tokens)]];
+    if (localOnly()) cards.push(['Billable', fmt(billableTok)]);
+    cards.push(['Cost', fmtCost(cost)], ['Sessions', sessions], ['Prompts', prompts],
+      ['Elapsed' + (localOn() ? '' : ' (n/a)'), localOn() ? fmtDur(elapsedMin) : '—'],
+      ['Projects', Object.keys(projects).length], ['Devices', Object.keys(devices).length]);
     document.getElementById('cards').innerHTML = cards.map(function (c) {
       return '<div class="card"><div class="k">' + c[0] + '</div><div class="v">' + c[1] + '</div></div>';
     }).join('');
   }
 
-  function renderCalendar(mf) {
+  function renderCalendar(tr) {
+    var costMode = localOnly() && state.basis === 'cost';
     var byDate = {};
-    mf.forEach(function (r) {
-      byDate[r.date] = byDate[r.date] || 0;
-      byDate[r.date] += state.basis === 'cost' ? r.cost : billable(r);
+    tr.forEach(function (r) {
+      byDate[r.date] = (byDate[r.date] || 0) + (costMode ? r.cost : tokTrend(r));
     });
     var dd = days(), data = dd.map(function (d) { return [d, byDate[d] || 0]; });
     var max = data.reduce(function (m, x) { return Math.max(m, x[1]); }, 0) || 1;
-    var costMode = state.basis === 'cost';
     chart('calendar').setOption({
       tooltip: { formatter: function (p) { return p.value[0] + '<br/>' + (costMode ? fmtCost(p.value[1]) : fmt(p.value[1]) + ' tokens'); } },
       visualMap: { min: 0, max: max, show: false, inRange: { color: ['#23262e', '#7c5cff'] } },
@@ -228,25 +271,20 @@ const CLIENT_JS = String.raw`
     }, true);
   }
 
-  function groupKey(r) { return state.groupBy === 'project' ? r.project : state.groupBy === 'category' ? (r.model || 'model') : r.model; }
-
-  function renderTrend(mf) {
+  function renderTrend(tr) {
     var dd = days();
-    var keys = {};
-    // group dimension: model or project (category uses tool categories — fall back to model here)
-    var dim = state.groupBy === 'project' ? 'project' : 'model';
-    mf.forEach(function (r) { keys[r[dim]] = 1; });
+    var keys = {}; tr.forEach(function (r) { keys[dimOf(r)] = 1; });
     var keyList = Object.keys(keys);
     var idx = {}; dd.forEach(function (d, i) { idx[d] = i; });
     var series = keyList.map(function (k, i) {
       var arr = dd.map(function () { return 0; });
-      mf.forEach(function (r) { if (r[dim] === k) arr[idx[r.date]] += billable(r); });
+      tr.forEach(function (r) { if (dimOf(r) === k) arr[idx[r.date]] += tokTrend(r); });
       return { name: k, type: 'line', stack: 'tok', areaStyle: { opacity: 0.65 }, showSymbol: false,
         lineStyle: { width: 1 }, itemStyle: { color: PALETTE[i % PALETTE.length] }, data: arr };
     });
-    if (state.cacheRead) {
+    if (localOnly() && state.cacheRead) {
       var carr = dd.map(function () { return 0; });
-      mf.forEach(function (r) { carr[idx[r.date]] += r.cache_read; });
+      tr.forEach(function (r) { carr[idx[r.date]] += r.cache_read; });
       series.push({ name: 'cache_read (re-read)', type: 'line', stack: 'tok', areaStyle: { opacity: 0.25 },
         showSymbol: false, lineStyle: { width: 1, type: 'dashed' }, itemStyle: { color: '#4a4e57' }, data: carr });
     }
@@ -260,19 +298,18 @@ const CLIENT_JS = String.raw`
     }, true);
   }
 
-  function renderBreakdown(mf, cf) {
-    var dim = state.groupBy === 'project' ? 'project' : state.groupBy === 'category' ? 'category' : 'model';
+  function renderBreakdown(tr, cf) {
     var agg = {};
-    if (dim === 'category') {
-      // tokens by tool category — but keep subagent (actual) apart from byte-proxy categories
-      cf.forEach(function (r) { agg[CAT_LABELS[r.category] || r.category] = (agg[CAT_LABELS[r.category] || r.category] || 0) + r.tokens; });
+    var isCat = state.groupBy === 'category';
+    if (isCat) {
+      cf.forEach(function (r) { var l = CAT_LABELS[r.category] || r.category; agg[l] = (agg[l] || 0) + r.tokens; });
     } else {
-      mf.forEach(function (r) { agg[r[dim]] = (agg[r[dim]] || 0) + billable(r); });
+      tr.forEach(function (r) { var k = dimOf(r); agg[k] = (agg[k] || 0) + tokTrend(r); });
     }
     var data = Object.keys(agg).map(function (k, i) { return { name: k, value: agg[k], itemStyle: { color: PALETTE[i % PALETTE.length] } }; })
       .sort(function (a, b) { return b.value - a.value; });
     chart('breakdown').setOption({
-      tooltip: { trigger: 'item', formatter: function (p) { return p.name + ': ' + fmt(p.value) + (dim === 'category' ? '' : ' (' + p.percent + '%)'); } },
+      tooltip: { trigger: 'item', formatter: function (p) { return p.name + ': ' + fmt(p.value) + (isCat ? '' : ' (' + p.percent + '%)'); } },
       legend: { type: 'scroll', textStyle: { color: '#b6bac2' }, top: 0 },
       series: [{ type: 'pie', radius: ['40%', '70%'], center: ['50%', '56%'], data: data,
         label: { color: '#b6bac2' }, labelLine: { lineStyle: { color: '#3a3e47' } } }],
@@ -280,6 +317,10 @@ const CLIENT_JS = String.raw`
   }
 
   function renderCatChart(cf) {
+    // local-only panel: blank with a note when the local device is filtered out
+    var note = document.getElementById('local-note-cat');
+    if (!localOn()) { chart('catchart').clear(); note.textContent = '(local device not selected)'; return; }
+    note.textContent = '(local device only · subagent = actual tokens · MCP/plugin/builtin ≈ result bytes, coarse estimate — not comparable, no shared %)';
     var subagent = 0, proxy = {};
     cf.forEach(function (r) {
       if (r.category === 'subagent') subagent += r.tokens;
@@ -301,9 +342,14 @@ const CLIENT_JS = String.raw`
 
   function sortRows(rows, key) { return rows.sort(function (a, b) { var x = a[key], y = b[key]; return typeof x === 'string' ? String(x).localeCompare(y) : y - x; }); }
 
-  function renderModelTable(mf) {
+  function renderModelTable(tr) {
+    // per-model breakdown is local-only (not synced) — aggregate just the local rows
+    var note = document.getElementById('local-note-model');
+    if (!localOn()) { fillTable('modeltbl', [], null); note.textContent = '(local device not selected)'; return; }
+    note.textContent = '(local device only — per-model data isn’t synced)';
     var agg = {};
-    mf.forEach(function (r) {
+    tr.forEach(function (r) {
+      if (!r.local) return;
       var a = agg[r.model] || (agg[r.model] = { model: r.model, requests: 0, tokens: 0, cost: 0 });
       a.requests += r.requests; a.tokens += r.tokens; a.cost += r.cost;
     });
@@ -313,27 +359,29 @@ const CLIENT_JS = String.raw`
     });
   }
 
-  function renderProjectTable(mf, sf) {
+  function renderProjectTable(tr, sr) {
     var agg = {};
-    mf.forEach(function (r) {
-      var a = agg[r.project] || (agg[r.project] = { project: r.project, sessions: 0, tokens: 0, cost: 0, elapsedMin: 0 });
-      a.tokens += r.tokens; a.cost += r.cost;
-    });
+    function row(p) { return agg[p] || (agg[p] = { project: p, sessions: 0, tokens: 0, cost: 0, elapsedMin: 0 }); }
+    tr.forEach(function (r) { var a = row(r.project); a.tokens += r.tokens; a.cost += r.cost; });
     var now = Date.now();
-    sf.forEach(function (s) {
-      var a = agg[s.project] || (agg[s.project] = { project: s.project, sessions: 0, tokens: 0, cost: 0, elapsedMin: 0 });
-      a.sessions++;
-      var start = new Date(s.started_at).getTime(), end = s.ended_at ? new Date(s.ended_at).getTime() : now;
-      var m = Math.round((end - start) / 60000); if (!s.ended_at && m > 240) m = 240;
-      a.elapsedMin += Math.max(0, m);
+    sr.forEach(function (s) {
+      var a = row(s.project); a.sessions += s.sessions;
+      if (s.local && s.started_at) {
+        var start = new Date(s.started_at).getTime(), end = s.ended_at ? new Date(s.ended_at).getTime() : now;
+        var m = Math.round((end - start) / 60000); if (!s.ended_at && m > 240) m = 240;
+        a.elapsedMin += Math.max(0, m);
+      }
     });
     var rows = sortRows(Object.values(agg), state.sort.project);
     fillTable('projtbl', rows, function (r) {
-      return '<td>' + esc(r.project) + '</td><td>' + r.sessions + '</td><td>' + fmt(r.tokens) + '</td><td>' + fmtCost(r.cost) + '</td><td>' + fmtDur(r.elapsedMin) + '</td>';
+      return '<td>' + esc(r.project) + '</td><td>' + r.sessions + '</td><td>' + fmt(r.tokens) + '</td><td>' + fmtCost(r.cost) + '</td><td>' + (r.elapsedMin ? fmtDur(r.elapsedMin) : '<span class="muted">—</span>') + '</td>';
     });
   }
 
   function renderSkillTable(kf) {
+    var note = document.getElementById('local-note-skill');
+    if (!localOn()) { fillTable('skilltbl', [], null); note.textContent = '(local device not selected)'; return; }
+    note.textContent = '(local device only — skill data isn’t synced)';
     var agg = {};
     kf.forEach(function (r) { if (r.skill_name) agg[r.skill_name] = (agg[r.skill_name] || 0) + r.count; });
     var rows = sortRows(Object.keys(agg).map(function (k) { return { name: k, total: agg[k] }; }), state.sort.skill);
@@ -354,31 +402,43 @@ const CLIENT_JS = String.raw`
   fromEl.addEventListener('change', function () { state.from = fromEl.value; render(); });
   toEl.addEventListener('change', function () { state.to = toEl.value; render(); });
 
-  // project menu
-  var menu = document.getElementById('projmenu');
-  menu.innerHTML = '<label><input type="checkbox" id="proj_all" checked> <b>All</b></label>' +
-    D.meta.projects.map(function (p) { return '<label><input type="checkbox" class="projck" value="' + esc(p) + '" checked> ' + esc(p) + '</label>'; }).join('');
-  var box = document.getElementById('projbox');
-  document.getElementById('projbtn').addEventListener('click', function (e) { e.stopPropagation(); box.classList.toggle('open'); });
-  document.addEventListener('click', function () { box.classList.remove('open'); });
-  menu.addEventListener('click', function (e) { e.stopPropagation(); });
-  function syncProjBtn() {
-    var n = state.projects.size, total = D.meta.projects.length;
-    document.getElementById('projbtn').textContent = (n === total ? 'All projects' : n + ' of ' + total) + ' ▾';
-  }
-  menu.addEventListener('change', function (e) {
-    if (e.target.id === 'proj_all') {
-      var on = e.target.checked;
-      document.querySelectorAll('.projck').forEach(function (c) { c.checked = on; });
-      state.projects = new Set(on ? D.meta.projects : []);
-    } else {
-      var sel = [];
-      document.querySelectorAll('.projck').forEach(function (c) { if (c.checked) sel.push(c.value); });
-      state.projects = new Set(sel);
-      document.getElementById('proj_all').checked = sel.length === D.meta.projects.length;
+  // generic checkbox multi-select (projects, devices)
+  function multiselect(opts) {
+    var items = opts.items, getSet = opts.getSet, setSet = opts.setSet, label = opts.label;
+    var menu = document.getElementById(opts.menu), box = document.getElementById(opts.box), btn = document.getElementById(opts.btn);
+    var allId = opts.box + '_all';
+    menu.innerHTML = '<label><input type="checkbox" id="' + allId + '" checked> <b>All</b></label>' +
+      items.map(function (p) { return '<label><input type="checkbox" class="' + opts.box + '_ck" value="' + esc(p) + '" checked> ' + esc(p) + '</label>'; }).join('');
+    btn.addEventListener('click', function (e) { e.stopPropagation(); box.classList.toggle('open'); });
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
+    function sync() {
+      var n = getSet().size;
+      btn.textContent = (n === items.length ? 'All ' + label : n + ' of ' + items.length) + ' ▾';
     }
-    syncProjBtn(); render();
+    menu.addEventListener('change', function (e) {
+      var cks = menu.querySelectorAll('.' + opts.box + '_ck');
+      if (e.target.id === allId) {
+        cks.forEach(function (c) { c.checked = e.target.checked; });
+        setSet(new Set(e.target.checked ? items : []));
+      } else {
+        var sel = []; cks.forEach(function (c) { if (c.checked) sel.push(c.value); });
+        setSet(new Set(sel));
+        document.getElementById(allId).checked = sel.length === items.length;
+      }
+      sync(); render();
+    });
+    return sync;
+  }
+  document.addEventListener('click', function () {
+    document.getElementById('projbox').classList.remove('open');
+    document.getElementById('devbox').classList.remove('open');
   });
+  var syncProjBtn = multiselect({ items: D.meta.projects, label: 'projects', box: 'projbox', btn: 'projbtn', menu: 'projmenu',
+    getSet: function () { return state.projects; }, setSet: function (s) { state.projects = s; } });
+  var syncDevBtn = multiselect({ items: D.meta.devices, label: 'devices', box: 'devbox', btn: 'devbtn', menu: 'devmenu',
+    getSet: function () { return state.devices; }, setSet: function (s) { state.devices = s; } });
+  // hide the device control entirely when there's only the local device
+  if (D.meta.devices.length < 2) document.getElementById('devicectl').style.display = 'none';
 
   function seg(id, apply) {
     var el = document.getElementById(id);
@@ -388,7 +448,7 @@ const CLIENT_JS = String.raw`
       e.target.classList.add('on'); apply(e.target.getAttribute('data-v')); render();
     });
   }
-  seg('groupby', function (v) { state.groupBy = v; document.getElementById('trendgroup').textContent = v === 'project' ? 'project' : 'model'; });
+  seg('groupby', function (v) { state.groupBy = v; document.getElementById('trendgroup').textContent = v === 'project' ? 'project' : v === 'device' ? 'device' : 'model'; });
   seg('basis', function (v) { state.basis = v; document.getElementById('calbasis').textContent = v === 'cost' ? 'cost' : 'billable tokens'; });
   seg('cacheread', function (v) { state.cacheRead = v === 'on'; });
 
@@ -401,7 +461,7 @@ const CLIENT_JS = String.raw`
   });
 
   window.addEventListener('resize', function () { Object.keys(charts).forEach(function (k) { charts[k].resize(); }); });
-  syncProjBtn(); render();
+  syncProjBtn(); syncDevBtn(); render();
 })();
 `;
 
@@ -424,16 +484,27 @@ export function cmdDashboard(args, VERSION) {
   const skillFacts = querySkillFacts(from, to);
   const sessionFacts = querySessionFacts(from, to);
 
-  const projects = [...new Set(modelFacts.map(r => r.project).concat(sessionFacts.map(r => r.project)))].sort();
+  // Cross-device: foreign devices' synced per-project daily facts (local device is the live DB above).
+  let deviceFacts = [], foreignDevices = [];
+  try { ({ facts: deviceFacts, devices: foreignDevices } = readDeviceFacts(from, to)); } catch {}
+  let localDevice = 'local';
+  try { localDevice = getDeviceId(); } catch {}
+  const devices = [localDevice, ...foreignDevices.filter(d => d !== localDevice)];
+
+  const projects = [...new Set(
+    modelFacts.map(r => r.project)
+      .concat(sessionFacts.map(r => r.project))
+      .concat(deviceFacts.map(r => r.project))
+  )].sort();
   const models = [...new Set(modelFacts.map(r => r.model))].sort();
 
   const data = {
     meta: {
       from, to, version: VERSION,
       generatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      projects, models,
+      projects, models, devices, localDevice,
     },
-    modelFacts, categoryFacts, skillFacts, sessionFacts,
+    modelFacts, categoryFacts, skillFacts, sessionFacts, deviceFacts,
   };
 
   const html = buildDashboardHtml(data);
