@@ -26,6 +26,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" insights --project NAME  # 
 4. **Skill Usage Rankings** — ranked table with bar chart; per-project breakdown when multiple projects
 5. **Model Usage** — per-model calls, tokens, cost (local device only)
 
+## Visual Dashboard
+
+For an interactive, graphical view of the same multi-day data, generate the HTML dashboard:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --days 30  # Generate & open in browser
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open  # Write file only
+```
+
+It writes a self-contained page to `~/.claude/traceme/dashboard.html` and opens it — a
+model-usage calendar heatmap, a tokens-per-day-by-model curve, and a Plugins/Subagents/MCPs
+token breakdown, plus model/project/skill tables. Click **Refresh** after re-running the
+command to see fresh data. Run `traceme rescan --all` once first to backfill the category
+breakdown for older sessions.
+
 ## Data Source
 
 Token data uses the cross-device merged sync snapshot by default (all your machines). Session duration, skill usage, and model data are local-only (not synced). Pass `--local` to use local data throughout.

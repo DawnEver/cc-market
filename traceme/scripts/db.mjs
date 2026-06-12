@@ -251,6 +251,44 @@ export function querySkillUsage(from, to, projectLike = null) {
   return db.prepare(sql).all(...params);
 }
 
+// Token usage bucketed by tool category (subagent/mcp/plugin/builtin) over a range.
+// Local-device only — category data is not synced.
+export function queryCategoryBreakdown(from, to, projectLike = null) {
+  const params = [from, to];
+  let sql = `
+    SELECT sc.category AS category, SUM(sc.calls) AS calls, SUM(sc.tokens) AS tokens
+    FROM session_categories sc JOIN sessions s ON sc.session_id = s.id
+    WHERE s.date >= ? AND s.date <= ?`;
+  if (projectLike) { sql += ' AND s.project LIKE ?'; params.push(projectLike); }
+  sql += ' GROUP BY sc.category ORDER BY tokens DESC';
+  return db.prepare(sql).all(...params);
+}
+
+// Per-day per-model token totals — powers the stacked tokens/day chart.
+export function queryModelByDay(from, to, projectLike = null) {
+  const params = [from, to];
+  let sql = `
+    SELECT s.date AS date, sm.model AS model,
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens
+    FROM session_models sm JOIN sessions s ON sm.session_id = s.id
+    WHERE s.date >= ? AND s.date <= ?`;
+  if (projectLike) { sql += ' AND s.project LIKE ?'; params.push(projectLike); }
+  sql += ' GROUP BY s.date, sm.model ORDER BY s.date ASC';
+  return db.prepare(sql).all(...params);
+}
+
+// Per-day token + cost totals — powers the calendar heatmap.
+export function queryDailyTokens(from, to, projectLike = null) {
+  const params = [from, to];
+  let sql = `
+    SELECT date, COALESCE(SUM(total_tokens),0) AS tokens, COALESCE(SUM(total_cost),0) AS cost
+    FROM sessions
+    WHERE date >= ? AND date <= ?`;
+  if (projectLike) { sql += ' AND project LIKE ?'; params.push(projectLike); }
+  sql += ' GROUP BY date ORDER BY date ASC';
+  return db.prepare(sql).all(...params);
+}
+
 export function queryDbStats() {
   const sessions = db.prepare('SELECT COUNT(*) AS c FROM sessions').get().c;
   const prompts = db.prepare('SELECT COALESCE(SUM(prompt_count),0) AS c FROM sessions').get().c;
@@ -263,6 +301,8 @@ export function queryDbStats() {
 export function deleteSession(id) {
   db.prepare('DELETE FROM session_models WHERE session_id=?').run(id);
   db.prepare('DELETE FROM session_tools WHERE session_id=?').run(id);
+  db.prepare('DELETE FROM session_skills WHERE session_id=?').run(id);
+  db.prepare('DELETE FROM session_categories WHERE session_id=?').run(id);
   return db.prepare('DELETE FROM sessions WHERE id=?').run(id).changes;
 }
 

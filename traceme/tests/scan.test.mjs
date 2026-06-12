@@ -40,6 +40,35 @@ describe('Transcript Scan', () => {
     for (const ext of ['', '-wal', '-shm']) { try { rmSync(TEST_DB + ext, { force: true }); } catch {} }
   });
 
+  it('parseSession buckets categories: subagent (sidechain true tokens), mcp/plugin (proxy)', () => {
+    const entries = [
+      { type: 'user', message: { role: 'user', content: 'go' }, cwd: '/x/test-proj', timestamp: '2026-06-09T10:00:00.000Z' },
+      // Main-thread turn spawns a subagent, calls an MCP tool and a namespaced Skill.
+      { type: 'assistant', message: { id: 'm1', role: 'assistant', model: 'claude-opus-4-8',
+        content: [
+          { type: 'tool_use', id: 'tu_task', name: 'Task', input: {} },
+          { type: 'tool_use', id: 'tu_mcp', name: 'mcp__server__do', input: {} },
+          { type: 'tool_use', id: 'tu_skill', name: 'Skill', input: { skill: 'rem:rem' } },
+        ], usage: { input_tokens: 100, output_tokens: 50 } }, timestamp: '2026-06-09T10:00:01.000Z' },
+      // tool_results carry sizes used for the proxy attribution.
+      { type: 'user', message: { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'tu_mcp', content: 'x'.repeat(400) },
+        { type: 'tool_result', tool_use_id: 'tu_skill', content: 'y'.repeat(40) },
+      ] }, timestamp: '2026-06-09T10:00:02.000Z' },
+      // Sidechain (subagent) assistant turn — true tokens attributed to subagent.
+      { type: 'assistant', isSidechain: true, message: { id: 'm2', role: 'assistant', model: 'claude-sonnet-4-6',
+        content: [{ type: 'text', text: 'sub' }], usage: { input_tokens: 1000, output_tokens: 200 } }, timestamp: '2026-06-09T10:00:03.000Z' },
+    ];
+    const p = parseSession(entries);
+    const cat = Object.fromEntries(p.categories.map(c => [c.category, c]));
+    assert.equal(cat.subagent.calls, 1);
+    assert.equal(cat.subagent.tokens, 1200, 'subagent tokens come from sidechain usage, not proxy');
+    assert.equal(cat.mcp.calls, 1);
+    assert.equal(cat.mcp.tokens, 100, '400 chars / 4 = 100 proxy tokens');
+    assert.equal(cat.plugin.calls, 1);
+    assert.equal(cat.plugin.tokens, 10);
+  });
+
   it('parseSession aggregates tokens, dedupes by message id, captures tools/skills', () => {
     const entries = transcript('s1', '/x/test-proj').split('\n').map(l => JSON.parse(l));
     const p = parseSession(entries);
