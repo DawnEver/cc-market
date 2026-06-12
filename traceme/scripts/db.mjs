@@ -111,6 +111,7 @@ function ensureColumns() {
     if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
   };
   add('session_categories', 'bytes_est', 'INTEGER DEFAULT 0');
+  add('sessions', 'active_min', 'INTEGER DEFAULT 0');
 }
 
 export function closeDb() {
@@ -130,12 +131,12 @@ export function replaceSession(s) {
   db.prepare('DELETE FROM session_categories WHERE session_id=?').run(s.id);
   db.prepare('DELETE FROM sessions WHERE id=?').run(s.id);
   db.prepare(`INSERT INTO sessions
-    (id, date, project, project_path, repo_origin, branch, started_at, ended_at,
+    (id, date, project, project_path, repo_origin, branch, started_at, ended_at, active_min,
      prompt_count, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
      total_tokens, total_cost, top_model)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(s.id, s.date, s.project, s.project_path || null, s.repo_origin || '', s.branch || null,
-      s.started_at, s.ended_at || null, s.prompt_count || 0, s.input_tokens || 0, s.output_tokens || 0,
+      s.started_at, s.ended_at || null, s.active_min || 0, s.prompt_count || 0, s.input_tokens || 0, s.output_tokens || 0,
       s.cache_read_tokens || 0, s.cache_creation_tokens || 0, s.total_tokens || 0, s.total_cost || 0, s.top_model || null);
 
   const mStmt = db.prepare(`INSERT INTO session_models
@@ -367,7 +368,7 @@ export function querySkillFacts(from, to) {
 
 export function querySessionFacts(from, to) {
   return db.prepare(`
-    SELECT date, project, started_at, ended_at, prompt_count, total_tokens, total_cost
+    SELECT date, project, started_at, ended_at, active_min, prompt_count, total_tokens, total_cost
     FROM sessions
     WHERE date >= ? AND date <= ?
     ORDER BY started_at ASC

@@ -85,11 +85,11 @@ export function cmdInsights(args, VERSION) {
   // TIME CONSUMPTION (local sessions table)
   // ═══════════════════════════════════════════════
   const timeQuery = projectLike
-    ? `SELECT s.project, s.started_at, s.ended_at, s.prompt_count
+    ? `SELECT s.project, s.started_at, s.ended_at, s.active_min, s.prompt_count
        FROM sessions s
        WHERE s.date >= ? AND s.date <= ?
          AND s.project LIKE ?`
-    : `SELECT s.project, s.started_at, s.ended_at, s.prompt_count
+    : `SELECT s.project, s.started_at, s.ended_at, s.active_min, s.prompt_count
        FROM sessions s
        WHERE s.date >= ? AND s.date <= ?`;
 
@@ -99,7 +99,7 @@ export function cmdInsights(args, VERSION) {
 
   const now = new Date();
   const timeByProject = {};
-  let grandDuration = 0;
+  let grandDuration = 0, grandActive = 0;
   let zombieCount = 0;
 
   for (const s of sessRows) {
@@ -111,11 +111,13 @@ export function cmdInsights(args, VERSION) {
     if (s.prompt_count === 0 && !s.ended_at && durMin > 240) { zombieCount++; continue; }
     if (!s.ended_at && durMin > 240) durMin = 240;
 
-    if (!timeByProject[s.project]) timeByProject[s.project] = { sessions: 0, totalMin: 0, countWithEnd: 0, sumWithEnd: 0 };
+    if (!timeByProject[s.project]) timeByProject[s.project] = { sessions: 0, totalMin: 0, activeMin: 0, countWithEnd: 0, sumWithEnd: 0 };
     timeByProject[s.project].sessions++;
     timeByProject[s.project].totalMin += durMin;
+    timeByProject[s.project].activeMin += s.active_min || 0;
     if (s.ended_at) { timeByProject[s.project].countWithEnd++; timeByProject[s.project].sumWithEnd += durMin; }
     grandDuration += durMin;
+    grandActive += s.active_min || 0;
   }
 
   // ═══════════════════════════════════════════════
@@ -162,7 +164,8 @@ export function cmdInsights(args, VERSION) {
   lines.push(`| Total prompts | ${grandPrompts} |`);
   lines.push(`| Total tokens | ${fmt(grandTokens)} |`);
   lines.push(`| Total cost | **${fmtCost(grandCost)}** |`);
-  lines.push(`| Total session time | ${fmtDuration(grandDuration)} |`);
+  lines.push(`| Active time (gaps <10min) | ${fmtDuration(grandActive)} |`);
+  lines.push(`| Elapsed session time | ${fmtDuration(grandDuration)} |`);
   lines.push(`| Skills used | ${Object.keys(skillAgg).length} |`);
   lines.push(`| Total skill calls | ${totalSkillCalls} |`);
   lines.push('');
@@ -196,13 +199,13 @@ export function cmdInsights(args, VERSION) {
   lines.push('## Time Consumption by Project');
   if (zombieCount > 0) lines.push(`_${zombieCount} zombie session(s) filtered (>4h, no prompts, no end)_`);
   lines.push('');
-  lines.push('| Project | Sessions | Total Time | Avg Time |');
-  lines.push('|---------|----------|------------|----------|');
-  for (const proj of [...projList].sort((a, b) => (timeByProject[b]?.totalMin || 0) - (timeByProject[a]?.totalMin || 0))) {
+  lines.push('| Project | Sessions | Active | Elapsed | Avg Elapsed |');
+  lines.push('|---------|----------|--------|---------|-------------|');
+  for (const proj of [...projList].sort((a, b) => (timeByProject[b]?.activeMin || 0) - (timeByProject[a]?.activeMin || 0))) {
     const t = timeByProject[proj];
     if (!t) continue;
     const avg = t.countWithEnd > 0 ? fmtDuration(Math.round(t.sumWithEnd / t.countWithEnd)) : 'N/A';
-    lines.push(`| ${proj} | ${t.sessions} | ${fmtDuration(t.totalMin)} | ${avg} |`);
+    lines.push(`| ${proj} | ${t.sessions} | ${fmtDuration(t.activeMin)} | ${fmtDuration(t.totalMin)} | ${avg} |`);
   }
   lines.push('');
 

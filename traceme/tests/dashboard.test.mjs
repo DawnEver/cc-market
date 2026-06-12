@@ -27,7 +27,7 @@ function sampleData() {
     ],
     sessionFacts: [
       { date: '2026-06-08', project: 'my-app', started_at: '2026-06-08T10:00:00Z',
-        ended_at: '2026-06-08T12:30:00Z', prompt_count: 20, total_tokens: 43500, total_cost: 0.2 },
+        ended_at: '2026-06-08T12:30:00Z', active_min: 95, prompt_count: 20, total_tokens: 43500, total_cost: 0.2 },
     ],
     deviceFacts: [
       { date: '2026-06-09', device: 'me@desktop', project: 'other', sessions: 3,
@@ -90,8 +90,9 @@ describe('Dashboard HTML builder', () => {
     // tool-category section keeps subagent (actual) apart from byte-proxy categories
     assert.ok(html.includes('≈ result bytes') || html.includes('≈ bytes'));
     assert.ok(html.includes('actual tokens'));
-    // session time is labeled Elapsed, not "Session time"
+    // session time is labeled Elapsed, not "Session time"; Active (hands-on) is offered too
     assert.ok(html.includes('Elapsed'));
+    assert.ok(html.includes('Active'));
     assert.ok(!/Session time/.test(html));
   });
 

@@ -83,6 +83,9 @@ describe('Transcript Scan', () => {
     assert.equal(p.cacheCreate, 50);
     assert.equal(p.total, 2250);
     assert.ok(p.cost > 0);
+    // active time = sum of consecutive-stamp gaps under the 10-min cutoff:
+    // 10:00:00→05 (5s) + →10:05:00 (295s) + →10:05:10 (10s) = 310s ≈ 5 min
+    assert.equal(p.activeMin, 5);
     assert.equal(p.branch, 'main');
     assert.deepEqual(p.tools.find(t => t.tool_name === 'Edit'), { tool_name: 'Edit', count: 1 });
     assert.deepEqual(p.skills, [{ skill_name: 'rem:rem', count: 1 }]);

@@ -114,8 +114,8 @@ export function buildDashboardHtml(data) {
 <h2>Model Usage <span class="sub" id="local-note-model">(local device only — per-model data isn't synced)</span></h2>
 <table id="modeltbl"><thead><tr><th data-k="model">Model</th><th data-k="requests">Calls</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th></tr></thead><tbody></tbody></table>
 
-<h2>Project Usage <span class="sub">(Elapsed = gross wall-clock incl. idle, local only; sessions bucketed by start day)</span></h2>
-<table id="projtbl"><thead><tr><th data-k="project">Project</th><th data-k="sessions">Sessions</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th><th data-k="elapsedMin">Elapsed</th></tr></thead><tbody></tbody></table>
+<h2>Project Usage <span class="sub">(Active = hands-on time, gaps &lt;10min, local only; Elapsed = gross wall-clock incl. idle; sessions bucketed by start day)</span></h2>
+<table id="projtbl"><thead><tr><th data-k="project">Project</th><th data-k="sessions">Sessions</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th><th data-k="activeMin">Active</th><th data-k="elapsedMin">Elapsed</th></tr></thead><tbody></tbody></table>
 
 <h2>Skill Usage <span class="sub" id="local-note-skill">(local device only — skill data isn't synced)</span></h2>
 <table id="skilltbl"><thead><tr><th data-k="name">Skill</th><th data-k="total">Uses</th></tr></thead><tbody></tbody></table>
@@ -191,7 +191,7 @@ const CLIENT_JS = String.raw`
     if (localOn()) D.sessionFacts.forEach(function (s) {
       if (!inRange(s)) return;
       rows.push({ project: s.project, device: LOCAL, sessions: 1, prompts: s.prompt_count,
-        started_at: s.started_at, ended_at: s.ended_at, local: true });
+        started_at: s.started_at, ended_at: s.ended_at, active_min: s.active_min || 0, local: true });
     });
     D.deviceFacts.forEach(function (r) {
       if (!state.devices.has(r.device) || !inRange(r)) return;
@@ -232,10 +232,11 @@ const CLIENT_JS = String.raw`
   function renderCards(tr, sr) {
     var tokens = 0, billableTok = 0, cost = 0;
     tr.forEach(function (r) { tokens += r.tokens; billableTok += r.billable; cost += r.cost; });
-    var now = Date.now(), elapsedMin = 0, prompts = 0, sessions = 0, projects = {}, devices = {};
+    var now = Date.now(), elapsedMin = 0, activeMin = 0, prompts = 0, sessions = 0, projects = {}, devices = {};
     sr.forEach(function (s) {
       projects[s.project] = 1; devices[s.device] = 1; prompts += s.prompts; sessions += s.sessions;
       if (s.local && s.started_at) {
+        activeMin += s.active_min || 0;
         var start = new Date(s.started_at).getTime();
         var end = s.ended_at ? new Date(s.ended_at).getTime() : now;
         var m = Math.round((end - start) / 60000);
@@ -246,6 +247,7 @@ const CLIENT_JS = String.raw`
     var cards = [['Tokens', fmt(tokens)]];
     if (localOnly()) cards.push(['Billable', fmt(billableTok)]);
     cards.push(['Cost', fmtCost(cost)], ['Sessions', sessions], ['Prompts', prompts],
+      ['Active' + (localOn() ? '' : ' (n/a)'), localOn() ? fmtDur(activeMin) : '—'],
       ['Elapsed' + (localOn() ? '' : ' (n/a)'), localOn() ? fmtDur(elapsedMin) : '—'],
       ['Projects', Object.keys(projects).length], ['Devices', Object.keys(devices).length]);
     document.getElementById('cards').innerHTML = cards.map(function (c) {
@@ -365,20 +367,22 @@ const CLIENT_JS = String.raw`
 
   function renderProjectTable(tr, sr) {
     var agg = {};
-    function row(p) { return agg[p] || (agg[p] = { project: p, sessions: 0, tokens: 0, cost: 0, elapsedMin: 0 }); }
+    function row(p) { return agg[p] || (agg[p] = { project: p, sessions: 0, tokens: 0, cost: 0, activeMin: 0, elapsedMin: 0 }); }
     tr.forEach(function (r) { var a = row(r.project); a.tokens += r.tokens; a.cost += r.cost; });
     var now = Date.now();
     sr.forEach(function (s) {
       var a = row(s.project); a.sessions += s.sessions;
       if (s.local && s.started_at) {
+        a.activeMin += s.active_min || 0;
         var start = new Date(s.started_at).getTime(), end = s.ended_at ? new Date(s.ended_at).getTime() : now;
         var m = Math.round((end - start) / 60000); if (!s.ended_at && m > 240) m = 240;
         a.elapsedMin += Math.max(0, m);
       }
     });
     var rows = sortRows(Object.values(agg), state.sort.project);
+    var dash = '<span class="muted">—</span>';
     fillTable('projtbl', rows, function (r) {
-      return '<td>' + esc(r.project) + '</td><td>' + r.sessions + '</td><td>' + fmt(r.tokens) + '</td><td>' + fmtCost(r.cost) + '</td><td>' + (r.elapsedMin ? fmtDur(r.elapsedMin) : '<span class="muted">—</span>') + '</td>';
+      return '<td>' + esc(r.project) + '</td><td>' + r.sessions + '</td><td>' + fmt(r.tokens) + '</td><td>' + fmtCost(r.cost) + '</td><td>' + (r.activeMin ? fmtDur(r.activeMin) : dash) + '</td><td>' + (r.elapsedMin ? fmtDur(r.elapsedMin) : dash) + '</td>';
     });
   }
 
