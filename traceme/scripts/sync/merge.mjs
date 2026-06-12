@@ -125,7 +125,7 @@ export function readDeviceFacts(from, to) {
     devices.add(device);
     for (const r of (data.daily_summary || [])) {
       facts.push({
-        date, device, project: r.project,
+        date, device, project: r.project, repo_origin: r.repo_origin || '',
         sessions: r.session_count || 0, prompts: r.prompt_count || 0,
         tokens: (r.billable_tokens != null ? r.billable_tokens : r.total_tokens) || 0,
         cost: r.total_cost || 0, top_model: r.top_model || null,
@@ -133,7 +133,7 @@ export function readDeviceFacts(from, to) {
     }
     for (const r of (data.model_facts || [])) {
       modelFacts.push({
-        date, device, project: r.project, model: r.model,
+        date, device, project: r.project, repo_origin: r.repo_origin || '', model: r.model,
         requests: r.requests || 0,
         tokens: (r.input || 0) + (r.output || 0) + (r.cache_creation || 0), // billable
         all_tokens: (r.input || 0) + (r.output || 0) + (r.cache_read || 0) + (r.cache_creation || 0),

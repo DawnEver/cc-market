@@ -164,7 +164,11 @@ excluded) → `skills/traceme/reference/sync.md`.
 - Zero npm dependencies — uses Node 24 `node:sqlite` built-in
 - Prompt text is **never** stored or read — the scanner only counts prompts; it never persists their content (structural guarantee, not a convention)
 - Sync repo contains ONLY `.enc` files — no plaintext ever touches GitHub
-- Project = git repo basename of the transcript's `cwd`; `repo_origin` = normalized git remote (cached per cwd)
+- Project = git repo basename of the transcript's `cwd` (display name); `repo_origin` = normalized
+  git remote (cached per cwd) and is the **grouping identity** — report/insights/dashboard group by
+  `repo_origin` so two repos sharing a basename don't merge. The dashboard suffixes the remote tail
+  (`name (tail)`) when one basename maps to >1 remote. Remote-less repos share `''` and still merge
+  (no identity without a remote)
 - Scan is idempotent: a session is fully recomputed and replaced on each pass; aggregates are query-time only
 
 ## Tests

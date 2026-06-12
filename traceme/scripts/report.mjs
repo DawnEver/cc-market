@@ -218,7 +218,8 @@ export function generateRangeReport(opts = {}) {
     dailyTrend.push({ date: day, ...daySummary });
 
     for (const r of filtered) {
-      const key = r.project || r.repo_origin;
+      // identity is repo_origin (so same-basename repos don't merge); project is the display name
+      const key = r.repo_origin || r.project;
       if (!aggregated[key]) {
         aggregated[key] = { project: r.project, sessions: 0, prompts: 0, tokens: 0, cost: 0 };
       }

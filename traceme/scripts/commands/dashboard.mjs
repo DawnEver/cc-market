@@ -512,6 +512,21 @@ export function cmdDashboard(args, VERSION) {
   try { localDevice = getDeviceId(); } catch {}
   const devices = [localDevice, ...foreignDevices.filter(d => d !== localDevice)];
 
+  // Disambiguate same-basename repos: identity is repo_origin, display is project; when one
+  // basename maps to >1 remote, suffix the remote's tail so distinct repos don't merge. (Remote-
+  // less repos share '' and still merge — no identity exists without a remote.)
+  const allFactSets = [modelFacts, sessionFacts, categoryFacts, skillFacts, deviceFacts, deviceModelFacts];
+  const reposByProject = {};
+  for (const set of allFactSets) for (const r of set) {
+    (reposByProject[r.project] ||= new Set()).add(r.repo_origin || '');
+  }
+  const repoTail = repo => (repo.split('/').pop() || repo).slice(0, 18);
+  const displayName = r => {
+    const repos = reposByProject[r.project];
+    return (repos && repos.size > 1 && r.repo_origin) ? `${r.project} (${repoTail(r.repo_origin)})` : r.project;
+  };
+  for (const set of allFactSets) for (const r of set) r.project = displayName(r);
+
   const projects = [...new Set(
     modelFacts.map(r => r.project)
       .concat(sessionFacts.map(r => r.project))

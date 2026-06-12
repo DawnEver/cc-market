@@ -38,8 +38,9 @@ export function cmdInsights(args, VERSION) {
   // ═══════════════════════════════════════════════
   // TOKEN CONSUMPTION (merged data per day)
   // ═══════════════════════════════════════════════
-  const tokenByDay = {};       // date → { project → { tokens, cost, sessions, prompts } }
+  const tokenByDay = {};       // date → { repoKey → { tokens, cost, sessions, prompts } }
   const projectTokenTotals = {};
+  const projectLabel = {};     // repoKey → display project basename
   const allProjects = new Set();
   let grandTokens = 0, grandCost = 0, grandSessions = 0, grandPrompts = 0, daysWithData = 0;
 
@@ -48,12 +49,12 @@ export function cmdInsights(args, VERSION) {
     let rows;
     if (merged) {
       rows = merged.daily_summary.map(r => ({
-        project: r.project, sessions: r.session_count, prompts: r.prompt_count,
+        project: r.project, repo_origin: r.repo_origin || '', sessions: r.session_count, prompts: r.prompt_count,
         tokens: r.billable_tokens ?? r.total_tokens, cost: r.total_cost,
       }));
     } else {
       rows = db.prepare(`
-        SELECT project, COUNT(*) as sessions, COALESCE(SUM(prompt_count),0) as prompts,
+        SELECT MAX(project) as project, repo_origin, COUNT(*) as sessions, COALESCE(SUM(prompt_count),0) as prompts,
                COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens),0) as tokens,
                COALESCE(SUM(total_cost),0) as cost
         FROM sessions
@@ -68,28 +69,32 @@ export function cmdInsights(args, VERSION) {
     daysWithData++;
     tokenByDay[day] = {};
     for (const r of rows) {
-      tokenByDay[day][r.project] = r;
-      allProjects.add(r.project);
-      if (!projectTokenTotals[r.project]) projectTokenTotals[r.project] = { sessions: 0, prompts: 0, tokens: 0, cost: 0 };
-      projectTokenTotals[r.project].sessions += r.sessions;
-      projectTokenTotals[r.project].prompts += r.prompts;
-      projectTokenTotals[r.project].tokens += r.tokens;
-      projectTokenTotals[r.project].cost += r.cost;
+      // group by repo_origin identity (so same-basename repos don't merge); label by project
+      const key = r.repo_origin || r.project;
+      projectLabel[key] = r.project;
+      tokenByDay[day][key] = r;
+      allProjects.add(key);
+      if (!projectTokenTotals[key]) projectTokenTotals[key] = { sessions: 0, prompts: 0, tokens: 0, cost: 0 };
+      projectTokenTotals[key].sessions += r.sessions;
+      projectTokenTotals[key].prompts += r.prompts;
+      projectTokenTotals[key].tokens += r.tokens;
+      projectTokenTotals[key].cost += r.cost;
       grandTokens += r.tokens; grandCost += r.cost; grandSessions += r.sessions; grandPrompts += r.prompts;
     }
   }
 
   const projList = [...allProjects].sort((a, b) => (projectTokenTotals[b]?.tokens || 0) - (projectTokenTotals[a]?.tokens || 0));
+  const label = k => projectLabel[k] || k;
 
   // ═══════════════════════════════════════════════
   // TIME CONSUMPTION (local sessions table)
   // ═══════════════════════════════════════════════
   const timeQuery = projectLike
-    ? `SELECT s.project, s.started_at, s.ended_at, s.active_min, s.prompt_count
+    ? `SELECT s.project, s.repo_origin, s.started_at, s.ended_at, s.active_min, s.prompt_count
        FROM sessions s
        WHERE s.date >= ? AND s.date <= ?
          AND s.project LIKE ?`
-    : `SELECT s.project, s.started_at, s.ended_at, s.active_min, s.prompt_count
+    : `SELECT s.project, s.repo_origin, s.started_at, s.ended_at, s.active_min, s.prompt_count
        FROM sessions s
        WHERE s.date >= ? AND s.date <= ?`;
 
@@ -111,11 +116,13 @@ export function cmdInsights(args, VERSION) {
     if (s.prompt_count === 0 && !s.ended_at && durMin > 240) { zombieCount++; continue; }
     if (!s.ended_at && durMin > 240) durMin = 240;
 
-    if (!timeByProject[s.project]) timeByProject[s.project] = { sessions: 0, totalMin: 0, activeMin: 0, countWithEnd: 0, sumWithEnd: 0 };
-    timeByProject[s.project].sessions++;
-    timeByProject[s.project].totalMin += durMin;
-    timeByProject[s.project].activeMin += s.active_min || 0;
-    if (s.ended_at) { timeByProject[s.project].countWithEnd++; timeByProject[s.project].sumWithEnd += durMin; }
+    const tkey = s.repo_origin || s.project;
+    projectLabel[tkey] = projectLabel[tkey] || s.project;
+    if (!timeByProject[tkey]) timeByProject[tkey] = { sessions: 0, totalMin: 0, activeMin: 0, countWithEnd: 0, sumWithEnd: 0 };
+    timeByProject[tkey].sessions++;
+    timeByProject[tkey].totalMin += durMin;
+    timeByProject[tkey].activeMin += s.active_min || 0;
+    if (s.ended_at) { timeByProject[tkey].countWithEnd++; timeByProject[tkey].sumWithEnd += durMin; }
     grandDuration += durMin;
     grandActive += s.active_min || 0;
   }
@@ -178,7 +185,7 @@ export function cmdInsights(args, VERSION) {
   // Token Consumption by Project (per day)
   lines.push('## Token Consumption by Project');
   lines.push('');
-  const header = '| Date | ' + projList.map(p => p.length > 14 ? p.slice(0, 12) + '..' : p).join(' | ') + ' | Daily Total |';
+  const header = '| Date | ' + projList.map(p => { const l = label(p); return l.length > 14 ? l.slice(0, 12) + '..' : l; }).join(' | ') + ' | Daily Total |';
   const sep = '|------|' + projList.map(() => '------|').join('') + '------|';
   lines.push(header);
   lines.push(sep);
@@ -205,7 +212,7 @@ export function cmdInsights(args, VERSION) {
     const t = timeByProject[proj];
     if (!t) continue;
     const avg = t.countWithEnd > 0 ? fmtDuration(Math.round(t.sumWithEnd / t.countWithEnd)) : 'N/A';
-    lines.push(`| ${proj} | ${t.sessions} | ${fmtDuration(t.activeMin)} | ${fmtDuration(t.totalMin)} | ${avg} |`);
+    lines.push(`| ${label(proj)} | ${t.sessions} | ${fmtDuration(t.activeMin)} | ${fmtDuration(t.totalMin)} | ${avg} |`);
   }
   lines.push('');
 
