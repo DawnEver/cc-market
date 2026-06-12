@@ -27,17 +27,28 @@ def _execute_action(action: Action, project_dir: Path,
     to the owning component. Returns True on success."""
     ctx = context or {}
 
-    # Delegate special actions to the component
+    # Delegate special actions (__deploy__, __recover_service__, ...) to the
+    # component that implements them. Prefer the anomaly's own component; fall
+    # back to the component that *declares* this action — a health anomaly
+    # (http_health/shell_probe) can trigger a git_version action like recovery.
     if action.command and action.command.startswith('__'):
         special = action.command.strip('_')
+        comp = None
         if registry and anomaly_source:
-            comp_name = anomaly_source.split('.')[0]
-            comp = registry.get(comp_name)
-            if comp and hasattr(comp, 'execute_action'):
-                ctx['_registry'] = registry
-                ctx['_project_dir'] = str(project_dir)
-                return comp.execute_action(special, registry.get_config(comp_name),
-                                          {}, project_dir, ctx)  # type: ignore[call-arg]
+            c = registry.get(anomaly_source.split('.')[0])
+            if c is not None and hasattr(c, 'execute_action'):
+                comp = c
+        if comp is None and registry is not None:
+            for c in getattr(registry, '_components', {}).values():
+                if hasattr(c, 'execute_action') and any(
+                        a.command == action.command for a in c.actions().values()):
+                    comp = c
+                    break
+        if comp is not None:
+            ctx['_registry'] = registry
+            ctx['_project_dir'] = str(project_dir)
+            return comp.execute_action(special, registry.get_config(comp.name),
+                                       {}, project_dir, ctx)  # type: ignore[call-arg]
         print(f'    cannot delegate {special}: no component found', file=sys.stderr)
         return False
 
