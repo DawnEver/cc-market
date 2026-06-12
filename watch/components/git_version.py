@@ -122,11 +122,16 @@ def remote_heads(comp_cfg: dict, project: Path, fetch: bool = True) -> dict[str,
         remote = repo.get('remote', 'origin')
         branch = repo.get('branch', 'main')
         if fetch:
-            try:
-                subprocess.run(['git', 'fetch', remote], cwd=repo_path,
-                               check=True, capture_output=True, timeout=30)
-            except Exception:
-                pass
+            # git fetch against this remote is flaky (auth/network) and often
+            # only succeeds on a later attempt — retry a few times.
+            for attempt in range(3):
+                r = subprocess.run(['git', 'fetch', remote], cwd=repo_path,
+                                   capture_output=True, text=True, timeout=30)
+                if r.returncode == 0:
+                    break
+                if attempt == 2:
+                    print(f'[git_version] fetch {remote} failed for {repo["name"]} '
+                          f'after 3 attempts: {r.stderr.strip()[:200]}')
         try:
             heads[repo['name']] = subprocess.check_output(
                 ['git', 'rev-parse', f'{remote}/{branch}'],
