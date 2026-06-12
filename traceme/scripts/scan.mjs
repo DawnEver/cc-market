@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import { openDb, getMeta, setMeta, replaceSession } from './db.mjs';
-import { getProjectRoot, getGitRemote, normalizeRemoteUrl } from './lib.mjs';
+import { getProjectRoot, getGitRemote, normalizeRemoteUrl, categorizeTool } from './lib.mjs';
 import { calcCost } from './pricing.mjs';
 
 // Claude Code writes one transcript per session under ~/.claude/projects/<enc-cwd>/<sessionId>.jsonl.
@@ -45,6 +45,16 @@ export function parseSession(entries) {
   const skills = {};
   let input = 0, output = 0, cacheRead = 0, cacheCreate = 0, cost = 0;
 
+  // Category buckets (Plugins/Subagents/MCPs). Subagent tokens come from sidechain
+  // assistant usage (true); other categories use a tool_result byte-size proxy.
+  const categories = {};
+  const bumpCat = (cat, calls, toks) => {
+    const c = categories[cat] || (categories[cat] = { calls: 0, tokens: 0 });
+    c.calls += calls; c.tokens += toks;
+  };
+  const toolUseById = new Map();   // tool_use_id → { name, skill }
+  const resultLenById = new Map(); // tool_use_id → result content length (proxy)
+
   for (const e of entries) {
     if (e.cwd && !cwd) cwd = e.cwd;
     if (e.gitBranch && !branch) branch = e.gitBranch;
@@ -53,6 +63,16 @@ export function parseSession(entries) {
       if (!ended || e.timestamp > ended) ended = e.timestamp;
     }
     if (isRealPrompt(e)) promptCount++;
+
+    // Collect tool_result sizes (in user messages) to proxy per-tool token cost.
+    if (e.type === 'user' && Array.isArray(e.message?.content)) {
+      for (const block of e.message.content) {
+        if (block && block.type === 'tool_result' && block.tool_use_id) {
+          const len = typeof block.content === 'string' ? block.content.length : JSON.stringify(block.content || '').length;
+          resultLenById.set(block.tool_use_id, (resultLenById.get(block.tool_use_id) || 0) + len);
+        }
+      }
+    }
 
     if (e.type === 'assistant' && e.message?.usage && e.message.id && !seen.has(e.message.id)) {
       seen.add(e.message.id);
@@ -66,16 +86,31 @@ export function parseSession(entries) {
       input += inp; output += out; cacheRead += cr; cacheCreate += cc; cost += c;
       const m = models[model] || (models[model] = { requests: 0, input: 0, output: 0, cache_read: 0, cache_creation: 0, cost: 0 });
       m.requests++; m.input += inp; m.output += out; m.cache_read += cr; m.cache_creation += cc; m.cost += c;
-      for (const block of (e.message.content || [])) {
-        if (block && block.type === 'tool_use' && block.name) {
-          tools[block.name] = (tools[block.name] || 0) + 1;
-          if (block.name === 'Skill' && block.input?.skill) {
-            const sk = block.input.skill;
-            skills[sk] = (skills[sk] || 0) + 1;
+      // Subagent turns run on the sidechain — attribute their true tokens.
+      if (e.isSidechain) bumpCat('subagent', 0, inp + out + cr + cc);
+      // Tool calls only count from the main thread (sidechain tool calls belong to the subagent).
+      if (!e.isSidechain) {
+        for (const block of (e.message.content || [])) {
+          if (block && block.type === 'tool_use' && block.name) {
+            tools[block.name] = (tools[block.name] || 0) + 1;
+            let sk = null;
+            if (block.name === 'Skill' && block.input?.skill) {
+              sk = block.input.skill;
+              skills[sk] = (skills[sk] || 0) + 1;
+            }
+            if (block.id) toolUseById.set(block.id, { name: block.name, skill: sk });
           }
         }
       }
     }
+  }
+
+  // Fold tool calls into categories: 1 call each + proxy tokens from the matching result.
+  // Subagent token totals already came from the sidechain pass above (don't double-count).
+  for (const [id, { name, skill }] of toolUseById) {
+    const cat = categorizeTool(name, skill);
+    const proxy = cat === 'subagent' ? 0 : Math.round((resultLenById.get(id) || 0) / 4);
+    bumpCat(cat, 1, proxy);
   }
 
   if (!started) return null;
@@ -87,6 +122,7 @@ export function parseSession(entries) {
     models: Object.entries(models).map(([model, m]) => ({ model, ...m })),
     tools: Object.entries(tools).map(([tool_name, count]) => ({ tool_name, count })),
     skills: Object.entries(skills).map(([skill_name, count]) => ({ skill_name, count })),
+    categories: Object.entries(categories).map(([category, v]) => ({ category, ...v })),
   };
 }
 
@@ -121,6 +157,7 @@ function scanOne(path, sessionId) {
     models: p.models,
     tools: p.tools,
     skills: p.skills,
+    categories: p.categories,
   });
   return p;
 }

@@ -1,27 +1,6 @@
 import { openDb, queryModelBreakdown, querySkillUsage } from '../db.mjs';
 import { readMergedSnapshot } from '../sync.mjs';
-import { todayISO } from '../lib.mjs';
-
-function fmt(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return String(n);
-}
-function fmtCost(n) { return '$' + n.toFixed(4); }
-function fmtDuration(min) {
-  if (min < 1) return '<1m';
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function daysArray(from, to) {
-  const days = [];
-  const d = new Date(from + 'T00:00:00');
-  const end = new Date(to + 'T00:00:00');
-  while (d <= end) { days.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
-  return days;
-}
+import { todayISO, fmt, fmtCost, fmtDuration, daysArray } from '../lib.mjs';
 
 export function cmdInsights(args, VERSION) {
   // ── flags ──

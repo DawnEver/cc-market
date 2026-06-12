@@ -10,7 +10,9 @@ import {
   upsertTakeoverTokens,
   queryDailySummary, queryToolUsage, queryModelBreakdown,
   querySkillUsage, querySessionStats, queryDbStats, deleteSession, allSessionIds,
+  queryCategoryBreakdown, queryModelByDay, queryDailyTokens,
 } from '../scripts/db.mjs';
+import { categorizeTool } from '../scripts/lib.mjs';
 
 const TEST_DB = join(tmpdir(), `traceme-test-${randomUUID()}.db`);
 
@@ -33,6 +35,11 @@ function sampleSession(id, over = {}) {
     ],
     tools: [{ tool_name: 'Edit', count: 2 }, { tool_name: 'Bash', count: 1 }],
     skills: [{ skill_name: 'rem:rem', count: 1 }],
+    categories: [
+      { category: 'subagent', calls: 1, tokens: 1200 },
+      { category: 'mcp', calls: 2, tokens: 300 },
+      { category: 'plugin', calls: 1, tokens: 10 },
+    ],
     ...over,
   };
 }
@@ -78,6 +85,30 @@ describe('DB Layer', { concurrency: 1 }, () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].project, 'test-project');
     assert.equal(rows[0].tokens, 2250);
+  });
+
+  it('queryCategoryBreakdown / queryModelByDay / queryDailyTokens', () => {
+    const cats = queryCategoryBreakdown('2026-06-09', '2026-06-09');
+    const byCat = Object.fromEntries(cats.map(c => [c.category, c]));
+    assert.equal(byCat.subagent.tokens, 1200);
+    assert.equal(byCat.mcp.calls, 2);
+
+    const byDay = queryModelByDay('2026-06-09', '2026-06-09');
+    assert.equal(byDay.length, 2);
+    assert.ok(byDay.every(r => r.date === '2026-06-09'));
+
+    const daily = queryDailyTokens('2026-06-09', '2026-06-09');
+    assert.equal(daily.length, 1);
+    assert.equal(daily[0].tokens, 2250);
+  });
+
+  it('categorizeTool buckets by tool name', () => {
+    assert.equal(categorizeTool('mcp__x__y'), 'mcp');
+    assert.equal(categorizeTool('Task'), 'subagent');
+    assert.equal(categorizeTool('Agent'), 'subagent');
+    assert.equal(categorizeTool('Skill', 'rem:rem'), 'plugin');
+    assert.equal(categorizeTool('Skill', 'verify'), 'builtin');
+    assert.equal(categorizeTool('Edit'), 'builtin');
   });
 
   it('upsertTakeoverTokens folds into daily summary total', () => {

@@ -66,6 +66,18 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" rescan --prune    # Also dr
 
 Re-derives the local DB from the Claude Code transcripts at `~/.claude/projects/**/*.jsonl`. The DB is purely a cache of jsonl-derived facts, so this is always safe to run — `--all` ignores the per-file cursors and rebuilds everything (use after upgrading or if data looks wrong); `--prune` removes sessions whose source transcript no longer exists.
 
+### Dashboard
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --days 30   # Generate & open visual HTML dashboard
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open   # Write file only, don't open browser
+```
+
+Generates a self-contained HTML dashboard at `~/.claude/traceme/dashboard.html` and opens it:
+a model-usage calendar heatmap, a tokens-per-day-by-model curve, and a Plugins/Subagents/MCPs
+token breakdown, plus model/project/skill tables. Re-run the command and click **Refresh** for
+fresh data. Charts are inline SVG (offline, zero-dep); category/model data is local-device only.
+Run `rescan --all` once first to backfill category data for older sessions.
+
 ### Errors
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" errors

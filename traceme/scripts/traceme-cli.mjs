@@ -10,6 +10,7 @@ import { cmdRescan } from './commands/rescan.mjs';
 import { cmdSync } from './commands/sync-cmd.mjs';
 import { cmdStatus, cmdErrors, cmdPricing, cmdConfig } from './commands/info.mjs';
 import { cmdInsights } from './commands/insights.mjs';
+import { cmdDashboard } from './commands/dashboard.mjs';
 
 const args = process.argv.slice(2);
 const cmd = args[0] || 'report';
@@ -43,6 +44,7 @@ Usage:
   traceme pricing                                Show current model pricing
   traceme config                                 Show configuration summary
   traceme insights [--day|--month|--days N] [--local] [--project <name>]  Multi-day trend analysis
+  traceme dashboard [--day|--month|--days N] [--project <name>] [--no-open]  Generate & open visual HTML dashboard
   traceme help                                   Show this help`);
 }
 
@@ -119,6 +121,9 @@ try {
       break;
     case 'insights':
       cmdInsights(args, VERSION);
+      break;
+    case 'dashboard':
+      cmdDashboard(args, VERSION);
       break;
     default:
       console.log(`Unknown command: ${cmd}`);

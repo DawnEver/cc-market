@@ -28,7 +28,8 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 | `scripts/db.mjs` | SQLite wrapper: schema, `replaceSession`, derived queries |
 | `scripts/ingest.mjs` | Takeover NDJSON trace scanner (only non-transcript source) |
 | `scripts/report.mjs` | Markdown report generator: per-project stats, model/tool usage |
-| `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights |
+| `scripts/commands/dashboard.mjs` | `dashboard` command: self-contained HTML dashboard (inline-SVG calendar/per-model curve/category breakdown), `buildDashboardHtml` exported for tests |
+| `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights, dashboard |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
 | `tests/` | Node built-in test runner, 34 tests across 5 suites |
@@ -46,8 +47,12 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
    exists or `--local` is passed.
 
 Schema (all per-session, recomputed on each scan): `sessions` (one row per transcript) +
-`session_models` / `session_tools` / `session_skills` breakdowns. `daily_takeover` holds the
-only non-transcript source. `traceme_meta` holds scan cursors (`cur:<path>`), the cwd→repo
+`session_models` / `session_tools` / `session_skills` / `session_categories` breakdowns.
+`session_categories` buckets tokens by tool category for the dashboard's
+Plugins/Subagents/MCPs view — `subagent` tokens are the *true* tokens of sidechain (subagent)
+assistant turns; `mcp`/`plugin`/`builtin` tokens are a `tool_result`-size proxy (no per-tool
+token attribution exists in the transcript). Local-device only; not synced. `daily_takeover`
+holds the only non-transcript source. `traceme_meta` holds scan cursors (`cur:<path>`), the cwd→repo
 cache (`repo:<cwd>`), `device_id`, and sync timestamps.
 
 ## Multi-Device Encrypted Sync
@@ -144,4 +149,4 @@ excluded) → `skills/traceme/reference/sync.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-34 tests: DB derived queries (7), transcript scan incl. dedup/cursor/idempotence (4), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged (6), plus the shared `--test` run via pre-commit.
+42 tests: DB derived queries incl. category/per-model-day/daily + `categorizeTool` (9), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged (6), dashboard HTML builder (6), plus the shared `--test` run via pre-commit.
