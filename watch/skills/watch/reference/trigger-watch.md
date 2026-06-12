@@ -16,12 +16,34 @@ no `claude -p` dependency. All context lives in filesystem state (`state/*.json`
 `trigger_ack.json`. Supports `--interval 15` (default), `--once`, and `--dry-run`. Logs to
 `.claude/watch/logs/trigger-watch.jsonl`.
 
-## Two complementary mechanisms
+## Three complementary mechanisms
 
-- **trigger-watch.py** — daemon-driven: watchd writes `trigger.json` on anomaly →
-  trigger-watch runs the AI check immediately
+- **trigger-watch.py** — daemon-driven, session-independent base layer: watchd writes
+  `trigger.json` on anomaly → trigger-watch runs the AI check (`scripts/watch.py`)
+  immediately. Always-on, no LLM, survives session death. Single-instance guarded via
+  `state/trigger-watch.pid`; supports `--force`.
+- **Monitor + trigger-emit.py** — in-session real-time layer: while a live `/watch:watch`
+  session is alive, it arms a `Monitor` whose command is `scripts/trigger-emit.py`
+  (pure stdlib; prints one line per `trigger.json` change). The session then handles the
+  trigger itself with full tool access — strictly better than headless `claude -p`, which
+  can't answer permission prompts. Armed in SKILL.md Step 6; skipped in headless/cron runs.
 - **CronCreate** — interval-driven: durable cron calls `/watch:watch` every 12h
-  (configurable), self-refreshes to reset 7-day TTL
+  (configurable), self-refreshes to reset 7-day TTL.
+
+These layer rather than compete: trigger-watch covers "no session alive", Monitor upgrades
+"session alive" to real-time full-capability handling, and CronCreate guarantees a periodic
+floor. Reacting twice is harmless — `scripts/watch.py` remedies are idempotent.
+
+### Process-identity note (cross-platform)
+
+`trigger-watch.py` and `watchd/daemon.py` call `bootstrap.ensure()`, which re-execs into the
+managed venv via `os.execv`. On **Windows** `os.execv` is emulated as a CRT `P_OVERLAY` spawn:
+the launcher becomes a waiting stub and the real worker gets a *fresh* PID. So a PID captured
+at spawn time (e.g. from a launcher's `Popen`) is stale immediately. Both daemons therefore
+write their own pidfile (`state/watchd.pid`, `state/trigger-watch.pid`) *after* bootstrap via
+`core/pidfile.py` — that is the authoritative handle for start/stop tooling. Killing the
+worker also reaps the Windows wait-stub parent. `trigger-emit.py` sidesteps this entirely by
+not importing bootstrap (pure stdlib, no re-exec).
 
 ## AI-only anomalies and headless escalation
 

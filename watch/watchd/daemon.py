@@ -9,7 +9,7 @@ Usage: python daemon.py --project-dir /path [--interval 300] [--once] [--dry-run
 """
 from __future__ import annotations
 
-import argparse, atexit, json, os, sys, time
+import argparse, json, os, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,65 +20,13 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 
 import bootstrap; bootstrap.ensure()
 
+from core import pidfile
 from core.config import load_config as load_main_config
 from core.state import load_state, save_state, track_anomaly as track
 from core.log import append_report
 from components.registry import create_registry
 
-
-# ── PID file guard ───────────────────────────────────────────────
-def _pid_path(project_dir: Path) -> Path:
-    p = project_dir / '.claude' / 'watch' / 'state' / 'watchd.pid'
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-def _pid_alive(pid: int) -> bool:
-    """Check if a process with given PID is alive (cross-platform)."""
-    try:
-        import psutil
-        return psutil.pid_exists(pid)
-    except ImportError:
-        if sys.platform == 'win32':
-            import ctypes.wintypes
-            SYNCHRONIZE = 0x100000
-            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if not h:
-                return False
-            WAIT_TIMEOUT = 0x00000102
-            alive = ctypes.windll.kernel32.WaitForSingleObject(h, 0) == WAIT_TIMEOUT
-            ctypes.windll.kernel32.CloseHandle(h)
-            return alive
-        else:
-            try:
-                os.kill(pid, 0)
-                return True
-            except (OSError, ProcessLookupError):
-                return False
-
-
-def _acquire_pidfile(project_dir: Path) -> bool:
-    """Write PID file if no live instance holds it. Returns True if acquired."""
-    path = _pid_path(project_dir)
-    if path.exists():
-        try:
-            stale_pid = int(path.read_text(encoding='utf-8').strip())
-            if _pid_alive(stale_pid):
-                return False
-        except (ValueError, OSError):
-            pass
-    path.write_text(str(os.getpid()), encoding='utf-8')
-    atexit.register(_release_pidfile, project_dir)
-    return True
-
-
-def _release_pidfile(project_dir: Path) -> None:
-    path = _pid_path(project_dir)
-    try:
-        if path.exists():
-            path.unlink()
-    except OSError:
-        pass
+_PIDFILE = 'watchd.pid'
 
 
 def _log(project_dir: Path, log_file: str, level: str, msg: str) -> None:
@@ -175,29 +123,13 @@ def main(argv: list[str] | None = None) -> None:
     project_dir = Path(args.project_dir).resolve()
 
     # ── Single-instance guard ──
-    if not _acquire_pidfile(project_dir):
+    if not pidfile.acquire(project_dir, _PIDFILE):
         if args.force:
-            pid_path = _pid_path(project_dir)
-            stale_pid = int(pid_path.read_text(encoding='utf-8').strip())
-            try:
-                import psutil
-                p = psutil.Process(stale_pid)
-                p.terminate()
-                p.wait(timeout=5)
-            except (ImportError, psutil.NoSuchProcess):
-                import signal
-                os.kill(stale_pid, signal.SIGTERM)
-            except psutil.TimeoutExpired:
-                try:
-                    p.kill()
-                except psutil.NoSuchProcess:
-                    pass
+            pidfile.terminate(project_dir, _PIDFILE)
             time.sleep(0.5)
-            _acquire_pidfile(project_dir)
+            pidfile.acquire(project_dir, _PIDFILE)
         else:
-            pid_path = _pid_path(project_dir)
-            stale_pid = pid_path.read_text(encoding='utf-8').strip()
-            print(f'watchd already running (PID {stale_pid}). '
+            print(f'watchd already running (PID {pidfile.read(project_dir, _PIDFILE)}). '
                   f'Use --force to replace.', file=sys.stderr)
             sys.exit(1)
 

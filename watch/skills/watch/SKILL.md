@@ -1,7 +1,6 @@
 ---
 name: watch
 description: "Unattended server & task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. Use when the user asks to supervise, monitor, watch, babysit a server, check health, auto-fix, restart on failure, rollback, or set up unattended ops."
-allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebFetch, TaskCreate, TaskUpdate, ScheduleWakeup, CronCreate, CronDelete, CronList]
 ---
 
 # watch — Unattended Operations Supervisor
@@ -84,9 +83,11 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
 
 Check `report.escalation.alerts_sent_this_cycle` before sending — avoid duplicate alerts.
 
-A second escalation path exists outside the AI loop: `trigger-watch.py` polls `trigger.json`
-(written by watchd on repeated failure) and runs `/watch:watch` directly — see
-`reference/trigger-watch.md`.
+Escalation paths outside this single invocation (see `reference/trigger-watch.md`):
+- **trigger-watch.py** (session-independent daemon) polls `trigger.json` and runs
+  `scripts/watch.py` directly — the always-on base layer.
+- **Monitor** (in-session, real-time) — armed in Step 6 below, lets *this* live session
+  react the moment a new trigger lands, with full tool access.
 
 ## Step 5: Schedule Next Check
 
@@ -98,6 +99,31 @@ CronCreate, verify via CronList that the entry exists, then write
 `cron_freshness` component every 5 minutes, so a skipped or failed refresh is detected
 and escalated even if this step is forgotten. Full interval lookup, cron-expression
 calculation, verification, and marker procedure → `reference/scheduling.md`.
+
+## Step 6: Arm the in-session real-time bridge (interactive sessions only)
+
+When this skill runs in a **live, interactive session** (not a headless `claude -p` /
+cron invocation), arm a persistent `Monitor` so you react to new anomalies the instant
+watchd raises them — instead of waiting for the next cron poll. This is the full-capability
+counterpart to the `trigger-watch.py` daemon: while you are alive, you handle triggers
+yourself with every tool available.
+
+```
+Monitor(
+  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5",
+  description="watch trigger.json — anomalies raised by watchd",
+  persistent=true,
+)
+```
+
+`trigger-emit.py` is pure stdlib (no venv re-exec) and prints one `ANOMALY trigger: …`
+line per change to `trigger.json`. When such an event arrives, re-run this skill from
+Step 1 to handle it. Guidance:
+- Arm it **once** per session. If a Monitor for `trigger.json` is already running, do not start another.
+- **Skip this step entirely** in headless/cron runs — there is no session to keep reactive,
+  and the `trigger-watch.py` daemon already covers that case.
+- Reacting is idempotent: `scripts/watch.py` remedies are safe to re-run even if the
+  standalone daemon also handled the same trigger.
 
 ## Logging
 

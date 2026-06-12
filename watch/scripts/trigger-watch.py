@@ -22,10 +22,12 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 
 import bootstrap; bootstrap.ensure()
 
+from core import pidfile
 from core.config import load_config
 from core.log import append_report, get_last_report
 
 LOG_FILE = '.claude/watch/logs/trigger-watch.jsonl'
+PIDFILE = 'trigger-watch.pid'
 WATCH_PY = _PLUGIN_ROOT / 'scripts' / 'watch.py'
 
 # Anomaly types that no shell action can fix — only an agent with CronCreate/CronList
@@ -151,9 +153,25 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument('--interval', type=int, default=15)
     p.add_argument('--once', action='store_true')
     p.add_argument('--dry-run', action='store_true')
+    p.add_argument('--force', action='store_true',
+                   help='Kill existing trigger-watch and take over')
     args = p.parse_args(argv)
 
     project_dir = Path(args.project_dir).resolve()
+
+    # ── Single-instance guard (skipped for one-shot/dry runs) ──
+    if not args.once and not args.dry_run:
+        if not pidfile.acquire(project_dir, PIDFILE):
+            if args.force:
+                pidfile.terminate(project_dir, PIDFILE)
+                time.sleep(0.5)
+                pidfile.acquire(project_dir, PIDFILE)
+            else:
+                print(f'trigger-watch already running (PID '
+                      f'{pidfile.read(project_dir, PIDFILE)}). Use --force to replace.',
+                      file=sys.stderr)
+                sys.exit(1)
+
     config = load_config(project_dir)
     wd = config['watchd']
     trigger_path = project_dir / wd['trigger_file']
