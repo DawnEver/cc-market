@@ -2,273 +2,438 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import {
-  openDb, queryModelBreakdown, querySkillUsage,
-  queryCategoryBreakdown, queryModelByDay, queryDailyTokens,
+  queryModelFacts, queryCategoryFacts, querySkillFacts, querySessionFacts, openDb,
 } from '../db.mjs';
 import { scanAll } from '../scan.mjs';
-import { todayISO, getDbPath, fmt, fmtCost, fmtDuration, daysArray } from '../lib.mjs';
+import { todayISO, getDbPath } from '../lib.mjs';
 
-const CAT_LABELS = { subagent: 'Subagents', mcp: 'MCPs', plugin: 'Plugins', builtin: 'Built-in tools' };
-const CAT_COLORS = { subagent: '#7c5cff', mcp: '#1f9d6b', plugin: '#e0883a', builtin: '#5a8dd6' };
-// Deterministic palette for model bands (no Math.random in this runtime).
-const MODEL_PALETTE = ['#7c5cff', '#1f9d6b', '#e0883a', '#d6505a', '#5a8dd6', '#c45ec4', '#3ab0c0', '#9aa05a'];
+const ECHARTS_CDN = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// ── SVG charts (hand-rolled, zero-dep, offline) ──
-
-function calendarHeatmapSVG(dailyTokens, days) {
-  const byDate = {};
-  for (const r of dailyTokens) byDate[r.date] = r;
-  const max = dailyTokens.reduce((m, r) => Math.max(m, r.tokens), 0) || 1;
-  const cell = 14, gap = 3, pad = 24;
-  // Align the grid so each column is a Sun→Sat week.
-  const first = new Date(days[0] + 'T00:00:00');
-  const startOffset = first.getDay(); // 0=Sun
-  const total = startOffset + days.length;
-  const weeks = Math.ceil(total / 7);
-  const w = pad + weeks * (cell + gap) + pad;
-  const h = pad + 7 * (cell + gap) + pad;
-  const rects = [];
-  days.forEach((date, i) => {
-    const idx = startOffset + i;
-    const col = Math.floor(idx / 7), row = idx % 7;
-    const r = byDate[date];
-    const t = r ? r.tokens : 0;
-    const intensity = t > 0 ? 0.15 + 0.85 * (t / max) : 0;
-    const fill = t > 0 ? `rgba(124,92,255,${intensity.toFixed(3)})` : '#23262e';
-    const x = pad + col * (cell + gap), y = pad + row * (cell + gap);
-    const tip = `${date}: ${fmt(t)} tokens${r ? ' · ' + fmtCost(r.cost) : ''}`;
-    rects.push(`<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="2" fill="${fill}"><title>${esc(tip)}</title></rect>`);
-  });
-  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const labels = dow.map((d, row) =>
-    row % 2 === 1 ? `<text x="2" y="${pad + row * (cell + gap) + cell - 2}" class="cal-lbl">${d}</text>` : '').join('');
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart" role="img">${labels}${rects.join('')}</svg>`;
-}
-
-function stackedLineSVG(modelByDay, days) {
-  const models = [...new Set(modelByDay.map(r => r.model))];
-  const colorOf = m => MODEL_PALETTE[models.indexOf(m) % MODEL_PALETTE.length];
-  const byDate = {};
-  for (const d of days) byDate[d] = {};
-  for (const r of modelByDay) { (byDate[r.date] ||= {})[r.model] = r.tokens; }
-  const totals = days.map(d => models.reduce((s, m) => s + (byDate[d]?.[m] || 0), 0));
-  const max = Math.max(1, ...totals);
-  const W = 720, H = 240, padL = 48, padB = 28, padT = 12, padR = 12;
-  const plotW = W - padL - padR, plotH = H - padB - padT;
-  const x = i => padL + (days.length <= 1 ? plotW / 2 : (i / (days.length - 1)) * plotW);
-  const y = v => padT + plotH - (v / max) * plotH;
-  // Stacked areas, model by model.
-  const cum = days.map(() => 0);
-  const areas = models.map(m => {
-    const lower = cum.slice();
-    const upper = days.map((d, i) => cum[i] + (byDate[d]?.[m] || 0));
-    days.forEach((d, i) => { cum[i] = upper[i]; });
-    const top = upper.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-    const bot = lower.map((v, i) => `${x(i)},${y(v)}`).reverse().join(' ');
-    return `<polygon points="${top} ${bot}" fill="${colorOf(m)}" fill-opacity="0.75"><title>${esc(m)}</title></polygon>`;
-  }).join('');
-  // Axes + gridlines.
-  const ticks = [0, 0.5, 1].map(f => {
-    const v = max * f, yy = y(v);
-    return `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" class="grid"/><text x="${padL - 6}" y="${yy + 4}" class="axis" text-anchor="end">${fmt(Math.round(v))}</text>`;
-  }).join('');
-  const xlabels = days.map((d, i) =>
-    (i === 0 || i === days.length - 1 || (days.length > 6 && i === Math.floor(days.length / 2)))
-      ? `<text x="${x(i)}" y="${H - 8}" class="axis" text-anchor="middle">${d.slice(5)}</text>` : '').join('');
-  const legend = models.map(m =>
-    `<span class="lg"><i style="background:${colorOf(m)}"></i>${esc(m)}</span>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${ticks}${areas}${xlabels}</svg><div class="legend">${legend}</div>`;
-}
-
-function categoryBarSVG(rows) {
-  if (!rows.length) return '<p class="muted">No categorized tool usage in this range.</p>';
-  const totalTok = rows.reduce((s, r) => s + r.tokens, 0) || 1;
-  const max = Math.max(...rows.map(r => r.tokens), 1);
-  const bars = rows.map(r => {
-    const label = CAT_LABELS[r.category] || r.category;
-    const color = CAT_COLORS[r.category] || '#888';
-    const pct = (r.tokens / totalTok * 100).toFixed(1);
-    const w = Math.max(2, Math.round(r.tokens / max * 100));
-    return `<div class="catrow">
-      <div class="catname">${esc(label)}</div>
-      <div class="catbar"><div class="catfill" style="width:${w}%;background:${color}"></div></div>
-      <div class="catval">${fmt(r.tokens)} <span class="muted">· ${r.calls} calls · ${pct}%</span></div>
-    </div>`;
-  }).join('');
-  return `<div class="cats">${bars}</div>`;
-}
-
 // ── HTML builder (exported for tests) ──
+// The server ships a flat 90-day fact table; ALL filtering/aggregation/rendering happens
+// client-side so the user can pick any date sub-range, project subset, and grouping without
+// re-running the CLI.
 
 export function buildDashboardHtml(data) {
-  const { from, to, numDays, project, generatedAt, version, days,
-    quick, dailyTokens, modelByDay, categories, models, skills, projects } = data;
-
-  const projectRows = projects.map(p =>
-    `<tr><td>${esc(p.project)}</td><td>${p.sessions}</td><td>${fmt(p.tokens)}</td><td>${fmtCost(p.cost)}</td><td>${fmtDuration(p.totalMin)}</td></tr>`).join('');
-  const modelRows = models.map(m =>
-    `<tr><td>${esc(m.model)}</td><td>${m.calls}</td><td>${fmt(m.tokens)}</td><td>${fmtCost(m.cost)}</td></tr>`).join('');
-  const skillMax = skills[0]?.total || 1;
-  const skillRows = skills.map(s => {
-    const w = Math.round(s.total / skillMax * 100);
-    return `<div class="catrow"><div class="catname">${esc(s.name)}</div><div class="catbar"><div class="catfill" style="width:${w}%;background:#5a8dd6"></div></div><div class="catval">${s.total}</div></div>`;
-  }).join('') || '<p class="muted">No skill usage in this range.</p>';
-
+  const { meta } = data;
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>TraceMe Dashboard</title>
+<script src="${ECHARTS_CDN}"></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; background: #15171c; color: #e6e8ec; }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px; }
   header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
   h1 { font-size: 20px; margin: 0; }
   h2 { font-size: 15px; margin: 28px 0 10px; color: #c8ccd4; border-bottom: 1px solid #2a2e37; padding-bottom: 6px; }
   .sub { color: #8b909a; font-size: 12px; }
-  button { background: #7c5cff; color: #fff; border: 0; border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
-  button:hover { background: #6a4cf0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-top: 16px;
+              background: #1c1f26; border: 1px solid #262a33; border-radius: 8px; padding: 12px 14px; }
+  .ctl { display: flex; flex-direction: column; gap: 4px; }
+  .ctl > label { font-size: 11px; color: #8b909a; text-transform: uppercase; letter-spacing: .04em; }
+  input[type=date], select { background: #23262e; color: #e6e8ec; border: 1px solid #2a2e37; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+  .seg { display: inline-flex; border: 1px solid #2a2e37; border-radius: 6px; overflow: hidden; }
+  .seg button { background: #23262e; color: #b6bac2; border: 0; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .seg button.on { background: #7c5cff; color: #fff; }
+  .projbox { position: relative; }
+  .projbox > .menu { display: none; position: absolute; z-index: 10; top: 100%; left: 0; margin-top: 4px;
+                     background: #1c1f26; border: 1px solid #2a2e37; border-radius: 6px; padding: 8px; max-height: 240px; overflow: auto; min-width: 200px; }
+  .projbox.open > .menu { display: block; }
+  .projbox .menu label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 4px; cursor: pointer; }
+  .projbox > button { background: #23262e; color: #e6e8ec; border: 1px solid #2a2e37; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
   .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
   .card { background: #1c1f26; border: 1px solid #262a33; border-radius: 8px; padding: 10px 14px; min-width: 120px; }
   .card .k { font-size: 11px; color: #8b909a; text-transform: uppercase; letter-spacing: .04em; }
   .card .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
-  .chart { width: 100%; height: auto; display: block; background: #1c1f26; border: 1px solid #262a33; border-radius: 8px; padding: 8px; }
+  .chart { width: 100%; height: 260px; background: #1c1f26; border: 1px solid #262a33; border-radius: 8px; }
+  .chart.cal { height: 200px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #23262e; }
-  th { color: #8b909a; font-weight: 500; }
+  th { color: #8b909a; font-weight: 500; cursor: pointer; user-select: none; }
   td:nth-child(n+2), th:nth-child(n+2) { text-align: right; }
   .muted { color: #8b909a; }
-  .cats { display: flex; flex-direction: column; gap: 8px; }
-  .catrow { display: grid; grid-template-columns: 130px 1fr 200px; align-items: center; gap: 10px; }
-  .catname { font-size: 13px; }
-  .catbar { background: #23262e; border-radius: 4px; height: 14px; overflow: hidden; }
-  .catfill { height: 100%; }
-  .catval { font-size: 12px; text-align: right; }
-  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 12px; color: #b6bac2; }
-  .lg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
-  .cal-lbl, .axis { fill: #8b909a; font-size: 9px; }
-  .grid { stroke: #2a2e37; stroke-width: 1; }
+  .note { color: #8b909a; font-size: 12px; margin: 4px 0 0; }
   footer { margin-top: 32px; color: #6b707a; font-size: 12px; }
 </style></head>
 <body><div class="wrap">
 <header>
   <div>
     <h1>TraceMe Dashboard</h1>
-    <div class="sub">${from} → ${to} · ${numDays} day${numDays !== 1 ? 's' : ''}${project ? ` · project "${esc(project)}"` : ''} · generated ${esc(generatedAt)}</div>
+    <div class="sub">data ${meta.from} → ${meta.to} · 90-day window · local device · generated ${esc(meta.generatedAt)}</div>
   </div>
-  <button onclick="location.reload()">↻ Refresh</button>
 </header>
 
-<div class="cards">
-  <div class="card"><div class="k">Tokens</div><div class="v">${fmt(quick.tokens)}</div></div>
-  <div class="card"><div class="k">Cost</div><div class="v">${fmtCost(quick.cost)}</div></div>
-  <div class="card"><div class="k">Sessions</div><div class="v">${quick.sessions}</div></div>
-  <div class="card"><div class="k">Prompts</div><div class="v">${quick.prompts}</div></div>
-  <div class="card"><div class="k">Session time</div><div class="v">${fmtDuration(quick.totalMin)}</div></div>
-  <div class="card"><div class="k">Projects</div><div class="v">${projects.length}</div></div>
+<div class="controls">
+  <div class="ctl"><label>From</label><input type="date" id="from" min="${meta.from}" max="${meta.to}"></div>
+  <div class="ctl"><label>To</label><input type="date" id="to" min="${meta.from}" max="${meta.to}"></div>
+  <div class="ctl"><label>Projects</label>
+    <div class="projbox" id="projbox"><button id="projbtn" type="button">All projects ▾</button><div class="menu" id="projmenu"></div></div>
+  </div>
+  <div class="ctl"><label>Group by</label>
+    <div class="seg" id="groupby">
+      <button data-v="model" class="on">Model</button><button data-v="project">Project</button><button data-v="category">Category</button>
+    </div>
+  </div>
+  <div class="ctl"><label>Trend basis</label>
+    <div class="seg" id="basis">
+      <button data-v="billable" class="on">Billable</button><button data-v="cost">Cost</button>
+    </div>
+  </div>
+  <div class="ctl"><label>Cache read</label>
+    <div class="seg" id="cacheread"><button data-v="off" class="on">Hide</button><button data-v="on">Show</button></div>
+  </div>
 </div>
 
-<h2>Model Usage Calendar</h2>
-${calendarHeatmapSVG(dailyTokens, days)}
+<div class="cards" id="cards"></div>
 
-<h2>Tokens per Day by Model</h2>
-${stackedLineSVG(modelByDay, days)}
+<h2>Activity Calendar <span class="sub">(intensity = <span id="calbasis">billable tokens</span>; billable = input+output+cache_creation, excludes re-read cache)</span></h2>
+<div class="chart cal" id="calendar"></div>
 
-<h2>Token Usage by Category <span class="sub">(Plugins · Subagents · MCPs — local device)</span></h2>
-${categoryBarSVG(categories)}
+<h2>Tokens per Day <span class="sub">(stacked by <span id="trendgroup">model</span>; cache_read excluded unless toggled)</span></h2>
+<div class="chart" id="trend"></div>
+
+<h2>Breakdown <span class="sub">(selected range)</span></h2>
+<div class="chart" id="breakdown"></div>
+
+<h2>Tool-Category Tokens <span class="sub">(subagent = actual tokens · MCP/plugin/builtin ≈ result bytes, coarse estimate — not comparable, no shared %)</span></h2>
+<div class="chart" id="catchart"></div>
 
 <h2>Model Usage</h2>
-<table><thead><tr><th>Model</th><th>Calls</th><th>Tokens</th><th>Cost</th></tr></thead><tbody>${modelRows || '<tr><td colspan="4" class="muted">No data.</td></tr>'}</tbody></table>
+<table id="modeltbl"><thead><tr><th data-k="model">Model</th><th data-k="requests">Calls</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th></tr></thead><tbody></tbody></table>
 
-<h2>Token Consumption by Project</h2>
-<table><thead><tr><th>Project</th><th>Sessions</th><th>Tokens</th><th>Cost</th><th>Time</th></tr></thead><tbody>${projectRows || '<tr><td colspan="5" class="muted">No data.</td></tr>'}</tbody></table>
+<h2>Project Usage <span class="sub">(Elapsed = gross wall-clock incl. idle; sessions bucketed by start day)</span></h2>
+<table id="projtbl"><thead><tr><th data-k="project">Project</th><th data-k="sessions">Sessions</th><th data-k="tokens">Tokens</th><th data-k="cost">Cost</th><th data-k="elapsedMin">Elapsed</th></tr></thead><tbody></tbody></table>
 
 <h2>Skill Usage</h2>
-${skillRows}
+<table id="skilltbl"><thead><tr><th data-k="name">Skill</th><th data-k="total">Uses</th></tr></thead><tbody></tbody></table>
 
-<footer>TraceMe ${esc(version)} · re-run <code>traceme dashboard${numDays !== 7 ? ` --days ${numDays}` : ''}</code> then Refresh for fresh data.</footer>
+<footer>TraceMe ${esc(meta.version)} · local-device data, 90-day window · run <code>traceme rescan --all</code> to backfill older sessions, then re-run <code>traceme dashboard</code>.</footer>
 </div>
 <script>window.__TRACEME__ = ${json};</script>
+<script>${CLIENT_JS}</script>
 </body></html>`;
 }
+
+// ── Client-side app (runs in the browser; embedded verbatim) ──
+const CLIENT_JS = String.raw`
+(function () {
+  var D = window.__TRACEME__;
+  if (!window.echarts) { document.body.insertAdjacentHTML('beforeend', '<p style="color:#d6505a;padding:24px">ECharts failed to load (offline?). Reconnect and reload.</p>'); return; }
+  var fmt = function (n) {
+    n = Math.round(n);
+    if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(n);
+  };
+  var fmtCost = function (n) { return '$' + n.toFixed(4); };
+  var fmtDur = function (min) {
+    min = Math.round(min);
+    if (min < 1) return '<1m';
+    var h = Math.floor(min / 60), m = min % 60;
+    return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+  };
+  var PALETTE = ['#7c5cff', '#1f9d6b', '#e0883a', '#d6505a', '#5a8dd6', '#c45ec4', '#3ab0c0', '#9aa05a', '#b06fd6', '#6fb0a0'];
+  var CAT_LABELS = { subagent: 'Subagents', mcp: 'MCPs', plugin: 'Plugins', builtin: 'Built-in' };
+
+  // ── controls state ──
+  var state = {
+    from: D.meta.from, to: D.meta.to,
+    projects: new Set(D.meta.projects),
+    groupBy: 'model', basis: 'billable', cacheRead: false,
+    sort: { model: 'tokens', project: 'tokens', skill: 'total' },
+  };
+  // default the visible window to the last 30 days inside the 90-day data
+  (function () {
+    var to = new Date(D.meta.to + 'T00:00:00'); var from = new Date(to); from.setDate(from.getDate() - 29);
+    var iso = function (d) { return d.toISOString().slice(0, 10); };
+    if (iso(from) >= D.meta.from) state.from = iso(from);
+  })();
+
+  var billable = function (r) { return r.input + r.output + r.cache_creation; };
+  var inRange = function (r) { return r.date >= state.from && r.date <= state.to && state.projects.has(r.project); };
+
+  var charts = {};
+  function chart(id) { if (!charts[id]) charts[id] = echarts.init(document.getElementById(id), 'dark'); return charts[id]; }
+
+  // ── aggregation ──
+  function days() {
+    var out = [], d = new Date(state.from + 'T00:00:00'), end = new Date(state.to + 'T00:00:00');
+    while (d <= end) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
+    return out;
+  }
+
+  function render() {
+    var mf = D.modelFacts.filter(inRange);
+    var sf = D.sessionFacts.filter(inRange);
+    var cf = D.categoryFacts.filter(inRange);
+    var kf = D.skillFacts.filter(inRange);
+    renderCards(mf, sf);
+    renderCalendar(mf);
+    renderTrend(mf);
+    renderBreakdown(mf, cf);
+    renderCatChart(cf);
+    renderModelTable(mf);
+    renderProjectTable(mf, sf);
+    renderSkillTable(kf);
+  }
+
+  function renderCards(mf, sf) {
+    var tokens = 0, billableTok = 0, cost = 0;
+    mf.forEach(function (r) { tokens += r.tokens; billableTok += billable(r); cost += r.cost; });
+    var now = Date.now(), elapsedMin = 0, prompts = 0;
+    var sessions = sf.length, projects = {};
+    sf.forEach(function (s) {
+      projects[s.project] = 1; prompts += s.prompt_count;
+      var start = new Date(s.started_at).getTime();
+      var end = s.ended_at ? new Date(s.ended_at).getTime() : now;
+      var m = Math.round((end - start) / 60000);
+      if (!s.ended_at && m > 240) m = 240;
+      elapsedMin += Math.max(0, m);
+    });
+    var cards = [
+      ['Tokens', fmt(tokens)], ['Billable', fmt(billableTok)], ['Cost', fmtCost(cost)],
+      ['Sessions', sessions], ['Prompts', prompts], ['Elapsed', fmtDur(elapsedMin)],
+      ['Projects', Object.keys(projects).length],
+    ];
+    document.getElementById('cards').innerHTML = cards.map(function (c) {
+      return '<div class="card"><div class="k">' + c[0] + '</div><div class="v">' + c[1] + '</div></div>';
+    }).join('');
+  }
+
+  function renderCalendar(mf) {
+    var byDate = {};
+    mf.forEach(function (r) {
+      byDate[r.date] = byDate[r.date] || 0;
+      byDate[r.date] += state.basis === 'cost' ? r.cost : billable(r);
+    });
+    var dd = days(), data = dd.map(function (d) { return [d, byDate[d] || 0]; });
+    var max = data.reduce(function (m, x) { return Math.max(m, x[1]); }, 0) || 1;
+    var costMode = state.basis === 'cost';
+    chart('calendar').setOption({
+      tooltip: { formatter: function (p) { return p.value[0] + '<br/>' + (costMode ? fmtCost(p.value[1]) : fmt(p.value[1]) + ' tokens'); } },
+      visualMap: { min: 0, max: max, show: false, inRange: { color: ['#23262e', '#7c5cff'] } },
+      calendar: { top: 30, left: 40, right: 16, cellSize: ['auto', 14], range: [state.from, state.to],
+        itemStyle: { color: '#1c1f26', borderColor: '#15171c', borderWidth: 2 },
+        dayLabel: { color: '#8b909a' }, monthLabel: { color: '#8b909a' }, yearLabel: { show: false }, splitLine: { show: false } },
+      series: [{ type: 'heatmap', coordinateSystem: 'calendar', data: data }],
+    }, true);
+  }
+
+  function groupKey(r) { return state.groupBy === 'project' ? r.project : state.groupBy === 'category' ? (r.model || 'model') : r.model; }
+
+  function renderTrend(mf) {
+    var dd = days();
+    var keys = {};
+    // group dimension: model or project (category uses tool categories — fall back to model here)
+    var dim = state.groupBy === 'project' ? 'project' : 'model';
+    mf.forEach(function (r) { keys[r[dim]] = 1; });
+    var keyList = Object.keys(keys);
+    var idx = {}; dd.forEach(function (d, i) { idx[d] = i; });
+    var series = keyList.map(function (k, i) {
+      var arr = dd.map(function () { return 0; });
+      mf.forEach(function (r) { if (r[dim] === k) arr[idx[r.date]] += billable(r); });
+      return { name: k, type: 'line', stack: 'tok', areaStyle: { opacity: 0.65 }, showSymbol: false,
+        lineStyle: { width: 1 }, itemStyle: { color: PALETTE[i % PALETTE.length] }, data: arr };
+    });
+    if (state.cacheRead) {
+      var carr = dd.map(function () { return 0; });
+      mf.forEach(function (r) { carr[idx[r.date]] += r.cache_read; });
+      series.push({ name: 'cache_read (re-read)', type: 'line', stack: 'tok', areaStyle: { opacity: 0.25 },
+        showSymbol: false, lineStyle: { width: 1, type: 'dashed' }, itemStyle: { color: '#4a4e57' }, data: carr });
+    }
+    chart('trend').setOption({
+      tooltip: { trigger: 'axis', valueFormatter: fmt },
+      legend: { type: 'scroll', textStyle: { color: '#b6bac2' }, top: 0 },
+      grid: { top: 36, left: 56, right: 16, bottom: 30 },
+      xAxis: { type: 'category', data: dd, axisLabel: { color: '#8b909a', formatter: function (v) { return v.slice(5); } } },
+      yAxis: { type: 'value', axisLabel: { color: '#8b909a', formatter: fmt }, splitLine: { lineStyle: { color: '#2a2e37' } } },
+      series: series,
+    }, true);
+  }
+
+  function renderBreakdown(mf, cf) {
+    var dim = state.groupBy === 'project' ? 'project' : state.groupBy === 'category' ? 'category' : 'model';
+    var agg = {};
+    if (dim === 'category') {
+      // tokens by tool category — but keep subagent (actual) apart from byte-proxy categories
+      cf.forEach(function (r) { agg[CAT_LABELS[r.category] || r.category] = (agg[CAT_LABELS[r.category] || r.category] || 0) + r.tokens; });
+    } else {
+      mf.forEach(function (r) { agg[r[dim]] = (agg[r[dim]] || 0) + billable(r); });
+    }
+    var data = Object.keys(agg).map(function (k, i) { return { name: k, value: agg[k], itemStyle: { color: PALETTE[i % PALETTE.length] } }; })
+      .sort(function (a, b) { return b.value - a.value; });
+    chart('breakdown').setOption({
+      tooltip: { trigger: 'item', formatter: function (p) { return p.name + ': ' + fmt(p.value) + (dim === 'category' ? '' : ' (' + p.percent + '%)'); } },
+      legend: { type: 'scroll', textStyle: { color: '#b6bac2' }, top: 0 },
+      series: [{ type: 'pie', radius: ['40%', '70%'], center: ['50%', '56%'], data: data,
+        label: { color: '#b6bac2' }, labelLine: { lineStyle: { color: '#3a3e47' } } }],
+    }, true);
+  }
+
+  function renderCatChart(cf) {
+    var subagent = 0, proxy = {};
+    cf.forEach(function (r) {
+      if (r.category === 'subagent') subagent += r.tokens;
+      else proxy[r.category] = (proxy[r.category] || 0) + r.tokens;
+    });
+    var pk = Object.keys(proxy);
+    var cats = ['Subagents (actual tokens)'].concat(pk.map(function (k) { return (CAT_LABELS[k] || k) + ' (≈ bytes)'; }));
+    var vals = [subagent].concat(pk.map(function (k) { return proxy[k]; }));
+    var colors = ['#7c5cff'].concat(pk.map(function (_, i) { return PALETTE[(i + 2) % PALETTE.length]; }));
+    chart('catchart').setOption({
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
+        formatter: function (p) { var b = p[0]; return b.name + '<br/>' + fmt(b.value) + (b.dataIndex === 0 ? ' tokens' : ' (byte estimate ÷4)'); } },
+      grid: { top: 16, left: 160, right: 24, bottom: 24 },
+      xAxis: { type: 'value', axisLabel: { color: '#8b909a', formatter: fmt }, splitLine: { lineStyle: { color: '#2a2e37' } } },
+      yAxis: { type: 'category', data: cats, axisLabel: { color: '#b6bac2' }, inverse: true },
+      series: [{ type: 'bar', data: vals.map(function (v, i) { return { value: v, itemStyle: { color: colors[i] } }; }) }],
+    }, true);
+  }
+
+  function sortRows(rows, key) { return rows.sort(function (a, b) { var x = a[key], y = b[key]; return typeof x === 'string' ? String(x).localeCompare(y) : y - x; }); }
+
+  function renderModelTable(mf) {
+    var agg = {};
+    mf.forEach(function (r) {
+      var a = agg[r.model] || (agg[r.model] = { model: r.model, requests: 0, tokens: 0, cost: 0 });
+      a.requests += r.requests; a.tokens += r.tokens; a.cost += r.cost;
+    });
+    var rows = sortRows(Object.values(agg), state.sort.model);
+    fillTable('modeltbl', rows, function (r) {
+      return '<td>' + esc(r.model) + '</td><td>' + r.requests + '</td><td>' + fmt(r.tokens) + '</td><td>' + fmtCost(r.cost) + '</td>';
+    });
+  }
+
+  function renderProjectTable(mf, sf) {
+    var agg = {};
+    mf.forEach(function (r) {
+      var a = agg[r.project] || (agg[r.project] = { project: r.project, sessions: 0, tokens: 0, cost: 0, elapsedMin: 0 });
+      a.tokens += r.tokens; a.cost += r.cost;
+    });
+    var now = Date.now();
+    sf.forEach(function (s) {
+      var a = agg[s.project] || (agg[s.project] = { project: s.project, sessions: 0, tokens: 0, cost: 0, elapsedMin: 0 });
+      a.sessions++;
+      var start = new Date(s.started_at).getTime(), end = s.ended_at ? new Date(s.ended_at).getTime() : now;
+      var m = Math.round((end - start) / 60000); if (!s.ended_at && m > 240) m = 240;
+      a.elapsedMin += Math.max(0, m);
+    });
+    var rows = sortRows(Object.values(agg), state.sort.project);
+    fillTable('projtbl', rows, function (r) {
+      return '<td>' + esc(r.project) + '</td><td>' + r.sessions + '</td><td>' + fmt(r.tokens) + '</td><td>' + fmtCost(r.cost) + '</td><td>' + fmtDur(r.elapsedMin) + '</td>';
+    });
+  }
+
+  function renderSkillTable(kf) {
+    var agg = {};
+    kf.forEach(function (r) { if (r.skill_name) agg[r.skill_name] = (agg[r.skill_name] || 0) + r.count; });
+    var rows = sortRows(Object.keys(agg).map(function (k) { return { name: k, total: agg[k] }; }), state.sort.skill);
+    fillTable('skilltbl', rows, function (r) { return '<td>' + esc(r.name) + '</td><td>' + r.total + '</td>'; });
+  }
+
+  function fillTable(id, rows, rowHtml) {
+    var tb = document.querySelector('#' + id + ' tbody');
+    tb.innerHTML = rows.length ? rows.map(function (r) { return '<tr>' + rowHtml(r) + '</tr>'; }).join('')
+      : '<tr><td class="muted" colspan="9">No data in range.</td></tr>';
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  // ── wire controls ──
+  var fromEl = document.getElementById('from'), toEl = document.getElementById('to');
+  fromEl.value = state.from; toEl.value = state.to;
+  fromEl.addEventListener('change', function () { state.from = fromEl.value; render(); });
+  toEl.addEventListener('change', function () { state.to = toEl.value; render(); });
+
+  // project menu
+  var menu = document.getElementById('projmenu');
+  menu.innerHTML = '<label><input type="checkbox" id="proj_all" checked> <b>All</b></label>' +
+    D.meta.projects.map(function (p) { return '<label><input type="checkbox" class="projck" value="' + esc(p) + '" checked> ' + esc(p) + '</label>'; }).join('');
+  var box = document.getElementById('projbox');
+  document.getElementById('projbtn').addEventListener('click', function (e) { e.stopPropagation(); box.classList.toggle('open'); });
+  document.addEventListener('click', function () { box.classList.remove('open'); });
+  menu.addEventListener('click', function (e) { e.stopPropagation(); });
+  function syncProjBtn() {
+    var n = state.projects.size, total = D.meta.projects.length;
+    document.getElementById('projbtn').textContent = (n === total ? 'All projects' : n + ' of ' + total) + ' ▾';
+  }
+  menu.addEventListener('change', function (e) {
+    if (e.target.id === 'proj_all') {
+      var on = e.target.checked;
+      document.querySelectorAll('.projck').forEach(function (c) { c.checked = on; });
+      state.projects = new Set(on ? D.meta.projects : []);
+    } else {
+      var sel = [];
+      document.querySelectorAll('.projck').forEach(function (c) { if (c.checked) sel.push(c.value); });
+      state.projects = new Set(sel);
+      document.getElementById('proj_all').checked = sel.length === D.meta.projects.length;
+    }
+    syncProjBtn(); render();
+  });
+
+  function seg(id, apply) {
+    var el = document.getElementById(id);
+    el.addEventListener('click', function (e) {
+      if (e.target.tagName !== 'BUTTON') return;
+      el.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+      e.target.classList.add('on'); apply(e.target.getAttribute('data-v')); render();
+    });
+  }
+  seg('groupby', function (v) { state.groupBy = v; document.getElementById('trendgroup').textContent = v === 'project' ? 'project' : 'model'; });
+  seg('basis', function (v) { state.basis = v; document.getElementById('calbasis').textContent = v === 'cost' ? 'cost' : 'billable tokens'; });
+  seg('cacheread', function (v) { state.cacheRead = v === 'on'; });
+
+  // sortable table headers
+  ['modeltbl', 'projtbl', 'skilltbl'].forEach(function (id) {
+    var key = id === 'skilltbl' ? 'skill' : id === 'projtbl' ? 'project' : 'model';
+    document.querySelectorAll('#' + id + ' th').forEach(function (th) {
+      th.addEventListener('click', function () { state.sort[key] = th.getAttribute('data-k'); render(); });
+    });
+  });
+
+  window.addEventListener('resize', function () { Object.keys(charts).forEach(function (k) { charts[k].resize(); }); });
+  syncProjBtn(); render();
+})();
+`;
 
 // ── Command ──
 
 export function cmdDashboard(args, VERSION) {
-  const getFlag = (a, f) => { const i = a.indexOf(f); return (i >= 0 && a[i + 1] && !a[i + 1].startsWith('--')) ? a[i + 1] : null; };
-  const dayFlag = args.includes('--day');
-  const monthFlag = args.includes('--month');
-  const daysVal = getFlag(args, '--days');
-  const project = getFlag(args, '--project');
   const noOpen = args.includes('--no-open');
-
-  let numDays = 7;
-  if (dayFlag) numDays = 1;
-  else if (monthFlag) numDays = 30;
-  else if (daysVal) numDays = parseInt(daysVal) || 7;
-
-  const to = todayISO();
-  const fromDate = new Date();
-  fromDate.setDate(fromDate.getDate() - numDays + 1);
-  const from = fromDate.toISOString().slice(0, 10);
-  const days = daysArray(from, to);
-  const projectLike = project ? `%${project.toLowerCase()}%` : null;
 
   // Keep the local DB current before reporting.
   try { scanAll(); } catch {}
+  openDb();
 
-  const db = openDb();
+  const to = todayISO();
+  const fromDate = new Date(to + 'T00:00:00');
+  fromDate.setDate(fromDate.getDate() - 89);
+  const from = fromDate.toISOString().slice(0, 10);
 
-  const dailyTokens = queryDailyTokens(from, to, projectLike);
-  const modelByDay = queryModelByDay(from, to, projectLike);
-  const categories = queryCategoryBreakdown(from, to, projectLike);
+  const modelFacts = queryModelFacts(from, to);
+  const categoryFacts = queryCategoryFacts(from, to);
+  const skillFacts = querySkillFacts(from, to);
+  const sessionFacts = querySessionFacts(from, to);
 
-  // Model usage over range.
-  const modelAgg = {};
-  for (const day of days) {
-    for (const m of queryModelBreakdown(day)) {
-      const a = modelAgg[m.model] || (modelAgg[m.model] = { model: m.model, calls: 0, tokens: 0, cost: 0 });
-      a.calls += m.calls; a.tokens += m.tokens; a.cost += m.cost;
-    }
-  }
-  const models = Object.values(modelAgg).sort((a, b) => b.cost - a.cost);
-
-  // Skills over range.
-  const skillAgg = {};
-  for (const r of querySkillUsage(from, to, projectLike)) {
-    if (!r.skill_name) continue;
-    skillAgg[r.skill_name] = (skillAgg[r.skill_name] || 0) + r.count;
-  }
-  const skills = Object.entries(skillAgg).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total);
-
-  // Per-project sessions, tokens, cost, time.
-  const sql = `SELECT project, started_at, ended_at, total_tokens, total_cost
-               FROM sessions WHERE date >= ? AND date <= ?` + (projectLike ? ' AND project LIKE ?' : '');
-  const sessRows = projectLike ? db.prepare(sql).all(from, to, projectLike) : db.prepare(sql).all(from, to);
-  const now = new Date();
-  const projMap = {};
-  const quick = { tokens: 0, cost: 0, sessions: 0, prompts: 0, totalMin: 0 };
-  for (const s of sessRows) {
-    const start = new Date(s.started_at);
-    const end = s.ended_at ? new Date(s.ended_at) : now;
-    let durMin = Math.round((end - start) / 60000);
-    if (!s.ended_at && durMin > 240) durMin = 240;
-    const p = projMap[s.project] || (projMap[s.project] = { project: s.project, sessions: 0, tokens: 0, cost: 0, totalMin: 0 });
-    p.sessions++; p.tokens += s.total_tokens; p.cost += s.total_cost; p.totalMin += durMin;
-    quick.sessions++; quick.tokens += s.total_tokens; quick.cost += s.total_cost; quick.totalMin += durMin;
-  }
-  const projects = Object.values(projMap).sort((a, b) => b.tokens - a.tokens);
+  const projects = [...new Set(modelFacts.map(r => r.project).concat(sessionFacts.map(r => r.project)))].sort();
+  const models = [...new Set(modelFacts.map(r => r.model))].sort();
 
   const data = {
-    from, to, numDays, project: project || null, generatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-    version: VERSION, days, quick, dailyTokens, modelByDay, categories, models, skills, projects,
+    meta: {
+      from, to, version: VERSION,
+      generatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      projects, models,
+    },
+    modelFacts, categoryFacts, skillFacts, sessionFacts,
   };
 
   const html = buildDashboardHtml(data);

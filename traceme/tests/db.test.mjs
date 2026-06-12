@@ -10,7 +10,7 @@ import {
   upsertTakeoverTokens,
   queryDailySummary, queryToolUsage, queryModelBreakdown,
   querySkillUsage, querySessionStats, queryDbStats, deleteSession, allSessionIds,
-  queryCategoryBreakdown, queryModelByDay, queryDailyTokens,
+  queryCategoryBreakdown, queryModelFacts, querySessionFacts,
 } from '../scripts/db.mjs';
 import { categorizeTool } from '../scripts/lib.mjs';
 
@@ -87,19 +87,23 @@ describe('DB Layer', { concurrency: 1 }, () => {
     assert.equal(rows[0].tokens, 2250);
   });
 
-  it('queryCategoryBreakdown / queryModelByDay / queryDailyTokens', () => {
+  it('queryCategoryBreakdown / queryModelFacts / querySessionFacts', () => {
     const cats = queryCategoryBreakdown('2026-06-09', '2026-06-09');
     const byCat = Object.fromEntries(cats.map(c => [c.category, c]));
     assert.equal(byCat.subagent.tokens, 1200);
     assert.equal(byCat.mcp.calls, 2);
 
-    const byDay = queryModelByDay('2026-06-09', '2026-06-09');
-    assert.equal(byDay.length, 2);
-    assert.ok(byDay.every(r => r.date === '2026-06-09'));
+    // flat fact table: per date×project×model with separate token components
+    const mf = queryModelFacts('2026-06-09', '2026-06-09');
+    assert.equal(mf.length, 2);
+    assert.ok(mf.every(r => r.date === '2026-06-09' && r.project));
+    assert.ok(mf.every(r => 'input' in r && 'cache_read' in r && 'cache_creation' in r));
+    assert.equal(mf.reduce((s, r) => s + r.tokens, 0), 2250);
 
-    const daily = queryDailyTokens('2026-06-09', '2026-06-09');
-    assert.equal(daily.length, 1);
-    assert.equal(daily[0].tokens, 2250);
+    const sf = querySessionFacts('2026-06-09', '2026-06-09');
+    assert.equal(sf.length, 1);
+    assert.equal(sf[0].project, 'test-project');
+    assert.ok('started_at' in sf[0]);
   });
 
   it('categorizeTool buckets by tool name', () => {

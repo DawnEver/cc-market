@@ -4,26 +4,30 @@ import { buildDashboardHtml } from '../scripts/commands/dashboard.mjs';
 
 function sampleData() {
   return {
-    from: '2026-06-03', to: '2026-06-09', numDays: 7, project: null,
-    generatedAt: '2026-06-09 12:00', version: 'v1.2.3',
-    days: ['2026-06-03', '2026-06-04', '2026-06-05', '2026-06-06', '2026-06-07', '2026-06-08', '2026-06-09'],
-    quick: { tokens: 125000, cost: 0.45, sessions: 5, prompts: 42, totalMin: 150 },
-    dailyTokens: [
-      { date: '2026-06-08', tokens: 50000, cost: 0.2 },
-      { date: '2026-06-09', tokens: 75000, cost: 0.25 },
+    meta: {
+      from: '2026-03-13', to: '2026-06-11', version: 'v1.2.3',
+      generatedAt: '2026-06-11 12:00',
+      projects: ['my-app', 'other'], models: ['claude-opus-4-8', 'claude-sonnet-4-6'],
+    },
+    modelFacts: [
+      { date: '2026-06-08', project: 'my-app', model: 'claude-sonnet-4-6', requests: 10,
+        input: 1000, output: 2000, cache_read: 40000, cache_creation: 500, tokens: 43500, cost: 0.2 },
+      { date: '2026-06-09', project: 'my-app', model: 'claude-opus-4-8', requests: 5,
+        input: 800, output: 1500, cache_read: 70000, cache_creation: 300, tokens: 72600, cost: 0.25 },
     ],
-    modelByDay: [
-      { date: '2026-06-08', model: 'claude-sonnet-4-6', tokens: 50000 },
-      { date: '2026-06-09', model: 'claude-opus-4-8', tokens: 75000 },
+    categoryFacts: [
+      { date: '2026-06-08', project: 'my-app', category: 'subagent', calls: 3, tokens: 40000 },
+      { date: '2026-06-08', project: 'my-app', category: 'mcp', calls: 5, tokens: 12000 },
+      { date: '2026-06-09', project: 'my-app', category: 'plugin', calls: 2, tokens: 3000 },
     ],
-    categories: [
-      { category: 'subagent', calls: 3, tokens: 40000 },
-      { category: 'mcp', calls: 5, tokens: 12000 },
-      { category: 'plugin', calls: 2, tokens: 3000 },
+    skillFacts: [
+      { date: '2026-06-08', project: 'my-app', skill_name: 'rem:rem', count: 4 },
+      { date: '2026-06-09', project: 'my-app', skill_name: 'verify', count: 1 },
     ],
-    models: [{ model: 'claude-opus-4-8', calls: 10, tokens: 75000, cost: 0.3 }],
-    skills: [{ name: 'rem:rem', total: 4 }, { name: 'verify', total: 1 }],
-    projects: [{ project: 'my-app', sessions: 5, tokens: 125000, cost: 0.45, totalMin: 150 }],
+    sessionFacts: [
+      { date: '2026-06-08', project: 'my-app', started_at: '2026-06-08T10:00:00Z',
+        ended_at: '2026-06-08T12:30:00Z', prompt_count: 20, total_tokens: 43500, total_cost: 0.2 },
+    ],
   };
 }
 
@@ -35,27 +39,48 @@ describe('Dashboard HTML builder', () => {
     assert.ok(html.includes('</html>'));
   });
 
-  it('has no external network references', () => {
-    assert.ok(!/<script\s+src=/i.test(html), 'no external scripts');
-    assert.ok(!/https?:\/\//.test(html.replace(/xmlns="[^"]*"/g, '')), 'no external URLs');
+  it('loads ECharts from a CDN', () => {
+    assert.match(html, /<script\s+src="https:\/\/cdn\.jsdelivr\.net\/npm\/echarts@5[^"]*"><\/script>/);
   });
 
-  it('renders the three signature chart sections', () => {
-    assert.ok(html.includes('Model Usage Calendar'));
-    assert.ok(html.includes('Tokens per Day by Model'));
-    assert.ok(html.includes('Token Usage by Category'));
-    assert.ok(html.includes('<svg'), 'inline SVG charts present');
-  });
-
-  it('embeds the data payload and a refresh control', () => {
+  it('embeds the flat fact-table payload', () => {
     assert.ok(html.includes('window.__TRACEME__'));
-    assert.ok(html.includes('location.reload()'));
-    assert.ok(html.includes('Subagents') && html.includes('MCPs') && html.includes('Plugins'));
+    const payload = html.slice(html.indexOf('window.__TRACEME__'));
+    assert.ok(payload.includes('modelFacts'));
+    assert.ok(payload.includes('categoryFacts'));
+    assert.ok(payload.includes('skillFacts'));
+    assert.ok(payload.includes('sessionFacts'));
+    // separate token components must survive so the client can pick a billable vs cache_read basis
+    assert.ok(payload.includes('cache_creation') && payload.includes('cache_read'));
+  });
+
+  it('renders interactive controls (date range, projects, group-by)', () => {
+    assert.ok(html.includes('id="from"') && html.includes('id="to"'));
+    assert.ok(html.includes('id="projmenu"'));
+    assert.ok(html.includes('id="groupby"'));
+  });
+
+  it('renders the signature chart sections', () => {
+    assert.ok(html.includes('Activity Calendar'));
+    assert.ok(html.includes('Tokens per Day'));
+    assert.ok(html.includes('Breakdown'));
+  });
+
+  it('encodes the data-honesty fixes (billable basis, byte-proxy split, Elapsed)', () => {
+    // calendar/trend default to billable, excluding re-read cache
+    assert.ok(/billable\s*=\s*input\+output\+cache_creation/.test(html));
+    // tool-category section keeps subagent (actual) apart from byte-proxy categories
+    assert.ok(html.includes('≈ result bytes') || html.includes('≈ bytes'));
+    assert.ok(html.includes('actual tokens'));
+    // session time is labeled Elapsed, not "Session time"
+    assert.ok(html.includes('Elapsed'));
+    assert.ok(!/Session time/.test(html));
   });
 
   it('escapes embedded JSON so it cannot break out of the script tag', () => {
     const hostile = sampleData();
-    hostile.projects = [{ project: '</script><x>', sessions: 1, tokens: 1, cost: 0, totalMin: 1 }];
+    hostile.modelFacts = [{ date: '2026-06-09', project: '</script><x>', model: 'm',
+      requests: 1, input: 1, output: 1, cache_read: 0, cache_creation: 0, tokens: 2, cost: 0 }];
     const out = buildDashboardHtml(hostile);
     const payload = out.slice(out.indexOf('window.__TRACEME__'));
     assert.ok(!payload.includes('</script><x>'), 'raw </script> must not survive in the JSON payload');

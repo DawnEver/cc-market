@@ -68,15 +68,19 @@ Re-derives the local DB from the Claude Code transcripts at `~/.claude/projects/
 
 ### Dashboard
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --days 30   # Generate & open visual HTML dashboard
-node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open   # Write file only, don't open browser
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard            # Generate & open interactive HTML dashboard
+node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open  # Write file only, don't open browser
 ```
 
-Generates a self-contained HTML dashboard at `~/.claude/traceme/dashboard.html` and opens it:
-a model-usage calendar heatmap, a tokens-per-day-by-model curve, and a Plugins/Subagents/MCPs
-token breakdown, plus model/project/skill tables. Re-run the command and click **Refresh** for
-fresh data. Charts are inline SVG (offline, zero-dep); category/model data is local-device only.
-Run `rescan --all` once first to backfill category data for older sessions.
+Generates an interactive HTML dashboard at `~/.claude/traceme/dashboard.html` and opens it.
+It embeds the **last 90 days** of local data and renders with **Apache ECharts via CDN** (needs
+internet on first open). Filter entirely in-browser — no CLI re-run: pick the **date range**,
+filter by **projects**, switch grouping **model / project / category**, toggle calendar intensity
+between **tokens and cost**, and toggle the **cache_read** layer. Calendar/trend default to
+*billable* tokens (`input+output+cache_creation`, excludes re-read cache); the tool-category chart
+keeps `subagent` (actual tokens) apart from MCP/plugin/builtin (`≈ result-bytes`, coarse estimate);
+"Elapsed" is gross wall-clock incl. idle. Category/model data is local-device only — run
+`rescan --all` once to backfill older sessions.
 
 ### Errors
 ```bash

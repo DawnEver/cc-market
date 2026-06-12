@@ -264,29 +264,57 @@ export function queryCategoryBreakdown(from, to, projectLike = null) {
   return db.prepare(sql).all(...params);
 }
 
-// Per-day per-model token totals — powers the stacked tokens/day chart.
-export function queryModelByDay(from, to, projectLike = null) {
-  const params = [from, to];
-  let sql = `
-    SELECT s.date AS date, sm.model AS model,
-           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens
+// ── Flat fact tables over a date range (power the interactive dashboard) ──
+// Each row keeps date + project so the browser can re-filter/aggregate any sub-range
+// and project subset client-side. Token components stay separate so the client can
+// pick a billable basis (input+output+cache_creation) vs. cache_read on demand.
+
+export function queryModelFacts(from, to) {
+  return db.prepare(`
+    SELECT s.date AS date, s.project AS project, sm.model AS model,
+           SUM(sm.requests) AS requests,
+           SUM(sm.input_tokens) AS input,
+           SUM(sm.output_tokens) AS output,
+           SUM(sm.cache_read_tokens) AS cache_read,
+           SUM(sm.cache_creation_tokens) AS cache_creation,
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens,
+           SUM(sm.cost) AS cost
     FROM session_models sm JOIN sessions s ON sm.session_id = s.id
-    WHERE s.date >= ? AND s.date <= ?`;
-  if (projectLike) { sql += ' AND s.project LIKE ?'; params.push(projectLike); }
-  sql += ' GROUP BY s.date, sm.model ORDER BY s.date ASC';
-  return db.prepare(sql).all(...params);
+    WHERE s.date >= ? AND s.date <= ?
+    GROUP BY s.date, s.project, sm.model
+    ORDER BY s.date ASC
+  `).all(from, to);
 }
 
-// Per-day token + cost totals — powers the calendar heatmap.
-export function queryDailyTokens(from, to, projectLike = null) {
-  const params = [from, to];
-  let sql = `
-    SELECT date, COALESCE(SUM(total_tokens),0) AS tokens, COALESCE(SUM(total_cost),0) AS cost
+export function queryCategoryFacts(from, to) {
+  return db.prepare(`
+    SELECT s.date AS date, s.project AS project, sc.category AS category,
+           SUM(sc.calls) AS calls, SUM(sc.tokens) AS tokens
+    FROM session_categories sc JOIN sessions s ON sc.session_id = s.id
+    WHERE s.date >= ? AND s.date <= ?
+    GROUP BY s.date, s.project, sc.category
+    ORDER BY s.date ASC
+  `).all(from, to);
+}
+
+export function querySkillFacts(from, to) {
+  return db.prepare(`
+    SELECT s.date AS date, s.project AS project, ss.skill_name AS skill_name,
+           SUM(ss.count) AS count
+    FROM session_skills ss JOIN sessions s ON ss.session_id = s.id
+    WHERE s.date >= ? AND s.date <= ?
+    GROUP BY s.date, s.project, ss.skill_name
+    ORDER BY s.date ASC
+  `).all(from, to);
+}
+
+export function querySessionFacts(from, to) {
+  return db.prepare(`
+    SELECT date, project, started_at, ended_at, prompt_count, total_tokens, total_cost
     FROM sessions
-    WHERE date >= ? AND date <= ?`;
-  if (projectLike) { sql += ' AND project LIKE ?'; params.push(projectLike); }
-  sql += ' GROUP BY date ORDER BY date ASC';
-  return db.prepare(sql).all(...params);
+    WHERE date >= ? AND date <= ?
+    ORDER BY started_at ASC
+  `).all(from, to);
 }
 
 export function queryDbStats() {
