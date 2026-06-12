@@ -38,6 +38,16 @@ class Action:
     timeout: int = 30
     fetch_before: bool = True         # for rollback
     set_var: dict[str, str] | None = None  # set context variables
+    # Managed-service form — the executor resolves the plugin's bundled
+    # kill-server.py / start-server.py itself, so config never hand-writes the
+    # "locate plugin scripts dir + shell out" boilerplate. Cross-platform and
+    # project-agnostic. start_dir / start_log are relative to the project dir.
+    kill_port: str | int | list | None = None  # port(s) to free before (re)starting
+    kill_pattern: str | None = None            # process-name pattern to kill
+    start_cmd: str | None = None               # command to spawn detached
+    start_dir: str | None = None               # cwd for start_cmd (rel. to project dir)
+    start_log: str | None = None               # stdout/stderr log (rel. to project dir)
+    steps: list[str] | None = None             # compose other named actions in order
 
 
 @dataclass

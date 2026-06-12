@@ -14,6 +14,7 @@ from pathlib import Path
 
 from core.config import load_config
 from core.loop import run
+from core.pidfile import pid_alive
 
 
 # ── PID file lock for one-shot runs ────────────────────────────
@@ -23,36 +24,13 @@ def _pid_path(project_dir: Path) -> Path:
     return p
 
 
-def _pid_alive(pid: int) -> bool:
-    try:
-        import psutil
-        return psutil.pid_exists(pid)
-    except ImportError:
-        if sys.platform == 'win32':
-            import ctypes.wintypes
-            SYNCHRONIZE = 0x100000
-            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if not h:
-                return False
-            WAIT_TIMEOUT = 0x00000102
-            alive = ctypes.windll.kernel32.WaitForSingleObject(h, 0) == WAIT_TIMEOUT
-            ctypes.windll.kernel32.CloseHandle(h)
-            return alive
-        else:
-            try:
-                os.kill(pid, 0)
-                return True
-            except (OSError, ProcessLookupError):
-                return False
-
-
 def _try_lock(project_dir: Path) -> bool:
     """Try to acquire the one-shot check lock. Returns True if acquired."""
     path = _pid_path(project_dir)
     if path.exists():
         try:
             stale_pid = int(path.read_text(encoding='utf-8').strip())
-            if _pid_alive(stale_pid):
+            if pid_alive(stale_pid):
                 print(f'[watch] check already running (PID {stale_pid}), '
                       f'skipping duplicate.', file=sys.stderr)
                 return False
@@ -166,7 +144,7 @@ def _print_status(project_dir: Path) -> None:
         print(json.dumps({'daemon': 'not_running', 'reason': 'corrupt PID file'}, ensure_ascii=False))
         return
 
-    alive = _pid_alive(pid)
+    alive = pid_alive(pid)
 
     # Heartbeat freshness
     hb_age = None

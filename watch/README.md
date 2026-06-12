@@ -164,7 +164,32 @@ probe.<name>                   — parsed probe output
 ### Actions
 
 Built-in: `restart`, `rollback`, `check_commits`, `log`.
-Custom: defined in `actions.custom[]` with `command` and optional `kill`.
+
+Custom actions live under `actions:` and take one of these forms:
+
+```yaml
+actions:
+  # 1. Shell form — run/kill arbitrary commands yourself.
+  restart:
+    kill: "pkill -f uvicorn"          # str or list
+    start: "python -m my_server"      # str or list
+    wait: 3
+
+  # 2. Managed-service form — the executor resolves the bundled, cross-platform
+  #    kill-server.py / start-server.py itself; no inline plugin-path glob, no
+  #    OS-specific kill/spawn. start_dir / start_log are relative to project-dir.
+  restart_backend:
+    kill_port: 8000                   # int | str | list — port(s) to free
+    kill_pattern: "uvicorn"           # optional process-name pattern
+    start_cmd: "python -m my_server"  # spawned detached
+    start_dir: "../deploy"            # cwd (default: project dir)
+    start_log: ".claude/watch/logs/backend.log"
+    wait: 3
+
+  # 3. Composition form — run other named actions in order (no duplicated commands).
+  restart_all:
+    steps: ["restart_backend", "restart_frontend"]
+```
 
 ### Remedies
 

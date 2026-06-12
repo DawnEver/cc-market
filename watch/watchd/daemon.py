@@ -21,21 +21,13 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 import bootstrap; bootstrap.ensure()
 
 from core import pidfile
-from core.config import load_config as load_main_config
+from core.config import load_config
 from core.remediate import apply_remedies
 from core.state import load_state, save_state, track_anomaly as track
-from core.log import append_report
+from core.log import log_event
 from components.registry import create_registry
 
 _PIDFILE = 'watchd.pid'
-
-
-def _load_config(project_dir: Path) -> dict:
-    """Load config and stamp _project_dir so components resolve paths against
-    the project dir, not the daemon's cwd (which need not be the project)."""
-    cfg = load_main_config(project_dir)
-    cfg['_project_dir'] = str(project_dir)
-    return cfg
 
 
 def _write_heartbeat(project_dir: Path, heartbeat_file: str) -> None:
@@ -51,10 +43,7 @@ def _write_heartbeat(project_dir: Path, heartbeat_file: str) -> None:
 
 
 def _log(project_dir: Path, log_file: str, level: str, msg: str) -> None:
-    ts = datetime.now(timezone.utc).isoformat()
-    print(f'[{ts}] {level}: {msg}')
-    append_report({'ts': ts, 'level': level, 'msg': msg}, project_dir,
-                  log_file=log_file, max_entries=0)
+    log_event(project_dir, log_file, level, msg)
 
 
 def _wake_claude(project_dir: Path, config: dict, reason: str, detail: str,
@@ -176,7 +165,7 @@ def main(argv: list[str] | None = None) -> None:
                   f'Use --force to replace.', file=sys.stderr)
             sys.exit(1)
 
-    config = _load_config(project_dir)
+    config = load_config(project_dir)
     wd = config['watchd']
 
     # CLI interval overrides config; config overrides defaults
@@ -194,7 +183,7 @@ def main(argv: list[str] | None = None) -> None:
             return
         while True:
             time.sleep(interval)
-            config = _load_config(project_dir)
+            config = load_config(project_dir)
             registry = create_registry(config, project_dir)
             if registry.enabled():
                 _log(project_dir, log_file, 'info', 'Components now enabled, starting polling.')
@@ -209,7 +198,7 @@ def main(argv: list[str] | None = None) -> None:
 
     while True:
         time.sleep(interval)
-        config = _load_config(project_dir)
+        config = load_config(project_dir)
         registry = create_registry(config, project_dir)
         state = load_state(project_dir, state_file)
         _poll(project_dir, registry, config, state, args.dry_run)
