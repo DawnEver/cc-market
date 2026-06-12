@@ -3,6 +3,8 @@ import { getProjectName, getGitRemote, getProjectRoot, normalizeRemoteUrl, today
 import { scanTakeoverTraces } from '../scripts/ingest.mjs';
 import { scanAll } from '../scripts/scan.mjs';
 import { appendFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 function logError(msg) {
   try { appendFileSync(ERROR_LOG, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
@@ -71,17 +73,30 @@ async function main() {
           logError(`takeover trace ingest failed: ${e.message}`);
         }
 
-        // Push encrypted daily snapshot (throttled on Stop, forced on SessionEnd).
+        // Push encrypted daily snapshot. On Stop the session continues, so push
+        // inline (throttled). On SessionEnd the session is tearing down and Claude
+        // Code won't wait for a network git push — doing it inline gets "Hook
+        // cancelled" — so detach a background process and return immediately.
         try {
           const { hasKey } = await import('../scripts/crypto.mjs');
           if (hasKey()) {
             const last = parseInt(getMeta('last_push_ms') || '0', 10);
             const due = event === 'SessionEnd' || (Date.now() - last) > PUSH_INTERVAL_MS;
             if (due) {
-              const syncUrl = new URL('../scripts/sync.mjs', import.meta.url).href;
-              const { pushSnapshot } = await import(syncUrl);
-              await pushSnapshot();
               setMeta('last_push_ms', String(Date.now()));
+              if (event === 'SessionEnd') {
+                const cli = fileURLToPath(new URL('../scripts/traceme-cli.mjs', import.meta.url));
+                const child = spawn(process.execPath, [cli, 'sync', 'push'], {
+                  detached: true,
+                  stdio: 'ignore',
+                  windowsHide: true,
+                });
+                child.unref();
+              } else {
+                const syncUrl = new URL('../scripts/sync.mjs', import.meta.url).href;
+                const { pushSnapshot } = await import(syncUrl);
+                await pushSnapshot();
+              }
             }
           }
         } catch (e) {
