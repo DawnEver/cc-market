@@ -12,10 +12,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from components.base import Action, Anomaly, CheckResult, Component, RemedyStep
+from core.state import atomic_write_text, file_lock
 
 
 # ── Known-good snapshot ─────────────────────────────────────────────────
@@ -37,13 +39,12 @@ def load_known(comp_cfg: dict, project: Path) -> dict[str, str]:
 
 def save_known(comp_cfg: dict, project: Path, commits: dict[str, str]) -> None:
     path = known_good_path(comp_cfg, project)
-    path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         'updated_at': datetime.now(timezone.utc).isoformat(),
         'repos': commits,
     }
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n',
-                    encoding='utf-8')
+    with file_lock(path):
+        atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + '\n')
 
 
 # ── Failed-commit tracking (escalate after N distinct failed deploys) ───
@@ -65,15 +66,16 @@ def load_failures(comp_cfg: dict, project: Path) -> list[str]:
 
 def record_failure(comp_cfg: dict, project: Path, signature: str) -> list[str]:
     """Append a distinct failed-deploy signature; return the full list."""
-    sigs = load_failures(comp_cfg, project)
-    if signature and signature not in sigs:
-        sigs.append(signature)
     path = failures_path(comp_cfg, project)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        'updated_at': datetime.now(timezone.utc).isoformat(),
-        'signatures': sigs,
-    }, ensure_ascii=False) + '\n', encoding='utf-8')
+    with file_lock(path):
+        # Re-read inside the lock so concurrent appends can't clobber each other.
+        sigs = load_failures(comp_cfg, project)
+        if signature and signature not in sigs:
+            sigs.append(signature)
+        atomic_write_text(path, json.dumps({
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            'signatures': sigs,
+        }, ensure_ascii=False) + '\n')
     return sigs
 
 
@@ -112,6 +114,35 @@ def current_heads(comp_cfg: dict, project: Path) -> dict[str, str]:
     return heads
 
 
+def classify_fetch_error(stderr: str) -> str:
+    """Bucket a `git fetch` failure into a structured reason from its stderr.
+
+    Returns one of: 'auth', 'network', 'corrupt', 'unknown'. Used to tell a human
+    triaging a fetch_unreachable escalation *which* failure mode they're facing.
+    """
+    s = (stderr or '').lower()
+    auth = ('authentication failed', 'could not read username', 'permission denied',
+            'access denied', 'invalid username or password', 'remote: forbidden',
+            '403 forbidden', '401 unauthorized', 'publickey')
+    network = ('could not resolve host', 'connection timed out', 'connection refused',
+               'connection reset', 'operation timed out', 'network is unreachable',
+               'failed to connect', 'temporary failure in name resolution',
+               'timed out', 'no route to host', 'unable to access')
+    corrupt = ('not a git repository', 'does not appear to be a git repository',
+               'bad object', 'object file', 'loose object', 'corrupt',
+               'repository not found', 'fatal: could not read from remote repository')
+    for needle in auth:
+        if needle in s:
+            return 'auth'
+    for needle in network:
+        if needle in s:
+            return 'network'
+    for needle in corrupt:
+        if needle in s:
+            return 'corrupt'
+    return 'unknown'
+
+
 def remote_heads(comp_cfg: dict, project: Path,
                  fetch: bool = True) -> tuple[dict[str, str], list[str]]:
     """Remote tracking HEAD (`<remote>/<branch>`) of each repo, optionally fetching.
@@ -120,6 +151,10 @@ def remote_heads(comp_cfg: dict, project: Path,
     did not succeed after retries. This matters because on fetch failure the stale
     local remote-tracking ref still resolves — silently masking new upstream commits
     as "no change". Callers escalate persistent fetch_failed so the blindness is loud.
+
+    Each fetch_failed entry is formatted ``"<repo> (<reason>)"`` where reason is the
+    classified failure mode (auth/network/corrupt/unknown), so the escalation message
+    can say *which* failure occurred.
     """
     heads: dict[str, str] = {}
     fetch_failed: list[str] = []
@@ -133,17 +168,24 @@ def remote_heads(comp_cfg: dict, project: Path,
             # git fetch against this remote is flaky (auth/network) and often
             # only succeeds on a later attempt — retry a few times.
             ok = False
+            last_stderr = ''
             for attempt in range(3):
-                r = subprocess.run(['git', 'fetch', remote], cwd=repo_path,
-                                   capture_output=True, text=True, timeout=30)
+                try:
+                    r = subprocess.run(['git', 'fetch', remote], cwd=repo_path,
+                                       capture_output=True, text=True, timeout=30)
+                except subprocess.TimeoutExpired:
+                    last_stderr = 'operation timed out'
+                    continue
                 if r.returncode == 0:
                     ok = True
                     break
+                last_stderr = r.stderr.strip()
                 if attempt == 2:
                     print(f'[git_version] fetch {remote} failed for {repo["name"]} '
-                          f'after 3 attempts: {r.stderr.strip()[:200]}')
+                          f'after 3 attempts: {last_stderr[:200]}')
             if not ok:
-                fetch_failed.append(repo['name'])
+                reason = classify_fetch_error(last_stderr)
+                fetch_failed.append(f'{repo["name"]} ({reason})')
         try:
             heads[repo['name']] = subprocess.check_output(
                 ['git', 'rev-parse', f'{remote}/{branch}'],
@@ -183,14 +225,42 @@ def health_check_url(url: str, timeout: int, interval: float = 2.0) -> bool:
     return False
 
 
-def remove_worktree(staging_path: Path, repo_path: Path) -> None:
-    """Remove a git worktree, falling back to shutil.rmtree."""
+def remove_worktree(staging_path: Path, repo_path: Path, retries: int = 4) -> None:
+    """Idempotently remove a git worktree; never raise on an already-gone tree.
+
+    On Windows, freshly-used worktrees keep file handles (test runners, the OS
+    indexer) that release slowly, so `git worktree remove --force` can transiently
+    fail — retry with short exponential backoff before falling back to rmtree."""
+    if not staging_path.exists():
+        # Already removed — still prune any dangling registration, best-effort.
+        try:
+            subprocess.run(['git', 'worktree', 'prune'], cwd=repo_path,
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
+        return
+
+    delay = 0.2
+    for attempt in range(retries):
+        try:
+            r = subprocess.run(
+                ['git', 'worktree', 'remove', '--force', str(staging_path)],
+                cwd=repo_path, capture_output=True, text=True, timeout=10)
+            if r.returncode == 0 or not staging_path.exists():
+                break
+        except subprocess.TimeoutExpired:
+            pass
+        if attempt < retries - 1:
+            time.sleep(delay)
+            delay = min(delay * 2, 1.5)
+
     try:
-        subprocess.run(['git', 'worktree', 'remove', '--force', str(staging_path)],
-                       cwd=repo_path, capture_output=True, timeout=10)
         subprocess.run(['git', 'worktree', 'prune'], cwd=repo_path,
                        capture_output=True, timeout=5)
     except Exception:
+        pass
+    # Last resort: physically drop the directory if git couldn't.
+    if staging_path.exists():
         shutil.rmtree(staging_path, ignore_errors=True)
 
 
@@ -342,12 +412,12 @@ class GitVersion(Component):
     def execute_action(self, action_name: str, comp_cfg: dict, global_cfg: dict,
                        project: Path, context: dict) -> bool:
         if action_name == 'deploy':
-            from components.git_version_deploy import deploy_repos
+            from components.versioning.git_version_deploy import deploy_repos
             return deploy_repos(comp_cfg, project, context)
         if action_name == 'rollback':
             return rollback_repos(comp_cfg, project)
         if action_name == 'recover_service':
-            from components.git_version_deploy import recover_service
+            from components.versioning.git_version_deploy import recover_service
             return recover_service(comp_cfg, project, context)
         if action_name == 'notify':
             return True

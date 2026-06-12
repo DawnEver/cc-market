@@ -3,11 +3,17 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_PLUGIN_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_PLUGIN_ROOT))
+sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
+
 import bootstrap
 bootstrap.ensure()
 
 import argparse
-import sys
 
 from core.alert import send_email, send_webhook
 from core.config import load_config

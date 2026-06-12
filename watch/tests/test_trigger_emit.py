@@ -16,7 +16,7 @@ _PLUGIN_ROOT = _HERE.parent
 # trigger-emit.py has a hyphen, so it can't be `import`ed normally. It is pure stdlib
 # (no bootstrap), so loading it does not re-exec.
 _spec = importlib.util.spec_from_file_location(
-    'trigger_emit', _PLUGIN_ROOT / 'scripts' / 'trigger-emit.py')
+    'trigger_emit', _PLUGIN_ROOT / 'scripts' / 'cli' / 'trigger-emit.py')
 assert _spec is not None and _spec.loader is not None
 trigger_emit = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(trigger_emit)

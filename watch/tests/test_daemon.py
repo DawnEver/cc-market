@@ -241,7 +241,7 @@ class TestWakeClaudeTriggerPayload(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.project = Path(self.tmp.name)
-        from watchd import daemon
+        from scripts.daemon import daemon
         self.daemon = daemon
         self.config = {'watchd': {
             'trigger_file': '.claude/watch/trigger.json',

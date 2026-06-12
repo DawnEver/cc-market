@@ -13,11 +13,11 @@ sys.path.insert(0, str(_HERE.parent))
 sys.path.insert(0, str(_HERE.parent / 'scripts'))
 
 from components.base import CheckResult, Anomaly, Component
-from components.disk_usage import DiskUsage
-from components.http_health import HttpHealth
-from components.shell_probe import ShellProbe
-from components.watchd_heartbeat import WatchdHeartbeat
-from components.process_monitor import ProcessMonitor
+from components.resources.disk_usage import DiskUsage
+from components.health.http_health import HttpHealth
+from components.health.shell_probe import ShellProbe
+from components.health.watchd_heartbeat import WatchdHeartbeat
+from components.resources.process_monitor import ProcessMonitor
 
 
 class TestDiskUsage(unittest.TestCase):

@@ -12,7 +12,7 @@ from components.base import Action, run_command
 # Bundled helper scripts ship alongside the plugin; resolve them from this
 # file's location so config never globs ~/.claude/plugins/... (install-root and
 # cache-layout fragile) to find them.
-_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / 'scripts'
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / 'scripts' / 'helpers'
 
 
 def _run_script(script: str, args: list[str], cwd: Path,

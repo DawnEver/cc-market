@@ -11,7 +11,7 @@ Run the monitor once and display results. No scheduling, no auto-repair.
 ## Execution
 
 ```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py \
+python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
   --project-dir ${CLAUDE_PROJECT_DIR} \
   --json
 ```

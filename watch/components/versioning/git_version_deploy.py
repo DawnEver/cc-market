@@ -3,12 +3,17 @@ worktree to it and restart production. No backport, no deploy-branch edits."""
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
+import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from components.git_version import (
+from core.log import append_report
+from core.pidfile import pid_alive
+from components.versioning.git_version import (
     changed_targets,
     clear_failures,
     deploy_path,
@@ -55,14 +60,80 @@ def _run_restart(comp_cfg: dict, project: Path, context: dict,
     _execute_action(act, project, registry, '', context)
 
 
+_DEPLOY_LOCK = '.claude/watch/state/deploy.lock'
+_DEPLOY_AUDIT = '.claude/watch/logs/deploy.jsonl'
+
+
+_DEPLOY_THREAD_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _deploy_lock(project: Path):
+    """Single 'deploy-in-progress' guard. Yields True if we hold it, False if a
+    deploy already runs (caller must bail without touching staging). Serializes both
+    across threads (an in-process ``threading.Lock``) and across processes (an
+    ``O_EXCL`` lockfile whose live owner — same or other PID — blocks). A stale lock
+    whose owner PID is dead is taken over (reuses pidfile.pid_alive)."""
+    lock = project / _DEPLOY_LOCK
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    # In-process guard: a second deploy on another thread must see us as busy.
+    if not _DEPLOY_THREAD_LOCK.acquire(blocking=False):
+        yield False
+        return
+    held = False
+    try:
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            owner = None
+            with contextlib.suppress(ValueError, OSError):
+                owner = int(lock.read_text(encoding='ascii').strip())
+            # A live owner (this PID or another) means a deploy is in progress.
+            if owner is not None and pid_alive(owner):
+                yield False
+                return
+            # Stale (dead owner / unreadable) — take it over.
+            with contextlib.suppress(OSError):
+                lock.unlink()
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode('ascii'))
+        os.close(fd)
+        held = True
+        yield True
+    finally:
+        if held:
+            with contextlib.suppress(OSError):
+                lock.unlink()
+        _DEPLOY_THREAD_LOCK.release()
+
+
+def _audit(project: Path, **fields) -> None:
+    """Append one structured per-deploy event to deploy.jsonl (best-effort)."""
+    event = {'ts': datetime.now(timezone.utc).isoformat(), **fields}
+    with contextlib.suppress(Exception):
+        append_report(event, project, log_file=_DEPLOY_AUDIT, max_entries=10000)
+
+
 def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
     """Test changed main commits in staging worktrees, then swap deploy
     worktrees and restart production. Records a distinct failure signature on
-    any gate failure (production is never left broken)."""
+    any gate failure (production is never left broken). Serialized by a single
+    deploy-in-progress lock so a second concurrent deploy bails cleanly."""
+    with _deploy_lock(project) as acquired:
+        if not acquired:
+            print('[git_version] Another deploy is in progress — skipping.')
+            _audit(project, phase='lock', outcome='skipped',
+                   reason='another deploy in progress')
+            return False
+        return _deploy_repos_locked(comp_cfg, project, context)
+
+
+def _deploy_repos_locked(comp_cfg: dict, project: Path, context: dict) -> bool:
     deploy_cfg = comp_cfg.get('deploy', {})
     repos = comp_cfg.get('repositories', [])
     test_cmd = deploy_cfg.get('test_command', '')
     staging_base = project / deploy_cfg.get('staging_dir', '.watch-staging')
+    t_start = time.time()
     if not repos:
         print('[git_version] No repositories configured.')
         return False
@@ -77,13 +148,19 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
     nests = _nest_map(repos)
     print(f'[git_version] Deploying {len(repos_to_deploy)} repo(s): '
           f'{", ".join(r["name"] for r in repos_to_deploy)}')
+    _audit(project, phase='start', outcome='running', commits=dict(changed),
+           repos=[r['name'] for r in repos_to_deploy])
 
-    def _fail(reason: str) -> bool:
+    def _fail(reason: str, phase: str = 'unknown', rollback_reason: str = '') -> bool:
         sigs = record_failure(comp_cfg, project, sig)
         context['deploy_result'] = 'failed'
         context['deploy_failure_reason'] = reason
         print(f'[git_version] Deploy ABORTED — {reason} '
               f'({len(sigs)} distinct failed commit(s)).')
+        _audit(project, phase=phase, outcome='failed', error=reason,
+               rollback_reason=rollback_reason, commits=dict(changed),
+               failed_commit_count=len(sigs),
+               duration_s=round(time.time() - t_start, 1))
         return False
 
     # ── Phase 1: staging worktrees (+ nested dependencies) ──
@@ -110,7 +187,7 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] worktree FAILED: {e.stderr}')
             _cleanup()
-            return _fail(f'staging worktree creation failed for {name}')
+            return _fail(f'staging worktree creation failed for {name}', phase='staging')
         staging_dirs[name] = staging
         print(f'[git_version]   [{name}] staging {staging} ({changed[name][:8]})')
 
@@ -133,7 +210,7 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
             except subprocess.CalledProcessError as e:
                 print(f'[git_version]   [{name}] nest FAILED: {e.stderr}')
                 _cleanup()
-                return _fail(f'nesting {dep["name"]} into {name} failed')
+                return _fail(f'nesting {dep["name"]} into {name} failed', phase='staging')
 
     # ── Phase 2: unit tests in staging ──
     test_env = os.environ.copy()
@@ -179,9 +256,12 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
     _cleanup()
 
     if not tests_ok:
-        return _fail('unit tests failed in staging — production untouched')
+        return _fail('unit tests failed in staging — production untouched', phase='test')
     if not gate_ok:
-        return _fail('port health gate failed in staging — production untouched')
+        return _fail('port health gate failed in staging — production untouched',
+                     phase='test_gate')
+    _audit(project, phase='gate', outcome='passed', commits=dict(changed),
+           duration_s=round(time.time() - t_start, 1))
 
     # ── Phase 4: swap deploy worktrees to the tested commits ──
     print('[git_version] Applying tested commits to deploy worktrees...')
@@ -190,7 +270,7 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
         dpath = deploy_path(repo, project)
         target = changed[name]
         if not dpath.is_dir():
-            return _fail(f'deploy_path missing for {name}: {dpath}')
+            return _fail(f'deploy_path missing for {name}: {dpath}', phase='apply')
         try:
             subprocess.run(['git', 'reset', '--hard', target],
                            cwd=dpath, check=True, capture_output=True, text=True, timeout=15)
@@ -198,7 +278,8 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] apply FAILED: {e.stderr}')
             rollback_repos(comp_cfg, project)
-            return _fail(f'failed to update deploy worktree for {name}')
+            return _fail(f'failed to update deploy worktree for {name}', phase='apply',
+                         rollback_reason='deploy worktree update failed mid-apply')
 
     # ── Phase 5: restart production and verify health ──
     prod_urls = deploy_cfg.get('production_health_url', [])
@@ -211,13 +292,17 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
             print('[git_version] Production unhealthy after deploy — rolling back.')
             rollback_repos(comp_cfg, project)
             _run_restart(comp_cfg, project, context)
-            return _fail('production failed health check after deploy — rolled back')
+            return _fail('production failed health check after deploy — rolled back',
+                         phase='health',
+                         rollback_reason='production unhealthy after deploy')
 
     save_known(comp_cfg, project, targets)
     clear_failures(comp_cfg, project)
     context['deploy_result'] = 'passed'
     context['deploy_branch_updated'] = True
     print('[git_version] Deploy complete. Known-good updated; failure counter cleared.')
+    _audit(project, phase='complete', outcome='passed', commits=dict(changed),
+           duration_s=round(time.time() - t_start, 1))
     return True
 
 

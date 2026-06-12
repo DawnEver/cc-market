@@ -25,7 +25,7 @@ from core.config import load_config  # noqa: E402
 
 # trigger-watch.py has a hyphen, so it can't be `import`ed normally.
 _spec = importlib.util.spec_from_file_location(
-    'trigger_watch', _PLUGIN_ROOT / 'scripts' / 'trigger-watch.py')
+    'trigger_watch', _PLUGIN_ROOT / 'scripts' / 'daemon' / 'trigger-watch.py')
 assert _spec is not None and _spec.loader is not None
 trigger_watch = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(trigger_watch)

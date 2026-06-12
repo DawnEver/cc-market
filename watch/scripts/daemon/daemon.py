@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_PLUGIN_ROOT = _HERE.parent
+_PLUGIN_ROOT = _HERE.parent.parent
 sys.path.insert(0, str(_PLUGIN_ROOT))
 sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 

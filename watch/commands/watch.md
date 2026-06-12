@@ -13,7 +13,7 @@ Load config from `.claude/watch/config.yaml`, run the health monitor, apply reme
 ### Step 1: Run the monitor
 
 ```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py \
+python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
   --project-dir ${CLAUDE_PROJECT_DIR} \
   --json
 ```
@@ -22,13 +22,15 @@ Parse the JSON output. Key fields: `status`, `anomalies`, `endpoints`, `processe
 
 ### Step 2: Decision Tree
 
+> The authoritative, report-driven decision tree lives in `skills/watch/SKILL.md`.
+> The summary below is a quick reference; prefer SKILL.md when they diverge.
+
 **If `status == "healthy"`:**
 - Check version_tracking: if known-good commit is older than `auto_update_interval_hours`, update it:
   ```bash
-  python ${CLAUDE_PLUGIN_ROOT}/scripts/action_runner.py --action update_known_good \
+  python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --action update_known_good \
     --project-dir ${CLAUDE_PROJECT_DIR}
   ```
-  (Implement by reading config and calling action_runner's function directly)
 - Report: all clear.
 - CronCreate: refresh the durable cron for `check_interval_normal` (see SKILL.md Step 5).
 
@@ -41,7 +43,7 @@ For each anomaly in `report.anomalies`:
      - Skip if `step.if` condition evaluates to false (evaluate with context vars like `$new_commits`).
      - Execute the action:
        ```
-       python ${CLAUDE_PLUGIN_ROOT}/scripts/action_runner.py \
+       python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
          --project-dir ${CLAUDE_PROJECT_DIR} \
          --action <step.action>
        ```
@@ -55,15 +57,15 @@ After all remedies applied: wait 10 seconds, re-run monitor to verify. If still 
 
 When escalating, send alert:
 ```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/send_alert.py \
+python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/send_alert.py \
   --config .claude/watch/config.yaml \
   --subject "Anomaly detected: <type>" \
-  --body "$(python ${CLAUDE_PLUGIN_ROOT}/scripts/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --json)"
+  --body "$(python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --json)"
 ```
 
 ## Context Variables
 
-The action runner maintains a context dict for condition evaluation:
+The action executor (`core/actions.py`, driven by `scripts/cli/watch.py --action`) maintains a context dict for condition evaluation:
 - `$new_commits` — set by `check_commits` action (count of commits since known-good)
 - Variables from `reduce_parallelism` etc. are interpolated into command strings
 
