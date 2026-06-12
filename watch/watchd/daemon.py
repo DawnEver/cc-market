@@ -31,6 +31,14 @@ from components.registry import create_registry
 _PIDFILE = 'watchd.pid'
 
 
+def _load_config(project_dir: Path) -> dict:
+    """Load config and stamp _project_dir so components resolve paths against
+    the project dir, not the daemon's cwd (which need not be the project)."""
+    cfg = load_main_config(project_dir)
+    cfg['_project_dir'] = str(project_dir)
+    return cfg
+
+
 def _write_heartbeat(project_dir: Path, heartbeat_file: str) -> None:
     """Write the liveness heartbeat. Called at the end of every poll, and
     again right before a (potentially long) in-process remediation so the
@@ -182,7 +190,7 @@ def main(argv: list[str] | None = None) -> None:
                   f'Use --force to replace.', file=sys.stderr)
             sys.exit(1)
 
-    config = load_main_config(project_dir)
+    config = _load_config(project_dir)
     wd = config['watchd']
 
     # CLI interval overrides config; config overrides defaults
@@ -200,7 +208,7 @@ def main(argv: list[str] | None = None) -> None:
             return
         while True:
             time.sleep(interval)
-            config = load_main_config(project_dir)
+            config = _load_config(project_dir)
             registry = create_registry(config, project_dir)
             if registry.enabled():
                 _log(project_dir, log_file, 'info', 'Components now enabled, starting polling.')
@@ -215,7 +223,7 @@ def main(argv: list[str] | None = None) -> None:
 
     while True:
         time.sleep(interval)
-        config = load_main_config(project_dir)
+        config = _load_config(project_dir)
         registry = create_registry(config, project_dir)
         state = load_state(project_dir, state_file)
         _poll(project_dir, registry, config, state, args.dry_run)
