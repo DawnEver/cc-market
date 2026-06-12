@@ -78,6 +78,14 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if not _try_lock(project_dir):
+        # Never exit silently — a caller (e.g. the Bash tool) capturing stdout
+        # must always get a parseable result, not an empty string.
+        skipped = {'status': 'skipped', 'reason': 'another check is already running'}
+        if args.json:
+            print(json.dumps(skipped, ensure_ascii=False))
+        else:
+            print('[watch] check already running — skipped.')
+        sys.stdout.flush()
         sys.exit(0)
 
     try:
@@ -87,6 +95,7 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(report, indent=2, ensure_ascii=False))
         else:
             _print_report(report)
+        sys.stdout.flush()
     finally:
         _unlock(project_dir)
 

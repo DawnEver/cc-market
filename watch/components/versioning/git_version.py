@@ -264,6 +264,54 @@ def remove_worktree(staging_path: Path, repo_path: Path, retries: int = 4) -> No
         shutil.rmtree(staging_path, ignore_errors=True)
 
 
+def deploy_drift(comp_cfg: dict, project: Path) -> list[tuple[str, str]]:
+    """Audit every deploy worktree for read-only violations.
+
+    The deploy worktree is plumbing: watchd resets it to known-good, nobody edits
+    it by hand. Two violations are caught so a human is told *before* the next
+    deploy/rollback silently `git reset --hard`s the work away:
+
+      * dirty   — uncommitted changes in the working tree
+      * diverged — HEAD carries commit(s) not reachable from the tracked remote
+                   branch (someone committed directly on the deploy branch)
+
+    Returns a list of ``(repo_name, reason)``. Only repos with an explicit,
+    distinct ``deploy_path`` are checked (the main working tree is never read-only).
+    All checks are plain git subprocess calls — identical on every platform.
+    """
+    drift: list[tuple[str, str]] = []
+    for repo in comp_cfg.get('repositories', []):
+        if not repo.get('deploy_path'):
+            continue
+        dpath = deploy_path(repo, project)
+        main_tree = (project / repo['path']).resolve()
+        if not dpath.is_dir() or dpath == main_tree:
+            continue
+        try:
+            dirty = subprocess.check_output(
+                ['git', 'status', '--porcelain'],
+                cwd=dpath, text=True, timeout=10).strip()
+        except Exception:
+            continue
+        if dirty:
+            n = len(dirty.splitlines())
+            drift.append((repo['name'], f'{n} uncommitted change(s) in deploy worktree'))
+        # Diverged: deploy HEAD has commits not on the tracked remote branch.
+        remote = repo.get('remote', 'origin')
+        branch = repo.get('branch', 'main')
+        try:
+            ahead = subprocess.check_output(
+                ['git', 'rev-list', '--count', f'{remote}/{branch}..HEAD'],
+                cwd=dpath, text=True, timeout=10).strip()
+            if ahead.isdigit() and int(ahead) > 0:
+                drift.append((repo['name'],
+                              f'{ahead} commit(s) on deploy not reachable from '
+                              f'{remote}/{branch} — committed directly on deploy'))
+        except Exception:
+            pass
+    return drift
+
+
 def rollback_repos(comp_cfg: dict, project: Path) -> bool:
     """Reset every deploy worktree (`deploy_path`) back to known-good. The deploy
     branch is force-reset; main working trees are never touched."""
@@ -368,6 +416,21 @@ class GitVersion(Component):
                 message=f'New tested-on-main version pending deploy: {detail}',
             ))
 
+        # Read-only enforcement — the deploy worktree must mirror known-good, never
+        # be edited or committed to directly. Surface drift before the next
+        # deploy/rollback reset --hard destroys it.
+        drift = deploy_drift(comp_cfg, project)
+        result.metrics['deploy_drift'] = len(drift)
+        if drift:
+            detail_drift = '; '.join(f'{n}: {why}' for n, why in drift)
+            result.anomalies.append(Anomaly(
+                type='deploy_worktree_dirty', severity='warning',
+                value=len(drift),
+                message=(f'Deploy worktree is not read-only — {detail_drift}. '
+                         f'watchd manages it via reset-to-known-good; commit on '
+                         f'main instead (these changes will be lost on next deploy).'),
+            ))
+
         # Distinct failed commits piled up → escalate to a human.
         if len(failures) >= max_failed:
             result.anomalies.append(Anomaly(
@@ -383,6 +446,9 @@ class GitVersion(Component):
             'new_version_available': [RemedyStep(action='deploy')],
             'deploy_failed': [RemedyStep(action='notify', escalate_after=1)],
             'fetch_unreachable': [RemedyStep(action='notify', escalate_after=1)],
+            # Drift is a human mistake (don't auto-destroy their uncommitted work) —
+            # alert after a couple of polls so a transient mid-edit doesn't spam.
+            'deploy_worktree_dirty': [RemedyStep(action='notify', escalate_after=2)],
         }
 
     def actions(self) -> dict[str, Action]:
