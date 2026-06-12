@@ -103,6 +103,8 @@ def backport_deploy(comp_cfg: dict, project: Path, context: dict) -> bool:
                     print(f'[git_version]   [{name}] Tests FAILED ({elapsed:.0f}s)')
                     if r.stdout:
                         print(r.stdout[-1500:])
+                    if r.stderr:
+                        print(r.stderr[-1500:])
                 else:
                     print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
             except subprocess.TimeoutExpired:

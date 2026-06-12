@@ -8,13 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from components.registry import create_registry
-from core.actions import _execute_action, _eval_condition, _to_serializable
+from core.actions import _to_serializable
 from core.config import load_config
-from core.daemon_helpers import _check_daemon_liveness, _escalate, _restart_watchd
+from core.daemon_helpers import _check_daemon_liveness, _restart_watchd
 from core.log import append_report
+from core.remediate import apply_remedies
 from core.report import _enrich_report
-from core.state import (load_state, save_state, track_anomaly,
-                         record_last_healthy, record_remedy_attempt, set_alert_sent)
+from core.state import (load_state, save_state, record_last_healthy)
 
 CHECK_TIMEOUT = 60  # per-component hard timeout (seconds)
 
@@ -94,41 +94,8 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
         state.pop('_remedies', None)
         record_last_healthy(state, ts)
     else:
-        context: dict[str, object] = {}
-        for anomaly in report['anomalies']:
-            steps = registry.get_remedies(anomaly.type)
-            if not steps or (len(steps) == 1 and steps[0].action == 'log'):
-                track_anomaly(state, anomaly.type)
-                continue
-
-            print(f'  [{anomaly.type}] applying remedies...', file=sys.stderr, flush=True)
-            escalate_count = 0
-            for step in steps:
-                if step.on != 'always' and step.on != anomaly.severity:
-                    continue
-                if step.condition and not _eval_condition(step.condition, state):
-                    continue
-
-                action = registry.get_action(step.action)
-                if not action:
-                    print(f'    action "{step.action}" not found, skipping', file=sys.stderr)
-                    continue
-
-                for attempt in range(step.max_attempts):
-                    ok = _execute_action(action, project, registry,
-                                        anomaly.source or '', context)
-                    if ok:
-                        record_remedy_attempt(state, anomaly.type, step.action, 'ok', attempt + 1)
-                        break
-                    print(f'    retry {attempt + 1}/{step.max_attempts}', file=sys.stderr)
-                else:
-                    record_remedy_attempt(state, anomaly.type, step.action, 'failed', step.max_attempts)
-
-                if step.escalate_after:
-                    escalate_count = track_anomaly(state, anomaly.type)
-                    if escalate_count >= step.escalate_after:
-                        _escalate(config, anomaly, escalate_count, report, dry_run)
-                        set_alert_sent(state, ts)
+        apply_remedies(registry, report['anomalies'], config, state,
+                       project, ts, report=report, dry_run=dry_run)
 
     # 5. Status
     if any(a.severity == 'critical' for a in report['anomalies']):

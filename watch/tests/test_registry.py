@@ -183,6 +183,29 @@ class TestCreateRegistry(unittest.TestCase):
             self.assertEqual(action.command, 'echo hello')
             self.assertEqual(action.timeout, 10)
 
+    def test_config_remedies_override_component_default(self):
+        with tempfile.TemporaryDirectory() as d:
+            reg = create_registry({
+                'remedies': {
+                    'new_version_available': [
+                        {'action': 'deploy'},
+                        {'action': 'build_frontend'},
+                        {'action': 'restart_all'},
+                    ],
+                },
+            }, Path(d))
+            steps = reg.get_remedies('new_version_available')
+            self.assertEqual([s.action for s in steps],
+                             ['deploy', 'build_frontend', 'restart_all'])
+
+    def test_config_remedies_accept_string_shorthand(self):
+        with tempfile.TemporaryDirectory() as d:
+            reg = create_registry({
+                'remedies': {'high_cpu': ['restart_backend']},
+            }, Path(d))
+            steps = reg.get_remedies('high_cpu')
+            self.assertEqual([s.action for s in steps], ['restart_backend'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -155,6 +155,8 @@ class GitVersion(Component):
         deploy_branch = comp_cfg.get('deploy', {}).get('deploy_branch', 'deploy')
         total_deploy_ahead = 0
         deploy_ahead_details: list[str] = []
+        total_local_unverified = 0
+        local_unverified_details: list[str] = []
 
         for repo in repos:
             name = repo['name']
@@ -241,6 +243,37 @@ class GitVersion(Component):
 
             result.metrics[f'{name}_new_commits'] = count
 
+            # Local commits sitting on the deploy branch that are ahead of the
+            # known-good snapshot — e.g. a manual hotfix committed directly to
+            # deploy. These need verification (test) before being marked stable.
+            local_unverified = 0
+            if known_commit:
+                try:
+                    local_head = subprocess.check_output(
+                        ['git', 'rev-parse', 'HEAD'],
+                        cwd=repo_path, text=True, timeout=5,
+                    ).strip()
+                except Exception:
+                    local_head = None
+                if local_head and local_head != known_commit:
+                    is_ancestor = subprocess.run(
+                        ['git', 'merge-base', '--is-ancestor', known_commit, local_head],
+                        cwd=repo_path, capture_output=True, timeout=5,
+                    ).returncode == 0
+                    if is_ancestor:
+                        try:
+                            local_unverified = int(subprocess.check_output(
+                                ['git', 'rev-list', '--count', f'{known_commit}..{local_head}'],
+                                cwd=repo_path, text=True, timeout=5,
+                            ).strip())
+                        except Exception:
+                            local_unverified = 0
+                        if local_unverified > 0:
+                            total_local_unverified += local_unverified
+                            local_unverified_details.append(f'{name}: +{local_unverified}')
+                            result.data[f'{name}_local_head'] = local_head
+            result.metrics[f'{name}_local_unverified'] = local_unverified
+
         result.metrics['new_commits'] = total_new
         result.data['new_commits'] = total_new
         result.data['new_commits_detail'] = ', '.join(details) if details else 'none'
@@ -264,6 +297,17 @@ class GitVersion(Component):
                 message=f'{deploy_branch} branch ahead of main: {result.data["deploy_ahead_detail"]}',
             ))
 
+        result.metrics['local_unverified_total'] = total_local_unverified
+        result.data['local_unverified_detail'] = (
+            ', '.join(local_unverified_details) if local_unverified_details else 'none')
+        if total_local_unverified > 0:
+            result.anomalies.append(Anomaly(
+                type='local_changes_unverified', severity='warning',
+                value=total_local_unverified,
+                message=(f'Local commits on {deploy_branch} not verified against '
+                         f'known-good: {result.data["local_unverified_detail"]}'),
+            ))
+
         return result
 
     def remedies(self) -> dict[str, list[RemedyStep]]:
@@ -273,6 +317,9 @@ class GitVersion(Component):
             ],
             'deploy_ahead_of_main': [
                 RemedyStep(action='backport_deploy'),
+            ],
+            'local_changes_unverified': [
+                RemedyStep(action='verify_mark_stable'),
             ],
         }
 
@@ -298,6 +345,11 @@ class GitVersion(Component):
                 command='__backport__',
                 timeout=600,
             ),
+            'verify_mark_stable': Action(
+                description='Test local deploy-branch commits in a worktree; mark known-good on pass',
+                command='__verify_mark__',
+                timeout=600,
+            ),
         }
 
     # ── Action handlers ──────────────────────────────────────────────
@@ -312,6 +364,8 @@ class GitVersion(Component):
             return self._mark_stable(comp_cfg, project)
         elif action_name == 'backport_deploy':
             return self._backport(comp_cfg, global_cfg, project, context)
+        elif action_name == 'verify_mark_stable':
+            return self._verify_mark_stable(comp_cfg, project, context)
         return False
 
     def _deploy(self, comp_cfg: dict, _global_cfg: dict, project: Path,
@@ -326,6 +380,11 @@ class GitVersion(Component):
                   context: dict) -> bool:
         from components.git_version_backport import backport_deploy
         return backport_deploy(comp_cfg, project, context)
+
+    def _verify_mark_stable(self, comp_cfg: dict, project: Path,
+                            context: dict) -> bool:
+        from components.git_version_deploy import verify_and_mark_stable
+        return verify_and_mark_stable(comp_cfg, project, context)
 
     def _mark_stable(self, comp_cfg: dict, project: Path) -> bool:
         """Mark current HEADs as known-good with incremented stable_checks."""
