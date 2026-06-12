@@ -1,41 +1,81 @@
 #!/usr/bin/env bash
-# Pre-commit hook — run all plugin tests before commit
+# Pre-commit hook — run only the tests for plugins whose files are staged.
+# Mirrors pre-push's changed-plugin discovery, but against the index (git diff --cached).
+# shared/ changing fans out to every plugin (shared/ is bundled into each).
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-tests=(
-  "tests/bundle-integrity.test.mjs"
-  "takeover/tests/lib.test.mjs"
-  "takeover/tests/mcp-server.test.mjs"
-  "rem/tests/frontmatter.test.mjs"
-  "rem/tests/date-path.test.mjs"
-  "rem/tests/lib.test.mjs"
-  "rem/tests/rem-hook.test.mjs"
-  "sharp-review/tests/lib.test.mjs"
-  "traceme/tests/crypto.test.mjs"
-  "traceme/tests/db.test.mjs"
-  "traceme/tests/scan.test.mjs"
-  "traceme/tests/report.test.mjs"
-  "traceme/tests/sync.test.mjs"
-)
+# Top-level dirs touched in the staged change set.
+changed_dirs="$(git diff --cached --name-only | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u)"
+
+node_tests=()       # plugin dirs whose *.test.mjs run via node --test
+run_python=0        # watch python tests
+run_bundle=0        # tests/bundle-integrity.test.mjs
+fanout=0            # shared/ touched -> run everything
+
+has() { printf '%s\n' "$changed_dirs" | grep -qx "$1"; }
+
+# shared/ is bundled into every plugin; tests/ is the cross-cutting bundle check.
+if has shared || has tests; then
+  fanout=1
+fi
+
+if [ "$fanout" -eq 1 ]; then
+  node_tests=(takeover rem sharp-review traceme)
+  run_python=1
+  run_bundle=1
+else
+  for p in takeover rem sharp-review traceme; do
+    has "$p" && node_tests+=("$p") && run_bundle=1
+  done
+  has watch && { run_python=1; run_bundle=1; }
+fi
+
+if [ "${#node_tests[@]}" -eq 0 ] && [ "$run_python" -eq 0 ] && [ "$run_bundle" -eq 0 ]; then
+  echo "pre-commit: no plugin tests affected by staged changes — skipping."
+  exit 0
+fi
+
+selected=()
+[ "$run_bundle" -eq 1 ] && selected+=("tests/bundle-integrity.test.mjs")
+for p in "${node_tests[@]}"; do
+  selected+=("$p/tests/*.test.mjs")
+done
 
 failed=0
-for t in "${tests[@]}"; do
-  if ! node --test "$t" > /dev/null 2>&1; then
-    echo "FAIL: $t"
+for glob in "${selected[@]}"; do
+  if ! node --test $glob > /dev/null 2>&1; then
+    echo "FAIL: $glob"
     failed=1
   fi
 done
 
+if [ "$run_python" -eq 1 ]; then
+  if command -v python > /dev/null 2>&1; then
+    # Unset GIT_* so watch's git-based tests don't inherit this commit's index/dir
+    # (git exports GIT_DIR/GIT_INDEX_FILE into hooks; tests that shell out to git in
+    # temp repos would otherwise operate on the real repo and fail spuriously).
+    if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX \
+            -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
+            python -m unittest discover watch/tests/ > /dev/null 2>&1; then
+      echo "FAIL: watch/tests (python)"
+      failed=1
+    fi
+  else
+    echo "pre-commit: python not found — skipping watch tests."
+  fi
+fi
+
 if [ "$failed" -ne 0 ]; then
   echo ""
   echo "Tests failed. Run manually:"
-  for t in "${tests[@]}"; do
-    echo "  node --test $t"
+  for glob in "${selected[@]}"; do
+    echo "  node --test $glob"
   done
+  [ "$run_python" -eq 1 ] && echo "  python -m unittest discover watch/tests/"
   exit 1
 fi
 
-echo "All plugin tests passed."
+echo "All affected plugin tests passed."

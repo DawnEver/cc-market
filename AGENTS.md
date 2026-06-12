@@ -22,7 +22,15 @@ Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progre
 
 ## Tests & Git Hooks
 
-Pre-commit hook (`.git/hooks/pre-commit`) runs all plugin tests before each commit:
+The pre-commit hook (`scripts/git-hooks/pre-commit`, wired via `core.hooksPath`) runs **only
+the tests for plugins whose files are staged** — committing a takeover-only change runs just
+`takeover/tests/*.test.mjs` (plus the cross-cutting `tests/bundle-integrity.test.mjs`). It
+maps each changed top-level dir to its tests; `watch/` changes run the Python tests
+(`python -m unittest discover watch/tests/`, skipped if `python` is absent). Because `shared/`
+is bundled into every plugin, staging anything under `shared/` (or the root `tests/`) fans out
+to **all** plugins. A commit touching no test-bearing dir (e.g. only root docs) skips tests.
+
+To run every JS suite manually:
 
 ```shell
 node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs
@@ -54,7 +62,7 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `traceme/tests/sync.test.mjs` | 7 | dump/import, readMergedSnapshot, readDeviceFacts, verifyConsistency |
 | `traceme/tests/pricing.test.mjs` | 6 | model matching: dot/dash canonicalization, longest-prefix, aliases, fallback, calcCost |
 
-All JS tests (`*.test.mjs`) run via pre-commit hook. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
+JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
 ## Migrating `.claude/` Project Files
 
@@ -88,5 +96,5 @@ Versioning is automatic: the `pre-push` hook (`scripts/git-hooks/pre-push`, wire
 - **A skill's execution knowledge goes in its `SKILL.md` / `reference/*.md`, never in `rules/*` or `AGENTS.md`/`CLAUDE.md`.** At runtime a skill sees only its own files and the host project's config — never this repo's rules/`AGENTS.md` (dev-context only — see `.claude/rules/invariants.md` "Dev context vs. runtime context").
 - After plugin changes, update the plugin's own `AGENTS.md` and `README.md`
 - Always add tests for new plugin logic
-- Pre-commit hook catches regressions across all plugins
+- Pre-commit hook catches regressions in the plugins a commit touches (`shared/` fans out to all)
 - Backward compatibility is not a concern here. Freely rename/restructure data formats, configs, and internal APIs instead of adding migration shims or compat layers — update all call sites and docs in the same change.
