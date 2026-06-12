@@ -361,6 +361,14 @@ describe('renderManifestText', () => {
   it('returns empty string for no entries', () => {
     assert.equal(renderManifestText([]), '');
   });
+
+  it('shows subPath scope when provided', () => {
+    const entries = [
+      { path: 'src/foo/bar.js', status: 'M', renamedFrom: null, added: 5, deleted: 2, hunks: [] },
+    ];
+    const text = renderManifestText(entries, { range: 'HEAD', subPath: 'src/foo' });
+    assert.ok(text.includes('Scope: `src/foo`'));
+  });
 });
 
 // ── extractHunkHeaders ──

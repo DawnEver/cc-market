@@ -12,6 +12,38 @@ export const ERROR_LOG = join(TRACEME_DIR, 'error.log');
 
 export { todayISO } from '../shared/lib.mjs';
 
+// ── Formatting helpers (shared by insights / dashboard) ──
+
+export function fmt(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+export function fmtCost(n) { return '$' + n.toFixed(4); }
+export function fmtDuration(min) {
+  if (min < 1) return '<1m';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+export function daysArray(from, to) {
+  const days = [];
+  const d = new Date(from + 'T00:00:00');
+  const end = new Date(to + 'T00:00:00');
+  while (d <= end) { days.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
+  return days;
+}
+
+// ── Tool categorization for the Plugins/Subagents/MCPs breakdown ──
+// Mirrors how Claude's native status insights buckets token usage.
+export function categorizeTool(toolName, skillName) {
+  if (!toolName) return 'builtin';
+  if (toolName.startsWith('mcp__')) return 'mcp';
+  if (toolName === 'Task' || toolName === 'Agent') return 'subagent';
+  if (toolName === 'Skill' && skillName && skillName.includes(':')) return 'plugin';
+  return 'builtin';
+}
+
 export function getGitBranch(cwd) {
   try {
     return execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', timeout: 3000 }).trim();

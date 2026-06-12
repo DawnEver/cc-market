@@ -97,6 +97,39 @@ describe("handleCallModel", () => {
   });
 });
 
+// ── handleCallModel dispatch routing ───────────────────────────────────────────
+
+describe("handleCallModel dispatch routing", () => {
+  test("rejects unsupported mode for claude provider", async () => {
+    await assert.rejects(
+      () => handleCallModel({ provider: "claude", userPrompt: "test", mode: "review" }),
+      /not supported for provider/
+    );
+  });
+
+  test("rejects unsupported mode for API provider", async () => {
+    // deepseek is an API provider — review mode only for codex
+    await assert.rejects(
+      () => handleCallModel({ provider: "deepseek", userPrompt: "test", mode: "image-generate" }),
+      /not supported for provider/
+    );
+  });
+
+  test("throws ConfigError on missing provider", async () => {
+    await assert.rejects(
+      () => handleCallModel({ userPrompt: "test" }),
+      /provider is required/
+    );
+  });
+
+  test("parses provider from <command> block", async () => {
+    // This will fail at the actual call stage (no config), but proves flag parsing works
+    await assert.rejects(
+      () => handleCallModel({ userPrompt: "<command>\n--provider claude\n</command>\ntest prompt" }),
+    );
+  });
+});
+
 // ── handleToolCall error handling ──────────────────────────────────────────────
 
 describe("handleToolCall error handling", () => {

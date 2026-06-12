@@ -168,17 +168,35 @@ export async function resetSharedClient() {
   _sharedClient = null;
 }
 
-export function withSharedClient(fn) {
+export function withSharedClient(fn, { timeout = 30000 } = {}) {
   const prev = _lock;
-  let release;
-  _lock = new Promise(resolve => { release = resolve; });
+  let release, rejectLock;
+  _lock = new Promise((resolve, reject) => { release = resolve; rejectLock = reject; });
+
+  const timeoutId = setTimeout(() => {
+    const queueDepth = _pendingCount || 0;
+    rejectLock(new Error(
+      `Lock acquisition timed out after ${timeout}ms. ` +
+      `This usually means the codex app-server process is stuck or has crashed. ` +
+      `Pending requests in queue: ${queueDepth}. Run resetSharedClient() to force-restart.`
+    ));
+  }, timeout);
+
+  let _pendingCount = (_pendingCount || 0) + 1;
 
   return prev.then(async () => {
+    clearTimeout(timeoutId);
+    _pendingCount--;
     try {
       const client = await getSharedClient();
       return await fn(client);
     } finally {
       release();
     }
+  }).catch(err => {
+    clearTimeout(timeoutId);
+    _pendingCount--;
+    release();
+    throw err;
   });
 }

@@ -77,21 +77,26 @@ function excludedSummary(excluded) {
 function main() {
   const args = process.argv.slice(2);
   const range = detectRange(getArg(args, '--range'));
+  const subPath = getArg(args, '--path');
+
+  // Build base args: git diff <flags> <range> [-- <path>]
+  const baseArgs = ['-M', range];
+  if (subPath) baseArgs.push('--', subPath);
 
   // Run all three git commands (avoid re-running git for each parse need)
   let numstatRaw, namestatusRaw, fullDiff;
   try {
-    numstatRaw = git(['diff', '--numstat', '-z', '-M', range]);
+    numstatRaw = git(['diff', '--numstat', '-z', ...baseArgs]);
   } catch {
     numstatRaw = '';
   }
   try {
-    namestatusRaw = git(['diff', '--name-status', '-z', '-M', range]);
+    namestatusRaw = git(['diff', '--name-status', '-z', ...baseArgs]);
   } catch {
     namestatusRaw = '';
   }
   try {
-    fullDiff = git(['diff', '-M', range]);
+    fullDiff = git(['diff', ...baseArgs]);
   } catch {
     fullDiff = '';
   }
@@ -125,10 +130,12 @@ function main() {
     excludedSummary: excludedSummary(excluded),
   };
 
+  if (subPath) result.path = subPath;
+
   if (mode === 'review') {
     result.diff = filteredDiff;
   } else if (mode === 'agent') {
-    result.manifestText = renderManifestText(entries, { range });
+    result.manifestText = renderManifestText(entries, { range, subPath });
   }
   // mode === 'empty': no diff or manifestText
 

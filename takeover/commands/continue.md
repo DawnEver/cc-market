@@ -4,7 +4,7 @@ argument-hint: "[--provider <name>] [--model <model>] [--review | --image | --im
 allowed-tools: Agent
 ---
 
-Invoke the `takeover:takeover` subagent via the `Agent` tool (`subagent_type: "takeover:takeover"`), forwarding the raw user request as the prompt prefixed with `[mode:task] `.
+Invoke the `takeover:takeover` subagent via the `Agent` tool (`subagent_type: "takeover:takeover"`), forwarding the raw user request as the prompt.
 
 The subagent calls the target model via the `call_model` MCP tool and returns its output verbatim.
 

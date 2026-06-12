@@ -11,12 +11,20 @@ import { fileURLToPath } from "node:url";
 
 import {
   loadProviderConfig,
+  clearConfigCache,
+  getConfigPath,
   resolveModel,
   buildPrompt,
   extractText,
   parseCommandBlock,
   callAnthropicAPI,
   loadProviderEnv,
+  logTakeoverRequest,
+  TakeoverError,
+  ConfigError,
+  ProviderError,
+  TimeoutError,
+  AuthError,
   PROVIDER_ENV_KEYS,
 } from "../scripts/lib.mjs";
 
@@ -504,6 +512,149 @@ describe("PROVIDER_ENV_KEYS", () => {
     const tiers = ['ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'];
     for (const key of tiers) {
       assert.ok(PROVIDER_ENV_KEYS.includes(key), `Missing tier key: ${key}`);
+    }
+  });
+});
+
+// ── Config caching ──────────────────────────────────────────────────────────
+
+describe("loadProviderConfig caching", () => {
+  test("returns cached result on second call within TTL", () => {
+    clearConfigCache();
+    const tmp = makeTempSettings({ "env:cachetest": {
+      ANTHROPIC_BASE_URL: "https://cache.example.com",
+      ANTHROPIC_AUTH_TOKEN: "sk-cache",
+    }});
+    try {
+      const r1 = loadProviderConfig("cachetest", tmp);
+      const r2 = loadProviderConfig("cachetest", tmp);
+      assert.equal(r2.baseUrl, "https://cache.example.com");
+      assert.equal(r2.token, "sk-cache");
+    } finally {
+      clearConfigCache();
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  test("clearConfigCache forces re-read", () => {
+    clearConfigCache();
+    const tmp = makeTempSettings({ "env:cachetest2": {
+      ANTHROPIC_BASE_URL: "https://first.example.com",
+      ANTHROPIC_AUTH_TOKEN: "sk-first",
+    }});
+    try {
+      const r1 = loadProviderConfig("cachetest2", tmp);
+      assert.equal(r1.baseUrl, "https://first.example.com");
+      clearConfigCache();
+      // Modify config file and re-read
+      fs.writeFileSync(tmp, JSON.stringify({ "env:cachetest2": {
+        ANTHROPIC_BASE_URL: "https://second.example.com", ANTHROPIC_AUTH_TOKEN: "sk-second"
+      }}));
+      const r2 = loadProviderConfig("cachetest2", tmp);
+      assert.equal(r2.baseUrl, "https://second.example.com");
+    } finally {
+      clearConfigCache();
+      fs.unlinkSync(tmp);
+    }
+  });
+});
+
+// ── getConfigPath ────────────────────────────────────────────────────────────
+
+describe("getConfigPath", () => {
+  test("evaluates TAKEOVER_CONFIG_PATH at call time", () => {
+    // Default path
+    const defaultPath = getConfigPath();
+    assert.ok(defaultPath.includes("claude_env_settings.json"));
+
+    // Override via env
+    process.env.TAKEOVER_CONFIG_PATH = "/custom/path/config.json";
+    try {
+      assert.equal(getConfigPath(), "/custom/path/config.json");
+    } finally {
+      delete process.env.TAKEOVER_CONFIG_PATH;
+    }
+
+    // After clearing, returns to default
+    assert.equal(getConfigPath(), defaultPath);
+  });
+});
+
+// ── Error taxonomy ──────────────────────────────────────────────────────────
+
+describe("TakeoverError classes", () => {
+  test("ConfigError has correct code and non-retryable", () => {
+    const e = new ConfigError("bad config");
+    assert.ok(e instanceof TakeoverError);
+    assert.ok(e instanceof Error);
+    assert.equal(e.code, "CONFIG_ERROR");
+    assert.equal(e.retryable, false);
+    assert.equal(e.message, "bad config");
+  });
+
+  test("ProviderError has configurable retryable", () => {
+    const e1 = new ProviderError("provider down", true);
+    assert.equal(e1.code, "PROVIDER_ERROR");
+    assert.equal(e1.retryable, true);
+
+    const e2 = new ProviderError("bad response");
+    assert.equal(e2.retryable, false);
+  });
+
+  test("TimeoutError is retryable", () => {
+    const e = new TimeoutError("timed out");
+    assert.equal(e.code, "TIMEOUT_ERROR");
+    assert.equal(e.retryable, true);
+  });
+
+  test("AuthError is non-retryable", () => {
+    const e = new AuthError("invalid key");
+    assert.equal(e.code, "AUTH_ERROR");
+    assert.equal(e.retryable, false);
+  });
+
+  test("TakeoverError base defaults", () => {
+    const e = new TakeoverError("generic");
+    assert.equal(e.code, "TAKEOVER_ERROR");
+    assert.equal(e.retryable, false);
+  });
+});
+
+// ── Structured logging ───────────────────────────────────────────────────────
+
+describe("logTakeoverRequest", () => {
+  test("emits valid ndjson to stderr", () => {
+    let captured;
+    const orig = process.stderr.write;
+    process.stderr.write = (data) => { captured = data; return true; };
+    try {
+      logTakeoverRequest("2026-06-12T10:00:00Z", "deepseek", "sonnet", "task", "ok", { durationMs: 1234, inputTokens: 500, outputTokens: 300 });
+      assert.ok(captured, "should emit a log line");
+      const entry = JSON.parse(captured);
+      assert.equal(entry.provider, "deepseek");
+      assert.equal(entry.model, "sonnet");
+      assert.equal(entry.mode, "task");
+      assert.equal(entry.status, "ok");
+      assert.equal(entry.duration_ms, 1234);
+      assert.equal(entry.input_tokens, 500);
+      assert.equal(entry.output_tokens, 300);
+      assert.ok(entry.request_id?.startsWith("tk-"));
+    } finally {
+      process.stderr.write = orig;
+    }
+  });
+
+  test("includes error field on error status", () => {
+    let captured;
+    const orig = process.stderr.write;
+    process.stderr.write = (data) => { captured = data; return true; };
+    try {
+      logTakeoverRequest("2026-06-12T10:00:00Z", "codex", "default", "review", "error", { durationMs: 5000, error: "timeout after 30s" });
+      const entry = JSON.parse(captured);
+      assert.equal(entry.status, "error");
+      assert.equal(entry.error, "timeout after 30s");
+    } finally {
+      process.stderr.write = orig;
     }
   });
 });

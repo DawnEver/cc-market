@@ -63,6 +63,14 @@ export function openDb(opts = {}) {
       PRIMARY KEY (session_id, skill_name)
     );
 
+    CREATE TABLE IF NOT EXISTS session_categories (
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      category   TEXT NOT NULL,
+      calls      INTEGER DEFAULT 0,
+      tokens     INTEGER DEFAULT 0,
+      PRIMARY KEY (session_id, category)
+    );
+
     CREATE TABLE IF NOT EXISTS daily_takeover (
       date        TEXT NOT NULL,
       repo_origin TEXT NOT NULL DEFAULT '',
@@ -97,6 +105,7 @@ export function replaceSession(s) {
   db.prepare('DELETE FROM session_models WHERE session_id=?').run(s.id);
   db.prepare('DELETE FROM session_tools WHERE session_id=?').run(s.id);
   db.prepare('DELETE FROM session_skills WHERE session_id=?').run(s.id);
+  db.prepare('DELETE FROM session_categories WHERE session_id=?').run(s.id);
   db.prepare('DELETE FROM sessions WHERE id=?').run(s.id);
   db.prepare(`INSERT INTO sessions
     (id, date, project, project_path, repo_origin, branch, started_at, ended_at,
@@ -119,6 +128,9 @@ export function replaceSession(s) {
 
   const skStmt = db.prepare('INSERT INTO session_skills (session_id, skill_name, count) VALUES (?,?,?)');
   for (const sk of (s.skills || [])) skStmt.run(s.id, sk.skill_name, sk.count || 0);
+
+  const cStmt = db.prepare('INSERT INTO session_categories (session_id, category, calls, tokens) VALUES (?,?,?,?)');
+  for (const c of (s.categories || [])) cStmt.run(s.id, c.category, c.calls || 0, c.tokens || 0);
 }
 
 // ── Metadata ──
