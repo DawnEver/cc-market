@@ -110,7 +110,7 @@ yourself with every tool available.
 
 ```
 Monitor(
-  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5",
+  command="python ${CLAUDE_PLUGIN_ROOT}/scripts/trigger-emit.py --project-dir ${CLAUDE_PROJECT_DIR} --interval 5 --ignore-ai-only",
   description="watch trigger.json — anomalies raised by watchd",
   persistent=true,
 )
@@ -119,6 +119,10 @@ Monitor(
 `trigger-emit.py` is pure stdlib (no venv re-exec) and prints one `ANOMALY trigger: …`
 line per change to `trigger.json`. When such an event arrives, re-run this skill from
 Step 1 to handle it. Guidance:
+- Pass `--ignore-ai-only` so parked AI-only anomalies (`cron_stale` / `cron_marker_missing`,
+  no shell remedy) never wake the Monitor — this live loop already refreshes cron on its own
+  cadence, and watchd suppresses those triggers by default (`watchd.suppress_ai_only_triggers`).
+  Drop the flag only if you want the session to react to every trigger watchd does write.
 - Arm it **once** per session. If a Monitor for `trigger.json` is already running, do not start another.
 - **Skip this step entirely** in headless/cron runs — there is no session to keep reactive,
   and the `trigger-watch.py` daemon already covers that case.

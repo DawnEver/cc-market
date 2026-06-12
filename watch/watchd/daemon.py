@@ -21,6 +21,7 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 import bootstrap; bootstrap.ensure()
 
 from core import pidfile
+from core.anomalies import is_ai_only
 from core.config import load_config as load_main_config
 from core.state import load_state, save_state, track_anomaly as track
 from core.log import append_report
@@ -37,9 +38,22 @@ def _log(project_dir: Path, log_file: str, level: str, msg: str) -> None:
 
 
 def _wake_claude(project_dir: Path, config: dict, reason: str, detail: str,
-                 dry_run: bool = False) -> None:
+                 anomaly_types: set[str] | None = None, dry_run: bool = False) -> None:
     wd = config['watchd']
     log_file = wd['log_file']
+    types = sorted(anomaly_types or [])
+    ai_only = is_ai_only(types)
+
+    # Parked AI-only anomalies (cron_stale/cron_marker_missing) have no shell remedy and
+    # may persist indefinitely. Writing a trigger for them every poll floods the real-time
+    # layers (trigger-watch + in-session Monitor) with events nothing can act on. Skip the
+    # trigger entirely — the live /watch:watch loop refreshes cron on its own cadence.
+    if ai_only and wd.get('suppress_ai_only_triggers', True):
+        _log(project_dir, log_file, 'info',
+             f'Suppressing AI-only trigger ({", ".join(types)}) — no shell remedy, '
+             f'handled by the in-session loop')
+        return
+
     if dry_run:
         _log(project_dir, log_file, 'info', f'[DRYRUN] Would wake Claude: {reason} — {detail}')
         return
@@ -47,6 +61,7 @@ def _wake_claude(project_dir: Path, config: dict, reason: str, detail: str,
     trigger.parent.mkdir(parents=True, exist_ok=True)
     trigger.write_text(json.dumps({
         'reason': reason, 'detail': detail,
+        'anomaly_types': types, 'ai_only': ai_only,
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'project_dir': str(project_dir),
     }, ensure_ascii=False) + '\n', encoding='utf-8')
@@ -64,6 +79,7 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
         return
 
     all_ok = True
+    anomaly_types: set[str] = set()
     names = [c.name for c in components]
     _log(project_dir, log_file, 'info', f'Polling ({", ".join(names)})')
 
@@ -79,10 +95,12 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
                     _log(project_dir, log_file, 'warn',
                          f'  [{comp.name}] [{a.severity}] {a.message}')
                     track(state, f'{comp.name}_{a.type}')
+                    anomaly_types.add(a.type)
         except Exception as e:
             _log(project_dir, log_file, 'error', f'  [{comp.name}] crashed: {e}')
             all_ok = False
             track(state, f'{comp.name}_error')
+            anomaly_types.add('error')
 
     state['fails'] = 0 if all_ok else state.get('fails', 0) + 1
     fail_threshold = wd.get('fail_threshold', 2)
@@ -97,7 +115,8 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
         ck = {k: v for k, v in state.items()
               if isinstance(v, int) and k.startswith('consecutive_')}
         detail = ', '.join(f'{k}:{v}x' for k, v in ck.items()) if ck else 'checkers failing'
-        _wake_claude(project_dir, config, 'anomalies_detected', detail, dry_run)
+        _wake_claude(project_dir, config, 'anomalies_detected', detail,
+                     anomaly_types=anomaly_types, dry_run=dry_run)
 
     save_state(project_dir, state, wd['state_file'])
 

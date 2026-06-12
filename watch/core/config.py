@@ -23,6 +23,7 @@ DEFAULTS: dict[str, Any] = {
         'trigger_file': '.claude/watch/trigger.json',
         'heartbeat_file': '.claude/watch/state/heartbeat.json',
         'enable_headless_ai_escalation': False,
+        'suppress_ai_only_triggers': True,
     },
     'actions': {},
     'deploy': {
