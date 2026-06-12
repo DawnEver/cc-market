@@ -10,7 +10,10 @@ every assistant message carries its model and full `usage` (input/output/cache),
 does **not** record any of this via real-time hooks; it scans the transcripts and derives
 everything. The only thing the transcript lacks is the git remote (for cross-device repo
 dedup), resolved per `cwd` via git and cached. Derived facts land in SQLite (`node:sqlite`,
-zero npm deps); all reports are query-time aggregates — no additive bookkeeping.
+zero npm deps); all reports are query-time aggregates — no additive bookkeeping. **Cost is
+query-time too:** derived queries price the stored token components with the *current*
+`model_pricing.json` via `calcCost`, so a pricing edit takes effect immediately — no rescan. The
+scan-time `*_cost` columns are kept only as a fallback for rows with no per-model breakdown.
 
 ```
 SessionStart → pull cross-device snapshots

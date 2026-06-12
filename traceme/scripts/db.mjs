@@ -2,6 +2,17 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { getDbPath } from './lib.mjs';
+import { calcCost } from './pricing.mjs';
+
+// Query-time cost: price stored token components with the CURRENT pricing table, so a
+// pricing.json edit takes effect immediately — no rescan needed. (Stored *_cost columns are
+// the scan-time snapshot, kept only as a fallback when a row has no per-model breakdown.)
+function costOf(model, c) {
+  return calcCost({
+    input_tokens: c.input || 0, output_tokens: c.output || 0,
+    cache_read_input_tokens: c.cache_read || 0, cache_creation_input_tokens: c.cache_creation || 0,
+  }, model);
+}
 
 let db = null;
 let dbPath = null;
@@ -193,9 +204,11 @@ export function queryDailySummary(date) {
     FROM sessions WHERE date=? GROUP BY repo_origin
   `).all(date);
 
+  const costByRepo = repoCostsForDate(date);
   const byRepo = {};
   for (const r of rows) {
     r.top_model = topModelForRepo(date, r.repo_origin);
+    if (r.repo_origin in costByRepo) r.total_cost = costByRepo[r.repo_origin];
     byRepo[r.repo_origin] = r;
   }
 
@@ -210,6 +223,20 @@ export function queryDailySummary(date) {
     }
   }
   return Object.values(byRepo).sort((a, b) => b.total_cost - a.total_cost);
+}
+
+// Query-time cost per repo_origin for a date, priced from session_models components.
+function repoCostsForDate(date) {
+  const rows = db.prepare(`
+    SELECT s.repo_origin AS repo, sm.model AS model,
+           SUM(sm.input_tokens) AS input, SUM(sm.output_tokens) AS output,
+           SUM(sm.cache_read_tokens) AS cache_read, SUM(sm.cache_creation_tokens) AS cache_creation
+    FROM session_models sm JOIN sessions s ON sm.session_id = s.id
+    WHERE s.date=? GROUP BY s.repo_origin, sm.model
+  `).all(date);
+  const byRepo = {};
+  for (const r of rows) byRepo[r.repo] = (byRepo[r.repo] || 0) + costOf(r.model, r);
+  return byRepo;
 }
 
 function topModelForRepo(date, repoOrigin) {
@@ -232,21 +259,25 @@ export function queryToolUsage(date) {
 
 export function queryModelBreakdown(date) {
   // `tokens` = billable basis (excludes re-read cache); cache_read / all_tokens exposed too.
-  return db.prepare(`
+  // `cost` recomputed query-time from current pricing.
+  const rows = db.prepare(`
     SELECT sm.model AS model,
            SUM(sm.requests) AS calls,
+           SUM(sm.input_tokens) AS input, SUM(sm.output_tokens) AS output,
+           SUM(sm.cache_read_tokens) AS cache_read, SUM(sm.cache_creation_tokens) AS cache_creation,
            SUM(sm.input_tokens + sm.output_tokens + sm.cache_creation_tokens) AS tokens,
-           SUM(sm.cache_read_tokens) AS cache_read,
-           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS all_tokens,
-           SUM(sm.cost) AS cost
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS all_tokens
     FROM session_models sm JOIN sessions s ON sm.session_id = s.id
-    WHERE s.date=? GROUP BY sm.model ORDER BY cost DESC
+    WHERE s.date=? GROUP BY sm.model
   `).all(date);
+  for (const r of rows) r.cost = costOf(r.model, r);
+  return rows.sort((a, b) => b.cost - a.cost);
 }
 
 export function querySessionStats(date) {
   // `tokens` is the billable basis (excludes re-read cache); cache_read exposed separately.
-  return db.prepare(`
+  // `cost` is recomputed query-time from current pricing (falls back to stored when no models).
+  const rows = db.prepare(`
     SELECT MAX(project) AS project,
            repo_origin,
            COUNT(*) AS sessions,
@@ -255,8 +286,11 @@ export function querySessionStats(date) {
            COALESCE(SUM(cache_read_tokens), 0) AS cache_read,
            COALESCE(SUM(total_tokens), 0) AS all_tokens,
            COALESCE(SUM(total_cost), 0) AS cost
-    FROM sessions WHERE date=? GROUP BY repo_origin ORDER BY cost DESC
+    FROM sessions WHERE date=? GROUP BY repo_origin
   `).all(date);
+  const costByRepo = repoCostsForDate(date);
+  for (const r of rows) if (r.repo_origin in costByRepo) r.cost = costByRepo[r.repo_origin];
+  return rows.sort((a, b) => b.cost - a.cost);
 }
 
 // Per (skill, project) counts over a date range — powers `traceme insights`.
@@ -291,20 +325,22 @@ export function queryCategoryBreakdown(from, to, projectLike = null) {
 // pick a billable basis (input+output+cache_creation) vs. cache_read on demand.
 
 export function queryModelFacts(from, to) {
-  return db.prepare(`
+  // `cost` recomputed query-time from current pricing (not the scan-time stored value).
+  const rows = db.prepare(`
     SELECT s.date AS date, s.project AS project, sm.model AS model,
            SUM(sm.requests) AS requests,
            SUM(sm.input_tokens) AS input,
            SUM(sm.output_tokens) AS output,
            SUM(sm.cache_read_tokens) AS cache_read,
            SUM(sm.cache_creation_tokens) AS cache_creation,
-           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens,
-           SUM(sm.cost) AS cost
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens
     FROM session_models sm JOIN sessions s ON sm.session_id = s.id
     WHERE s.date >= ? AND s.date <= ?
     GROUP BY s.date, s.project, sm.model
     ORDER BY s.date ASC
   `).all(from, to);
+  for (const r of rows) r.cost = costOf(r.model, r);
+  return rows;
 }
 
 export function queryCategoryFacts(from, to) {

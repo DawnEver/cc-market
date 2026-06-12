@@ -13,6 +13,7 @@ import {
   queryCategoryBreakdown, queryModelFacts, querySessionFacts,
 } from '../scripts/db.mjs';
 import { categorizeTool } from '../scripts/lib.mjs';
+import { calcCost } from '../scripts/pricing.mjs';
 
 const TEST_DB = join(tmpdir(), `traceme-test-${randomUUID()}.db`);
 
@@ -76,7 +77,12 @@ describe('DB Layer', { concurrency: 1 }, () => {
 
   it('queryToolUsage / queryModelBreakdown / querySkillUsage', () => {
     assert.equal(queryToolUsage('2026-06-09').length, 2);
-    assert.equal(queryModelBreakdown('2026-06-09').length, 2);
+    const mb = queryModelBreakdown('2026-06-09');
+    assert.equal(mb.length, 2);
+    // cost is recomputed query-time from current pricing, NOT the stored fixture cost (0.05/0.08)
+    const sonnet = mb.find(m => m.model === 'claude-sonnet-4-6');
+    assert.equal(sonnet.cost, calcCost({ input_tokens: 500, output_tokens: 200, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }, 'claude-sonnet-4-6'));
+    assert.notEqual(sonnet.cost, 0.05);
     assert.equal(querySkillUsage('2026-06-09', '2026-06-09')[0].skill_name, 'rem:rem');
   });
 
