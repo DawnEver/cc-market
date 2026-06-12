@@ -15,6 +15,8 @@ export function mergeSnapshots(snapshots, keyFn) {
         m.session_count += row.session_count;
         m.prompt_count += row.prompt_count;
         m.total_tokens += row.total_tokens;
+        if (row.billable_tokens != null) m.billable_tokens = (m.billable_tokens || 0) + row.billable_tokens;
+        if (row.cache_read_tokens != null) m.cache_read_tokens = (m.cache_read_tokens || 0) + row.cache_read_tokens;
         m.total_cost += row.total_cost;
         m.total_cost = Math.round(m.total_cost * 100000) / 100000;
         m.top_model = m.top_model || row.top_model;
@@ -122,7 +124,8 @@ export function readDeviceFacts(from, to) {
       facts.push({
         date, device, project: r.project,
         sessions: r.session_count || 0, prompts: r.prompt_count || 0,
-        tokens: r.total_tokens || 0, cost: r.total_cost || 0, top_model: r.top_model || null,
+        tokens: (r.billable_tokens != null ? r.billable_tokens : r.total_tokens) || 0,
+        cost: r.total_cost || 0, top_model: r.top_model || null,
       });
     }
   }

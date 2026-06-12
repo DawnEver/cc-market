@@ -63,10 +63,13 @@ describe('Transcript Scan', () => {
     const cat = Object.fromEntries(p.categories.map(c => [c.category, c]));
     assert.equal(cat.subagent.calls, 1);
     assert.equal(cat.subagent.tokens, 1200, 'subagent tokens come from sidechain usage, not proxy');
+    assert.equal(cat.subagent.bytes_est, 0);
     assert.equal(cat.mcp.calls, 1);
-    assert.equal(cat.mcp.tokens, 100, '400 chars / 4 = 100 proxy tokens');
+    assert.equal(cat.mcp.tokens, 0, 'proxy is not a token count');
+    assert.equal(cat.mcp.bytes_est, 100, '400 chars / 4 = 100 byte-estimate, stored apart from tokens');
     assert.equal(cat.plugin.calls, 1);
-    assert.equal(cat.plugin.tokens, 10);
+    assert.equal(cat.plugin.tokens, 0);
+    assert.equal(cat.plugin.bytes_est, 10);
   });
 
   it('parseSession aggregates tokens, dedupes by message id, captures tools/skills', () => {

@@ -88,7 +88,18 @@ export function openDb(opts = {}) {
     CREATE INDEX IF NOT EXISTS idx_sessions_repo ON sessions(repo_origin);
   `);
 
+  ensureColumns();
   return db;
+}
+
+// Idempotent additive migrations for existing DBs (CREATE TABLE IF NOT EXISTS won't add
+// columns to a table that already exists). Safe to run on every open.
+function ensureColumns() {
+  const add = (table, col, decl) => {
+    const has = db.prepare(`SELECT 1 FROM pragma_table_info(?) WHERE name=?`).get(table, col);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+  };
+  add('session_categories', 'bytes_est', 'INTEGER DEFAULT 0');
 }
 
 export function closeDb() {
@@ -129,8 +140,8 @@ export function replaceSession(s) {
   const skStmt = db.prepare('INSERT INTO session_skills (session_id, skill_name, count) VALUES (?,?,?)');
   for (const sk of (s.skills || [])) skStmt.run(s.id, sk.skill_name, sk.count || 0);
 
-  const cStmt = db.prepare('INSERT INTO session_categories (session_id, category, calls, tokens) VALUES (?,?,?,?)');
-  for (const c of (s.categories || [])) cStmt.run(s.id, c.category, c.calls || 0, c.tokens || 0);
+  const cStmt = db.prepare('INSERT INTO session_categories (session_id, category, calls, tokens, bytes_est) VALUES (?,?,?,?,?)');
+  for (const c of (s.categories || [])) cStmt.run(s.id, c.category, c.calls || 0, c.tokens || 0, c.bytes_est || 0);
 }
 
 // ── Metadata ──
@@ -175,6 +186,8 @@ export function queryDailySummary(date) {
            MAX(project) AS project,
            COUNT(*) AS session_count,
            SUM(prompt_count) AS prompt_count,
+           SUM(input_tokens + output_tokens + cache_creation_tokens) AS billable_tokens,
+           SUM(cache_read_tokens) AS cache_read_tokens,
            SUM(total_tokens) AS total_tokens,
            SUM(total_cost) AS total_cost
     FROM sessions WHERE date=? GROUP BY repo_origin
@@ -190,9 +203,10 @@ export function queryDailySummary(date) {
   for (const [repo, tk] of Object.entries(takeoverByRepo(date))) {
     if (byRepo[repo]) {
       byRepo[repo].total_tokens += tk.tokens;
+      byRepo[repo].billable_tokens += tk.tokens; // takeover tokens are real output, not re-read cache
     } else {
       byRepo[repo] = { date, repo_origin: repo, project: tk.project, session_count: 0,
-        prompt_count: 0, total_tokens: tk.tokens, total_cost: 0, top_model: null };
+        prompt_count: 0, billable_tokens: tk.tokens, cache_read_tokens: 0, total_tokens: tk.tokens, total_cost: 0, top_model: null };
     }
   }
   return Object.values(byRepo).sort((a, b) => b.total_cost - a.total_cost);
@@ -217,10 +231,13 @@ export function queryToolUsage(date) {
 }
 
 export function queryModelBreakdown(date) {
+  // `tokens` = billable basis (excludes re-read cache); cache_read / all_tokens exposed too.
   return db.prepare(`
     SELECT sm.model AS model,
            SUM(sm.requests) AS calls,
-           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens,
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_creation_tokens) AS tokens,
+           SUM(sm.cache_read_tokens) AS cache_read,
+           SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS all_tokens,
            SUM(sm.cost) AS cost
     FROM session_models sm JOIN sessions s ON sm.session_id = s.id
     WHERE s.date=? GROUP BY sm.model ORDER BY cost DESC
@@ -228,12 +245,15 @@ export function queryModelBreakdown(date) {
 }
 
 export function querySessionStats(date) {
+  // `tokens` is the billable basis (excludes re-read cache); cache_read exposed separately.
   return db.prepare(`
     SELECT MAX(project) AS project,
            repo_origin,
            COUNT(*) AS sessions,
            COALESCE(SUM(prompt_count), 0) AS prompts,
-           COALESCE(SUM(total_tokens), 0) AS tokens,
+           COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens), 0) AS tokens,
+           COALESCE(SUM(cache_read_tokens), 0) AS cache_read,
+           COALESCE(SUM(total_tokens), 0) AS all_tokens,
            COALESCE(SUM(total_cost), 0) AS cost
     FROM sessions WHERE date=? GROUP BY repo_origin ORDER BY cost DESC
   `).all(date);
@@ -256,7 +276,8 @@ export function querySkillUsage(from, to, projectLike = null) {
 export function queryCategoryBreakdown(from, to, projectLike = null) {
   const params = [from, to];
   let sql = `
-    SELECT sc.category AS category, SUM(sc.calls) AS calls, SUM(sc.tokens) AS tokens
+    SELECT sc.category AS category, SUM(sc.calls) AS calls,
+           SUM(sc.tokens) AS tokens, SUM(sc.bytes_est) AS bytes_est
     FROM session_categories sc JOIN sessions s ON sc.session_id = s.id
     WHERE s.date >= ? AND s.date <= ?`;
   if (projectLike) { sql += ' AND s.project LIKE ?'; params.push(projectLike); }
@@ -289,7 +310,7 @@ export function queryModelFacts(from, to) {
 export function queryCategoryFacts(from, to) {
   return db.prepare(`
     SELECT s.date AS date, s.project AS project, sc.category AS category,
-           SUM(sc.calls) AS calls, SUM(sc.tokens) AS tokens
+           SUM(sc.calls) AS calls, SUM(sc.tokens) AS tokens, SUM(sc.bytes_est) AS bytes_est
     FROM session_categories sc JOIN sessions s ON sc.session_id = s.id
     WHERE s.date >= ? AND s.date <= ?
     GROUP BY s.date, s.project, sc.category

@@ -49,12 +49,13 @@ export function cmdInsights(args, VERSION) {
     if (merged) {
       rows = merged.daily_summary.map(r => ({
         project: r.project, sessions: r.session_count, prompts: r.prompt_count,
-        tokens: r.total_tokens, cost: r.total_cost,
+        tokens: r.billable_tokens ?? r.total_tokens, cost: r.total_cost,
       }));
     } else {
       rows = db.prepare(`
         SELECT project, COUNT(*) as sessions, COALESCE(SUM(prompt_count),0) as prompts,
-               COALESCE(SUM(total_tokens),0) as tokens, COALESCE(SUM(total_cost),0) as cost
+               COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens),0) as tokens,
+               COALESCE(SUM(total_cost),0) as cost
         FROM sessions
         WHERE date = ?
         GROUP BY repo_origin

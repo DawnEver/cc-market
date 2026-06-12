@@ -13,6 +13,8 @@ export function dumpDailyData(date) {
       repo_origin: r.repo_origin,
       session_count: r.session_count,
       prompt_count: r.prompt_count,
+      billable_tokens: r.billable_tokens,
+      cache_read_tokens: r.cache_read_tokens,
       total_tokens: r.total_tokens,
       total_cost: Math.round(r.total_cost * 100000) / 100000,
       top_model: r.top_model

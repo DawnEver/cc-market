@@ -47,7 +47,7 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
 | `traceme/tests/crypto.test.mjs` | 9 | AES-256-GCM encrypt/decrypt |
-| `traceme/tests/db.test.mjs` | 9 | replaceSession, derived daily/model/tool/skill/category queries, `categorizeTool`, takeover fold-in |
+| `traceme/tests/db.test.mjs` | 10 | replaceSession, derived daily/model/tool/skill queries, billable basis, category unit-split (tokens vs bytes_est), `categorizeTool`, takeover fold-in |
 | `traceme/tests/scan.test.mjs` | 5 | transcript scan: token aggregation, message-id dedup, cursor skip, idempotent re-scan, category bucketing |
 | `traceme/tests/report.test.mjs` | 7 | generateReport/generateStats, merged vs local-only data source |
 | `traceme/tests/dashboard.test.mjs` | 9 | buildDashboardHtml: ECharts CDN, flat fact-table payload, interactive controls incl. device dimension, cross-device data, data-honesty labels, embedded-JSON escaping |

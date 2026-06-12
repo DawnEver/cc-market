@@ -45,12 +45,13 @@ export function parseSession(entries) {
   const skills = {};
   let input = 0, output = 0, cacheRead = 0, cacheCreate = 0, cost = 0;
 
-  // Category buckets (Plugins/Subagents/MCPs). Subagent tokens come from sidechain
-  // assistant usage (true); other categories use a tool_result byte-size proxy.
+  // Category buckets (Plugins/Subagents/MCPs). Two DISTINCT units, never summed together:
+  // `tokens` holds real tokens (subagent sidechain usage); `bytes_est` holds the tool_result
+  // byte-size proxy (length/4) for mcp/plugin/builtin, which is NOT a token count.
   const categories = {};
-  const bumpCat = (cat, calls, toks) => {
-    const c = categories[cat] || (categories[cat] = { calls: 0, tokens: 0 });
-    c.calls += calls; c.tokens += toks;
+  const bumpCat = (cat, calls, toks, bytes) => {
+    const c = categories[cat] || (categories[cat] = { calls: 0, tokens: 0, bytes_est: 0 });
+    c.calls += calls; c.tokens += toks; c.bytes_est += bytes || 0;
   };
   const toolUseById = new Map();   // tool_use_id → { name, skill }
   const resultLenById = new Map(); // tool_use_id → result content length (proxy)
@@ -87,7 +88,7 @@ export function parseSession(entries) {
       const m = models[model] || (models[model] = { requests: 0, input: 0, output: 0, cache_read: 0, cache_creation: 0, cost: 0 });
       m.requests++; m.input += inp; m.output += out; m.cache_read += cr; m.cache_creation += cc; m.cost += c;
       // Subagent turns run on the sidechain — attribute their true tokens.
-      if (e.isSidechain) bumpCat('subagent', 0, inp + out + cr + cc);
+      if (e.isSidechain) bumpCat('subagent', 0, inp + out + cr + cc, 0);
       // Tool calls only count from the main thread (sidechain tool calls belong to the subagent).
       if (!e.isSidechain) {
         for (const block of (e.message.content || [])) {
@@ -109,8 +110,9 @@ export function parseSession(entries) {
   // Subagent token totals already came from the sidechain pass above (don't double-count).
   for (const [id, { name, skill }] of toolUseById) {
     const cat = categorizeTool(name, skill);
+    // proxy lands in bytes_est (NOT tokens) — it is a result-size estimate, not a token count.
     const proxy = cat === 'subagent' ? 0 : Math.round((resultLenById.get(id) || 0) / 4);
-    bumpCat(cat, 1, proxy);
+    bumpCat(cat, 1, 0, proxy);
   }
 
   if (!started) return null;

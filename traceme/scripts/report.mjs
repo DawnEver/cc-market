@@ -24,8 +24,10 @@ function summarizeProjectRows(rows) {
 }
 
 function normalizeProjectRow(row, isMerged) {
+  // `tokens` is the billable basis; merged snapshots fall back to total_tokens when an older
+  // device hasn't re-pushed the billable field yet.
   return isMerged
-    ? { project: row.project, repo_origin: row.repo_origin, sessions: row.session_count, prompts: row.prompt_count, tokens: row.total_tokens, cost: row.total_cost }
+    ? { project: row.project, repo_origin: row.repo_origin, sessions: row.session_count, prompts: row.prompt_count, tokens: row.billable_tokens ?? row.total_tokens, cost: row.total_cost }
     : { project: row.project, repo_origin: row.repo_origin, sessions: row.sessions, prompts: row.prompts, tokens: row.tokens, cost: row.cost };
 }
 
