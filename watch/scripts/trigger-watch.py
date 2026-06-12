@@ -23,16 +23,13 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 import bootstrap; bootstrap.ensure()
 
 from core import pidfile
+from core.anomalies import AI_ONLY_ANOMALY_TYPES
 from core.config import load_config
 from core.log import append_report, get_last_report
 
 LOG_FILE = '.claude/watch/logs/trigger-watch.jsonl'
 PIDFILE = 'trigger-watch.pid'
 WATCH_PY = _PLUGIN_ROOT / 'scripts' / 'watch.py'
-
-# Anomaly types that no shell action can fix — only an agent with CronCreate/CronList
-# tool access can resolve these (see components/cron_freshness.py).
-AI_ONLY_ANOMALY_TYPES = {'cron_stale', 'cron_marker_missing'}
 
 
 def _log(project_dir: Path, level: str, msg: str) -> None:
