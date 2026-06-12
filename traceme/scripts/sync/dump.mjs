@@ -22,7 +22,7 @@ export function dumpDailyData(date) {
     tool_usage: queryToolUsage(date),
     // Per (project, model) token components — lights up cross-device per-model views.
     model_facts: queryModelFacts(date, date).map(r => ({
-      project: r.project, model: r.model, requests: r.requests,
+      project: r.project, repo_origin: r.repo_origin, model: r.model, requests: r.requests,
       input: r.input, output: r.output, cache_read: r.cache_read, cache_creation: r.cache_creation,
       cost: Math.round(r.cost * 100000) / 100000,
     })),

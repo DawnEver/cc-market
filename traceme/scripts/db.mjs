@@ -328,7 +328,7 @@ export function queryCategoryBreakdown(from, to, projectLike = null) {
 export function queryModelFacts(from, to) {
   // `cost` recomputed query-time from current pricing (not the scan-time stored value).
   const rows = db.prepare(`
-    SELECT s.date AS date, s.project AS project, sm.model AS model,
+    SELECT s.date AS date, MAX(s.project) AS project, s.repo_origin AS repo_origin, sm.model AS model,
            SUM(sm.requests) AS requests,
            SUM(sm.input_tokens) AS input,
            SUM(sm.output_tokens) AS output,
@@ -337,7 +337,7 @@ export function queryModelFacts(from, to) {
            SUM(sm.input_tokens + sm.output_tokens + sm.cache_read_tokens + sm.cache_creation_tokens) AS tokens
     FROM session_models sm JOIN sessions s ON sm.session_id = s.id
     WHERE s.date >= ? AND s.date <= ?
-    GROUP BY s.date, s.project, sm.model
+    GROUP BY s.date, s.repo_origin, sm.model
     ORDER BY s.date ASC
   `).all(from, to);
   for (const r of rows) r.cost = costOf(r.model, r);
@@ -346,29 +346,29 @@ export function queryModelFacts(from, to) {
 
 export function queryCategoryFacts(from, to) {
   return db.prepare(`
-    SELECT s.date AS date, s.project AS project, sc.category AS category,
+    SELECT s.date AS date, MAX(s.project) AS project, s.repo_origin AS repo_origin, sc.category AS category,
            SUM(sc.calls) AS calls, SUM(sc.tokens) AS tokens, SUM(sc.bytes_est) AS bytes_est
     FROM session_categories sc JOIN sessions s ON sc.session_id = s.id
     WHERE s.date >= ? AND s.date <= ?
-    GROUP BY s.date, s.project, sc.category
+    GROUP BY s.date, s.repo_origin, sc.category
     ORDER BY s.date ASC
   `).all(from, to);
 }
 
 export function querySkillFacts(from, to) {
   return db.prepare(`
-    SELECT s.date AS date, s.project AS project, ss.skill_name AS skill_name,
+    SELECT s.date AS date, MAX(s.project) AS project, s.repo_origin AS repo_origin, ss.skill_name AS skill_name,
            SUM(ss.count) AS count
     FROM session_skills ss JOIN sessions s ON ss.session_id = s.id
     WHERE s.date >= ? AND s.date <= ?
-    GROUP BY s.date, s.project, ss.skill_name
+    GROUP BY s.date, s.repo_origin, ss.skill_name
     ORDER BY s.date ASC
   `).all(from, to);
 }
 
 export function querySessionFacts(from, to) {
   return db.prepare(`
-    SELECT date, project, started_at, ended_at, active_min, prompt_count, total_tokens, total_cost
+    SELECT date, project, repo_origin, started_at, ended_at, active_min, prompt_count, total_tokens, total_cost
     FROM sessions
     WHERE date >= ? AND date <= ?
     ORDER BY started_at ASC
