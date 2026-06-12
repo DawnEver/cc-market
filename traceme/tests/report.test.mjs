@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { openDb, closeDb, replaceSession } from '../scripts/db.mjs';
 import { generateReport, generateStats } from '../scripts/report.mjs';
+import { calcCost } from '../scripts/pricing.mjs';
 
 const TEST_DB = join(tmpdir(), `traceme-report-${randomUUID()}.db`);
 
@@ -38,7 +39,9 @@ describe('Report Generator', () => {
     const report = generateReport('2026-06-09', { local: true });
     assert.ok(report.includes('TraceMe Report'));
     assert.ok(report.includes('my-project'));
-    assert.ok(report.includes('$0.045'), `Cost not found. Report: ${report.slice(0, 500)}`);
+    // cost is recomputed query-time from current pricing, not the stored fixture value
+    const expectedCost = '$' + calcCost({ input_tokens: 8000, output_tokens: 3500, cache_read_input_tokens: 500, cache_creation_input_tokens: 0 }, 'claude-sonnet-4-6').toFixed(4);
+    assert.ok(report.includes(expectedCost), `Cost ${expectedCost} not found. Report: ${report.slice(0, 500)}`);
     assert.ok(report.includes('Edit'));
     assert.ok(report.includes('Bash'));
     assert.ok(report.includes('Read'));
