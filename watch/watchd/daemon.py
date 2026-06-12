@@ -23,11 +23,24 @@ import bootstrap; bootstrap.ensure()
 from core import pidfile
 from core.anomalies import is_ai_only
 from core.config import load_config as load_main_config
+from core.remediate import apply_remedies
 from core.state import load_state, save_state, track_anomaly as track
 from core.log import append_report
 from components.registry import create_registry
 
 _PIDFILE = 'watchd.pid'
+
+
+def _write_heartbeat(project_dir: Path, heartbeat_file: str) -> None:
+    """Write the liveness heartbeat. Called at the end of every poll, and
+    again right before a (potentially long) in-process remediation so the
+    health-check pipeline doesn't read the daemon as stale mid-deploy."""
+    hb_path = project_dir / heartbeat_file
+    hb_path.parent.mkdir(parents=True, exist_ok=True)
+    hb_path.write_text(json.dumps({
+        'ts': datetime.now(timezone.utc).isoformat(),
+        'pid': os.getpid(),
+    }, ensure_ascii=False) + '\n', encoding='utf-8')
 
 
 def _log(project_dir: Path, log_file: str, level: str, msg: str) -> None:
@@ -80,6 +93,7 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
 
     all_ok = True
     anomaly_types: set[str] = set()
+    anomalies: list = []
     names = [c.name for c in components]
     _log(project_dir, log_file, 'info', f'Polling ({", ".join(names)})')
 
@@ -96,6 +110,8 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
                          f'  [{comp.name}] [{a.severity}] {a.message}')
                     track(state, f'{comp.name}_{a.type}')
                     anomaly_types.add(a.type)
+                    a.source = f'{comp.name}.{a.type}'
+                    anomalies.append(a)
         except Exception as e:
             _log(project_dir, log_file, 'error', f'  [{comp.name}] crashed: {e}')
             all_ok = False
@@ -111,22 +127,36 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
                 state.pop(key, None)
         state['last_ok'] = datetime.now(timezone.utc).isoformat()
         _log(project_dir, log_file, 'info', 'All OK.')
-    elif state['fails'] >= fail_threshold:
-        ck = {k: v for k, v in state.items()
-              if isinstance(v, int) and k.startswith('consecutive_')}
-        detail = ', '.join(f'{k}:{v}x' for k, v in ck.items()) if ck else 'checkers failing'
-        _wake_claude(project_dir, config, 'anomalies_detected', detail,
-                     anomaly_types=anomaly_types, dry_run=dry_run)
+    else:
+        # Headless auto-remediation: when enabled, watchd applies the same
+        # deterministic remedy chains the AI loop would (deploy → test gate →
+        # rollback-on-failure → build/restart) entirely in-process. AI-only
+        # anomalies (cron_*) have no shell remedy, so they still fall through
+        # to _wake_claude. A mixed batch is remediated for its actionable part.
+        auto = wd.get('auto_remediate', False)
+        if auto and anomalies and not is_ai_only(anomaly_types) and not dry_run:
+            # Refresh heartbeat first — remediation (deploy) can run for minutes
+            # and we must not read as stale meanwhile.
+            _write_heartbeat(project_dir, wd['heartbeat_file'])
+            _log(project_dir, log_file, 'info',
+                 f'Auto-remediating ({", ".join(sorted(anomaly_types))})...')
+            ts = datetime.now(timezone.utc).isoformat()
+            try:
+                apply_remedies(registry, anomalies, config, state,
+                               project_dir, ts, dry_run=dry_run)
+            except Exception as e:
+                _log(project_dir, log_file, 'error', f'Auto-remediation crashed: {e}')
+        elif state['fails'] >= fail_threshold:
+            ck = {k: v for k, v in state.items()
+                  if isinstance(v, int) and k.startswith('consecutive_')}
+            detail = ', '.join(f'{k}:{v}x' for k, v in ck.items()) if ck else 'checkers failing'
+            _wake_claude(project_dir, config, 'anomalies_detected', detail,
+                         anomaly_types=anomaly_types, dry_run=dry_run)
 
     save_state(project_dir, state, wd['state_file'])
 
     # Heartbeat — write after each poll so health-check pipeline can verify liveness
-    hb_path = project_dir / wd['heartbeat_file']
-    hb_path.parent.mkdir(parents=True, exist_ok=True)
-    hb_path.write_text(json.dumps({
-        'ts': datetime.now(timezone.utc).isoformat(),
-        'pid': os.getpid(),
-    }, ensure_ascii=False) + '\n', encoding='utf-8')
+    _write_heartbeat(project_dir, wd['heartbeat_file'])
 
 
 def main(argv: list[str] | None = None) -> None:

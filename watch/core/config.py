@@ -18,6 +18,7 @@ DEFAULTS: dict[str, Any] = {
         'interval': 300,
         'fail_threshold': 2,
         'auto_restart': True,
+        'auto_remediate': False,
         'log_file': '.claude/watch/logs/daemon.jsonl',
         'state_file': '.claude/watch/state/daemon.json',
         'trigger_file': '.claude/watch/trigger.json',

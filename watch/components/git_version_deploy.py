@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from components.git_version import (
+    current_heads,
     health_check_url,
     load_known,
     remove_worktree,
@@ -119,6 +120,8 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
                 print(f'[git_version]   [{name}] Tests FAILED ({elapsed:.0f}s)')
                 if r.stdout:
                     print(r.stdout[-1500:])
+                if r.stderr:
+                    print(r.stderr[-1500:])
             else:
                 print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
         except subprocess.TimeoutExpired:
@@ -242,4 +245,99 @@ def deploy_repos(comp_cfg: dict, project: Path, context: dict) -> bool:
 
     context['deploy_test_health_passed'] = True
     print(f'[git_version] All test gates passed. Production restart delegated to SKILL.md.')
+    return True
+
+
+def verify_and_mark_stable(comp_cfg: dict, project: Path, context: dict) -> bool:
+    """Verify local deploy-branch commits in an isolated worktree, then mark
+    them known-good on success. Used by the `local_changes_unverified` remedy:
+    a manual hotfix committed to the deploy branch gets tested before becoming
+    the new rollback target. Known-good is left untouched on failure.
+    """
+    deploy_cfg = comp_cfg.get('deploy', {})
+    test_cmd = deploy_cfg.get('test_command', '')
+    repos = comp_cfg.get('repositories', [])
+    if not test_cmd or not repos:
+        print('[git_version] No test_command or repositories configured.')
+        return False
+
+    heads = current_heads(comp_cfg, project)
+    known = load_known(comp_cfg, project)
+    repos_to_test = [r for r in repos
+                     if heads.get(r['name']) and heads.get(r['name']) != known.get(r['name'])]
+    if not repos_to_test:
+        print('[git_version] Local HEADs already match known-good. Nothing to verify.')
+        return True
+
+    staging_base = project / deploy_cfg.get('staging_dir', '.watch-staging')
+    staging_dirs: dict[str, Path] = {}
+    tests_ok = True
+    test_env = os.environ.copy()
+    test_env['WATCH_PROJECT_ROOT'] = str(project)
+
+    for repo in repos_to_test:
+        name = repo['name']
+        repo_path = (project / repo['path']).resolve()
+        target = heads[name]
+        staging = staging_base / name
+
+        if staging.exists():
+            remove_worktree(staging, repo_path)
+        try:
+            subprocess.run(
+                ['git', 'worktree', 'add', '--detach', str(staging), target],
+                cwd=repo_path, check=True, capture_output=True, text=True, timeout=30,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f'[git_version]   [{name}] worktree FAILED: {e.stderr}')
+            tests_ok = False
+            break
+        staging_dirs[name] = staging
+
+        repo_test_cmd = repo.get('test_command', test_cmd)
+        test_env['WATCH_STAGING'] = str(staging)
+        env_key = 'WATCH_STAGING_' + name.upper().replace('-', '_').replace(' ', '_')
+        test_env[env_key] = str(staging)
+
+        print(f'[git_version]   [{name}] verify test: {repo_test_cmd}')
+        t0 = time.time()
+        try:
+            r = subprocess.run(repo_test_cmd, shell=True, cwd=staging,
+                               capture_output=True, text=True,
+                               timeout=deploy_cfg.get('test_timeout', 300),
+                               env=test_env)
+            elapsed = time.time() - t0
+            if r.returncode != 0:
+                tests_ok = False
+                print(f'[git_version]   [{name}] Tests FAILED ({elapsed:.0f}s)')
+                if r.stdout:
+                    print(r.stdout[-1500:])
+                if r.stderr:
+                    print(r.stderr[-1500:])
+            else:
+                print(f'[git_version]   [{name}] Tests PASSED ({elapsed:.0f}s)')
+        except subprocess.TimeoutExpired:
+            print(f'[git_version]   [{name}] Tests TIMED OUT')
+            tests_ok = False
+
+        if not tests_ok:
+            break
+
+    for name, staging in staging_dirs.items():
+        repo_path = (project / next(
+            r['path'] for r in repos_to_test if r['name'] == name)).resolve()
+        remove_worktree(staging, repo_path)
+
+    if not tests_ok:
+        context['deploy_result'] = 'failed'
+        context['deploy_failure_reason'] = (
+            'Local deploy-branch changes failed verification tests. '
+            'Known-good was NOT updated.')
+        print('[git_version] Verify ABORTED — tests failed. Known-good unchanged.')
+        return False
+
+    save_known(comp_cfg, project, heads, stable_checks=0)
+    context['deploy_result'] = 'passed'
+    context['known_good_updated'] = True
+    print('[git_version] Local changes verified. Known-good updated (stable_checks=0).')
     return True

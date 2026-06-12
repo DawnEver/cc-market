@@ -134,4 +134,22 @@ def create_registry(config: dict, project_dir: Path) -> ComponentRegistry:
             reg._actions[aname] = Action(**{k: v for k, v in adef.items()
                                             if k in Action.__dataclass_fields__})
 
+    # 5. Override remedy chains from config's top-level `remedies:` section.
+    #    A project may redefine an anomaly's remedy chain (e.g. extend the
+    #    built-in `new_version_available -> [deploy]` to also build + restart
+    #    production). Config wins over component defaults (last-writer-wins).
+    config_remedies = config.get('remedies', {})
+    for atype, steps in config_remedies.items():
+        if not isinstance(steps, list):
+            continue
+        parsed: list[RemedyStep] = []
+        for step in steps:
+            if isinstance(step, dict) and step.get('action'):
+                parsed.append(RemedyStep(**{k: v for k, v in step.items()
+                                            if k in RemedyStep.__dataclass_fields__}))
+            elif isinstance(step, str):
+                parsed.append(RemedyStep(action=step))
+        if parsed:
+            reg._remedies[atype] = parsed
+
     return reg
