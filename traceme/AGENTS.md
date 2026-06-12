@@ -48,10 +48,19 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 
 Schema (all per-session, recomputed on each scan): `sessions` (one row per transcript) +
 `session_models` / `session_tools` / `session_skills` / `session_categories` breakdowns.
-`session_categories` buckets tokens by tool category for the dashboard's
-Plugins/Subagents/MCPs view — `subagent` tokens are the *true* tokens of sidechain (subagent)
-assistant turns; `mcp`/`plugin`/`builtin` tokens are a `tool_result`-size proxy (no per-tool
-token attribution exists in the transcript). Local-device only; not synced. `daily_takeover`
+`session_categories` buckets by tool category for the dashboard's Plugins/Subagents/MCPs view.
+**Two distinct units, never summed:** `subagent.tokens` are the *true* tokens of sidechain
+(subagent) assistant turns; `mcp`/`plugin`/`builtin` carry no real tokens — their
+`tool_result`-size estimate (`length/4`) lives in a separate `bytes_est` column (no per-tool
+token attribution exists in the transcript). Local-device only; not synced.
+
+**Billable basis:** the canonical "tokens" metric across report/insights/dashboard/sync is
+`input + output + cache_creation` (billable) — re-read cache (`cache_read`) is excluded from
+headline totals and exposed as its own dimension, since it is the same context re-read each turn
+and inflates an idle session. `total_tokens` (all four) is retained for completeness; derived
+queries return `tokens`/`billable_tokens` (billable) plus `cache_read`. Daily snapshots carry
+`billable_tokens` + `cache_read_tokens`; merged reads fall back to `total_tokens` for snapshots an
+older device hasn't re-pushed. `daily_takeover`
 holds the only non-transcript source. `traceme_meta` holds scan cursors (`cur:<path>`), the cwd→repo
 cache (`repo:<cwd>`), `device_id`, and sync timestamps.
 
@@ -149,4 +158,4 @@ excluded) → `skills/traceme/reference/sync.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-52 tests: DB derived queries incl. category + flat fact tables + `categorizeTool` (9), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged + `readDeviceFacts` (7), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping (9), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.
+53 tests: DB derived queries incl. billable basis, category unit-split, flat fact tables + `categorizeTool` (10), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged + `readDeviceFacts` (7), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping (9), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.

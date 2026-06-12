@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { TRACEME_DIR } from './lib.mjs';
 
-const PRICING_FILE = join(TRACEME_DIR, 'model_pricing.json');
+const PRICING_FILE = process.env.TRACEME_PRICING_FILE || join(TRACEME_DIR, 'model_pricing.json');
 
 // Default pricing — updated 2026-06-11.
 // Source: https://platform.claude.com/docs/en/about-claude/pricing
@@ -24,6 +24,21 @@ const DEFAULT_PRICING = {
   'deepseek-v4-flash':       { input: 0.14,  output: 0.28,  cache_hit: 0.0028 },
 };
 
+// Bare model aliases Claude Code emits (no version suffix) → canonical id.
+const ALIASES = {
+  opus: 'claude-opus-4-8',
+  sonnet: 'claude-sonnet-4-6',
+  haiku: 'claude-haiku-4-5',
+  fable: 'claude-fable-5',
+  mythos: 'claude-mythos-5',
+};
+
+// Canonicalize so dot/dash spelling can't desync key vs. model id.
+// Real model ids use dashes (`claude-opus-4-8`); pricing keys historically
+// used dots (`claude-opus-4.8`) — without this, `startsWith` silently fell
+// through to the older `claude-opus-4` tier and overcharged 3×.
+function canon(s) { return s.toLowerCase().replace(/\./g, '-'); }
+
 let _pricing = null;
 
 export function loadPricing() {
@@ -42,10 +57,16 @@ export function loadPricing() {
 
 export function getPricing(model) {
   const pricing = loadPricing();
+  let m = canon(model || '');
+  if (ALIASES[m]) m = canon(ALIASES[m]);
+  // Longest matching canonical prefix wins, so `claude-opus-4-8` binds to
+  // `claude-opus-4.8`, never the shorter `claude-opus-4`.
+  let best = null, bestLen = -1;
   for (const [key, price] of Object.entries(pricing)) {
-    if (model.startsWith(key)) return price;
+    const ck = canon(key);
+    if (m.startsWith(ck) && ck.length > bestLen) { best = price; bestLen = ck.length; }
   }
-  return pricing['claude-sonnet-4.6'] || DEFAULT_PRICING['claude-sonnet-4.6'];
+  return best || pricing['claude-sonnet-4.6'] || DEFAULT_PRICING['claude-sonnet-4.6'];
 }
 
 export function calcCost(usage, model) {

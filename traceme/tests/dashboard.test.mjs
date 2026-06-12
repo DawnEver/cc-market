@@ -17,9 +17,9 @@ function sampleData() {
         input: 800, output: 1500, cache_read: 70000, cache_creation: 300, tokens: 72600, cost: 0.25 },
     ],
     categoryFacts: [
-      { date: '2026-06-08', project: 'my-app', category: 'subagent', calls: 3, tokens: 40000 },
-      { date: '2026-06-08', project: 'my-app', category: 'mcp', calls: 5, tokens: 12000 },
-      { date: '2026-06-09', project: 'my-app', category: 'plugin', calls: 2, tokens: 3000 },
+      { date: '2026-06-08', project: 'my-app', category: 'subagent', calls: 3, tokens: 40000, bytes_est: 0 },
+      { date: '2026-06-08', project: 'my-app', category: 'mcp', calls: 5, tokens: 0, bytes_est: 12000 },
+      { date: '2026-06-09', project: 'my-app', category: 'plugin', calls: 2, tokens: 0, bytes_est: 3000 },
     ],
     skillFacts: [
       { date: '2026-06-08', project: 'my-app', skill_name: 'rem:rem', count: 4 },

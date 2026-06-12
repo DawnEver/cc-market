@@ -36,9 +36,9 @@ function sampleSession(id, over = {}) {
     tools: [{ tool_name: 'Edit', count: 2 }, { tool_name: 'Bash', count: 1 }],
     skills: [{ skill_name: 'rem:rem', count: 1 }],
     categories: [
-      { category: 'subagent', calls: 1, tokens: 1200 },
-      { category: 'mcp', calls: 2, tokens: 300 },
-      { category: 'plugin', calls: 1, tokens: 10 },
+      { category: 'subagent', calls: 1, tokens: 1200, bytes_est: 0 },
+      { category: 'mcp', calls: 2, tokens: 0, bytes_est: 300 },
+      { category: 'plugin', calls: 1, tokens: 0, bytes_est: 10 },
     ],
     ...over,
   };
@@ -84,14 +84,21 @@ describe('DB Layer', { concurrency: 1 }, () => {
     const rows = querySessionStats('2026-06-09');
     assert.equal(rows.length, 1);
     assert.equal(rows[0].project, 'test-project');
-    assert.equal(rows[0].tokens, 2250);
+    assert.equal(rows[0].tokens, 1950); // billable = input(1300)+output(600)+cache_creation(50), excludes cache_read
+    assert.equal(rows[0].cache_read, 300);
   });
 
-  it('queryCategoryBreakdown / queryModelFacts / querySessionFacts', () => {
+  it('queryCategoryBreakdown keeps subagent tokens apart from byte-proxy', () => {
     const cats = queryCategoryBreakdown('2026-06-09', '2026-06-09');
     const byCat = Object.fromEntries(cats.map(c => [c.category, c]));
     assert.equal(byCat.subagent.tokens, 1200);
+    assert.equal(byCat.subagent.bytes_est, 0);
     assert.equal(byCat.mcp.calls, 2);
+    assert.equal(byCat.mcp.tokens, 0, 'proxy categories carry no real tokens');
+    assert.equal(byCat.mcp.bytes_est, 300, 'proxy lives in bytes_est, never summed with tokens');
+  });
+
+  it('queryModelFacts / querySessionFacts', () => {
 
     // flat fact table: per date×project×model with separate token components
     const mf = queryModelFacts('2026-06-09', '2026-06-09');

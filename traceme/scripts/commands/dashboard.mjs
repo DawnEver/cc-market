@@ -302,7 +302,11 @@ const CLIENT_JS = String.raw`
     var agg = {};
     var isCat = state.groupBy === 'category';
     if (isCat) {
-      cf.forEach(function (r) { var l = CAT_LABELS[r.category] || r.category; agg[l] = (agg[l] || 0) + r.tokens; });
+      // subagent is real tokens; others are the byte-estimate — labelled so they aren't read as tokens
+      cf.forEach(function (r) {
+        var l = r.category === 'subagent' ? 'Subagents (tokens)' : (CAT_LABELS[r.category] || r.category) + ' (≈ bytes)';
+        agg[l] = (agg[l] || 0) + (r.category === 'subagent' ? r.tokens : (r.bytes_est || 0));
+      });
     } else {
       tr.forEach(function (r) { var k = dimOf(r); agg[k] = (agg[k] || 0) + tokTrend(r); });
     }
@@ -324,7 +328,7 @@ const CLIENT_JS = String.raw`
     var subagent = 0, proxy = {};
     cf.forEach(function (r) {
       if (r.category === 'subagent') subagent += r.tokens;
-      else proxy[r.category] = (proxy[r.category] || 0) + r.tokens;
+      else proxy[r.category] = (proxy[r.category] || 0) + (r.bytes_est || 0);
     });
     var pk = Object.keys(proxy);
     var cats = ['Subagents (actual tokens)'].concat(pk.map(function (k) { return (CAT_LABELS[k] || k) + ' (≈ bytes)'; }));
