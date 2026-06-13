@@ -5,21 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from components.base import Anomaly, CheckResult, Component
-
-
-def _resolve_output_dir(path: str, project_dir: str) -> str:
-    """Replace ${OUTPUT_DIR} in *path* using active-run.json."""
-    if '${OUTPUT_DIR}' not in path:
-        return path
-    ar = Path(project_dir) / '.claude' / 'watch' / 'active-run.json'
-    try:
-        if ar.exists():
-            data = json.loads(ar.read_text(encoding='utf-8'))
-            return path.replace('${OUTPUT_DIR}', data.get('output_dir', ''))
-    except Exception:
-        pass
-    return path
+from components.base import (
+    DEFAULT_ACTIVE_RUN_FILE,
+    Anomaly,
+    CheckResult,
+    Component,
+    resolve_output_dir,
+)
 
 
 class ProgressTracker(Component):
@@ -36,12 +28,13 @@ class ProgressTracker(Component):
         total_ops = comp_cfg.get('total_ops', 0)
         state_key = comp_cfg.get('state_key', '_progress')
         stale_threshold = comp_cfg.get('stale_threshold', 3)
+        active_run_file = comp_cfg.get('active_run_file', DEFAULT_ACTIVE_RUN_FILE)
 
         result = CheckResult()
         project_dir = global_cfg.get('_project_dir', '.')
 
         # Resolve progress file path (handles ${OUTPUT_DIR} template)
-        progress_file = _resolve_output_dir(progress_file, project_dir)
+        progress_file = resolve_output_dir(progress_file, project_dir, active_run_file)
         pf = Path(progress_file)
         if not pf.is_absolute():
             pf = Path(project_dir) / pf
@@ -155,13 +148,15 @@ class ProgressTracker(Component):
                 message=f'Progress stalled: {ops_done}/{total_ops} OPs unchanged for {stale} polls',
             ))
         elif status == 'COMPLETE':
-            # Info-only anomaly — not a failure
-            result.anomalies.append(Anomaly(
-                type='complete',
-                severity='warning',
-                value=ops_done,
-                threshold=total_ops,
-                message=f'Task complete: {ops_done}/{total_ops} OPs',
-            ))
+            # Terminal success — a completion, NOT an anomaly. Modelling it as a
+            # (warning) anomaly made a finished run read as `degraded` forever,
+            # held it on the anomaly cadence, and could trip escalation. As a
+            # completion it yields a first-class `complete` status instead.
+            result.completions.append({
+                'type': 'complete',
+                'ops_done': ops_done,
+                'total_ops': total_ops,
+                'message': f'Task complete: {ops_done}/{total_ops} OPs',
+            })
 
         return result

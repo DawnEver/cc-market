@@ -43,6 +43,7 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
         'timestamp': ts,
         'instance': config['instance']['name'],
         'anomalies': [],
+        'completions': [],
         'components': {},
     }
 
@@ -58,10 +59,13 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
                 'data': result.data,
                 'anomalies': [{'type': a.type, 'severity': a.severity,
                                'message': a.message} for a in result.anomalies],
+                'completions': list(result.completions),
             }
             for a in result.anomalies:
                 a.source = f'{comp.name}.{a.type}'
             report['anomalies'].extend(result.anomalies)
+            for c in result.completions:
+                report['completions'].append({**c, 'source': comp.name})
         except FutureTimeoutError:
             print(f'[{comp.name}] timed out after {CHECK_TIMEOUT}s', file=sys.stderr, flush=True)
             report['components'][comp.name] = {'error': f'timed out after {CHECK_TIMEOUT}s'}
@@ -102,6 +106,11 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
         report['status'] = 'degraded'
     elif report['anomalies']:
         report['status'] = 'degraded'
+    elif report['completions']:
+        # Terminal success: task(s) finished with no outstanding anomalies. Not
+        # `degraded` — lets /watch:watch stop refreshing the cron instead of
+        # rescheduling at the anomaly cadence.
+        report['status'] = 'complete'
 
     # 5b. Serialize anomalies (Anomaly objects → dicts)
     report = _to_serializable(report)
