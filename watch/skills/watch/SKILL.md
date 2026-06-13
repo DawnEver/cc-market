@@ -45,6 +45,14 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
   (main → known-good → deploy worktree), there is no hotfix/backport path.
 - Otherwise go straight to Step 5 (`normal` interval).
 
+**On `complete`:**
+- A monitored task finished successfully (`report.completions` lists them;
+  `report.summary` starts with `COMPLETE`). Terminal success — do NOT remediate
+  or escalate.
+- Report completion to the user, then **stop the recurring schedule**: delete the
+  durable cron (`CronDelete`) rather than refreshing it. Optionally clear/rename
+  `.claude/watch/active-run.json` so later manual checks are quiet.
+
 **On `degraded` (anomaly after recent deploy):**
 - Check `report.escalation.remedies_attempted` — if a recent deploy failed, consider rollback:
   ```bash

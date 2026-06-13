@@ -2,10 +2,40 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+DEFAULT_ACTIVE_RUN_FILE = '.claude/watch/active-run.json'
+
+
+def resolve_output_dir(
+    path: str, project_dir: str, active_run_file: str = DEFAULT_ACTIVE_RUN_FILE
+) -> str:
+    """Replace ``${OUTPUT_DIR}`` in *path* using the active-run file.
+
+    The active-run file (a small JSON written by the supervised launcher) carries
+    ``{"output_dir": ...}`` so components can follow a task whose output location
+    is only known at runtime. *active_run_file* is configurable so two separate
+    watch configs can each point at their own run file; it defaults to the
+    single shared ``.claude/watch/active-run.json``. Returns *path* unchanged if
+    the template is absent or the file is missing/unreadable.
+    """
+    if '${OUTPUT_DIR}' not in path:
+        return path
+    ar = Path(active_run_file)
+    if not ar.is_absolute():
+        ar = Path(project_dir) / ar
+    try:
+        if ar.exists():
+            data = json.loads(ar.read_text(encoding='utf-8'))
+            return path.replace('${OUTPUT_DIR}', data.get('output_dir', ''))
+    except Exception:
+        pass
+    return path
 
 
 @dataclass
@@ -63,6 +93,11 @@ class CheckResult:
     metrics: dict[str, float] = field(default_factory=dict)
     anomalies: list[Anomaly] = field(default_factory=list)
     data: dict[str, Any] = field(default_factory=dict)
+    # Terminal "task finished successfully" signals — NOT anomalies. A completion
+    # never makes a run `degraded` and never enters remedies/escalation; it lets
+    # the loop report a first-class `complete` status. Each item is a small dict,
+    # e.g. {'type': 'complete', 'ops_done': N, 'total_ops': N, 'message': ...}.
+    completions: list[dict] = field(default_factory=list)
 
 
 class Component(ABC):

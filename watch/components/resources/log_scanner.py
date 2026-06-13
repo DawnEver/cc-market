@@ -2,24 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from components.base import Anomaly, CheckResult, Component
-
-
-def _resolve_output_dir(path: str, project_dir: str) -> str:
-    """Replace ${OUTPUT_DIR} in *path* using active-run.json."""
-    if '${OUTPUT_DIR}' not in path:
-        return path
-    ar = Path(project_dir) / '.claude' / 'watch' / 'active-run.json'
-    try:
-        if ar.exists():
-            data = json.loads(ar.read_text(encoding='utf-8'))
-            return path.replace('${OUTPUT_DIR}', data.get('output_dir', ''))
-    except Exception:
-        pass
-    return path
+from components.base import (
+    DEFAULT_ACTIVE_RUN_FILE,
+    Anomaly,
+    CheckResult,
+    Component,
+    resolve_output_dir,
+)
 
 
 class LogScanner(Component):
@@ -32,6 +23,7 @@ class LogScanner(Component):
         tail_lines = comp_cfg.get('tail_lines', 5)
         error_patterns = comp_cfg.get('error_patterns', ['FAIL', 'ERROR', 'Traceback'])
         max_files = comp_cfg.get('max_files', 10)
+        active_run_file = comp_cfg.get('active_run_file', DEFAULT_ACTIVE_RUN_FILE)
 
         result = CheckResult()
 
@@ -42,7 +34,7 @@ class LogScanner(Component):
             return result
 
         project_dir = global_cfg.get('_project_dir', '.')
-        log_dir = _resolve_output_dir(log_dir, project_dir)
+        log_dir = resolve_output_dir(log_dir, project_dir, active_run_file)
         log_path = Path(project_dir) / log_dir if not Path(log_dir).is_absolute() else Path(log_dir)
 
         if not log_path.exists() or not log_path.is_dir():

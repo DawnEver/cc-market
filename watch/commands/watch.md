@@ -34,6 +34,17 @@ Parse the JSON output. Key fields: `status`, `anomalies`, `endpoints`, `processe
 - Report: all clear.
 - CronCreate: refresh the durable cron for `check_interval_normal` (see SKILL.md Step 5).
 
+**If `status == "complete"`:**
+A monitored task finished (`report.completions` lists the finished tasks; e.g. a
+`progress_tracker` reached its `total_ops`). This is terminal success, not a
+problem — do NOT apply remedies or escalate.
+- Report the completion(s) to the user (`report.summary` starts with `COMPLETE`).
+- **Stop the recurring schedule** instead of refreshing it: delete the durable
+  cron (`CronDelete`) so the loop doesn't keep polling a finished task. (If you
+  want a low-frequency idle check afterwards, recreate a daily cron instead.)
+- Optionally run a configured `task_done` action and clear/rename
+  `.claude/watch/active-run.json` so subsequent manual checks go quiet.
+
 **If `status == "degraded"` or `status == "unreachable"`:**
 
 For each anomaly in `report.anomalies`:

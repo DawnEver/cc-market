@@ -31,6 +31,10 @@ def _build_summary(report: dict) -> str:
     """One-line orientation string."""
     comp_names = list(report.get('components', {}).keys())
     anomalies = report['anomalies']
+    completions = report.get('completions', [])
+    if not anomalies and completions:
+        msgs = '; '.join(c.get('message', 'complete') for c in completions[:3])
+        return f'COMPLETE — {msgs}'
     if not anomalies:
         comps = ', '.join(comp_names[:4])
         if len(comp_names) > 4:

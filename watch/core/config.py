@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 from typing import Any
@@ -102,7 +103,10 @@ def load_config(project_dir: str | Path, config_path: str | None = None) -> dict
     project = Path(project_dir)
     watch_dir = project / '.claude' / 'watch'
 
-    config = dict(DEFAULTS)
+    # Deep-copy: _deep_merge mutates nested dicts in place, and a shallow
+    # dict(DEFAULTS) would let those mutations corrupt the module-global DEFAULTS
+    # (contaminating later loads — e.g. the daemon reloads config every poll).
+    config = copy.deepcopy(DEFAULTS)
 
     # 1. Main config (version-tracked): instance, components, thresholds, actions, remedies
     main_file = watch_dir / (config_path or 'config.yaml')

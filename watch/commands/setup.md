@@ -103,6 +103,21 @@ components:
     enabled: true
     max_age_seconds: 600
 
+  # Track a long-running task's progress file and signal completion.
+  # progress_tracker:
+  #   enabled: true
+  #   progress_file: "${OUTPUT_DIR}/timing.json"  # ${OUTPUT_DIR} <- active-run.json
+  #   count_path: "models"        # dot-path to the per-unit count map
+  #   combine: "sum"              # sum|min|max|first across units
+  #   total_ops_path: ".claude/watch/active-run.json"
+  #   total_ops_key: "total_ops"
+  #   stale_threshold: 5          # unchanged polls before STALLED
+  #   active_run_file: ".claude/watch/active-run.json"  # source of ${OUTPUT_DIR};
+  #                               # override to run two configs side-by-side.
+  # When ops_done >= total_ops the run reports first-class status `complete`
+  # (terminal success — never `degraded`, never escalated). /watch:watch stops
+  # the recurring cron on `complete` instead of refreshing it.
+
 remedies:
   high_cpu:       [{action: restart}]
   high_memory:    [{action: restart}]
