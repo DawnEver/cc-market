@@ -94,12 +94,15 @@ export function openDb(opts = {}) {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+  `);
 
+  // Backfill missing columns BEFORE indexing them — a pre-0.3 `sessions` table lacks `date`,
+  // so `CREATE INDEX ... ON sessions(date)` would throw if run against the old schema.
+  ensureColumns();
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(date);
     CREATE INDEX IF NOT EXISTS idx_sessions_repo ON sessions(repo_origin);
   `);
-
-  ensureColumns();
   return db;
 }
 
@@ -111,6 +114,16 @@ function ensureColumns() {
     if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
   };
   add('session_categories', 'bytes_est', 'INTEGER DEFAULT 0');
+  // Backfill any `sessions` column a pre-0.3 schema lacks (it had no date/token breakdown/
+  // top_model/active_min). ADD COLUMN can't be NOT NULL on a populated table, so these land
+  // nullable/defaulted; rescan replaces every row anyway. Without this an old on-disk DB
+  // throws "no such column: date" on the first replaceSession INSERT.
+  add('sessions', 'date', "TEXT DEFAULT ''");
+  add('sessions', 'input_tokens', 'INTEGER DEFAULT 0');
+  add('sessions', 'output_tokens', 'INTEGER DEFAULT 0');
+  add('sessions', 'cache_read_tokens', 'INTEGER DEFAULT 0');
+  add('sessions', 'cache_creation_tokens', 'INTEGER DEFAULT 0');
+  add('sessions', 'top_model', 'TEXT');
   add('sessions', 'active_min', 'INTEGER DEFAULT 0');
 }
 
