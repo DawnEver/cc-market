@@ -47,7 +47,7 @@ export function parseExistingTasks(content) {
   const existing = new Map();
   if (!content) return existing;
   let currentModule = 'unknown';
-  for (const line of content.split('\n')) {
+  for (const line of content.replace(/\r\n/g, '\n').split('\n')) {
     if (line.startsWith('### ')) { currentModule = line.slice(4).trim(); continue; }
     if (line.startsWith('## ')) { currentModule = line.slice(3).trim(); continue; }
     const m = line.match(TASK_LINE_RE);

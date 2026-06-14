@@ -155,7 +155,7 @@ describe('rem migrate()', () => {
     const { changed, summary } = await migrate(projectRoot);
 
     assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('migrated 1 flat memory directory')));
+    assert.ok(summary.some(s => s.includes('migrated 1 flat memory entry')));
     // Old flat dir removed
     assert.equal(fs.existsSync(flatDir), false);
     // New nested dir exists with the file

@@ -10,13 +10,15 @@ import { test, describe, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 
+// Resolve relative to this test file so it works regardless of cwd
+// (root config repo vs. cc-market's own pre-commit hook).
 const scriptPath = join(
-  process.cwd(),
-  "cc-market",
-  "rem",
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
   "scripts",
   "scope-validate.mjs"
 );
