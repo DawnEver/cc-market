@@ -122,6 +122,17 @@ describe("parseExistingTasks", () => {
     assert.equal(parseExistingTasks(content).get("SR-001").checked, true);
   });
 
+  test("parses CRLF-terminated lines (Windows / git autocrlf)", () => {
+    const content = [
+      "## engine",
+      "- [ ] SR-001 [HIGH] Some bug (2026-06-08)",
+    ].join("\r\n");
+    const t = parseExistingTasks(content).get("SR-001");
+    assert.equal(t.module, "engine");
+    assert.equal(t.summary, "Some bug");
+    assert.equal(t.discovered, "2026-06-08");
+  });
+
   test("handles undefined date", () => {
     const content = "- [ ] SR-001 [HIGH] Bug (undefined)";
     assert.equal(parseExistingTasks(content).get("SR-001").discovered, undefined);
