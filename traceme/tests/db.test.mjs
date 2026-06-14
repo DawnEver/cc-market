@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -139,5 +140,31 @@ describe('DB Layer', { concurrency: 1 }, () => {
     assert.equal(allSessionIds().length, 2);
     deleteSession('sess-002');
     assert.deepEqual(allSessionIds(), ['sess-001']);
+  });
+});
+
+describe('Pre-0.3 schema self-heal', { concurrency: 1 }, () => {
+  const OLD_DB = join(tmpdir(), `traceme-old-${randomUUID()}.db`);
+  after(() => {
+    closeDb();
+    for (const ext of ['', '-wal', '-shm']) { try { unlinkSync(OLD_DB + ext); } catch {} }
+  });
+
+  it('openDb backfills missing sessions columns so replaceSession works', () => {
+    // Simulate a legacy on-disk DB whose `sessions` table predates date/token-breakdown
+    // columns — the schema that produced "no such column: date".
+    const seed = new DatabaseSync(OLD_DB);
+    seed.exec(`CREATE TABLE sessions (
+      id TEXT PRIMARY KEY, project TEXT, project_path TEXT, branch TEXT,
+      started_at TEXT, ended_at TEXT, prompt_count INTEGER,
+      total_tokens INTEGER, total_cost REAL, repo_origin TEXT)`);
+    seed.prepare('INSERT INTO sessions (id, project, started_at) VALUES (?,?,?)')
+      .run('legacy-1', 'old-proj', '2026-01-01T00:00:00Z');
+    seed.close();
+
+    openDb({ path: OLD_DB });
+    // Should no longer throw "no such column: date".
+    replaceSession(sampleSession('sess-new'));
+    assert.deepEqual(allSessionIds().sort(), ['legacy-1', 'sess-new']);
   });
 });

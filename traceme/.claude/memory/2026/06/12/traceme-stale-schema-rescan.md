@@ -11,9 +11,13 @@ on-disk `~/.claude/traceme/traceme.db` was created by an older traceme version w
 traceme uses `CREATE TABLE IF NOT EXISTS`, which never migrates an existing table, so
 `replaceSession`'s INSERT hits the missing column.
 
-**Fix:** the DB is purely a cache of `~/.claude/projects/**/*.jsonl`, so it's safe to
-`rm traceme.db traceme.db-wal traceme.db-shm` then `traceme rescan --all` to rebuild with
-the current schema. No data loss.
+**Fixed durably (2026-06-14):** `db.mjs` `ensureColumns()` now backfills every missing
+`sessions` column (`date`, token breakdown, `top_model`, `active_min`), and index creation
+runs *after* it so `CREATE INDEX ON sessions(date)` can't fail on the old schema. Old DBs
+now self-heal on open — no manual intervention needed.
 
-Note this happened in the cached plugin copy (`plugins/cache/cc-market/traceme/<ver>`);
-the dev clone of cc-market has no schema-migration guard, so it can recur on upgrade.
+Manual fallback if it ever recurs (DB is a pure cache of `~/.claude/projects/**/*.jsonl`):
+`rm traceme.db traceme.db-wal traceme.db-shm` then `traceme rescan --all`. No data loss.
+
+Note: the cached/installed plugin copy (`plugins/cache/cc-market/traceme/<ver>`) lags this
+dev clone until it pulls, so the bug can still reproduce from there until then.
