@@ -13,6 +13,7 @@ from pathlib import Path
 
 from core.log import append_report
 from core.pidfile import pid_alive
+from components.base import NO_WINDOW
 from components.versioning.git_version import (
     changed_targets,
     clear_failures,
@@ -183,7 +184,8 @@ def _deploy_repos_locked(comp_cfg: dict, project: Path, context: dict) -> bool:
             remove_worktree(staging, main_tree)
         try:
             subprocess.run(['git', 'worktree', 'add', '--detach', str(staging), changed[name]],
-                           cwd=main_tree, check=True, capture_output=True, text=True, timeout=30)
+                           cwd=main_tree, check=True, capture_output=True, text=True, timeout=30,
+                           creationflags=NO_WINDOW)
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] worktree FAILED: {e.stderr}')
             _cleanup()
@@ -204,7 +206,8 @@ def _deploy_repos_locked(comp_cfg: dict, project: Path, context: dict) -> bool:
                 remove_worktree(nest_at, dep_main)
             try:
                 subprocess.run(['git', 'worktree', 'add', '--detach', str(nest_at), dep_target],
-                               cwd=dep_main, check=True, capture_output=True, text=True, timeout=30)
+                               cwd=dep_main, check=True, capture_output=True, text=True, timeout=30,
+                               creationflags=NO_WINDOW)
                 nested_paths.append((nest_at, dep_main))
                 print(f'[git_version]   [{name}] nested {dep["name"]} at {rel} ({dep_target[:8]})')
             except subprocess.CalledProcessError as e:
@@ -229,7 +232,8 @@ def _deploy_repos_locked(comp_cfg: dict, project: Path, context: dict) -> bool:
         try:
             r = subprocess.run(repo_test_cmd, shell=True, cwd=staging,
                                capture_output=True, text=True,
-                               timeout=deploy_cfg.get('test_timeout', 300), env=test_env)
+                               timeout=deploy_cfg.get('test_timeout', 300), env=test_env,
+                               creationflags=NO_WINDOW)
             elapsed = time.time() - t0
             if r.returncode != 0:
                 tests_ok = False
@@ -273,7 +277,8 @@ def _deploy_repos_locked(comp_cfg: dict, project: Path, context: dict) -> bool:
             return _fail(f'deploy_path missing for {name}: {dpath}', phase='apply')
         try:
             subprocess.run(['git', 'reset', '--hard', target],
-                           cwd=dpath, check=True, capture_output=True, text=True, timeout=15)
+                           cwd=dpath, check=True, capture_output=True, text=True, timeout=15,
+                           creationflags=NO_WINDOW)
             print(f'[git_version]   [{name}] deploy worktree -> {target[:8]}')
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] apply FAILED: {e.stderr}')

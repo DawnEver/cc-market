@@ -18,6 +18,10 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _PLUGIN_ROOT = _HERE.parent.parent
 sys.path.insert(0, str(_PLUGIN_ROOT))
+
+# Suppress the transient console window watch.py would otherwise flash on
+# Windows each time the poller fires it. 0 (no-op) on POSIX.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 
 import bootstrap; bootstrap.ensure()
@@ -58,6 +62,7 @@ def _run_ai_loop(project_dir: Path, dry_run: bool = False) -> bool:
             capture_output=True,
             text=True,
             timeout=600,
+            creationflags=NO_WINDOW,
         )
         if result.stdout:
             _log(project_dir, 'info', f'watch.py: {result.stdout.strip()[:500]}')

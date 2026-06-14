@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from components.base import Action, Anomaly, CheckResult, Component, RemedyStep
+from components.base import NO_WINDOW, Action, Anomaly, CheckResult, Component, RemedyStep
 from core.state import atomic_write_text, file_lock
 
 
@@ -107,7 +107,8 @@ def current_heads(comp_cfg: dict, project: Path) -> dict[str, str]:
         repo_path = (project / repo['path']).resolve()
         try:
             h = subprocess.check_output(['git', 'rev-parse', 'HEAD'],
-                                        cwd=repo_path, text=True, timeout=5).strip()
+                                        cwd=repo_path, text=True, timeout=5,
+                                        creationflags=NO_WINDOW).strip()
             heads[repo['name']] = h
         except Exception:
             pass
@@ -172,7 +173,8 @@ def remote_heads(comp_cfg: dict, project: Path,
             for attempt in range(3):
                 try:
                     r = subprocess.run(['git', 'fetch', remote], cwd=repo_path,
-                                       capture_output=True, text=True, timeout=30)
+                                       capture_output=True, text=True, timeout=30,
+                                       creationflags=NO_WINDOW)
                 except subprocess.TimeoutExpired:
                     last_stderr = 'operation timed out'
                     continue
@@ -189,7 +191,8 @@ def remote_heads(comp_cfg: dict, project: Path,
         try:
             heads[repo['name']] = subprocess.check_output(
                 ['git', 'rev-parse', f'{remote}/{branch}'],
-                cwd=repo_path, text=True, timeout=5).strip()
+                cwd=repo_path, text=True, timeout=5,
+                creationflags=NO_WINDOW).strip()
         except Exception:
             pass
     return heads, fetch_failed
@@ -235,7 +238,7 @@ def remove_worktree(staging_path: Path, repo_path: Path, retries: int = 4) -> No
         # Already removed — still prune any dangling registration, best-effort.
         try:
             subprocess.run(['git', 'worktree', 'prune'], cwd=repo_path,
-                           capture_output=True, timeout=5)
+                           capture_output=True, timeout=5, creationflags=NO_WINDOW)
         except Exception:
             pass
         return
@@ -245,7 +248,8 @@ def remove_worktree(staging_path: Path, repo_path: Path, retries: int = 4) -> No
         try:
             r = subprocess.run(
                 ['git', 'worktree', 'remove', '--force', str(staging_path)],
-                cwd=repo_path, capture_output=True, text=True, timeout=10)
+                cwd=repo_path, capture_output=True, text=True, timeout=10,
+                creationflags=NO_WINDOW)
             if r.returncode == 0 or not staging_path.exists():
                 break
         except subprocess.TimeoutExpired:
@@ -256,7 +260,7 @@ def remove_worktree(staging_path: Path, repo_path: Path, retries: int = 4) -> No
 
     try:
         subprocess.run(['git', 'worktree', 'prune'], cwd=repo_path,
-                       capture_output=True, timeout=5)
+                       capture_output=True, timeout=5, creationflags=NO_WINDOW)
     except Exception:
         pass
     # Last resort: physically drop the directory if git couldn't.
@@ -290,7 +294,8 @@ def deploy_drift(comp_cfg: dict, project: Path) -> list[tuple[str, str]]:
         try:
             dirty = subprocess.check_output(
                 ['git', 'status', '--porcelain'],
-                cwd=dpath, text=True, timeout=10).strip()
+                cwd=dpath, text=True, timeout=10,
+                creationflags=NO_WINDOW).strip()
         except Exception:
             continue
         if dirty:
@@ -302,7 +307,8 @@ def deploy_drift(comp_cfg: dict, project: Path) -> list[tuple[str, str]]:
         try:
             ahead = subprocess.check_output(
                 ['git', 'rev-list', '--count', f'{remote}/{branch}..HEAD'],
-                cwd=dpath, text=True, timeout=10).strip()
+                cwd=dpath, text=True, timeout=10,
+                creationflags=NO_WINDOW).strip()
             if ahead.isdigit() and int(ahead) > 0:
                 drift.append((repo['name'],
                               f'{ahead} commit(s) on deploy not reachable from '
@@ -333,7 +339,8 @@ def rollback_repos(comp_cfg: dict, project: Path) -> bool:
             continue
         try:
             current = subprocess.check_output(['git', 'rev-parse', 'HEAD'],
-                                              cwd=dpath, text=True, timeout=5).strip()
+                                              cwd=dpath, text=True, timeout=5,
+                                              creationflags=NO_WINDOW).strip()
         except Exception:
             current = None
         if current == target:
@@ -342,7 +349,8 @@ def rollback_repos(comp_cfg: dict, project: Path) -> bool:
         print(f'[git_version] Rollback [{name}]: {current[:8] if current else "?"} -> {target[:8]}')
         try:
             subprocess.run(['git', 'reset', '--hard', target],
-                           cwd=dpath, check=True, capture_output=True, timeout=10)
+                           cwd=dpath, check=True, capture_output=True, timeout=10,
+                           creationflags=NO_WINDOW)
             print(f'[git_version]   [{name}] OK')
         except subprocess.CalledProcessError as e:
             print(f'[git_version]   [{name}] FAILED: {e.stderr}')

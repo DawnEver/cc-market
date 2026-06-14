@@ -21,11 +21,16 @@ import time
 _VERIFY_DELAY = 0.4
 _KILL_ATTEMPTS = 3
 
+# Suppress the transient console window each child (netstat/taskkill/tasklist)
+# would otherwise flash on Windows. 0 (no-op) on POSIX.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
 
 def _run(cmd: list[str], timeout: int = 5) -> str:
     try:
         return subprocess.check_output(
-            cmd, text=True, timeout=timeout, stderr=subprocess.DEVNULL
+            cmd, text=True, timeout=timeout, stderr=subprocess.DEVNULL,
+            creationflags=NO_WINDOW,
         ).strip()
     except Exception:
         return ''
