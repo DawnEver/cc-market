@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 DEFAULT_ACTIVE_RUN_FILE = '.claude/watch/active-run.json'
+
+# On Windows, a subprocess.run/Popen/check_output started without this flag
+# flashes a console window (cmd/mingw64) that opens and immediately closes.
+# When the daemon or a cron-triggered watch run fires many child processes
+# (git fetch per repo, shell probes, helper scripts) the screen flickers with
+# transient windows. CREATE_NO_WINDOW suppresses them. 0 (no-op) on POSIX —
+# merge into every subprocess call's kwargs via `creationflags=NO_WINDOW`.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 
 
 def resolve_output_dir(
@@ -131,6 +140,7 @@ def run_command(cmd: str, *, shell: bool = False, cwd: str = '',
         r = subprocess.run(
             cmd, shell=shell, cwd=cwd or None,
             capture_output=True, text=True, timeout=timeout,
+            creationflags=NO_WINDOW,
         )
         return r.returncode, r.stdout.strip(), r.stderr.strip()
     except subprocess.TimeoutExpired:

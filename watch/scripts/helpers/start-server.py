@@ -70,7 +70,10 @@ def main() -> None:
         }
 
     if sys.platform == 'win32':
-        popen_kwargs['creationflags'] = subprocess.DETACHED_PROCESS  # type: ignore[call-arg]
+        # DETACHED_PROCESS severs the console; CREATE_NO_WINDOW also suppresses
+        # the brief console window a child would otherwise flash on spawn.
+        popen_kwargs['creationflags'] = (  # type: ignore[call-arg]
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW)
         startupinfo = _build_win_startupinfo(redirecting=bool(args.log))
         if startupinfo is not None:
             popen_kwargs['startupinfo'] = startupinfo  # type: ignore[call-arg]

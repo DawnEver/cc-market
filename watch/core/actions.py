@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from components.base import Action, run_command
+from components.base import NO_WINDOW, Action, run_command
 
 # Bundled helper scripts ship alongside the plugin; resolve them from this
 # file's location so config never globs ~/.claude/plugins/... (install-root and
@@ -72,6 +72,7 @@ def _run_script(script: str, args: list[str], cwd: Path,
         r = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / script), *args],
             cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
+            creationflags=NO_WINDOW,
         )
         return r.returncode, r.stdout.strip(), r.stderr.strip()
     except subprocess.TimeoutExpired:
