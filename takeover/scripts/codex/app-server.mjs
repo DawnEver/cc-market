@@ -152,6 +152,7 @@ export class CodexAppServerClient {
 
 let _sharedClient = null;
 let _lock = Promise.resolve();
+let _pendingCount = 0;
 
 export async function getSharedClient(opts = {}) {
   if (!_sharedClient || _sharedClient._closed) {
@@ -182,7 +183,7 @@ export function withSharedClient(fn, { timeout = 30000 } = {}) {
     ));
   }, timeout);
 
-  let _pendingCount = (_pendingCount || 0) + 1;
+  _pendingCount++;
 
   return prev.then(async () => {
     clearTimeout(timeoutId);
