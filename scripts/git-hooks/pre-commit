@@ -45,26 +45,43 @@ for p in "${node_tests[@]}"; do
 done
 
 failed=0
+# Unset GIT_* so tests that spin up temp git repos (e.g. check-docs CLI) don't inherit
+# this commit's index/dir — git exports GIT_DIR/GIT_INDEX_FILE into hooks, and those tests
+# would otherwise operate on the real repo and fail spuriously. Same guard as watch's
+# python tests below.
 for glob in "${selected[@]}"; do
-  if ! node --test $glob > /dev/null 2>&1; then
+  if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX \
+          -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
+          node --test $glob > /dev/null 2>&1; then
     echo "FAIL: $glob"
     failed=1
   fi
 done
 
 if [ "$run_python" -eq 1 ]; then
-  if command -v python > /dev/null 2>&1; then
+  # Pick a Python that actually RUNS. `command -v python` alone matches the Windows Store
+  # alias shim (…/WindowsApps/python.exe), which passes the lookup but then errors at
+  # runtime ("Python was not found") and exits non-zero — turning a missing interpreter
+  # into a spurious test failure. Require a working `--version`, and fall back to
+  # python3/py for cross-platform robustness.
+  py=""
+  for cand in python python3 py; do
+    if command -v "$cand" > /dev/null 2>&1 && "$cand" --version > /dev/null 2>&1; then
+      py="$cand"; break
+    fi
+  done
+  if [ -n "$py" ]; then
     # Unset GIT_* so watch's git-based tests don't inherit this commit's index/dir
     # (git exports GIT_DIR/GIT_INDEX_FILE into hooks; tests that shell out to git in
     # temp repos would otherwise operate on the real repo and fail spuriously).
     if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX \
             -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
-            python -m unittest discover watch/tests/ > /dev/null 2>&1; then
+            "$py" -m unittest discover watch/tests/ > /dev/null 2>&1; then
       echo "FAIL: watch/tests (python)"
       failed=1
     fi
   else
-    echo "pre-commit: python not found — skipping watch tests."
+    echo "pre-commit: no working python — skipping watch tests."
   fi
 fi
 
