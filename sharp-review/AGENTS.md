@@ -6,10 +6,8 @@ Post-feature code review plugin for Claude Code. Three parallel reviewers with J
 
 ```
 Stop → sharp-review-hook.js
-         ├── Wave gate: diff lastReviewRef..WORKTREE
-         │     wave 0 (new commit): ≥300 lines or ≥5 files → pass
-         │     wave 1+ (same ref):  ≥1000 lines or ≥15 files → pass
-         │     Below threshold → skip (changes accumulate across sessions)
+         ├── Wave gate: diff lastReviewRef..WORKTREE (thresholds → SKILL.md)
+         │     wave 0 (new commit) vs wave 1+ (same ref); below → skip (accumulates)
          ├── Classify (claude -p): none / once / multi
          └── Trigger /sharp-review skill:
                ├── diff-manifest.js → { mode, range, stats, diff?, manifestText?, excludedSummary }

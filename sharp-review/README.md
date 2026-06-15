@@ -56,27 +56,9 @@ node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --rescan
 
 ### Wave Gate
 
-Reviews are gated by accumulated code changes, not per-session. This prevents triggering a review every time you stop, and auto-resets when you move to a new commit.
+Reviews are gated by accumulated code changes, not per-session. A new commit reviews early on a small change; once a ref is reviewed, only substantial new changes re-trigger. Skipped sessions preserve the reference point so changes add up until the threshold is met; the wave resets when HEAD moves to a new commit.
 
-| Wave | When | Threshold | Purpose |
-|---|---|---|---|
-| 0 | New commit / first review | 80 lines or 4 files | Catch issues early on fresh code |
-| 1+ | Same ref already reviewed | 300 lines or 10 files | Only re-trigger after substantial new changes |
-
-When a session is skipped (below threshold), the reference point is preserved — changes add up across multiple sessions until the threshold is met. Once triggered, `lastReviewRef` moves to HEAD and the wave increments. Wave resets to 0 automatically when HEAD moves to a new commit.
-
-**Per-project configuration** — add to `.claude/.rem-state.json`:
-```json
-{
-  "reviewGate": {
-    "thresholds": {
-      "wave0": { "lines": 80, "files": 4 },
-      "wave1": { "lines": 300, "files": 10 }
-    }
-  }
-}
-```
-Omit to use defaults shown above. Override only the fields you want to change.
+Thresholds are per-project configurable under `reviewGate.thresholds` in `.claude/.rem-state.json`. Exact defaults and config schema → `skills/sharp-review/SKILL.md`.
 
 ### Large Diffs
 
