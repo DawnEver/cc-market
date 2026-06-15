@@ -92,5 +92,63 @@ class TestApplyRemediesSuppression(unittest.TestCase):
         self.assertEqual(len(self.sent), 4)
 
 
+class TestApplyRemediesCooldown(unittest.TestCase):
+    def setUp(self):
+        self.sent: list[int] = []
+        self._orig = remediate._escalate
+        remediate._escalate = lambda cfg, anomaly, count, report, dry: self.sent.append(count)
+
+        self.reg = ComponentRegistry()
+        self.reg._actions['notify'] = Action(command='exit 0', shell=True)
+        self.reg._remedies['deploy_worktree_dirty'] = [
+            RemedyStep(action='notify', escalate_after=1)]
+
+    def tearDown(self):
+        remediate._escalate = self._orig
+
+    def _anomaly(self):
+        return Anomaly(type='deploy_worktree_dirty', severity='warning',
+                       message='repo: 1 uncommitted change(s)',
+                       source='git_version.deploy_worktree_dirty')
+
+    def _run(self, config, state, ts):
+        remediate.apply_remedies(self.reg, [self._anomaly()], config,
+                                 state, Path('.'), ts, dry_run=True)
+
+    def test_cooldown_suppresses_within_window(self):
+        config = {'instance': {'name': 't'},
+                  'alerts': {'email': {'cooldown_minutes': 10}}}
+        state: dict = {}
+        self._run(config, state, '2026-06-15T10:00:00')
+        self._run(config, state, '2026-06-15T10:05:00')  # 5 min < 10 → suppressed
+        self.assertEqual(len(self.sent), 1)
+
+    def test_cooldown_releases_after_window(self):
+        config = {'instance': {'name': 't'},
+                  'alerts': {'email': {'cooldown_minutes': 10}}}
+        state: dict = {}
+        self._run(config, state, '2026-06-15T10:00:00')
+        self._run(config, state, '2026-06-15T10:20:00')  # 20 min > 10 → released
+        self.assertEqual(len(self.sent), 2)
+
+    def test_string_cooldown_minutes_does_not_crash(self):
+        # Misconfigured (string) cooldown must not raise TypeError.
+        config = {'instance': {'name': 't'},
+                  'alerts': {'email': {'cooldown_minutes': '10'}}}
+        state: dict = {}
+        self._run(config, state, '2026-06-15T10:00:00')
+        self._run(config, state, '2026-06-15T10:05:00')
+        self.assertEqual(len(self.sent), 1)
+
+    def test_garbage_cooldown_minutes_treated_as_disabled(self):
+        config = {'instance': {'name': 't'},
+                  'alerts': {'email': {'cooldown_minutes': 'abc'}}}
+        state: dict = {}
+        self._run(config, state, '2026-06-15T10:00:00')
+        self._run(config, state, '2026-06-15T10:05:00')
+        # cooldown unparseable → disabled → every escalation alerts.
+        self.assertEqual(len(self.sent), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

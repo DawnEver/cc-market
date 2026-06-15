@@ -180,3 +180,13 @@ def record_remedy_attempt(state: dict, anomaly_type: str, action: str,
 def set_alert_sent(state: dict, timestamp: str) -> None:
     """Mark that an alert was sent at the given timestamp."""
     state['_alert_sent'] = timestamp
+
+
+def set_anomaly_alerted(state: dict, anomaly_type: str, timestamp: str) -> None:
+    """Record when the last alert was sent for a specific anomaly type."""
+    state[f'_alert_ts_{anomaly_type}'] = timestamp
+
+
+def get_anomaly_last_alerted(state: dict, anomaly_type: str) -> str | None:
+    """Return ISO timestamp of last alert for this anomaly type, or None."""
+    return state.get(f'_alert_ts_{anomaly_type}')
