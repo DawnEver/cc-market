@@ -228,7 +228,7 @@ function handleHelp() {
 
 Usage:
   todo                      Show open tasks + stats (default)
-  todo report               Same as above
+  todo report, check        Same as above
   todo <summary>            Add a manual task (implicit add)
   todo add, -a <summary>    Add a manual task (explicit)
        --severity HIGH|MEDIUM|LOW   (default MEDIUM)
@@ -252,7 +252,7 @@ function main() {
   if (cmd === '--add' || cmd === 'add' || cmd === '-a')    return handleAdd(args.slice(1), today, null);
   if (cmd === '--remove' || cmd === '--rm' || cmd === 'remove' || cmd === 'rm') return handleRemove(args[1]);
   if (cmd === '--mark' || cmd === 'mark' || cmd === '-m') return handleMark(args[1], args[2]);
-  if (cmd === '--report' || cmd === 'report')    return handleReport(today);
+  if (cmd === '--report' || cmd === 'report' || cmd === 'check')    return handleReport(today);
   if (cmd === 'help' || cmd === '--help' || cmd === '-h') return handleHelp();
 
   handleAdd(args.slice(1), today, args.join(' '));
