@@ -117,3 +117,23 @@ describe("CodexAppServerClient _handleLine", () => {
     assert.doesNotThrow(() => client._handleLine("not json"));
   });
 });
+
+describe("withSharedClient queue counter (source guard)", () => {
+  // Regression: `_pendingCount` was declared with `let` inside withSharedClient and
+  // referenced on its own RHS (`let _pendingCount = (_pendingCount || 0) + 1`), throwing
+  // a TDZ error ("Cannot access '_pendingCount' before initialization") synchronously on
+  // every call — which silently broke ALL codex routing (review/task). A runtime test would
+  // spawn a real codex app-server, so guard the source statically instead.
+  const src = readFileSync(
+    join(__dirname, "..", "scripts", "codex", "app-server.mjs"),
+    "utf8",
+  );
+
+  test("declares _pendingCount at module scope", () => {
+    assert.match(src, /^let _pendingCount = 0;$/m);
+  });
+
+  test("does not re-declare _pendingCount inside a function (TDZ self-reference)", () => {
+    assert.doesNotMatch(src, /let\s+_pendingCount\s*=\s*\(?\s*_pendingCount/);
+  });
+});
