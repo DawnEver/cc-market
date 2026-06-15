@@ -98,6 +98,39 @@ export function pickProfileKey(weights, rand) {
   return entries[entries.length - 1][0];
 }
 
+// ── Same-day follow-up merge ──
+// The workflow restarts finding sequence numbers at 001 every run, so a second
+// same-day review (e.g. a diff review then an architecture review) collides with
+// the first run's SR-YYYYMMDD-NNN ids. Renumber the colliding incoming findings to
+// continue after the existing max sequence, and rewrite their ids in the incoming
+// markdown in a single cascade-safe pass. Returns the merged findings + rewritten markdown.
+export function mergeFollowup(existingFindings, incomingFindings, incomingMarkdown) {
+  const seqOf = (id) => {
+    const m = /-(\d+)$/.exec(id || '');
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  let maxSeq = existingFindings.reduce((mx, f) => Math.max(mx, seqOf(f.id)), 0);
+  const idMap = {};
+  // Renumber the WHOLE incoming block contiguously after the existing max sequence.
+  // (A per-collision renumber is unsafe: a shifted id can clash with an un-shifted
+  // incoming id.) Incoming always restarts at 001, so this just appends cleanly.
+  const renumbered = incomingFindings.map((f) => {
+    if (!f.id) return f;
+    const newId = f.id.replace(/-(\d+)$/, '-' + String(++maxSeq).padStart(3, '0'));
+    if (newId !== f.id) idMap[f.id] = newId;
+    return { ...f, id: newId };
+  });
+  let markdown = incomingMarkdown;
+  const olds = Object.keys(idMap);
+  if (olds.length) {
+    // Single regex alternation → one pass, so a new id that equals another old id
+    // (when existing has fewer findings than incoming) can't cascade.
+    const re = new RegExp(olds.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
+    markdown = incomingMarkdown.replace(re, (m) => idMap[m] || m);
+  }
+  return { findings: [...existingFindings, ...renumbered], markdown, renumbered: olds.length };
+}
+
 // ── Diff manifest — constants ──
 
 export const INLINE_DIFF_LIMIT_DEFAULT = 20000; // chars (~5k tokens); config key reviewGate.inlineDiffLimit
@@ -160,10 +193,15 @@ export function parseNumstatZ(buf) {
     const added = header.slice(0, t1);
     const deleted = header.slice(t1 + 1, t2);
     const path = header.slice(t2 + 1);
-    // Look ahead: if next part has no tab, it's the new-path of a rename
     let renamedFrom = null;
     let finalPath = path;
-    if (i + 1 < parts.length && !parts[i + 1].includes('\t')) {
+    if (path === '') {
+      // Real git -z rename/copy: header path empty; next two parts are old, new.
+      renamedFrom = parts[i + 1] ?? null;
+      finalPath = parts[i + 2] ?? '';
+      i += 3;
+    } else if (i + 1 < parts.length && !parts[i + 1].includes('\t')) {
+      // Fallback: header carries the old path, next part is the new path.
       renamedFrom = path;
       finalPath = parts[i + 1];
       i += 2;
@@ -191,7 +229,7 @@ export function parseNameStatusZ(buf) {
   while (i < parts.length) {
     const status = parts[i];
     if (status.includes('\t')) { i++; continue; }
-    const isStatus = /^[AMD]\d*$/.test(status) || /^[RC]\d{2,3}$/.test(status);
+    const isStatus = /^[AMD]$/.test(status) || /^[RC]\d{2,3}$/.test(status);
     if (!isStatus) { i++; continue; }
     let renamedFrom = null;
     let path;
@@ -268,6 +306,17 @@ export function decideMode(filteredDiffChars, limit) {
   return 'agent';
 }
 
+// Decide the overall manifest mode from the entry count and filtered diff size.
+// No reviewable entries → 'empty' (the ONLY empty path). Entries present but no diff
+// text (e.g. the full `git diff` exceeded maxBuffer and was caught to '') → 'agent',
+// so an oversized diff is reviewed via the manifest rather than silently skipped.
+// Otherwise fall back to the size-based decision.
+export function decideManifestMode(entryCount, filteredDiffChars, limit) {
+  if (entryCount === 0) return 'empty';
+  if (filteredDiffChars <= 0) return 'agent';
+  return decideMode(filteredDiffChars, limit);
+}
+
 // Render manifest as markdown table + hunk headers, capped at MANIFEST_TEXT_BUDGET.
 export function renderManifestText(entries, { range, subPath } = {}) {
   if (!entries.length) return '';
@@ -312,10 +361,25 @@ export function renderManifestText(entries, { range, subPath } = {}) {
     lines.push(`*+${overflow} more files not shown (cap ${MAX_MANIFEST_FILES})*`);
   }
 
-  // Truncate to budget
+  // Truncate to budget on a line boundary so we never cut a table row (or a
+  // multibyte char) mid-way and emit malformed markdown.
   const text = lines.join('\n');
   if (text.length <= MANIFEST_TEXT_BUDGET) return text;
-  return text.slice(0, MANIFEST_TEXT_BUDGET - 3) + '...';
+  const sliced = text.slice(0, MANIFEST_TEXT_BUDGET - 4);
+  const lastNl = sliced.lastIndexOf('\n');
+  return (lastNl > 0 ? sliced.slice(0, lastNl) : sliced) + '\n...';
+}
+
+// Drop excluded files' segments from a full git diff. `excludedPaths` is keyed by the
+// NEW (b/) path — matching how buildManifest keys entries — so renamed-and-excluded files
+// (e.g. a moved lockfile/binary) are stripped too.
+export function filterDiff(fullDiff, excludedPaths) {
+  if (!excludedPaths || !excludedPaths.size) return fullDiff;
+  const parts = fullDiff.split(/(?=^diff --git )/m);
+  return parts.filter(part => {
+    const m = part.match(/^diff --git a\/.+ b\/(.+)$/m);
+    return !m || !excludedPaths.has(m[1]);
+  }).join('');
 }
 
 // Extract `@@ ... @@` hunk headers from full git diff, grouped by file path.
@@ -328,7 +392,7 @@ export function extractHunkHeaders(diffText) {
     // Detect file boundary: `diff --git a/<path> b/<path>`
     const fileMatch = line.match(/^diff --git a\/(.+) b\/(.+)$/);
     if (fileMatch) {
-      currentFile = fileMatch[1]; // use a/ path
+      currentFile = fileMatch[2]; // use b/ (new) path — matches buildManifest keying
       if (!map.has(currentFile)) map.set(currentFile, []);
       continue;
     }

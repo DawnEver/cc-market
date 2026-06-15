@@ -50,24 +50,18 @@ function loadClassifierMemory() {
   return unified.reviewGate?.memory || [];
 }
 
-function appendClassifierMemory(entry) {
-  const unified = loadUnifiedState();
-  if (!unified.reviewGate) unified.reviewGate = {};
-  let memory = unified.reviewGate.memory || [];
-  memory.push(entry);
-  if (memory.length > MEMORY_MAX) memory = memory.slice(-MEMORY_MAX);
-  unified.reviewGate.memory = memory;
-  saveUnifiedState(unified);
-}
-
 function getChangedFiles() {
   try {
     const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
-    return out.split('\n').map(l => l.slice(3).trim()).filter(Boolean);
+    return out.split('\n').map(l => {
+      const p = l.slice(3).trim();
+      const arrow = p.indexOf(' -> ');
+      return arrow === -1 ? p : p.slice(arrow + 4);
+    }).filter(Boolean);
   } catch { return []; }
 }
 
-const DOC_ONLY_PATTERNS = [/\.md$/i, /^memories\//, /^\.claude\//, /^MEMORY\.md$/i, /^README/i];
+const DOC_ONLY_PATTERNS = [/\.md$/i, /^\.claude\//, /^MEMORY\.md$/i, /^README/i];
 
 function isDocOnly(files) {
   return files.length > 0 && files.every(f => DOC_ONLY_PATTERNS.some(p => p.test(f)));
@@ -168,7 +162,7 @@ Changed files: ${changedFiles.join(', ') || 'none'}
 Respond ONLY with valid JSON: {"mode": "none"|"once"|"multi", "reason": "one sentence"}`;
 
   try {
-    const result = spawnSync('claude', ['-p', prompt, '--max-tokens', '80'], {
+    const result = spawnSync('claude', ['-p', prompt], {
       env: { ...process.env, SHARP_REVIEW_CLASSIFY: '1' },
       timeout: 15000,
       encoding: 'utf8',
@@ -260,6 +254,11 @@ async function main() {
       classification = { mode: 'once', reason: 'classifier error' };
     }
 
+    const updatedMemory = [
+      ...memory,
+      { task: taskSummary.slice(0, 200), files: changedFiles.slice(0, 10), mode: classification.mode },
+    ].slice(-MEMORY_MAX);
+
     reviewGate = {
       sessionId,
       mode: classification.mode,
@@ -269,12 +268,10 @@ async function main() {
       lastReviewRef: head,
       lastReviewDiff: stat,
       wave,
-      memory,
+      memory: updatedMemory,
       thresholds: reviewGate?.thresholds,
     };
     saveReviewGate(reviewGate);
-
-    appendClassifierMemory({ task: taskSummary.slice(0, 200), files: changedFiles.slice(0, 10), mode: classification.mode });
   }
 
   const target = TARGETS[reviewGate.mode] ?? 1;

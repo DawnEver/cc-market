@@ -134,12 +134,11 @@ Workflow({
 
 The `architecture` profile forces agent mode and uses neither `diff` nor `manifestText` — its reviewers explore the repo from scratch. `stats`/`range`/`seed` from diff-manifest are still passed (the workflow requires `stats`).
 
-The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod 3`, combos AB/BC/AC) so multiple review rounds within the same day rotate the pair instead of repeating: Reviewer A (Codex), Reviewer B (DeepSeek), Reviewer C (Sonnet). Each is constrained by a JSON Schema that enforces:
+The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod 3`, combos AB/AC/BC) so multiple review rounds within the same day rotate the pair instead of repeating: Reviewer A (Codex), Reviewer B (DeepSeek), Reviewer C (Sonnet). Each is constrained by a JSON Schema that enforces:
 - `severity`: HIGH | MEDIUM | LOW | INFO
 - `file`: affected file path
 - `summary`: one-line issue description
 - `category`: Bug | Feature | Performance
-- `module`: inferred from file path
 - `status`: OPEN | FIXED
 - `suggestion`: one-line fix
 

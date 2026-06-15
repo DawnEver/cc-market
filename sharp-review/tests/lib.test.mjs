@@ -24,7 +24,57 @@ try {
   process.on('exit', () => { try { rmSync(tmp, { recursive: true }); } catch {} });
 }
 
-const { SR_ID_RE, SR_ID_PARSE_RE, inferCategory, reviewFrontmatter, parseFindingsFromMarkdown } = lib;
+const { SR_ID_RE, SR_ID_PARSE_RE, inferCategory, reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } = lib;
+
+describe('mergeFollowup', () => {
+  const F = (id, summary) => ({ id, summary, severity: 'LOW', status: 'OPEN' });
+
+  it('renumbers colliding incoming ids and rewrites the markdown (no data loss)', () => {
+    const existing = [F('SR-20260615-001', 'old one')];
+    const incoming = [F('SR-20260615-001', 'new A'), F('SR-20260615-002', 'new B')];
+    const md = '### [SR-20260615-001] new A\n### [SR-20260615-002] new B\n';
+    const r = mergeFollowup(existing, incoming, md);
+    // existing kept; both incoming kept (none dropped) → 3 total
+    assert.equal(r.findings.length, 3);
+    assert.equal(r.renumbered, 2);
+    // incoming ids renumbered to continue after max existing seq (001) → 002, 003
+    assert.deepEqual(r.findings.map(f => f.id), ['SR-20260615-001', 'SR-20260615-002', 'SR-20260615-003']);
+    // markdown ids rewritten to match
+    assert.ok(r.markdown.includes('[SR-20260615-002] new A'));
+    assert.ok(r.markdown.includes('[SR-20260615-003] new B'));
+    // the original existing finding (separate id space) is untouched here
+  });
+
+  it('is cascade-safe when existing has fewer findings than incoming', () => {
+    // existing maxSeq=1; incoming 001,002,003 → new 002,003,004. oldIds and newIds overlap.
+    const existing = [F('SR-20260615-001', 'x')];
+    const incoming = [F('SR-20260615-001', 'a'), F('SR-20260615-002', 'b'), F('SR-20260615-003', 'c')];
+    const md = '[SR-20260615-001]a [SR-20260615-002]b [SR-20260615-003]c';
+    const r = mergeFollowup(existing, incoming, md);
+    assert.deepEqual(r.findings.slice(1).map(f => f.id), ['SR-20260615-002', 'SR-20260615-003', 'SR-20260615-004']);
+    // single-pass rewrite: each old id maps exactly once, no double-shift
+    assert.equal(r.markdown, '[SR-20260615-002]a [SR-20260615-003]b [SR-20260615-004]c');
+  });
+
+  it('appends incoming contiguously after existing max seq (renumber-all)', () => {
+    const existing = [F('SR-20260615-001', 'x')];
+    const incoming = [F('SR-20260615-009', 'y')];
+    const md = '[SR-20260615-009] y';
+    const r = mergeFollowup(existing, incoming, md);
+    assert.equal(r.renumbered, 1);                         // 009 → 002 (contiguous)
+    assert.equal(r.markdown, '[SR-20260615-002] y');
+    assert.deepEqual(r.findings.map(f => f.id), ['SR-20260615-001', 'SR-20260615-002']);
+  });
+
+  it('no-ops the markdown when incoming already starts right after existing', () => {
+    const existing = [F('SR-20260615-001', 'x')];
+    const incoming = [F('SR-20260615-002', 'y')];   // already 002, maxSeq+1 → stays 002
+    const md = '[SR-20260615-002] y';
+    const r = mergeFollowup(existing, incoming, md);
+    assert.equal(r.renumbered, 0);
+    assert.equal(r.markdown, md);
+  });
+});
 
 describe('SR_ID_RE', () => {
   it('matches SR-YYYYMMDD-NNN format', () => {

@@ -193,7 +193,7 @@ ${args.manifestText}
   prioritized by (1) churn, (2) risk (core logic, auth/security, error handling, concurrency),
   (3) new files (status A). Skip tests/docs/config unless the manifest looks suspicious.
 - Scope: ${scope}
-- Respond with ONLY a JSON object: { "findings": [] }  ${findingsFormat}`;
+- Respond with ONLY a JSON object: { "findings": [...] }  ${findingsFormat}`;
   return wrapTakeoverCall(reviewer, 'agent', agentBody, findingsFormat);
 }
 
@@ -203,6 +203,10 @@ ${args.manifestText}
 // `args` as a stringified object instead of a real JSON value, which silently strips
 // every field (args.stats → undefined) and dead-ends the run. Parse it back here.
 const A = typeof args === 'string' ? JSON.parse(args) : (args || {});
+
+// Single defensive fallback date. The caller always passes A.date, so this only
+// matters when it is missing — keep one constant rather than scattering literals.
+const date = A.date || '2026-06-04';
 
 // Resolve config with fallbacks
 const contentType = A.contentType || 'code';
@@ -241,7 +245,7 @@ if (pickStrategy === 'all') {
   // pair, not just day-to-day. Falls back to day-of-month if no seed given.
   const seed = Number.isFinite(A.seed)
     ? A.seed
-    : (parseInt((A.date || '2026-06-09').slice(-2), 10) || 9);
+    : (parseInt(date.slice(-2), 10) || 9);
   const n = reviewers.length;
   if (n <= 2) {
     active = [...reviewers];
@@ -304,7 +308,7 @@ for (const f of allFindings) {
   grouped.get(k).push(f);
 }
 
-const today = (A.date || '2026-06-04').replace(/-/g, '');
+const today = date.replace(/-/g, '');
 const idPrefix = A.idPrefix || ID_PREFIX;
 const merged = [];
 let seq = 0;
@@ -320,7 +324,6 @@ for (const [k, group] of grouped) {
     file: primary.file || '',
     summary: primary.summary || '',
     category: primary.category || 'Bug',
-    module: primary.module || '',
     status: primary.status || 'OPEN',
     suggestion: primary.suggestion || '',
     detail: primary.detail || '',
@@ -332,7 +335,7 @@ log(`${merged.length} unique findings (${merged.filter(f => f.confidence.include
 
 // ── Render markdown ──
 
-const dateStr = A.date || '2026-06-04';
+const dateStr = date;
 const timestamp = dateStr + ' (session)';
 const reviewFile = `.claude/memory/${dateStr.replace(/-/g, '/')}/sharp-review.md`;
 
@@ -341,7 +344,7 @@ lines.push(`## Review ${timestamp} — ${A.profileLabel || 'current branch'}`);
 lines.push('');
 lines.push('### Reviewer Status');
 for (const r of reviewers) {
-  const status = slotResults[r.key] ? 'OK' : (active.some(a => a.key === r.key) ? 'FAILED' : 'skipped');
+  const status = Array.isArray(slotResults[r.key]?.findings) ? 'OK' : (active.some(a => a.key === r.key) ? 'FAILED' : 'skipped');
   lines.push(`- Reviewer ${r.key} (${r.name}): ${status}`);
 }
 if (succeeded.length < active.length) lines.push(`- Warning: only ${succeeded.length}/${active.length} reviewers succeeded`);
@@ -355,7 +358,6 @@ for (const f of merged) {
   lines.push(`### [${f.id}] [${f.severity}] ${f.file} — ${f.summary}`);
   lines.push('');
   lines.push(`- **Category:** ${f.category}`);
-  if (f.module) lines.push(`- **Module:** ${f.module}`);
   lines.push(`- **Status:** ${f.status}`);
   lines.push(`- **Confidence:** ${f.confidence}`);
   if (f.suggestion) lines.push(`- **Suggestion:** ${f.suggestion}`);

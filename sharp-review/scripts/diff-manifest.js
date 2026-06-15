@@ -11,9 +11,10 @@ import {
   parseNumstatZ,
   parseNameStatusZ,
   buildManifest,
-  decideMode,
+  decideManifestMode,
   renderManifestText,
   extractHunkHeaders,
+  filterDiff,
   INLINE_DIFF_LIMIT_DEFAULT,
 } from '../lib.mjs';
 
@@ -44,17 +45,6 @@ function readLimit() {
   } catch {
     return INLINE_DIFF_LIMIT_DEFAULT;
   }
-}
-
-// ── Diff filtering ──
-
-function filterDiff(fullDiff, excludedPaths) {
-  if (!excludedPaths.size) return fullDiff;
-  const parts = fullDiff.split(/(?=^diff --git )/m);
-  return parts.filter(part => {
-    const m = part.match(/^diff --git a\/(.+) b\//m);
-    return !m || !excludedPaths.has(m[1]);
-  }).join('');
 }
 
 // ── Excluded summary ──
@@ -112,7 +102,7 @@ function main() {
 
   const filteredDiffChars = filteredDiff.length;
   const limit = readLimit();
-  const mode = entries.length === 0 ? 'empty' : decideMode(filteredDiffChars, limit);
+  const mode = decideManifestMode(entries.length, filteredDiffChars, limit);
 
   const insertions = entries.reduce((s, e) => s + e.added, 0);
   const deletions = entries.reduce((s, e) => s + e.deleted, 0);

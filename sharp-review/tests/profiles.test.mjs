@@ -61,6 +61,26 @@ test('pickProfileKey — deterministic cumulative bands', () => {
   assert.equal(pickProfileKey(w, 0.99), 'architecture');
 });
 
+test('pickProfileKey — rand at/above 1.0 clamps into the last band', () => {
+  const w = { diff: 0.8, architecture: 0.2 };
+  // rand exactly 1.0 must NOT overflow past the last band (0.999999 clamp).
+  assert.equal(pickProfileKey(w, 1.0), 'architecture');
+  // just below 1.0 stays in-range too.
+  assert.equal(pickProfileKey(w, 0.9999999), 'architecture');
+});
+
+test('pickProfileKey — negative weights are dropped before band selection', () => {
+  // diff has negative weight → filtered out; architecture (only positive) wins.
+  assert.equal(pickProfileKey({ diff: -1, architecture: 0.2 }, 0.5), 'architecture');
+  assert.equal(pickProfileKey({ diff: -1, architecture: 0.2 }, 0.0), 'architecture');
+});
+
+test('resolveWeights — negative weight dropped, default kept for others', () => {
+  const cleaned = resolveWeights({ diff: -1 });
+  assert.equal(cleaned.diff, undefined);       // negative dropped
+  assert.equal(cleaned.architecture, 0.2);     // default retained
+});
+
 test('pickProfileKey — single profile always wins', () => {
   assert.equal(pickProfileKey({ architecture: 0.2 }, 0.0), 'architecture');
   assert.equal(pickProfileKey({ architecture: 0.2 }, 0.999), 'architecture');
