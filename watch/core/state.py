@@ -144,16 +144,16 @@ def register_alert_signature(state: dict, anomaly_type: str, signature: str,
     new situation) or the anomaly clears (`reset_anomaly`). A non-positive
     `suppress_after` disables suppression entirely.
     """
+    if suppress_after <= 0:
+        return False  # suppression disabled — never track, never suppress
     key = f'_alert_sig_{anomaly_type}'
     prev = state.get(key)
     if not isinstance(prev, dict) or prev.get('sig') != signature:
         state[key] = {'sig': signature, 'sent': 1}
         return False
-    sent = prev.get('sent', 0)
-    if suppress_after and suppress_after > 0 and sent >= suppress_after:
+    if prev.get('sent', 0) >= suppress_after:
         return True
-    prev['sent'] = sent + 1
-    state[key] = prev
+    prev['sent'] = prev.get('sent', 0) + 1  # prev is the stored dict — mutated in place
     return False
 
 
