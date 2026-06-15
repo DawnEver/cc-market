@@ -84,5 +84,7 @@ state shape, and failure handling). Stop conditions and the safety caps are in
   + rename). If the loop crashes, the rem Stop hook auto-expires it after 30 min, so a
   lingering value is harmless. Also delete any stale `.claude/.rem-state.tmp` left by a failed
   atomic write.
-- Write a short round-log memory entry summarizing rounds run and outcomes.
+- Write a short round-log memory entry via `writeRoundLog(projectRoot, {...})` — it writes a
+  rem-frontmatter entry under `.claude/memory/YYYY/MM/DD/`, so rem's session indexer picks it
+  up automatically (no need to rebuild the index here).
 - Report a one-line summary in chat (rounds, total fixed, won't-fix, deferred items).

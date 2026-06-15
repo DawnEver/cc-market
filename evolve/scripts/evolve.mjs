@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadState as loadSharedState, saveState as saveSharedState } from '../shared/state.mjs';
+import { parseFindingsFromMarkdown, dateToPath } from '../shared/lib.mjs';
 
 const STATE_FILE = '.claude/.rem-state.json';
-const TMP_FILE = '.claude/.rem-state.tmp';
 
 const SEVERITY_ORDER = { HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
 const BLOCKING = new Set(['HIGH', 'MEDIUM']);
@@ -42,49 +43,21 @@ function statePath(projectRoot) {
   return path.join(projectRoot, STATE_FILE);
 }
 
+// State lives under the `evolveState` key of the shared `.claude/.rem-state.json`.
+// loadState/saveState delegate to shared/state.mjs — its deepMerge preserves foreign keys
+// (hook, prune, reviewGate…) so we never clobber rem/sharp-review's slice of the file, and
+// its atomic save (with Windows-retry) replaces evolve's old hand-rolled temp/rename dance.
 export function loadState(projectRoot = process.cwd()) {
-  const defaults = initState();
-  const file = statePath(projectRoot);
-  try {
-    if (!fs.existsSync(file)) return defaults;
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return { ...defaults, ...(raw.evolveState || {}) };
-  } catch {
-    return defaults;
-  }
+  const root = loadSharedState(statePath(projectRoot));
+  return { ...initState(), ...(root.evolveState || {}) };
 }
 
 export function saveState(projectRoot = process.cwd(), state) {
   const file = statePath(projectRoot);
-  const tmp = path.join(projectRoot, TMP_FILE);
-  if (!fs.existsSync(file)) return { persisted: false };
-
-  let root;
-  try {
-    root = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    root = {};
-  }
+  if (!fs.existsSync(file)) return { persisted: false }; // rem absent → keep state in memory
+  const root = loadSharedState(file);
   root.evolveState = state;
-  const payload = JSON.stringify(root, null, 2);
-
-  const tryRename = () => {
-    fs.writeFileSync(tmp, payload);
-    fs.renameSync(tmp, file);
-  };
-
-  try {
-    tryRename();
-    return { persisted: true };
-  } catch {
-    try {
-      tryRename();
-      return { persisted: true };
-    } catch {
-      try { fs.existsSync(tmp) && fs.unlinkSync(tmp); } catch {}
-      return { persisted: false };
-    }
-  }
+  return saveSharedState(file, root, { atomic: true });
 }
 
 function findingFiles(f) {
@@ -216,6 +189,43 @@ export function checkTermination(state) {
   }
 }
 
+function memoryDayDir(projectRoot, date) {
+  return path.join(projectRoot, '.claude', 'memory', ...dateToPath(date).split('/'));
+}
+
+// --seed: pull OPEN findings from an existing sharp-review backlog instead of re-critiquing.
+// Reuses shared/lib.mjs parseFindingsFromMarkdown + SR-ID parsing rather than a new parser.
+export function seedFromSharpReview(projectRoot = process.cwd(), date) {
+  const file = path.join(memoryDayDir(projectRoot, date), 'sharp-review.md');
+  if (!fs.existsSync(file)) return [];
+  return parseFindingsFromMarkdown(fs.readFileSync(file, 'utf8'), date)
+    .filter((f) => String(f.status || 'open').toLowerCase() === 'open')
+    .map((f) => ({
+      id: f.id, file: f.file, summary: f.summary, severity: f.severity,
+      status: 'open', unfixedRounds: 0,
+    }));
+}
+
+// Cleanup: write the round-log as a memory entry with rem frontmatter into
+// .claude/memory/YYYY/MM/DD/ so rem's existing SessionStart indexer picks it up — no need to
+// call rem's rebuildIndex directly. Returns the written path.
+export function writeRoundLog(projectRoot = process.cwd(), { date, rounds, fixed = 0, wontFix = 0, deferred = 0, note = '' } = {}) {
+  const dir = memoryDayDir(projectRoot, date);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'evolve-round-log.md');
+  const body = `---
+name: evolve-round-log-${dateToPath(date).replace(/\//g, '-')}
+description: evolve loop — ${rounds} round(s), ${fixed} fixed, ${wontFix} won't-fix${deferred ? `, ${deferred} deferred` : ''}
+metadata:
+  type: project
+---
+
+evolve ran ${rounds} round(s): ${fixed} fixed, ${wontFix} won't-fix${deferred ? `, ${deferred} deferred` : ''}.${note ? ` ${note}` : ''}
+`;
+  fs.writeFileSync(file, body, 'utf8');
+  return file;
+}
+
 // ---------------- CLI ----------------
 
 function parseArgs(argv) {
@@ -254,9 +264,12 @@ function main() {
       out(prioritize(loadState(root).findings, minSeverity));
       break;
     }
+    case 'seed':
+      out(seedFromSharpReview(root, positional[0]));
+      break;
     default:
       process.stderr.write(
-        'usage: evolve.mjs <init|load|group <file.json>|terminate|prioritize <minSeverity>> [--root <dir>]\n'
+        'usage: evolve.mjs <init|load|group <file.json>|terminate|prioritize <minSeverity>|seed [date]> [--root <dir>]\n'
       );
       process.exit(cmd ? 1 : 0);
   }

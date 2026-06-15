@@ -1,7 +1,7 @@
 // shared/state.mjs — unified .rem-state.json read/write
 // Pure functions: stateFile path passed as parameter.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
 
 export const DEFAULT_STATE = {
@@ -53,10 +53,30 @@ export function loadState(stateFile) {
   }
 }
 
-export function saveState(stateFile, state) {
+// saveState(stateFile, state, { atomic })
+// Default: direct write (back-compat). With { atomic: true }: write to a temp file then
+// rename over the target so a crash never leaves a half-written state file. The rename can
+// intermittently fail on Windows under OneDrive/AV — retry once, then give up without
+// throwing. Returns { persisted } so callers (e.g. evolve's loop) can fall back to in-memory
+// state instead of blocking. Pre-atomic callers ignore the return value, so this is safe.
+export function saveState(stateFile, state, { atomic = false } = {}) {
   const dir = dirname(stateFile);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(stateFile, JSON.stringify(state, null, 2), 'utf8');
+  const payload = JSON.stringify(state, null, 2);
+
+  if (!atomic) {
+    writeFileSync(stateFile, payload, 'utf8');
+    return { persisted: true };
+  }
+
+  const tmp = stateFile + '.tmp';
+  const tryWrite = () => { writeFileSync(tmp, payload, 'utf8'); renameSync(tmp, stateFile); };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { tryWrite(); return { persisted: true }; }
+    catch { /* retry once (Windows/OneDrive rename flake) */ }
+  }
+  try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
+  return { persisted: false };
 }
 
 export function appendEvent(stateFile, type, detail) {
