@@ -186,6 +186,10 @@ actions:
                                       # (e.g. install deps in a fresh worktree)
     start_cmd: "python -m my_server --port 8000"  # spawned detached
     start_dir: "../deploy"            # cwd (default: project dir)
+    start_dir_env: "WATCH_STAGING"    # optional — env var naming an absolute
+                                      # cwd; overrides start_dir when set (e.g.
+                                      # a deploy gate exports a dynamic staging
+                                      # path). Falls back to start_dir if unset.
     start_log: ".claude/watch/logs/backend.log"
     verify_port: 8000                 # after start, confirm the process is
                                       # actually LISTENing here — catches a

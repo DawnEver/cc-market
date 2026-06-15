@@ -60,6 +60,34 @@ class TestManagedService(unittest.TestCase):
         a = Action(kill_port=7001, start_cmd='python -m app')
         self.assertFalse(actions._execute_action(a, Path(tempfile.gettempdir())))
 
+    def _started_project_dir(self) -> Path:
+        """The --project-dir start-server.py was launched with (the resolved cwd)."""
+        call = next(c for c in self._calls if c[0] == 'start-server.py')
+        return Path(call[1][call[1].index('--project-dir') + 1])
+
+    def test_start_dir_env_overrides_start_dir(self):
+        # start_dir_env names an env var holding an absolute cwd (the deploy gate
+        # exports a dynamic staging path) — it wins over the static start_dir.
+        import os
+        staging = Path(tempfile.gettempdir()) / 'wdg-staging-xyz'
+        os.environ['WATCH_TEST_STAGING'] = str(staging)
+        try:
+            a = Action(start_cmd='python -m app', start_dir='../deploy',
+                       start_dir_env='WATCH_TEST_STAGING')
+            self.assertTrue(actions._execute_action(a, Path(tempfile.gettempdir())))
+        finally:
+            os.environ.pop('WATCH_TEST_STAGING', None)
+        self.assertEqual(self._started_project_dir(), staging.resolve())
+
+    def test_start_dir_env_falls_back_to_start_dir_when_unset(self):
+        import os
+        os.environ.pop('WATCH_TEST_STAGING_MISSING', None)
+        proj = Path(tempfile.gettempdir())
+        a = Action(start_cmd='python -m app', start_dir='../deploy',
+                   start_dir_env='WATCH_TEST_STAGING_MISSING')
+        self.assertTrue(actions._execute_action(a, proj))
+        self.assertEqual(self._started_project_dir(), (proj / '../deploy').resolve())
+
 
 class TestSetupAndVerify(unittest.TestCase):
     def setUp(self):

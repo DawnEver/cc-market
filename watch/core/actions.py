@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import os
 import socket
 import subprocess
 import sys
@@ -94,7 +95,15 @@ def _exec_managed(action: Action, project_dir: Path) -> bool:
                     project_dir, timeout=20)
 
     if action.start_cmd:
-        cwd = (project_dir / action.start_dir).resolve() if action.start_dir else project_dir
+        # start_dir_env wins when the named var is set (deploy gate exports a
+        # dynamic absolute staging path); else fall back to the static start_dir.
+        env_dir = os.environ.get(action.start_dir_env) if action.start_dir_env else None
+        if env_dir:
+            cwd = Path(env_dir).resolve()
+        elif action.start_dir:
+            cwd = (project_dir / action.start_dir).resolve()
+        else:
+            cwd = project_dir
         # One-shot init (e.g. yarn install) so a fresh deploy worktree without
         # node_modules / a virtualenv self-heals on first start instead of failing.
         if not _run_setup(action, cwd):
