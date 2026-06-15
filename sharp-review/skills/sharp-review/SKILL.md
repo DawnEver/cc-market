@@ -48,7 +48,32 @@ Units are **chars** (not lines) because chars track actual context window cost.
 
 ## Execution
 
-### Step 1 — Gather context
+### Step 1 — Pick profile
+
+Each run rotates between review **profiles** (templates), chosen probabilistically. Run `pick-profile.js` first and capture its JSON:
+
+```powershell
+node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js"
+```
+
+```json
+{ "key": "diff", "label": "diff review", "mode": null, "promptKind": "diff", "framing": null, "reviewScope": null }
+```
+
+Profiles and default weights (provider selection is unaffected — profiles never bind a provider):
+
+| Profile | Weight | Mode | What it reviews |
+|---|---|---|---|
+| `diff` | 0.8 | honors diff-manifest (review/agent) | the git diff — bugs & cleanup (original behavior) |
+| `architecture` (架构锐评) | 0.2 | forced **agent** | the **current codebase architecture** as a whole — reviewers explore freely, report shortcomings + improvements |
+
+Per-project tuning — set weights in `.claude/.rem-state.json`:
+```json
+{ "reviewGate": { "profileWeights": { "diff": 0.8, "architecture": 0.2 } } }
+```
+Manual override (no weighting): `pick-profile.js --profile architecture`. Selection is stateless — weights only, no persisted rotation index.
+
+### Step 2 — Gather context
 
 Run `diff-manifest.js` — the ONLY allowed diff payload. Never run raw `git diff` or paste diff text into context.
 
@@ -80,11 +105,11 @@ Capture the JSON output. The script produces a size-bounded payload — each fie
 }
 ```
 
-### Step 2 — Run workflow
+### Step 3 — Run workflow
 
-If `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory.
+If `profile.key === "diff"` AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory. (The `architecture` profile ignores empty — it reviews the codebase, not a diff — so always proceed for it.)
 
-Otherwise, pass the JSON fields into Workflow args:
+Otherwise, pass the JSON fields into Workflow args, layering the profile on top:
 
 ```js
 Workflow({
@@ -92,16 +117,22 @@ Workflow({
   args: {
     date: "<YYYY-MM-DD today>",
     seed: result.seed,              // time-based; rotates reviewer pair per round
-    mode: result.mode,
+    mode: profile.mode || result.mode,   // architecture forces "agent"
+    promptKind: profile.promptKind,      // "diff" | "architecture"
+    framing: profile.framing,            // profile-specific prompt intro (null for diff)
+    profileLabel: profile.label,         // shown in the memory heading
+    reviewScope: profile.reviewScope,    // pass only when non-null (else workflow default)
     range: result.range,
     path: result.path,              // only when --path was used
     stats: result.stats,
-    diff: result.diff,              // only in review mode
-    manifestText: result.manifestText, // only in agent mode
+    diff: result.diff,              // only review mode (omit for architecture)
+    manifestText: result.manifestText, // only agent diff mode (omit for architecture)
     excludedSummary: result.excludedSummary,
   }
 })
 ```
+
+The `architecture` profile forces agent mode and uses neither `diff` nor `manifestText` — its reviewers explore the repo from scratch. `stats`/`range`/`seed` from diff-manifest are still passed (the workflow requires `stats`).
 
 The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod 3`, combos AB/BC/AC) so multiple review rounds within the same day rotate the pair instead of repeating: Reviewer A (Codex), Reviewer B (DeepSeek), Reviewer C (Sonnet). Each is constrained by a JSON Schema that enforces:
 - `severity`: HIGH | MEDIUM | LOW | INFO
@@ -114,7 +145,7 @@ The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod
 
 In **review mode**, the full diff is inlined into each reviewer's prompt via takeover `mode="review"`. In **agent mode**, only the manifest is sent; reviewers use `mode="agent"` to get full tool access and explore the codebase autonomously (`git diff <range> -- <path>`, read source files, trace call chains).
 
-### Step 3 — Write memory entry & sync
+### Step 4 — Write memory entry & sync
 
 The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings as a single memory entry.
 
@@ -132,7 +163,7 @@ node "<CLAUDE_PLUGIN_ROOT>/scripts/post-review.js" --date <YYYY-MM-DD> --finding
 
 This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
 
-### Step 4 — Resolve findings
+### Step 5 — Resolve findings
 
 ```bash
 todo mark <SR-ID> fixed
@@ -142,7 +173,7 @@ This flips `**Status:** OPEN` → `FIXED` in `sharp-review.md` and re-derives th
 
 For the full file-ownership table (where findings, archives, and manual tasks live) → `reference/task-system.md`.
 
-### Step 5 — Report
+### Step 6 — Report
 
 **Output in chat ONLY**: `Sharp review: <summary>`
 

@@ -112,14 +112,58 @@ If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`
 
 // ── Code review prompt (original behavior, parameterized) ──
 
+// Wrap a prepared review body into the per-reviewer takeover call. Provider/model routing
+// stays decoupled from the profile: A→codex, B→deepseek, C→sonnet (or the reviewer's own).
+function wrapTakeoverCall(reviewer, takeoverMode, body, findingsFormat) {
+  if (reviewer.key === 'A') {
+    return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="${takeoverMode}", and userPrompt set to:
+
+${body}
+
+Then translate the findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
+${findingsFormat}
+
+If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
+  }
+
+  const provider = reviewer.provider || (reviewer.key === 'B' ? 'deepseek' : 'claude');
+  const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="sonnet"' : '');
+
+  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="${takeoverMode}" and a userPrompt containing:
+
+${body}
+
+Then take the response and call the StructuredOutput tool with it.
+
+If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
+}
+
 function buildCodeReviewPrompt(reviewer, args) {
   const scope = args.reviewScope || DEFAULT_REVIEW_SCOPE;
   const findingsFormat = buildFindingsFormat(args.findingSchema || DEFAULT_FINDING);
-  const takeoverMode = args.mode === 'agent' ? 'agent' : 'review';
   const prefix = `Range: ${args.range}.${args.path ? ` Scope: ${args.path}.` : ''} ${args.excludedSummary || ''}`;
 
+  // Architecture profile: holistic survey, no diff/manifest. Reviewers explore the repo freely.
+  if (args.promptKind === 'architecture') {
+    const archBody = `${args.framing || 'Survey the current codebase architecture as a whole.'}
+
+## Your job — explore autonomously
+- You have full tool access. Walk the repo: read the directory structure, entry points, build/config
+  files, and the main modules. Trace how the pieces fit together before judging.
+- Assess the architecture as it stands today — do NOT focus on any single diff or recent change.
+- Be BLUNT. Report concrete weaknesses with the file/dir they live in, and a one-line improvement each.
+
+Scope: ${scope}
+
+Respond with ONLY a JSON object: { "findings": [...] }
+${findingsFormat}`;
+    return wrapTakeoverCall(reviewer, 'agent', archBody, findingsFormat);
+  }
+
+  const intro = args.framing ? `${args.framing}\n\n` : '';
+
   if (args.mode === 'review') {
-    const reviewBody = `${prefix}
+    const reviewBody = `${intro}${prefix}
 
 Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
 
@@ -132,32 +176,11 @@ Git diff:
 \`\`\`
 ${args.diff}
 \`\`\``;
-
-    if (reviewer.key === 'A') {
-      return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="review", and userPrompt set to:
-
-${reviewBody}
-
-Then translate Codex's findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
-${findingsFormat}
-
-If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
-    }
-
-    const provider = reviewer.provider || (reviewer.key === 'B' ? 'deepseek' : 'claude');
-    const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="sonnet"' : '');
-
-    return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="review" and a userPrompt containing:
-
-${reviewBody}
-
-Then take the response and call the StructuredOutput tool with it.
-
-If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
+    return wrapTakeoverCall(reviewer, 'review', reviewBody, findingsFormat);
   }
 
   // Agent mode: manifest + autonomous exploration
-  const agentBody = `Large change set (${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions}). Full diff NOT included.
+  const agentBody = `${intro}Large change set (${args.stats.files} files, +${args.stats.insertions}/-${args.stats.deletions}). Full diff NOT included.
 ${prefix}
 
 ## Review manifest (all changed files)
@@ -171,28 +194,7 @@ ${args.manifestText}
   (3) new files (status A). Skip tests/docs/config unless the manifest looks suspicious.
 - Scope: ${scope}
 - Respond with ONLY a JSON object: { "findings": [] }  ${findingsFormat}`;
-
-  if (reviewer.key === 'A') {
-    return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="agent", and userPrompt set to:
-
-${agentBody}
-
-Then translate the findings into the required JSON schema and call the StructuredOutput tool with a JSON object: { "findings": [...] }
-${findingsFormat}
-
-If the takeover tool call fails or Codex is unavailable, call StructuredOutput with { "findings": [] }.`;
-  }
-
-  const provider = reviewer.provider || (reviewer.key === 'B' ? 'deepseek' : 'claude');
-  const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="sonnet"' : '');
-
-  return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="agent" and a userPrompt containing:
-
-${agentBody}
-
-Then take the response and call the StructuredOutput tool with it.
-
-If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
+  return wrapTakeoverCall(reviewer, 'agent', agentBody, findingsFormat);
 }
 
 // ── Main ──
@@ -335,7 +337,7 @@ const timestamp = dateStr + ' (session)';
 const reviewFile = `.claude/memory/${dateStr.replace(/-/g, '/')}/sharp-review.md`;
 
 const lines = [];
-lines.push(`## Review ${timestamp} — current branch`);
+lines.push(`## Review ${timestamp} — ${A.profileLabel || 'current branch'}`);
 lines.push('');
 lines.push('### Reviewer Status');
 for (const r of reviewers) {

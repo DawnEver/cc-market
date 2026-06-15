@@ -10,6 +10,7 @@ Stop → sharp-review-hook.js
          │     wave 0 (new commit) vs wave 1+ (same ref); below → skip (accumulates)
          ├── Classify (claude -p): none / once / multi
          └── Trigger /sharp-review skill:
+               ├── pick-profile.js → weighted-random review profile (diff | architecture); stateless, no provider binding
                ├── diff-manifest.js → { mode, range, stats, diff?, manifestText?, excludedSummary }
                │     Smart filtering: lockfiles, generated, binary, pure renames
                │     mode = review (≤ inlineDiffLimit) | agent (> inlineDiffLimit) | empty (no files)
@@ -49,6 +50,7 @@ sharp-review/
 │   └── sharp-review-hook.js      Stop hook: classify review depth
 ├── skills/sharp-review/SKILL.md /sharp-review skill definition
 ├── scripts/
+│   ├── pick-profile.js               Weighted-random review-profile pick (diff | architecture); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
 │   ├── post-review.js                Write memory entry → stamp
 │   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
@@ -62,6 +64,14 @@ sharp-review/
 ├── AGENTS.md                     This file
 └── README.md                     User-facing docs
 ```
+
+### Review Profiles
+
+A profile is a review *template* (scope + prompt framing + forced mode), defined in `PROFILES`
+in `lib.mjs` — orthogonal to providers (the seed-mod reviewer rotation is unchanged). `pick-profile.js`
+selects one per run by weighted random. `diff` honors diff-manifest's mode; `architecture` forces
+agent mode and reviews the whole codebase (no diff/manifest). Both write to the same `sharp-review.md`
+with `SR-` IDs (zero downstream changes). Profile keys, weights, and config → `skills/sharp-review/SKILL.md`.
 
 ### Dual Review Modes
 
