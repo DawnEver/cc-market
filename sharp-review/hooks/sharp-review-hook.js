@@ -11,7 +11,7 @@
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
 import path from 'node:path';
-import { execSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
 
@@ -62,7 +62,7 @@ function appendClassifierMemory(entry) {
 
 function getChangedFiles() {
   try {
-    const out = execSync('git status --porcelain', { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     return out.split('\n').map(l => l.slice(3).trim()).filter(Boolean);
   } catch { return []; }
 }
@@ -77,20 +77,20 @@ function isDocOnly(files) {
 
 function getCurrentHead() {
   try {
-    return execSync('git rev-parse HEAD', { cwd: projectDir, timeout: 5000 }).toString().trim();
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: 5000 }).toString().trim();
   } catch { return null; }
 }
 
 function gitRefExists(ref) {
   try {
-    execSync(`git cat-file -t ${ref}`, { cwd: projectDir, timeout: 5000, stdio: 'ignore' });
+    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: 5000, stdio: 'ignore' });
     return true;
   } catch { return false; }
 }
 
 function getDiffStat(sinceRef) {
   try {
-    const out = execSync(`git diff --shortstat ${sinceRef}`, { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     const m = out.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
     if (!m) return { lines: 0, files: 0 };
     const files = parseInt(m[1], 10) || 0;
