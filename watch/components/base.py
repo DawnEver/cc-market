@@ -94,6 +94,10 @@ class Action:
                                                # succeeded for the current command
     start_cmd: str | None = None               # command to spawn detached
     start_dir: str | None = None               # cwd for setup_cmd/start_cmd (rel. to project dir)
+    start_dir_env: str | None = None           # env var naming an absolute cwd; when set and
+                                               # present it overrides start_dir (e.g. a deploy
+                                               # gate exports a dynamic staging path). Falls
+                                               # back to start_dir when the var is unset.
     start_log: str | None = None               # stdout/stderr log (rel. to project dir)
     verify_port: str | int | list | None = None  # after start, confirm the process is
                                                # actually LISTENing on this port — catches
