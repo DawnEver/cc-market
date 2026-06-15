@@ -38,7 +38,7 @@ Always-injected behavioral constraints for working on the takeover plugin.
 - `send(rpc)` writes `JSON.stringify(rpc) + "\n"` to stdout.
 - Error codes: `-32601` for unknown method, `-32000` for server error, `-32602` for invalid params.
 - `call_model` requires `provider` + `userPrompt` (non-empty). `--write` only valid for `provider=codex`.
-- `mode` enum: `task`, `review`, `image-generate`, `image-edit`, `agent`. Review/image modes require `provider=codex`.
+- `mode` enum / per-provider support: documented authoritatively in the `call_model` tool schema description in `mcp-server.mjs` (the only runtime-visible source). Dev note: image modes are codex-only; `review` is dispatched for every provider (codex via its native endpoint, others aliased to the task handler) — keep the dispatch maps and that schema description in sync.
 - `list_models` and `codex_status` take no required params.
 
 ## Mode flags

@@ -63,7 +63,8 @@ export const TOOLS = [
           enum: ["task", "review", "image-generate", "image-edit", "agent"],
           description:
             "Operation mode. 'task' for code/investigation (default). " +
-            "'review' for adversarial code review (codex only). " +
+            "'review' for adversarial code review (codex uses its native review endpoint; " +
+            "other providers run it as a task with the review system prompt). " +
             "'agent' for full tool-access via Claude Code harness + provider env. " +
             "'image-generate' for image generation (codex only). " +
             "'image-edit' for image editing (codex only). " +
@@ -256,6 +257,9 @@ async function dispatchClaudeAgent({ userPrompt, systemPrompt, provider, model, 
 const CLAUDE_DISPATCH = {
   task: dispatchClaudeTask,
   agent: dispatchClaudeAgent,
+  // Non-codex providers have no dedicated adversarial-review endpoint; review mode
+  // runs as a task with the review system prompt (built from mode in handleCallModel).
+  review: dispatchClaudeTask,
 };
 
 // -- API provider handlers --
@@ -281,7 +285,11 @@ async function dispatchAPIAgent({ userPrompt, systemPrompt, provider, model, res
 const API_DISPATCH = {
   task: dispatchAPITask,
   agent: dispatchAPIAgent,
+  // See CLAUDE_DISPATCH.review — review runs as a task with the review system prompt.
+  review: dispatchAPITask,
 };
+
+export { API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH };
 
 // ── Main handler ──────────────────────────────────────────────────
 

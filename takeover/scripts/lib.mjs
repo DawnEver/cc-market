@@ -289,6 +289,17 @@ export function listModels(configPath = getConfigPath()) {
 
 // ── Shared: spawn claude.exe with stdin (stream-json for large prompts) ─────
 
+// Watchdog kill timer for spawned children. The child_process `timeout` option
+// is unusable here: on spawn ENOENT Node emits 'error' but never 'exit', so its
+// internal kill timer is never cleared and keeps the event loop alive for the
+// full timeout. This timer is unref'd (never blocks process exit) and explicitly
+// cleared on 'close'/'error'.
+function armKillTimer(child, ms) {
+  const t = globalThis.setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, ms);
+  t.unref?.();
+  return t;
+}
+
 function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = null, signal = null) {
   return new Promise((resolve, reject) => {
     let stdout = "", stderr = "";
@@ -307,9 +318,9 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
       child = spawn(bin, ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], {
         env,
         stdio: ["pipe", "pipe", "pipe"],
-        timeout: 600000,
         shell: false,
       });
+      const killTimer = armKillTimer(child, 600000);
       child.stdout.on("data", (d) => {
         stdout += d;
         // Stream text progress: parse each complete line as it arrives
@@ -330,8 +341,9 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
         }
       });
       child.stderr.on("data", (d) => (stderr += d));
-      child.on("error", (err) => { if (signal) signal.removeEventListener('abort', onAbort); reject(err); });
+      child.on("error", (err) => { clearTimeout(killTimer); if (signal) signal.removeEventListener('abort', onAbort); reject(err); });
       child.on("close", (code) => {
+        clearTimeout(killTimer);
         if (signal) signal.removeEventListener('abort', onAbort);
         try {
           const result = parseStreamJsonOutput(stdout);
@@ -366,13 +378,14 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
       child = spawn(bin, ["-p", fullPrompt], {
         env,
         stdio: ["ignore", "pipe", "pipe"],
-        timeout: 300000,
         shell: false,
       });
+      const killTimer = armKillTimer(child, 300000);
       child.stdout.on("data", (d) => (stdout += d));
       child.stderr.on("data", (d) => (stderr += d));
-      child.on("error", (err) => { if (signal) signal.removeEventListener('abort', onAbort); reject(err); });
+      child.on("error", (err) => { clearTimeout(killTimer); if (signal) signal.removeEventListener('abort', onAbort); reject(err); });
       child.on("close", (code) => {
+        clearTimeout(killTimer);
         if (signal) signal.removeEventListener('abort', onAbort);
         try {
           const usage = extractUsageFromStderr(stderr);
@@ -472,7 +485,19 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (stream) body.stream = true;
 
-    const fetchSignal = signal || AbortSignal.timeout(300000);
+    // Use an AbortController with a clearable, unref'd timer rather than
+    // AbortSignal.timeout(): the latter's timer is neither unref'd nor cleared
+    // once the fetch settles, so it keeps the event loop alive for the full
+    // timeout (5 min) after the request is already done. Note `setTimeout` is
+    // imported from node:timers/promises at the top of this file, so reach for
+    // the global timer explicitly here.
+    let timeoutCtl, timeoutId;
+    if (!signal) {
+      timeoutCtl = new AbortController();
+      timeoutId = globalThis.setTimeout(() => timeoutCtl.abort(new Error("Request timed out")), 300000);
+      timeoutId.unref?.();
+    }
+    const fetchSignal = signal || timeoutCtl.signal;
 
     let res;
     try {
@@ -487,6 +512,7 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
         signal: fetchSignal,
       });
     } catch (err) {
+      clearTimeout(timeoutId);
       if (signal?.aborted) throw new Error('Request cancelled');
       if (attempt < maxRetries) {
         const delay = Math.pow(2, attempt) * 1000;
@@ -496,6 +522,7 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
       }
       throw err;
     }
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {

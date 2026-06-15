@@ -6,7 +6,7 @@
 import { test, describe, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { TOOLS, handleToolCall, handleCallModel, send } from "../scripts/mcp-server.mjs";
+import { TOOLS, handleToolCall, handleCallModel, send, API_DISPATCH, CLAUDE_DISPATCH } from "../scripts/mcp-server.mjs";
 
 // ── TOOLS definition ───────────────────────────────────────────────────────────
 
@@ -101,18 +101,27 @@ describe("handleCallModel", () => {
 
 describe("handleCallModel dispatch routing", () => {
   test("rejects unsupported mode for claude provider", async () => {
+    // image-generate is codex-only; claude (native) has no image dispatch.
     await assert.rejects(
-      () => handleCallModel({ provider: "claude", userPrompt: "test", mode: "review" }),
+      () => handleCallModel({ provider: "claude", userPrompt: "test", mode: "image-generate" }),
       /not supported for provider/
     );
   });
 
   test("rejects unsupported mode for API provider", async () => {
-    // deepseek is an API provider — review mode only for codex
+    // deepseek is an API provider — image modes only for codex
     await assert.rejects(
       () => handleCallModel({ provider: "deepseek", userPrompt: "test", mode: "image-generate" }),
       /not supported for provider/
     );
+  });
+
+  test("review mode is supported for non-codex providers (maps to task)", () => {
+    // Regression: sharp-review sends mode="review" to deepseek/sonnet reviewers.
+    // Previously rejected ("not supported"), silently zeroing those reviewers.
+    // Assert the dispatch maps now expose a review handler.
+    assert.equal(typeof API_DISPATCH.review, "function");
+    assert.equal(typeof CLAUDE_DISPATCH.review, "function");
   });
 
   test("throws ConfigError on missing provider", async () => {

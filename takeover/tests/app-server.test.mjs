@@ -118,6 +118,25 @@ describe("CodexAppServerClient _handleLine", () => {
   });
 });
 
+describe("_rejectAllPending", () => {
+  // Regression: child 'error'/'close' handlers rejected pending requests but never
+  // cleared their setTimeout timers (up to 10 min), keeping the event loop alive long
+  // after the work finished — so test runs and short-lived CLI calls hung until killed.
+  test("rejects all pending and clears the map (timers cleared)", () => {
+    const client = new CodexAppServerClient();
+    client.child = { stdin: { write: () => {} } };
+    client._closed = false;
+
+    const p = client.send("test/method", { x: 1 });
+    assert.equal(client.pending.size, 1);
+
+    client._rejectAllPending(new Error("boom"));
+    assert.equal(client.pending.size, 0);
+
+    return assert.rejects(p, /boom/);
+  });
+});
+
 describe("withSharedClient queue counter (source guard)", () => {
   // Regression: `_pendingCount` was declared with `let` inside withSharedClient and
   // referenced on its own RHS (`let _pendingCount = (_pendingCount || 0) + 1`), throwing
