@@ -30,7 +30,7 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 |---|---|---|
 | `none` | Trivial/doc-only tasks | 0 (skipped) |
 | `once` | Moderate code changes | 1 pass |
-| `multi` | Complex/risky changes | 2 parallel (random pick from 3 backends) + merge |
+| `multi` | Complex/risky changes | 2 parallel (picked from 3 backends) + merge |
 
 ## Output
 
@@ -119,7 +119,7 @@ Callers pass these `Workflow` args to override defaults:
 | `reviewScope` | Code dimensions | Comma-separated check dimensions |
 | `findingSchema` | Code schema | JSON Schema for findings |
 | `reviewers` | A/B/C | Custom reviewer identities |
-| `pickStrategy` | `"day-mod"` | `"all"` to use all reviewers |
+| `pickStrategy` | `"seed-mod"` | `"all"` to use all reviewers |
 | `dedupKeyFields` | `["file", "summary"]` | Fields for dedup key |
 | `idPrefix` | `"SR"` | Finding ID prefix |
 

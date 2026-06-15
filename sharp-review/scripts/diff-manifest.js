@@ -120,6 +120,9 @@ function main() {
   const result = {
     mode,
     range,
+    // Time-based seed (minutes since epoch) so reviewer pairs vary across
+    // multiple review rounds within the same day, not just day-to-day.
+    seed: Math.floor(Date.now() / 60000),
     stats: {
       files: entries.length,
       insertions,

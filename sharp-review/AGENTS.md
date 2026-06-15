@@ -18,7 +18,7 @@ Stop → sharp-review-hook.js
                ├── Workflow(sharp-review-workflow.js, { date, mode, range, stats, diff?, manifestText?, excludedSummary })
                │     ├── review mode: full diff inlined via takeover mode="review"
                │     └── agent mode: manifest only, reviewers explore via takeover mode="agent"
-               ├── 2 of 3 reviewers (day-of-month mod 3: AB/BC/AC), schema-constrained
+               ├── 2 of 3 reviewers, schema-constrained
                ├── Merge & dedup (≥2 reviewers = high confidence)
                └── post-review.js:
                      ├── Write .claude/memory/YYYY/MM/DD/sharp-review.md (single file w/ rem frontmatter)
