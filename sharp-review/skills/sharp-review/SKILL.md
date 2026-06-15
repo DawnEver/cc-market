@@ -71,6 +71,7 @@ Capture the JSON output. The script produces a size-bounded payload — each fie
 {
   "mode": "review" | "agent" | "empty",
   "range": "HEAD",
+  "seed": 29345678,               // minutes since epoch; seeds reviewer-pair pick
   "path": "src/components",       // only when --path is provided
   "stats": { "files": 42, "insertions": 1234, "deletions": 567, "excluded": 9, "diffChars": 183421 },
   "diff": "...",            // only review mode (≤ inlineDiffLimit chars)
@@ -90,6 +91,7 @@ Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/scripts/sharp-review-workflow.js",
   args: {
     date: "<YYYY-MM-DD today>",
+    seed: result.seed,              // time-based; rotates reviewer pair per round
     mode: result.mode,
     range: result.range,
     path: result.path,              // only when --path was used
@@ -101,7 +103,7 @@ Workflow({
 })
 ```
 
-The workflow launches 2 of 3 reviewers, picked deterministically by `day-of-month mod 3` (combos: AB, BC, AC per day): Reviewer A (Codex), Reviewer B (DeepSeek), Reviewer C (Sonnet). Each is constrained by a JSON Schema that enforces:
+The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod 3`, combos AB/BC/AC) so multiple review rounds within the same day rotate the pair instead of repeating: Reviewer A (Codex), Reviewer B (DeepSeek), Reviewer C (Sonnet). Each is constrained by a JSON Schema that enforces:
 - `severity`: HIGH | MEDIUM | LOW | INFO
 - `file`: affected file path
 - `summary`: one-line issue description
@@ -180,7 +182,7 @@ Workflow({
       { key: 'A', name: '...', provider: 'claude', model: 'sonnet' },
       { key: 'B', name: '...', provider: 'deepseek' },
     ],
-    pickStrategy: "all",              // "day-mod" (default, picks 2) | "all" (uses all)
+    pickStrategy: "all",              // "seed-mod" (default, picks 2 via time seed) | "all" (uses all)
     dedupKeyFields: ["summary"],      // fields for dedup key (default: ["file", "summary"])
     idPrefix: "SR",                   // finding ID prefix (default: "SR")
   }
@@ -196,7 +198,7 @@ Workflow({
 | `reviewScope` | 5-dim code scope | Comma-separated review dimensions |
 | `findingSchema` | Code schema | JSON Schema for a single finding. Engine wraps in `{ findings: [...] }` |
 | `reviewers` | A/B/C | Array of `{ key, name, provider, model? }`. `key` maps to takeover provider routing |
-| `pickStrategy` | `"day-mod"` | `"day-mod"` picks 2 of N by date; `"all"` runs all reviewers |
+| `pickStrategy` | `"seed-mod"` | `"seed-mod"` picks 2 of N from `args.seed` (time-based, falls back to day-of-month); `"all"` runs all reviewers |
 | `dedupKeyFields` | `["file", "summary"]` | Which finding fields form the dedup key (lowercased, first 60 chars each) |
 | `idPrefix` | `"SR"` | Prefix for finding IDs (`SR-20260610-001`, `CR-A-20260610-001`, etc.) |
 

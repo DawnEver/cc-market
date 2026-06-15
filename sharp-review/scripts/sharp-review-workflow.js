@@ -207,7 +207,7 @@ const contentType = A.contentType || 'code';
 const findingSchema = A.findingSchema || DEFAULT_FINDING;
 const findingsSchema = buildFindingsSchema(findingSchema);
 const reviewers = A.reviewers || DEFAULT_REVIEWERS;
-const pickStrategy = A.pickStrategy || 'day-mod';
+const pickStrategy = A.pickStrategy || 'seed-mod';
 const dedupKeyFields = A.dedupKeyFields || DEFAULT_DEDUP_KEY_FIELDS;
 
 // Validate required args
@@ -234,15 +234,19 @@ let active;
 if (pickStrategy === 'all') {
   active = [...reviewers];
 } else {
-  // day-mod: pick 2 of N deterministically from date
-  const day = parseInt((A.date || '2026-06-09').slice(-2), 10) || 9;
+  // seed-mod: pick 2 of N from a time-based seed (minutes since epoch,
+  // supplied by diff-manifest.js) so multiple rounds in one day rotate the
+  // pair, not just day-to-day. Falls back to day-of-month if no seed given.
+  const seed = Number.isFinite(A.seed)
+    ? A.seed
+    : (parseInt((A.date || '2026-06-09').slice(-2), 10) || 9);
   const n = reviewers.length;
   if (n <= 2) {
     active = [...reviewers];
   } else {
     // Cycle through all pair combinations: (0,1), (1,2), (2,0), (0,1), ...
     const comboCount = n * (n - 1) / 2;
-    const comboIdx = day % comboCount;
+    const comboIdx = seed % comboCount;
     // Generate the comboIdx-th pair
     let ci = 0;
     active = [];
