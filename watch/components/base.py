@@ -55,6 +55,11 @@ class Anomaly:
     value: float | None = None
     threshold: float | None = None
     source: str = ''
+    # Stable identity used to dedup repeat alerts (alerts.suppress_after_n_identical).
+    # Empty → the message is used. Set this to a value that stays constant while the
+    # underlying condition is unchanged (e.g. the dirty commit sha) but changes when
+    # the situation genuinely moves, so suppression releases on real change.
+    signature: str = ''
 
 
 @dataclass

@@ -108,7 +108,7 @@ def _poll(project_dir: Path, registry, config: dict, state: dict,
 
     if all_ok:
         for key in list(state):
-            if key.startswith('consecutive_'):
+            if key.startswith('consecutive_') or key.startswith('_alert_sig_'):
                 state.pop(key, None)
         state['last_ok'] = datetime.now(timezone.utc).isoformat()
         _log(project_dir, log_file, 'info', 'All OK.')

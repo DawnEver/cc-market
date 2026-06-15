@@ -243,6 +243,11 @@ Requires: domain verified in Resend dashboard + valid API key.
 
 ```yaml
 alerts:
+  # Stop re-sending an escalated alert once this many *identical* ones have fired
+  # in a row (same anomaly type + signature — e.g. the same unchanged dirty commit).
+  # Suppression releases when the signature changes or the anomaly clears. 0 = off.
+  suppress_after_n_identical: 3
+
   email:
     enabled: true
     host: localhost

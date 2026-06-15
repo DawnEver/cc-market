@@ -37,6 +37,10 @@ DEFAULTS: dict[str, Any] = {
         'restart_attempts': 2,       # recover ladder: restarts before rollback
     },
     'alerts': {
+        # After this many consecutive *identical* escalated alerts (same anomaly
+        # type + signature — e.g. the same unchanged dirty commit), stop re-sending
+        # until the signature changes or the anomaly clears. 0 disables suppression.
+        'suppress_after_n_identical': 3,
         'email': {'enabled': False, 'host': 'localhost', 'port': 25,
                   'to': '', 'from': 'watch@localhost', 'subject_prefix': '[watch]',
                   'cooldown_minutes': 10},
