@@ -39,8 +39,11 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 
 | Test file | Tests | Coverage |
 |---|---|---|
-| `takeover/tests/lib.test.mjs` | 27 | provider config, model resolution, API, retry |
-| `takeover/tests/mcp-server.test.mjs` | 10 | TOOLS schema, JSON-RPC, validation |
+| `takeover/tests/lib.test.mjs` | 56 | provider config, model resolution, API, retry |
+| `takeover/tests/mcp-server.test.mjs` | 15 | TOOLS schema, JSON-RPC, validation, dispatch routing (review for all providers) |
+| `takeover/tests/app-server.test.mjs` | 13 | JSON-RPC client, `_rejectAllPending` timer cleanup, `_pendingCount` source guard |
+| `takeover/tests/discovery.test.mjs` | 4 | codex binary discovery |
+| `takeover/tests/image.test.mjs` | 2 | image gen/edit error paths |
 | `rem/tests/frontmatter.test.mjs` | 13 | frontmatter parsing, field get/set |
 | `rem/tests/date-path.test.mjs` | 16 | date formatting, path resolution, memory dir security |
 | `rem/tests/lib.test.mjs` | 17 | index parsing, constants, file collection, state, findProjectRoot |

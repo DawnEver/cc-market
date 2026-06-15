@@ -35,16 +35,12 @@ export class CodexAppServerClient {
 
     this.child.on("error", (err) => {
       this._closed = true;
-      for (const [, p] of this.pending) p.reject(err);
-      this.pending.clear();
+      this._rejectAllPending(err);
     });
 
     this.child.on("close", (code) => {
       this._closed = true;
-      for (const [, p] of this.pending) {
-        p.reject(new Error(`codex app-server exited ${code}`));
-      }
-      this.pending.clear();
+      this._rejectAllPending(new Error(`codex app-server exited ${code}`));
       if (this._closeResolve) { this._closeResolve(); this._closeResolve = null; }
     });
 
@@ -87,6 +83,18 @@ export class CodexAppServerClient {
       this.pending.set(id, { resolve, reject, timer });
       this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     });
+  }
+
+  // Reject every in-flight request and clear its timeout. Without clearing the
+  // timer, a pending request rejected via the child's error/close events would
+  // leave its (up to 10-min) setTimeout alive, keeping the event loop from
+  // exiting long after the work is done.
+  _rejectAllPending(err) {
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(err);
+    }
+    this.pending.clear();
   }
 
   notify(method, params) {
