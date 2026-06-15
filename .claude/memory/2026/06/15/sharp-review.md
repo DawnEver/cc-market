@@ -1,9 +1,10 @@
 ---
 name: sharp-review-2026-06-15
-description: Sharp review findings — 6 total
+description: Sharp review findings — 11 total
 metadata:
   type: project
 ---
+
 
 ## Review 2026-06-15 (session) — current branch
 
@@ -79,3 +80,72 @@ Fixed — `prev` is already the stored dict reference.
 - **Suggestion:** Simplify the condition.
 
 Fixed — early guard handles the disabled/non-positive case; inner check is now a plain `sent >= suppress_after`.
+
+
+## Review 2026-06-15 (follow-up)
+
+## Review 2026-06-15 (session) — current branch
+
+### Reviewer Status
+- Reviewer A (Codex): OK
+- Reviewer B (DeepSeek): OK
+- Reviewer C (Sonnet): skipped
+
+### Confirmed findings
+
+---
+
+### [SR-20260615-001] [HIGH] watch/core/remediate.py — Cooldown comparisons may use stale timestamp if 'ts' is not updated for each anomaly.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Ensure 'ts' is generated fresh (e.g., datetime.now().isoformat()) for each anomaly before the cooldown check, or pass the current time explicitly.
+
+In the new cooldown logic, 'ts' is used to compute elapsed time. If 'ts' is a variable set once at the start of apply_remedies (as implied by its prior use in set_alert_sent), all anomalies processed in the same call will have the same timestamp. This means after the first alert, any subsequent alert during the same run will see elapsed = 0 and be suppressed indefinitely, even if real cooldown period has passed.
+
+---
+
+### [SR-20260615-002] [MEDIUM] watch/core/remediate.py — Unvalidated numeric cast of 'cooldown_minutes' can cause runtime TypeError.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Explicitly convert or validate 'cooldown_minutes' as a numeric value before multiplication.
+
+'cooldown_s = alerts_cfg.get('email', {}).get('cooldown_minutes', 0) * 60' multiplies the config value by 60. If the configuration is a string or None (other than the default 0), this will raise a TypeError. The code relies on user-provided config being correct.
+
+---
+
+### [SR-20260615-003] [LOW] watch/core/remediate.py — Falsy check for signature falls back on message even when signature is an empty string.
+
+- **Category:** Bug
+- **Status:** WONTFIX
+- **Confidence:** single-reviewer
+- **Suggestion:** Use 'anomaly.signature if anomaly.signature is not None else anomaly.message' to preserve intentional empty strings.
+
+'sig = anomaly.signature or anomaly.message' treats an empty string as falsy, potentially using the message instead. This may lead to inconsistent suppression grouping if a signature is explicitly set to an empty string.
+
+**Maintainer note (2026-06-15): FALSE POSITIVE, not applying.** `Anomaly.signature` is declared `signature: str = ''` in `components/base.py` — the empty string IS the "unset" sentinel, by design. `or` is the intended fallback (empty → use message). The suggested `is not None` change would break `test_changed_signature_resumes_alerting`, which relies on the message-based fallback. Reviewer did not see base.py.
+
+---
+
+### [SR-20260615-004] [LOW] watch/core/remediate.py — Repeated escalation and state-setting code increases maintenance risk.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Extract the common escalation + state updates into a helper function to avoid duplication.
+
+The sequence '_escalate(...); set_alert_sent(state, ts); set_anomaly_alerted(state, anomaly.type, ts)' appears in three separate branches (cooldown expired, no prior alert, cooldown disabled). Any future change to alert handling must be applied in all three places.
+
+---
+
+### [SR-20260615-005] [INFO] watch/core/remediate.py — Alert suppression logic is becoming non-trivial; consider extracting to a dedicated module.
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Move signature suppression and cooldown check into a separate function or class to keep apply_remedies focused on remediation flow.
+
+The 'if step.escalate_after' block is now 30+ lines with nested conditional logic. Encapsulating this in an AlertSuppressor or similar would improve readability and testability.
