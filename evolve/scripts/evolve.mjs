@@ -43,10 +43,11 @@ function statePath(projectRoot) {
   return path.join(projectRoot, STATE_FILE);
 }
 
-// State lives under the `evolveState` key of the shared `.claude/.rem-state.json`.
-// loadState/saveState delegate to shared/state.mjs — its deepMerge preserves foreign keys
-// (hook, prune, reviewGate…) so we never clobber rem/sharp-review's slice of the file, and
-// its atomic save (with Windows-retry) replaces evolve's old hand-rolled temp/rename dance.
+// State lives under the `evolveState` key of the shared `.claude/.rem-state.json` (owned by
+// the required rem plugin). loadState/saveState delegate to shared/state.mjs — its deepMerge
+// preserves foreign keys (hook, prune, reviewGate…) so we never clobber rem/sharp-review's
+// slice of the file, and its atomic save (with Windows-retry) replaces evolve's old
+// hand-rolled temp/rename dance.
 export function loadState(projectRoot = process.cwd()) {
   const root = loadSharedState(statePath(projectRoot));
   return { ...initState(), ...(root.evolveState || {}) };
@@ -54,8 +55,7 @@ export function loadState(projectRoot = process.cwd()) {
 
 export function saveState(projectRoot = process.cwd(), state) {
   const file = statePath(projectRoot);
-  if (!fs.existsSync(file)) return { persisted: false }; // rem absent → keep state in memory
-  const root = loadSharedState(file);
+  const root = loadSharedState(file); // returns DEFAULT_STATE if absent; shared save creates the dir
   root.evolveState = state;
   return saveSharedState(file, root, { atomic: true });
 }

@@ -9,9 +9,10 @@ Drive a codebase toward a clean state over repeated rounds. This loop is **Claud
 (run from the main loop, not a background `Workflow`) because human gates (`AskUserQuestion`)
 and interactive `git commit` cannot happen inside a background workflow.
 
-Self-contained and portable: it runs in any git project. When the `sharp-review` plugin /
-`todo` CLI / rem `.rem-state.json` are present it integrates with them; otherwise it falls
-back to built-in equivalents. See `README.md` for the overview.
+Runs in any git project, but **hard-depends on three cc-market plugins** — `sharp-review`
+(round critique engine), `rem` (state + memory in `.claude/.rem-state.json`), and the `todo`
+CLI (finding/task status). Setup verifies they are installed and aborts if any is missing;
+there are no built-in fallbacks. See `README.md` for the overview.
 
 ## Usage
 
@@ -34,12 +35,16 @@ back to built-in equivalents. See `README.md` for the overview.
    repo). Run `git status --short`: if the working tree has **unrelated** uncommitted changes,
    ask the user to commit/stash first, or to confirm proceeding — evolve commits with explicit
    per-file `git add` scope, but a dirty tree still risks confusion. Note the current branch.
+   **Verify the required plugins are installed** — check that `sharp-review` and `rem` are
+   registered (e.g. in `~/.claude/plugins/installed_plugins.json`) and that the `todo` CLI is
+   on `PATH`. If any is missing, abort with a clear message naming what to install — evolve has
+   no fallback for them.
 2. Parse flags (see Usage). On Windows under OneDrive, run
    `git config windows.appendAtomically false` once so `git commit` doesn't fail with
    "cannot update the ref".
-3. **Interruption guard (only if rem is present).** If `.claude/.rem-state.json` exists, set
-   `hook.taskActiveUntil = now + 30*60*1000` so the rem Stop hook does not interrupt the loop
-   mid-round. If the file is absent, skip — no guard is needed.
+3. **Interruption guard.** Set `hook.taskActiveUntil = now + 30*60*1000` in
+   `.claude/.rem-state.json` so the rem Stop hook does not interrupt the loop mid-round. (rem is
+   a required dependency, so the state file exists or is created by the helper.)
 4. **Initialize loop state via the helper** — run
    `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" init [flags]` (or import `initState` from
    `$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs`) to create or load the state. Do **not**

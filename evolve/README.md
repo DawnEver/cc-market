@@ -27,9 +27,9 @@ to a clean state:
 
 Extra flags: `--path`, `--min-severity`, `--dry-run`, `--seed`, `--commit=round|group`.
 
-Claude-driven (not a background workflow) so human gates and commits work; portable and
-self-contained (runs in any git repo), and integrates with cc-market's `sharp-review` / `todo`
-/ rem state when present, with built-in fallbacks otherwise.
+Claude-driven (not a background workflow) so human gates and commits work. Runs in any git
+repo but **hard-depends on cc-market's `sharp-review`, `rem`, and `todo`** — Setup verifies
+they are installed and aborts if any is missing; there are no built-in fallbacks.
 
 A real `scripts/evolve.mjs` helper now backs state, finding-grouping, and termination — no
 hand-edited JSON. Convergence is **severity-based** (`checkTermination`): only HIGH/MEDIUM

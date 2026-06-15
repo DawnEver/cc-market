@@ -9,10 +9,10 @@ plugin: invoked via `/evolve`, no hook.
 
 ```
 /evolve [--until --path --min-severity --dry-run --seed --commit]
-  Setup: pre-flight git + dirty-tree check; init state via scripts/evolve.mjs
+  Setup: pre-flight git + dirty-tree check; require sharp-review/rem/todo; init state via scripts/evolve.mjs
   Per round (reference/round-protocol.md):
     0. Pre-flight (dirty-tree re-check, cc-market repo check)
-    1. Critique → findings; confirmedByQuorum(≥2) → prioritize(minSeverity)
+    1. Critique via Workflow({name:'sharp-review'}) → merged findings → prioritize(minSeverity)
     2. Fan-out fix: groupFindings → disjoint groups → parallel agents (cross-cutting = 1 serial)
     3. Review un-fixed → classify reason
     4. Human gate (arch change / won't-fix / unpassable test); headless → defer
@@ -40,10 +40,11 @@ evolve/
 ## Helper — `scripts/evolve.mjs`
 
 Dependency-free Node ESM (importable + CLI). Centralizes the error-prone mechanics so the
-loop never hand-edits JSON: `loadState`/`saveState` (atomic, rem-or-memory, Windows-retry),
+loop never hand-edits JSON: `loadState`/`saveState` (atomic, rem state file, Windows-retry),
 `initState`, `recordRound`, `groupFindings` (connected components), `prioritize`,
-`checkTermination`, `confirmedByQuorum`. Pure logic functions take timestamps as params (no
-internal clock) for deterministic tests.
+`checkTermination`, `confirmedByQuorum` (a unit helper; quorum is done upstream by
+sharp-review's merge, not called in the live flow). Pure logic functions take timestamps as
+params (no internal clock) for deterministic tests.
 
 ## Testing
 
