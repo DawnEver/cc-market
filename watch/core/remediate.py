@@ -9,7 +9,8 @@ from pathlib import Path
 
 from core.actions import _execute_action, _eval_condition
 from core.daemon_helpers import _escalate
-from core.state import (track_anomaly, record_remedy_attempt, set_alert_sent)
+from core.state import (track_anomaly, record_remedy_attempt, set_alert_sent,
+                        register_alert_signature)
 
 
 def apply_remedies(registry, anomalies: list, config: dict, state: dict,
@@ -56,5 +57,13 @@ def apply_remedies(registry, anomalies: list, config: dict, state: dict,
             if step.escalate_after:
                 escalate_count = track_anomaly(state, anomaly.type)
                 if escalate_count >= step.escalate_after:
-                    _escalate(config, anomaly, escalate_count, report, dry_run)
-                    set_alert_sent(state, ts)
+                    suppress_after = config.get('alerts', {}).get(
+                        'suppress_after_n_identical', 0)
+                    sig = anomaly.signature or anomaly.message
+                    if register_alert_signature(state, anomaly.type, sig, suppress_after):
+                        print(f'    [{anomaly.type}] alert suppressed — identical '
+                              f'signature unchanged after {suppress_after} alerts',
+                              file=sys.stderr)
+                    else:
+                        _escalate(config, anomaly, escalate_count, report, dry_run)
+                        set_alert_sent(state, ts)

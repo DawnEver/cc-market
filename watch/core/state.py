@@ -130,6 +130,31 @@ def track_anomaly(state: dict, anomaly_type: str) -> int:
 
 def reset_anomaly(state: dict, anomaly_type: str) -> None:
     state.pop(f'consecutive_{anomaly_type}', None)
+    state.pop(f'_alert_sig_{anomaly_type}', None)
+
+
+def register_alert_signature(state: dict, anomaly_type: str, signature: str,
+                             suppress_after: int) -> bool:
+    """Track runs of identical escalated alerts; return True if this one should be
+    SUPPRESSED.
+
+    Counts how many identical alerts (same `signature`) have fired in a row for
+    `anomaly_type`. Once `suppress_after` identical alerts have been sent, every
+    further identical one is suppressed until the signature changes (a genuinely
+    new situation) or the anomaly clears (`reset_anomaly`). A non-positive
+    `suppress_after` disables suppression entirely.
+    """
+    key = f'_alert_sig_{anomaly_type}'
+    prev = state.get(key)
+    if not isinstance(prev, dict) or prev.get('sig') != signature:
+        state[key] = {'sig': signature, 'sent': 1}
+        return False
+    sent = prev.get('sent', 0)
+    if suppress_after and suppress_after > 0 and sent >= suppress_after:
+        return True
+    prev['sent'] = sent + 1
+    state[key] = prev
+    return False
 
 
 def record_last_healthy(state: dict, timestamp: str) -> None:
