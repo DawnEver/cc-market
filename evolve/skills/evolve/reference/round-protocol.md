@@ -17,6 +17,13 @@ to the helper (importable + CLI:
 - `prioritize(findings, minSeverity)` — filter by `--min-severity` and sort HIGH→MEDIUM→LOW
   (steps 1/2).
 - `groupFindings(findings)` — disjoint connected-component fix-groups (step 2).
+- `seedFromSharpReview(projectRoot, date)` — `--seed`: read OPEN findings from an existing
+  `sharp-review.md` backlog (reuses `shared/lib.mjs parseFindingsFromMarkdown`), step 1.
+- `writeRoundLog(projectRoot, {...})` — cleanup: write the round-log as a rem-frontmatter
+  memory entry so rem's indexer picks it up (no need to call rem's `rebuildIndex`).
+
+State I/O and `dateToPath` come from the bundled `shared/` (`shared/state.mjs`,
+`shared/lib.mjs`) — the same modules rem/sharp-review use — not re-implemented here.
 - `checkTermination(state)` → `{ stop, reason }` — the termination decision (step 7).
 
 Keep the conceptual explanation in each step; let the script do the arithmetic.
@@ -44,22 +51,26 @@ Goal: produce a quorum-confirmed, severity-sorted **OPEN findings list** for thi
 - **Working diff present:** review that diff (plus directly-touched modules).
 - `--seed`: if set and a sharp-review findings store exists
   (`.claude/memory/.../sharp-review.md`), seed this round's findings from its existing **OPEN**
-  entries — in addition to (or, on a clean tree, instead of) a fresh critique.
+  entries — in addition to (or, on a clean tree, instead of) a fresh critique. Use the helper
+  `seedFromSharpReview(projectRoot, date)` (it reuses `shared/lib.mjs parseFindingsFromMarkdown`
+  + SR-ID parsing) rather than re-parsing the markdown by hand.
 
 - **If the `sharp-review` plugin is installed** (preferred — best integration): run the
   critique via `Workflow({ name: 'sharp-review' })` and consume the returned `merged`
   findings. The plugin handles diff sizing (`diff-manifest.js` → review/agent/empty mode) and
   assigns stable `SR-YYYYMMDD-NNN` IDs. If the call fails (plugin absent / errors), fall back
   below — do not abort.
-- **Fallback (no plugin):** fan out 2–3 parallel reviewers (`Agent` of type
-  `Explore`/`general-purpose`; optionally `takeover` for model variety) over the working diff
-  and touched modules. Ask each for findings as
+- **Fallback (no `name: 'sharp-review'` registered, or it errored):** prefer to still reuse
+  sharp-review's review engine in **generalized mode** rather than hand-rolling a fan-out —
+  call `Workflow({ scriptPath: "<sharp-review>/scripts/sharp-review-workflow.js", contentType,
+  reviewers, findingSchema, pickStrategy: 'all', dedupKeyFields: ['file','summary'] })`; its
+  merge step already does the ≥2-reviewer confidence/dedup that `confirmedByQuorum` does.
+  Only if the sharp-review plugin is entirely absent, fan out 2–3 parallel reviewers (`Agent`
+  of type `Explore`/`general-purpose`; optionally `takeover` for model variety) over the
+  working diff and touched modules, asking each for findings as
   `{ severity, file, summary, category, suggestion, arch? }` (reviewers may set `arch: true`
-  directly; otherwise it is inferred below). **Dedup:** match on `file` + a
-  *normalized* summary (lowercase, trim, collapse whitespace). Treat near-duplicates with
-  clearly the same root cause as one (keep the more specific suggestion); when unsure, keep
-  both — over-splitting is safer than dropping a real finding. (sharp-review already dedups, so
-  this only applies to the fallback path.)
+  directly; otherwise it is inferred below), then dedup with `confirmedByQuorum` on `file` +
+  normalized summary.
 
 **Finding identity (across rounds):** if findings come from sharp-review, use its SR-IDs. In
 the fallback, assign a stable id = `file + "|" + normalized-summary` so the same finding keeps

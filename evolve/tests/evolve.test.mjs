@@ -1,13 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   initState,
+  loadState,
+  saveState,
   recordRound,
   groupFindings,
   prioritize,
   checkTermination,
   confirmedByQuorum,
+  seedFromSharpReview,
+  writeRoundLog,
 } from '../scripts/evolve.mjs';
+
+function tmpProject() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'evolve-test-'));
+  fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+  return root;
+}
 
 test('initState defaults', () => {
   const s = initState();
@@ -159,4 +172,70 @@ test('confirmedByQuorum same reviewer twice does not count as quorum', () => {
     { id: 2, file: 'a.js', summary: 'bug', reviewer: 'r1' },
   ];
   assert.equal(confirmedByQuorum(raw, 2).length, 0);
+});
+
+test('saveState preserves foreign keys (rem/sharp-review slice) via shared deepMerge', () => {
+  const root = tmpProject();
+  const stateFile = path.join(root, '.claude', '.rem-state.json');
+  // Simulate a file owned by other plugins (hook + reviewGate) with no evolveState yet.
+  fs.writeFileSync(stateFile, JSON.stringify({
+    hook: { taskActiveUntil: 999 },
+    reviewGate: { wave: 2, memory: ['x'] },
+  }, null, 2));
+
+  const st = initState({ until: 'clean' });
+  st.round = 3;
+  const res = saveState(root, st);
+  assert.equal(res.persisted, true);
+
+  const written = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.equal(written.evolveState.round, 3);
+  assert.equal(written.reviewGate.wave, 2);          // foreign key preserved
+  assert.deepEqual(written.reviewGate.memory, ['x']); // foreign key preserved
+  assert.equal(written.hook.taskActiveUntil, 999);    // hook slice preserved
+
+  const reloaded = loadState(root);
+  assert.equal(reloaded.round, 3);
+  assert.equal(reloaded.until, 'clean');
+});
+
+test('saveState no-ops when rem state file absent (in-memory fallback)', () => {
+  const root = tmpProject(); // no .rem-state.json
+  assert.deepEqual(saveState(root, initState()), { persisted: false });
+  // loadState returns defaults when absent
+  assert.equal(loadState(root).round, 0);
+});
+
+test('seedFromSharpReview pulls OPEN findings, skips fixed', () => {
+  const root = tmpProject();
+  const day = path.join(root, '.claude', 'memory', '2026', '06', '15');
+  fs.mkdirSync(day, { recursive: true });
+  fs.writeFileSync(path.join(day, 'sharp-review.md'), `---
+name: sharp-review-2026-06-15
+---
+
+### [SR-20260615-001] [HIGH] src/a.js — Null deref on user
+- **Status:** OPEN
+
+### [SR-20260615-002] [LOW] src/b.js — Typo in log
+- **Status:** FIXED
+`);
+  const seeded = seedFromSharpReview(root, '2026-06-15');
+  assert.equal(seeded.length, 1);
+  assert.equal(seeded[0].id, 'SR-20260615-001');
+  assert.equal(seeded[0].severity, 'HIGH');
+  assert.equal(seeded[0].status, 'open');
+});
+
+test('seedFromSharpReview returns [] when no backlog file', () => {
+  assert.deepEqual(seedFromSharpReview(tmpProject(), '2026-06-15'), []);
+});
+
+test('writeRoundLog writes a rem-frontmatter memory entry', () => {
+  const root = tmpProject();
+  const file = writeRoundLog(root, { date: '2026-06-15', rounds: 2, fixed: 5, wontFix: 1 });
+  const content = fs.readFileSync(file, 'utf8');
+  assert.match(file, /[\\/]2026[\\/]06[\\/]15[\\/]evolve-round-log\.md$/);
+  assert.match(content, /metadata:\s*\n\s*type: project/);
+  assert.match(content, /2 round\(s\): 5 fixed, 1 won't-fix/);
 });

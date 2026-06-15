@@ -61,6 +61,13 @@ export function todayISO(date) {
   return new Date().toISOString().slice(0, 10);
 }
 
+// ── dateToPath: YYYY-MM-DD → "YYYY/MM/DD" (nested memory-dir segments) ──
+
+export function dateToPath(date) {
+  const [y, m, d] = todayISO(date).split('-');
+  return `${y}/${m}/${d}`;
+}
+
 // ── normalizePath: cross-platform path normalization ──
 
 export function normalizePath(p) { return p.replace(/\\/g, '/'); }
