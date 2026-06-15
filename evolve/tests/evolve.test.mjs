@@ -199,11 +199,15 @@ test('saveState preserves foreign keys (rem/sharp-review slice) via shared deepM
   assert.equal(reloaded.until, 'clean');
 });
 
-test('saveState no-ops when rem state file absent (in-memory fallback)', () => {
-  const root = tmpProject(); // no .rem-state.json
-  assert.deepEqual(saveState(root, initState()), { persisted: false });
-  // loadState returns defaults when absent
-  assert.equal(loadState(root).round, 0);
+test('saveState creates the state file when absent (hard rem dependency)', () => {
+  const root = tmpProject(); // no .rem-state.json yet
+  const st = initState();
+  st.round = 2;
+  const res = saveState(root, st);
+  assert.equal(res.persisted, true);
+  // file is created and reloads the persisted state
+  assert.ok(fs.existsSync(path.join(root, '.claude', '.rem-state.json')));
+  assert.equal(loadState(root).round, 2);
 });
 
 test('seedFromSharpReview pulls OPEN findings, skips fixed', () => {

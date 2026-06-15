@@ -9,13 +9,12 @@ Do **not** hand-edit state JSON or hand-compute grouping/termination. Delegate t
 to the helper (importable + CLI:
 `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" <init|load|group|terminate|prioritize>`):
 
-- `loadState` / `saveState` — atomic, rem-or-memory backed, with Windows retry. Use instead of
-  manual read/rename of `.rem-state.json`.
+- `loadState` / `saveState` — atomic, backed by rem's `.claude/.rem-state.json` (a hard
+  dependency, verified in Setup), with Windows retry. Use instead of manual read/rename.
 - `initState` — create a fresh `evolveState` (step Setup).
 - `recordRound` — bump `round`/`lastRoundAt` and persist (step 7).
-- `confirmedByQuorum(rawFindings, minReviewers = 2)` — drop single-reviewer noise (step 1).
 - `prioritize(findings, minSeverity)` — filter by `--min-severity` and sort HIGH→MEDIUM→LOW
-  (steps 1/2).
+  (steps 1/2). (Quorum/dedup is done upstream by sharp-review's merge, not re-run here.)
 - `groupFindings(findings)` — disjoint connected-component fix-groups (step 2).
 - `seedFromSharpReview(projectRoot, date)` — `--seed`: read OPEN findings from an existing
   `sharp-review.md` backlog (reuses `shared/lib.mjs parseFindingsFromMarkdown`), step 1.
@@ -23,7 +22,8 @@ to the helper (importable + CLI:
   memory entry so rem's indexer picks it up (no need to call rem's `rebuildIndex`).
 
 State I/O and `dateToPath` come from the bundled `shared/` (`shared/state.mjs`,
-`shared/lib.mjs`) — the same modules rem/sharp-review use — not re-implemented here.
+`shared/lib.mjs`) — the same modules rem/sharp-review use — not re-implemented here. `saveState`
+always persists to rem's state file (creating it if absent); there is no in-memory fallback.
 - `checkTermination(state)` → `{ stop, reason }` — the termination decision (step 7).
 
 Keep the conceptual explanation in each step; let the script do the arithmetic.
@@ -55,33 +55,20 @@ Goal: produce a quorum-confirmed, severity-sorted **OPEN findings list** for thi
   `seedFromSharpReview(projectRoot, date)` (it reuses `shared/lib.mjs parseFindingsFromMarkdown`
   + SR-ID parsing) rather than re-parsing the markdown by hand.
 
-- **If the `sharp-review` plugin is installed** (preferred — best integration): run the
-  critique via `Workflow({ name: 'sharp-review' })` and consume the returned `merged`
-  findings. The plugin handles diff sizing (`diff-manifest.js` → review/agent/empty mode) and
-  assigns stable `SR-YYYYMMDD-NNN` IDs. If the call fails (plugin absent / errors), fall back
-  below — do not abort.
-- **Fallback (no `name: 'sharp-review'` registered, or it errored):** prefer to still reuse
-  sharp-review's review engine in **generalized mode** rather than hand-rolling a fan-out —
-  call `Workflow({ scriptPath: "<sharp-review>/scripts/sharp-review-workflow.js", contentType,
-  reviewers, findingSchema, pickStrategy: 'all', dedupKeyFields: ['file','summary'] })`; its
-  merge step already does the ≥2-reviewer confidence/dedup that `confirmedByQuorum` does.
-  Only if the sharp-review plugin is entirely absent, fan out 2–3 parallel reviewers (`Agent`
-  of type `Explore`/`general-purpose`; optionally `takeover` for model variety) over the
-  working diff and touched modules, asking each for findings as
-  `{ severity, file, summary, category, suggestion, arch? }` (reviewers may set `arch: true`
-  directly; otherwise it is inferred below), then dedup with `confirmedByQuorum` on `file` +
-  normalized summary.
+Run the critique via `Workflow({ name: 'sharp-review' })` (the `sharp-review` plugin is a hard
+dependency, verified in Setup) and consume the returned `merged` findings. The plugin handles
+diff sizing (`diff-manifest.js` → review/agent/empty mode), runs ≥2 reviewers, and assigns
+stable `SR-YYYYMMDD-NNN` IDs. Its merge step already performs the ≥2-reviewer quorum/dedup, so
+evolve does **not** re-run `confirmedByQuorum` on the merged output.
 
-**Finding identity (across rounds):** if findings come from sharp-review, use its SR-IDs. In
-the fallback, assign a stable id = `file + "|" + normalized-summary` so the same finding keeps
-its id if it recurs in a later round. New findings start at `status: OPEN`, `unfixedRounds: 0`.
+**Finding identity (across rounds):** findings come from sharp-review, so use its SR-IDs — the
+same finding keeps its id if it recurs in a later round. New findings start at `status: OPEN`,
+`unfixedRounds: 0`.
 
-**Quorum + priority (before acting):** pass the gathered *raw* findings through
-`confirmedByQuorum(rawFindings, 2)` to drop single-reviewer noise, then `prioritize(findings,
-minSeverity)` to apply the `--min-severity` filter and severity-sort. Only confirmed findings
-become OPEN this round. (Note: `clean` convergence is severity-based — LOW/INFO findings do
-not block convergence; see `reference/termination.md`. The sharp-review path is already merged,
-but still run it through quorum/prioritize for the severity filter.)
+**Priority (before acting):** pass the merged findings through `prioritize(findings,
+minSeverity)` to apply the `--min-severity` filter and severity-sort. (Note: `clean`
+convergence is severity-based — LOW/INFO findings do not block convergence; see
+`reference/termination.md`.)
 
 Record the confirmed findings into `evolveState.findings`. **Architecture pass:** set `arch: true` on any
 finding whose `summary`/`suggestion` implies a cross-module refactor, a public
@@ -166,10 +153,10 @@ step 7.
 
 ## 7. Resolve & commit
 
-- Mark each finding `fixed` or `wont-fix` (with reason). If the `todo` CLI / SR findings are
-  present and the id is `SR-*`, use `todo mark <ID> fixed`; otherwise update
-  `evolveState.findings` directly. (When both exist, treat `todo`/`sharp-review.md` as the
-  source of truth and mirror status into `evolveState`.)
+- Mark each finding `fixed` or `wont-fix` (with reason). The `todo` CLI and sharp-review
+  findings store are hard dependencies, so ids are always `SR-*`: use `todo mark <ID> fixed`,
+  treating `todo`/`sharp-review.md` as the source of truth, and mirror status into
+  `evolveState.findings`.
 - **Stage only evolve's own changes:** `git add <file> ...` listing exactly the files the
   round's agents reported modifying (diff against the step-0 snapshot). Never `git add -A` —
   the user may have unrelated work in the tree.
@@ -199,10 +186,10 @@ step 7.
   a protected branch is the one exception — there, **skip the auto-commit and prompt the user**
   (do not commit until they confirm or switch branch). Never force-push.
 - Bump round state and persist via the helper: `recordRound` (which calls `saveState`). The
-  helper handles the atomic write (rem `.claude/.rem-state.json` or memory fallback) and the
-  Windows/OneDrive rename retry internally — do not hand-roll the tmp-write/rename. If a write
-  ultimately fails it falls back to in-memory state for the session; note that in the summary
-  and never block the loop on a state-write failure.
+  helper writes rem's `.claude/.rem-state.json` atomically (creating it if absent) and handles
+  the Windows/OneDrive rename retry internally — do not hand-roll the tmp-write/rename. If the
+  atomic rename ultimately flakes (`persisted:false`), state stays in memory for the session;
+  note that in the summary and never block the loop on a state-write failure.
 - Apply the termination policy: call `checkTermination(state)` → `{ stop, reason }` and act on
   it. Definitions live in `reference/termination.md` (not duplicated here).
 

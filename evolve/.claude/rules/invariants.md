@@ -20,5 +20,7 @@ drift from these).
 - `clean` is severity-based: only NEW open HIGH/MEDIUM findings reset `emptyRounds`. A naive
   "no findings at all" rule never converges (LLM reviewers always surface nits) — do not
   revert to it.
-- Findings are quorum-filtered (`confirmedByQuorum`, ≥2 reviewers) before counting toward
-  convergence, to drop single-reviewer noise.
+- Findings are quorum-filtered (≥2 reviewers) before counting toward convergence — but the
+  quorum/dedup is done upstream by sharp-review's merge (a hard dependency), not by re-running
+  `confirmedByQuorum` on the merged output (which, lacking per-reviewer fields, would drop
+  everything). `confirmedByQuorum` stays as a tested unit helper, not part of the live flow.

@@ -32,8 +32,8 @@ naive "no new findings at all" rule never converges — in practice it just ran 
 `maxRounds`. Counting only HIGH/MEDIUM lets the loop actually settle once the substantive
 issues are gone.
 
-Findings are also **quorum-filtered** before counting — only those confirmed by ≥2 reviewers
-(`confirmedByQuorum(findings, 2)` in the helper) count, dropping single-reviewer noise.
+Findings are already **quorum-filtered upstream** — sharp-review's merge only emits findings
+confirmed by ≥2 reviewers, so single-reviewer noise never reaches the convergence count.
 
 ## `resolved`
 

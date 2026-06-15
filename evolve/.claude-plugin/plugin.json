@@ -1,6 +1,6 @@
 {
   "name": "evolve",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Iterative TDD review→fix loop — critique, fan out fix agents, verify, gate hard calls to the human, keep tests green, commit per round",
   "author": {
     "name": "Mingyang Bao"
