@@ -36,6 +36,68 @@ export function inferCategory(summary, explicit) {
   return 'Bug';
 }
 
+// ── Review profiles ──
+// A profile is a review *template* (scope, prompt framing, forced mode) — NOT bound to any
+// provider. Provider/model selection stays the per-reviewer seed-mod rotation. Profiles are
+// selected probabilistically per trigger (see pickProfileKey); weights are tunable per project
+// via reviewGate.profileWeights in .claude/.rem-state.json.
+
+export const PROFILES = {
+  diff: {
+    key: 'diff',
+    label: 'diff review',
+    weight: 0.8,            // default probability
+    mode: null,             // null = honor diff-manifest's decided mode (review/agent/empty)
+    promptKind: 'diff',
+    framing: null,          // null = workflow's existing default intro
+    reviewScope: null,      // null = DEFAULT_REVIEW_SCOPE in the workflow
+  },
+  architecture: {
+    key: 'architecture',
+    label: 'architecture survey (架构锐评)',
+    weight: 0.2,
+    mode: 'agent',          // forced — reviewers explore the repo freely
+    promptKind: 'architecture',
+    framing: '架构锐评: survey the CURRENT codebase architecture as a whole — this is NOT a diff review.',
+    reviewScope: [
+      'Module boundaries and layering violations',
+      'Coupling / cohesion problems and circular dependencies',
+      'Duplication and missing abstractions across the codebase',
+      'Files/dirs that grew too large or hold too many responsibilities',
+      'Inconsistent patterns, dead subsystems, scalability / extensibility limits',
+    ].join(', '),
+  },
+};
+
+export function resolveProfile(key) {
+  return PROFILES[key] || PROFILES.diff;
+}
+
+// Merge a per-project weight override map over the registry defaults. Unknown keys ignored;
+// non-positive / non-finite weights dropped. Returns { <key>: weight } for known profiles.
+export function resolveWeights(override) {
+  const weights = {};
+  for (const [key, p] of Object.entries(PROFILES)) {
+    const w = override && Number.isFinite(override[key]) ? override[key] : p.weight;
+    if (Number.isFinite(w) && w > 0) weights[key] = w;
+  }
+  return weights;
+}
+
+// Pure weighted pick. `rand` ∈ [0,1) injected by the caller (Math.random in the script,
+// fixed values in tests). Falls back to 'diff' when weights are empty/garbage.
+export function pickProfileKey(weights, rand) {
+  const entries = Object.entries(weights).filter(([, w]) => Number.isFinite(w) && w > 0);
+  if (!entries.length) return 'diff';
+  const total = entries.reduce((s, [, w]) => s + w, 0);
+  let threshold = (Number.isFinite(rand) ? Math.max(0, Math.min(rand, 0.999999)) : 0) * total;
+  for (const [key, w] of entries) {
+    threshold -= w;
+    if (threshold < 0) return key;
+  }
+  return entries[entries.length - 1][0];
+}
+
 // ── Diff manifest — constants ──
 
 export const INLINE_DIFF_LIMIT_DEFAULT = 20000; // chars (~5k tokens); config key reviewGate.inlineDiffLimit
