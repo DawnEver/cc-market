@@ -12,6 +12,25 @@
   },
   "plugins": [
     {
+      "name": "evolve",
+      "source": "./evolve",
+      "displayName": "Evolve",
+      "description": "Iterative TDD review→fix loop — each round critiques the codebase, fans out fix agents over disjoint files, verifies, gates hard calls to the human, keeps tests green, and commits. Severity-based convergence with safety caps.",
+      "author": {
+        "name": "Mingyang Bao"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": [
+        "review",
+        "refactor",
+        "tdd",
+        "loop",
+        "autofix"
+      ],
+      "category": "productivity"
+    },
+    {
       "name": "takeover",
       "source": "./takeover",
       "displayName": "Takeover",
