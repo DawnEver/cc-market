@@ -13,12 +13,71 @@ const {
   parseNameStatusZ,
   buildManifest,
   decideMode,
+  decideManifestMode,
   renderManifestText,
   extractHunkHeaders,
+  filterDiff,
   INLINE_DIFF_LIMIT_DEFAULT,
   MANIFEST_TEXT_BUDGET,
   MAX_HUNKS_PER_FILE,
 } = lib;
+
+// ── decideManifestMode ──
+
+describe('decideManifestMode', () => {
+  it("returns 'empty' only when there are no entries", () => {
+    assert.equal(decideManifestMode(0, 0, 20000), 'empty');
+    assert.equal(decideManifestMode(0, 5000, 20000), 'empty');
+  });
+
+  it("returns 'agent' when entries exist but diff text is empty (oversized/failed full diff)", () => {
+    assert.equal(decideManifestMode(3, 0, 20000), 'agent');
+  });
+
+  it('falls back to size-based decision when entries and diff text are present', () => {
+    assert.equal(decideManifestMode(2, 100, 20000), 'review');
+    assert.equal(decideManifestMode(2, 50000, 20000), 'agent');
+  });
+});
+
+// ── filterDiff ──
+
+describe('filterDiff', () => {
+  const diff = [
+    'diff --git a/src/app.js b/src/app.js',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+    'diff --git a/old.lock b/new.lock',
+    'similarity index 100%',
+    'rename from old.lock',
+    'rename to new.lock',
+  ].join('\n') + '\n';
+
+  it('returns the full diff when nothing is excluded', () => {
+    assert.equal(filterDiff(diff, new Set()), diff);
+  });
+
+  it('strips a renamed excluded file matched by its NEW (b/) path', () => {
+    // buildManifest keys excluded entries by the new path; the rename moved old.lock→new.lock.
+    const out = filterDiff(diff, new Set(['new.lock']));
+    assert.ok(out.includes('a/src/app.js'));
+    assert.ok(!out.includes('new.lock'), 'renamed excluded segment must be removed');
+    assert.ok(!out.includes('old.lock'));
+  });
+
+  it('does NOT strip when only the old (a/) path is in the excluded set (regression guard)', () => {
+    // The old buggy code matched a/; ensure we now match b/ so the old path alone does not filter.
+    const out = filterDiff(diff, new Set(['old.lock']));
+    assert.ok(out.includes('new.lock'), 'matching the a/ path must no longer strip the segment');
+  });
+
+  it('strips a normal (non-rename) excluded file', () => {
+    const out = filterDiff(diff, new Set(['src/app.js']));
+    assert.ok(!out.includes('a/src/app.js'));
+    assert.ok(out.includes('new.lock'));
+  });
+});
 
 // ── classifyLowValue ──
 
@@ -88,28 +147,31 @@ describe('parseNumstatZ', () => {
     assert.equal(result[0].binary, true);
   });
 
-  it('parses renamed files (dual-path record)', () => {
-    const buf = '5\t3\told/name.js\x00new/name.js\x00';
+  it('parses renamed files (real git -z: empty header path + two parts)', () => {
+    // Real `git diff --numstat -z -M` rename: header `added\tdeleted\t` (empty path),
+    // then two separate NUL-terminated parts: old path, new path.
+    const buf = '5\t3\t\x00old/name.js\x00new/name.js\x00';
     const result = parseNumstatZ(buf);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].path, 'new/name.js');
+    assert.equal(result.length, 1); // single entry, not two
+    assert.equal(result[0].path, 'new/name.js'); // NEW path, not old
     assert.equal(result[0].added, 5);
     assert.equal(result[0].deleted, 3);
+    assert.equal(result[0].binary, false);
     assert.equal(result[0].renamedFrom, 'old/name.js');
   });
 
-  it('parses R100 rename with zero churn', () => {
-    const buf = '0\t0\told/path.js\x00new/path.js\x00';
+  it('parses R100 rename with zero churn (real git -z format)', () => {
+    const buf = '0\t0\t\x00old/path.js\x00new/path.js\x00';
     const result = parseNumstatZ(buf);
     assert.equal(result.length, 1);
     assert.equal(result[0].path, 'new/path.js');
+    assert.equal(result[0].renamedFrom, 'old/path.js');
     assert.equal(result[0].added, 0);
     assert.equal(result[0].deleted, 0);
-    assert.equal(result[0].renamedFrom, 'old/path.js');
   });
 
-  it('parses multiple entries', () => {
-    const buf = '10\t2\tsrc/a.js\x0030\t5\tsrc/b.js\x000\t0\tsrc/old.js\x00src/new.js\x00';
+  it('parses multiple entries (incl. real-format rename)', () => {
+    const buf = '10\t2\tsrc/a.js\x0030\t5\tsrc/b.js\x000\t0\t\x00src/old.js\x00src/new.js\x00';
     const result = parseNumstatZ(buf);
     assert.equal(result.length, 3);
     assert.equal(result[0].path, 'src/a.js');
@@ -159,6 +221,18 @@ describe('parseNameStatusZ', () => {
     assert.equal(result[0].status, 'C080');
     assert.equal(result[0].path, 'src/copy.js');
     assert.equal(result[0].renamedFrom, 'src/orig.js');
+  });
+
+  it('accepts bare A/M/D and R/C with scores, rejects bogus numbered A/M/D', () => {
+    // Bare A/M/D parse; R100/C### parse.
+    assert.equal(parseNameStatusZ('A\x00f.js\x00')[0].status, 'A');
+    assert.equal(parseNameStatusZ('M\x00f.js\x00')[0].status, 'M');
+    assert.equal(parseNameStatusZ('D\x00f.js\x00')[0].status, 'D');
+    assert.equal(parseNameStatusZ('R100\x00o.js\x00n.js\x00')[0].status, 'R100');
+    assert.equal(parseNameStatusZ('C085\x00o.js\x00n.js\x00')[0].status, 'C085');
+    // Bogus numbered A/M/D are not valid git statuses → not parsed as a status record.
+    assert.equal(parseNameStatusZ('A5\x00f.js\x00').length, 0);
+    assert.equal(parseNameStatusZ('M12\x00f.js\x00').length, 0);
   });
 
   it('parses mixed statuses', () => {
@@ -259,6 +333,7 @@ describe('decideMode', () => {
 
   it('returns empty when diff is zero or negative', () => {
     assert.equal(decideMode(0, 40000), 'empty');
+    assert.equal(decideMode(0, 20000), 'empty');
     assert.equal(decideMode(-1, 40000), 'empty');
   });
 
@@ -411,7 +486,7 @@ describe('extractHunkHeaders', () => {
     assert.equal(map.get('b.js').length, 2);
   });
 
-  it('handles rename headers (uses a/ path)', () => {
+  it('handles rename headers (keys by b/ new path, matching buildManifest)', () => {
     const diff = [
       'diff --git a/old/name.js b/new/name.js',
       'similarity index 85%',
@@ -421,7 +496,18 @@ describe('extractHunkHeaders', () => {
     ].join('\n');
     const map = extractHunkHeaders(diff);
     assert.equal(map.size, 1);
-    assert.ok(map.has('old/name.js'));
+    assert.ok(map.has('new/name.js')); // NEW path so buildManifest lookup hits
+    assert.ok(!map.has('old/name.js'));
+    assert.equal(map.get('new/name.js').length, 1);
+  });
+
+  it('non-rename: a/==b/ unaffected', () => {
+    const diff = [
+      'diff --git a/src/same.js b/src/same.js',
+      '@@ -1,1 +1,1 @@',
+    ].join('\n');
+    const map = extractHunkHeaders(diff);
+    assert.ok(map.has('src/same.js'));
   });
 
   it('ignores hunk-like patterns outside diff --git context', () => {
