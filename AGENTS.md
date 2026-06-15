@@ -12,6 +12,7 @@ Community marketplace of Claude Code plugins. Each plugin lives in its own direc
 
 | Plugin | Directory | Description |
 |---|---|---|
+| [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
 | [`takeover`](takeover/README.md) | `takeover/` | Multi-model AI orchestration via MCP |
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, compaction, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
