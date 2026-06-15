@@ -1,6 +1,6 @@
 {
   "name": "takeover",
-  "version": "2.3.12",
+  "version": "2.3.13",
   "description": "Hand off tasks to another AI model and get back the result — let a different model take over any task or planning request.",
   "author": {
     "name": "Mingyang Bao"
