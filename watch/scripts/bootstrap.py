@@ -18,6 +18,18 @@ PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 
 
+def _force_utf8_io() -> None:
+    """Reconfigure stdio to UTF-8 so report glyphs (✓, —) never raise
+    UnicodeEncodeError on Windows consoles, which default to cp1252. Output to a
+    pipe/file inherits the same encoding. errors='replace' keeps output flowing
+    for any unmappable char; no-op on streams that lack reconfigure()."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError):
+            pass
+
+
 def _venv_python() -> Path:
     name = 'python.exe' if sys.platform == 'win32' else 'python3'
     subdir = 'Scripts' if sys.platform == 'win32' else 'bin'
@@ -34,6 +46,7 @@ def _in_venv() -> bool:
 
 def ensure() -> None:
     """Create venv if missing, install deps, re-exec into it."""
+    _force_utf8_io()
     if _in_venv():
         if PLUGIN_ROOT not in sys.path:
             sys.path.insert(0, PLUGIN_ROOT)
