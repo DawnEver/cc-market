@@ -87,7 +87,7 @@ The workflow engine (`scripts/sharp-review-workflow.js`) supports arbitrary cont
 
 | Consumer | Review Target | Identities | Models |
 |----------|--------------|------------|--------|
-| `/sharp-review` (built-in) | Git code diffs | 3 generic code reviewers | Codex + DeepSeek + Sonnet (2 picked) |
+| `/sharp-review` (built-in) | Git code diffs | 3 generic code reviewers | Codex + DeepSeek + Opus (2 picked) |
 | ai-post `/post-review` | Social media articles | 读者代理人 + 技术核查员 | Claude Sonnet + DeepSeek (×2 identities) |
 
 ### Configuration

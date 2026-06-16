@@ -29,7 +29,7 @@ const DEFAULT_FINDING = {
 const DEFAULT_REVIEWERS = [
   { key: 'A', name: 'Codex', provider: 'codex' },
   { key: 'B', name: 'DeepSeek', provider: 'deepseek' },
-  { key: 'C', name: 'Sonnet', provider: 'claude', model: 'sonnet' },
+  { key: 'C', name: 'Opus', provider: 'claude', model: 'opus' },
 ];
 
 // ── Default Review Scope (code review) ──
@@ -113,7 +113,7 @@ If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`
 // ── Code review prompt (original behavior, parameterized) ──
 
 // Wrap a prepared review body into the per-reviewer takeover call. Provider/model routing
-// stays decoupled from the profile: A→codex, B→deepseek, C→sonnet (or the reviewer's own).
+// stays decoupled from the profile: A→codex, B→deepseek, C→opus (or the reviewer's own).
 function wrapTakeoverCall(reviewer, takeoverMode, body, findingsFormat) {
   if (reviewer.key === 'A') {
     return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="codex", mode="${takeoverMode}", and userPrompt set to:
@@ -127,7 +127,7 @@ If the takeover tool call fails or Codex is unavailable, call StructuredOutput w
   }
 
   const provider = reviewer.provider || (reviewer.key === 'B' ? 'deepseek' : 'claude');
-  const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="sonnet"' : '');
+  const modelArg = reviewer.model ? `, model="${reviewer.model}"` : (reviewer.key === 'C' ? ', model="opus"' : '');
 
   return `Use the mcp__plugin_takeover_takeover__call_model tool with provider="${provider}"${modelArg}, mode="${takeoverMode}" and a userPrompt containing:
 
