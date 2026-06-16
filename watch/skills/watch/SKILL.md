@@ -37,13 +37,15 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
 ### Step 2: Branch on status
 
 **On `healthy`:**
+- Run the **plugin self-update check** (Step 4b) — the watch plugin loads from a
+  versioned cache dir that the marketplace can bump silently.
 - If `report.watch.version_tracking.enabled` and `report.components.git_version.metrics.new_commits > 0`
   for any repo → run the deploy/test-gate/restart procedure in `reference/deploy.md`,
-  then go to Step 5 (`normal` interval).
+  then go to Step 5 (refresh the adaptive sweep cron).
 - If `report.components.git_version.metrics.failed_commits >= max_failed_commits` (the
   fix on main is not converging) → escalate to a human; the deploy is one-way
   (main → known-good → deploy worktree), there is no hotfix/backport path.
-- Otherwise go straight to Step 5 (`normal` interval).
+- Otherwise go straight to Step 5 (refresh the adaptive sweep cron).
 
 **On `complete`:**
 - A monitored task finished successfully (`report.completions` lists them;
@@ -78,7 +80,8 @@ Parse `report.summary` for instant situation awareness. Also check `report.watch
   1. Read `remedy_plan` — it lists actions, max attempts, and escalation threshold
   2. Execute each action in order. Respect `max_attempts`.
   3. Check `report.escalation.consecutive` for this anomaly type — if count ≥ `escalate_after`, escalate.
-- Go to Step 5 (schedule next check with `anomaly` interval).
+- Go to Step 5. Any anomaly resets `_healthy_streak` to 0, so the sweep cron snaps
+  back to the shortest rung (`report.watch.ai_sweep.next_cron_expr`) automatically.
 
 ### Step 3: Trend-aware decisions
 
@@ -102,10 +105,57 @@ Check `report.escalation.alerts_sent_this_cycle` before sending — avoid duplic
 Escalation paths outside this single invocation (see `reference/trigger-watch.md`):
 - **trigger-watch.py** (session-independent daemon) polls `trigger.json` and runs
   `scripts/cli/watch.py` directly — the always-on base layer.
-- **Monitor** (in-session, real-time) — armed in Step 5 below, lets *this* live session
+- **Monitor** (in-session, real-time) — armed in Step 6 below, lets *this* live session
   react the moment a new trigger lands, with full tool access.
 
-## Step 5: Arm the in-session real-time bridge (interactive sessions only)
+### Step 4b: Plugin self-update check
+
+The watch plugin runs from a **versioned cache dir** the marketplace can bump
+out-of-band, so the version watchd executes may change silently between sweeps. On
+each `healthy` sweep, detect drift:
+
+```bash
+python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/plugin_version.py \
+  --project-dir ${CLAUDE_PROJECT_DIR} --json
+```
+
+- `drift: false` → nothing to do (first run records no baseline — not drift).
+- `drift: true` (`last_seen` → `current` differ) → a new plugin version is installed:
+  1. `/reload-plugins` so this session picks up the new skill/scripts.
+  2. Re-exec watchd against the new version — spawn it **detached** via
+     `start-server.py` (a bare `daemon.py` runs the blocking poll loop in the
+     foreground and would hang the session). `--force` replaces the daemon holding
+     the pidfile; `${CLAUDE_PLUGIN_ROOT}` now resolves to the new cache dir:
+     ```bash
+     python ${CLAUDE_PLUGIN_ROOT}/scripts/helpers/start-server.py \
+       --project-dir ${CLAUDE_PROJECT_DIR} \
+       --cmd "python ${CLAUDE_PLUGIN_ROOT}/scripts/daemon/daemon.py --project-dir ${CLAUDE_PROJECT_DIR} --force"
+     ```
+  3. Record the new baseline so it isn't re-triggered:
+     `python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/plugin_version.py --project-dir ${CLAUDE_PROJECT_DIR} --record`
+
+## Step 5: Refresh the adaptive AI-sweep cron
+
+The periodic Claude wake-up is a **safety net layered on top of** watchd's
+event-driven triggers — it backs off the longer things stay healthy and snaps back
+to the shortest rung on any anomaly. The cadence is pre-computed for you in
+`report.watch.ai_sweep`:
+
+- `next_cron_expr` — the cron expression for the next sweep (already off the `:00`
+  minute mark to avoid fleet-wide collisions).
+- `next_interval` / `rung` / `healthy_streak` — for human-readable context.
+
+Refresh this skill's own recurring schedule to that cadence:
+```
+CronDelete(<previous sweep job id, if any>)
+CronCreate(cron=<report.watch.ai_sweep.next_cron_expr>, prompt="/watch:watch", durable=true)
+```
+- The ladder lives in config (`instance.ai_sweep.ladder` / `promote_after`) — never
+  hardcode interval numbers here; always read `next_cron_expr` from the report.
+- On `complete` (a monitored task finished): **stop** the schedule (`CronDelete`) per
+  Step 2 instead of refreshing — there is nothing left to sweep.
+
+## Step 6: Arm the in-session real-time bridge (interactive sessions only)
 
 When this skill runs in a **live, interactive session**, arm a persistent `Monitor` so
 you react to new anomalies the instant watchd raises them. This is the full-capability
@@ -129,8 +179,10 @@ Step 1 to handle it. Guidance:
 - Reacting is idempotent: `scripts/cli/watch.py` remedies are safe to re-run even if the
   standalone daemon also handled the same trigger.
 
-Polling cadence is entirely owned by the `watchd` daemon (`watchd.interval`) plus
-`trigger-watch.py`; there is no Claude-session cron dependency.
+Real-time anomaly response is owned by the `watchd` daemon (`watchd.interval`) plus
+`trigger-watch.py` — that path needs no Claude session. The adaptive sweep cron
+(Step 5) is a separate, low-frequency safety net that periodically wakes Claude for a
+full sanity pass + plugin self-update check, even when no anomaly has fired.
 
 ## Logging
 

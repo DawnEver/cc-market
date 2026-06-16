@@ -13,6 +13,15 @@ DEFAULTS: dict[str, Any] = {
         'name': 'unknown',
         'check_interval_normal': 43200,    # 12h
         'check_interval_anomaly': 1800,    # 30m
+        # Adaptive AI-sweep cadence: the periodic Claude wake-up (a safety-net
+        # sweep on top of watchd's event-driven triggers) backs off the longer the
+        # system stays healthy, and snaps back to the shortest rung on any anomaly.
+        # rung index = min(len(ladder)-1, healthy_streak // promote_after); a single
+        # anomaly resets healthy_streak to 0 → rung 0 (shortest).
+        'ai_sweep': {
+            'ladder': [3600, 21600, 86400],   # 1h → 6h → 24h
+            'promote_after': 3,               # consecutive healthy sweeps per rung step
+        },
     },
     'components': {},
     'watchd': {
