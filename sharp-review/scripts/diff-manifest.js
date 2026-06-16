@@ -23,7 +23,7 @@ const MAX_BUFFER = 256 * 1024 * 1024; // 256MB
 function getArg(args, flag) { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; }
 
 function git(args) {
-  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: 'pipe' });
+  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: 'pipe', windowsHide: true });
 }
 
 // ── Range detection ──

@@ -17,6 +17,24 @@ plugin `CLAUDE.md`, or `.claude/rules/` will be available to the agent executing
 If the skill needs that knowledge to complete its task, it must be restated or linked
 in-band (a `reference/*.md` file, inline instructions) — not implied.
 
+## Always pass `windowsHide: true` to child_process
+
+Every `spawn`/`spawnSync`/`execFileSync`/`execSync` that launches a console app
+(`git`, `node`, `claude`, `claude.exe`, `codex`, `powershell`, `python`, …) from a hook,
+MCP server, or background script MUST set `windowsHide: true` in its options. On Windows a
+console-subsystem child gets a fresh console window allocated (a visible terminal flash)
+whenever the parent has no console of its own — which is exactly the case for Claude Code
+hooks and the takeover MCP server. `windowsHide` suppresses that window and is a harmless
+no-op on macOS/Linux, so add it unconditionally.
+
+Also never wrap a background launch in `cmd /c start …`: `start` spawns its **own** console
+that `windowsHide` on the `cmd.exe` call cannot reach. Spawn the target (e.g. `powershell.exe`)
+directly with `{ detached: true, stdio: 'ignore', windowsHide: true }` instead.
+
+Exception: foreground launchers the user runs in their own terminal with `stdio: 'inherit'`
+(e.g. `cc.js`, the `todo`/`traceme` CLI launchers) already share a console and don't flash —
+`windowsHide` there is unnecessary (still harmless).
+
 ## Progressive disclosure
 
 Keep `SKILL.md` itself short (the always-loaded part). Move detail — schemas, flag tables,

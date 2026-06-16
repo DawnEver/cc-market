@@ -30,7 +30,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const validateScript = join(__dirname, 'scope-validate.mjs');
 try {
-  execFileSync('node', [validateScript, '--fix'], { cwd: scopeRoot, encoding: 'utf8', stdio: 'pipe' });
+  execFileSync('node', [validateScript, '--fix'], { cwd: scopeRoot, encoding: 'utf8', stdio: 'pipe', windowsHide: true });
 } catch { /* non-zero exit on unfixable issues — continue with prune */ }
 
 // Build entry list from memory state + disk files

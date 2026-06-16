@@ -125,7 +125,7 @@ console.log(`[post-review] Written: ${memFile}`);
 // ── Index with stamp-memory.js ──
 
 try {
-  execFileSync('node', [STAMP_SCRIPT], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' });
+  execFileSync('node', [STAMP_SCRIPT], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', windowsHide: true });
   console.log('[post-review] stamp-memory.js OK');
 } catch (e) {
   console.error(`[post-review] stamp-memory.js failed: ${e.stderr || e.message}`);
