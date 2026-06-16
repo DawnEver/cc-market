@@ -96,8 +96,12 @@ def run(project_dir: str | Path, dry_run: bool = False) -> dict:
                 state.pop(key, None)
         state.pop('_alert_sent', None)
         state.pop('_remedies', None)
+        # Adaptive AI-sweep: each healthy cycle climbs the backoff ladder.
+        state['_healthy_streak'] = int(state.get('_healthy_streak', 0)) + 1
         record_last_healthy(state, ts)
     else:
+        # Any anomaly snaps the AI sweep back to the shortest rung.
+        state['_healthy_streak'] = 0
         apply_remedies(registry, report['anomalies'], config, state,
                        project, ts, report=report, dry_run=dry_run)
 

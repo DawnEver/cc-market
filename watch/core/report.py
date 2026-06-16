@@ -100,8 +100,55 @@ def _build_watch_overview(config: dict, registry, state: dict,
             'normal': _format_duration(instance.get('check_interval_normal', 43200)),
             'anomaly': _format_duration(instance.get('check_interval_anomaly', 1800)),
         },
+        'ai_sweep': _ai_sweep_overview(instance, state),
         'version_tracking': vt,
     }
+
+
+def _ai_sweep_overview(instance: dict, state: dict) -> dict:
+    """Adaptive cadence for the periodic AI safety-sweep cron.
+
+    The longer the system stays healthy, the further the sweep backs off; any
+    anomaly resets ``_healthy_streak`` (in monitor.json) to 0 → shortest rung.
+    The skill reads ``next_cron_expr`` and refreshes its own cron with it.
+    """
+    cfg = instance.get('ai_sweep', {}) or {}
+    ladder = [int(s) for s in cfg.get('ladder', [3600, 21600, 86400])]
+    promote_after = max(1, int(cfg.get('promote_after', 3)))
+    streak = max(0, int(state.get('_healthy_streak', 0)))
+
+    rung = min(len(ladder) - 1, streak // promote_after)
+    interval = ladder[rung]
+    return {
+        'healthy_streak': streak,
+        'rung': rung,
+        'ladder': ladder,
+        'promote_after': promote_after,
+        'next_interval_seconds': interval,
+        'next_interval': _format_duration(interval),
+        'next_cron_expr': _interval_to_cron(interval),
+    }
+
+
+def _interval_to_cron(seconds: int) -> str:
+    """Map an interval (seconds) to a 5-field cron expr, off the :00 minute mark.
+
+    Covers the rungs used in practice (minutes / hourly / sub-daily / daily); an
+    odd interval that divides cleanly into neither falls back to hourly.
+    """
+    seconds = int(seconds)
+    if seconds % 3600 == 0:
+        hours = seconds // 3600
+        if hours == 1:
+            return '7 * * * *'
+        if hours < 24 and 24 % hours == 0:
+            return f'7 */{hours} * * *'
+        return '7 3 * * *'          # daily (>= 24h) at 03:07
+    if seconds % 60 == 0:
+        minutes = seconds // 60
+        if 0 < minutes < 60 and 60 % minutes == 0:
+            return f'*/{minutes} * * * *'
+    return '7 * * * *'
 
 
 def _build_history(report: dict, project: Path) -> dict:
