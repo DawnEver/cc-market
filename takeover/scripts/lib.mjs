@@ -26,9 +26,33 @@ export const PROVIDER_ENV_KEYS = [
 
 // ── Claude binary resolution (cross-platform) ───────────────────────────────
 
-const claudeExe = process.platform === "win32"
-  ? path.join(os.homedir(), "nodejs", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
-  : "claude";
+// On Windows, spawn(shell:false) cannot launch the `claude.cmd`/`claude.ps1`
+// shims — it needs the real `claude.exe`. That .exe lives in the global npm
+// prefix at node_modules/@anthropic-ai/claude-code/bin/claude.exe, but the
+// prefix is install-specific (nvm4w → D:\nvm4w\nodejs, plain npm → ~\nodejs),
+// so it cannot be hardcoded. Resolve it dynamically:
+//   1. CLAUDE_CLI_PATH override (escape hatch)
+//   2. derive from the launcher shim found on PATH
+//   3. legacy ~/nodejs fallback
+const CLAUDE_EXE_REL = path.join("node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+
+export function resolveClaudeExe() {
+  if (process.env.CLAUDE_CLI_PATH) return process.env.CLAUDE_CLI_PATH;
+  if (process.platform !== "win32") return "claude";
+
+  // Find the directory of a claude shim on PATH; the npm global prefix (which
+  // holds the shims) also contains node_modules with the real .exe.
+  const dirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    for (const shim of ["claude.cmd", "claude.exe", "claude.ps1", "claude"]) {
+      if (fs.existsSync(path.join(dir, shim))) {
+        const exe = path.join(dir, CLAUDE_EXE_REL);
+        if (fs.existsSync(exe)) return exe;
+      }
+    }
+  }
+  return path.join(os.homedir(), "nodejs", CLAUDE_EXE_REL); // legacy fallback
+}
 
 // ── Agent mode: spawn claude -p with provider env ────────────────────────────
 
@@ -77,7 +101,7 @@ export async function spawnClaudeP(userPrompt, opts = {}) {
   const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
   process.stderr.write(`mcp-takeover: spawning claude (provider=${label} model=${model || 'default'})${useStdin ? ' [stdin]' : ''}...\n`);
 
-  return stdinSpawnClaude(claudeExe, fullPrompt, useStdin, env, (code, stdout, stderr, usage) => {
+  return stdinSpawnClaude(resolveClaudeExe(), fullPrompt, useStdin, env, (code, stdout, stderr, usage) => {
     if (code === 0) return { content: [{ type: 'text', text: stdout.trim() }], _usage: usage };
     throw new Error(`claude CLI (${label}) exited ${code}: ${stderr.trim()}`);
   }, images, signal);
