@@ -52,7 +52,7 @@ function loadClassifierMemory() {
 
 function getChangedFiles() {
   try {
-    const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString();
     return out.split('\n').map(l => {
       const p = l.slice(3).trim();
       const arrow = p.indexOf(' -> ');
@@ -71,20 +71,20 @@ function isDocOnly(files) {
 
 function getCurrentHead() {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: 5000 }).toString().trim();
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString().trim();
   } catch { return null; }
 }
 
 function gitRefExists(ref) {
   try {
-    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: 5000, stdio: 'ignore' });
+    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: 5000, stdio: 'ignore', windowsHide: true });
     return true;
   } catch { return false; }
 }
 
 function getDiffStat(sinceRef) {
   try {
-    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString();
     const m = out.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
     if (!m) return { lines: 0, files: 0 };
     const files = parseInt(m[1], 10) || 0;
@@ -166,6 +166,7 @@ Respond ONLY with valid JSON: {"mode": "none"|"once"|"multi", "reason": "one sen
       env: { ...process.env, SHARP_REVIEW_CLASSIFY: '1' },
       timeout: 15000,
       encoding: 'utf8',
+      windowsHide: true,
     });
     const text = result.stdout || '';
     const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}');

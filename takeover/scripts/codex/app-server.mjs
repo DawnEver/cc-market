@@ -31,6 +31,7 @@ export class CodexAppServerClient {
       stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
       shell: process.platform === "win32",
+      windowsHide: true,
     });
 
     this.child.on("error", (err) => {

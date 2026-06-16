@@ -46,7 +46,7 @@ export function categorizeTool(toolName, skillName) {
 
 export function getProjectRoot(cwd) {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 3000 }).trim();
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
   } catch {
     return cwd;
   }
@@ -58,7 +58,7 @@ export function getProjectName(cwd) {
 
 export function getGitRemote(cwd) {
   try {
-    return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 3000 }).trim();
+    return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
   } catch {
     return null;
   }

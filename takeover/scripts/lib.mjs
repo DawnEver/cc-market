@@ -343,6 +343,7 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
         env,
         stdio: ["pipe", "pipe", "pipe"],
         shell: false,
+        windowsHide: true,
       });
       const killTimer = armKillTimer(child, 600000);
       child.stdout.on("data", (d) => {
@@ -403,6 +404,7 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
         env,
         stdio: ["ignore", "pipe", "pipe"],
         shell: false,
+        windowsHide: true,
       });
       const killTimer = armKillTimer(child, 300000);
       child.stdout.on("data", (d) => (stdout += d));

@@ -31,13 +31,13 @@ export function collectUncommitted(cwd) {
   const files = [];
   try {
     const diff = execFileSync('git', ['diff', '--name-only', 'HEAD'], {
-      cwd, timeout: 3000, encoding: 'utf8',
+      cwd, timeout: 3000, encoding: 'utf8', windowsHide: true,
     });
     files.push(...diff.trim().split('\n').filter(Boolean));
   } catch { /* not a git repo */ }
   try {
     const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
-      cwd, timeout: 3000, encoding: 'utf8',
+      cwd, timeout: 3000, encoding: 'utf8', windowsHide: true,
     });
     files.push(...untracked.trim().split('\n').filter(Boolean));
   } catch { /* not a git repo */ }

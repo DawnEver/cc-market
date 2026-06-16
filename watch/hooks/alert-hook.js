@@ -92,14 +92,14 @@ function sendAlert(subject, html) {
       '--project-dir', projectDir,
       '--subject', `${prefix} ${subject}`,
       '--body', html,
-    ], { cwd: projectDir, timeout: 15000 });
+    ], { cwd: projectDir, timeout: 15000, windowsHide: true });
     if (proc.error && proc.error.code === 'ENOENT') {
       pythonCmd = 'python';
       proc = spawnSync(pythonCmd, [sendScript,
         '--project-dir', projectDir,
         '--subject', `${prefix} ${subject}`,
         '--body', html,
-      ], { cwd: projectDir, timeout: 15000 });
+      ], { cwd: projectDir, timeout: 15000, windowsHide: true });
     }
     if (proc.status !== 0) {
       process.stderr.write(`[watch-alert] send_alert.py failed (${pythonCmd}): ${proc.stderr}\n`);
