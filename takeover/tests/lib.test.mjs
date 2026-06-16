@@ -26,6 +26,7 @@ import {
   TimeoutError,
   AuthError,
   PROVIDER_ENV_KEYS,
+  resolveClaudeExe,
 } from "../scripts/lib.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -512,6 +513,43 @@ describe("PROVIDER_ENV_KEYS", () => {
     const tiers = ['ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'];
     for (const key of tiers) {
       assert.ok(PROVIDER_ENV_KEYS.includes(key), `Missing tier key: ${key}`);
+    }
+  });
+});
+
+describe("resolveClaudeExe", () => {
+  test("honors CLAUDE_CLI_PATH override", () => {
+    const prev = process.env.CLAUDE_CLI_PATH;
+    process.env.CLAUDE_CLI_PATH = "/custom/path/to/claude";
+    try {
+      assert.equal(resolveClaudeExe(), "/custom/path/to/claude");
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CLI_PATH;
+      else process.env.CLAUDE_CLI_PATH = prev;
+    }
+  });
+
+  test("returns plain 'claude' on non-win32 without override", (t) => {
+    if (process.platform === "win32") return t.skip("win32");
+    const prev = process.env.CLAUDE_CLI_PATH;
+    delete process.env.CLAUDE_CLI_PATH;
+    try {
+      assert.equal(resolveClaudeExe(), "claude");
+    } finally {
+      if (prev !== undefined) process.env.CLAUDE_CLI_PATH = prev;
+    }
+  });
+
+  test("resolves an existing claude.exe on win32", (t) => {
+    if (process.platform !== "win32") return t.skip("non-win32");
+    const prev = process.env.CLAUDE_CLI_PATH;
+    delete process.env.CLAUDE_CLI_PATH;
+    try {
+      const p = resolveClaudeExe();
+      // Either derived from PATH (exists) or the legacy fallback path string.
+      assert.ok(p.endsWith("claude.exe"));
+    } finally {
+      if (prev !== undefined) process.env.CLAUDE_CLI_PATH = prev;
     }
   });
 });

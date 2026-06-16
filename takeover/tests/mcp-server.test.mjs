@@ -3,10 +3,14 @@
  * Run: node --test cc-market/takeover/tests/mcp-server.test.mjs
  */
 
-import { test, describe, mock } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { TOOLS, handleToolCall, handleCallModel, send, API_DISPATCH, CLAUDE_DISPATCH } from "../scripts/mcp-server.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── TOOLS definition ───────────────────────────────────────────────────────────
 
@@ -132,10 +136,18 @@ describe("handleCallModel dispatch routing", () => {
   });
 
   test("parses provider from <command> block", async () => {
-    // This will fail at the actual call stage (no config), but proves flag parsing works
-    await assert.rejects(
-      () => handleCallModel({ userPrompt: "<command>\n--provider claude\n</command>\ntest prompt" }),
-    );
+    // Force the claude spawn to fail fast (ENOENT) so this exercises flag
+    // parsing → native-claude dispatch without launching a real CLI.
+    const prev = process.env.CLAUDE_CLI_PATH;
+    process.env.CLAUDE_CLI_PATH = path.join(__dirname, "_no_such_claude_binary.exe");
+    try {
+      await assert.rejects(
+        () => handleCallModel({ userPrompt: "<command>\n--provider claude\n</command>\ntest prompt" }),
+      );
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CLI_PATH;
+      else process.env.CLAUDE_CLI_PATH = prev;
+    }
   });
 });
 
