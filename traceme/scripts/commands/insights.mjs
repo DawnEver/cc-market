@@ -33,7 +33,6 @@ export function cmdInsights(args, VERSION) {
   lines.push('');
 
   const projectSearch = project ? project.toLowerCase() : null;
-  const projectLike = projectSearch ? `%${projectSearch}%` : null;
 
   // ═══════════════════════════════════════════════
   // TOKEN CONSUMPTION (merged data per day)
@@ -44,8 +43,10 @@ export function cmdInsights(args, VERSION) {
   const allProjects = new Set();
   let grandTokens = 0, grandCost = 0, grandSessions = 0, grandPrompts = 0, daysWithData = 0;
 
+  const mergedByDay = {};   // date → merged snapshot (when sync data exists for that day)
   for (const day of days) {
     const merged = local ? null : readMergedSnapshot(day);
+    if (merged) mergedByDay[day] = merged;
     let rows;
     if (merged) {
       rows = merged.daily_summary.map(r => ({
@@ -87,20 +88,17 @@ export function cmdInsights(args, VERSION) {
   const label = k => projectLabel[k] || k;
 
   // ═══════════════════════════════════════════════
-  // TIME CONSUMPTION (local sessions table)
+  // TIME CONSUMPTION (merged sessions per day, local fallback)
   // ═══════════════════════════════════════════════
-  const timeQuery = projectLike
-    ? `SELECT s.project, s.repo_origin, s.started_at, s.ended_at, s.active_min, s.prompt_count
-       FROM sessions s
-       WHERE s.date >= ? AND s.date <= ?
-         AND s.project LIKE ?`
-    : `SELECT s.project, s.repo_origin, s.started_at, s.ended_at, s.active_min, s.prompt_count
-       FROM sessions s
-       WHERE s.date >= ? AND s.date <= ?`;
+  const localSessionsForDay = day => db.prepare(
+    `SELECT project, repo_origin, started_at, ended_at, active_min, prompt_count
+     FROM sessions WHERE date = ?`).all(day);
 
-  const sessRows = projectLike
-    ? db.prepare(timeQuery).all(from, to, projectLike)
-    : db.prepare(timeQuery).all(from, to);
+  let sessRows = [];
+  for (const day of days) {
+    sessRows.push(...(mergedByDay[day] ? mergedByDay[day].sessions || [] : localSessionsForDay(day)));
+  }
+  if (projectSearch) sessRows = sessRows.filter(s => (s.project || '').toLowerCase().includes(projectSearch));
 
   const now = new Date();
   const timeByProject = {};
@@ -128,15 +126,19 @@ export function cmdInsights(args, VERSION) {
   }
 
   // ═══════════════════════════════════════════════
-  // SKILL USAGE (local session_skills table)
+  // SKILL USAGE (merged per day, local fallback)
   // ═══════════════════════════════════════════════
-  const skillRows = querySkillUsage(from, to, projectLike);
+  const skillRows = [];
+  for (const day of days) {
+    skillRows.push(...(mergedByDay[day] ? mergedByDay[day].skill_usage || [] : querySkillUsage(day, day)));
+  }
 
   const skillAgg = {};
   let totalSkillCalls = 0;
   for (const r of skillRows) {
     const name = r.skill_name;
     if (!name) continue;
+    if (projectSearch && !(r.project || '').toLowerCase().includes(projectSearch)) continue;
     totalSkillCalls += r.count;
     if (!skillAgg[name]) skillAgg[name] = { total: 0, projects: {} };
     skillAgg[name].total += r.count;
@@ -144,11 +146,17 @@ export function cmdInsights(args, VERSION) {
   }
 
   // ═══════════════════════════════════════════════
-  // MODEL USAGE (local)
+  // MODEL USAGE (merged per day, local fallback)
   // ═══════════════════════════════════════════════
+  const hasMergedSnapshots = Object.keys(mergedByDay).length > 0;
   const modelAgg = {};
-  for (const day of days) {
-    for (const m of queryModelBreakdown(day)) {
+  // Model facts collapse project in both sources, so a per-project view isn't possible here;
+  // skip the work entirely under --project (the section is omitted with a note below).
+  for (const day of (projectSearch ? [] : days)) {
+    // Both sources normalize to { model, calls, tokens, cost }: queryModelBreakdown aliases
+    // SUM(requests) AS calls; mergeModelFacts maps requests→calls (billable tokens, summed cost).
+    const rows = mergedByDay[day] ? mergedByDay[day].model_facts || [] : queryModelBreakdown(day);
+    for (const m of rows) {
       if (!modelAgg[m.model]) modelAgg[m.model] = { calls: 0, tokens: 0, cost: 0 };
       modelAgg[m.model].calls += m.calls;
       modelAgg[m.model].tokens += m.tokens;
@@ -248,11 +256,18 @@ export function cmdInsights(args, VERSION) {
     }
   }
 
-  // Model Usage
-  if (Object.keys(modelAgg).length > 0) {
+  // Model Usage. Model facts aggregate by model only (merged + local sources both collapse
+  // project), so this view is inherently global. Under --project we omit the table rather than
+  // show unfiltered numbers next to the filtered Quick Stats (which would not reconcile).
+  if (projectSearch) {
     lines.push('## Model Usage');
     lines.push('');
-    lines.push('_Local device only — model data not synced_');
+    lines.push('_Not shown under `--project`: model usage is aggregated globally (not project-scoped). Run without `--project` for the full breakdown._');
+    lines.push('');
+  } else if (Object.keys(modelAgg).length > 0) {
+    lines.push('## Model Usage');
+    lines.push('');
+    lines.push(hasMergedSnapshots ? '_Cross-device (merged from synced snapshots)_' : '_Local device only — no synced data_');
     lines.push('');
     lines.push('| Model | Calls | Tokens | Cost |');
     lines.push('|-------|-------|--------|------|');

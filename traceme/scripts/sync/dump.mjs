@@ -1,4 +1,4 @@
-import { openDb, queryDailySummary, queryToolUsage, queryModelFacts } from '../db.mjs';
+import { openDb, queryDailySummary, queryToolUsage, queryModelFacts, querySkillFacts } from '../db.mjs';
 import { getDeviceId } from './repo.mjs';
 
 export function dumpDailyData(date) {
@@ -20,6 +20,10 @@ export function dumpDailyData(date) {
       top_model: r.top_model
     })),
     tool_usage: queryToolUsage(date),
+    // Per (project, repo_origin, skill) call counts — lights up cross-device skill rankings.
+    skill_usage: querySkillFacts(date, date).map(r => ({
+      project: r.project, repo_origin: r.repo_origin, skill_name: r.skill_name, count: r.count,
+    })),
     // Per (project, model) token components — lights up cross-device per-model views.
     model_facts: queryModelFacts(date, date).map(r => ({
       project: r.project, repo_origin: r.repo_origin, model: r.model, requests: r.requests,
@@ -27,7 +31,7 @@ export function dumpDailyData(date) {
       cost: Math.round(r.cost * 100000) / 100000,
     })),
     sessions: db.prepare(`
-      SELECT id, project, repo_origin, branch, started_at, ended_at, prompt_count, total_tokens, total_cost
+      SELECT id, project, repo_origin, branch, started_at, ended_at, active_min, prompt_count, total_tokens, total_cost
       FROM sessions WHERE date = ?
     `).all(date).map(r => ({
       ...r,

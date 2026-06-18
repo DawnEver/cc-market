@@ -26,7 +26,8 @@ describe('Sync Data Dump/Import', () => {
       total_tokens: 25000, total_cost: 0.095, top_model: 'claude-sonnet-4-6',
       models: [{ model: 'claude-sonnet-4-6', requests: 5, input: 18000, output: 6500, cache_read: 500, cache_creation: 0, cost: 0.095 }],
       tools: [{ tool_name: 'Edit', count: 1 }, { tool_name: 'Bash', count: 1 }],
-      skills: [],
+      skills: [{ skill_name: 'code-review', count: 2 }],
+      active_min: 42,
     });
   });
 
@@ -66,6 +67,72 @@ describe('Sync Data Dump/Import', () => {
     // repo_origin must NOT be undefined (may be null for pre-migration data)
     assert.equal('repo_origin' in data.sessions[0], true);
     assert.equal(data.tool_usage.length, 2);
+    // active_min synced so cross-device time aggregation works
+    assert.equal(data.sessions[0].active_min, 42);
+    // skill_usage synced so cross-device skill rankings work
+    assert.equal(data.skill_usage.length, 1);
+    assert.equal(data.skill_usage[0].skill_name, 'code-review');
+    assert.equal(data.skill_usage[0].count, 2);
+    assert.equal(data.skill_usage[0].project, 'my-project');
+  });
+
+  it('mergeSkillFacts aggregates per (skill, project) across devices', async () => {
+    const { mergeSkillFacts } = await import('../scripts/sync.mjs');
+    const merged = mergeSkillFacts([
+      { data: { skill_usage: [
+        { skill_name: 'code-review', project: 'p1', count: 2 },
+        { skill_name: 'rem', project: 'p1', count: 1 },
+      ] } },
+      { data: { skill_usage: [
+        { skill_name: 'code-review', project: 'p1', count: 3 },
+        { skill_name: 'code-review', project: 'p2', count: 1 },
+      ] } },
+      { data: {} }, // older snapshot predating skill_usage — ignored
+    ]);
+    const cr1 = merged.find(r => r.skill_name === 'code-review' && r.project === 'p1');
+    const cr2 = merged.find(r => r.skill_name === 'code-review' && r.project === 'p2');
+    const rem = merged.find(r => r.skill_name === 'rem');
+    assert.equal(cr1.count, 5);   // 2 + 3 across devices
+    assert.equal(cr2.count, 1);   // distinct project kept separate
+    assert.equal(rem.count, 1);
+  });
+
+  it('mergeSkillFacts key is collision-proof across (skill, project) boundaries', async () => {
+    const { mergeSkillFacts } = await import('../scripts/sync.mjs');
+    // A naive `${skill} ${project}` key would collide these two distinct pairs.
+    const merged = mergeSkillFacts([
+      { data: { skill_usage: [{ skill_name: 'code', project: 'review x', count: 1 }] } },
+      { data: { skill_usage: [{ skill_name: 'code review', project: 'x', count: 1 }] } },
+    ]);
+    assert.equal(merged.length, 2); // kept separate, not collapsed into one
+  });
+
+  it('mergeSkillFacts keeps same-basename repos distinct via repo_origin', async () => {
+    const { mergeSkillFacts } = await import('../scripts/sync.mjs');
+    const merged = mergeSkillFacts([
+      { data: { skill_usage: [{ skill_name: 'code-review', project: 'my-app', repo_origin: 'github.com/alice/my-app', count: 5 }] } },
+      { data: { skill_usage: [{ skill_name: 'code-review', project: 'my-app', repo_origin: 'github.com/bob/my-app', count: 3 }] } },
+    ]);
+    assert.equal(merged.length, 2);
+    assert.equal(merged.find(r => r.repo_origin === 'github.com/alice/my-app').count, 5);
+    assert.equal(merged.find(r => r.repo_origin === 'github.com/bob/my-app').count, 3);
+  });
+
+  it('mergeModelFacts aggregates per-model billable tokens across devices', async () => {
+    const { mergeModelFacts } = await import('../scripts/sync.mjs');
+    const merged = mergeModelFacts([
+      { data: { model_facts: [
+        { model: 'opus', requests: 2, input: 100, output: 50, cache_creation: 10, cache_read: 999, cost: 1 },
+      ] } },
+      { data: { model_facts: [
+        { model: 'opus', requests: 3, input: 200, output: 0, cache_creation: 0, cache_read: 0, cost: 2 },
+      ] } },
+      { data: {} }, // older snapshot predating model_facts — ignored
+    ]);
+    const opus = merged.find(r => r.model === 'opus');
+    assert.equal(opus.calls, 5);            // 2 + 3 requests
+    assert.equal(opus.tokens, 360);         // (100+50+10) + (200+0+0); cache_read excluded
+    assert.equal(opus.cost, 3);             // 1 + 2
   });
 
   it('should import data from another device without corrupting local', async () => {

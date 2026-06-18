@@ -24,7 +24,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" insights --project NAME  # 
 2. **Token Consumption by Project** — per-day per-project token table with totals
 3. **Time Consumption by Project** — session count, total and average duration (zombie sessions excluded)
 4. **Skill Usage Rankings** — ranked table with bar chart; per-project breakdown when multiple projects
-5. **Model Usage** — per-model calls, tokens, cost (local device only)
+5. **Model Usage** — per-model calls, tokens, cost (cross-device when synced; aggregated globally, so omitted under `--project`)
 
 ## Visual Dashboard
 
@@ -56,7 +56,7 @@ is gross wall-clock (includes idle), with sessions bucketed by their start day. 
 
 ## Data Source
 
-Token data uses the cross-device merged sync snapshot by default (all your machines). Session duration, skill usage, and model data are local-only (not synced). Pass `--local` to use local data throughout.
+All sections — tokens, session duration, skill usage, and model usage — use the cross-device merged sync snapshot by default (all your machines). Foreign snapshots pushed before a field existed (`active_min`, `skill_usage`) contribute 0 for it until that device re-pushes (`traceme sync push --all`). Pass `--local` to use this device's data throughout. Tool-category breakdowns remain local-only (not synced).
 
 ## Privacy
 
