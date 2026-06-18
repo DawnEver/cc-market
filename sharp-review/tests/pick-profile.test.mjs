@@ -31,9 +31,11 @@ test('--profile with unknown key falls back to diff', () => {
   assert.equal(run(['--profile', 'nope']).key, 'diff');
 });
 
+const ALL_KEYS = ['diff', 'architecture', 'security', 'docs', 'deps'];
+
 test('default (weighted) run always emits a valid profile JSON', () => {
   const p = run([]);
-  assert.ok(['diff', 'architecture'].includes(p.key));
+  assert.ok(ALL_KEYS.includes(p.key));
   assert.ok('label' in p && 'mode' in p && 'promptKind' in p);
 });
 
@@ -43,23 +45,61 @@ test('corrupt/missing state degrades gracefully (no throw, valid output)', () =>
     mkdirSync(join(dir, '.claude'), { recursive: true });
     writeFileSync(join(dir, '.claude', '.rem-state.json'), '{ not valid json', 'utf8');
     const p = run([], dir);
-    assert.ok(['diff', 'architecture'].includes(p.key));
+    assert.ok(ALL_KEYS.includes(p.key));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('--sources constrains selection to that source set', () => {
+  // Only the codebase source → architecture is the sole eligible profile.
+  for (let i = 0; i < 8; i++) {
+    assert.equal(run(['--sources', 'codebase']).key, 'architecture');
+  }
+  // Only the diff source → eligible profiles are diff + security (both source 'diff').
+  for (let i = 0; i < 8; i++) {
+    assert.ok(['diff', 'security'].includes(run(['--sources', 'diff']).key));
+  }
+});
+
+test('--sources docs with per-project weight selects docs profile', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
+  try {
+    mkdirSync(join(dir, '.claude'), { recursive: true });
+    writeFileSync(
+      join(dir, '.claude', '.rem-state.json'),
+      JSON.stringify({ reviewGate: { profileWeights: { docs: 1 } } }),
+      'utf8',
+    );
+    for (let i = 0; i < 8; i++) {
+      assert.equal(run(['--sources', 'docs'], dir).key, 'docs');
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('no --sources flag uses the full default rotation', () => {
+  for (let i = 0; i < 12; i++) {
+    assert.ok(ALL_KEYS.includes(run([]).key));
+  }
+});
+
+test('--profile override still works with --sources present', () => {
+  assert.equal(run(['--sources', 'codebase', '--profile', 'docs']).key, 'docs');
 });
 
 test('per-project profileWeights forcing architecture is honored', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
   try {
     mkdirSync(join(dir, '.claude'), { recursive: true });
-    // Drive architecture to weight 1 (diff 0) so the weighted pick is deterministic.
+    // Zero out every other profile so the weighted pick is deterministically architecture.
     writeFileSync(
       join(dir, '.claude', '.rem-state.json'),
-      JSON.stringify({ reviewGate: { profileWeights: { diff: 0, architecture: 1 } } }),
+      JSON.stringify({ reviewGate: { profileWeights: { diff: 0, architecture: 1, security: 0, docs: 0, deps: 0 } } }),
       'utf8',
     );
-    // Run several times; with diff weight 0 it must always pick architecture.
+    // Run several times; with all others at weight 0 it must always pick architecture.
     for (let i = 0; i < 8; i++) {
       assert.equal(run([], dir).key, 'architecture');
     }

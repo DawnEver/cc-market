@@ -50,30 +50,58 @@ Units are **chars** (not lines) because chars track actual context window cost.
 
 ### Step 1 — Pick profile
 
-Each run rotates between review **profiles** (templates), chosen probabilistically. Run `pick-profile.js` first and capture its JSON:
+Each run rotates between review **profiles** (templates), chosen probabilistically. Profile
+selection is **source-aware**: the Stop hook records which trigger source(s) fired in
+`reviewGate.firedSources` (e.g. `["diff"]`, `["docs"]`). Pass them to `pick-profile.js` via
+`--sources` so the pick is constrained to profiles whose source fired; capture its JSON:
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js"
+node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js" --sources diff,docs
 ```
 
 ```json
 { "key": "diff", "label": "diff review", "mode": null, "promptKind": "diff", "framing": null, "reviewScope": null }
 ```
 
-Profiles and default weights (provider selection is unaffected — profiles never bind a provider):
+If `firedSources` is absent (manual run), omit `--sources` for the full default rotation.
+Manual override (no weighting): `pick-profile.js --profile architecture`. Selection is
+stateless — weights only, no persisted rotation index. Per-project tuning — set weights in
+`.claude/.rem-state.json`: `{ "reviewGate": { "profileWeights": { "diff": 0.6, "architecture": 0.2 } } }`.
 
-| Profile | Weight | Mode | What it reviews |
-|---|---|---|---|
-| `diff` | 0.8 | honors diff-manifest (review/agent) | the git diff — bugs & cleanup (original behavior) |
-| `architecture` (架构锐评) | 0.2 | forced **agent** | the **current codebase architecture** as a whole — reviewers explore freely, report shortcomings + improvements |
+#### Review profiles & sources
 
-Per-project tuning — set weights in `.claude/.rem-state.json`:
-```json
-{ "reviewGate": { "profileWeights": { "diff": 0.8, "architecture": 0.2 } } }
-```
-Manual override (no weighting): `pick-profile.js --profile architecture`. Selection is stateless — weights only, no persisted rotation index.
+A *profile* is the unit of selection; a *source* is just the named trigger a profile reacts to
+(diff and security share the `diff` trigger). There is **no pick-source-then-profile two-step** —
+selection is a single **global** weighted draw over the profiles whose source fired this round.
+Provider selection is unaffected — profiles never bind a provider.
+
+| Profile | Source | Weight | Mode | Reviews |
+|---|---|---|---|---|
+| `diff` | `diff` | 0.6 | honors diff-manifest | the git diff — bugs & cleanup (default) |
+| `architecture` (架构锐评) | `codebase` | 0.2 | agent | whole codebase architecture |
+| `security` (安全锐评) | `diff` | 0.05 | honors diff-manifest | the diff for security vulnerabilities |
+| `docs` (文档锐评) | `docs` | 0.1 | agent | docs vs. current code |
+| `deps` (依赖锐评) | `deps` | 0.05 | agent | dependency risk (CVEs, licenses) |
+
+Default weights sum to 1.0 and are **global probabilities** — across reviews each profile runs at
+roughly its weight. A profile is only *eligible* when its source fired; the weight of any profile
+whose source is cold this round (its "orphan mass") folds into the catch-all `diff` review, so
+each eligible specialist keeps its **exact global share** and `diff` absorbs the slack (its
+effective rate rises above 0.6 when specialists are idle). If `diff` itself is cold (e.g. a
+doc-only change, so only the `docs` source fired), the orphan mass spreads across whatever is
+eligible. Set a weight to 0 in `profileWeights` to opt a profile out. Sources fire on: `diff` = wave gate;
+`codebase` = time interval; `docs` = ≥N doc files changed; `deps` = a lockfile changed.
+`architecture`/`docs`/`deps` run in **agent mode** with no diff payload — reviewers explore the
+repo. Source config (`docsThreshold`, `codebaseIntervalMin`) lives under `reviewGate` in
+`.claude/.rem-state.json`.
 
 ### Step 2 — Gather context
+
+For the **active profile's source**: the `diff`/`security` profiles run `diff-manifest.js`
+(below) for the diff payload. The `architecture`/`docs`/`deps` profiles run in agent mode with
+NO diff payload — their reviewers explore the repo directly (read source/docs, `git diff`,
+inspect lockfiles); skip diff-manifest for them, but still pass `stats`/`range`/`seed` (the
+workflow requires `stats`, so run diff-manifest to obtain them even when its `diff` is unused).
 
 Run `diff-manifest.js` — the ONLY allowed diff payload. Never run raw `git diff` or paste diff text into context.
 
@@ -107,7 +135,7 @@ Capture the JSON output. The script produces a size-bounded payload — each fie
 
 ### Step 3 — Run workflow
 
-If `profile.key === "diff"` AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory. (The `architecture` profile ignores empty — it reviews the codebase, not a diff — so always proceed for it.)
+If the profile honors the diff manifest (`profile.mode === null`, i.e. `diff`/`security`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory. (Agent-mode profiles — `architecture`/`docs`/`deps` — ignore empty: they explore the repo, not a diff, so always proceed for them.)
 
 Otherwise, pass the JSON fields into Workflow args, layering the profile on top:
 

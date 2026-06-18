@@ -6,11 +6,18 @@ Post-feature code review plugin for Claude Code. Three parallel reviewers with J
 
 ```
 Stop → sharp-review-hook.js
-         ├── Wave gate: diff lastReviewRef..WORKTREE (thresholds → SKILL.md)
-         │     wave 0 (new commit) vs wave 1+ (same ref); below → skip (accumulates)
+         ├── Source gate (sources.mjs evaluateSources, pure): the hook does the git/clock I/O,
+         │     builds ctx, and asks every source adapter if it fired.
+         │       diff     → wave gate (lastReviewRef..WORKTREE thresholds → SKILL.md)
+         │       codebase → time interval since last review (architecture survey)
+         │       deps     → a lockfile changed
+         │       docs     → ≥N doc files changed
+         │     none fired → skip (accumulates); any fired → record reviewGate.firedSources
          ├── Classify (claude -p): none / once / multi
          └── Trigger /sharp-review skill:
-               ├── pick-profile.js → weighted-random review profile (diff | architecture); stateless, no provider binding
+               ├── pick-profile.js --sources <firedSources> → single GLOBAL weighted draw over
+               │     the eligible profiles (diff | architecture | security | docs | deps); orphan
+               │     mass (cold sources) folds into diff; stateless, no provider binding
                ├── diff-manifest.js → { mode, range, stats, diff?, manifestText?, excludedSummary }
                │     Smart filtering: lockfiles, generated, binary, pure renames
                │     mode = review (≤ inlineDiffLimit) | agent (> inlineDiffLimit) | empty (no files)
@@ -50,11 +57,12 @@ sharp-review/
 │   └── sharp-review-hook.js      Stop hook: classify review depth
 ├── skills/sharp-review/SKILL.md /sharp-review skill definition
 ├── scripts/
-│   ├── pick-profile.js               Weighted-random review-profile pick (diff | architecture); stateless
+│   ├── pick-profile.js               Source-constrained weighted profile pick (--sources); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
 │   ├── post-review.js                Write memory entry → stamp
 │   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
-├── lib.mjs                       SR-specific logic: frontmatter, markdown parsing, category inference, diff manifest
+├── lib.mjs                       SR-specific logic: frontmatter, markdown parsing, category inference, diff manifest, PROFILES, isLockfile/isDoc
+├── sources.mjs                   Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 ├── tests/                        Tests (node:test)
 │   ├── lib.test.mjs              Frontmatter, category inference, markdown parsing
 │   ├── manifest.test.mjs         Diff manifest: parsing, filtering, mode decision, rendering
@@ -68,10 +76,22 @@ sharp-review/
 ### Review Profiles
 
 A profile is a review *template* (scope + prompt framing + forced mode), defined in `PROFILES`
-in `lib.mjs` — orthogonal to providers (the seed-mod reviewer rotation is unchanged). `pick-profile.js`
-selects one per run by weighted random. `diff` honors diff-manifest's mode; `architecture` forces
-agent mode and reviews the whole codebase (no diff/manifest). Both write to the same `sharp-review.md`
-with `SR-` IDs (zero downstream changes). Profile keys, weights, and config → `skills/sharp-review/SKILL.md`.
+in `lib.mjs` — orthogonal to providers (the seed-mod reviewer rotation is unchanged). The
+**profile is the single unit of selection**; a `source` is just the named trigger (in
+`sources.mjs`) a profile reacts to — diff and security share the `diff` trigger. There is no
+pick-source-then-profile two-step. Five profiles ship: `diff`/`security` (source `diff`),
+`architecture` (source `codebase`), `docs` (source `docs`), `deps` (source `deps`).
+
+`pick-profile.js --sources <fired>` does a single **global** weighted draw via
+`globalWeightsForSources` (`lib.mjs`): default weights are global probabilities (`diff` 0.6,
+`architecture` 0.2, `docs` 0.1, `security`/`deps` 0.05, sum 1.0); the weight of any profile whose
+source is cold this round folds into the catch-all `diff` (orphan mass → diff), so each eligible
+specialist keeps its exact global share and diff absorbs the slack. If diff itself is cold, the
+orphan mass spreads across the eligible profiles. `diff`/`security` honor diff-manifest's mode;
+`architecture`/`docs`/`deps` force agent mode and explore the repo (no diff/manifest). All write
+to the same `sharp-review.md` with `SR-` IDs (zero downstream changes). The seam is additive: the
+engine was already source-agnostic; only the entry layer (profiles + pick-profile + hook gate)
+was lifted to it. Profile keys, weights, and config → `skills/sharp-review/SKILL.md`.
 
 ### Dual Review Modes
 

@@ -8,7 +8,7 @@
 import { join } from 'path';
 
 import { loadState } from '../shared/state.mjs';
-import { resolveProfile, resolveWeights, pickProfileKey } from '../lib.mjs';
+import { resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from '../lib.mjs';
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
@@ -26,13 +26,20 @@ function readWeightOverride() {
 function main() {
   const args = process.argv.slice(2);
   const forced = getArg(args, '--profile');
+  const sourcesArg = getArg(args, '--sources');
 
   let key;
   if (forced) {
     // Explicit override (e.g. manual run): select without consulting weights.
     key = forced;
   } else {
-    const weights = resolveWeights(readWeightOverride());
+    const override = readWeightOverride();
+    const sourceKeys = sourcesArg
+      ? sourcesArg.split(',').map(s => s.trim()).filter(Boolean)
+      : null;
+    // With --sources, fold the global distribution onto the eligible profiles (orphan mass →
+    // diff); without it (manual run), draw from the full global rotation.
+    const weights = sourceKeys ? globalWeightsForSources(sourceKeys, override) : resolveWeights(override);
     key = pickProfileKey(weights, Math.random());
   }
 
