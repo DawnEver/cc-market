@@ -73,3 +73,10 @@ and remain enforced by `checkTermination`.
 Run the SKILL.md cleanup: remove `hook.taskActiveUntil` (if set), write the round-log memory
 entry via `writeRoundLog` (rem indexes it automatically), and report a one-line summary in chat
 (rounds run, total fixed, won't-fix, any deferred items, and whether a safety cap triggered).
+
+**Still-open findings must leave the loop visible (not swallowed).** `clean` can converge with
+LOW findings still open (severity-based convergence). The exit summary MUST report the count of
+findings still `status: open` and point to the backlog (`todo`) so they remain trackable and
+resolvable after exit — `defer` is "not now", never "dropped" (see `round-protocol.md` §7.5
+*defer ≠ drop*). If the user wants the loop to keep going until even LOW items are resolved, that
+is `--until=resolved`, not `clean`.

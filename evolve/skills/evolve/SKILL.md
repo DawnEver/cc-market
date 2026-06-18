@@ -95,4 +95,6 @@ state shape, and failure handling). Stop conditions and the safety caps are in
 - Write a short round-log memory entry via `writeRoundLog(projectRoot, {...})` — it writes a
   rem-frontmatter entry under `.claude/memory/YYYY/MM/DD/`, so rem's session indexer picks it
   up automatically (no need to rebuild the index here).
-- Report a one-line summary in chat (rounds, total fixed, won't-fix, deferred items).
+- Report a one-line summary in chat (rounds, total fixed, won't-fix, deferred items, **and the
+  count of findings still OPEN** — point to `todo` so deferred/LOW items leave the loop visible,
+  never silently dropped; `defer` ≠ drop).
