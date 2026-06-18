@@ -42,11 +42,17 @@ export function inferCategory(summary, explicit) {
 // selected probabilistically per trigger (see pickProfileKey); weights are tunable per project
 // via reviewGate.profileWeights in .claude/.rem-state.json.
 
+// `source` names the trigger adapter (see sources.mjs) that fires this profile's review.
+// Profiles whose `source` is in the fired set are eligible for selection. Weights are relative
+// probabilities WITHIN the eligible (fired-source) set — the source gate decides eligibility,
+// the weight decides the pick among eligible profiles. Default weights sum to 1.0. Set a weight
+// to 0 to opt a profile out (pickProfileKey drops non-positive weights).
 export const PROFILES = {
   diff: {
     key: 'diff',
     label: 'diff review',
-    weight: 0.8,            // default probability
+    source: 'diff',
+    weight: 0.6,            // default probability
     mode: null,             // null = honor diff-manifest's decided mode (review/agent/empty)
     promptKind: 'diff',
     framing: null,          // null = workflow's existing default intro
@@ -55,6 +61,7 @@ export const PROFILES = {
   architecture: {
     key: 'architecture',
     label: 'architecture survey (架构锐评)',
+    source: 'codebase',
     weight: 0.2,
     mode: 'agent',          // forced — reviewers explore the repo freely
     promptKind: 'architecture',
@@ -65,6 +72,53 @@ export const PROFILES = {
       'Duplication and missing abstractions across the codebase',
       'Files/dirs that grew too large or hold too many responsibilities',
       'Inconsistent patterns, dead subsystems, scalability / extensibility limits',
+    ].join(', '),
+  },
+  security: {
+    key: 'security',
+    label: 'security audit (安全锐评)',
+    source: 'diff',
+    weight: 0.05,          // competes with `diff` whenever the diff source fires
+    mode: null,            // honor diff-manifest's decided mode
+    promptKind: 'diff',
+    framing: '安全锐评: audit the diff for security vulnerabilities — focus on exploitable defects, not style.',
+    reviewScope: [
+      'Authorization / access-control gaps and missing authentication',
+      'Injection (SQL, command, template, XSS) and unsafe input handling',
+      'Hardcoded secrets / credentials / tokens',
+      'SSRF and path traversal',
+      'Unsafe deserialization',
+      'Crypto misuse (weak algorithms, static IVs, predictable randomness)',
+    ].join(', '),
+  },
+  docs: {
+    key: 'docs',
+    label: 'docs review (文档锐评)',
+    source: 'docs',
+    weight: 0.1,           // eligible only when the docs source fires
+    mode: 'agent',         // reviewers explore docs + code
+    promptKind: 'architecture', // reuse the explore prompt path (no diff payload)
+    framing: '文档锐评: review the documentation against the current code — this is NOT a diff review.',
+    reviewScope: [
+      'Accuracy vs. the actual code (claims that no longer hold)',
+      'Staleness — outdated instructions, removed features still documented',
+      'Broken links / references / anchors',
+      'Missing or contradictory setup/usage instructions',
+    ].join(', '),
+  },
+  deps: {
+    key: 'deps',
+    label: 'dependency review (依赖锐评)',
+    source: 'deps',
+    weight: 0.05,          // eligible only when the deps source fires
+    mode: 'agent',         // reviewers explore manifests + lockfiles
+    promptKind: 'architecture',
+    framing: '依赖锐评: review the project dependencies for risk — this is NOT a diff review.',
+    reviewScope: [
+      'Known CVEs / security advisories in pinned versions',
+      'Outdated major versions and unmaintained packages',
+      'License issues / incompatibilities',
+      'Unused or duplicate dependencies',
     ].join(', '),
   },
 };
@@ -82,6 +136,34 @@ export function resolveWeights(override) {
     if (Number.isFinite(w) && w > 0) weights[key] = w;
   }
   return weights;
+}
+
+// Collapse the GLOBAL weight distribution onto the profiles eligible this round (those whose
+// `source` trigger fired). Selection is a single global weighted draw — there is no "pick a
+// source, then a profile within it" stage. Profiles whose source is cold donate their weight
+// ("orphan mass") to the catch-all `diff` review, so every eligible *specialist* keeps its exact
+// GLOBAL weight and `diff` absorbs the slack (its effective rate sits above its base weight).
+// Edge case — `diff` itself ineligible (its source didn't fire, e.g. a doc-only change): the
+// orphan mass is spread across the eligible profiles in proportion to their weight, preserving
+// their relative global shares. Returns {} when nothing is eligible (caller skips the review).
+export function globalWeightsForSources(sourceKeys, override, fallbackKey = 'diff') {
+  const fired = new Set(sourceKeys || []);
+  const all = resolveWeights(override);            // global weights (non-positive already dropped)
+  const eligible = {};
+  let orphan = 0;
+  for (const [key, w] of Object.entries(all)) {
+    if (fired.has(PROFILES[key]?.source)) eligible[key] = w;
+    else orphan += w;
+  }
+  const keys = Object.keys(eligible);
+  if (!keys.length || orphan <= 0) return eligible;
+  if (eligible[fallbackKey] !== undefined) {
+    eligible[fallbackKey] += orphan;               // catch-all absorbs the slack
+  } else {
+    const total = keys.reduce((s, k) => s + eligible[k], 0);
+    for (const k of keys) eligible[k] += orphan * (eligible[k] / total);
+  }
+  return eligible;
 }
 
 // Pure weighted pick. `rand` ∈ [0,1) injected by the caller (Math.random in the script,
@@ -176,6 +258,57 @@ export function classifyLowValue(filePath) {
     if (re.test(filePath)) return reason;
   }
   return null;
+}
+
+// True when `filePath` is a dependency lockfile — reuses the lockfile entries in
+// LOW_VALUE_PATTERNS (single source of truth). Drives the `deps` review source.
+export function isLockfile(filePath) {
+  for (const { re, reason } of LOW_VALUE_PATTERNS) {
+    if (reason === 'lockfile' && re.test(filePath)) return true;
+  }
+  return false;
+}
+
+// True when `filePath` matches any generated/vendored/minified LOW_VALUE pattern (dist/,
+// build/, out/, vendor/, node_modules/, *.generated.*, *.min.*, *.map, snapshots, protobuf).
+// Reused by isDoc so the dist/build/out/vendor list lives in one place (LOW_VALUE_PATTERNS).
+export function isGeneratedPath(filePath) {
+  for (const { re, reason } of LOW_VALUE_PATTERNS) {
+    if ((reason.startsWith('generated') || reason === 'vendored' || reason === 'minified' || reason === 'sourcemap')
+        && re.test(filePath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Human-authored documentation by name (case-insensitive, with or without extension).
+// NOTE: LICENSE is intentionally NOT a doc.
+const DOC_NAME_RE = /(^|\/)(README|CHANGELOG|CONTRIBUTING|AGENTS|CLAUDE|GLOBAL-AGENTS|CODE_OF_CONDUCT|SECURITY|NOTICE)([.][^/]*)?$/i;
+// Markup documentation extensions.
+const DOC_EXT_RE = /\.(md|mdx|rst|adoc|txt|org)$/i;
+// Auto-generated / built documentation trees that must NOT fire the docs source. The exclusion
+// wins over inclusion (a `.md` under docs/api/ is excluded). Covers sphinx/mkdocs/jekyll/
+// docusaurus/javadoc/rustdoc/storybook outputs plus a generic generated guard.
+const DOC_BUILD_RE = new RegExp([
+  /(^|\/)(_site|site|storybook-static)\//.source,        // jekyll _site, mkdocs site, storybook
+  /(^|\/)\.docusaurus\//.source,                         // docusaurus cache
+  /(^|\/)docs\/(_build|api|html)\//.source,              // sphinx _build, generated api/html under docs
+  /(^|\/)target\/doc\//.source,                          // rustdoc
+  /(^|\/)(javadoc|apidocs)\//.source,                    // javadoc / generated apidocs
+  /\.generated\./.source,                                // *.generated.md
+  /(^|\/)_build\//.source,                               // generic build tree
+  /(^|\/)\.cache\//.source,                              // generic cache
+].join('|'), 'i');
+
+// True when `filePath` is human-authored documentation. The exclusion check (generated/built
+// docs, vendored trees) WINS over inclusion. Drives the `docs` review source.
+export function isDoc(filePath) {
+  if (isGeneratedPath(filePath) || DOC_BUILD_RE.test(filePath)) return false;
+  if (/(^|\/)LICEN[CS]E([.][^/]*)?$/i.test(filePath)) return false; // LICENSE is explicitly NOT a doc
+  if (DOC_NAME_RE.test(filePath)) return true;
+  if (/(^|\/)docs?\//i.test(filePath)) return true;      // docs/ or doc/ at any depth
+  return DOC_EXT_RE.test(filePath);
 }
 
 // Parse `git diff --numstat -z -M` output.

@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PROFILES, resolveProfile, resolveWeights, pickProfileKey } from '../lib.mjs';
+import { PROFILES, resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from '../lib.mjs';
+
+const close = (a, b) => Math.abs(a - b) < 1e-9;
 
 test('PROFILES — diff and architecture shapes', () => {
   assert.equal(PROFILES.diff.key, 'diff');
@@ -23,6 +25,79 @@ test('PROFILES — diff and architecture shapes', () => {
   }
 });
 
+test('PROFILES — source field on existing + new profiles', () => {
+  assert.equal(PROFILES.diff.source, 'diff');
+  assert.equal(PROFILES.architecture.source, 'codebase');
+
+  // Three new profiles, in the default rotation with their own weights.
+  const expectedWeights = { security: 0.05, docs: 0.1, deps: 0.05 };
+  for (const key of ['security', 'docs', 'deps']) {
+    assert.ok(PROFILES[key], `profile ${key} must exist`);
+    assert.equal(PROFILES[key].weight, expectedWeights[key], `${key} default weight`);
+    assert.ok(typeof PROFILES[key].framing === 'string' && PROFILES[key].framing.length);
+    assert.ok(typeof PROFILES[key].reviewScope === 'string' && PROFILES[key].reviewScope.length);
+  }
+  // Default weights sum to 1.0.
+  const total = Object.values(PROFILES).reduce((s, p) => s + p.weight, 0);
+  assert.ok(Math.abs(total - 1.0) < 1e-9, `default weights sum to 1.0 (got ${total})`);
+  assert.equal(PROFILES.security.source, 'diff');
+  assert.equal(PROFILES.security.mode, null);          // honor manifest
+  assert.equal(PROFILES.security.promptKind, 'diff');
+  assert.equal(PROFILES.docs.source, 'docs');
+  assert.equal(PROFILES.docs.mode, 'agent');
+  assert.equal(PROFILES.docs.promptKind, 'architecture');
+  assert.equal(PROFILES.deps.source, 'deps');
+  assert.equal(PROFILES.deps.mode, 'agent');
+});
+
+test('all five profiles are in the default rotation', () => {
+  const w = resolveWeights(null);
+  assert.equal(w.diff, 0.6);
+  assert.equal(w.architecture, 0.2);
+  assert.equal(w.security, 0.05);
+  assert.equal(w.docs, 0.1);
+  assert.equal(w.deps, 0.05);
+});
+
+test('globalWeightsForSources — orphan mass folds into diff; specialists keep global weight', () => {
+  // diff source fired → eligible {diff, security}; the .35 from arch/docs/deps folds into diff.
+  const w = globalWeightsForSources(['diff'], null);
+  assert.ok(close(w.diff, 0.95), `diff absorbs orphan mass (got ${w.diff})`);
+  assert.ok(close(w.security, 0.05), 'security keeps its exact global weight');
+  assert.equal(w.architecture, undefined);
+  assert.equal(w.docs, undefined);
+
+  // diff + docs fired → docs keeps .1, security .05, diff absorbs arch+deps (.25) → .85.
+  const w2 = globalWeightsForSources(['diff', 'docs'], null);
+  assert.ok(close(w2.diff, 0.85), `diff = .6 + orphan .25 (got ${w2.diff})`);
+  assert.ok(close(w2.docs, 0.1), 'docs keeps its exact global weight');
+  assert.ok(close(w2.security, 0.05), 'security keeps its exact global weight');
+
+  // total mass is always conserved at 1.0 (weights sum to 1).
+  const sum = Object.values(w2).reduce((s, x) => s + x, 0);
+  assert.ok(close(sum, 1.0), `mass conserved (got ${sum})`);
+});
+
+test('globalWeightsForSources — diff ineligible: orphan spreads across eligible', () => {
+  // doc-only change → only docs source fired; diff can't absorb, so docs takes all the mass.
+  const w = globalWeightsForSources(['docs'], null);
+  assert.ok(close(w.docs, 1.0), `docs absorbs everything when it is the sole eligible (got ${w.docs})`);
+  assert.equal(w.diff, undefined);
+
+  // codebase only → architecture takes the full mass.
+  const cb = globalWeightsForSources(['codebase'], null);
+  assert.ok(close(cb.architecture, 1.0), `architecture = full mass (got ${cb.architecture})`);
+  assert.equal(cb.diff, undefined);
+});
+
+test('globalWeightsForSources — nothing eligible returns {} (caller skips)', () => {
+  // docs source fired but docs weight overridden to 0 → no eligible profile.
+  const w = globalWeightsForSources(['docs'], { docs: 0 });
+  assert.deepEqual(w, {});
+  // pickProfileKey degrades to diff on an empty map.
+  assert.equal(pickProfileKey(w, 0.5), 'diff');
+});
+
 test('resolveProfile — known keys and fallback', () => {
   assert.equal(resolveProfile('diff').key, 'diff');
   assert.equal(resolveProfile('architecture').key, 'architecture');
@@ -32,7 +107,7 @@ test('resolveProfile — known keys and fallback', () => {
 
 test('resolveWeights — defaults and per-project override', () => {
   const def = resolveWeights(null);
-  assert.equal(def.diff, 0.8);
+  assert.equal(def.diff, 0.6);
   assert.equal(def.architecture, 0.2);
 
   const over = resolveWeights({ diff: 0.5, architecture: 0.5 });
@@ -41,14 +116,14 @@ test('resolveWeights — defaults and per-project override', () => {
 
   // Partial override keeps the un-overridden default.
   const partial = resolveWeights({ architecture: 0.4 });
-  assert.equal(partial.diff, 0.8);
+  assert.equal(partial.diff, 0.6);
   assert.equal(partial.architecture, 0.4);
 
   // Garbage / non-positive weights are dropped, unknown keys ignored.
   const cleaned = resolveWeights({ architecture: 0, bogus: 1 });
   assert.equal(cleaned.architecture, undefined);
   assert.equal(cleaned.bogus, undefined);
-  assert.equal(cleaned.diff, 0.8);
+  assert.equal(cleaned.diff, 0.6);
 });
 
 test('pickProfileKey — deterministic cumulative bands', () => {

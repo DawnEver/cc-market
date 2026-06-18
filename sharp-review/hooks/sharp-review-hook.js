@@ -14,6 +14,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
+import { evaluateSources, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../sources.mjs';
 
 // Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
 export function findGitRoot(startDir) { return findProjectRoot(startDir); }
@@ -59,12 +60,6 @@ function getChangedFiles() {
       return arrow === -1 ? p : p.slice(arrow + 4);
     }).filter(Boolean);
   } catch { return []; }
-}
-
-const DOC_ONLY_PATTERNS = [/\.md$/i, /^\.claude\//, /^MEMORY\.md$/i, /^README/i];
-
-function isDocOnly(files) {
-  return files.length > 0 && files.every(f => DOC_ONLY_PATTERNS.some(p => p.test(f)));
 }
 
 // ── Wave Gate ──
@@ -194,7 +189,9 @@ async function main() {
 
   const changedFiles = getChangedFiles();
 
-  if (isDocOnly(changedFiles) || (changedFiles.length === 0 && !hasCodeEdits(transcript))) {
+  // A doc-only change no longer auto-skips: the `docs` source may fire (governed below by
+  // source evaluation). Only skip outright when there is nothing at all to review.
+  if (changedFiles.length === 0 && !hasCodeEdits(transcript)) {
     process.exit(0);
   }
 
@@ -231,8 +228,25 @@ async function main() {
       };
     }
 
-    if (effectiveStat.lines < threshold.lines && effectiveStat.files < threshold.files) {
-      // Accumulated changes below wave threshold — skip, preserve ref for accumulation
+    // ── Source evaluation ──
+    // The diff source reproduces the wave gate exactly (effectiveStat vs the wave threshold);
+    // the other sources (codebase/deps/docs) widen the trigger. The hook owns all I/O and
+    // builds the pure ctx; evaluateSources decides what fired.
+    // No prior timestamp on a never-reviewed repo → treat as 0 (don't fire a codebase survey
+    // on the very first stop); the 7-day clock starts once the first review is recorded.
+    const lastReviewAt = reviewGate?.classifiedAt || reviewGate?.lastReviewAt || 0;
+    const minutesSinceLastReview = lastReviewAt ? Math.max(0, (now - lastReviewAt) / 60000) : 0;
+    const { fired, reasons } = evaluateSources({
+      changedFiles,
+      diffStat: effectiveStat,
+      waveThreshold: threshold,
+      minutesSinceLastReview,
+      docsThreshold: reviewGate?.docsThreshold ?? DOCS_THRESHOLD_DEFAULT,
+      codebaseIntervalMin: reviewGate?.codebaseIntervalMin ?? CODEBASE_INTERVAL_MIN_DEFAULT,
+    });
+
+    if (fired.length === 0) {
+      // Nothing fired — skip, preserve ref for accumulation
       reviewGate = {
         ...(reviewGate || {}),
         sessionId,
@@ -269,8 +283,12 @@ async function main() {
       lastReviewRef: head,
       lastReviewDiff: stat,
       wave,
+      firedSources: fired,        // skill passes these to pick-profile --sources
+      firedReasons: reasons,
       memory: updatedMemory,
       thresholds: reviewGate?.thresholds,
+      docsThreshold: reviewGate?.docsThreshold,
+      codebaseIntervalMin: reviewGate?.codebaseIntervalMin,
     };
     saveReviewGate(reviewGate);
   }
