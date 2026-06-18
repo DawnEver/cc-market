@@ -178,6 +178,28 @@ For the full file-ownership table (where findings, archives, and manual tasks li
 
 Do NOT dump findings in chat.
 
+#### Attention boundary (consumer-aware)
+
+This report step **is** the attention gate for sharp-review, and the skill is already
+consumer-aware by construction:
+
+- **AI consumer** (e.g. `evolve` calling this workflow, or any parent orchestrator): consumes
+  the returned `{ merged, markdown, summary }` programmatically. The skill **never prompts** —
+  there is no human attention to protect, so no gate is needed. This is the default and the
+  reason findings go to backlog instead of chat.
+- **Human consumer**: findings are written to the `sharp-review.md` backlog for *async* triage
+  via `todo`, deliberately kept out of chat so a review never floods your attention. Only the
+  one-line `summary` reaches you.
+
+When a human explicitly wants to **triage now** (not later via `todo`), route the OPEN findings
+through the shared attention gate (`shared/attention.mjs`) instead of reading them all:
+`route(items, { consumer: 'human' })` compresses to *what you must decide / the consequence of
+not deciding*, coalesces into a single `AskUserQuestion` (≤4, highest-severity first), and
+silently defers the low-stakes rest to the backlog. Map each finding to a gate item
+(`{ id, title: summary, detail: 'file: summary', stakes: severity, reversible: !arch,
+default: 'defer', options: [Fix now / Won't-fix / Defer] }`). For an AI consumer pass
+`consumer: 'ai'` and it resolves by policy with no prompt.
+
 ## Phase 2 — Task Audit
 
 After the review:

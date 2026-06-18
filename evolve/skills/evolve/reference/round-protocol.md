@@ -25,6 +25,9 @@ State I/O and `dateToPath` come from the bundled `shared/` (`shared/state.mjs`,
 `shared/lib.mjs`) — the same modules rem/sharp-review use — not re-implemented here. `saveState`
 always persists to rem's state file (creating it if absent); there is no in-memory fallback.
 - `checkTermination(state)` → `{ stop, reason }` — the termination decision (step 7).
+- `checkRoundComplete(state)` → `{ complete, openFindings }` and
+  `routeRoundCompletion(state, {consumer})` — the round-completion check + attention-gate routing
+  (step 7.5). The gate itself is `shared/attention.mjs` (`route`/`classify`/`compress`).
 
 Keep the conceptual explanation in each step; let the script do the arithmetic.
 
@@ -124,6 +127,12 @@ Call `AskUserQuestion` (summarizing the items) if the round produced **any** of:
 
 Apply the answers: fix it / accept won't-fix-with-reason / change the approach.
 
+Prefer routing these through the **attention gate** (`shared/attention.mjs`, step 7.5) rather
+than a hand-written `AskUserQuestion`: it compresses each item to *what you must know / decide /
+the consequence of not deciding*, coalesces multiple gated items into one prompt for a human,
+and — for an AI consumer — resolves by policy without prompting at all. Hand-roll
+`AskUserQuestion` only for genuinely one-off questions the gate's item shape can't express.
+
 ## 5. Continue fixing
 
 Loop back through fan-out fixes for any item the human said to fix or re-approach, until no
@@ -192,6 +201,38 @@ step 7.
   note that in the summary and never block the loop on a state-write failure.
 - Apply the termination policy: call `checkTermination(state)` → `{ stop, reason }` and act on
   it. Definitions live in `reference/termination.md` (not duplicated here).
+
+## 7.5 Round-completion check (every round, after commit)
+
+A round is **not done** until every finding it touched reached a terminal state
+(`fixed` / accepted `wont-fix`). Findings left `open` are otherwise carried silently — their
+`unfixedRounds` just climbs until the stuck-finding cap at round 3. Make the carry **explicit**
+and route it through the attention gate instead of swallowing it.
+
+- Call `checkRoundComplete(state)` → `{ complete, openFindings }`. If `complete`, the round is
+  clean — continue to termination.
+- Otherwise route the un-terminal findings through the **attention gate**
+  (`shared/attention.mjs`, via `routeRoundCompletion(state, { consumer })`). The gate is
+  **consumer-aware** — its whole job is to protect the scarce resource on the receiving end:
+  - **Detect the consumer first.** `consumer: 'human'` when a person can answer
+    `AskUserQuestion` (interactive run); `consumer: 'ai'` when headless/autonomous, or when
+    `/evolve` was invoked *by another agent* (e.g. a parent orchestrator, a scheduled tick) that
+    consumes the result programmatically. Pass `{ consumer: 'ai' }` in those cases. When unsure
+    and a human is present, default to `'human'`.
+  - **Human consumer** → the gate applies safe defaults silently (reversible, non-HIGH findings
+    auto-`defer`, logged, *not shown*), and returns a single coalesced `prompt`
+    (`AskUserQuestion` payload, ≤4 questions, highest-stakes first; `overflow` carries the rest
+    to next round) covering only the decisions that truly need you — irreversible/arch or HIGH
+    stakes. Ask it, then apply the answers (fix / record wont-fix / defer).
+  - **AI consumer** → the gate **never prompts** (there is no human attention to protect). It
+    returns `applied` (defaults resolved by policy) and `deferred` (irreversible/ambiguous, no
+    safe default — left OPEN and logged, never blocked). Apply `applied`, record `deferred` in
+    the round summary. An AI consumer that *wants* a second opinion on a deferred arch call may
+    hand it to a stronger model via `takeover`, but must not block the loop on it.
+
+  In both cases: record the gate's `applied`/`deferred`/answers back into
+  `evolveState.findings`, so the next round sees accurate status and the round summary reflects
+  what was decided vs deferred.
 
 ## State shape (`.claude/.rem-state.json`)
 

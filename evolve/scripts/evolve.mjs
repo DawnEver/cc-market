@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadState as loadSharedState, saveState as saveSharedState } from '../shared/state.mjs';
 import { parseFindingsFromMarkdown, dateToPath } from '../shared/lib.mjs';
+import { route as routeAttention } from '../shared/attention.mjs';
 
 const STATE_FILE = '.claude/.rem-state.json';
 
@@ -187,6 +188,48 @@ export function checkTermination(state) {
     default:
       return { stop: false, reason: 'unknown-mode' };
   }
+}
+
+// Step 7.5 — round-completion check. After commit, every finding from this round must be
+// terminal (fixed / wont-fix). Any still-`open` finding means the round is NOT done; surface
+// it rather than silently carrying it forward (unfixedRounds keeps climbing until the
+// stuck-finding cap). Returns the un-terminal set for routing through the attention gate.
+export function checkRoundComplete(state) {
+  const openFindings = (state.findings || []).filter(
+    (f) => String(f.status || 'open').toLowerCase() === 'open'
+  );
+  return { complete: openFindings.length === 0, openFindings };
+}
+
+// Map open findings to attention-gate items. An arch/interface change is irreversible and
+// must reach a human; everything else carries a safe `defer` default (keep it OPEN, log it),
+// so for an AI consumer or a low-stakes human round it auto-defers without an interruption.
+export function findingsToAttentionItems(findings = []) {
+  const sevStake = (s) => {
+    const u = String(s || '').toUpperCase();
+    return u === 'HIGH' ? 'HIGH' : u === 'MEDIUM' ? 'MEDIUM' : 'LOW';
+  };
+  return findings.map((f) => ({
+    id: f.id,
+    title: f.summary || f.id,
+    detail: f.file ? `${f.file}: ${f.summary || ''}` : f.summary || '',
+    kind: f.arch ? 'arch' : (f.reason || 'open-finding'),
+    stakes: sevStake(f.severity),
+    reversible: !f.arch,
+    default: f.arch ? null : 'defer',
+    options: [
+      { label: 'Fix next round', value: 'fix', consequence: 'Re-enters fan-out next round.' },
+      { label: "Won't fix", value: 'wont-fix', consequence: 'Recorded as accepted, with reason.' },
+      { label: 'Defer', value: 'defer', consequence: 'Left OPEN; revisited next round.' },
+    ],
+  }));
+}
+
+// Route an incomplete round's open findings through the attention gate (shared/attention.mjs).
+// consumer 'human' → coalesced AskUserQuestion payload (or silent defaults); 'ai' → policy + defer.
+export function routeRoundCompletion(state, { consumer = 'human' } = {}) {
+  const { openFindings } = checkRoundComplete(state);
+  return routeAttention(findingsToAttentionItems(openFindings), { consumer });
 }
 
 function memoryDayDir(projectRoot, date) {

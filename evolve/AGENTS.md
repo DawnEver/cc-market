@@ -19,6 +19,9 @@ plugin: invoked via `/evolve`, no hook.
     5. Continue fixing
     6. TDD gate: detect test cmd, all green; per-finding verify
     7. Resolve & commit (scoped git add); checkTermination(state) → loop or stop
+    7.5 Round-completion check: checkRoundComplete(state) → route open findings through the
+        consumer-aware attention gate (shared/attention.mjs) — human: one coalesced prompt;
+        ai: policy-resolve + defer, never block
 ```
 
 ## File Structure

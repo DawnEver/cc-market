@@ -68,6 +68,9 @@ it) and never hang on `AskUserQuestion`. Surface all deferred/gated items in the
 5. **Continue fixing** per the human's answers.
 6. **TDD gate** — run the test suite; all green before committing.
 7. **Resolve & commit** — mark findings, commit (explicit `git add` scope), apply termination.
+8. **Round-completion check** — assert every finding reached a terminal state; route any still-OPEN
+   ones through the **attention gate** (consumer-aware: compress+coalesce one prompt for a human,
+   policy-resolve+defer for an AI consumer). Never carry an un-terminal finding silently.
 
 **`--dry-run` is a first-class mode:** run step 1 (critique) and produce the fix plan +
 grouping (steps 2–3 planning only), report it, and **STOP** — no edits, no test gate, no

@@ -12,6 +12,9 @@ import {
   prioritize,
   checkTermination,
   confirmedByQuorum,
+  checkRoundComplete,
+  findingsToAttentionItems,
+  routeRoundCompletion,
   seedFromSharpReview,
   writeRoundLog,
 } from '../scripts/evolve.mjs';
@@ -242,4 +245,51 @@ test('writeRoundLog writes a rem-frontmatter memory entry', () => {
   assert.match(file, /[\\/]2026[\\/]06[\\/]15[\\/]evolve-round-log\.md$/);
   assert.match(content, /metadata:\s*\n\s*type: project/);
   assert.match(content, /2 round\(s\): 5 fixed, 1 won't-fix/);
+});
+
+test('checkRoundComplete: complete when no open findings', () => {
+  const state = { findings: [{ id: 'a', status: 'fixed' }, { id: 'b', status: 'wont-fix' }] };
+  const r = checkRoundComplete(state);
+  assert.equal(r.complete, true);
+  assert.equal(r.openFindings.length, 0);
+});
+
+test('checkRoundComplete: incomplete surfaces open findings', () => {
+  const state = { findings: [{ id: 'a', status: 'fixed' }, { id: 'b', status: 'open' }] };
+  const r = checkRoundComplete(state);
+  assert.equal(r.complete, false);
+  assert.deepEqual(r.openFindings.map((f) => f.id), ['b']);
+});
+
+test('findingsToAttentionItems: arch finding is irreversible + no default', () => {
+  const [item] = findingsToAttentionItems([{ id: 'x', summary: 'API change', severity: 'HIGH', arch: true }]);
+  assert.equal(item.reversible, false);
+  assert.equal(item.default, null);
+  assert.equal(item.kind, 'arch');
+  assert.equal(item.stakes, 'HIGH');
+});
+
+test('findingsToAttentionItems: ordinary finding defers by default', () => {
+  const [item] = findingsToAttentionItems([{ id: 'y', summary: 'nit', severity: 'LOW' }]);
+  assert.equal(item.reversible, true);
+  assert.equal(item.default, 'defer');
+});
+
+test('routeRoundCompletion: ai consumer never prompts, defers arch', () => {
+  const state = { findings: [
+    { id: 'a', status: 'open', summary: 'nit', severity: 'LOW' },
+    { id: 'b', status: 'open', summary: 'API', severity: 'HIGH', arch: true },
+    { id: 'c', status: 'fixed' },
+  ] };
+  const r = routeRoundCompletion(state, { consumer: 'ai' });
+  assert.equal(r.prompt, null);
+  assert.deepEqual(r.applied.map((a) => a.id), ['a']);   // low-stakes auto-defer
+  assert.deepEqual(r.deferred.map((d) => d.id), ['b']);  // arch deferred, not blocked
+});
+
+test('routeRoundCompletion: human consumer prompts on arch finding', () => {
+  const state = { findings: [{ id: 'b', status: 'open', summary: 'API', severity: 'HIGH', arch: true }] };
+  const r = routeRoundCompletion(state, { consumer: 'human' });
+  assert.ok(r.prompt);
+  assert.equal(r.prompt.questions.length, 1);
 });
