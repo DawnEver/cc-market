@@ -131,16 +131,16 @@ describe('appendEvent', async () => {
     assert.ok(state.prune.events[0].ts);
   });
 
-  it('trims events to 50', () => {
+  it('trims events to 15', () => {
     const file = tmp('overflow.json');
     const state = JSON.parse(JSON.stringify(DEFAULT_STATE));
-    state.prune.events = Array.from({ length: 55 }, (_, i) => ({ ts: `ts${i}`, type: 'old' }));
+    state.prune.events = Array.from({ length: 20 }, (_, i) => ({ ts: `ts${i}`, type: 'old' }));
     writeFileSync(file, JSON.stringify(state));
 
     appendEvent(file, 'new', {});
     const result = loadState(file);
-    assert.equal(result.prune.events.length, 50);
-    assert.equal(result.prune.events[49].type, 'new');
+    assert.equal(result.prune.events.length, 15);
+    assert.equal(result.prune.events[14].type, 'new');
   });
 
   it('creates state from scratch if file is missing', () => {

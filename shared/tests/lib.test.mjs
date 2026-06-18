@@ -109,9 +109,15 @@ describe('readStdinJSON', async () => {
   const { readStdinJSON } = await import(sharedLibUrl);
 
   it('returns {} when stdin is a TTY', () => {
-    // In a test runner, stdin might or might not be TTY
-    const result = readStdinJSON();
-    assert.equal(typeof result, 'object');
+    // Force the TTY branch — otherwise readStdinJSON does a blocking readFileSync(0)
+    // that hangs under a test runner / git hook (stdin is an open pipe, never EOFs).
+    const orig = process.stdin.isTTY;
+    process.stdin.isTTY = true;
+    try {
+      assert.deepEqual(readStdinJSON(), {});
+    } finally {
+      process.stdin.isTTY = orig;
+    }
   });
 
   // BOM handling is tested in shared/tests/state.test.mjs (loadState BOM test).

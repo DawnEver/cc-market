@@ -40,6 +40,8 @@ fi
 
 selected=()
 [ "$run_bundle" -eq 1 ] && selected+=("tests/bundle-integrity.test.mjs")
+# shared/ owns the canonical modules bundled into every plugin — run its own suite when touched.
+{ has shared || has tests; } && selected+=("shared/tests/*.test.mjs")
 for p in "${node_tests[@]}"; do
   selected+=("$p/tests/*.test.mjs")
 done
