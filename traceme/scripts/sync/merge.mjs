@@ -89,13 +89,30 @@ export function readMergedSnapshot(date, opts = {}) {
     daily_summary: Object.values(merged.daily_summary),
     tool_usage: Object.entries(merged.tool_usage).map(([k, v]) => ({ tool_name: k, count: v })),
     model_facts: mergeModelFacts(loaded.snapshots),
+    skill_usage: mergeSkillFacts(loaded.snapshots),
   };
+}
+
+// Aggregate per-device skill_usage into cross-device per (skill, repo_origin, project) call
+// counts — keyed on repo_origin (the grouping identity) so same-basename repos stay distinct,
+// consistent with the Token/Time sections. Empty for older snapshots predating skill_usage.
+export function mergeSkillFacts(snapshots) {
+  const agg = {};
+  for (const { data } of snapshots) {
+    for (const r of (data.skill_usage || [])) {
+      if (!r.skill_name) continue;
+      const key = JSON.stringify([r.skill_name, r.repo_origin || '', r.project || '']);
+      const a = agg[key] || (agg[key] = { skill_name: r.skill_name, repo_origin: r.repo_origin || '', project: r.project || '', count: 0 });
+      a.count += r.count || 0;
+    }
+  }
+  return Object.values(agg);
 }
 
 // Aggregate per-device model_facts into cross-device per-model totals (cost recomputed by the
 // caller is not possible across devices — uses each device's pushed cost). Empty for older
 // snapshots that predate model_facts.
-function mergeModelFacts(snapshots) {
+export function mergeModelFacts(snapshots) {
   const agg = {};
   for (const { data } of snapshots) {
     for (const r of (data.model_facts || [])) {

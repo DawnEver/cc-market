@@ -51,7 +51,9 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 
 `sessions.active_min` is hands-on time: the sum of consecutive message-timestamp gaps under a
 10-min idle cutoff (derived in `scan.mjs`). Unlike elapsed (`ended_at − started_at`), idle gaps
-don't count — reports surface both ("Active" vs "Elapsed"). Local-only; not synced.
+don't count — reports surface both ("Active" vs "Elapsed"). Synced (in the per-session
+snapshot rows) so cross-device insights aggregate it; foreign snapshots predating the field
+contribute 0 until re-pushed.
 
 Schema (all per-session, recomputed on each scan): `sessions` (one row per transcript) +
 `session_models` / `session_tools` / `session_skills` / `session_categories` breakdowns.
@@ -136,8 +138,11 @@ directory and merges in memory. No separate aggregate step needed. Remote resolv
 `TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's `origin` if unset.
 
 The snapshot carries `daily_summary` (incl. `billable_tokens`/`cache_read_tokens`), `tool_usage`,
-`model_facts` (per project×model components — lights up cross-device per-model views), and
-`sessions`. `merge.mjs` has ONE low-level reader, `loadDeviceSnapshots({from,to,skipSelf})`
+`model_facts` (per project×model components — lights up cross-device per-model views),
+`skill_usage` (per project×skill call counts — cross-device skill rankings), and `sessions`
+(incl. `active_min` — cross-device Active/Elapsed time). `readMergedSnapshot` exposes merged
+`model_facts`/`skill_usage`/`sessions`, which `insights` aggregates for its Model/Skill/Time
+sections (per-day local fallback when a day has no synced snapshot). `merge.mjs` has ONE low-level reader, `loadDeviceSnapshots({from,to,skipSelf})`
 (cached `origin/main`, no network); `readMergedSnapshot(date)` (per-day merge, for report/insights)
 and `readDeviceFacts(from,to)` (per-device rows + per-device `modelFacts`, for the dashboard's
 all-devices vs. single-device view) are both built on it. The local device is excluded from
@@ -177,4 +182,4 @@ excluded) → `skills/traceme/reference/sync.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-53 tests: DB derived queries incl. billable basis, category unit-split, flat fact tables + `categorizeTool` (10), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged + `readDeviceFacts` (7), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping (9), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.
+58 tests: DB derived queries incl. billable basis, category unit-split, flat fact tables + `categorizeTool` (10), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged + `readDeviceFacts` + `mergeSkillFacts`/`mergeModelFacts` (11), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping (9), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.
