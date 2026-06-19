@@ -16,9 +16,17 @@
   "prune": {
     "lastPruneAt": 1780500000000,
     "events": [{ "ts": "...", "type": "evict", "path": "...", "reason": "stale-90d" }]
+  },
+  "scopes": {
+    "ignore": ["vendor", "test-*", "packages/legacy"]
   }
 }
 ```
+
+`scopes.ignore` — glob/name patterns for directories that `findAllScopes` /
+`findChildScopes` skip during scope discovery (and prune their descendants). A bare
+pattern (no `/`) matches a directory's basename; a pattern containing `/` matches the
+path relative to the scan root. Both support `*` and `?`. Empty by default.
 
 Useful for debugging hook gating (e.g. why `/rem` did or didn't trigger) or checking
 recent prune events (demotions/evictions) during a session.

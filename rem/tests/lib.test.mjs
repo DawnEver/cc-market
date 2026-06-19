@@ -23,6 +23,9 @@ import {
   appendEvent,
   stateFile,
   findProjectRoot,
+  isScopeIgnored,
+  findAllScopes,
+  findChildScopes,
 } from "../lib.mjs";
 
 // ── Index parsing ──────────────────────────────────────────────────────────────
@@ -219,5 +222,66 @@ describe("findProjectRoot", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+// ── Scope ignore ────────────────────────────────────────────────────────────────
+
+describe("isScopeIgnored", () => {
+  test("no patterns → never ignored", () => {
+    assert.equal(isScopeIgnored("node_modules", "node_modules", []), false);
+    assert.equal(isScopeIgnored("foo", "foo", undefined), false);
+  });
+
+  test("bare name matches basename exactly", () => {
+    assert.equal(isScopeIgnored("vendor", "a/b/vendor", ["vendor"]), true);
+    assert.equal(isScopeIgnored("vendored", "vendored", ["vendor"]), false);
+  });
+
+  test("glob on basename", () => {
+    assert.equal(isScopeIgnored("test-utils", "x/test-utils", ["test-*"]), true);
+    assert.equal(isScopeIgnored("utils", "utils", ["test-*"]), false);
+  });
+
+  test("pattern with slash matches relative path", () => {
+    assert.equal(isScopeIgnored("docs", "packages/docs", ["packages/docs"]), true);
+    assert.equal(isScopeIgnored("docs", "other/docs", ["packages/docs"]), false);
+  });
+
+  test("slash pattern with glob", () => {
+    assert.equal(isScopeIgnored("e2e", "apps/web/e2e", ["apps/*/e2e"]), true);
+  });
+});
+
+describe("findAllScopes / findChildScopes ignore", () => {
+  let tmp;
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rem-scopes-"));
+    for (const d of ["keep", "skipme", "nested/deep"]) {
+      fs.mkdirSync(path.join(tmp, d, ".claude", "memory"), { recursive: true });
+    }
+  });
+  afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+  test("findAllScopes skips ignored dirs by name", () => {
+    const scopes = findAllScopes(tmp, ["skipme"]);
+    assert.ok(scopes.includes(path.join(tmp, "keep")));
+    assert.ok(!scopes.some((s) => s.includes("skipme")));
+  });
+
+  test("findAllScopes without ignore includes all", () => {
+    const scopes = findAllScopes(tmp, []);
+    assert.ok(scopes.some((s) => s.endsWith("skipme")));
+  });
+
+  test("ignoring a parent prunes its descendants", () => {
+    const scopes = findAllScopes(tmp, ["nested"]);
+    assert.ok(!scopes.some((s) => s.includes("nested")));
+  });
+
+  test("findChildScopes honors ignore", () => {
+    const children = findChildScopes(tmp, ["skipme"]);
+    assert.ok(!children.some((s) => s.includes("skipme")));
+    assert.ok(children.some((s) => s.endsWith("keep")));
   });
 });
