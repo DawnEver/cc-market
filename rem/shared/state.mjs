@@ -18,6 +18,12 @@ export const DEFAULT_STATE = {
     lastPruneAt: 0,
     events: [],
   },
+  scopes: {
+    // Glob/name patterns for directories findAllScopes/findChildScopes skip during
+    // scope discovery. Bare names (no `/`) match a directory's basename; patterns
+    // with `/` match the path relative to the scan root. Supports `*` and `?`.
+    ignore: [],
+  },
 };
 
 function deepMerge(defaults, partial) {

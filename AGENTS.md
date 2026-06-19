@@ -46,7 +46,7 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `takeover/tests/image.test.mjs` | 2 | image gen/edit error paths |
 | `rem/tests/frontmatter.test.mjs` | 13 | frontmatter parsing, field get/set |
 | `rem/tests/date-path.test.mjs` | 16 | date formatting, path resolution, memory dir security |
-| `rem/tests/lib.test.mjs` | 17 | index parsing, constants, file collection, state, findProjectRoot |
+| `rem/tests/lib.test.mjs` | 26 | index parsing, constants, file collection, state, findProjectRoot, scope ignore (isScopeIgnored, findAllScopes/findChildScopes) |
 | `rem/tests/memory-state.test.mjs` | 13 | _meta.json state: load, save, bump, drop, self-heal, scope isolation |
 | `rem/tests/scope-validate.test.mjs` | 6 | scope isolation check/fix, intermediate file integrity |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |

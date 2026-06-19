@@ -48,7 +48,9 @@ self-heal: entries default to path-date accessed/count=1/tier=short.
 ## Scope isolation
 
 Scopes are discovered purely by filesystem: any directory with `.claude/memory/` is a scope.
-`findAllScopes()` discovers all scopes (max depth 4, no name assumptions). `rebuildIndex()`
+`findAllScopes()` discovers all scopes (max depth 4, no name assumptions), skipping any
+directory matching a `scopes.ignore` glob/name pattern in `.rem-state.json` (an ignored
+parent also prunes its descendants) via the pure `isScopeIgnored()` helper. `rebuildIndex()`
 is single-scope — multi-scope rebuilds use explicit `findAllScopes().forEach(rebuildIndex)`.
 `scope-validate.mjs` runs at SessionStart (`--fix`) to ensure intermediate file integrity
 across all scopes. Each scope owns independent `_meta.json` files and `MEMORY.md`.

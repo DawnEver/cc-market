@@ -2,7 +2,7 @@
 // Single source of truth for paths, frontmatter, index format, file collection, state.
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs';
-import { join, dirname, resolve, relative } from 'path';
+import { join, dirname, resolve, relative, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from './shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from './shared/state.mjs';
 
@@ -31,8 +31,37 @@ export function findMemoryScope() {
   return root;
 }
 
-export function findAllScopes(base) {
+// Convert a simple glob (supporting `*` and `?`) to an anchored RegExp.
+function globToRegExp(glob) {
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  return new RegExp('^' + escaped + '$');
+}
+
+// True if a directory should be skipped during scope discovery. `name` is the
+// directory's basename, `rel` its path relative to the scan root. Patterns without
+// a `/` match the basename; patterns with a `/` match the relative path. Both forms
+// support `*` and `?` globs.
+export function isScopeIgnored(name, rel, patterns) {
+  if (!patterns || !patterns.length) return false;
+  const relNorm = rel.split(sep).join('/');
+  return patterns.some((p) => {
+    const re = globToRegExp(p);
+    return p.includes('/') ? re.test(relNorm) : re.test(name);
+  });
+}
+
+// Resolve ignore patterns: explicit arg wins, else read from .rem-state.json.
+function resolveIgnore(ignore) {
+  if (ignore) return ignore;
+  try { return loadState().scopes?.ignore || []; } catch { return []; }
+}
+
+export function findAllScopes(base, ignore) {
   const root = base || repoRoot;
+  const patterns = resolveIgnore(ignore);
   const scopes = [root];
   function walk(dir, depth) {
     if (depth > 4) return;
@@ -40,6 +69,7 @@ export function findAllScopes(base) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
           const sub = join(dir, entry.name);
+          if (isScopeIgnored(entry.name, relative(root, sub), patterns)) continue;
           if (existsSync(join(sub, '.claude', 'memory'))) scopes.push(sub);
           walk(sub, depth + 1);
         }
@@ -50,7 +80,8 @@ export function findAllScopes(base) {
   return scopes;
 }
 
-export function findChildScopes(scopeRoot) {
+export function findChildScopes(scopeRoot, ignore) {
+  const patterns = resolveIgnore(ignore);
   const children = [];
   function walk(dir, depth) {
     if (depth > 4) return;
@@ -58,6 +89,7 @@ export function findChildScopes(scopeRoot) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
           const sub = join(dir, entry.name);
+          if (isScopeIgnored(entry.name, relative(scopeRoot, sub), patterns)) continue;
           if (existsSync(join(sub, '.claude', 'memory'))) children.push(sub);
           walk(sub, depth + 1);
         }
