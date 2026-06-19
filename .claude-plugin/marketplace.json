@@ -1,7 +1,7 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
   "name": "cc-market",
-  "version": "2.1.51",
+  "version": "2.1.52",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
     "name": "Mingyang Bao",
