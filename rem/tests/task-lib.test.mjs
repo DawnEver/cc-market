@@ -17,8 +17,13 @@ import {
   parseExistingTasks,
   groupByModule, groupByCategory,
   scanMemoryForFindings, scanManualTasks,
-  markFinding,
+  markFinding, severityRank, getFindingDetail,
+  formatScopeReport, resolvedConfidence, parseReportOpts,
 } from "../scripts/task-lib.mjs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const ENGINE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "task-engine.js");
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -449,6 +454,255 @@ describe("markFinding", () => {
     const result = markFinding(tmpDir, "FOO-001", "fixed");
     assert.equal(result.found, false);
     assert.match(result.error, /Unknown ID format/);
+  });
+
+  test("accepts 'done' as alias for fixed", () => {
+    const file = writeReview([
+      "---", "name: sharp-review-2026-06-09", "---",
+      "### [SR-20260609-901] [HIGH] test/file.js — A bug",
+      "- **Status:** OPEN",
+    ].join("\n"), "utf8");
+    const result = markFinding(tmpDir, "SR-20260609-901", "done");
+    assert.equal(result.found, true);
+    assert.equal(result.status, "fixed");
+    assert.match(fs.readFileSync(file, "utf8"), /\*\*Status:\*\*\s*FIXED/);
+  });
+});
+
+// ── severityRank ───────────────────────────────────────────────────────────────
+
+describe("severityRank", () => {
+  test("orders HIGH < MEDIUM < LOW < unknown", () => {
+    assert.ok(severityRank("HIGH") < severityRank("MEDIUM"));
+    assert.ok(severityRank("MEDIUM") < severityRank("LOW"));
+    assert.ok(severityRank("LOW") < severityRank("WAT"));
+    assert.equal(severityRank("high"), severityRank("HIGH")); // case-insensitive
+  });
+});
+
+// ── parseReportOpts ──────────────────────────────────────────────────────────────
+
+describe("parseReportOpts", () => {
+  test("--module captures the value", () => {
+    assert.equal(parseReportOpts(["--module", "mesh"]).moduleFilter, "mesh");
+  });
+  test("--severity and --sort both set sortBySeverity", () => {
+    assert.equal(parseReportOpts(["--severity"]).sortBySeverity, true);
+    assert.equal(parseReportOpts(["--sort"]).sortBySeverity, true);
+  });
+  test("--auto-close-resolved defaults to 'high', 'all' opt-in", () => {
+    assert.equal(parseReportOpts(["--auto-close-resolved"]).autoClose, "high");
+    assert.equal(parseReportOpts(["--auto-close-resolved", "all"]).autoClose, "all");
+  });
+  test("combines flags", () => {
+    const o = parseReportOpts(["--module", "a", "--severity", "--auto-close-resolved", "all"]);
+    assert.equal(o.moduleFilter, "a");
+    assert.equal(o.sortBySeverity, true);
+    assert.equal(o.autoClose, "all");
+  });
+});
+
+// ── CLI: report --auto-close-resolved (integration) ──────────────────────────────
+
+describe("task-engine report --auto-close-resolved", () => {
+  let proj;
+  beforeEach(() => { proj = fs.mkdtempSync(path.join(os.tmpdir(), "task-engine-cli-")); });
+  afterEach(() => { fs.rmSync(proj, { recursive: true, force: true }); });
+
+  test("auto-closes a finding whose file no longer exists", () => {
+    const dayDir = path.join(proj, ".claude", "memory", "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    const review = path.join(dayDir, "sharp-review.md");
+    fs.writeFileSync(review, [
+      "---", "name: sharp-review-2026-06-09",
+      "description: Sharp review findings — 1 total",
+      "metadata:", "  type: project", "---", "",
+      "### [SR-20260609-001] [HIGH] gone/missing-file.js — Bug in deleted file",
+      "- **Status:** OPEN",
+    ].join("\n"), "utf8");
+
+    const out = execFileSync("node", [ENGINE, "report", "--auto-close-resolved"], {
+      cwd: proj, env: { ...process.env, CLAUDE_PROJECT_DIR: proj }, encoding: "utf8",
+    });
+    assert.match(out, /auto-closed SR-20260609-001/);
+    assert.match(fs.readFileSync(review, "utf8"), /\*\*Status:\*\*\s*FIXED/);
+  });
+});
+
+// ── CLI: show / remove ───────────────────────────────────────────────────────────
+
+describe("task-engine show / remove (integration)", () => {
+  let proj;
+  beforeEach(() => { proj = fs.mkdtempSync(path.join(os.tmpdir(), "task-engine-cli-")); });
+  afterEach(() => { fs.rmSync(proj, { recursive: true, force: true }); });
+
+  function writeManual() {
+    const dayDir = path.join(proj, ".claude", "memory", "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    const file = path.join(dayDir, "manual.md");
+    fs.writeFileSync(file, [
+      "---", "name: manual-2026-06-09", "metadata:", "  type: project", "---", "",
+      "- [ ] MANUAL-20260609-001 [LOW] Write docs (2026-06-09)",
+      "      module: docs",
+      "",
+    ].join("\n"), "utf8");
+    return file;
+  }
+  const run = (...a) => execFileSync("node", [ENGINE, ...a], {
+    cwd: proj, env: { ...process.env, CLAUDE_PROJECT_DIR: proj }, encoding: "utf8",
+  });
+
+  test("show prints the task detail", () => {
+    writeManual();
+    const out = run("show", "MANUAL-20260609-001");
+    assert.match(out, /Write docs/);
+    assert.match(out, /module: docs/);
+  });
+
+  test("remove via -r short flag deletes the manual task", () => {
+    const file = writeManual();
+    const out = run("-r", "MANUAL-20260609-001");
+    assert.match(out, /Removed: MANUAL-20260609-001/);
+    assert.doesNotMatch(fs.readFileSync(file, "utf8"), /MANUAL-20260609-001/);
+  });
+});
+
+// ── resolvedConfidence ───────────────────────────────────────────────────────────
+
+describe("resolvedConfidence", () => {
+  test("returns 'high' when referenced file no longer exists", () => {
+    const f = { file: "definitely/missing/__nope__.xyz", discovered: "2026-01-01" };
+    assert.equal(resolvedConfidence(f, "2026-06-09"), "high");
+  });
+
+  test("returns null when no file field", () => {
+    assert.equal(resolvedConfidence({ discovered: "2026-01-01" }, "2026-06-09"), null);
+  });
+});
+
+// ── getFindingDetail ─────────────────────────────────────────────────────────────
+
+describe("getFindingDetail", () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "task-lib-test-")); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  test("returns MANUAL task with its indented continuation lines", () => {
+    const dayDir = path.join(tmpDir, "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    fs.writeFileSync(path.join(dayDir, "manual.md"), [
+      "## manual",
+      "- [ ] MANUAL-20260609-001 [LOW] Write docs (2026-06-09)",
+      "      module: docs",
+      "- [ ] MANUAL-20260609-002 [LOW] Other (2026-06-09)",
+      "      module: misc",
+    ].join("\n"), "utf8");
+
+    const r = getFindingDetail(tmpDir, "MANUAL-20260609-001");
+    assert.equal(r.found, true);
+    assert.match(r.text, /module: docs/);
+    assert.doesNotMatch(r.text, /Other/);
+  });
+
+  test("returns full SR block text", () => {
+    const dayDir = path.join(tmpDir, "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    fs.writeFileSync(path.join(dayDir, "sharp-review.md"), [
+      "---", "name: r", "---",
+      "### [SR-20260609-001] [HIGH] a.js — Bug",
+      "- **Status:** OPEN",
+      "- **Suggestion:** Fix it carefully",
+      "",
+      "### [SR-20260609-002] [LOW] b.js — Other",
+      "- **Status:** OPEN",
+    ].join("\n"), "utf8");
+
+    const r = getFindingDetail(tmpDir, "SR-20260609-001");
+    assert.equal(r.found, true);
+    assert.match(r.text, /Fix it carefully/);
+    assert.doesNotMatch(r.text, /Other/);
+  });
+
+  test("returns error for missing id", () => {
+    const r = getFindingDetail(tmpDir, "SR-20260609-999");
+    assert.equal(r.found, false);
+  });
+});
+
+// ── scan module inference fallback ───────────────────────────────────────────────
+
+describe("scanMemoryForFindings module inference", () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "task-lib-test-")); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  test("infers module from file path when no **Module:** line", () => {
+    const dayDir = path.join(tmpDir, "2026", "06", "09");
+    fs.mkdirSync(dayDir, { recursive: true });
+    fs.writeFileSync(path.join(dayDir, "sharp-review.md"), [
+      "---", "name: r", "---",
+      "### [SR-20260609-001] [HIGH] mesh/sizing.py — Bug",
+      "- **Status:** OPEN",
+    ].join("\n"), "utf8");
+
+    const findings = scanMemoryForFindings(tmpDir);
+    assert.equal(findings[0].module, "mesh");
+  });
+});
+
+// ── formatScopeReport options ────────────────────────────────────────────────────
+
+describe("formatScopeReport", () => {
+  const today = "2026-06-09";
+  const mk = (id, sev, mod) => ({
+    id, severity: sev, summary: "x", status: "open", discovered: "2026-06-09",
+    module: mod, file: "", _scopeRoot: "/proj",
+  });
+
+  test("renders severity counts in scope header", () => {
+    const findings = [mk("SR-1", "HIGH", "a"), mk("SR-2", "LOW", "a")];
+    const out = formatScopeReport(findings, [], today);
+    assert.match(out, /1 HIGH/);
+    assert.match(out, /1 LOW/);
+  });
+
+  test("--module filters to one module", () => {
+    const findings = [mk("SR-1", "HIGH", "mesh"), mk("SR-2", "LOW", "solver")];
+    const out = formatScopeReport(findings, [], today, { moduleFilter: "mesh" });
+    assert.match(out, /SR-1/);
+    assert.doesNotMatch(out, /SR-2/);
+  });
+
+  test("--module footer counts only the filtered module's findings", () => {
+    const fixed = (id, mod) => ({ ...mk(id, "LOW", mod), status: "fixed" });
+    const findings = [mk("SR-1", "HIGH", "mesh"), fixed("SR-2", "mesh"),
+                      mk("SR-3", "LOW", "solver"), fixed("SR-4", "solver")];
+    const out = formatScopeReport(findings, [], today, { moduleFilter: "mesh" });
+    assert.match(out, /total: 1 open \(2 findings\)/); // 2 mesh findings, not all 4
+  });
+
+  test("--severity sort orders HIGH before LOW within module", () => {
+    const findings = [mk("SR-low", "LOW", "a"), mk("SR-high", "HIGH", "a")];
+    const out = formatScopeReport(findings, [], today, { sortBySeverity: true });
+    assert.ok(out.indexOf("SR-high") < out.indexOf("SR-low"));
+  });
+
+  test("emits likely-resolved mark commands for missing-file findings", () => {
+    const f = { id: "SR-gone", severity: "HIGH", summary: "x", status: "open",
+      discovered: "2026-01-01", module: "a", file: "definitely/missing/__nope__.xyz",
+      _scopeRoot: "/proj" };
+    const out = formatScopeReport([f], [], today);
+    assert.match(out, /likely-resolved \(high\)/);
+    assert.match(out, /todo mark SR-gone fixed/);
+  });
+
+  test("truncates long summaries with a show pointer", () => {
+    const longSummary = "z".repeat(150);
+    const f = mk("SR-long", "HIGH", "a");
+    f.summary = longSummary;
+    const out = formatScopeReport([f], [], today);
+    assert.match(out, /…\s*\(todo show SR-long\)/);
+    assert.doesNotMatch(out, new RegExp("z".repeat(150)));
   });
 });
 

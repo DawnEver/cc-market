@@ -168,3 +168,41 @@ describe('readTranscriptTail', async () => {
     assert.deepEqual(result[1], { also: 'valid' });
   });
 });
+
+// ── inferModuleFromPath ──
+
+describe('inferModuleFromPath', async () => {
+  const { inferModuleFromPath } = await import(sharedLibUrl);
+
+  it('returns first dir segment', () => {
+    assert.equal(inferModuleFromPath('mesh/sizing.py'), 'mesh');
+  });
+
+  it('skips generic wrapper dirs', () => {
+    assert.equal(inferModuleFromPath('src/solver/core.py'), 'solver');
+    assert.equal(inferModuleFromPath('packages/lib/util.js'), 'util'); // all generic → file basename
+  });
+
+  it('uses basename (no ext) for root files', () => {
+    assert.equal(inferModuleFromPath('config.json'), 'config');
+  });
+
+  it('handles backslashes and leading ./', () => {
+    assert.equal(inferModuleFromPath(String.raw`.\mesh\a.py`), 'mesh');
+  });
+
+  it('returns empty string for no file', () => {
+    assert.equal(inferModuleFromPath(''), '');
+    assert.equal(inferModuleFromPath(null), '');
+  });
+
+  it('falls back to file basename when all dirs generic', () => {
+    assert.equal(inferModuleFromPath('src/lib/x.js'), 'x');
+    assert.equal(inferModuleFromPath('src/index.js'), 'index');
+  });
+
+  it('drops . and .. relative segments', () => {
+    assert.equal(inferModuleFromPath('../mesh/sizing.py'), 'mesh');
+    assert.equal(inferModuleFromPath('./././mesh/a.py'), 'mesh');
+  });
+});

@@ -193,10 +193,12 @@ describe('parseFindingsFromMarkdown', () => {
     assert.equal(findings[0].module, 'test');
   });
 
-  it('defaults module to empty when no explicit field', () => {
+  it('infers module from file path when no explicit field', () => {
     const findings = parseFindingsFromMarkdown(sample, '2026-06-07');
-    // test.js has no Module field → no inference, just empty
-    assert.equal(findings[2].module, '');
+    // test.js (root file) → basename without extension
+    assert.equal(findings[2].module, 'test');
+    // lib.mjs (root file) → basename without extension
+    assert.equal(findings[1].module, 'lib');
   });
 
   it('handles empty content', () => {

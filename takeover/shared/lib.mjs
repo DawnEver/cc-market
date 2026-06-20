@@ -72,6 +72,31 @@ export function dateToPath(date) {
 
 export function normalizePath(p) { return p.replace(/\\/g, '/'); }
 
+// ── inferModuleFromPath: derive a grouping "module" from a file path ──
+//
+// mesh/sizing.py → mesh ; src/solver/core.py → solver ; config.json → config
+// Generic top-level wrapper dirs (src, lib, app, …) are skipped so the module
+// reflects the meaningful subsystem, not the build layout. Returns '' for no path.
+
+const GENERIC_DIRS = new Set([
+  'src', 'lib', 'app', 'pkg', 'internal', 'source', 'sources',
+  'test', 'tests', 'spec', 'scripts', 'packages',
+]);
+
+export function inferModuleFromPath(file) {
+  if (!file) return '';
+  const segs = normalizePath(file).split('/').filter(s => s && s !== '.' && s !== '..');
+  if (segs.length === 0) return '';
+  if (segs.length === 1) return segs[0].replace(/\.[^.]+$/, '') || '';
+  const dirs = segs.slice(0, -1);
+  for (const seg of dirs) {
+    if (!GENERIC_DIRS.has(seg.toLowerCase())) return seg;
+  }
+  // All dirs are generic wrappers (src/, lib/, …) → the wrapper name is
+  // meaningless for grouping, so fall back to the file's basename.
+  return segs[segs.length - 1].replace(/\.[^.]+$/, '') || segs[segs.length - 1];
+}
+
 // ── SR finding regex patterns (contract between sharp-review and rem) ──
 
 export const SR_ID_RE = /SR-\d{8}-\d{3}/g;
@@ -116,7 +141,7 @@ export function parseFindingsFromMarkdown(content, date) {
       discovered: hdr[1].slice(3, 11).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'),
       resolvedDate,
       category: 'Bug',
-      module: moduleMatch ? moduleMatch[1].trim() : '',
+      module: moduleMatch ? moduleMatch[1].trim() : inferModuleFromPath(file),
       suggestion: '',
       detail: '',
     });

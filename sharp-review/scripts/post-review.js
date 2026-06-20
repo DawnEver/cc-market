@@ -116,6 +116,11 @@ if (existsSync(memFile)) {
   console.log(`[post-review] Appended to existing session file (${findings.length} total findings)`);
 }
 
+// Note: we deliberately do NOT write an explicit `**Module:**` line per finding.
+// The module is inferred lazily from the file path at scan/report time
+// (shared/lib.mjs inferModuleFromPath, used by task-lib scanMemoryForFindings),
+// so grouping stays correct even if a reviewer omits the module or a file is
+// later moved — there's no stale module string to drift.
 const frontmatter = reviewFrontmatter(findings, date);
 const dirPath = join(MEMORY_DIR, datePath);
 if (!existsSync(dirPath)) mkdirSync(dirPath, { recursive: true });
