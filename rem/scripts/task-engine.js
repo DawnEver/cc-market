@@ -10,7 +10,7 @@ import {
   ROOT,
   scanManualTasks,
   scanAllScopes, formatScopeReport,
-  markFinding,
+  markFinding, resolvedConfidence, getFindingDetail, parseReportOpts,
 } from './task-lib.mjs';
 
 const PREFIX = '[task-engine]';
@@ -192,15 +192,34 @@ function handleMark(id, status) {
 
 // ── report (multi-scope) ──
 
-function handleReport(today) {
-  const { findings, manual } = scanAllScopes();
+function handleReport(today, opts = {}) {
+  let { findings, manual } = scanAllScopes();
 
   if (findings.length === 0 && manual.length === 0) {
     console.log(`${PREFIX} No tasks found`);
     return;
   }
 
-  const report = formatScopeReport(findings, manual, today);
+  // --auto-close-resolved: flip high-confidence (file-missing) open findings to fixed.
+  // 'all' also closes medium-confidence (file-modified-since) findings.
+  if (opts.autoClose) {
+    // Only file-based SR findings have a resolved-confidence signal; manual
+    // tasks (file='') never qualify, so don't bother iterating them.
+    const open = findings.filter(f => f.status === 'open');
+    let closed = 0;
+    for (const f of open) {
+      const conf = resolvedConfidence(f, today);
+      if (conf === 'high' || (opts.autoClose === 'all' && conf === 'medium')) {
+        const memDir = join(f._scopeRoot, '.claude', 'memory');
+        const r = markFinding(memDir, f.id, 'fixed');
+        if (r.found) { closed++; console.log(`${PREFIX} auto-closed ${f.id} (${conf} confidence)`); }
+      }
+    }
+    console.log(`${PREFIX} auto-closed ${closed} finding${closed !== 1 ? 's' : ''}`);
+    ({ findings, manual } = scanAllScopes()); // re-scan to reflect changes
+  }
+
+  const report = formatScopeReport(findings, manual, today, opts);
   if (!report.includes('total:')) {
     // formatScopeReport returned minimal output — print stats directly
     const openCount = findings.filter(f => f.status === 'open').length + manual.filter(t => t.status === 'open').length;
@@ -221,6 +240,23 @@ function handleReport(today) {
   console.log(`${PREFIX} ${parts.join(', ')}  (${VERSION})`);
 }
 
+// ── show ──
+
+function handleShow(id) {
+  if (!id) { console.error(`${PREFIX} show requires a task ID`); process.exit(1); }
+  const { findings, manual } = scanAllScopes();
+  const all = [...findings, ...manual];
+  const match = all.find(f => f.id === id);
+  const scope = match ? match._scopeRoot : findMemoryScope();
+  const memDir = join(scope, '.claude', 'memory');
+  const result = getFindingDetail(memDir, id);
+  if (!result.found) {
+    console.error(`${PREFIX} ${result.error}`);
+    process.exit(1);
+  }
+  console.log(result.text);
+}
+
 // ── help ──
 
 function handleHelp() {
@@ -229,13 +265,18 @@ function handleHelp() {
 Usage:
   todo                      Show open tasks + stats (default)
   todo report, check        Same as above
+       --module name                filter to one module
+       --severity, --sort           sort each module by severity (HIGH→LOW)
+       --auto-close-resolved [all]  flip high-confidence resolved findings to fixed
+                                    ('all' also closes medium-confidence)
   todo <summary>            Add a manual task (implicit add)
   todo add, -a <summary>    Add a manual task (explicit)
        --severity HIGH|MEDIUM|LOW   (default MEDIUM)
        --module name                (default 'manual')
        --scope path                 target scope (default: auto-detect from cwd)
+  todo show <id>            Show full detail of a finding/task
   todo remove, rm, -r <id>  Remove manual task or close SR finding
-  todo mark <id> <status>   Set status: open | fixed | closed
+  todo mark <id> <status>   Set status: open | fixed | closed (aliases: done, resolved)
   todo help                 Show this help`);
 }
 
@@ -250,9 +291,10 @@ function main() {
   const cmd = args[0];
 
   if (cmd === '--add' || cmd === 'add' || cmd === '-a')    return handleAdd(args.slice(1), today, null);
-  if (cmd === '--remove' || cmd === '--rm' || cmd === 'remove' || cmd === 'rm') return handleRemove(args[1]);
+  if (cmd === '--remove' || cmd === '--rm' || cmd === 'remove' || cmd === 'rm' || cmd === '-r') return handleRemove(args[1]);
   if (cmd === '--mark' || cmd === 'mark' || cmd === '-m') return handleMark(args[1], args[2]);
-  if (cmd === '--report' || cmd === 'report' || cmd === 'check')    return handleReport(today);
+  if (cmd === 'show' || cmd === '--show') return handleShow(args[1]);
+  if (cmd === '--report' || cmd === 'report' || cmd === 'check')    return handleReport(today, parseReportOpts(args.slice(1)));
   if (cmd === 'help' || cmd === '--help' || cmd === '-h') return handleHelp();
 
   handleAdd(args.slice(1), today, args.join(' '));

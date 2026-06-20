@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 import { DAY_MS } from '../lib.mjs';
-import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown } from '../shared/lib.mjs';
+import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown, inferModuleFromPath } from '../shared/lib.mjs';
 import { findAllScopes, extractDateFromPath } from '../lib.mjs';
 
 // ── Paths ──
@@ -20,17 +20,32 @@ export function isStale(finding, today) {
   return (new Date(today).getTime() - discovered) > STALE_DAYS * DAY_MS;
 }
 
-export function checkFileModified(finding, today) {
-  if (!finding.file) return false;
+// Heuristic confidence that an open finding is already resolved:
+//   'high'   → the referenced file no longer exists (clearly addressed/removed)
+//   'medium' → the file was modified after the finding was discovered
+//   null     → no signal (or no file to check)
+export function resolvedConfidence(finding, today) {
+  if (!finding.file) return null;
   try {
     const absPath = join(ROOT, finding.file);
-    if (!existsSync(absPath)) return true;
+    if (!existsSync(absPath)) return 'high';
     const mtime = statSync(absPath).mtimeMs;
     const discovered = new Date(finding.discovered).getTime();
     const todayStart = new Date(today).getTime();
-    if (discovered >= todayStart) return false;
-    return mtime > discovered;
-  } catch { return false; }
+    if (discovered >= todayStart) return null;
+    return mtime > discovered ? 'medium' : null;
+  } catch { return null; }
+}
+
+export function checkFileModified(finding, today) {
+  return resolvedConfidence(finding, today) !== null;
+}
+
+// Severity ordering for sorting (lower = more urgent).
+export const SEVERITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+export function severityRank(sev) {
+  const r = SEVERITY_ORDER[(sev || '').toUpperCase()];
+  return r === undefined ? 3 : r;
 }
 
 export function detectScale(openCount) {
@@ -123,7 +138,7 @@ export function scanMemoryForFindings(memDir) {
               status,
               discovered: hdr[1].slice(3, 11).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'),
               category: 'Bug',
-              module: moduleMatch ? moduleMatch[1].trim() : '',
+              module: moduleMatch ? moduleMatch[1].trim() : inferModuleFromPath(hdr[3].trim()),
               suggestion: '',
               detail: '',
             });
@@ -196,7 +211,30 @@ export function scanAllScopes() {
   return { findings: allFindings, manual: allManual };
 }
 
-export function formatScopeReport(allFindings, allManual, today) {
+// Cap the visible summary text (the "show <id>" suffix is added on top, so a
+// truncated line is intentionally longer than SUMMARY_MAX — the cap bounds the
+// noisy finding text, not the whole line).
+const SUMMARY_MAX = 100;
+function truncateSummary(s, id) {
+  if (!s || s.length <= SUMMARY_MAX) return s;
+  return `${s.slice(0, SUMMARY_MAX).trimEnd()}… (todo show ${id})`;
+}
+
+function severityCounts(items) {
+  const c = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+  for (const f of items) {
+    const s = (f.severity || '').toUpperCase();
+    if (c[s] !== undefined) c[s]++;
+  }
+  const parts = [];
+  if (c.HIGH) parts.push(`${c.HIGH} HIGH`);
+  if (c.MEDIUM) parts.push(`${c.MEDIUM} MEDIUM`);
+  if (c.LOW) parts.push(`${c.LOW} LOW`);
+  return parts.join(', ');
+}
+
+export function formatScopeReport(allFindings, allManual, today, opts = {}) {
+  const { moduleFilter = null, sortBySeverity = false } = opts;
   const lines = [];
   const PREFIX = '[task-engine]';
 
@@ -221,41 +259,63 @@ export function formatScopeReport(allFindings, allManual, today) {
   let totalOpen = 0;
   let totalFindings = 0;
   let totalManual = 0;
+  let renderedScopes = 0;
+
+  const resolvedHints = [];
 
   for (const [scope, { findings, manual }] of byScope) {
     const scopeRel = relative(ROOT, scope).replace(/\\/g, '/') || '.';
-    const allOpen = [
+    let allOpen = [
       ...findings.filter(f => f.status === 'open'),
       ...manual.filter(t => t.status === 'open'),
     ];
+    if (moduleFilter) allOpen = allOpen.filter(f => (f.module || 'unknown') === moduleFilter);
 
     if (allOpen.length === 0 && findings.length === 0 && manual.length === 0) continue;
+    if (moduleFilter && allOpen.length === 0) continue;
 
+    // Footer counts must respect --module: count only the filtered module's items,
+    // not every finding in the scope (otherwise "(N findings)" overstates).
+    const inFilter = f => !moduleFilter || (f.module || 'unknown') === moduleFilter;
     totalOpen += allOpen.length;
-    totalFindings += findings.length;
-    totalManual += manual.length;
+    totalFindings += findings.filter(inFilter).length;
+    totalManual += manual.filter(inFilter).length;
+    renderedScopes++;
 
-    lines.push(`${PREFIX} scope: ${scopeRel} (${allOpen.length} open)`);
+    const sevSummary = severityCounts(allOpen);
+    lines.push(`${PREFIX} scope: ${scopeRel} (${allOpen.length} open${sevSummary ? ` — ${sevSummary}` : ''})`);
 
     if (allOpen.length > 0) {
       const byMod = groupByModule(allOpen);
       const sorted = [...byMod].sort(([a], [b]) => a.localeCompare(b));
 
       for (const [mod, items] of sorted) {
+        const ordered = sortBySeverity
+          ? [...items].sort((a, b) => severityRank(a.severity) - severityRank(b.severity))
+          : items;
         lines.push(`  ## ${mod}`);
-        for (const f of items) {
+        for (const f of ordered) {
           const stale = isStale(f, today) ? ' ⚠ stale' : '';
-          const likely = checkFileModified(f, today) ? ' ⚠ likely-resolved' : '';
-          lines.push(`  - [ ] ${f.id} [${f.severity}] ${f.summary} (${f.discovered})${stale}${likely}`);
+          const conf = resolvedConfidence(f, today);
+          const likely = conf ? ` ⚠ likely-resolved (${conf})` : '';
+          if (conf) resolvedHints.push({ id: f.id, conf });
+          lines.push(`  - [ ] ${f.id} [${f.severity}] ${truncateSummary(f.summary, f.id)} (${f.discovered})${stale}${likely}`);
         }
       }
     }
     lines.push('');
   }
 
-  const scopeCount = [...byScope].filter(([_, v]) =>
-    v.findings.length > 0 || v.manual.length > 0
-  ).length;
+  if (resolvedHints.length > 0) {
+    lines.push(`${PREFIX} ${resolvedHints.length} likely-resolved — close with:`);
+    for (const { id, conf } of resolvedHints) {
+      lines.push(`  todo mark ${id} fixed   # ${conf} confidence`);
+    }
+    lines.push(`  (or run: todo report --auto-close-resolved  to auto-close high-confidence)`);
+    lines.push('');
+  }
+
+  const scopeCount = renderedScopes; // count only scopes actually shown (respects --module)
 
   const parts = [];
   if (totalFindings > 0) parts.push(`${totalFindings} findings`);
@@ -330,8 +390,60 @@ function markManualTask(memDir, id, status) {
   return { found: true, file: target, id, status };
 }
 
+// ── Report flag parsing ──
+//
+// Parses the option flags accepted by `todo report` / `todo check`:
+//   --module <name>            → opts.moduleFilter
+//   --severity | --sort        → opts.sortBySeverity
+//   --auto-close-resolved [all]→ opts.autoClose ('high' | 'all')
+export function parseReportOpts(args) {
+  const opts = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--module' && args[i + 1]) opts.moduleFilter = args[++i];
+    else if (args[i] === '--severity' || args[i] === '--sort') opts.sortBySeverity = true;
+    else if (args[i] === '--auto-close-resolved') {
+      if (args[i + 1] === 'all') { i++; opts.autoClose = 'all'; }
+      else opts.autoClose = 'high';
+    }
+  }
+  return opts;
+}
+
+// ── Show full detail of a single finding/task ──
+
+export function getFindingDetail(memDir, id) {
+  const fileName = id.startsWith('SR-') ? 'sharp-review.md'
+    : id.startsWith('MANUAL-') ? 'manual.md' : null;
+  if (!fileName) return { found: false, error: `Unknown ID format: ${id}` };
+
+  let result = null;
+  walkFiles(memDir, fileName, full => {
+    const content = readFileSync(full, 'utf8');
+    if (!content.includes(id)) return false;
+    if (fileName === 'sharp-review.md') {
+      const blocks = content.split(/\n(?=###\s+\[SR-)/);
+      const block = blocks.find(b => b.includes(`[${id}]`));
+      if (!block) return false;
+      result = { found: true, file: full, text: block.trim() };
+    } else {
+      const lines = content.split('\n');
+      const idx = lines.findIndex(l => l.includes(id));
+      if (idx < 0) return false;
+      const out = [lines[idx]];
+      // Continuation lines are indented (canonically 6 spaces); accept any
+      // leading-whitespace line so non-standard indentation isn't silently dropped.
+      for (let i = idx + 1; i < lines.length && /^\s+\S/.test(lines[i]); i++) out.push(lines[i]);
+      result = { found: true, file: full, text: out.join('\n').trim() };
+    }
+    return true;
+  });
+
+  return result || { found: false, error: `${id} not found` };
+}
+
 export function markFinding(memDir, id, status) {
-  const norm = (status || '').toLowerCase();
+  let norm = (status || '').toLowerCase();
+  if (norm === 'done' || norm === 'resolved') norm = 'fixed'; // friendly aliases
   if (!VALID_STATUSES.includes(norm)) {
     return { found: false, error: `Invalid status: ${status} (expected open|fixed|closed)` };
   }

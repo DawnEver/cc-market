@@ -51,9 +51,9 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `rem/tests/scope-validate.test.mjs` | 6 | scope isolation check/fix, intermediate file integrity |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
 | `rem/tests/migrations.test.mjs` | 9 | `migrate()`: volatile field stripping, _meta.json import, gitignore block normalization, legacy task-dir cleanup, idempotence |
-| `rem/tests/task-lib.test.mjs` | 36 | scan, parse, markFinding, scanAllScopes, formatScopeReport |
+| `rem/tests/task-lib.test.mjs` | 58 | scan, parse, markFinding, scanAllScopes, formatScopeReport (module/severity/filter opts + footer counts), resolvedConfidence, getFindingDetail, parseReportOpts, CLI auto-close/show/remove |
 | `rem/tests/check-docs.test.mjs` | 29 | collectDocs, crossReference, formatReport, CLI |
-| `sharp-review/tests/lib.test.mjs` | 17 | SR-ID parsing, module/category inference, frontmatter |
+| `sharp-review/tests/lib.test.mjs` | 21 | SR-ID parsing, module/category inference (incl. path inference), frontmatter |
 | `sharp-review/tests/manifest.test.mjs` | 42 | classifyLowValue, numstat/name-status parsing, buildManifest, decideMode, renderManifestText, extractHunkHeaders |
 | `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
 | `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
