@@ -87,6 +87,25 @@ state shape, and failure handling). Stop conditions and the safety caps are in
 
 ## Cleanup (on exit — normal stop or abort)
 
+- **Squash the round commits into one (after the loop ends, normal stop only).** Once
+  iteration is finished, attempt to collapse the per-round commits this run created into a
+  single coherent commit, so history shows one logical change rather than `round 1 / 2 / 3`
+  noise. Use a non-interactive soft reset (never `rebase -i` — it opens an editor):
+  ```bash
+  # N = number of evolve commits this run (rounds + any baseline this run made).
+  # Confirm none are already pushed/shared first; skip the squash if any are.
+  git reset --soft HEAD~N
+  git commit -m "$(cat <<'EOF'
+  feat: <combined summary of the whole evolve run>
+  EOF
+  )"
+  ```
+  Squash **only commits this evolve run authored** — never fold in pre-existing commits from
+  before the run, and never squash across a push (if a round was already pushed, leave history
+  as-is and note it). For `cc-market/` changes run the reset/commit with `git -C cc-market`.
+  With `--commit=group` the user opted into per-group commits — honor that and skip squashing.
+  If anything is uncertain (which commits are ours, already-pushed, protected branch), leave the
+  per-round commits and say so in the summary.
 - If you set it in Setup, remove `hook.taskActiveUntil` from `.claude/.rem-state.json`
   (load JSON, `delete state.hook.taskActiveUntil`, write back atomically via `.rem-state.tmp`
   + rename). If the loop crashes, the rem Stop hook auto-expires it after 30 min, so a
