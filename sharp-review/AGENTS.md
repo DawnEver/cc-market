@@ -61,7 +61,10 @@ sharp-review/
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
 │   ├── post-review.js                Write memory entry → stamp
 │   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
-├── lib.mjs                       SR-specific logic: frontmatter, markdown parsing, category inference, diff manifest, PROFILES, isLockfile/isDoc
+├── lib.mjs                       Barrel: re-exports findings/profiles/manifest + shared frontmatter helpers (stable `../lib.mjs` import path)
+├── findings.mjs                  Category inference, same-day follow-up renumber, host-agnostic mergeFindings/renderReviewMarkdown
+├── profiles.mjs                  Profile registry (PROFILES) + weighted selection (resolveWeights/globalWeightsForSources/pickProfileKey)
+├── manifest.mjs                  Diff-manifest: isLockfile/isDoc/classifyLowValue, git -z parsing, buildManifest, renderManifestText
 ├── sources.mjs                   Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 ├── tests/                        Tests (node:test)
 │   ├── lib.test.mjs              Frontmatter, category inference, markdown parsing
@@ -137,4 +140,4 @@ node --test cc-market/sharp-review/tests/*.test.mjs
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic.
-- Keep `lib.mjs` as the single source of truth for constants and shared logic.
+- Keep concern modules (`findings`/`profiles`/`manifest`) as the single source of truth for their logic; `lib.mjs` is only a re-export barrel. Add new shared logic to the matching module (or a new sibling), then export it through the barrel.
