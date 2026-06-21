@@ -54,7 +54,7 @@ See each plugin's README for detailed usage, configuration, and API reference.
 All plugins share a test suite run by the pre-commit hook (`.git/hooks/pre-commit`). Run manually:
 
 ```shell
-node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
+node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
 ```
 
 Codex host integration is exercised end-to-end (in an isolated `CODEX_HOME`, requires the

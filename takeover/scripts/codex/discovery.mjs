@@ -81,7 +81,7 @@ export function checkCodexStatus(codexPath) {
   });
 
   let authenticated = false;
-  if (doctor.status === 0) {
+  if (doctor.status === 0 && doctor.stdout) {
     try {
       const report = JSON.parse(doctor.stdout.toString());
       authenticated = report?.checks?.["auth.credentials"]?.status === "ok";

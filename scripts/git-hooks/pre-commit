@@ -70,8 +70,10 @@ if [ "$run_python" -eq 1 ]; then
   # but errors at runtime, so require a working `--version`.
   py=""; in_venv=0
   venv_py="$HOME/.local/share/claude/watch/venv/bin/python"
-  [ -x "$venv_py" ] || venv_py="$HOME/.local/share/claude/watch/venv/Scripts/python.exe"
-  if [ -x "$venv_py" ] && "$venv_py" --version > /dev/null 2>&1; then
+  # Use -f (not -x): on Windows/WSL NTFS mounts the exec bit may not be set on python.exe;
+  # the `--version` probe below is the real executability check.
+  [ -f "$venv_py" ] || venv_py="$HOME/.local/share/claude/watch/venv/Scripts/python.exe"
+  if [ -f "$venv_py" ] && "$venv_py" --version > /dev/null 2>&1; then
     py="$venv_py"; in_venv=1
   else
     for cand in python python3 py; do
