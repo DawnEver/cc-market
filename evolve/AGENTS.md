@@ -45,8 +45,9 @@ evolve/
 ├── skills/evolve/
 │   ├── SKILL.md                     /evolve entry: usage, setup, per-round overview, cleanup
 │   └── reference/
-│       ├── round-protocol.md        Full ordered per-round protocol + state shape
-│       └── termination.md           clean/resolved/ask + safety caps
+│       ├── round-protocol.md        Full ordered per-round protocol + failure handling
+│       ├── termination.md           clean/resolved/ask + safety caps
+│       └── state-schema.md          evolveState JSON schema (debug-only; delegate to evolve.mjs)
 ├── scripts/evolve.mjs               State/grouping/termination helper (importable + CLI)
 ├── tests/evolve.test.mjs            node:test (13 tests)
 ├── CLAUDE.md / AGENTS.md / README.md

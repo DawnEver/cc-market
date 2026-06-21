@@ -81,9 +81,10 @@ to state/file (via the helper) rather than kept only in conversation, and each r
 critique/fix work is delegated to subagents — the main loop holds only the structured results
 and short summaries.
 
-**Before executing a round, read `reference/round-protocol.md`** (the full ordered protocol,
-state shape, and failure handling). Stop conditions and the safety caps are in
-`reference/termination.md`.
+**Before executing a round, read `reference/round-protocol.md`** (the full ordered protocol +
+failure handling). Stop conditions and safety caps → `reference/termination.md`; the
+`evolveState` JSON schema (debugging only — use `scripts/evolve.mjs`, never hand-edit) →
+`reference/state-schema.md`.
 
 ## Cleanup (on exit — normal stop or abort)
 

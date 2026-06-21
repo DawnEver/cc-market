@@ -247,24 +247,11 @@ and route it through the attention gate instead of swallowing it.
   human/ai branches, the `defer` ≠ drop guarantee, and the `--until=clean` convergence caveat)
   before acting on an incomplete round.
 
-## State shape (`.claude/.rem-state.json`)
+## State shape
 
-```jsonc
-{
-  "hook": { "taskActiveUntil": 0 },      // set during loop (rem only), deleted on exit
-  "evolveState": {
-    "round": 0,
-    "until": "ask",                       // ask | clean | resolved
-    "maxRounds": 10,                       // hard backstop (all modes)
-    "maxAgents": 8,                        // max concurrent fix agents per batch
-    "lastRoundAt": null,
-    "emptyRounds": 0,                      // consecutive rounds with no new OPEN findings
-                                           //   (incremented by the termination policy)
-    "findings": [ /* { id, file, summary, status, reason?, unfixedRounds, arch? }
-                     id is an SR-YYYYMMDD-NNN (sharp-review) or a "file|summary" string (fallback) */ ]
-  }
-}
-```
+The `evolveState` schema in `.claude/.rem-state.json` is a debugging/inspection reference —
+in the live flow you delegate all state I/O to `scripts/evolve.mjs` and never touch the JSON.
+Full schema → `reference/state-schema.md`.
 
 ## Failure handling
 
