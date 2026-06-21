@@ -77,9 +77,11 @@ codex exec 'Run a sharp review of the current changes.'
 codex exec '/evolve --until 1 --dry-run'
 ```
 
-**Pass:** step 1 critique invokes the sharp-review skill directly (raw fan-out, not `Workflow`),
-step 2 fans out fixes via `spawn_agent` per disjoint group, and `taskActiveUntil` is set at round
-start so the Stop hook holds off until the round completes.
+**Pass:** step 1 critique runs the sharp-review skill host-agnostically and reads OPEN findings
+from its backlog (evolve does NOT branch on host here — sharp-review picks Workflow vs raw fan-out
+internally); step 2 fans out fixes via `spawn_agent` per disjoint group (the one evolve-layer host
+branch); and `taskActiveUntil` is set at round start so the Stop hook holds off until the round
+completes.
 
 ## 5. Cross-host parity (optional)
 

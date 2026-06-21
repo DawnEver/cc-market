@@ -12,7 +12,8 @@ plugin: invoked via `/evolve`, no hook.
   Setup: pre-flight git + dirty-tree check; require sharp-review/rem/todo; init state via scripts/evolve.mjs
   Per round (reference/round-protocol.md):
     0. Pre-flight (dirty-tree re-check, cc-market repo check)
-    1. Critique via Workflow({name:'sharp-review'}) → merged findings → prioritize(minSeverity)
+    1. Critique: run sharp-review skill (host-agnostic) → read OPEN findings from backlog
+       (seedFromSharpReview) → prioritize(minSeverity)
     2. Fan-out fix: groupFindings → disjoint groups → parallel agents (cross-cutting = 1 serial)
     3. Review un-fixed → classify reason
     4. Human gate (arch change / won't-fix / unpassable test); headless → defer
@@ -26,10 +27,12 @@ plugin: invoked via `/evolve`, no hook.
 
 ### Host adaptivity (Claude Code + Codex)
 
-evolve runs from the main loop on both hosts; only two tool names differ — step 1 critique
-(`Workflow({name:'sharp-review'})` on Claude vs. invoking the `sharp-review` skill's raw
-fan-out directly on Codex) and step 2 fan-out fix (`Agent` per group vs. `spawn_agent` per
-group). Helpers, gates, TDD, commits are host-agnostic. Full substitution table →
+evolve runs from the main loop on both hosts. **Exactly one touch point is host-aware:** the
+step-2 fan-out fix (`Agent` per group on Claude vs. `spawn_agent` per group on Codex) — spawning
+fix subagents is evolve's own orchestration primitive, so this host-awareness is irreducible.
+Step-1 critique is **not** host-aware here: evolve just runs the `sharp-review` skill and reads
+OPEN findings from its backlog (`seedFromSharpReview`); the Workflow-vs-raw-fan-out fork lives
+entirely inside sharp-review. Helpers, gates, TDD, commits are host-agnostic. Detail →
 `reference/round-protocol.md` § Host adaptivity. (On Codex, set `taskActiveUntil` at round
 start — no `background_tasks` field — so the Stop hook doesn't fire mid-round.)
 

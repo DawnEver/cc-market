@@ -125,8 +125,10 @@ Codex 有原生并行 `spawn_agent`,**不降级**。设计要点:
   测试 `tests/post-review-raw.test.mjs`(2 例 E2E)+ 既有 `merge-render.test.mjs`(8 例)。
 - ✅ `sharp-review/SKILL.md`:Step 3 拆为 **3a(Claude Workflow)/ 3b(Codex 直接并行
   `spawn_agent`/takeover `call_model` → `post-review.js --raw`)**;Step 4 双形态写盘。
-- ✅ `evolve/reference/round-protocol.md` + `AGENTS.md`:新增"Host adaptivity"替换表
-  (step 1 critique:Workflow→sharp-review skill 直调;step 2 fan-out:`Agent`→`spawn_agent`)。
+- ✅ `evolve/reference/round-protocol.md` + `AGENTS.md`:evolve 仅 **step 2 fan-out fix** 宿主
+  感知(`Agent`→`spawn_agent`,这是 evolve 自有的子代理编排原语,不可约)。**step 1 critique
+  宿主无关** —— evolve 只"跑 sharp-review skill + 读 backlog OPEN findings"(`seedFromSharpReview`),
+  Workflow-vs-raw-fan-out 的分叉只活在 sharp-review 一处,不泄漏到 evolve。
 - ✅ Codex E2E 提示词 `scripts/codex-e2e-prompts.md`(需 codex 登录的手动 `codex exec` 部分:
   MCP 工具可发现性、`.claude/rules` 注入、sharp-review/evolve 宿主分支、跨宿主产物对齐)。
   → 留给用户实跑(本期 headless 不验证)。

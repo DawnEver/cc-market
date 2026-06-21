@@ -5,13 +5,19 @@ round because a single subagent failed — filter out null results and continue.
 
 ## Host adaptivity (Claude Code vs Codex)
 
-evolve runs from the main loop on either host; only two tool names differ. The protocol below
-is written for Claude Code — when running under **Codex**, substitute:
+evolve runs from the main loop on either host. **Only one touch point is host-aware:** the
+fan-out fix (step 2), because spawning fix subagents is evolve's *own* orchestration primitive
+and the two hosts expose different ones:
 
 | Step | Claude Code | Codex |
 |---|---|---|
-| 1. Critique | `Workflow({ name: 'sharp-review' })` | invoke the `sharp-review` skill directly (its Step 3b raw fan-out: `spawn_agent`/takeover `call_model` per reviewer → `post-review.js --raw`), then read the OPEN findings from the written `sharp-review.md` backlog (same as `--seed`) |
 | 2. Fan-out fix | one `Agent` per disjoint group | one `spawn_agent` worker per disjoint group (Codex runs them in parallel and they "see each other's work" — keep file-sets disjoint exactly as below) |
+
+**Critique (step 1) is NOT host-aware in evolve.** evolve only *runs sharp-review and reads the
+OPEN findings from its backlog* — sharp-review picks its own fan-out path (Claude `Workflow` vs
+Codex raw `spawn_agent`/takeover) internally; that choice never surfaces here. Keeping the
+Workflow-vs-skill fork inside sharp-review (one place) is why step 1 reads the backlog rather
+than consuming a tool's return value.
 
 Everything else — `groupFindings`/`prioritize`/`checkTermination` (plain Node), the human gate,
 the TDD gate, scoped commits — is host-agnostic. Under Codex, set a `taskActiveUntil` window at
@@ -72,11 +78,15 @@ Goal: produce a quorum-confirmed, severity-sorted **OPEN findings list** for thi
   `seedFromSharpReview(projectRoot, date)` (it reuses `shared/lib.mjs parseFindingsFromMarkdown`
   + SR-ID parsing) rather than re-parsing the markdown by hand.
 
-Run the critique via `Workflow({ name: 'sharp-review' })` (the `sharp-review` plugin is a hard
-dependency, verified in Setup) and consume the returned `merged` findings. The plugin handles
-diff sizing (`diff-manifest.js` → review/agent/empty mode), runs ≥2 reviewers, and assigns
-stable `SR-YYYYMMDD-NNN` IDs. Its merge step already performs the ≥2-reviewer quorum/dedup, so
-evolve does **not** re-run `confirmedByQuorum` on the merged output.
+Run the critique by invoking the `sharp-review` skill (a hard dependency, verified in Setup) —
+**host-agnostic**: sharp-review itself chooses how to fan out reviewers (Claude `Workflow` vs
+Codex raw `spawn_agent`/takeover) and writes its findings to the `sharp-review.md` backlog with
+stable `SR-YYYYMMDD-NNN` IDs and ≥2-reviewer quorum/dedup already applied. evolve never sees that
+internal choice, so it does **not** consume a tool return value — instead it reads this round's
+findings from the backlog's **OPEN** entries via `seedFromSharpReview(projectRoot, date)` (the
+same path `--seed` uses). This is the *one* place the Workflow-vs-skill fork would otherwise leak
+into evolve; routing through the backlog keeps it confined to sharp-review. evolve does **not**
+re-run `confirmedByQuorum` — the quorum/dedup is already done upstream.
 
 **Finding identity (across rounds):** findings come from sharp-review, so use its SR-IDs — the
 same finding keeps its id if it recurs in a later round. New findings start at `status: OPEN`,
