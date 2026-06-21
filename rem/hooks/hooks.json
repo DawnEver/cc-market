@@ -7,6 +7,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prune-memory.js\" --evict-stale",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.js\"",
+            "timeout": 5
           }
         ]
       }

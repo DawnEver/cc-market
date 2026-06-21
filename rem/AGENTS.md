@@ -6,6 +6,7 @@ Memory management plugin for Claude Code sessions. Three-tier system: rules (alw
 
 ```
 SessionStart → prune-memory.js --evict-stale
+            → inject-rules.js (Codex-only: feed host .claude/rules into context)
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
@@ -38,6 +39,7 @@ rem/
 │   └── rem-hook.js          Stop hook: session-depth gate for /rem
 ├── scripts/
 │   ├── stamp-memory.js      Initialize .claude/memory/ and MEMORY.md index
+│   ├── inject-rules.js      SessionStart hook: inject host `.claude/rules/**/*.md` as additionalContext — Codex-only (Claude auto-loads them; no-op there)
 │   ├── prune-memory.js      Evict stale short-term, demote inactive long-term
 │   ├── touch-memory.js      Bump accessed timestamp, promote short→long
 │   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
@@ -52,6 +54,7 @@ rem/
 │   ├── frontmatter.test.mjs  frontmatter parsing, field get/set, tier, stamping
 │   ├── date-path.test.mjs    date formatting, path resolution, memory dir security
 │   ├── lib.test.mjs          index parsing, constants, file collection, state, findProjectRoot
+│   ├── inject-rules.test.mjs host detection, rule-file collection, context build
 │   └── rem-hook.test.mjs     isFreshSession, hasSubstantiveWork, decideStop
 ├── .claude/rules/           Injected every session (invariants only)
 ├── CLAUDE.md                Entry point → @AGENTS.md + @.claude/rules/*.md

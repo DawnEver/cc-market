@@ -1,3 +1,10 @@
+---
+name: codex-support
+description: cc-market 双宿主 (Claude Code + Codex) 支持设计与分阶段实施 — 单一来源生成派生工件、运行时归一、能力降级,含阶段 0 Codex CLI 调研发现
+metadata:
+  type: design
+---
+
 # cc-market 双宿主支持设计 (Claude Code + Codex)
 
 > 状态:阶段 0 完成 + 阶段 1 落地 (manifest/marketplace 生成器 + takeover E2E) · 2026-06-21
@@ -87,16 +94,29 @@ hook 事件契约、个别插件的运行时假设。
 
 **阶段 2 — hook 适配**
 - 写 hook adapter,验证 **rem** 在 Codex 下的 SessionStart/Stop 行为。
+- ✅ **`.claude/rules` 注入**(Codex 不原生加载 Claude 自动注入的 `.claude/rules/`):
+  rem 新增 SessionStart hook `scripts/inject-rules.js` —— 插件级通用机制(随 rem 的
+  `hooks.json` 一次性下发,对 Codex 打开的**任意**项目生效,读取该项目自身的
+  `.claude/rules/**/*.md` 并经 `hookSpecificOutput.additionalContext` 注入),**非逐项目插入**。
+  宿主探测用已替换的 `${CLAUDE_PLUGIN_ROOT}`(Codex 在 `.codex/plugins/…` 下,Claude 在
+  `.claude/plugins/…` 下);Claude 宿主下为 no-op(避免与原生自动加载重复)。测试
+  `rem/tests/inject-rules.test.mjs`(9 例)。
 
-**阶段 3 — Workflow 降级(本期重点)**
-- **sharp-review** / **evolve** 提供 Codex 下的顺序执行降级路径。两者目前都依赖 Claude 的
-  `Workflow`/subagent fan-out 来并行 reviewer / fix。Codex 无对应原语,设计要点:
-  - 把"并行 N reviewer"降级为"顺序跑 N 轮 reviewer",合并逻辑(merge findings、task sync)
-    不变 —— 这部分本就是宿主无关的纯函数。
-  - 降级路径必须显式 `log` 出"已降级为顺序执行,无并行",不静默砍能力。
-  - 抽出一个 `runReviewers(reviewers, { parallel })` 入口:`parallel:true` 走 Workflow,
-    `parallel:false` 走顺序 —— 宿主探测决定走哪条,核心 review 逻辑单一实现。
-- 阶段 0 的开放问题 3(Codex 是否有任何并行原语)若为"有",可免降级,直接复用并行路径。
+**阶段 3 — 宿主自适应并行 fan-out(本期重点)** —— ⚠️ 原"顺序降级"前提已被 §7.5.3 推翻:
+Codex 有原生并行 `spawn_agent`,**不降级**。设计要点:
+- **不是降级**:Claude 走 `Workflow`/`Agent`,Codex 走 `spawn_agent`(并行)或 takeover
+  `call_model`。两者都并行,无能力损失。
+- **唯一真实差异 = Workflow VM**:Claude 的 `sharp-review-workflow.js` 在沙箱 VM 里跑
+  (无 import/FS,这正是 `buildDedupKey` 内联而非 import 的原因)。Codex 无此 VM,主 agent
+  直接 `spawn_agent` + 跑普通 node 脚本。
+- **共用化改造(enabler)**:把 merge+render 纯逻辑从 Workflow VM 抽进 `sharp-review/lib.mjs`
+  (`mergeFindings`/`renderReviewMarkdown`/`buildDedupKey`,可单测)。两条路径都把"每 reviewer
+  的原始 findings"喂给同一套合并逻辑(经 `post-review.js`):
+  - Claude:Workflow 并行 reviewer → 返回原始 findings → `post-review.js` 合并+渲染+写盘。
+  - Codex:`spawn_agent` 并行 reviewer → 原始 findings → 同一 `post-review.js`。
+  - 唯一宿主差异是 fan-out 工具名;merge/render/写盘 100% 共用,且终于可单测。
+- evolve 同理:fix-agent fan-out 在 Codex 用 `spawn_agent`,纯 JS(groupFindings/
+  checkTermination)不变。
 
 > **traceme 本期不做**(见第 4 节),不在阶段计划内。
 
@@ -182,9 +202,20 @@ Codex 刻意做了 Claude 兼容摄取:
    仍待 `codex exec` 实跑验证 session_start/stop 端到端触发(需 codex 登录)。
 2. 插件 MCP server 的 `${CLAUDE_PLUGIN_ROOT}` 在运行时是否解析到安装 cache 根(`codex exec`
    + MCP tool 可发现性验证;需 codex 登录,headless 无法验证)。
-3. Codex 是否有并行 subagent / workflow 原语(决定 sharp-review/evolve 能否免降级)?
-   —— 二进制可见 `subagent_start`/`subagent_stop` 事件与 `agent_type`/`agent_transcript_path`
-   payload,**暗示 Codex 有 subagent 概念**,值得进一步挖能否程序化 fan-out。
+3. ✅ **已确认 — Codex 有原生并行 subagent**(推翻"降级为顺序"前提)。二进制证据:
+   - **`spawn_agent` 工具**:`"Spawns an agent to work on the specified task. If your current
+     task is /root/task1 and you spawn_agent with task_name "task_3" the agent will have
+     canonical task name /root/task1/task_3"`,并带 `Available models:`(可指定模型)。
+   - **并行**:`"there may be multiple workers making changes in parallel … be aware of each
+     other's work"` + 委派指引(`Designing delegated subtasks` / `After you delegate` /
+     `Do not redo delegated subagent tasks yourself`);另见 `SubAgentSource`、
+     `subAgentThreadSpawn`、`process/spawn`。
+   - **takeover MCP `call_model` 在 Codex 下同样可用**(takeover 本就是 Codex 首验目标)。
+   → **结论:sharp-review / evolve 不需要"顺序降级"。** Phase 3 改为"宿主自适应并行 fan-out":
+     Claude 用 `Workflow`/`Agent`,Codex 用 `spawn_agent`(仍并行)或 takeover `call_model`。
+     唯一真实差异:Codex 无 Workflow **VM**(沙箱无 import/FS),故 merge/render 纯逻辑须以普通
+     Node 步骤运行(Codex 主 agent 直接跑 node 脚本即可,无沙箱限制)—— 这正是把 merge/render
+     抽进 `sharp-review/lib.mjs`(宿主无关、可单测)的动因,两宿主共用。
 4. 同一目录并存 `.claude-plugin/` 与 `.codex-plugin/` 时两宿主是否互不干扰(实测验证)。
 
 ### 7.6 Codex 兼容性边界(已确认,gen-codex 已处理)

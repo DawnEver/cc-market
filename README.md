@@ -6,8 +6,8 @@ Plugins are authored once against the Claude Code format (the source of truth) a
 artifacts (`.codex-plugin/plugin.json` per plugin + `.agents/plugins/marketplace.json`) are
 generated from them by `scripts/gen-codex.mjs`. Codex ingests Claude plugins natively —
 it auto-discovers `hooks.json`/`.mcp.json`/`skills/` and substitutes `${CLAUDE_PLUGIN_ROOT}` —
-so the same plugin runs on either host. See [`CODEX-SUPPORT.md`](CODEX-SUPPORT.md) for the design
-and the validated host-compatibility contract.
+so the same plugin runs on either host. See the [codex-support design memo](.claude/memory/2026/06/21/codex-support.md)
+for the design and the validated host-compatibility contract.
 
 > Active development — backward compatibility is not guaranteed. Plugin configs, data formats, and internal APIs may change between versions without migration paths.
 
