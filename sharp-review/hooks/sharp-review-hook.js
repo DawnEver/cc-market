@@ -15,6 +15,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
 import { evaluateSources, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
+import { loadReviewConfig } from '../scripts/lib/config.mjs';
 
 // Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
 export function findGitRoot(startDir) { return findProjectRoot(startDir); }
@@ -89,8 +90,10 @@ function getDiffStat(sinceRef) {
   } catch { return { lines: 0, files: 0 }; }
 }
 
-function loadThresholds(reviewGate) {
-  const custom = reviewGate?.thresholds || {};
+// Thresholds come from the tracked, shareable `.claude/sharp-review.json` (config), NOT from
+// the gitignored runtime `reviewGate` — so a repo's trigger tuning travels with it.
+function loadThresholds(config) {
+  const custom = config?.thresholds || {};
   return {
     wave0: { ...DEFAULT_THRESHOLDS.wave0, ...custom.wave0 },
     wave1: { ...DEFAULT_THRESHOLDS.wave1, ...custom.wave1 },
@@ -197,12 +200,13 @@ async function main() {
 
   const now = Date.now();
   let reviewGate = loadReviewGate();
+  const reviewCfg = loadReviewConfig(projectDir);   // tracked config (thresholds, source tuning)
   const isFresh = !reviewGate || reviewGate.sessionId !== sessionId;
 
   if (isFresh) {
     // ── Wave gate ──
     const head = getCurrentHead();
-    const thresholds = loadThresholds(reviewGate);
+    const thresholds = loadThresholds(reviewCfg);
     const lastRef = reviewGate?.lastReviewRef;
 
     // Wave resets to 0 when HEAD moves to a new commit, otherwise increments
@@ -241,8 +245,8 @@ async function main() {
       diffStat: effectiveStat,
       waveThreshold: threshold,
       minutesSinceLastReview,
-      docsThreshold: reviewGate?.docsThreshold ?? DOCS_THRESHOLD_DEFAULT,
-      codebaseIntervalMin: reviewGate?.codebaseIntervalMin ?? CODEBASE_INTERVAL_MIN_DEFAULT,
+      docsThreshold: reviewCfg.docsThreshold ?? DOCS_THRESHOLD_DEFAULT,
+      codebaseIntervalMin: reviewCfg.codebaseIntervalMin ?? CODEBASE_INTERVAL_MIN_DEFAULT,
     });
 
     if (fired.length === 0) {
@@ -286,9 +290,8 @@ async function main() {
       firedSources: fired,        // skill passes these to pick-profile --sources
       firedReasons: reasons,
       memory: updatedMemory,
-      thresholds: reviewGate?.thresholds,
-      docsThreshold: reviewGate?.docsThreshold,
-      codebaseIntervalMin: reviewGate?.codebaseIntervalMin,
+      // Config (thresholds / source tuning) lives in the tracked .claude/sharp-review.json —
+      // never copied into this gitignored runtime state, so the two can't drift.
     };
     saveReviewGate(reviewGate);
   }

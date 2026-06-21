@@ -89,15 +89,64 @@ export const PROFILES = {
   },
 };
 
-export function resolveProfile(key) {
-  return PROFILES[key] || PROFILES.diff;
+export function resolveProfile(key, registry = PROFILES) {
+  return registry[key] || registry.diff || PROFILES.diff;
+}
+
+// ── Custom (config-driven) profiles ──
+// A project can declare extra review templates in .claude/.rem-state.json →
+// reviewGate.customProfiles (array) WITHOUT touching plugin code. Each entry is normalized into
+// the PROFILES shape and merged into the registry that pick-profile.js draws from. This keeps
+// the engine source-agnostic: a custom profile just attaches its framing/scope to an existing
+// `source` trigger (usually `codebase`, agent mode) and competes on weight like any built-in.
+//
+// Entry shape: { key, source, weight?, mode?, promptKind?, framing?, reviewScope?, label? }
+//   key, source        required (source must be a known trigger: diff|codebase|docs|deps)
+//   weight             default 0.1; non-positive/garbage → dropped at weighting time
+//   mode               'agent' (default) | 'review' | null (honor diff-manifest)
+//   promptKind         'architecture' (default, explore — no diff payload) | 'diff'
+//   reviewScope        string or string[] (joined with ', '); keep it tight — verbose framing
+//                      wastes reviewer attention
+export function normalizeCustomProfile(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const key = typeof raw.key === 'string' ? raw.key.trim() : '';
+  const source = typeof raw.source === 'string' ? raw.source.trim() : '';
+  if (!key || !source) return null; // key + source are required
+  const mode = raw.mode === null || raw.mode === 'review' || raw.mode === 'agent' ? raw.mode : 'agent';
+  const scope = Array.isArray(raw.reviewScope)
+    ? raw.reviewScope.filter(Boolean).join(', ')
+    : (typeof raw.reviewScope === 'string' && raw.reviewScope.trim() ? raw.reviewScope.trim() : null);
+  return {
+    key,
+    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : key,
+    source,
+    weight: Number.isFinite(raw.weight) && raw.weight > 0 ? raw.weight : 0.1,
+    mode,
+    promptKind: raw.promptKind === 'diff' ? 'diff' : 'architecture',
+    framing: typeof raw.framing === 'string' && raw.framing.trim() ? raw.framing.trim() : null,
+    reviewScope: scope,
+    custom: true,
+  };
+}
+
+// Build the effective registry = built-in PROFILES + normalized custom profiles. A custom entry
+// reusing a built-in key overrides it (last wins) — lets a project retune a shipped profile's
+// framing/scope. Invalid entries (missing key/source) are skipped silently.
+export function mergeProfiles(customProfiles, base = PROFILES) {
+  if (!Array.isArray(customProfiles) || !customProfiles.length) return base;
+  const merged = { ...base };
+  for (const raw of customProfiles) {
+    const p = normalizeCustomProfile(raw);
+    if (p) merged[p.key] = p;
+  }
+  return merged;
 }
 
 // Merge a per-project weight override map over the registry defaults. Unknown keys ignored;
 // non-positive / non-finite weights dropped. Returns { <key>: weight } for known profiles.
-export function resolveWeights(override) {
+export function resolveWeights(override, registry = PROFILES) {
   const weights = {};
-  for (const [key, p] of Object.entries(PROFILES)) {
+  for (const [key, p] of Object.entries(registry)) {
     const w = override && Number.isFinite(override[key]) ? override[key] : p.weight;
     if (Number.isFinite(w) && w > 0) weights[key] = w;
   }
@@ -112,13 +161,13 @@ export function resolveWeights(override) {
 // Edge case — `diff` itself ineligible (its source didn't fire, e.g. a doc-only change): the
 // orphan mass is spread across the eligible profiles in proportion to their weight, preserving
 // their relative global shares. Returns {} when nothing is eligible (caller skips the review).
-export function globalWeightsForSources(sourceKeys, override, fallbackKey = 'diff') {
+export function globalWeightsForSources(sourceKeys, override, fallbackKey = 'diff', registry = PROFILES) {
   const fired = new Set(sourceKeys || []);
-  const all = resolveWeights(override);            // global weights (non-positive already dropped)
+  const all = resolveWeights(override, registry);  // global weights (non-positive already dropped)
   const eligible = {};
   let orphan = 0;
   for (const [key, w] of Object.entries(all)) {
-    if (fired.has(PROFILES[key]?.source)) eligible[key] = w;
+    if (fired.has(registry[key]?.source)) eligible[key] = w;
     else orphan += w;
   }
   const keys = Object.keys(eligible);

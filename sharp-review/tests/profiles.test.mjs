@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PROFILES, resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from '../scripts/lib.mjs';
+import { PROFILES, resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources, normalizeCustomProfile, mergeProfiles } from '../scripts/lib.mjs';
 
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 
@@ -168,4 +168,75 @@ test('pickProfileKey — empty/garbage weights degrade to diff', () => {
 
 test('pickProfileKey — non-finite rand treated as 0', () => {
   assert.equal(pickProfileKey({ diff: 0.8, architecture: 0.2 }, NaN), 'diff');
+});
+
+// ── Custom (config-driven) profiles ──
+
+test('normalizeCustomProfile — fills defaults; requires key + source', () => {
+  assert.equal(normalizeCustomProfile(null), null);
+  assert.equal(normalizeCustomProfile({ key: 'x' }), null);          // no source
+  assert.equal(normalizeCustomProfile({ source: 'codebase' }), null); // no key
+
+  const p = normalizeCustomProfile({ key: 'arch-hygiene', source: 'codebase' });
+  assert.equal(p.key, 'arch-hygiene');
+  assert.equal(p.label, 'arch-hygiene');     // defaults to key
+  assert.equal(p.source, 'codebase');
+  assert.equal(p.weight, 0.1);               // default
+  assert.equal(p.mode, 'agent');             // default
+  assert.equal(p.promptKind, 'architecture');// default
+  assert.equal(p.framing, null);
+  assert.equal(p.reviewScope, null);
+  assert.equal(p.custom, true);
+});
+
+test('normalizeCustomProfile — normalizes scope array, mode, weight', () => {
+  const p = normalizeCustomProfile({
+    key: 'k', source: 'codebase', label: 'L', weight: 0.3, mode: 'review',
+    promptKind: 'diff', framing: ' f ', reviewScope: ['a', '', 'b'],
+  });
+  assert.equal(p.label, 'L');
+  assert.equal(p.weight, 0.3);
+  assert.equal(p.mode, 'review');
+  assert.equal(p.promptKind, 'diff');
+  assert.equal(p.framing, 'f');              // trimmed
+  assert.equal(p.reviewScope, 'a, b');       // array joined, empties dropped
+
+  // mode null (honor diff-manifest) is preserved; garbage mode → 'agent'
+  assert.equal(normalizeCustomProfile({ key: 'k', source: 'diff', mode: null }).mode, null);
+  assert.equal(normalizeCustomProfile({ key: 'k', source: 'diff', mode: 'bogus' }).mode, 'agent');
+  // non-positive weight → default 0.1
+  assert.equal(normalizeCustomProfile({ key: 'k', source: 'diff', weight: 0 }).weight, 0.1);
+});
+
+test('mergeProfiles — adds custom, skips invalid, custom can override built-in', () => {
+  assert.equal(mergeProfiles(null), PROFILES);         // no custom → identity
+  assert.equal(mergeProfiles([]), PROFILES);
+
+  const reg = mergeProfiles([
+    { key: 'arch-hygiene', source: 'codebase', weight: 0.5, reviewScope: ['boundaries'] },
+    { bogus: true },                                   // invalid → skipped
+  ]);
+  assert.ok(reg !== PROFILES, 'returns a new registry');
+  assert.equal(reg['arch-hygiene'].weight, 0.5);
+  assert.equal(reg['arch-hygiene'].source, 'codebase');
+  assert.ok(reg.diff, 'built-ins preserved');
+
+  // override a built-in key
+  const reg2 = mergeProfiles([{ key: 'diff', source: 'diff', weight: 0.9 }]);
+  assert.equal(reg2.diff.weight, 0.9);
+  assert.equal(reg2.diff.custom, true);
+});
+
+test('custom profile participates in source-gated selection', () => {
+  const reg = mergeProfiles([{ key: 'arch-hygiene', source: 'codebase', weight: 0.5 }]);
+  // codebase fired → eligible {architecture(.2), arch-hygiene(.5)}; diff cold, orphan spreads.
+  const w = globalWeightsForSources(['codebase'], null, 'diff', reg);
+  assert.ok(w['arch-hygiene'] > 0, 'custom profile is eligible when its source fires');
+  assert.ok(w.architecture > 0);
+  // No mass is dropped — eligible weights sum to the registry's total weight (1.0 base + 0.5).
+  const total = Object.values(resolveWeights(null, reg)).reduce((s, x) => s + x, 0);
+  const sum = Object.values(w).reduce((s, x) => s + x, 0);
+  assert.ok(close(sum, total), `mass conserved with custom profile (got ${sum}, total ${total})`);
+  // resolveProfile finds it via the same registry
+  assert.equal(resolveProfile('arch-hygiene', reg).key, 'arch-hygiene');
 });

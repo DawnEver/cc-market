@@ -4,6 +4,25 @@ On-demand detail behind the lean Step 1/2 commands in `SKILL.md`. Read this when
 *why* — the selection math, the mode internals, or the per-project config keys. The skill's
 happy path only needs the commands and their JSON output, not this file.
 
+## Configuration file (`.claude/sharp-review.json`)
+
+All static, per-project review config lives in a **tracked, committed** `.claude/sharp-review.json`
+— so a repo's tuning ("this codebase leans on architecture surveys", custom review templates)
+travels with it, the same for everyone. Do NOT put it in `.claude/.rem-state.json`: that file is
+gitignored runtime state (sessionId, wave, lastReviewRef …) and would make the config device-local.
+
+Every key is optional (defaults apply when absent):
+```json
+{
+  "profileWeights":      { "architecture": 0.35, "diff": 0.45 },
+  "customProfiles":      [ /* see "Custom profiles" below */ ],
+  "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
+  "inlineDiffLimit":     20000,
+  "docsThreshold":       3,
+  "codebaseIntervalMin": 10080
+}
+```
+
 ## Wave Gate (trigger thresholds)
 
 The skill is normally invoked *by* the Stop hook (`sharp-review-hook.js`) after enough change
@@ -14,10 +33,7 @@ accumulates; a manual `/sharp-review` bypasses the gate entirely. Gate logic, fo
   substantial new changes.
 - Wave resets to 0 when HEAD moves to a new commit. Skipped sessions keep accumulating.
 
-Per-project config — `.claude/.rem-state.json` → `reviewGate.thresholds`:
-```json
-{ "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } }
-```
+Config — `.claude/sharp-review.json` → `thresholds` (see the config file section above).
 
 ## Profile selection (weighting math)
 
@@ -44,8 +60,30 @@ whatever is eligible. Set a weight to 0 in `profileWeights` to opt a profile out
 
 Sources fire on: `diff` = wave gate; `codebase` = time interval; `docs` = ≥N doc files changed;
 `deps` = a lockfile changed. `architecture`/`docs`/`deps` run in **agent mode** with no diff
-payload — reviewers explore the repo. Source config (`docsThreshold`, `codebaseIntervalMin`,
-`profileWeights`) lives under `reviewGate` in `.claude/.rem-state.json`.
+payload — reviewers explore the repo. `profileWeights`, `docsThreshold`, `codebaseIntervalMin`
+all live in `.claude/sharp-review.json` (config file section above).
+
+### Custom profiles
+
+A repo can add its own review templates in `customProfiles` (array) without touching plugin code
+— `pick-profile.js` merges them into the registry so they compete on weight like any built-in.
+Each entry attaches its framing/scope to an existing `source` trigger (usually `codebase`, agent
+mode):
+
+```json
+{
+  "key": "arch-hygiene",          // required; unique (reusing a built-in key overrides it)
+  "source": "codebase",           // required; a known trigger: diff | codebase | docs | deps
+  "weight": 0.3,                  // default 0.1
+  "mode": "agent",                // "agent" (default) | "review" | null (honor diff-manifest)
+  "promptKind": "architecture",   // "architecture" (default, explore — no diff) | "diff"
+  "framing": "…one-line intent…",
+  "reviewScope": ["bullet a", "bullet b"],  // string or string[]; keep it TIGHT — verbose framing wastes reviewer attention
+  "label": "整洁锐评"
+}
+```
+
+Keep custom framings/scopes concise — low-signal instruction text degrades review quality.
 
 ## Dual review modes
 
@@ -60,11 +98,8 @@ payload — reviewers explore the repo. Source config (`docsThreshold`, `codebas
 **Smart filtering** (both modes): lockfiles, minified/sourcemap, generated/vendored paths,
 binary files, and pure renames (R100) are excluded so noise doesn't inflate diff size.
 
-Per-project config — `.claude/.rem-state.json` → `reviewGate.inlineDiffLimit` (chars, default
-20000; chars not lines, because chars track context-window cost):
-```json
-{ "reviewGate": { "inlineDiffLimit": 20000 } }
-```
+Config — `.claude/sharp-review.json` → `inlineDiffLimit` (chars, default 20000; chars not lines,
+because chars track context-window cost).
 
 ## diff-manifest.js output payload
 

@@ -13,5 +13,6 @@
 !**/.claude/rules/**
 !**/.claude/memory/
 !**/.claude/memory/**
+!**/.claude/sharp-review.json
 **/.claude/rules/MEMORY.md
 **/_meta.json

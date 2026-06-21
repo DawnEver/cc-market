@@ -4,8 +4,6 @@
 // Key invariant: maxBuffer 256MB on all git calls — default 1MB explodes on large diffs.
 
 import { execFileSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
 
 import {
   parseNumstatZ,
@@ -16,6 +14,7 @@ import {
   extractHunkHeaders,
   filterDiff,
   INLINE_DIFF_LIMIT_DEFAULT,
+  loadReviewConfig,
 } from './lib.mjs';
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -37,14 +36,7 @@ function detectRange(rangeArg) {
 // ── Config ──
 
 function readLimit() {
-  const stateFile = join(ROOT, '.claude', '.rem-state.json');
-  if (!existsSync(stateFile)) return INLINE_DIFF_LIMIT_DEFAULT;
-  try {
-    const state = JSON.parse(readFileSync(stateFile, 'utf8'));
-    return state.reviewGate?.inlineDiffLimit ?? INLINE_DIFF_LIMIT_DEFAULT;
-  } catch {
-    return INLINE_DIFF_LIMIT_DEFAULT;
-  }
+  return loadReviewConfig(ROOT).inlineDiffLimit ?? INLINE_DIFF_LIMIT_DEFAULT;
 }
 
 // ── Excluded summary ──

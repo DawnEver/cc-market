@@ -39,11 +39,11 @@ test('default (weighted) run always emits a valid profile JSON', () => {
   assert.ok('label' in p && 'mode' in p && 'promptKind' in p);
 });
 
-test('corrupt/missing state degrades gracefully (no throw, valid output)', () => {
+test('corrupt/missing config degrades gracefully (no throw, valid output)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
   try {
     mkdirSync(join(dir, '.claude'), { recursive: true });
-    writeFileSync(join(dir, '.claude', '.rem-state.json'), '{ not valid json', 'utf8');
+    writeFileSync(join(dir, '.claude', 'sharp-review.json'), '{ not valid json', 'utf8');
     const p = run([], dir);
     assert.ok(ALL_KEYS.includes(p.key));
   } finally {
@@ -62,18 +62,44 @@ test('--sources constrains selection to that source set', () => {
   }
 });
 
+function writeConfig(dir, config) {
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  writeFileSync(join(dir, '.claude', 'sharp-review.json'), JSON.stringify(config), 'utf8');
+}
+
 test('--sources docs with per-project weight selects docs profile', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
   try {
-    mkdirSync(join(dir, '.claude'), { recursive: true });
-    writeFileSync(
-      join(dir, '.claude', '.rem-state.json'),
-      JSON.stringify({ reviewGate: { profileWeights: { docs: 1 } } }),
-      'utf8',
-    );
+    writeConfig(dir, { profileWeights: { docs: 1 } });
     for (let i = 0; i < 8; i++) {
       assert.equal(run(['--sources', 'docs'], dir).key, 'docs');
     }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('custom profile from config participates in selection and is resolvable', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
+  try {
+    writeConfig(dir, {
+      // zero the built-in codebase profile so the only eligible codebase profile is the custom one
+      profileWeights: { architecture: 0 },
+      customProfiles: [{
+        key: 'arch-hygiene', source: 'codebase', weight: 1, label: '整洁锐评',
+        framing: 'hygiene pass', reviewScope: ['boundaries', 'duplication'],
+      }],
+    });
+    for (let i = 0; i < 8; i++) {
+      const p = run(['--sources', 'codebase'], dir);
+      assert.equal(p.key, 'arch-hygiene');
+      assert.equal(p.mode, 'agent');             // default for custom
+      assert.equal(p.promptKind, 'architecture');
+      assert.equal(p.framing, 'hygiene pass');
+      assert.equal(p.reviewScope, 'boundaries, duplication');
+    }
+    // forced selection of a custom key also works
+    assert.equal(run(['--profile', 'arch-hygiene'], dir).key, 'arch-hygiene');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -92,13 +118,8 @@ test('--profile override still works with --sources present', () => {
 test('per-project profileWeights forcing architecture is honored', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
   try {
-    mkdirSync(join(dir, '.claude'), { recursive: true });
     // Zero out every other profile so the weighted pick is deterministically architecture.
-    writeFileSync(
-      join(dir, '.claude', '.rem-state.json'),
-      JSON.stringify({ reviewGate: { profileWeights: { diff: 0, architecture: 1, security: 0, docs: 0, deps: 0 } } }),
-      'utf8',
-    );
+    writeConfig(dir, { profileWeights: { diff: 0, architecture: 1, security: 0, docs: 0, deps: 0 } });
     // Run several times; with all others at weight 0 it must always pick architecture.
     for (let i = 0; i < 8; i++) {
       assert.equal(run([], dir).key, 'architecture');

@@ -83,4 +83,58 @@ describe('sharp-review migrate()', () => {
     assert.equal(changed, false);
     assert.deepEqual(summary, []);
   });
+
+  // ── Config relocation: reviewGate (runtime state) → .claude/sharp-review.json (tracked) ──
+
+  function writeState(obj) {
+    const dir = path.join(projectRoot, '.claude');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '.rem-state.json'), JSON.stringify(obj), 'utf8');
+  }
+  const readJSON = (rel) => JSON.parse(fs.readFileSync(path.join(projectRoot, rel), 'utf8'));
+
+  test('relocates review config out of reviewGate into sharp-review.json', async () => {
+    writeState({
+      reviewGate: {
+        sessionId: 'abc', wave: 2, lastReviewRef: 'deadbeef',   // runtime state — must stay
+        profileWeights: { architecture: 0.4 },                   // config — must move
+        thresholds: { wave0: { lines: 100, files: 2 } },
+        inlineDiffLimit: 30000, docsThreshold: 3, codebaseIntervalMin: 60,
+        customProfiles: [{ key: 'k', source: 'codebase' }],
+      },
+    });
+
+    const { changed, summary } = await migrate(projectRoot);
+    assert.equal(changed, true);
+    assert.match(summary.join('\n'), /relocated review config/);
+
+    const cfg = readJSON('.claude/sharp-review.json');
+    assert.deepEqual(cfg.profileWeights, { architecture: 0.4 });
+    assert.equal(cfg.inlineDiffLimit, 30000);
+    assert.equal(cfg.docsThreshold, 3);
+    assert.deepEqual(cfg.customProfiles, [{ key: 'k', source: 'codebase' }]);
+
+    const gate = readJSON('.claude/.rem-state.json').reviewGate;
+    assert.equal(gate.sessionId, 'abc');          // runtime state preserved
+    assert.equal(gate.wave, 2);
+    assert.equal(gate.profileWeights, undefined);  // config stripped
+    assert.equal(gate.inlineDiffLimit, undefined);
+    assert.equal(gate.customProfiles, undefined);
+  });
+
+  test('config relocation is idempotent and never clobbers an existing config key', async () => {
+    writeState({ reviewGate: { profileWeights: { diff: 0.9 }, inlineDiffLimit: 12345 } });
+    // hand-written config already sets profileWeights — must win over the runtime copy
+    const cfgDir = path.join(projectRoot, '.claude');
+    fs.writeFileSync(path.join(cfgDir, 'sharp-review.json'), JSON.stringify({ profileWeights: { diff: 0.1 } }), 'utf8');
+
+    await migrate(projectRoot);
+    let cfg = readJSON('.claude/sharp-review.json');
+    assert.deepEqual(cfg.profileWeights, { diff: 0.1 }); // existing config kept
+    assert.equal(cfg.inlineDiffLimit, 12345);            // new key moved
+
+    // second run is a no-op for config (keys already stripped from reviewGate)
+    const second = await migrate(projectRoot);
+    assert.equal(second.changed, false);
+  });
 });

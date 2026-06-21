@@ -57,9 +57,9 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `sharp-review/tests/lib.test.mjs` | 21 | SR-ID parsing, module/category inference (incl. path inference), frontmatter |
 | `sharp-review/tests/manifest.test.mjs` | 42 | classifyLowValue, numstat/name-status parsing, buildManifest, decideMode, renderManifestText, extractHunkHeaders |
 | `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
-| `sharp-review/tests/migrations.test.mjs` | 4 | `migrate()`: legacy finding-file consolidation, idempotence |
-| `sharp-review/tests/profiles.test.mjs` | 8 | PROFILES registry, resolveProfile fallback, resolveWeights override, pickProfileKey weighted bands |
-| `sharp-review/tests/pick-profile.test.mjs` | 5 | profile pick CLI: --profile override, weighted default, corrupt-state degrade, per-project weights |
+| `sharp-review/tests/migrations.test.mjs` | 6 | `migrate()`: legacy finding-file consolidation, config relocation to `.claude/sharp-review.json`, idempotence |
+| `sharp-review/tests/profiles.test.mjs` | 19 | PROFILES registry, resolveProfile/resolveWeights, pickProfileKey bands, normalizeCustomProfile + mergeProfiles (custom profiles) |
+| `sharp-review/tests/pick-profile.test.mjs` | 10 | profile pick CLI: --profile override, weighted default, corrupt-config degrade, per-project weights, custom profile from config |
 | `watch/tests/` (Python) | 48 | config, daemon, components, registry |
 | `traceme/tests/crypto.test.mjs` | 9 | AES-256-GCM encrypt/decrypt |
 | `traceme/tests/db.test.mjs` | 10 | replaceSession, derived daily/model/tool/skill queries, billable basis, category unit-split (tokens vs bytes_est), `categorizeTool`, takeover fold-in |

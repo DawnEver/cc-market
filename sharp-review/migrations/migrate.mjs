@@ -1,11 +1,11 @@
-// sharp-review migration: consolidate legacy per-finding review files into the
-// current single-file-per-day format. Idempotent — safe to re-run; no-op once
-// a project is current.
-//
-// Old format: .claude/memory/YYYY-MM-DD/SR-*.md (one file per finding) +
-//             optional .claude/memory/YYYY-MM-DD/resolved.txt
-// New format: .claude/memory/YYYY/MM/DD/sharp-review.md (single file, frontmatter
-//             `status: OPEN|FIXED` per finding instead of resolved.txt)
+// sharp-review migrations (idempotent — safe to re-run; no-op once a project is current):
+//   1. consolidate legacy per-finding review files into the single-file-per-day format.
+//        Old: .claude/memory/YYYY-MM-DD/SR-*.md (+ optional resolved.txt)
+//        New: .claude/memory/YYYY/MM/DD/sharp-review.md (frontmatter status per finding)
+//   2. relocate static review config out of the gitignored runtime state
+//        (.claude/.rem-state.json → reviewGate.{profileWeights,customProfiles,thresholds,
+//        inlineDiffLimit,docsThreshold,codebaseIntervalMin}) into the tracked, shareable
+//        .claude/sharp-review.json so it travels with the repo.
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -13,10 +13,49 @@ import { reviewFrontmatter, SR_ID_RE, FINDING_HDR_RE } from '../scripts/lib.mjs'
 
 const FLAT_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-export async function migrate(projectRoot) {
-  const memoryDir = join(projectRoot, '.claude', 'memory');
+// Config keys that used to live under reviewGate but are static, shareable config.
+const CONFIG_KEYS = ['profileWeights', 'customProfiles', 'thresholds', 'inlineDiffLimit', 'docsThreshold', 'codebaseIntervalMin'];
+
+// Move review config from .rem-state.json → .claude/sharp-review.json. Idempotent: only the
+// keys still present in reviewGate are moved, and the config file never clobbers a key it
+// already has (a hand-written config wins). After moving, the keys are stripped from reviewGate.
+function migrateReviewConfig(projectRoot) {
   const summary = [];
-  let changed = false;
+  const stateFile = join(projectRoot, '.claude', '.rem-state.json');
+  if (!existsSync(stateFile)) return { changed: false, summary };
+
+  let state;
+  try { state = JSON.parse(readFileSync(stateFile, 'utf8')); } catch { return { changed: false, summary }; }
+  const gate = state?.reviewGate;
+  if (!gate || typeof gate !== 'object') return { changed: false, summary };
+
+  const present = CONFIG_KEYS.filter(k => gate[k] !== undefined);
+  if (present.length === 0) return { changed: false, summary };
+
+  const configFile = join(projectRoot, '.claude', 'sharp-review.json');
+  let config = {};
+  if (existsSync(configFile)) {
+    try { config = JSON.parse(readFileSync(configFile, 'utf8')) || {}; } catch { config = {}; }
+  }
+
+  const moved = [];
+  for (const k of present) {
+    if (config[k] === undefined) { config[k] = gate[k]; moved.push(k); }
+    delete gate[k];
+  }
+
+  mkdirSync(join(projectRoot, '.claude'), { recursive: true });
+  writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  summary.push(`relocated review config ${JSON.stringify(present)} from .rem-state.json → .claude/sharp-review.json${moved.length < present.length ? ' (some keys already present in config, kept)' : ''}`);
+  return { changed: true, summary };
+}
+
+export async function migrate(projectRoot) {
+  const cfg = migrateReviewConfig(projectRoot);
+  const memoryDir = join(projectRoot, '.claude', 'memory');
+  const summary = [...cfg.summary];
+  let changed = cfg.changed;
   if (!existsSync(memoryDir)) return { changed, summary };
 
   for (const entry of readdirSync(memoryDir, { withFileTypes: true })) {

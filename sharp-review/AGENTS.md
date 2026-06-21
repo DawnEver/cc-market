@@ -75,7 +75,8 @@ sharp-review/
 │   ├── lib/                      Concern modules:
 │   │   ├── findings.mjs          Category inference, same-day follow-up renumber, host-agnostic mergeFindings/renderReviewMarkdown
 │   │   ├── profiles.mjs          Profile registry (PROFILES) + weighted selection (resolveWeights/globalWeightsForSources/pickProfileKey)
-│   │   └── manifest.mjs          Diff-manifest: isLockfile/isDoc/classifyLowValue, git -z parsing, buildManifest, renderManifestText
+│   │   ├── manifest.mjs          Diff-manifest: isLockfile/isDoc/classifyLowValue, git -z parsing, buildManifest, renderManifestText
+│   │   └── config.mjs            loadReviewConfig — reads tracked .claude/sharp-review.json (profileWeights, customProfiles, thresholds, inlineDiffLimit, …)
 │   ├── sources.mjs               Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 │   ├── pick-profile.js               Source-constrained weighted profile pick (--sources); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
@@ -107,6 +108,14 @@ table/thresholds, and config keys — live in `skills/sharp-review/reference/pro
 - The seam is **additive**: the engine was already source-agnostic; only the entry layer
   (profiles + pick-profile + hook gate) was lifted onto it, so all profiles still write the same
   `sharp-review.md` with `SR-` ids and zero downstream changes.
+- **Config vs runtime state are separate files** (don't merge them): static review config
+  (`profileWeights`, `customProfiles`, `thresholds`, `inlineDiffLimit`, `docsThreshold`,
+  `codebaseIntervalMin`) lives in the **tracked** `.claude/sharp-review.json` via
+  `loadReviewConfig` (`lib/config.mjs`) so it's shareable; volatile runtime state stays in the
+  gitignored `.claude/.rem-state.json` under `reviewGate`. `migrations/migrate.mjs` relocates
+  legacy config out of `reviewGate` into the config file. `customProfiles` are config-declared
+  review templates merged into `PROFILES` at pick time (`mergeProfiles`/`normalizeCustomProfile`)
+  — a repo adds a profile without touching plugin code.
 
 ### Generalized Content Review
 

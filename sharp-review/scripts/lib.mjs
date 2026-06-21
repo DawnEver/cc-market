@@ -19,3 +19,4 @@ export {
 export * from './lib/findings.mjs';
 export * from './lib/profiles.mjs';
 export * from './lib/manifest.mjs';
+export * from './lib/config.mjs';

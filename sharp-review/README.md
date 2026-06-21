@@ -63,7 +63,7 @@ node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --rescan
 
 Reviews are gated by accumulated code changes, not per-session. A new commit reviews early on a small change; once a ref is reviewed, only substantial new changes re-trigger. Skipped sessions preserve the reference point so changes add up until the threshold is met; the wave resets when HEAD moves to a new commit.
 
-Thresholds are per-project configurable under `reviewGate.thresholds` in `.claude/.rem-state.json`. Exact defaults and config schema → `skills/sharp-review/SKILL.md`.
+Thresholds are per-project configurable under `thresholds` in the tracked `.claude/sharp-review.json` (committed, so the tuning is shared — not device-local). Exact defaults, the full config schema, custom profiles, and weighting → `skills/sharp-review/reference/profiles-and-modes.md`.
 
 ### Large Diffs
 
@@ -74,13 +74,9 @@ When a change touches many files or produces a very large diff, sharp review aut
 - **Agent mode** (> `inlineDiffLimit` chars): only a manifest (file table + hunk header summary) is sent to reviewers. Each reviewer gets full tool access via takeover `mode="agent"` and explores autonomously — running `git diff -- <path>`, reading source files, tracing call chains. Two reviewers still cross-validate findings.
 - **Empty mode**: if all files are filtered out, the review is skipped entirely.
 
-Configure the threshold in `.claude/.rem-state.json`:
+Configure the threshold in `.claude/sharp-review.json`:
 ```json
-{
-  "reviewGate": {
-    "inlineDiffLimit": 20000
-  }
-}
+{ "inlineDiffLimit": 20000 }
 ```
 Default is 20000 characters (~5k tokens). Units are **chars** (not lines) because chars track actual context window cost — line counts mislead on minified or long-line content.
 
