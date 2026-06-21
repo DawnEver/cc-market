@@ -53,7 +53,7 @@ with no imports); both are covered by tests (`merge-render.test.mjs`, `post-revi
 
 ### Wave Gate
 
-Reviews are gated by change accumulation, not per-session triggers. This prevents the "just reviewed, next stop triggers again" problem. Thresholds and config → `skills/sharp-review/SKILL.md`.
+Reviews are gated by change accumulation, not per-session triggers. This prevents the "just reviewed, next stop triggers again" problem. Thresholds and config → `skills/sharp-review/reference/profiles-and-modes.md`.
 
 Implementation detail not covered there:
 - `lastReviewRef` tracks which commit was last reviewed. Skipped sessions do NOT update it — changes keep accumulating.
@@ -93,29 +93,20 @@ sharp-review/
 └── README.md                     User-facing docs
 ```
 
-### Review Profiles
+### Review Profiles & Modes (design seam only)
 
-A profile is a review *template* (scope + prompt framing + forced mode), defined in `PROFILES`
-in `lib.mjs` — orthogonal to providers (the seed-mod reviewer rotation is unchanged). The
-**profile is the single unit of selection**; a `source` is just the named trigger (in
-`sources.mjs`) a profile reacts to — diff and security share the `diff` trigger. There is no
-pick-source-then-profile two-step. Five profiles ship: `diff`/`security` (source `diff`),
-`architecture` (source `codebase`), `docs` (source `docs`), `deps` (source `deps`).
+Runtime facts — the profile table, weights, the orphan-mass weighting math, the mode
+table/thresholds, and config keys — live in `skills/sharp-review/reference/profiles-and-modes.md`
+(don't restate them here; they drift). What's dev-only:
 
-`pick-profile.js --sources <fired>` does a single **global** weighted draw via
-`globalWeightsForSources` (`lib.mjs`): default weights are global probabilities (`diff` 0.6,
-`architecture` 0.2, `docs` 0.1, `security`/`deps` 0.05, sum 1.0); the weight of any profile whose
-source is cold this round folds into the catch-all `diff` (orphan mass → diff), so each eligible
-specialist keeps its exact global share and diff absorbs the slack. If diff itself is cold, the
-orphan mass spreads across the eligible profiles. `diff`/`security` honor diff-manifest's mode;
-`architecture`/`docs`/`deps` force agent mode and explore the repo (no diff/manifest). All write
-to the same `sharp-review.md` with `SR-` IDs (zero downstream changes). The seam is additive: the
-engine was already source-agnostic; only the entry layer (profiles + pick-profile + hook gate)
-was lifted to it. Profile keys, weights, and config → `skills/sharp-review/SKILL.md`.
-
-### Dual Review Modes
-
-`review` (full diff inlined) vs `agent` (manifest only, reviewers explore via tools) vs `empty` (skip) — see `skills/sharp-review/SKILL.md` for the mode table, thresholds, and filtering rules.
+- A profile is a review *template* (scope + prompt framing + forced mode) in `PROFILES`
+  (`lib/profiles.mjs`), orthogonal to providers (seed-mod reviewer rotation unchanged). The
+  **profile is the single unit of selection**; a `source` (`sources.mjs`) is just its trigger —
+  no pick-source-then-profile two-step.
+- `pick-profile.js --sources <fired>` does one global weighted draw via `globalWeightsForSources`.
+- The seam is **additive**: the engine was already source-agnostic; only the entry layer
+  (profiles + pick-profile + hook gate) was lifted onto it, so all profiles still write the same
+  `sharp-review.md` with `SR-` ids and zero downstream changes.
 
 ### Generalized Content Review
 

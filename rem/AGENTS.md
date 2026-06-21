@@ -67,8 +67,9 @@ See `.claude/rules/invariants.md` (always-injected) for append-only, path securi
 
 ## Reference
 
-Script flag reference and the `.claude/.rem-state.json` schema now live in
-`skills/rem/reference/` (`scripts.md`, `state-schema.md`) — loaded on demand by `/rem`.
+Script flag reference, the `.claude/.rem-state.json` schema, and the (rare, user-gated) compact
+procedure now live in `skills/rem/reference/` (`scripts.md`, `state-schema.md`, `compact.md`) —
+loaded on demand by `/rem`.
 
 ## Testing
 

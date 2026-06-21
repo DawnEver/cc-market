@@ -5,55 +5,15 @@ description: Post-feature sharp review (锐评) —parallel reviewers, merge fin
 
 # Sharp Review (锐评)
 
-Workflow-driven post-feature review. multiple reviewers, each constrained by JSON Schema, then cross-checked and merged. Result is written as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter.
-
-## Triggering (Wave Gate)
-
-Reviews are gated by change accumulation, not per-session. The Stop hook (`sharp-review-hook.js`) diffs from the last-reviewed ref:
-
-- **Wave 0** (new commit): triggers at ≥300 lines changed OR ≥5 files — catch issues early
-- **Wave 1+** (same ref already reviewed): triggers at ≥1000 lines changed OR ≥15 files — only re-trigger after substantial new changes
-- Wave resets to 0 when HEAD moves to a new commit
-- Skipped sessions keep accumulating — changes add up across stops until threshold met
-
-Per-project threshold config in `.claude/.rem-state.json` → `reviewGate.thresholds`:
-```json
-{
-  "wave0": { "lines": 300, "files": 5 },
-  "wave1": { "lines": 1000, "files": 15 }
-}
-```
-
-## Dual Review Modes
-
-Sharp review operates in one of two modes, determined automatically by `diff-manifest.js` based on filtered diff size:
-
-| Mode | Condition | Behavior |
-|---|---|---|
-| `review` | Filtered diff ≤ `inlineDiffLimit` chars | Full diff inlined into reviewer prompts — best signal quality |
-| `agent` | Filtered diff > `inlineDiffLimit` chars | Manifest only (file table + hunk headers); reviewers explore autonomously via `git diff -- <path>` |
-| `empty` | No reviewable files after filtering | Skill exits early — no review produced |
-
-**Smart filtering** applies in both modes: lockfiles, minified/sourcemap files, generated/vendored paths, binary files, and pure renames (R100) are automatically excluded. This prevents noise from inflating the diff size and wasting reviewer attention.
-
-Per-project config in `.claude/.rem-state.json` → `reviewGate.inlineDiffLimit` (chars, default 20000):
-```json
-{
-  "reviewGate": {
-    "inlineDiffLimit": 20000
-  }
-}
-```
-Units are **chars** (not lines) because chars track actual context window cost.
+Post-feature review: 2 of 3 reviewers, each JSON-Schema-constrained, cross-checked and merged into a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter. Normally invoked by the Stop hook once enough change accumulates (Wave Gate); `/sharp-review` runs it manually. Trigger thresholds, profile-weighting math, mode internals, and config keys → **`reference/profiles-and-modes.md`**.
 
 ## Execution
 
 ### Step 1 — Pick profile
 
-Each run rotates between review **profiles** (templates), chosen probabilistically. Profile
-selection is **source-aware**: the Stop hook records which trigger source(s) fired in
-`reviewGate.firedSources` (e.g. `["diff"]`, `["docs"]`). Pass them to `pick-profile.js` via
-`--sources` so the pick is constrained to profiles whose source fired; capture its JSON:
+Each run rotates between review **profiles** (diff / architecture / security / docs / deps),
+picked by a source-aware weighted draw. The Stop hook records which trigger source(s) fired in
+`reviewGate.firedSources`; pass them so the pick is constrained to eligible profiles, and capture the JSON:
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js" --sources diff,docs
@@ -63,75 +23,18 @@ node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js" --sources diff,docs
 { "key": "diff", "label": "diff review", "mode": null, "promptKind": "diff", "framing": null, "reviewScope": null }
 ```
 
-If `firedSources` is absent (manual run), omit `--sources` for the full default rotation.
-Manual override (no weighting): `pick-profile.js --profile architecture`. Selection is
-stateless — weights only, no persisted rotation index. Per-project tuning — set weights in
-`.claude/.rem-state.json`: `{ "reviewGate": { "profileWeights": { "diff": 0.6, "architecture": 0.2 } } }`.
-
-#### Review profiles & sources
-
-A *profile* is the unit of selection; a *source* is just the named trigger a profile reacts to
-(diff and security share the `diff` trigger). There is **no pick-source-then-profile two-step** —
-selection is a single **global** weighted draw over the profiles whose source fired this round.
-Provider selection is unaffected — profiles never bind a provider.
-
-| Profile | Source | Weight | Mode | Reviews |
-|---|---|---|---|---|
-| `diff` | `diff` | 0.6 | honors diff-manifest | the git diff — bugs & cleanup (default) |
-| `architecture` (架构锐评) | `codebase` | 0.2 | agent | whole codebase architecture |
-| `security` (安全锐评) | `diff` | 0.05 | honors diff-manifest | the diff for security vulnerabilities |
-| `docs` (文档锐评) | `docs` | 0.1 | agent | docs vs. current code |
-| `deps` (依赖锐评) | `deps` | 0.05 | agent | dependency risk (CVEs, licenses) |
-
-Default weights sum to 1.0 and are **global probabilities** — across reviews each profile runs at
-roughly its weight. A profile is only *eligible* when its source fired; the weight of any profile
-whose source is cold this round (its "orphan mass") folds into the catch-all `diff` review, so
-each eligible specialist keeps its **exact global share** and `diff` absorbs the slack (its
-effective rate rises above 0.6 when specialists are idle). If `diff` itself is cold (e.g. a
-doc-only change, so only the `docs` source fired), the orphan mass spreads across whatever is
-eligible. Set a weight to 0 in `profileWeights` to opt a profile out. Sources fire on: `diff` = wave gate;
-`codebase` = time interval; `docs` = ≥N doc files changed; `deps` = a lockfile changed.
-`architecture`/`docs`/`deps` run in **agent mode** with no diff payload — reviewers explore the
-repo. Source config (`docsThreshold`, `codebaseIntervalMin`) lives under `reviewGate` in
-`.claude/.rem-state.json`.
+Omit `--sources` for the full default rotation (manual run). Manual override: `--profile architecture`. Selection is stateless (weights only). Profile table + weighting math + per-project `profileWeights` → `reference/profiles-and-modes.md`.
 
 ### Step 2 — Gather context
 
-For the **active profile's source**: the `diff`/`security` profiles run `diff-manifest.js`
-(below) for the diff payload. The `architecture`/`docs`/`deps` profiles run in agent mode with
-NO diff payload — their reviewers explore the repo directly (read source/docs, `git diff`,
-inspect lockfiles); skip diff-manifest for them, but still pass `stats`/`range`/`seed` (the
-workflow requires `stats`, so run diff-manifest to obtain them even when its `diff` is unused).
-
-Run `diff-manifest.js` — the ONLY allowed diff payload. Never run raw `git diff` or paste diff text into context.
+`diff`/`security` profiles need the diff payload; `architecture`/`docs`/`deps` run in agent mode and explore the repo, but still need `stats`/`range`/`seed` — so **always** run `diff-manifest.js` (the ONLY allowed diff source; never run raw `git diff` or paste diff text):
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js"
-```
-
-By default, reviews uncommitted changes (staged + unstaged vs HEAD). If the user specified a range or path filter, pass it through:
-
-```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD"
-node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --path "src/components"
+node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js"                       # uncommitted vs HEAD (default)
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD" --path "src/components"
 ```
 
-`--path` restricts the review to a subfolder or file — only changes under that path are included. Combine with `--range` to review a specific module's history.
-
-Capture the JSON output. The script produces a size-bounded payload — each field is construction-guaranteed to stay under safe limits:
-```json
-{
-  "mode": "review" | "agent" | "empty",
-  "range": "HEAD",
-  "seed": 29345678,               // minutes since epoch; seeds reviewer-pair pick
-  "path": "src/components",       // only when --path is provided
-  "stats": { "files": 42, "insertions": 1234, "deletions": 567, "excluded": 9, "diffChars": 183421 },
-  "diff": "...",            // only review mode (≤ inlineDiffLimit chars)
-  "manifestText": "...",    // only agent mode (≤ 12k chars)
-  "excludedSummary": "9 files excluded: 3 lockfile, 4 generated, 2 binary"
-}
-```
+`--range`/`--path` scope the review. Capture the JSON output — it carries `mode`, `range`, `seed`, `stats`, and (mode-dependent) `diff` | `manifestText` + `excludedSummary`. Full payload schema → `reference/profiles-and-modes.md`.
 
 ### Step 3 — Run reviewers (host-adaptive fan-out)
 
@@ -174,17 +77,7 @@ Workflow({
 })
 ```
 
-The `architecture` profile forces agent mode and uses neither `diff` nor `manifestText` — its reviewers explore the repo from scratch. `stats`/`range`/`seed` from diff-manifest are still passed (the workflow requires `stats`).
-
-The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod 3`, combos AB/AC/BC) so multiple review rounds within the same day rotate the pair instead of repeating: Reviewer A (Codex), Reviewer B (DeepSeek), Reviewer C (Opus). Each is constrained by a JSON Schema that enforces:
-- `severity`: HIGH | MEDIUM | LOW | INFO
-- `file`: affected file path
-- `summary`: one-line issue description
-- `category`: Bug | Feature | Performance
-- `status`: OPEN | FIXED
-- `suggestion`: one-line fix
-
-In **review mode**, the full diff is inlined into each reviewer's prompt via takeover `mode="review"`. In **agent mode**, only the manifest is sent; reviewers use `mode="agent"` to get full tool access and explore the codebase autonomously (`git diff <range> -- <path>`, read source files, trace call chains).
+The `architecture` profile forces agent mode and uses neither `diff` nor `manifestText` — `stats`/`range`/`seed` are still passed (the workflow requires `stats`). The workflow picks 2 of 3 reviewers (`seed mod 3`) and constrains each to the finding schema. Reviewer roster + finding schema + per-mode prompt behavior → `reference/profiles-and-modes.md`.
 
 #### Step 3b — Codex (no Workflow tool): direct parallel fan-out
 
@@ -245,31 +138,11 @@ For the full file-ownership table (where findings, archives, and manual tasks li
 
 ### Step 6 — Report
 
-**Output in chat ONLY**: `Sharp review: <summary>`
-
-Do NOT dump findings in chat.
-
-#### Attention boundary (consumer-aware)
-
-This report step **is** the attention gate for sharp-review, and the skill is already
-consumer-aware by construction:
-
-- **AI consumer** (e.g. `evolve` calling this workflow, or any parent orchestrator): consumes
-  the returned `{ merged, markdown, summary }` programmatically. The skill **never prompts** —
-  there is no human attention to protect, so no gate is needed. This is the default and the
-  reason findings go to backlog instead of chat.
-- **Human consumer**: findings are written to the `sharp-review.md` backlog for *async* triage
-  via `todo`, deliberately kept out of chat so a review never floods your attention. Only the
-  one-line `summary` reaches you.
-
-When a human explicitly wants to **triage now** (not later via `todo`), route the OPEN findings
-through the shared attention gate (`shared/attention.mjs`) instead of reading them all:
-`route(items, { consumer: 'human' })` compresses to *what you must decide / the consequence of
-not deciding*, coalesces into a single `AskUserQuestion` (≤4, highest-severity first), and
-silently defers the low-stakes rest to the backlog. Map each finding to a gate item
-(`{ id, title: summary, detail: 'file: summary', stakes: severity, reversible: !arch,
-default: 'defer', options: [Fix now / Won't-fix / Defer] }`). For an AI consumer pass
-`consumer: 'ai'` and it resolves by policy with no prompt.
+**Output in chat ONLY**: `Sharp review: <summary>`. Do NOT dump findings in chat — this report
+step **is** the attention gate. By default findings go to the backlog (AI consumers like
+`evolve` read them there; humans triage async via `todo`). Only when a human asks to **triage
+now** do you route OPEN findings through the shared attention gate (`shared/attention.mjs`).
+Consumer-aware routing detail → `reference/profiles-and-modes.md` § Attention boundary.
 
 ## Phase 2 — Task Audit
 
