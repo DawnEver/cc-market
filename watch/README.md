@@ -268,3 +268,8 @@ alerts:
 ```
 
 The plugin also registers a Claude Code hook that emails on `Notification` events (usage/quota/error) and on `Stop` events (consecutive failure streaks ≥ 3).
+
+> **On Codex:** install with `codex plugin add watch@cc-market`. Codex has no `Notification`
+> hook event, so the alert hook degrades to `Stop`-only there (failure-streak alerts still
+> fire; usage/quota/error notifications do not). `/watch:*` are Claude slash-commands; on
+> Codex invoke the underlying skill directly (the Python daemon is host-independent either way).

@@ -21,6 +21,10 @@ Then register the MCP server in `~/.claude/settings.json`:
 }
 ```
 
+> **On Codex:** install with `codex plugin add takeover@cc-market`. Codex consumes the MCP
+> server (the `call_model` / `list_models` / `codex_status` tools) but **not** the
+> `/takeover:*` slash-commands — call the MCP tools directly, or ask Codex to use them.
+
 ## Usage
 
 ```shell

@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkS
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
-import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } from './lib.mjs';
+import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, mergeFindings, renderReviewMarkdown } from './lib.mjs';
 import { resolvePluginDir } from '../shared/lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,6 +27,7 @@ const args = process.argv.slice(2);
 const date = getArg(args, '--date');
 const findingsFile = getArg(args, '--findings');
 const markdownFile = getArg(args, '--markdown');
+const rawFile = getArg(args, '--raw');
 const rescan = hasArg(args, '--rescan');
 
 if (!date) {
@@ -82,23 +83,48 @@ if (rescan) {
 }
 
 // ── New review: write memory entry ──
+//
+// Two input shapes converge here onto the same { findings, markdown } pair:
+//   --raw <file>: raw per-reviewer findings + reviewer metadata. Merge + render run
+//     HERE (via shared lib) instead of inside the host fan-out, so any host — the
+//     Claude Workflow VM (sandboxed, no import/FS) or Codex (spawn_agent / takeover
+//     call_model, plain node) — only has to collect raw reviewer output and hand it off.
+//   --findings + --markdown: pre-merged findings + rendered markdown (legacy / external
+//     content-review callers that merge upstream).
 
-if (!findingsFile || !markdownFile) {
-  console.error('[post-review] Expected --findings <json-file> --markdown <md-file> (or --rescan)');
-  process.exit(1);
-}
+let findings, markdown;
 
-if (!existsSync(findingsFile)) {
-  console.error(`[post-review] Findings file not found: ${findingsFile}`);
-  process.exit(1);
+if (rawFile) {
+  if (!existsSync(rawFile)) {
+    console.error(`[post-review] Raw findings file not found: ${rawFile}`);
+    process.exit(1);
+  }
+  // { rawResults: [{ findings: [...] } | null], reviewers, active, profileLabel?,
+  //   dedupKeyFields?, idPrefix? } — rawResults is positionally aligned with `active`.
+  const raw = JSON.parse(readFileSync(rawFile, 'utf8'));
+  const rawResults = raw.rawResults || [];
+  const reviewers = raw.reviewers || [];
+  const active = raw.active || reviewers;
+  const slotResults = {};
+  active.forEach((r, i) => { slotResults[r.key] = rawResults[i]; });
+  findings = mergeFindings(rawResults, { dedupKeyFields: raw.dedupKeyFields, idPrefix: raw.idPrefix, date });
+  ({ markdown } = renderReviewMarkdown(findings, { reviewers, slotResults, active, date, profileLabel: raw.profileLabel }));
+} else {
+  if (!findingsFile || !markdownFile) {
+    console.error('[post-review] Expected --raw <json-file>, or --findings <json-file> --markdown <md-file> (or --rescan)');
+    process.exit(1);
+  }
+  if (!existsSync(findingsFile)) {
+    console.error(`[post-review] Findings file not found: ${findingsFile}`);
+    process.exit(1);
+  }
+  if (!existsSync(markdownFile)) {
+    console.error(`[post-review] Markdown file not found: ${markdownFile}`);
+    process.exit(1);
+  }
+  findings = JSON.parse(readFileSync(findingsFile, 'utf8'));
+  markdown = readFileSync(markdownFile, 'utf8');
 }
-if (!existsSync(markdownFile)) {
-  console.error(`[post-review] Markdown file not found: ${markdownFile}`);
-  process.exit(1);
-}
-
-let findings = JSON.parse(readFileSync(findingsFile, 'utf8'));
-let markdown = readFileSync(markdownFile, 'utf8');
 
 // Merge with existing session file if same-day re-review. The workflow restarts
 // sequence numbers at 001 each run, so renumber colliding incoming findings (and

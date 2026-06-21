@@ -24,6 +24,15 @@ plugin: invoked via `/evolve`, no hook.
         ai: policy-resolve + defer, never block
 ```
 
+### Host adaptivity (Claude Code + Codex)
+
+evolve runs from the main loop on both hosts; only two tool names differ — step 1 critique
+(`Workflow({name:'sharp-review'})` on Claude vs. invoking the `sharp-review` skill's raw
+fan-out directly on Codex) and step 2 fan-out fix (`Agent` per group vs. `spawn_agent` per
+group). Helpers, gates, TDD, commits are host-agnostic. Full substitution table →
+`reference/round-protocol.md` § Host adaptivity. (On Codex, set `taskActiveUntil` at round
+start — no `background_tasks` field — so the Stop hook doesn't fire mid-round.)
+
 ## File Structure
 
 ```

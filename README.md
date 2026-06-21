@@ -11,6 +11,24 @@ for the design and the validated host-compatibility contract.
 
 > Active development — backward compatibility is not guaranteed. Plugin configs, data formats, and internal APIs may change between versions without migration paths.
 
+## Hosts: Claude Code & Codex
+
+Most plugins run on **both** hosts. Per-plugin support:
+
+| Plugin | Claude Code | Codex | Notes |
+|---|---|---|---|
+| [`takeover`](takeover/README.md) | ✅ | ✅ | MCP server consumed by both hosts. |
+| [`rem`](rem/README.md) | ✅ | ✅ | On Codex the SessionStart hook injects `.claude/rules` (Codex doesn't auto-load them). |
+| [`sharp-review`](sharp-review/README.md) | ✅ | ✅ | Stop hook + skill; host-adaptive reviewer fan-out. |
+| [`evolve`](evolve/README.md) | ✅ | ✅ | Skill-only; depends on `sharp-review` + `rem`. |
+| [`watch`](watch/README.md) | ✅ | ✅ | Codex has no `Notification` event — its alert degrades to `Stop`-only. |
+| [`traceme`](traceme/README.md) | ✅ | ❌ | **Claude-only.** Reads Claude transcript JSONL; Codex sessions live in sqlite — out of scope, and will not be supported. |
+
+**What Codex consumes:** skills, hooks, and `mcpServers` — but **not** plugin slash-commands
+(those are Claude Code-only; the underlying capability is still reachable via the plugin's
+skills/MCP). Codex also does not support the `Notification` or `SessionEnd` hook events, and
+does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionStart hook).
+
 ## Add this marketplace
 
 **Claude Code:**
@@ -24,8 +42,10 @@ for the design and the validated host-compatibility contract.
 ```shell
 node scripts/gen-codex.mjs .          # refresh .codex-plugin/ + .agents/plugins/
 codex plugin marketplace add <path-to-cc-market>
-codex plugin add takeover@cc-market
+codex plugin add takeover@cc-market   # then rem / sharp-review / evolve / watch
 ```
+
+`traceme` is Claude-only — do not `codex plugin add traceme`. See the host table above.
 
 ## Available plugins
 

@@ -133,7 +133,21 @@ Capture the JSON output. The script produces a size-bounded payload — each fie
 }
 ```
 
-### Step 3 — Run workflow
+### Step 3 — Run reviewers (host-adaptive fan-out)
+
+Two hosts, one merge. The reviewer fan-out tool differs by host; the merge + render +
+write-back is identical (shared `mergeFindings`/`renderReviewMarkdown` in `lib.mjs`, invoked
+by `post-review.js`). Pick the branch for the host you are running under:
+
+- **Claude Code** — use the `Workflow` tool (3a below). It fans out reviewers in a sandboxed
+  VM, merges/renders inline, and returns `{ reviewFile, markdown, merged, summary }`.
+- **Codex (or any host without the `Workflow` tool)** — fan out reviewers yourself in
+  parallel via `spawn_agent` (or the takeover `call_model` MCP tool), collect each reviewer's
+  raw `{ findings: [...] }`, and hand the **raw** results to `post-review.js --raw` (3b below),
+  which runs the same merge/render. Do NOT merge or assign `SR-` ids yourself — the shared lib
+  owns that so both hosts produce byte-identical output.
+
+#### Step 3a — Claude Code: Workflow
 
 If the profile honors the diff manifest (`profile.mode === null`, i.e. `diff`/`security`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory. (Agent-mode profiles — `architecture`/`docs`/`deps` — ignore empty: they explore the repo, not a diff, so always proceed for them.)
 
@@ -172,23 +186,52 @@ The workflow launches 2 of 3 reviewers, picked from a time-based seed (`seed mod
 
 In **review mode**, the full diff is inlined into each reviewer's prompt via takeover `mode="review"`. In **agent mode**, only the manifest is sent; reviewers use `mode="agent"` to get full tool access and explore the codebase autonomously (`git diff <range> -- <path>`, read source files, trace call chains).
 
-### Step 4 — Write memory entry & sync
+#### Step 3b — Codex (no Workflow tool): direct parallel fan-out
 
-The workflow returns `{ reviewFile, markdown, merged, summary }`. Write findings as a single memory entry.
+Same gate as 3a: if the profile honors the diff manifest and `mode === "empty"`, report
+`Sharp review skipped: …` and stop. Otherwise:
+
+1. Pick the active reviewer pair the same way the workflow does — `seed mod 3` over
+   `[A:Codex, B:DeepSeek, C:Opus]` (combos AB/AC/BC) — using `result.seed`.
+2. Build each reviewer's prompt from the same scope/diff/manifest payload (Step 2) and fan
+   them out **in parallel** — `spawn_agent` one worker per reviewer, or the takeover
+   `call_model` MCP tool (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`).
+   Each reviewer must return ONLY `{ "findings": [...] }` matching the schema in Step 3a.
+3. Collect the raw per-reviewer results into a `raw.json` (use the Write tool):
+
+   ```json
+   {
+     "reviewers": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"},{"key":"C","name":"Opus"}],
+     "active":    [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"}],
+     "profileLabel": "diff review",
+     "rawResults": [ {"findings":[...]}, {"findings":[...]} ]
+   }
+   ```
+   `rawResults[i]` aligns positionally with `active[i]`; a failed reviewer is `null`.
+
+4. Hand it to `post-review.js --raw` (Step 4) — it runs the shared merge/render and writes
+   the memory entry. No client-side merge or `SR-` id assignment.
+
+### Step 4 — Write memory entry & sync
 
 **IMPORTANT on Windows**: Do NOT use Bash redirection (`>`) with Windows paths — Bash treats backslashes as escape characters and creates stray files in the wrong location. Instead, write temp files using the Write tool, then call post-review.js via PowerShell.
 
-Use the Write tool to create two temp files (paths must use forward slashes or be resolved by Node):
+**From Codex / raw fan-out (3b)** — write the `raw.json` from Step 3b, then:
+
+```powershell
+node "<CLAUDE_PLUGIN_ROOT>/scripts/post-review.js" --date <YYYY-MM-DD> --raw "$env:TEMP/claude-sharp-review/raw.json"
+```
+
+**From the Claude Workflow (3a)** — the workflow already merged/rendered, returning
+`{ reviewFile, markdown, merged, summary }`. Write two temp files with the Write tool:
 - `$env:TEMP/claude-sharp-review/findings.json` — contents: `result.merged` as JSON
 - `$env:TEMP/claude-sharp-review/review.md` — contents: `result.markdown`
-
-Then run post-review.js via PowerShell:
 
 ```powershell
 node "<CLAUDE_PLUGIN_ROOT>/scripts/post-review.js" --date <YYYY-MM-DD> --findings "$env:TEMP/claude-sharp-review/findings.json" --markdown "$env:TEMP/claude-sharp-review/review.md"
 ```
 
-This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
+Either form writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
 
 ### Step 5 — Resolve findings
 

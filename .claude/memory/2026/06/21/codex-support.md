@@ -102,7 +102,7 @@ hook 事件契约、个别插件的运行时假设。
   `.claude/plugins/…` 下);Claude 宿主下为 no-op(避免与原生自动加载重复)。测试
   `rem/tests/inject-rules.test.mjs`(9 例)。
 
-**阶段 3 — 宿主自适应并行 fan-out(本期重点)** —— ⚠️ 原"顺序降级"前提已被 §7.5.3 推翻:
+**阶段 3 — 宿主自适应并行 fan-out(✅ 已落地)** —— ⚠️ 原"顺序降级"前提已被 §7.5.3 推翻:
 Codex 有原生并行 `spawn_agent`,**不降级**。设计要点:
 - **不是降级**:Claude 走 `Workflow`/`Agent`,Codex 走 `spawn_agent`(并行)或 takeover
   `call_model`。两者都并行,无能力损失。
@@ -118,7 +118,20 @@ Codex 有原生并行 `spawn_agent`,**不降级**。设计要点:
 - evolve 同理:fix-agent fan-out 在 Codex 用 `spawn_agent`,纯 JS(groupFindings/
   checkTermination)不变。
 
-> **traceme 本期不做**(见第 4 节),不在阶段计划内。
+**阶段 3 落地清单(2026-06-21):**
+- ✅ `post-review.js --raw`:接收每 reviewer 原始 findings + reviewer 元数据,经共享
+  `mergeFindings`/`renderReviewMarkdown` 合并渲染写盘 —— 宿主无关入口(Codex / 任何无 Workflow
+  VM 的宿主走此路);`--findings`/`--markdown` 保留给 Claude Workflow 与外部 content 调用方。
+  测试 `tests/post-review-raw.test.mjs`(2 例 E2E)+ 既有 `merge-render.test.mjs`(8 例)。
+- ✅ `sharp-review/SKILL.md`:Step 3 拆为 **3a(Claude Workflow)/ 3b(Codex 直接并行
+  `spawn_agent`/takeover `call_model` → `post-review.js --raw`)**;Step 4 双形态写盘。
+- ✅ `evolve/reference/round-protocol.md` + `AGENTS.md`:新增"Host adaptivity"替换表
+  (step 1 critique:Workflow→sharp-review skill 直调;step 2 fan-out:`Agent`→`spawn_agent`)。
+- ✅ Codex E2E 提示词 `scripts/codex-e2e-prompts.md`(需 codex 登录的手动 `codex exec` 部分:
+  MCP 工具可发现性、`.claude/rules` 注入、sharp-review/evolve 宿主分支、跨宿主产物对齐)。
+  → 留给用户实跑(本期 headless 不验证)。
+
+> **traceme 本期不做**(见第 4 节),不在阶段计划内 —— Codex 工件已移除,README 标注 Claude-only。
 
 ## 6. 测试与约束
 

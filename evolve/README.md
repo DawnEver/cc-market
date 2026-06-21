@@ -27,6 +27,10 @@ to a clean state:
 
 Extra flags: `--path`, `--min-severity`, `--dry-run`, `--seed`, `--commit=round|group`.
 
+**On Codex:** install with `codex plugin add evolve@cc-market` (also requires `sharp-review`
++ `rem`). evolve runs from the main loop on both hosts; only two tool names differ (critique
+fan-out and per-group fix), and Codex invokes the skill directly rather than via a slash-command.
+
 Claude-driven (not a background workflow) so human gates and commits work. Runs in any git
 repo but **hard-depends on cc-market's `sharp-review`, `rem`, and `todo`** — Setup verifies
 they are installed and aborts if any is missing; there are no built-in fallbacks.

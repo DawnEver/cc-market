@@ -3,6 +3,20 @@
 The full ordered protocol for one round. Execute the steps in order. Never abort the whole
 round because a single subagent failed — filter out null results and continue.
 
+## Host adaptivity (Claude Code vs Codex)
+
+evolve runs from the main loop on either host; only two tool names differ. The protocol below
+is written for Claude Code — when running under **Codex**, substitute:
+
+| Step | Claude Code | Codex |
+|---|---|---|
+| 1. Critique | `Workflow({ name: 'sharp-review' })` | invoke the `sharp-review` skill directly (its Step 3b raw fan-out: `spawn_agent`/takeover `call_model` per reviewer → `post-review.js --raw`), then read the OPEN findings from the written `sharp-review.md` backlog (same as `--seed`) |
+| 2. Fan-out fix | one `Agent` per disjoint group | one `spawn_agent` worker per disjoint group (Codex runs them in parallel and they "see each other's work" — keep file-sets disjoint exactly as below) |
+
+Everything else — `groupFindings`/`prioritize`/`checkTermination` (plain Node), the human gate,
+the TDD gate, scoped commits — is host-agnostic. Under Codex, set a `taskActiveUntil` window at
+round start (no `background_tasks` field) so the Stop hook doesn't fire mid-round.
+
 ## Helper module — `scripts/evolve.mjs`
 
 Do **not** hand-edit state JSON or hand-compute grouping/termination. Delegate the mechanics

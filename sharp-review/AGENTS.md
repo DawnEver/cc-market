@@ -37,6 +37,20 @@ Generalized content review (external consumers):
             └── Return { merged, markdown, summary } → caller handles pipeline integration
 ```
 
+### Host-adaptive fan-out (Claude Code + Codex)
+
+The reviewer fan-out tool is host-specific; merge/render/write-back is shared and tested
+(`lib/findings.mjs` `mergeFindings`/`renderReviewMarkdown`, invoked by `post-review.js`):
+- **Claude Code** — the `Workflow` tool (`sharp-review-workflow.js`) fans out reviewers in a
+  sandboxed VM, merges/renders inline (the VM can't import `lib`), returns `{ merged, markdown }`
+  → `post-review.js --findings/--markdown`.
+- **Codex** — no `Workflow` tool/VM. The skill fans out reviewers directly (`spawn_agent` /
+  takeover `call_model`), collects raw per-reviewer `{ findings }`, and calls
+  `post-review.js --raw` → the **same** shared merge/render. Host branches: `skills/sharp-review/SKILL.md` Step 3a/3b.
+
+The Workflow VM's inline merge is a deliberate duplicate of `mergeFindings` (the VM is sandboxed
+with no imports); both are covered by tests (`merge-render.test.mjs`, `post-review-raw.test.mjs`).
+
 ### Wave Gate
 
 Reviews are gated by change accumulation, not per-session triggers. This prevents the "just reviewed, next stop triggers again" problem. Thresholds and config → `skills/sharp-review/SKILL.md`.
@@ -65,10 +79,12 @@ sharp-review/
 │   ├── sources.mjs               Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 │   ├── pick-profile.js               Source-constrained weighted profile pick (--sources); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
-│   ├── post-review.js                Write memory entry → stamp
+│   ├── post-review.js                Write memory entry → stamp. `--raw` merges+renders raw per-reviewer findings via lib (host-agnostic entry, used by Codex / any non-Workflow-VM host); `--findings`+`--markdown` takes pre-merged input (Claude Workflow / external content callers)
 │   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
 ├── tests/                        Tests (node:test)
 │   ├── lib.test.mjs              Frontmatter, category inference, markdown parsing
+│   ├── merge-render.test.mjs     Host-agnostic mergeFindings/renderReviewMarkdown/buildDedupKey
+│   ├── post-review-raw.test.mjs  post-review.js --raw end-to-end (raw fan-out → memory entry)
 │   ├── manifest.test.mjs         Diff manifest: parsing, filtering, mode decision, rendering
 │   ├── hook.test.mjs             Git root resolution
 │   └── migrations.test.mjs       Legacy format migration

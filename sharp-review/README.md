@@ -20,6 +20,11 @@ Then run setup to symlink:
 node scripts/setup/setup.js
 ```
 
+> **On Codex:** install with `codex plugin add sharp-review@cc-market`. The Stop hook and the
+> review skill both run on Codex; reviewer fan-out is host-adaptive (no `Workflow` VM on Codex
+> — the skill fans out reviewers directly and feeds `post-review.js --raw` the same shared
+> merge/render). `/sharp-review` is a Claude slash-command; on Codex invoke the skill directly.
+
 ## Usage
 
 Run `/sharp-review` after finishing a feature. The Stop hook automatically classifies review depth and triggers the skill when appropriate.

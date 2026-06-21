@@ -39,6 +39,11 @@ Then register the hooks in `~/.claude/settings.json`:
 }
 ```
 
+> **On Codex:** install with `codex plugin add rem@cc-market`. The hooks run on Codex too;
+> additionally, rem's SessionStart hook injects the host project's `.claude/rules/**/*.md`
+> into context (Codex doesn't auto-load them — Claude Code does, where this step is a no-op).
+> `/rem` and `/todo` are Claude slash-commands; on Codex invoke the underlying skills directly.
+
 ## Usage
 
 After installation, `/rem` is available as a slash command. It triggers automatically after ≥3 stops and ≥2 min of substantive work, or you can invoke it manually:
