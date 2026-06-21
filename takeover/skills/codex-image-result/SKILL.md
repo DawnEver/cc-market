@@ -1,4 +1,5 @@
 ---
+name: codex-image-result
 description: Internal skill for presenting Codex image generation output
 user-invocable: false
 ---

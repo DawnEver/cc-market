@@ -1,0 +1,31 @@
+{
+  "name": "rem",
+  "version": "1.0.32",
+  "description": "REM sleep for your Claude sessions — prune stale memory, consolidate learnings, maintain .claude/memory/ with timestamps and automatic eviction",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "rem",
+    "memory",
+    "session",
+    "retrospect",
+    "prune",
+    "eviction",
+    "summarize"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "REM",
+    "shortDescription": "REM sleep for your Claude sessions — prune stale memory, consolidate learnings,",
+    "longDescription": "REM sleep for Claude sessions — auto-prunes stale memory on session start, consolidates learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
+    "developerName": "Mingyang Bao",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use the REM plugin."
+    ]
+  }
+}

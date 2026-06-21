@@ -1,0 +1,38 @@
+{
+  "name": "watch",
+  "version": "1.0.50",
+  "description": "Unattended server & long-running task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. One YAML config per project, zero code changes to adopt.",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "watch",
+    "supervision",
+    "health",
+    "monitoring",
+    "server",
+    "alerts",
+    "devops",
+    "sre",
+    "uptime",
+    "restart",
+    "rollback",
+    "process",
+    "long-running",
+    "unattended"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Watch",
+    "shortDescription": "Unattended server & long-running task supervision — health checks, anomaly",
+    "longDescription": "Unattended server & long-running task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. One YAML config per project, zero code changes to adopt.",
+    "developerName": "Mingyang Bao",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use the Watch plugin."
+    ]
+  }
+}

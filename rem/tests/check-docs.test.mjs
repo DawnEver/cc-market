@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { join } from 'path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'url';
 import {
   DOC_PATTERN, SKIP_DIRS,
-  collectDocs, crossReference, formatReport, collectUncommitted,
+  collectDocs, crossReference, formatReport,
 } from '../scripts/check-docs.js';
 
 // ── collectDocs ──
@@ -15,7 +16,7 @@ describe('collectDocs', () => {
   let tmpDir;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(process.env.TEMP || '/tmp', 'check-docs-test-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'check-docs-test-'));
   });
 
   afterEach(() => {
@@ -249,7 +250,7 @@ describe('CLI', () => {
   let repoDir;
 
   beforeEach(() => {
-    repoDir = mkdtempSync(join(process.env.TEMP || '/tmp', 'check-docs-repo-'));
+    repoDir = mkdtempSync(join(tmpdir(), 'check-docs-repo-'));
     execFileSync('git', ['init'], { cwd: repoDir, timeout: 5000 });
     execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: repoDir, timeout: 2000 });
     execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir, timeout: 2000 });

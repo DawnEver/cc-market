@@ -1,0 +1,29 @@
+{
+  "name": "sharp-review",
+  "version": "1.1.23",
+  "description": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge findings, sync task list",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "review",
+    "code-review",
+    "sharp-review",
+    "quality",
+    "findings"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sharp Review",
+    "shortDescription": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge",
+    "longDescription": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge findings, sync structured task list with memory cross-references.",
+    "developerName": "Mingyang Bao",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use the Sharp Review plugin."
+    ]
+  }
+}
