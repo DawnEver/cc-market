@@ -12,7 +12,7 @@ import { join } from 'path';
 import {
   scopeIndexFile, findAllScopes, loadState,
   todayISO, bumpAccessed, getMemoryMeta, saveMemoryMeta, MAX_ENTRIES, rebuildIndex,
-} from '../lib.mjs';
+} from './lib.mjs';
 
 const args = process.argv.slice(2);
 const transcriptIdx = args.indexOf('--transcript');

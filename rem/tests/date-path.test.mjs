@@ -17,7 +17,7 @@ import {
   extractDateFromPath,
   resolveMemoryPath,
   isInsideMemoryDir,
-} from "../lib.mjs";
+} from "../scripts/lib.mjs";
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 

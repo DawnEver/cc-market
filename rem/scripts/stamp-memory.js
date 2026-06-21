@@ -11,7 +11,7 @@ import { relative } from 'path';
 import {
   scopeMemoryDir as memoryDir, scopeRulesDir as rulesDir,
   parseFrontmatter, collectMemoryFiles, rebuildIndex, findAllScopes,
-} from '../lib.mjs';
+} from './lib.mjs';
 
 // Ensure directories exist
 if (!existsSync(memoryDir)) mkdirSync(memoryDir, { recursive: true });

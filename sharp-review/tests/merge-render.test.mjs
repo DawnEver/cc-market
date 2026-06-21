@@ -6,7 +6,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDedupKey, mergeFindings, renderReviewMarkdown } from '../lib.mjs';
+import { buildDedupKey, mergeFindings, renderReviewMarkdown } from '../scripts/lib.mjs';
 
 describe('buildDedupKey', () => {
   test('lowercases and joins configured fields', () => {

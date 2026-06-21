@@ -5,7 +5,7 @@
 import { readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { join, relative } from 'path';
-import { repoRoot } from '../lib.mjs';
+import { repoRoot } from './lib.mjs';
 
 export const DOC_PATTERN = /^(README|CLAUDE|AGENTS|AGENT|CHANGELOG|CONTRIBUTING).*\.md$/i;
 export const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'dist', 'build', '__pycache__', '.venv', 'venv']);

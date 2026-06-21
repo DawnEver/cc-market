@@ -8,7 +8,7 @@
 import { join } from 'path';
 
 import { loadState } from '../shared/state.mjs';
-import { resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from '../lib.mjs';
+import { resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from './lib.mjs';
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 

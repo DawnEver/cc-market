@@ -16,7 +16,7 @@ import {
   extractHunkHeaders,
   filterDiff,
   INLINE_DIFF_LIMIT_DEFAULT,
-} from '../lib.mjs';
+} from './lib.mjs';
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const MAX_BUFFER = 256 * 1024 * 1024; // 256MB

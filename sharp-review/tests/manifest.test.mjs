@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 
-const libPath = join(import.meta.dirname, '..', 'lib.mjs');
+const libPath = join(import.meta.dirname, '..', 'scripts', 'lib.mjs');
 const lib = await import(pathToFileURL(libPath).href);
 
 const {

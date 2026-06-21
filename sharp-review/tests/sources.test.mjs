@@ -8,7 +8,7 @@ import {
   isDoc,
   DOCS_THRESHOLD_DEFAULT,
   CODEBASE_INTERVAL_MIN_DEFAULT,
-} from '../sources.mjs';
+} from '../scripts/sources.mjs';
 
 // Minimal complete ctx with everything below threshold; tests override fields.
 function ctx(over = {}) {

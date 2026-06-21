@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PROFILES, resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from '../lib.mjs';
+import { PROFILES, resolveProfile, resolveWeights, pickProfileKey, globalWeightsForSources } from '../scripts/lib.mjs';
 
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 

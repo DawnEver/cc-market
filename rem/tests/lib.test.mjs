@@ -26,7 +26,7 @@ import {
   isScopeIgnored,
   findAllScopes,
   findChildScopes,
-} from "../lib.mjs";
+} from "../scripts/lib.mjs";
 
 // ── Index parsing ──────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { join, relative, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { todayISO, findMemoryScope } from '../lib.mjs';
+import { todayISO, findMemoryScope } from './lib.mjs';
 import {
   ROOT,
   scanManualTasks,

@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
-import { findAllScopes, loadMemoryState, rebuildIndex } from '../lib.mjs';
+import { findAllScopes, loadMemoryState, rebuildIndex } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const fixMode = args.includes('--fix');

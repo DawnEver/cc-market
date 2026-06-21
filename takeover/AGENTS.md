@@ -25,7 +25,14 @@ Multi-model AI orchestration via MCP. Routes tasks to Claude, Codex, DeepSeek, o
 ```
 takeover/
 ├── scripts/
-│   ├── lib.mjs              Core: provider config (cached 60s TTL), error taxonomy, API callers, retry, flag parsing
+│   ├── lib.mjs              Barrel: re-exports lib/* (+ codex discovery) so `./lib.mjs` import sites stay stable
+│   ├── lib/                 Concern modules:
+│   │   ├── config.mjs       Provider config (cached 60s TTL) + env, model resolution, model listing
+│   │   ├── errors.mjs       Error taxonomy (TakeoverError + subclasses)
+│   │   ├── trace.mjs        TraceMe NDJSON emission + structured request logging
+│   │   ├── spawn.mjs        Claude binary resolution + spawn claude -p (stream-json)
+│   │   ├── parse.mjs        Command-block flag parsing, prompt building, text extraction
+│   │   └── callers.mjs      Anthropic API caller (retry + SSE) + Codex companion
 │   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model (provider dispatch map) + list_models + codex_status
 │   └── codex/
 │       ├── discovery.mjs    Codex binary detection

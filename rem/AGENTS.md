@@ -33,11 +33,11 @@ Three-tier memory system (rules / long-term / short-term) → `skills/rem/refere
 
 ```
 rem/
-├── lib.mjs                  Shared library: paths, frontmatter, index, state, date, module inference, memory cross-reference
 ├── hooks/
 │   ├── hooks.json           Hook registration (SessionStart + Stop)
 │   └── rem-hook.js          Stop hook: session-depth gate for /rem
 ├── scripts/
+│   ├── lib.mjs              Shared library: paths, frontmatter, index, state, date, module inference, memory cross-reference
 │   ├── stamp-memory.js      Initialize .claude/memory/ and MEMORY.md index
 │   ├── inject-rules.js      SessionStart hook: inject host `.claude/rules/**/*.md` as additionalContext — Codex-only (Claude auto-loads them; no-op there)
 │   ├── prune-memory.js      Evict stale short-term, demote inactive long-term

@@ -3,9 +3,9 @@
 
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
-import { DAY_MS } from '../lib.mjs';
+import { DAY_MS } from './lib.mjs';
 import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown, inferModuleFromPath } from '../shared/lib.mjs';
-import { findAllScopes, extractDateFromPath } from '../lib.mjs';
+import { findAllScopes, extractDateFromPath } from './lib.mjs';
 
 // ── Paths ──
 

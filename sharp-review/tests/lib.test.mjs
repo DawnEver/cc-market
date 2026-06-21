@@ -8,7 +8,7 @@ import { tmpdir } from 'os';
 
 // Import the module under test
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const libPath = join(__dirname, '..', 'lib.mjs');
+const libPath = join(__dirname, '..', 'scripts', 'lib.mjs');
 
 let lib;
 try {

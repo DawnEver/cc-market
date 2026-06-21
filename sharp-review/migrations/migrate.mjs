@@ -9,7 +9,7 @@
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
-import { reviewFrontmatter, SR_ID_RE, FINDING_HDR_RE } from '../lib.mjs';
+import { reviewFrontmatter, SR_ID_RE, FINDING_HDR_RE } from '../scripts/lib.mjs';
 
 const FLAT_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 

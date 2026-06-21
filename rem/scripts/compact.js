@@ -20,7 +20,7 @@ import {
   scopeIndexFile as indexFile, remRulesDir, scopeMemoryDir as memoryDir,
   scopeRoot, MAX_ENTRIES, collectMemoryFiles,
   getMemoryMeta, getField, rebuildIndex, dropFromIndex,
-} from '../lib.mjs';
+} from './lib.mjs';
 
 const args = process.argv.slice(2);
 const mode = args[0] || '--check';

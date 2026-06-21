@@ -10,7 +10,7 @@ import {
   parseFrontmatter,
   getField,
   setField,
-} from "../lib.mjs";
+} from "../scripts/lib.mjs";
 
 // ── parseFrontmatter ───────────────────────────────────────────────────────────
 

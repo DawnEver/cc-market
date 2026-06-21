@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkS
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
-import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } from '../lib.mjs';
+import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } from './lib.mjs';
 import { resolvePluginDir } from '../shared/lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

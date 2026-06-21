@@ -3,8 +3,8 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs';
 import { join, dirname, resolve, relative, sep } from 'path';
-import { findProjectRoot as _findProjectRoot, todayISO } from './shared/lib.mjs';
-import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from './shared/state.mjs';
+import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
+import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from '../shared/state.mjs';
 
 // ── Paths ──
 

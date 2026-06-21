@@ -57,15 +57,16 @@ sharp-review/
 │   └── sharp-review-hook.js      Stop hook: classify review depth
 ├── skills/sharp-review/SKILL.md /sharp-review skill definition
 ├── scripts/
+│   ├── lib.mjs                   Barrel: re-exports lib/* + shared frontmatter helpers (stable `./lib.mjs`/`../scripts/lib.mjs` import path)
+│   ├── lib/                      Concern modules:
+│   │   ├── findings.mjs          Category inference, same-day follow-up renumber, host-agnostic mergeFindings/renderReviewMarkdown
+│   │   ├── profiles.mjs          Profile registry (PROFILES) + weighted selection (resolveWeights/globalWeightsForSources/pickProfileKey)
+│   │   └── manifest.mjs          Diff-manifest: isLockfile/isDoc/classifyLowValue, git -z parsing, buildManifest, renderManifestText
+│   ├── sources.mjs               Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 │   ├── pick-profile.js               Source-constrained weighted profile pick (--sources); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
 │   ├── post-review.js                Write memory entry → stamp
 │   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
-├── lib.mjs                       Barrel: re-exports findings/profiles/manifest + shared frontmatter helpers (stable `../lib.mjs` import path)
-├── findings.mjs                  Category inference, same-day follow-up renumber, host-agnostic mergeFindings/renderReviewMarkdown
-├── profiles.mjs                  Profile registry (PROFILES) + weighted selection (resolveWeights/globalWeightsForSources/pickProfileKey)
-├── manifest.mjs                  Diff-manifest: isLockfile/isDoc/classifyLowValue, git -z parsing, buildManifest, renderManifestText
-├── sources.mjs                   Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 ├── tests/                        Tests (node:test)
 │   ├── lib.test.mjs              Frontmatter, category inference, markdown parsing
 │   ├── manifest.test.mjs         Diff manifest: parsing, filtering, mode decision, rendering

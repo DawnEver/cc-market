@@ -9,7 +9,7 @@ import {
   todayISO, bumpAccessed, saveMemoryMeta, getMemoryMeta,
   rebuildIndex, findMemoryScope,
   resolveMemoryPath, isInsideMemoryDir,
-} from '../lib.mjs';
+} from './lib.mjs';
 
 const args = process.argv.slice(2);
 const promote = args.includes('--promote');

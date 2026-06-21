@@ -14,7 +14,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
-import { evaluateSources, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../sources.mjs';
+import { evaluateSources, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
 
 // Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
 export function findGitRoot(startDir) { return findProjectRoot(startDir); }

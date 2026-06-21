@@ -13,7 +13,7 @@ import {
   loadMemoryState, saveMemoryMeta, loadState, saveState, appendEvent, dayPrecision,
   rebuildIndex, collectMemoryFiles, parseFrontmatter,
   findAllScopes,
-} from '../lib.mjs';
+} from './lib.mjs';
 
 const dryRun = process.argv.includes('--dry-run');
 const evictStale = process.argv.includes('--evict-stale');

@@ -17,7 +17,7 @@ import {
   getMemoryMeta,
   bumpAccessed,
   dropFromIndex,
-} from "../lib.mjs";
+} from "../scripts/lib.mjs";
 
 // ── Test helpers ──────────────────────────────────────────────────────────
 

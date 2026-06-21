@@ -3,7 +3,7 @@
 // Triggers /rem after 3+ stops AND either (2+ min session) OR (substantive code edits).
 // State tracked in unified .claude/.rem-state.json
 
-import { loadState, saveState } from '../lib.mjs';
+import { loadState, saveState } from "../scripts/lib.mjs";
 import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 
 const MIN_STOP_COUNT = 3;
