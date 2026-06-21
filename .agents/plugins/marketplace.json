@@ -1,0 +1,80 @@
+{
+  "name": "cc-market",
+  "interface": {
+    "displayName": "Cc-Market"
+  },
+  "plugins": [
+    {
+      "name": "evolve",
+      "source": {
+        "source": "local",
+        "path": "./evolve"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "takeover",
+      "source": {
+        "source": "local",
+        "path": "./takeover"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "rem",
+      "source": {
+        "source": "local",
+        "path": "./rem"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "sharp-review",
+      "source": {
+        "source": "local",
+        "path": "./sharp-review"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "watch",
+      "source": {
+        "source": "local",
+        "path": "./watch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "traceme",
+      "source": {
+        "source": "local",
+        "path": "./traceme"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

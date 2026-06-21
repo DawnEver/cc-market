@@ -1,0 +1,29 @@
+{
+  "name": "evolve",
+  "version": "1.0.6",
+  "description": "Iterative TDD review→fix loop — critique, fan out fix agents, verify, gate hard calls to the human, keep tests green, commit per round",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "review",
+    "refactor",
+    "tdd",
+    "loop",
+    "autofix"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Evolve",
+    "shortDescription": "Iterative TDD review→fix loop — critique, fan out fix agents, verify, gate hard",
+    "longDescription": "Iterative TDD review→fix loop — each round critiques the codebase, fans out fix agents over disjoint files, verifies, gates hard calls to the human, keeps tests green, and commits. Severity-based convergence with safety caps.",
+    "developerName": "Mingyang Bao",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use the Evolve plugin."
+    ]
+  }
+}

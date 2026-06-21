@@ -64,8 +64,12 @@ export function checkCodexStatus(codexPath) {
     windowsHide: true,
   });
 
-  if (version.status !== 0) {
-    return { installed: false, error: version.stderr.toString().trim() };
+  if (version.error || version.status !== 0) {
+    // spawn failure (e.g. ENOENT) leaves stderr null and status null — fall back to error/status.
+    const detail = version.error
+      ? version.error.message
+      : version.stderr?.toString().trim() || `exited with status ${version.status}`;
+    return { installed: false, error: detail };
   }
 
   // Check auth via `codex doctor` — `codex account read` doesn't exist in v0.137+
