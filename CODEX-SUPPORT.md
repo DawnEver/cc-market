@@ -65,7 +65,7 @@ hook 事件契约、个别插件的运行时假设。
 | **rem** | 中 | hook payload 适配 + 内存路径 | hook adapter;`.claude/memory` 作为唯一权威库,codex hook 也指向它(不要分叉成 `.codex/memory`) |
 | **sharp-review** | 中低(**必做**) | 依赖 `Workflow` 工具 + 并行 reviewer | skill 降级为顺序执行 reviewer;hook 分类逻辑可复用 |
 | **evolve** | 中低(**必做**) | 依赖 Workflow / subagent fan-out | 同上,降级为顺序 review→fix 轮次 |
-| **traceme** | — | 读 Claude transcript JSONL;Codex 会话在 sqlite | **本期跳过**(out of scope):需新写 sqlite ingester,非适配可解决,留待后续独立立项 |
+| **traceme** | 部分 | 读 Claude transcript JSONL;Codex 会话在 sqlite | 清单**已生成**(`gen-codex.mjs` 一并产出,保持市场完整),但**运行时观测未移植**:Codex 会话存 sqlite,需新写 ingester,留待后续独立立项 |
 
 设计原则:**能力降级要显式 `log`**,不要静默砍功能(与 cc-market 现有"no silent caps"约定一致)。
 
@@ -161,7 +161,7 @@ Codex 刻意做了 Claude 兼容摄取:
   takeover 的 `commands` 字段需在 Codex 清单中删去(Codex 用 skills 暴露能力)。
 
 ### 7.4 清单/市场 E2E 实测通过 ✅(隔离 `CODEX_HOME`,`codex` 0.140.0)
-用 `scripts/codex-probe.sh` 在临时 `CODEX_HOME` 跑通了完整链路(零污染用户配置):
+用 `scripts/codex-e2e.sh` 在临时 `CODEX_HOME` 跑通了完整链路(零污染用户配置):
 1. `validate_plugin.py` 通过 —— 确认 `.codex-plugin/plugin.json` **必填**:`name`、`version`
    (严格 semver)、`description`、`author.name`、`interface.{displayName, shortDescription,
    longDescription, developerName, category, capabilities[], defaultPrompt[]}`。
@@ -177,14 +177,47 @@ Codex 刻意做了 Claude 兼容摄取:
   `SKILL.json`(优先于 frontmatter 的 `short_description`)。
 
 ### 7.5 仍待实测确认的开放问题
-1. `hooks.json` + `${CLAUDE_PLUGIN_ROOT}` 在 Codex 下真正触发(需起 `codex exec` 验证
-   session_start/stop 实跑 + 处理 7.3 的 `trusted_hash` 信任批准是否可脚本化)。
+1. ✅ **已确认**:hook 信任流程存在 —— 二进制 TUI 字符串可见 `FetchHooksList`、`TrustHook`、
+   `current_hash`、`SetHookTrusted`、`HookEnabled`,说明插件 hook 需经一次 hash 信任批准。
+   仍待 `codex exec` 实跑验证 session_start/stop 端到端触发(需 codex 登录)。
 2. 插件 MCP server 的 `${CLAUDE_PLUGIN_ROOT}` 在运行时是否解析到安装 cache 根(`codex exec`
-   + MCP tool 可发现性验证)。
+   + MCP tool 可发现性验证;需 codex 登录,headless 无法验证)。
 3. Codex 是否有并行 subagent / workflow 原语(决定 sharp-review/evolve 能否免降级)?
    —— 二进制可见 `subagent_start`/`subagent_stop` 事件与 `agent_type`/`agent_transcript_path`
    payload,**暗示 Codex 有 subagent 概念**,值得进一步挖能否程序化 fan-out。
 4. 同一目录并存 `.claude-plugin/` 与 `.codex-plugin/` 时两宿主是否互不干扰(实测验证)。
 
-> 阶段 1 状态:清单/市场生成的契约已由 E2E 锁定(7.4),`${CLAUDE_PLUGIN_ROOT}` 兼容性已由
-> 二进制证实(7.2)。下一步即可写 `gen-codex.mjs` 生成器 + takeover 双宿主 E2E。
+### 7.6 Codex 兼容性边界(已确认,gen-codex 已处理)
+
+**(a) 插件 slash-command 不是 Codex 概念。** Codex 的插件组件只有 skills / hooks / mcpServers /
+apps(`commands` 字段被 validator 拒绝,二进制中也无插件命令自动发现)。因此 `gen-codex.mjs`
+丢弃 `commands` 字段。影响:
+- takeover(`/takeover:continue|models|summary`)、watch(`/watch:watch|check|setup`)的
+  **slash 入口在 Codex 下不存在**;但其底层能力仍可达 —— takeover 经 MCP 工具
+  (`call_model`/`list_models`/`codex_status`),技能经 `skills/`。
+- Codex 另有用户级 `~/.codex/prompts` 自定义提示,与插件命令是不同机制,不在本期映射范围。
+
+**(b) Hook 事件兼容性。** Codex 支持 10 个 hook 事件(`PreToolUse`、`PermissionRequest`、
+`PostToolUse`、`PreCompact`、`PostCompact`、`SessionStart`、`UserPromptSubmit`、
+`SubagentStart`、`SubagentStop`、`Stop`)。Claude 独有、**Codex 不支持**的 `Notification`、
+`SessionEnd` 在 Codex 下静默不触发。各插件实测:
+
+| 插件 | hooks.json 事件 | Codex 兼容 |
+|---|---|---|
+| rem | SessionStart, Stop | ✅ 全兼容 |
+| sharp-review | Stop | ✅ |
+| takeover / evolve | (无 hooks.json) | ✅ |
+| watch | **Notification**, Stop | ⚠️ Notification 不触发(告警退化为 Stop-only) |
+| traceme | SessionStart, Stop, **SessionEnd** | ⚠️ SessionEnd 不触发(本就 out-of-scope) |
+
+→ **本期必做的 4 个插件(takeover/rem/sharp-review/evolve)hook 全兼容。** `gen-codex.mjs`
+现在在生成时对 watch/traceme 的不支持事件**打印 warning**(`unsupportedHookEvents()`),把
+静默运行时退化前置为生成期可见警告。watch/traceme 的 Codex hook 适配留待各自后续工作。
+
+**(c) `background_tasks` 缺失。** Codex hook payload 无此字段(见 7.1)。rem 的 pending-work
+guard 退回 `taskActiveUntil` 时间窗;在 Codex 下运行的多轮技能(evolve/sharp-review)须在起始
+设 `taskActiveUntil`(evolve 已遵守),否则 Stop hook 可能中途触发。
+
+> 状态:清单/市场契约由 E2E 锁定(7.4),`${CLAUDE_PLUGIN_ROOT}` 兼容性由二进制证实(7.2),
+> 命令/hook 事件兼容边界已厘清并由 gen-codex 自动告警(7.6)。剩余 §7.5 第 2–4 项需 codex 登录
+> 实跑,非 headless 可关闭。

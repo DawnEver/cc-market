@@ -4,6 +4,11 @@
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 VALIDATOR="$HOME/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py"
+# Skip cleanly when the codex toolchain is absent locally — but in CI (where it should be
+# present) a missing toolchain is a real failure, not a skip, so surface it.
+miss() { if [ -n "${CI:-}" ]; then echo "FAIL (CI): $1"; exit 1; fi; echo "SKIP: $1"; exit 0; }
+[ -f "$VALIDATOR" ] || miss "Codex validator not found at $VALIDATOR (codex CLI / plugin-creator skill not installed)"
+command -v codex >/dev/null 2>&1 || miss "codex CLI not on PATH"
 PROBE="${TMPDIR:-/tmp}/codex-e2e"; rm -rf "$PROBE"; mkdir -p "$PROBE/home"
 export CODEX_HOME="$PROBE/home"
 

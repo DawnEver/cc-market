@@ -90,6 +90,15 @@ done <<< "$CHANGED"
 
 mv="$(bump_json "$REPO_ROOT/.claude-plugin/marketplace.json")"
 git -C "$REPO_ROOT" add "$REPO_ROOT/.claude-plugin/marketplace.json"
+
+# Regenerate Codex artifacts from the freshly-bumped Claude sources so .codex-plugin/ versions
+# stay in lockstep with .claude-plugin/ (otherwise the two manifests drift on every release).
+if [ -f "$REPO_ROOT/scripts/gen-codex.mjs" ]; then
+  node "$REPO_ROOT/scripts/gen-codex.mjs" "$REPO_ROOT" >/dev/null
+  git -C "$REPO_ROOT" add "$REPO_ROOT"/*/.codex-plugin/plugin.json "$REPO_ROOT/.agents/plugins/marketplace.json"
+  echo "pre-push: regenerated Codex artifacts" >&2
+fi
+
 git commit --amend --no-edit --no-verify -q
 git tag -a "v${mv}" -m "Release v${mv}"
 echo "pre-push: marketplace v${mv} tagged" >&2

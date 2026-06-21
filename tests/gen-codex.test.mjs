@@ -1,7 +1,7 @@
 // Tests for scripts/gen-codex.mjs — Claude → Codex artifact transpilation.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,12 +9,22 @@ import {
   transpileManifest,
   transpileMarketEntry,
   transpileMarketplace,
+  unsupportedHookEvents,
   generate,
 } from '../scripts/gen-codex.mjs';
 
 // Codex validator's accepted manifest keys + required interface fields (CODEX-SUPPORT.md §7.4).
 const CODEX_ALLOWED = new Set(['id', 'name', 'version', 'description', 'skills', 'apps', 'mcpServers', 'interface', 'author', 'homepage', 'repository', 'license', 'keywords']);
 const REQUIRED_INTERFACE = ['displayName', 'shortDescription', 'longDescription', 'developerName', 'category', 'capabilities', 'defaultPrompt'];
+
+// Track every temp dir so the suite cleans up after itself instead of leaking into tmpdir.
+const tmpDirs = [];
+function mkTmp(prefix) {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+}
+after(() => { for (const d of tmpDirs) { try { rmSync(d, { recursive: true, force: true }); } catch {} } });
 
 test('buildInterface synthesizes all required fields', () => {
   const iface = buildInterface({ name: 'takeover', description: 'Hand off tasks.', author: { name: 'Mingyang Bao' } }, { displayName: 'Takeover', category: 'productivity' });
@@ -56,14 +66,14 @@ test('transpileManifest drops Claude-only keys and keeps only accepted ones', ()
 });
 
 test('transpileManifest wires mcpServers/skills only when present on disk', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gc-'));
+  const dir = mkTmp('gc-');
   writeFileSync(join(dir, '.mcp.json'), '{}');
   mkdirSync(join(dir, 'skills'));
   const out = transpileManifest({ name: 'p', version: '1.0.0', description: 'd', author: { name: 'x' } }, { pluginDir: dir });
   assert.equal(out.mcpServers, './.mcp.json');
   assert.equal(out.skills, './skills/');
 
-  const dir2 = mkdtempSync(join(tmpdir(), 'gc-'));
+  const dir2 = mkTmp('gc-');
   const out2 = transpileManifest({ name: 'p', version: '1.0.0', description: 'd', author: { name: 'x' } }, { pluginDir: dir2 });
   assert.ok(!('mcpServers' in out2));
   assert.ok(!('skills' in out2));
@@ -85,7 +95,7 @@ test('transpileMarketplace maps all plugins and seeds interface.displayName', ()
 });
 
 test('generate writes manifests + marketplace and is idempotent', () => {
-  const root = mkdtempSync(join(tmpdir(), 'gcrepo-'));
+  const root = mkTmp('gcrepo-');
   mkdirSync(join(root, '.claude-plugin'), { recursive: true });
   writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({
     name: 'cc-market', plugins: [{ name: 'takeover', displayName: 'Takeover', description: 'd', category: 'productivity' }],
@@ -104,9 +114,68 @@ test('generate writes manifests + marketplace and is idempotent', () => {
 
   const before = readFileSync(join(root, 'takeover', '.codex-plugin', 'plugin.json'), 'utf8');
   generate(root); // re-run
-  const after = readFileSync(join(root, 'takeover', '.codex-plugin', 'plugin.json'), 'utf8');
-  assert.equal(before, after, 'generate must be idempotent');
+  const rerun = readFileSync(join(root, 'takeover', '.codex-plugin', 'plugin.json'), 'utf8');
+  assert.equal(before, rerun, 'generate must be idempotent');
   assert.ok(r1.written.length >= 2);
+});
+
+test('buildInterface falls back to a non-empty defaultPrompt when overrides clamp to empty', () => {
+  // Codex rejects empty defaultPrompt entries; whitespace/empty overrides must not survive.
+  const iface = buildInterface({ name: 'p', description: 'd', codexInterface: { defaultPrompt: ['', '   '] } }, { displayName: 'P' });
+  assert.ok(iface.defaultPrompt.length >= 1);
+  assert.ok(iface.defaultPrompt.every((p) => p.trim().length > 0), 'no empty prompt entries');
+});
+
+test('unsupportedHookEvents flags Codex-incompatible hook events', () => {
+  const dir = mkTmp('gchooks-');
+  mkdirSync(join(dir, 'hooks'), { recursive: true });
+  writeFileSync(join(dir, 'hooks', 'hooks.json'), JSON.stringify({
+    hooks: { SessionStart: [], Stop: [], Notification: [], SessionEnd: [] },
+  }));
+  const bad = unsupportedHookEvents(dir);
+  assert.deepEqual(bad.sort(), ['Notification', 'SessionEnd']);
+  // SessionStart/Stop are supported → not flagged.
+  assert.ok(!bad.includes('SessionStart') && !bad.includes('Stop'));
+
+  // No hooks.json → no warnings.
+  assert.deepEqual(unsupportedHookEvents(mkTmp('gcnohooks-')), []);
+});
+
+test('unsupportedHookEvents tolerates malformed hooks.json (non-object .hooks / bad JSON)', () => {
+  for (const bad of ['{"hooks":"oops"}', '{"hooks":[1,2]}', '{"hooks":123}', 'not json', '{}']) {
+    const dir = mkTmp('gcbad-');
+    mkdirSync(join(dir, 'hooks'), { recursive: true });
+    writeFileSync(join(dir, 'hooks', 'hooks.json'), bad);
+    assert.deepEqual(unsupportedHookEvents(dir), [], `should no-op for: ${bad}`);
+  }
+});
+
+test('generate collects hook-compat warnings without failing', () => {
+  const root = mkTmp('gcwarn-');
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({
+    name: 'cc-market', plugins: [{ name: 'w', description: 'd', category: 'productivity' }],
+  }));
+  mkdirSync(join(root, 'w', '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, 'w', '.claude-plugin', 'plugin.json'), JSON.stringify({
+    name: 'w', version: '1.0.0', description: 'd', author: { name: 'x' },
+  }));
+  mkdirSync(join(root, 'w', 'hooks'), { recursive: true });
+  writeFileSync(join(root, 'w', 'hooks', 'hooks.json'), JSON.stringify({ hooks: { Notification: [], Stop: [] } }));
+  const { warnings } = generate(root);
+  assert.ok(warnings.some((m) => m.includes('Notification') && m.includes('w')));
+});
+
+test('generate silently skips marketplace entries with no .claude-plugin/plugin.json', () => {
+  const root = mkTmp('gcskip-');
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({
+    name: 'cc-market', plugins: [{ name: 'ghost', category: 'productivity' }], // no plugin dir on disk
+  }));
+  const { written } = generate(root);
+  assert.ok(!existsSync(join(root, 'ghost', '.codex-plugin', 'plugin.json')), 'no manifest for missing plugin');
+  // The marketplace is still emitted even when every entry is skipped.
+  assert.ok(written.some((p) => p.endsWith(join('.agents', 'plugins', 'marketplace.json'))));
 });
 
 test('generated manifest satisfies Codex required fields', () => {

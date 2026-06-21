@@ -15,7 +15,31 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Keys Codex's plugin validator accepts; everything else is dropped from the manifest.
+// NOTE `commands` is intentionally absent: Codex has no plugin slash-command concept (its
+// plugin components are skills/hooks/mcpServers/apps), so a plugin's commands/ are dropped —
+// their underlying skills/MCP still port, but the `/plugin:command` invocation does not exist
+// on Codex. See CODEX-SUPPORT.md §7.6.
 const CODEX_MANIFEST_KEYS = ['name', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords'];
+
+// Hook events Codex understands (Claude hooks.json PascalCase form). A plugin hooks.json that
+// registers anything outside this set will silently not fire on Codex — gen-codex surfaces that
+// as a generation-time warning rather than letting it degrade silently at runtime.
+const CODEX_HOOK_EVENTS = new Set([
+  'PreToolUse', 'PermissionRequest', 'PostToolUse', 'PreCompact', 'PostCompact',
+  'SessionStart', 'UserPromptSubmit', 'SubagentStart', 'SubagentStop', 'Stop',
+]);
+
+/** Return the hook event names in a plugin's hooks/hooks.json that Codex does not support. */
+export function unsupportedHookEvents(pluginDir) {
+  const hooksPath = join(pluginDir, 'hooks', 'hooks.json');
+  if (!existsSync(hooksPath)) return [];
+  let hooks;
+  try { hooks = JSON.parse(readFileSync(hooksPath, 'utf8')).hooks; }
+  catch { return []; }
+  // Only a plain object maps event names → handlers; a string/array/number is malformed.
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) return [];
+  return Object.keys(hooks).filter((e) => !CODEX_HOOK_EVENTS.has(e));
+}
 
 /** Trim a string to at most `max` chars without cutting mid-word where avoidable. */
 function clamp(str, max) {
@@ -38,6 +62,14 @@ export function buildInterface(manifest, marketEntry = {}) {
   const override = manifest.codexInterface || {};
   const displayName = override.displayName || marketEntry.displayName || manifest.name;
   const longDescription = override.longDescription || marketEntry.description || manifest.description || displayName;
+  // Clamp then drop any entry that collapsed to empty; fall back to a guaranteed non-empty
+  // prompt so Codex's validator (defaultPrompt entries must be non-empty) never rejects it.
+  const fallbackPrompt = `Use the ${displayName} plugin.`;
+  let defaultPrompt = (override.defaultPrompt || [fallbackPrompt])
+    .slice(0, 3)
+    .map((p) => clamp(String(p).trim(), 128))
+    .filter((p) => p.length > 0);
+  if (defaultPrompt.length === 0) defaultPrompt = [fallbackPrompt];
   return {
     displayName,
     shortDescription: clamp(override.shortDescription || manifest.description || displayName, 80),
@@ -45,7 +77,7 @@ export function buildInterface(manifest, marketEntry = {}) {
     developerName: override.developerName || manifest.author?.name || 'Unknown',
     category: titleCase(override.category || marketEntry.category),
     capabilities: override.capabilities || ['Interactive'],
-    defaultPrompt: (override.defaultPrompt || [`Use the ${displayName} plugin.`]).slice(0, 3).map((p) => clamp(p, 128)),
+    defaultPrompt,
   };
 }
 
@@ -103,7 +135,7 @@ function writeJSON(p, obj) {
 export function generate(repoRoot, { write = true } = {}) {
   const market = readJSON(join(repoRoot, '.claude-plugin', 'marketplace.json'));
   const written = [];
-  const byName = Object.fromEntries(market.plugins.map((p) => [p.name, p]));
+  const warnings = [];
 
   for (const entry of market.plugins) {
     const pluginDir = join(repoRoot, entry.name);
@@ -114,6 +146,11 @@ export function generate(repoRoot, { write = true } = {}) {
     const dest = join(pluginDir, '.codex-plugin', 'plugin.json');
     if (write) writeJSON(dest, codexManifest);
     written.push(dest);
+
+    const badEvents = unsupportedHookEvents(pluginDir);
+    if (badEvents.length) {
+      warnings.push(`${entry.name}: hook event(s) ${badEvents.join(', ')} are not supported on Codex and will not fire`);
+    }
   }
 
   const codexMarket = transpileMarketplace(market);
@@ -121,12 +158,13 @@ export function generate(repoRoot, { write = true } = {}) {
   if (write) writeJSON(marketDest, codexMarket);
   written.push(marketDest);
 
-  return { written, market: codexMarket, byName };
+  return { written, market: codexMarket, warnings };
 }
 
 // CLI entry
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const repoRoot = process.argv[2] || join(dirname(fileURLToPath(import.meta.url)), '..');
-  const { written } = generate(repoRoot);
+  const { written, warnings } = generate(repoRoot);
   for (const f of written) console.log('wrote', f);
+  for (const w of warnings) console.warn('warning:', w);
 }
