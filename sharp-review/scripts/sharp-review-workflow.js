@@ -39,7 +39,7 @@ const DEFAULT_REVIEW_SCOPE = [
   'Redundant / dead code',
   'Anything simpler, faster, or more idiomatic',
   'Missed edge cases or silent failures',
-  'Files that grew past ~400 lines and should be split into smaller modules',
+  'Code files > 300 lines warrant scrutiny; > 600 lines should be split into smaller modules',
 ].join(', ');
 
 // ── Default Dedup Key Fields ──

@@ -58,6 +58,10 @@ slack (its effective rate rises above 0.6 when specialists are idle). If `diff` 
 (e.g. a doc-only change, so only the `docs` source fired), the orphan mass spreads across
 whatever is eligible. Set a weight to 0 in `profileWeights` to opt a profile out.
 
+**File-size convention** (built into the `architecture` profile's scope, every repo): code files
+> 300 lines warrant scrutiny and > 600 lines **must** be split; a single SKILL.md / AGENTS.md /
+CLAUDE.md > 100 lines warrants scrutiny — push mechanism into `reference/*` (progressive disclosure).
+
 Sources fire on: `diff` = wave gate; `codebase` = time interval; `docs` = ≥N doc files changed;
 `deps` = a lockfile changed. `architecture`/`docs`/`deps` run in **agent mode** with no diff
 payload — reviewers explore the repo. `profileWeights`, `docsThreshold`, `codebaseIntervalMin`
