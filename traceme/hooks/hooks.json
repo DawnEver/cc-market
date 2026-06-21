@@ -1,5 +1,4 @@
 {
-  "description": "TraceMe observability hooks — pull cross-device snapshots at session start; at session end, scan transcripts for token/tool/cost data and push an encrypted daily snapshot.",
   "hooks": {
     "SessionStart": [
       {

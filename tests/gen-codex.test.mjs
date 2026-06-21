@@ -183,3 +183,21 @@ test('generated manifest satisfies Codex required fields', () => {
   assert.ok(out.name && out.version && out.description && out.author?.name);
   for (const f of REQUIRED_INTERFACE) assert.ok(out.interface[f] !== undefined, `interface.${f} required`);
 });
+
+// --- Codex hooks.json compatibility (regression) ---
+// Codex parses hooks/hooks.json natively and rejects any top-level key other than
+// `hooks` ("unknown field `description`, expected `hooks`"). Both hosts read the
+// same file, so the source must contain only `hooks`.
+import { readdirSync as _readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+const _repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+for (const _p of _readdirSync(_repoRoot).filter((n) =>
+  existsSync(join(_repoRoot, n, 'hooks', 'hooks.json'))
+)) {
+  test(`hooks.json codex-compat: ${_p} has only the "hooks" key`, () => {
+    const j = JSON.parse(readFileSync(join(_repoRoot, _p, 'hooks', 'hooks.json'), 'utf8'));
+    assert.deepEqual(Object.keys(j), ['hooks'],
+      `Codex rejects extra top-level keys; found: ${Object.keys(j).join(', ')}`);
+  });
+}

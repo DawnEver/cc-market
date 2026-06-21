@@ -1,5 +1,4 @@
 {
-  "description": "REM sleep for Claude sessions — prune stale memory on start, consolidate learnings on stop.",
   "hooks": {
     "SessionStart": [
       {
