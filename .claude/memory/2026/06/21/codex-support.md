@@ -211,12 +211,20 @@ Codex 刻意做了 Claude 兼容摄取:
 - 技能:`skills/<n>/SKILL.md` 同构;Codex 额外读 `agents/openai.yaml`(interface)与可选
   `SKILL.json`(优先于 frontmatter 的 `short_description`)。
 
-### 7.5 仍待实测确认的开放问题
-1. ✅ **已确认**:hook 信任流程存在 —— 二进制 TUI 字符串可见 `FetchHooksList`、`TrustHook`、
-   `current_hash`、`SetHookTrusted`、`HookEnabled`,说明插件 hook 需经一次 hash 信任批准。
-   仍待 `codex exec` 实跑验证 session_start/stop 端到端触发(需 codex 登录)。
-2. 插件 MCP server 的 `${CLAUDE_PLUGIN_ROOT}` 在运行时是否解析到安装 cache 根(`codex exec`
-   + MCP tool 可发现性验证;需 codex 登录,headless 无法验证)。
+### 7.5 实测结果(2026-06-22,codex 0.141,`scripts/codex-e2e-live.sh` 隔离 CODEX_HOME 实跑)
+**5/6 通过 —— 双宿主核心机制全部验证;唯一缺口是 `codex exec` 下 MCP 工具不可发现。**
+1. ✅ **已确认实跑**:`codex exec` 下 hook 端到端触发(probe 日志可见 `hook: Stop` /
+   `hook: Stop Completed`)。`--dangerously-bypass-hook-trust` 跳过一次性 hash 信任(交互式会话仍弹一次)。
+2. ⚠️ **MCP 工具在 `codex exec` 下不可发现(`TOOL_NOT_FOUND`)** —— 但**非本仓库 bug**:
+   takeover MCP server 本地直驱 JSON-RPC 正常 boot 并列出 3 工具(`call_model`/`list_models`/
+   `codex_status`);Codex 清单 `mcpServers → ./.mcp.json → ${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs`
+   正确;安装后 `.mcp.json` 保留 `${CLAUDE_PLUGIN_ROOT}`。**结论:`codex exec`(非交互)未把插件
+   MCP server 起给模型**。待交互式 `codex` 会话复测(交互式必起 MCP)—— 若交互式可用则记为
+   "exec 模式限制"而非缺陷;handoff 文档已交 Codex 排查(`CODEX-HANDOFF.md` Task 1)。
+2b. ✅ **`.claude/rules` 注入实跑通过** —— probe 项目放 `.claude/rules/probe.md`,`codex exec`
+   下模型答出注入短语(`PROBE-RULE-OK-7Q`),证明 rem `inject-rules` SessionStart hook 在 Codex
+   生效(Codex 不原生加载 `.claude/rules`)。✅ **技能摄取**:`sharp-review`/`evolve`/`rem`/`takeover`
+   全部可见。
 3. ✅ **已确认 — Codex 有原生并行 subagent**(推翻"降级为顺序"前提)。二进制证据:
    - **`spawn_agent` 工具**:`"Spawns an agent to work on the specified task. If your current
      task is /root/task1 and you spawn_agent with task_name "task_3" the agent will have
