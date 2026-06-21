@@ -5,12 +5,63 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TOOLS, handleToolCall, handleCallModel, send, API_DISPATCH, CLAUDE_DISPATCH } from "../scripts/mcp-server.mjs";
+import {
+  TOOLS,
+  handleToolCall,
+  handleCallModel,
+  send,
+  encodeRpcMessage,
+  API_DISPATCH,
+  CLAUDE_DISPATCH,
+} from "../scripts/mcp-server.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SERVER_PATH = path.join(__dirname, "..", "scripts", "mcp-server.mjs");
+
+function parseFramedMessage(output) {
+  const headerEnd = output.indexOf("\r\n\r\n");
+  assert.notEqual(headerEnd, -1, `missing framed header in: ${output}`);
+  const header = output.slice(0, headerEnd);
+  const match = /^Content-Length:\s*(\d+)$/im.exec(header);
+  assert.ok(match, `missing Content-Length in: ${header}`);
+  const length = Number(match[1]);
+  const body = output.slice(headerEnd + 4, headerEnd + 4 + length);
+  assert.equal(Buffer.byteLength(body, "utf8"), length);
+  return JSON.parse(body);
+}
+
+function runServer(input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [SERVER_PATH], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("mcp-server test timed out"));
+    }, 3000);
+
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+
+    child.stdin.write(input);
+    child.stdin.end();
+  });
+}
 
 // ── TOOLS definition ───────────────────────────────────────────────────────────
 
@@ -54,6 +105,62 @@ describe("send", () => {
     } finally {
       process.stdout.write = orig;
     }
+  });
+
+  test("can encode standard MCP Content-Length frames", () => {
+    const encoded = encodeRpcMessage({ jsonrpc: "2.0", id: 1, result: { ok: true } }, "framed");
+    assert.match(encoded, /^Content-Length: \d+\r\n\r\n/);
+    assert.deepEqual(parseFramedMessage(encoded), { jsonrpc: "2.0", id: 1, result: { ok: true } });
+  });
+});
+
+// ── stdio transport ───────────────────────────────────────────────────────────
+
+describe("stdio transport", () => {
+  const initialize = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "test-client", version: "0.0.0" },
+    },
+  };
+
+  test("handles newline-delimited JSON initialize for Claude Code compatibility", async () => {
+    const { code, stdout, stderr } = await runServer(`${JSON.stringify(initialize)}\n`);
+    assert.equal(code, 0);
+    assert.equal(stderr, "");
+
+    const response = JSON.parse(stdout.trim());
+    assert.equal(response.jsonrpc, "2.0");
+    assert.equal(response.id, 1);
+    assert.equal(response.result.serverInfo.name, "takeover");
+    assert.deepEqual(response.result.capabilities, { tools: {} });
+  });
+
+  test("handles final newline-delimited JSON message without trailing newline", async () => {
+    const { code, stdout, stderr } = await runServer(JSON.stringify(initialize));
+    assert.equal(code, 0);
+    assert.equal(stderr, "");
+
+    const response = JSON.parse(stdout.trim());
+    assert.equal(response.jsonrpc, "2.0");
+    assert.equal(response.id, 1);
+    assert.equal(response.result.serverInfo.name, "takeover");
+  });
+
+  test("handles Content-Length framed initialize for Codex MCP clients", async () => {
+    const { code, stdout, stderr } = await runServer(encodeRpcMessage(initialize, "framed"));
+    assert.equal(code, 0);
+    assert.equal(stderr, "");
+
+    const response = parseFramedMessage(stdout);
+    assert.equal(response.jsonrpc, "2.0");
+    assert.equal(response.id, 1);
+    assert.equal(response.result.serverInfo.name, "takeover");
+    assert.deepEqual(response.result.capabilities, { tools: {} });
   });
 });
 

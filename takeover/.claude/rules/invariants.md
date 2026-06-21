@@ -35,7 +35,8 @@ Always-injected behavioral constraints for working on the takeover plugin.
 
 ## MCP protocol
 
-- `send(rpc)` writes `JSON.stringify(rpc) + "\n"` to stdout.
+- The server accepts both newline-delimited JSON-RPC and standard MCP `Content-Length` stdio frames. Keep newline support for Claude Code compatibility; keep framed support for Codex MCP startup.
+- `send(rpc)` defaults to newline-delimited JSON for direct handler/tests. Runtime dispatch replies on the same transport used by the incoming request.
 - Error codes: `-32601` for unknown method, `-32000` for server error, `-32602` for invalid params.
 - `call_model` requires `provider` + `userPrompt` (non-empty). `--write` only valid for `provider=codex`.
 - `mode` enum / per-provider support: documented authoritatively in the `call_model` tool schema description in `mcp-server.mjs` (the only runtime-visible source). Dev note: image modes are codex-only; `review` is dispatched for every provider (codex via its native endpoint, others aliased to the task handler) — keep the dispatch maps and that schema description in sync.

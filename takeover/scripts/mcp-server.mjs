@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -29,8 +28,41 @@ const SERVER_VERSION = pluginJson.version;
 
 // ── MCP stdio transport ───────────────────────────────────────────
 
-export function send(rpc) {
-  process.stdout.write(JSON.stringify(rpc) + "\n");
+const LINE_TRANSPORT = "line";
+const FRAMED_TRANSPORT = "framed";
+
+export function encodeRpcMessage(rpc, transport = LINE_TRANSPORT) {
+  const json = JSON.stringify(rpc);
+  if (transport === FRAMED_TRANSPORT) {
+    return `Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n\r\n${json}`;
+  }
+  return `${json}\n`;
+}
+
+export function send(rpc, transport = LINE_TRANSPORT) {
+  process.stdout.write(encodeRpcMessage(rpc, transport));
+}
+
+function isFramedTransport(buffer) {
+  const prefix = buffer.subarray(0, Math.min(buffer.length, "Content-Length:".length)).toString("ascii").toLowerCase();
+  return "content-length:".startsWith(prefix) || prefix.startsWith("content-length:");
+}
+
+function headerEnd(buffer) {
+  const crlf = buffer.indexOf("\r\n\r\n");
+  const lf = buffer.indexOf("\n\n");
+  if (crlf === -1) return lf === -1 ? null : { index: lf, bytes: 2 };
+  if (lf === -1) return { index: crlf, bytes: 4 };
+  return crlf < lf ? { index: crlf, bytes: 4 } : { index: lf, bytes: 2 };
+}
+
+function parseJsonPayload(payload, preview) {
+  try {
+    return JSON.parse(payload);
+  } catch {
+    process.stderr.write(`mcp-takeover: bad JSON: ${preview.slice(0, 200)}\n`);
+    return null;
+  }
 }
 
 // ── Tool definitions ──────────────────────────────────────────────
@@ -398,72 +430,113 @@ export async function handleToolCall(name, args) {
 
 // ── Main loop ─────────────────────────────────────────────────────
 
-async function main() {
-  const rl = createInterface({ input: process.stdin });
+export async function handleRpcRequest(req, transport = LINE_TRANSPORT) {
+  const { id, method, params = {} } = req;
 
-  for await (const line of rl) {
-    if (!line.trim()) continue;
+  try {
+    switch (method) {
+      case "initialize":
+        send({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion: params.protocolVersion || "2024-11-05",
+            capabilities: { tools: {} },
+            serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+          },
+        }, transport);
+        break;
 
-    let req;
-    try {
-      req = JSON.parse(line);
-    } catch {
-      process.stderr.write(
-        `mcp-takeover: bad JSON: ${line.slice(0, 200)}\n`
-      );
-      continue;
+      case "ping":
+        send({ jsonrpc: "2.0", id, result: {} }, transport);
+        break;
+
+      case "notifications/initialized":
+        break;
+
+      case "tools/list":
+        send({ jsonrpc: "2.0", id, result: { tools: TOOLS } }, transport);
+        break;
+
+      case "tools/call":
+        send({
+          jsonrpc: "2.0",
+          id,
+          result: await handleToolCall(params.name, params.arguments || {}),
+        }, transport);
+        break;
+
+      default:
+        send({
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32601,
+            message: `Method not found: ${method}`,
+          },
+        }, transport);
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = message.includes("not found") ? -32602 : -32000;
+    send({ jsonrpc: "2.0", id, error: { code, message } }, transport);
+  }
+}
 
-    const { id, method, params } = req;
+async function main(input = process.stdin) {
+  let buffer = Buffer.alloc(0);
 
-    try {
-      switch (method) {
-        case "initialize":
-          send({
-            jsonrpc: "2.0",
-            id,
-            result: {
-              protocolVersion: "2024-11-05",
-              capabilities: { tools: {} },
-              serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-            },
-          });
-          break;
+  for await (const chunk of input) {
+    const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    buffer = Buffer.concat([buffer, incoming]);
 
-        case "ping":
-          send({ jsonrpc: "2.0", id, result: {} });
-          break;
-
-        case "notifications/initialized":
-          break;
-
-        case "tools/list":
-          send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
-          break;
-
-        case "tools/call":
-          send({
-            jsonrpc: "2.0",
-            id,
-            result: await handleToolCall(params.name, params.arguments || {}),
-          });
-          break;
-
-        default:
-          send({
-            jsonrpc: "2.0",
-            id,
-            error: {
-              code: -32601,
-              message: `Method not found: ${method}`,
-            },
-          });
+    while (buffer.length > 0) {
+      if (buffer[0] === 0x0a || buffer[0] === 0x0d) {
+        buffer = buffer.subarray(1);
+        continue;
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const code = message.includes("not found") ? -32602 : -32000;
-      send({ jsonrpc: "2.0", id, error: { code, message } });
+
+      if (isFramedTransport(buffer)) {
+        const end = headerEnd(buffer);
+        if (!end) break;
+
+        const header = buffer.subarray(0, end.index).toString("ascii");
+        const match = /^Content-Length:\s*(\d+)$/im.exec(header);
+        if (!match) {
+          process.stderr.write(`mcp-takeover: bad MCP header: ${header.slice(0, 200)}\n`);
+          buffer = buffer.subarray(end.index + end.bytes);
+          continue;
+        }
+
+        const length = Number(match[1]);
+        const bodyStart = end.index + end.bytes;
+        const bodyEnd = bodyStart + length;
+        if (buffer.length < bodyEnd) break;
+
+        const body = buffer.subarray(bodyStart, bodyEnd).toString("utf8");
+        buffer = buffer.subarray(bodyEnd);
+
+        const req = parseJsonPayload(body, body);
+        if (req) await handleRpcRequest(req, FRAMED_TRANSPORT);
+        continue;
+      }
+
+      const lineEnd = buffer.indexOf("\n");
+      if (lineEnd === -1) break;
+
+      const line = buffer.subarray(0, lineEnd).toString("utf8").trim();
+      buffer = buffer.subarray(lineEnd + 1);
+      if (!line) continue;
+
+      const req = parseJsonPayload(line, line);
+      if (req) await handleRpcRequest(req, LINE_TRANSPORT);
     }
+  }
+
+  const trailing = buffer.toString("utf8").trim();
+  if (trailing && !isFramedTransport(buffer)) {
+    const req = parseJsonPayload(trailing, trailing);
+    if (req) await handleRpcRequest(req, LINE_TRANSPORT);
   }
 }
 
