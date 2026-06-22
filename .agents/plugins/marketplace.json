@@ -63,18 +63,6 @@
         "authentication": "ON_USE"
       },
       "category": "Productivity"
-    },
-    {
-      "name": "traceme",
-      "source": {
-        "source": "local",
-        "path": "./traceme"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_USE"
-      },
-      "category": "Productivity"
     }
   ]
 }

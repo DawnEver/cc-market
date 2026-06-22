@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "takeover": {
+      "command": "node",
+      "args": [
+        "./scripts/mcp-server.mjs"
+      ],
+      "cwd": "."
+    }
+  }
+}

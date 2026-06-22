@@ -1,6 +1,6 @@
 {
   "name": "takeover",
-  "version": "2.3.21",
+  "version": "2.3.22",
   "description": "Hand off tasks to another AI model and get back the result — let a different model take over any task or planning request.",
   "author": {
     "name": "Mingyang Bao"
@@ -13,7 +13,7 @@
     "delegate",
     "second-opinion"
   ],
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./.codex-plugin/mcp.json",
   "skills": "./skills/",
   "interface": {
     "displayName": "Takeover",

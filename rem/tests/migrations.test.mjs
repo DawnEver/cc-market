@@ -8,7 +8,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { migrate } from '../migrations/migrate.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('rem migrate()', () => {
   let projectRoot;
@@ -163,5 +166,13 @@ describe('rem migrate()', () => {
     assert.equal(fs.existsSync(nestedFile), true);
     const content = fs.readFileSync(nestedFile, 'utf8');
     assert.match(content, /name: flat-entry/);
+  });
+
+  test('migration stamp child process is hidden on Windows', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', 'migrate.mjs'),
+      'utf8',
+    );
+    assert.match(source, /execFileSync\('node', \[stampScript\], \{[^}]*windowsHide: true/s);
   });
 });

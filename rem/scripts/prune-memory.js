@@ -2,7 +2,7 @@
 // Prune MEMORY.md index:
 //   - Short-term (>90d stale or >20 count): evict from index
 //   - Long-term (not accessed since last prune): demote to short
-// Run: node scripts/prune-memory.js [--dry-run] [--evict-stale]
+// Run: node scripts/prune-memory.js [--dry-run] [--evict-stale] [--quiet]
 // Called by SessionStart hook; runs scope-validate --fix first.
 
 import { readFileSync } from 'fs';
@@ -17,7 +17,12 @@ import {
 
 const dryRun = process.argv.includes('--dry-run');
 const evictStale = process.argv.includes('--evict-stale');
+const quiet = process.argv.includes('--quiet');
 const now = Date.now();
+
+function log(...args) {
+  if (!quiet) console.log(...args);
+}
 
 // Load unified state
 const state = loadState();
@@ -78,9 +83,9 @@ if (lastPruneAt > 0) {
 }
 
 if (demoted.length > 0) {
-  console.log(`[prune-memory] ${demoted.length} long-term entries inactive since last prune → demoting to short:`);
+  log(`[prune-memory] ${demoted.length} long-term entries inactive since last prune → demoting to short:`);
   for (const e of demoted) {
-    console.log(`  ${e.accessed} ${e.path}`);
+    log(`  ${e.accessed} ${e.path}`);
     if (!dryRun) {
       saveMemoryMeta(scopeRoot, e.path, { tier: 'short', count: 1 });
       shortTerm.push(e);
@@ -94,20 +99,20 @@ if (demoted.length > 0) {
 }
 
 if (longTerm.length > 0) {
-  console.log(`[prune-memory] ${longTerm.length} long-term entries (protected this cycle):`);
-  for (const e of longTerm) console.log(`  ${e.accessed} ${e.path}`);
+  log(`[prune-memory] ${longTerm.length} long-term entries (protected this cycle):`);
+  for (const e of longTerm) log(`  ${e.accessed} ${e.path}`);
 }
 
 // ── Short-term eviction ──
 const stale = shortTerm.filter(e => now - e.accessedDate > STALE_DAYS * DAY_MS);
 if (stale.length > 0) {
-  console.log(`[prune-memory] ${stale.length} stale short-term entries (>${STALE_DAYS}d):`);
+  log(`[prune-memory] ${stale.length} stale short-term entries (>${STALE_DAYS}d):`);
   for (const e of stale) {
     const days = Math.round((now - e.accessedDate) / DAY_MS);
-    console.log(`  ${e.accessed} ${e.path} — last accessed ${days}d ago`);
+    log(`  ${e.accessed} ${e.path} — last accessed ${days}d ago`);
   }
   if (evictStale && !dryRun) {
-    console.log('[prune-memory] --evict-stale: dropping stale entries from index');
+    log('[prune-memory] --evict-stale: dropping stale entries from index');
   }
 }
 
@@ -115,9 +120,9 @@ const over = shortTerm.length - MAX_ENTRIES;
 if (over > 0) {
   const oldestFirst = [...shortTerm].sort((a, b) => a.accessedDate - b.accessedDate);
   const toDrop = oldestFirst.slice(0, over);
-  console.log(`[prune-memory] ${shortTerm.length} short-term entries, dropping ${over} oldest:`);
+  log(`[prune-memory] ${shortTerm.length} short-term entries, dropping ${over} oldest:`);
   for (const e of toDrop) {
-    console.log(`  ${e.accessed} ${e.path}`);
+    log(`  ${e.accessed} ${e.path}`);
   }
 }
 
@@ -140,9 +145,9 @@ if (!dryRun) {
 
 if (dropSet.size === 0 && demoted.length === 0) {
   const total = longTerm.length + shortTerm.length;
-  console.log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale, ${over > 0 ? over : 0} over limit`);
+  log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale, ${over > 0 ? over : 0} over limit`);
 } else if (dryRun) {
-  console.log('[prune-memory] --dry-run: would drop ' + dropSet.size + ' entries');
+  log('[prune-memory] --dry-run: would drop ' + dropSet.size + ' entries');
 } else {
   // Drop entries from state
   for (const p of dropSet) {
@@ -156,5 +161,5 @@ if (dropSet.size === 0 && demoted.length === 0) {
   }
 
   const kept = entries.length - dropSet.size;
-  console.log(`[prune-memory] removed ${dropSet.size} entries, ${kept} remaining`);
+  log(`[prune-memory] removed ${dropSet.size} entries, ${kept} remaining`);
 }

@@ -267,7 +267,7 @@ export async function migrate(projectRoot) {
   const stampScript = join(__dirname, '..', 'scripts', 'stamp-memory.js');
   if (existsSync(stampScript) && existsSync(join(projectRoot, '.claude'))) {
     try {
-      const out = execFileSync('node', [stampScript], { cwd: projectRoot, encoding: 'utf8' });
+      const out = execFileSync('node', [stampScript], { cwd: projectRoot, encoding: 'utf8', windowsHide: true });
       if (/\[stamp-memory\]/.test(out)) {
         changed = true;
         summary.push('rebuilt MEMORY.md indexes for all scopes');

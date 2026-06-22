@@ -5,12 +5,11 @@
 // `.claude-plugin/plugin.json` → `.codex-plugin/plugin.json` (Codex's accepted shape),
 // then emit a Codex marketplace at `.agents/plugins/marketplace.json`.
 //
-// Codex ingests Claude artifacts directly: it auto-discovers `hooks.json`/`.mcp.json`/`skills/`
-// and substitutes `${CLAUDE_PLUGIN_ROOT}` itself, so those files are NOT rewritten — only the
-// manifest (which rejects Claude-only keys like `commands`/`hooks`) and the marketplace need
-// generating. See CODEX-SUPPORT.md §7 for the validated contract.
+// Codex ingests Claude artifacts directly for hooks/skills, but plugin MCP loading is more
+// conservative than Claude Code. We keep the source `.mcp.json` untouched for Claude Code and
+// generate a Codex-only MCP manifest under `.codex-plugin/` with relative paths.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -93,10 +92,38 @@ export function transpileManifest(manifest, { marketEntry = {}, pluginDir = null
   }
   // Component contract paths (Codex also auto-discovers these, but declaring is harmless and explicit).
   if (pluginDir) {
-    if (existsSync(join(pluginDir, '.mcp.json'))) out.mcpServers = './.mcp.json';
+    if (existsSync(join(pluginDir, '.mcp.json'))) out.mcpServers = './.codex-plugin/mcp.json';
     if (existsSync(join(pluginDir, 'skills'))) out.skills = './skills/';
   }
   out.interface = buildInterface(manifest, marketEntry);
+  return out;
+}
+
+function normalizePluginRootPath(value) {
+  const pluginRootPrefix = /^\$\{(?:CLAUDE_)?PLUGIN_ROOT\}[\\/]/;
+  if (!pluginRootPrefix.test(value)) return value;
+  return `./${value.replace(pluginRootPrefix, '').replaceAll('\\', '/')}`;
+}
+
+function normalizeMcpValue(value) {
+  if (typeof value === 'string') {
+    return normalizePluginRootPath(value);
+  }
+  if (Array.isArray(value)) return value.map(normalizeMcpValue);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = normalizeMcpValue(v);
+    return out;
+  }
+  return value;
+}
+
+/** Build a Codex-only MCP manifest without mutating the Claude Code `.mcp.json`. */
+export function transpileMcpManifest(mcpManifest) {
+  const out = normalizeMcpValue(mcpManifest);
+  for (const server of Object.values(out.mcpServers || {})) {
+    if (server && typeof server === 'object' && server.cwd === undefined) server.cwd = '.';
+  }
   return out;
 }
 
@@ -110,12 +137,16 @@ export function transpileMarketEntry(entry) {
   };
 }
 
+function isCodexSupported(entry) {
+  return entry.codex !== false;
+}
+
 /** Build the full Codex marketplace manifest from the Claude one. */
 export function transpileMarketplace(market) {
   return {
     name: market.name,
     interface: { displayName: market.metadata?.displayName || titleCase(market.name) },
-    plugins: market.plugins.map(transpileMarketEntry),
+    plugins: market.plugins.filter(isCodexSupported).map(transpileMarketEntry),
   };
 }
 
@@ -139,6 +170,11 @@ export function generate(repoRoot, { write = true } = {}) {
 
   for (const entry of market.plugins) {
     const pluginDir = join(repoRoot, entry.name);
+    if (!isCodexSupported(entry)) {
+      if (write) rmSync(join(pluginDir, '.codex-plugin'), { recursive: true, force: true });
+      warnings.push(`${entry.name}: skipped Codex artifacts because marketplace entry has codex:false`);
+      continue;
+    }
     const srcManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
     if (!existsSync(srcManifestPath)) continue;
     const manifest = readJSON(srcManifestPath);
@@ -146,6 +182,13 @@ export function generate(repoRoot, { write = true } = {}) {
     const dest = join(pluginDir, '.codex-plugin', 'plugin.json');
     if (write) writeJSON(dest, codexManifest);
     written.push(dest);
+
+    const srcMcpPath = join(pluginDir, '.mcp.json');
+    if (existsSync(srcMcpPath)) {
+      const mcpDest = join(pluginDir, '.codex-plugin', 'mcp.json');
+      if (write) writeJSON(mcpDest, transpileMcpManifest(readJSON(srcMcpPath)));
+      written.push(mcpDest);
+    }
 
     const badEvents = unsupportedHookEvents(pluginDir);
     if (badEvents.length) {

@@ -4,12 +4,13 @@ A community marketplace of plugins for **both Claude Code and Codex**.
 
 Plugins are authored once against the Claude Code format (the source of truth) and the Codex
 artifacts (`.codex-plugin/plugin.json` per plugin + `.agents/plugins/marketplace.json`) are
-generated from them by `scripts/gen-codex.mjs`. Codex ingests Claude plugins natively —
-it auto-discovers `hooks.json`/`.mcp.json`/`skills/` and substitutes `${CLAUDE_PLUGIN_ROOT}` —
-so the same plugin runs on either host. See the [codex-support design memo](.claude/memory/2026/06/21/codex-support.md)
-for the design and the validated host-compatibility contract.
+generated from them by `scripts/gen-codex.mjs`. Hooks and skills stay shared across both hosts;
+MCP plugins keep their Claude Code `.mcp.json` source and get a generated
+`.codex-plugin/mcp.json` with plugin-local relative paths for Codex. See the
+[codex-support design memo](.claude/memory/2026/06/21/codex-support.md) for the design and the
+validated host-compatibility contract.
 
-> Active development — backward compatibility is not guaranteed. Plugin configs, data formats, and internal APIs may change between versions without migration paths.
+> Active development: backward compatibility is not guaranteed. Plugin configs, data formats, and internal APIs may change between versions without migration paths.
 
 ## Hosts: Claude Code & Codex
 
@@ -17,14 +18,14 @@ Most plugins run on **both** hosts. Per-plugin support:
 
 | Plugin | Claude Code | Codex | Notes |
 |---|---|---|---|
-| [`takeover`](takeover/README.md) | ✅ | ✅ | MCP server consumed by both hosts. |
-| [`rem`](rem/README.md) | ✅ | ✅ | On Codex the SessionStart hook injects `.claude/rules` (Codex doesn't auto-load them). |
-| [`sharp-review`](sharp-review/README.md) | ✅ | ✅ | Stop hook + skill; host-adaptive reviewer fan-out. |
-| [`evolve`](evolve/README.md) | ✅ | ✅ | Skill-only; depends on `sharp-review` + `rem`. |
-| [`watch`](watch/README.md) | ✅ | ✅ | Codex has no `Notification` event — its alert degrades to `Stop`-only. |
-| [`traceme`](traceme/README.md) | ✅ | ❌ | **Claude-only.** Reads Claude transcript JSONL; Codex sessions live in sqlite — out of scope, and will not be supported. |
+| [`takeover`](takeover/README.md) | yes | yes | MCP server consumed by both hosts. |
+| [`rem`](rem/README.md) | yes | yes | On Codex the SessionStart hook injects `.claude/rules` (Codex doesn't auto-load them). |
+| [`sharp-review`](sharp-review/README.md) | yes | yes | Stop hook + skill; host-adaptive reviewer fan-out. |
+| [`evolve`](evolve/README.md) | yes | yes | Skill-only; depends on `sharp-review` + `rem`. |
+| [`watch`](watch/README.md) | yes | yes | Codex has no `Notification` event; its alert degrades to `Stop`-only. |
+| [`traceme`](traceme/README.md) | yes | no | **Claude-only.** Reads Claude transcript JSONL; Codex sessions live in sqlite, out of scope and unsupported. |
 
-**What Codex consumes:** skills, hooks, and `mcpServers` — but **not** plugin slash-commands
+**What Codex consumes:** skills, hooks, and `mcpServers`, but **not** plugin slash-commands
 (those are Claude Code-only; the underlying capability is still reachable via the plugin's
 skills/MCP). Codex also does not support the `Notification` or `SessionEnd` hook events, and
 does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionStart hook).
@@ -45,17 +46,17 @@ codex plugin marketplace add <path-to-cc-market>
 codex plugin add takeover@cc-market   # then rem / sharp-review / evolve / watch
 ```
 
-`traceme` is Claude-only — do not `codex plugin add traceme`. See the host table above.
+`traceme` is Claude-only; do not `codex plugin add traceme`. See the host table above.
 
 ## Available plugins
 
 | Plugin | Description |
 |---|---|
-| [`takeover`](takeover/README.md) | Multi-model AI orchestration — delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider |
-| [`rem`](rem/README.md) | REM sleep for Claude sessions — memory pruning, session summarization, compaction, and automatic eviction |
-| [`sharp-review`](sharp-review/README.md) | Post-feature sharp review — 3 parallel reviewers, task sync, rem-integrated memory lifecycle |
-| [`traceme`](traceme/README.md) | Personal observability — token/cost reports, tool usage stats, multi-device encrypted sync |
-| [`watch`](watch/README.md) | Unattended server & task supervision — health checks, anomaly detection, auto-repair |
+| [`takeover`](takeover/README.md) | Multi-model AI orchestration: delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider |
+| [`rem`](rem/README.md) | REM sleep for Claude sessions: memory pruning, session summarization, compaction, and automatic eviction |
+| [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 3 parallel reviewers, task sync, rem-integrated memory lifecycle |
+| [`traceme`](traceme/README.md) | Personal observability: token/cost reports, tool usage stats, multi-device encrypted sync |
+| [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 
 ## Install
 
@@ -77,9 +78,13 @@ All plugins share a test suite run by the pre-commit hook (`.git/hooks/pre-commi
 node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
 ```
 
-Codex host integration is exercised end-to-end (in an isolated `CODEX_HOME`, requires the
-`codex` CLI) by `scripts/codex-e2e.sh` — it validates every generated `.codex-plugin/plugin.json`,
-adds the marketplace, and installs a plugin.
+Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised by
+`scripts/codex-e2e-live.sh` after `codex login`; it installs the four in-scope plugins
+(`takeover`, `rem`, `sharp-review`, `evolve`) into the real `~/.codex`, then probes hooks,
+`.claude/rules` injection, MCP exposure, and skill ingestion. For Claude Code compatibility,
+source `.mcp.json` files stay canonical and untouched; Codex uses generated per-plugin
+`.codex-plugin/mcp.json` manifests with forward-slash, plugin-local relative paths. That keeps
+the marketplace source portable across Windows/macOS/Linux and across Claude Code/Codex.
 
 ## Contributing
 
@@ -90,10 +95,10 @@ Each plugin lives in its own directory at the repo root. To add a plugin:
 3. Add tests in `<plugin-name>/tests/` using Node's built-in test runner
 4. Add an entry to `.claude-plugin/marketplace.json`
 5. Run `node scripts/gen-codex.mjs .` to regenerate the Codex artifacts (don't hand-edit
-   `.codex-plugin/` or `.agents/plugins/` — they are generated). Optionally add a `codexInterface`
+   `.codex-plugin/` or `.agents/plugins/`; they are generated). Optionally add a `codexInterface`
    block to your `plugin.json` to override the synthesized Codex `interface` fields.
-
-Versioning is automatic — the `pre-push` hook bumps every changed plugin's `plugin.json` patch version plus the marketplace manifest, then tags the release.
 6. Open a PR
+
+Versioning is automatic: the `pre-push` hook bumps every changed plugin's `plugin.json` patch version plus the marketplace manifest, then tags the release.
 
 See [Claude Code plugin docs](https://code.claude.com/docs/en/plugins) for the plugin format.
