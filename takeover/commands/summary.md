@@ -19,10 +19,12 @@ Keep it tight and actionable. The reader needs to know what to do, not a full tr
 
 ## Save
 
-After writing the summary, save it:
+After writing the summary, create the nested per-day directory:
 
 ```bash
-mkdir -p .claude/summary
+mkdir -p .claude/summary/YYYY/MM/DD
 ```
 
-Then write the summary to `.claude/summary/YYYY/MM/DD-HHmm.md` (use the current date/time). Output the file path when done.
+Then write the summary to `.claude/summary/YYYY/MM/DD/HHmm-<topic>.md` — nested per-day dir,
+filename = `HHmm` (current time) + a short kebab-case `<topic>` slug (e.g. `0058-codex-support.md`).
+Output the file path when done.
