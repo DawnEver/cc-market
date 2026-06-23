@@ -17,16 +17,6 @@ Always-injected behavioral constraints for working on the takeover plugin.
 - Notification routing: `onNotification(method, handler)`, dispatched from `_handleLine()`.
 - Cleanup via `stop()` on completion or error. Kill child process on hang.
 
-## Retry logic
-
-| Status | Behavior |
-|---|---|
-| 429, 502, 503, 504 | 2 retries with exponential backoff (1s, 2s) |
-| 4xx | Fail immediately |
-| Network error / timeout | Retry if attempts remain |
-
-`isRetryable(status)` in `lib.mjs` defines the retryable set.
-
 ## Provider config
 
 - `loadProviderConfig("claude"|"codex")` — returns `{ native: true }`, no config read.
@@ -41,15 +31,6 @@ Always-injected behavioral constraints for working on the takeover plugin.
 - `call_model` requires `provider` + `userPrompt` (non-empty). `--write` only valid for `provider=codex`.
 - `mode` enum / per-provider support: documented authoritatively in the `call_model` tool schema description in `mcp-server.mjs` (the only runtime-visible source). Dev note: image modes are codex-only; `review` is dispatched for every provider (codex via its native endpoint, others aliased to the task handler) — keep the dispatch maps and that schema description in sync.
 - `list_models` and `codex_status` take no required params.
-
-## Mode flags
-
-`parseCommandBlock()` extracts from `<command>` block:
-- `--review` → `mode=review` (adversarial by default)
-- `--image-edit` → `mode=image-edit`
-- `--image` → `mode=image-generate`
-- `--provider X` → provider override
-- `--model X` → model override
 
 ## Codex + Foundry
 
