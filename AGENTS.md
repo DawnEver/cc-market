@@ -49,7 +49,8 @@ node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs c
 | `rem/tests/lib.test.mjs` | 26 | index parsing, constants, file collection, state, findProjectRoot, scope ignore (isScopeIgnored, findAllScopes/findChildScopes) |
 | `rem/tests/inject-rules.test.mjs` | 9 | Codex host detection, `.claude/rules` file collection, additionalContext build |
 | `rem/tests/memory-state.test.mjs` | 13 | _meta.json state: load, save, bump, drop, self-heal, scope isolation |
-| `rem/tests/scope-validate.test.mjs` | 6 | scope isolation check/fix, intermediate file integrity |
+| `rem/tests/scope-validate.test.mjs` | 7 | scope isolation check/fix, intermediate file integrity, dangling migrated→ tombstone |
+| `rem/tests/scope-split.test.mjs` | 19 | scope-split: path extraction, common-prefix, subdir inference, clustering, propose thresholds, move+tombstone execute |
 | `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
 | `rem/tests/migrations.test.mjs` | 9 | `migrate()`: volatile field stripping, _meta.json import, gitignore block normalization, legacy task-dir cleanup, idempotence |
 | `rem/tests/task-lib.test.mjs` | 58 | scan, parse, markFinding, scanAllScopes, formatScopeReport (module/severity/filter opts + footer counts), resolvedConfidence, getFindingDetail, parseReportOpts, CLI auto-close/show/remove |

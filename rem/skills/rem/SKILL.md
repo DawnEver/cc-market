@@ -25,6 +25,7 @@ eviction policy, rules-vs-memory boundary — → `reference/memory-conventions.
 | `touch-memory.js <path>` | Bump `accessed` to today. `--promote` to upgrade `tier: short` → `long`. |
 | `prune-memory.js` | Enforce 20-entry cap + 90d eviction (short-term only, long-term protected). `--evict-stale`. |
 | `compact.js` | Orchestrate compact mode. `--check`, `--execute --distilled <paths>`, `--validate`. |
+| `scope-split.js` | Propose/execute splitting a memory cluster into a child scope. `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>`. |
 | `rem-prep.js` | Pre-REM automation: event log, batch touch, auto-promote, compact check. `--transcript <path> --promote`. |
 
 ### Reference
@@ -32,6 +33,7 @@ eviction policy, rules-vs-memory boundary — → `reference/memory-conventions.
 - Full script list (incl. `check-docs.js`, `task-engine.js`) → `reference/scripts.md`
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
 - Compact procedure (memory ≥20 entries; user-gated distill) → `reference/compact.md`
+- Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`
 
 ---
 
@@ -56,6 +58,17 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --check
 Exit 0 = needed, exit 1 = skip. **If needed**, follow the full user-gated distill procedure in
 **`reference/compact.md`** (propose → classify → user-confirm → distill into `.claude/rules/rem/`
 → cleanup → check-docs), then continue with the standard REM session below.
+
+## Scope split (large scope + a subdir owns a cluster)
+
+Check whether a memory cluster should move into its own child scope:
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --check
+```
+Exit 0 = a split candidate exists, exit 1 = skip. **If a candidate exists**, follow the
+user-gated procedure in **`reference/scope-split.md`** (propose → confirm each split →
+execute). Self-disables in flat repos with no internal module boundary. Distinct from compact:
+a split relocates entries into a nested scope rather than distilling them into rules.
 
 ## Lightweight (doc-only or non-code session)
 

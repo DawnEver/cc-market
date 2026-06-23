@@ -176,6 +176,27 @@ describe("scope-validate --check", () => {
     );
   });
 
+  test("dangling migrated→ tombstone reported", () => {
+    const root = freshDir();
+    setupScope(root);
+    // tombstone points at a child scope that does not exist
+    const metaFile = join(root, ".claude", "memory", "2026", "06", "11", "_meta.json");
+    writeFileSync(
+      metaFile,
+      JSON.stringify({ "gone.md": { accessed: "2026-06-11", count: 1, tier: "short", dropped: "migrated→ghost-mod" } }) + "\n",
+      "utf8"
+    );
+
+    const { stdout, status } = runValidate(root, ["--check"]);
+
+    // warn level -> exit 0
+    assert.equal(status, 0);
+    assert.ok(
+      stdout.includes("dangling migrated→ tombstone"),
+      "expected dangling tombstone warning"
+    );
+  });
+
   test("corrupt _meta.json detected", () => {
     const root = freshDir();
     setupScope(root, { corruptMeta: true });

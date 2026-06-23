@@ -18,6 +18,7 @@ SessionStart → prune-memory.js --evict-stale
     ├── Update MEMORY.md index
     ├── If ≥20 entries → compact into .claude/rules/rem/
     │   └── check-docs.js — audit doc freshness after compaction
+    ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
 
   /todo skill (user-facing task management):
     ├── /todo        → task-engine.js report  (scans memory directly)
@@ -43,6 +44,7 @@ rem/
 │   ├── prune-memory.js      Evict stale short-term, demote inactive long-term
 │   ├── touch-memory.js      Bump accessed timestamp, promote short→long
 │   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
+│   ├── scope-split.js       Relocate a memory cluster into a child scope (--check/--propose/--execute)
 │   ├── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
 │   ├── check-docs.js         Doc freshness check at compact time
 │   ├── task-lib.mjs          Task pure logic: scan, parse, archive, report helpers
@@ -79,7 +81,7 @@ node --test cc-market/rem/tests/*.test.mjs
 
 Pre-commit hook runs all rem tests + takeover + sharp-review tests. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`.
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `scope-split.test.mjs`.
 
 ## Standard
 

@@ -2,9 +2,16 @@
 
 Always-injected behavioral constraints for working on the rem plugin.
 
-## Append-only
+## Append-only (with one carve-out: relocation)
 
-Memory files in `.claude/memory/` are NEVER deleted. `prune-memory.js` and `compact.js` only mark entries as dropped in `_meta.json` — files stay on disk forever.
+Memory files in `.claude/memory/` are NEVER deleted. `prune-memory.js` and `compact.js` only
+mark entries as dropped in `_meta.json` — files stay on disk forever.
+
+The single exception is `scope-split.js`, which may **relocate** a file from a parent scope
+into a child scope's memory tree (move, not evict). It records a `dropped: 'migrated→<subdir>'`
+tombstone in the parent's `_meta.json` so the move is traceable and history is never silently
+lost. `scope-validate.mjs` flags dangling `migrated→` tombstones whose child scope is missing.
+This is a structural relocation, not an eviction — never treat it as license to delete memory.
 
 ## Path format: nested YYYY/MM/DD/ only
 
@@ -53,7 +60,9 @@ directory matching a `scopes.ignore` glob/name pattern in `.rem-state.json` (an 
 parent also prunes its descendants) via the pure `isScopeIgnored()` helper. `rebuildIndex()`
 is single-scope — multi-scope rebuilds use explicit `findAllScopes().forEach(rebuildIndex)`.
 `scope-validate.mjs` runs at SessionStart (`--fix`) to ensure intermediate file integrity
-across all scopes. Each scope owns independent `_meta.json` files and `MEMORY.md`.
+across all scopes. Each scope owns independent `_meta.json` files and `MEMORY.md`. Child
+scopes can be created on demand by `scope-split.js` (mechanism/procedure documented for the
+agent in `skills/rem/reference/scope-split.md` — not restated here).
 
 ## State
 

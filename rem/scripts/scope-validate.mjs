@@ -82,6 +82,16 @@ function validateScope(scopeRoot) {
     }
   }
 
+  // 4b. migrated→ tombstones must point at an existing child scope
+  for (const [, meta] of state) {
+    if (typeof meta.dropped === 'string' && meta.dropped.startsWith('migrated→')) {
+      const target = meta.dropped.slice('migrated→'.length);
+      if (!existsSync(join(scopeRoot, target, '.claude', 'memory'))) {
+        issues.push({ scope: scopeRoot, level: 'warn', msg: `dangling migrated→ tombstone: child scope ${target} not found` });
+      }
+    }
+  }
+
   // 5. Child scopes should not have .rem-state.json
   if (!isRepoRoot && existsSync(remStateFile)) {
     issues.push({ scope: scopeRoot, level: 'warn', msg: '.claude/.rem-state.json should only exist in repo root scope' });
