@@ -3,259 +3,153 @@
 The full ordered protocol for one round. Execute the steps in order. Never abort the whole
 round because a single subagent failed — filter out null results and continue.
 
-## Host adaptivity (Claude Code vs Codex)
-
-evolve runs from the main loop on either host. **Only one touch point is host-aware:** the
-fan-out fix (step 2), because spawning fix subagents is evolve's *own* orchestration primitive
-and the two hosts expose different ones:
-
-| Step | Claude Code | Codex |
-|---|---|---|
-| 2. Fan-out fix | one `Agent` per disjoint group | one `spawn_agent` worker per disjoint group (Codex runs them in parallel and they "see each other's work" — keep file-sets disjoint exactly as below) |
-
-**Critique (step 1) is NOT host-aware in evolve.** evolve only *runs sharp-review and reads the
-OPEN findings from its backlog* — sharp-review picks its own fan-out path (Claude `Workflow` vs
-Codex raw `spawn_agent`/takeover) internally; that choice never surfaces here. Keeping the
-Workflow-vs-skill fork inside sharp-review (one place) is why step 1 reads the backlog rather
-than consuming a tool's return value.
-
-Everything else — `groupFindings`/`prioritize`/`checkTermination` (plain Node), the human gate,
-the TDD gate, scoped commits — is host-agnostic. Under Codex, set a `taskActiveUntil` window at
-round start (no `background_tasks` field) so the Stop hook doesn't fire mid-round.
+**Host-adaptivity context** → AGENTS.md § Host adaptivity for the one touch point (step 2
+fan-out is host-aware — `Agent` vs `spawn_agent`). All other steps are host-agnostic. On
+Codex, set the task guard at round start so the Stop hook doesn't fire mid-round.
 
 ## Helper module — `scripts/evolve.mjs`
 
-Do **not** hand-edit state JSON or hand-compute grouping/termination. Delegate the mechanics
-to the helper (importable + CLI:
-`node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" <init|load|group|terminate|prioritize>`):
-
-- `loadState` / `saveState` — atomic, backed by rem's `.claude/.rem-state.json` (a hard
-  dependency, verified in Setup), with Windows retry. Use instead of manual read/rename.
-- `initState` — create a fresh `evolveState` (step Setup).
-- `recordRound` — bump `round`/`lastRoundAt` and persist (step 7).
-- `prioritize(findings, minSeverity)` — filter by `--min-severity` and sort HIGH→MEDIUM→LOW
-  (steps 1/2). (Quorum/dedup is done upstream by sharp-review's merge, not re-run here.)
-- `groupFindings(findings)` — disjoint connected-component fix-groups (step 2).
-- `seedFromSharpReview(projectRoot, date)` — `--seed`: read OPEN findings from an existing
-  `sharp-review.md` backlog (reuses `shared/lib.mjs parseFindingsFromMarkdown`), step 1.
-- `writeRoundLog(projectRoot, {...})` — cleanup: write the round-log as a rem-frontmatter
-  memory entry so rem's indexer picks it up (no need to call rem's `rebuildIndex`).
-
-State I/O and `dateToPath` come from the bundled `shared/` (`shared/state.mjs`,
-`shared/lib.mjs`) — the same modules rem/sharp-review use — not re-implemented here. `saveState`
-always persists to rem's state file (creating it if absent); there is no in-memory fallback.
-- `checkTermination(state)` → `{ stop, reason }` — the termination decision (step 7).
-- `checkRoundComplete(state)` → `{ complete, openFindings }` and
-  `routeRoundCompletion(state, {consumer})` — the round-completion check + attention-gate routing
-  (step 7.5). The gate itself is `shared/attention.mjs` (`route`/`classify`/`compress`).
-
-Keep the conceptual explanation in each step; let the script do the arithmetic.
+Do **not** hand-edit state JSON or hand-compute grouping/termination. Delegate every
+state/grouper/gate operation to the helper (importable + CLI:
+`node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" <cmd> [args]`). Key functions:
+`loadState`/`saveState` (atomic, preserves rem's other keys), `initState`, `recordRound`,
+`prioritize`, `groupFindings`, `seedFromSharpReview`, `checkTermination`, `checkRoundComplete`,
+`routeRoundCompletion`, `writeRoundLog`, `setTaskGuard`/`clearTaskGuard`. State I/O delegates
+to `shared/state.mjs`; never hand-write `.claude/.rem-state.json`.
 
 ## 0. Pre-flight (every round)
 
-- Confirm still inside a git repo and note the current branch (set in Setup).
-- Re-run `git status --short` and **diff against the previous round's snapshot**: if the user
-  introduced new *unrelated* changes mid-loop, pause and confirm before proceeding (their edits
-  must not be swept into evolve's commit). Then take this round's snapshot of already-modified
-  files so the commit step can scope `git add` to only what evolve changes this round.
-- If any file evolve may touch lives under `cc-market/`, verify
-  `git -C cc-market rev-parse --git-dir` succeeds; if `cc-market/` exists but is not its own
-  git repo, abort with a clear message rather than failing silently at commit.
+- Confirm still inside a git repo; note the current branch.
+- Re-run `git status --short` and diff against the previous round's snapshot: pause on new
+  unrelated mid-loop changes, then take this round's snapshot for scoped `git add` at commit.
+- If any touched file lives under `cc-market/`, verify `git -C cc-market rev-parse --git-dir`
+  succeeds; abort if `cc-market/` exists but isn't its own repo.
 
 ## 1. Architecture critique (锐评)
 
 Goal: produce a quorum-confirmed, severity-sorted **OPEN findings list** for this round.
 
-**Critique target (be explicit about what is reviewed):**
+**Critique target:**
+- `--path <glob>` scopes the critique; default is the whole repo.
+- Clean working tree (no diff): review the codebase in scope (or seeded backlog).
+- Working diff present: review that diff plus directly-touched modules.
+- `--seed`: pull existing OPEN findings from a `sharp-review.md` backlog via
+  `seedFromSharpReview(projectRoot, date)`.
 
-- `--path <glob>` scopes the critique to those files/modules; default is the whole repo scope.
-- **Clean working tree (no diff):** review the codebase/modules in scope (or the seeded
-  backlog) — never an empty diff. Reviewing nothing yields nothing.
-- **Working diff present:** review that diff (plus directly-touched modules).
-- `--seed`: if set and a sharp-review findings store exists
-  (`.claude/memory/.../sharp-review.md`), seed this round's findings from its existing **OPEN**
-  entries — in addition to (or, on a clean tree, instead of) a fresh critique. Use the helper
-  `seedFromSharpReview(projectRoot, date)` (it reuses `shared/lib.mjs parseFindingsFromMarkdown`
-  + SR-ID parsing) rather than re-parsing the markdown by hand.
+Run the critique by invoking the `sharp-review` skill — **host-agnostic**: sharp-review writes
+findings to the `sharp-review.md` backlog; evolve reads **OPEN** entries via
+`seedFromSharpReview(projectRoot, date)`. evolve does **not** consume a tool return value,
+re-run `confirmedByQuorum`, or know how sharp-review fans out internally — routing through
+the backlog keeps the boundary clean.
 
-Run the critique by invoking the `sharp-review` skill (a hard dependency, verified in Setup) —
-**host-agnostic**: sharp-review itself chooses how to fan out reviewers (Claude `Workflow` vs
-Codex raw `spawn_agent`/takeover) and writes its findings to the `sharp-review.md` backlog with
-stable `SR-YYYYMMDD-NNN` IDs and ≥2-reviewer quorum/dedup already applied. evolve never sees that
-internal choice, so it does **not** consume a tool return value — instead it reads this round's
-findings from the backlog's **OPEN** entries via `seedFromSharpReview(projectRoot, date)` (the
-same path `--seed` uses). This is the *one* place the Workflow-vs-skill fork would otherwise leak
-into evolve; routing through the backlog keeps it confined to sharp-review. evolve does **not**
-re-run `confirmedByQuorum` — the quorum/dedup is already done upstream.
+**Finding identity:** findings carry stable SR-IDs. The same finding keeps its id across
+rounds. New findings start `status: OPEN`, `unfixedRounds: 0`.
 
-**Finding identity (across rounds):** findings come from sharp-review, so use its SR-IDs — the
-same finding keeps its id if it recurs in a later round. New findings start at `status: OPEN`,
-`unfixedRounds: 0`.
+**Priority:** pass findings through `prioritize(findings, minSeverity)` to apply
+`--min-severity` and severity-sort. LOW/INFO findings do not block clean convergence.
 
-**Priority (before acting):** pass the merged findings through `prioritize(findings,
-minSeverity)` to apply the `--min-severity` filter and severity-sort. (Note: `clean`
-convergence is severity-based — LOW/INFO findings do not block convergence; see
-`reference/termination.md`.)
-
-Record the confirmed findings into `evolveState.findings`. **Architecture pass:** set `arch: true` on any
-finding whose `summary`/`suggestion` implies a cross-module refactor, a public
-interface/signature change, or a data-model/schema change — detect via those signals (keywords
-like *interface, export, schema, data model, migration, breaking*) when a reviewer did not
-already set the `arch` flag. `arch: true` feeds the human gate (step 4).
+**Arch detection:** set `arch: true` on any finding whose summary/suggestion implies a
+cross-module refactor, public interface/signature change, or data-model/schema change
+(signals: *interface, export, schema, data model, migration, breaking*). `arch: true`
+feeds the human gate (step 4).
 
 ## 2. Fan-out fix
 
-Fix findings in **HIGH→MEDIUM→LOW** order (use `prioritize(findings, minSeverity)` from step 1
-as the ordering), grouped into **disjoint file sets**, then spawn one `Agent` per group.
+Fix findings in HIGH→MEDIUM→LOW order (`prioritize` output), grouped into **disjoint file
+sets** via `groupFindings(findings)`, one `Agent` per group.
 
-- **Grouping (delegated):** call `groupFindings(findings)` — it estimates each finding's file
-  closure and returns disjoint connected-component groups (merging any two findings whose
-  estimated file-sets intersect), so no two agents edit the same file. Treat each estimate as a
-  *lower bound* (see the overrun rule). Keep any finding with an uncertain closure in its own
-  group and tell its agent to **stay within its declared files**.
-- **Cross-cutting changes:** if a finding's fix spans many files (e.g. an API rename used
-  across the repo), `groupFindings` will collapse it into one large group — hand that group to
-  a **single coordinated agent run serially**, not forced into parallel. The disjoint-grouping
-  fan-out is for *independent local* fixes; one sprawling change is one serial agent.
-- **Cap:** spawn at most `maxAgents` (default 8) groups concurrently in one message; queue any
-  excess to the next batch within the same round.
-- **Overrun rule:** instruct each agent to edit only its group's files. If an agent reports
-  modifying a file outside its declared set that overlaps another group, revert that file
-  (`git checkout -- <file>`, or `git restore <file>`) and re-run those findings serially via a
-  single agent (outside the parallel fan-out) in the next batch — never let two edits race on
-  one file.
-- Use `isolation: "worktree"` only if you cannot make file-sets disjoint; otherwise plain
-  agents on disjoint sets (cheaper).
-- Each agent: implement the fixes for its findings, then report `{ id, fixed: bool, reason }`
-  for every finding it owned, plus the exact list of files it modified.
+- **Grouping:** `groupFindings` returns disjoint connected-component groups. Keep any finding
+  with an uncertain file-closure in its own group; tell its agent to stay within declared files.
+- **Cross-cutting:** a finding spanning many files collapses to one large group — run it
+  **serially**, not in parallel. Disjoint fan-out is for independent local fixes.
+- **Cap:** at most `maxAgents` (default 8) groups concurrently; queue excess.
+- **Overrun rule:** if an agent edits a file outside its declared set that overlaps another
+  group, revert (`git checkout -- <file>`) and re-run those findings serially.
+- Each agent: implement fixes, report `{ id, fixed: bool, reason, filesModified: [...] }`.
 
 ## 3. Review the un-fixed
 
-Collect every finding **not** marked `fixed`; increment its `unfixedRounds`. For each,
-classify the reason:
-
-- `false-positive` — the finding is wrong; nothing to change.
+Collect every finding **not** marked `fixed`; increment `unfixedRounds`. Classify reason:
+- `false-positive` — finding is wrong.
 - `intentional` — current behavior is deliberate.
 - `out-of-scope` — real but belongs to other work.
-- `needs-architecture-decision` — requires a design call beyond this round.
+- `needs-architecture-decision` — design call beyond this round.
 
 ## 4. Human-in-the-loop gate
 
-Call `AskUserQuestion` (summarizing the items) if the round produced **any** of:
+Gate (prefer `shared/attention.mjs` via `routeRoundCompletion`; hand-roll `AskUserQuestion`
+only for one-off questions the gate can't express) if the round produced any of:
+- (a) an **architectural change** (`arch: true` or a fix changing an interface/data model);
+- (b) a **won't-fix** finding — confirm before accepting;
+- (c) a **test failure** that couldn't be auto-fixed (step 6).
 
-- (a) an **architectural change** (any `arch: true` finding being acted on, or a fix that
-  changed an interface/data model);
-- (b) a **won't-fix** finding (`false-positive` / `intentional` / `out-of-scope`) — confirm
-  before recording it as accepted;
-- (c) a **test failure** that could not be auto-fixed (see step 6).
-
-Apply the answers: fix it / accept won't-fix-with-reason / change the approach.
-
-Prefer routing these through the **attention gate** (`shared/attention.mjs`, step 7.5) rather
-than a hand-written `AskUserQuestion`: it compresses each item to *what you must know / decide /
-the consequence of not deciding*, coalesces multiple gated items into one prompt for a human,
-and — for an AI consumer — resolves by policy without prompting at all. Hand-roll
-`AskUserQuestion` only for genuinely one-off questions the gate's item shape can't express.
+Apply answers: fix / accept won't-fix / re-approach.
 
 ## 5. Continue fixing
 
-Loop back through fan-out fixes for any item the human said to fix or re-approach, until no
+Loop back through fan-out for any item the human said to fix or re-approach, until no
 actionable item remains.
 
 ## 6. TDD gate
 
-Detect the project's test command in this order; **all tests must pass before committing.**
+Detect the test command: `package.json` scripts.test → `npm test`; Node test files →
+`node --test <dir>/*.test.mjs`; Python → `pytest`; other → `cargo test`, `go test ./...`, etc.
+None detected → ask the user; if no tests exist, skip **with an explicit warning** — never
+silently skip.
 
-1. `package.json` `scripts.test` → `npm test`.
-2. Node test files → `node --test <dir>/*.test.mjs` (e.g. a plugin's `tests/`).
-3. Python → `pytest` if `pyproject.toml` / `setup.py` / `tests/` present.
-4. Other ecosystems → the conventional command (`cargo test`, `go test ./...`, etc.).
-5. **None detected** → ask the user for the test command via `AskUserQuestion`. If the user
-   says there are no tests, skip the TDD gate **with an explicit warning in the summary** —
-   never silently skip. After a warned skip the round still proceeds to commit (step 7).
+If tests fail: auto-fix attempt (back to step 5). If still failing, escalate via human gate
+(step 4c) — do **not** commit red.
 
-If tests fail: attempt an auto-fix (back to step 5). If still failing after a reasonable
-attempt, escalate via the human gate (step 4c) — do **not** commit red.
-
-**Per-finding verification:** a green global suite is necessary but not sufficient. For each
-finding an agent claimed `fixed`, run a quick *targeted* re-check that the specific issue is
-actually resolved (re-read the changed lines / run the narrow test or repro that exercises it).
-Any claimed-fixed finding that does not truly close goes back to `status: OPEN` (its
-`unfixedRounds` keeps incrementing) and re-enters fan-out (step 5) — do not mark it fixed in
-step 7.
+**Per-finding verification:** after a green suite, re-check each claimed-fixed finding is
+truly resolved. Any not actually closed goes back to `OPEN` (its `unfixedRounds` keeps
+incrementing) — do not mark it fixed in step 7.
 
 ## 7. Resolve & commit
 
-- Mark each finding `fixed` or `wont-fix` (with reason). The `todo` CLI and sharp-review
-  findings store are hard dependencies, so ids are always `SR-*`: use `todo mark <ID> fixed`,
-  treating `todo`/`sharp-review.md` as the source of truth, and mirror status into
-  `evolveState.findings`.
-- **Stage only evolve's own changes:** `git add <file> ...` listing exactly the files the
-  round's agents reported modifying (diff against the step-0 snapshot). Never `git add -A` —
-  the user may have unrelated work in the tree.
-- **Commit granularity (`--commit=round|group`):** default `round` — one commit per round
-  staging all of the round's files. With `--commit=group`, stage and commit **per fix-group**
-  (from step 2's `groupFindings`) so each group is an independently reviewable/revertable
-  commit; iterate the staging + commit below once per group.
-- Commit with a conventional message using the **Bash HEREDOC** form (avoids PowerShell
-  here-string `@` leakage — this convention is self-contained, no external rule file needed):
+- Mark each finding `fixed` or `wont-fix` (with reason) via `todo mark <ID> <status>`. Mirror
+  status into `evolveState.findings`.
+- **Stage only evolve's changes:** `git add <file> ...` listing exactly the files the round's
+  agents modified (diff against step-0 snapshot). Never `git add -A`.
+- **Commit granularity (`--commit=round|group`):** default `round` — one commit per round.
+  `group` — one commit per fix-group, independently reviewable/revertable.
+- Commit message using Bash HEREDOC:
   ```bash
   git commit -m "$(cat <<'EOF'
   fix: evolve round N — <summary>
   EOF
   )"
   ```
-  **Windows + OneDrive:** `git commit` can fail with `cannot update the ref ... Invalid
-  argument` when the repo lives under OneDrive. Fix once with
-  `git config windows.appendAtomically false`, then retry the commit.
-  **cc-market integration:** if the changed files live under `cc-market/` (a separate,
-  gitignored repo), commit there instead: `git -C cc-market add <files>` then
-  `git -C cc-market commit -m ...`. Files under `cc-market/` and files in the host repo are
-  two separate commits.
-- **Protected-branch guard (re-checked every round, critical for auto modes):** before
-  committing, confirm the current branch is not protected/shared — treat `main`/`master` and
-  `release/*` as protected by default, honor any host-known branch protections, and when unsure
-  ask the user. Auto modes (`clean`/`resolved`) normally commit each round without prompting;
-  a protected branch is the one exception — there, **skip the auto-commit and prompt the user**
-  (do not commit until they confirm or switch branch). Never force-push.
-- Bump round state and persist via the helper: `recordRound` (which calls `saveState`). The
-  helper writes rem's `.claude/.rem-state.json` atomically (creating it if absent) and handles
-  the Windows/OneDrive rename retry internally — do not hand-roll the tmp-write/rename. If the
-  atomic rename ultimately flakes (`persisted:false`), state stays in memory for the session;
-  note that in the summary and never block the loop on a state-write failure.
-- Apply the termination policy: call `checkTermination(state)` → `{ stop, reason }` and act on
-  it. Definitions live in `reference/termination.md` (not duplicated here).
+- **Windows + OneDrive:** if `git commit` fails with "cannot update the ref", run
+  `git config windows.appendAtomically false` then retry. **cc-market:** changed files under
+  `cc-market/` → commit with `git -C cc-market`.
+- **Protected-branch guard:** re-check every round. Treat `main`/`master`/`release/*` as
+  protected. Auto modes normally commit each round; on a protected branch, **skip auto-commit
+  and prompt** — never force-push.
+- Bump state via `recordRound(state, ..., now=Date.now())`, which calls `saveState`. If the
+  atomic rename flakes, state stays in memory — never block the loop on a state-write failure.
+- Apply termination: call `checkTermination(state)` → `{ stop, reason }`. Definitions in
+  `reference/termination.md`.
 
 ## 7.5 Round-completion check (every round, after commit)
 
-A round is **not done** until every finding it touched reached a terminal state
-(`fixed` / accepted `wont-fix`). Findings left `open` are otherwise carried silently — their
-`unfixedRounds` just climbs until the stuck-finding cap at round 3. Make the carry **explicit**
-and route it through the attention gate instead of swallowing it.
+A round is **not done** until every finding it touched reached a terminal state. Still-open
+findings must be surfaced, not carried silently.
 
-- Call `checkRoundComplete(state)` → `{ complete, openFindings }`. If `complete`, the round is
-  clean — continue to termination.
-- Otherwise route the un-terminal findings through the **attention gate**
-  (`shared/attention.mjs`, via `routeRoundCompletion(state, { consumer })`) — a consumer-aware
-  router: for a **human** it auto-defers low-stakes items and coalesces only the irreversible/HIGH
-  decisions into one `AskUserQuestion`; for an **ai** consumer it never prompts (policy-resolve +
-  defer). **`defer` ≠ drop** — deferred findings (LOW included) stay OPEN in the backlog, get
-  re-attempted by fan-out every round, and escalate at the stuck-finding cap; they must also be
-  reported in the exit summary, never silently swallowed.
-
-  **Read `reference/attention-gate.md`** for the full routing rules (consumer detection, the
-  human/ai branches, the `defer` ≠ drop guarantee, and the `--until=clean` convergence caveat)
-  before acting on an incomplete round.
+- Call `checkRoundComplete(state)` → `{ complete, openFindings }`. If complete, continue to
+  termination.
+- Otherwise route through the **attention gate**: `routeRoundCompletion(state, { consumer })`
+  (`shared/attention.mjs`). Human → one coalesced `AskUserQuestion`; AI → policy-resolve +
+  defer. **`defer` ≠ drop** — deferred findings stay OPEN, get re-attempted every round, and
+  escalate at the stuck-finding cap. Full routing rules → `reference/attention-gate.md`.
 
 ## State shape
 
-The `evolveState` schema in `.claude/.rem-state.json` is a debugging/inspection reference —
-in the live flow you delegate all state I/O to `scripts/evolve.mjs` and never touch the JSON.
-Full schema → `reference/state-schema.md`.
+The `evolveState` schema in `.claude/.rem-state.json` is for debugging only — delegate all
+I/O to `scripts/evolve.mjs`. Full schema → `reference/state-schema.md`.
 
 ## Failure handling
 
-- A dead/failed subagent → its result is `null`; filter and continue the round.
+- Dead/failed subagent → `null` result; filter and continue.
 - Never commit with failing tests.
-- State is persisted atomically by `saveState`/`recordRound`; if the loop crashes,
-  `taskActiveUntil` auto-expires after 30 min (rem Stop hook self-heals).
+- State persisted atomically by `saveState`/`recordRound`; if loop crashes, the task guard
+  auto-expires after 30 min (rem Stop hook self-heals).

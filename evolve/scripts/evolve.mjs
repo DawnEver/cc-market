@@ -61,6 +61,28 @@ export function saveState(projectRoot = process.cwd(), state) {
   return saveSharedState(file, root, { atomic: true });
 }
 
+// Task guard — set/clear the rem Stop-hook window so evolve can run multi-round without
+// being interrupted mid-round. evolve does NOT know rem's internal state key layout; these
+// functions encapsulate the single touch-point.
+export function setTaskGuard(projectRoot = process.cwd(), minutes = 30) {
+  const file = statePath(projectRoot);
+  const root = loadSharedState(file);
+  if (!root.hook) root.hook = {};
+  root.hook.taskActiveUntil = Date.now() + minutes * 60 * 1000;
+  return saveSharedState(file, root, { atomic: true });
+}
+
+export function clearTaskGuard(projectRoot = process.cwd()) {
+  const file = statePath(projectRoot);
+  const root = loadSharedState(file);
+  if (root.hook?.taskActiveUntil !== undefined) {
+    delete root.hook.taskActiveUntil;
+  }
+  // Clean up stale tmp file from a prior failed atomic write.
+  try { fs.unlinkSync(file + '.tmp'); } catch (_) { /* ignore */ }
+  return saveSharedState(file, root, { atomic: true });
+}
+
 function findingFiles(f) {
   const set = new Set();
   if (f.file) set.add(f.file);
@@ -310,9 +332,15 @@ function main() {
     case 'seed':
       out(seedFromSharpReview(root, positional[0]));
       break;
+    case 'set-task-guard':
+      out(setTaskGuard(root, parseInt(positional[0]) || 30));
+      break;
+    case 'clear-task-guard':
+      out(clearTaskGuard(root));
+      break;
     default:
       process.stderr.write(
-        'usage: evolve.mjs <init|load|group <file.json>|terminate|prioritize <minSeverity>|seed [date]> [--root <dir>]\n'
+        'usage: evolve.mjs <init|load|group <file.json>|terminate|prioritize <minSeverity>|seed [date]|set-task-guard [minutes]|clear-task-guard> [--root <dir>]\n'
       );
       process.exit(cmd ? 1 : 0);
   }

@@ -30,11 +30,11 @@ plugin: invoked via `/evolve`, no hook.
 evolve runs from the main loop on both hosts. **Exactly one touch point is host-aware:** the
 step-2 fan-out fix (`Agent` per group on Claude vs. `spawn_agent` per group on Codex) — spawning
 fix subagents is evolve's own orchestration primitive, so this host-awareness is irreducible.
-Step-1 critique is **not** host-aware here: evolve just runs the `sharp-review` skill and reads
-OPEN findings from its backlog (`seedFromSharpReview`); the Workflow-vs-raw-fan-out fork lives
-entirely inside sharp-review. Helpers, gates, TDD, commits are host-agnostic. Detail →
-`reference/round-protocol.md` § Host adaptivity. (On Codex, set `taskActiveUntil` at round
-start — no `background_tasks` field — so the Stop hook doesn't fire mid-round.)
+Step-1 critique is **not** host-aware here: evolve runs the `sharp-review` skill and reads
+OPEN findings from its backlog (`seedFromSharpReview`). Helpers, gates, TDD, commits are
+host-agnostic. Detail → `reference/round-protocol.md` § Host adaptivity. (On Codex, set
+the task guard at round start — no `background_tasks` field — so the Stop hook doesn't
+fire mid-round.)
 
 ## File Structure
 

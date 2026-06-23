@@ -30,7 +30,7 @@ Extra flags: `--path`, `--min-severity`, `--dry-run`, `--seed`, `--commit=round|
 **On Codex:** install with `codex plugin add evolve@cc-market` (also requires `sharp-review`
 + `rem`). evolve runs from the main loop on both hosts; only the per-group fix fan-out differs
 (`Agent` on Claude vs. `spawn_agent` on Codex). The critique stays host-agnostic — evolve just
-runs `sharp-review` and reads its backlog, so sharp-review owns the Workflow-vs-raw fork. Codex
+runs `sharp-review` and reads its backlog; sharp-review handles fan-out internally. Codex
 invokes the skill directly rather than via a slash-command.
 
 Claude-driven (not a background workflow) so human gates and commits work. Runs in any git

@@ -42,9 +42,11 @@ there are no built-in fallbacks. See `README.md` for the overview.
 2. Parse flags (see Usage). On Windows under OneDrive, run
    `git config windows.appendAtomically false` once so `git commit` doesn't fail with
    "cannot update the ref".
-3. **Interruption guard.** Set `hook.taskActiveUntil = now + 30*60*1000` in
-   `.claude/.rem-state.json` so the rem Stop hook does not interrupt the loop mid-round. (rem is
-   a required dependency, so the state file exists or is created by the helper.)
+3. **Interruption guard.** Run
+   `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" set-task-guard` (or import `setTaskGuard` from
+   `$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs`). This sets a 30-minute window so the rem Stop hook
+   does not interrupt the loop mid-round. (rem is a required dependency, so the state file exists or
+   is created by the helper.)
 4. **Initialize loop state via the helper** — run
    `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" init [flags]` (or import `initState` from
    `$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs`) to create or load the state. Do **not**
@@ -107,11 +109,10 @@ failure handling). Stop conditions and safety caps → `reference/termination.md
   With `--commit=group` the user opted into per-group commits — honor that and skip squashing.
   If anything is uncertain (which commits are ours, already-pushed, protected branch), leave the
   per-round commits and say so in the summary.
-- If you set it in Setup, remove `hook.taskActiveUntil` from `.claude/.rem-state.json`
-  (load JSON, `delete state.hook.taskActiveUntil`, write back atomically via `.rem-state.tmp`
-  + rename). If the loop crashes, the rem Stop hook auto-expires it after 30 min, so a
-  lingering value is harmless. Also delete any stale `.claude/.rem-state.tmp` left by a failed
-  atomic write.
+- If you set it in Setup, clear the task guard:
+  `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" clear-task-guard` (or import
+  `clearTaskGuard`). If the loop crashes, the rem Stop hook auto-expires the guard after 30
+  min, so a lingering value is harmless.
 - Write a short round-log memory entry via `writeRoundLog(projectRoot, {...})` — it writes a
   rem-frontmatter entry under `.claude/memory/YYYY/MM/DD/`, so rem's session indexer picks it
   up automatically (no need to rebuild the index here).

@@ -70,7 +70,7 @@ and remain enforced by `checkTermination`.
 
 ## On stop
 
-Run the SKILL.md cleanup: remove `hook.taskActiveUntil` (if set), write the round-log memory
+Run the SKILL.md cleanup: run `clearTaskGuard` (if the task guard was set), write the round-log memory
 entry via `writeRoundLog` (rem indexes it automatically), and report a one-line summary in chat
 (rounds run, total fixed, won't-fix, any deferred items, and whether a safety cap triggered).
 
