@@ -35,7 +35,7 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 | `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights, dashboard |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
-| `tests/` | Node built-in test runner, 34 tests across 5 suites |
+| `tests/` | Node built-in test runner, 58 tests across 6 suites |
 
 ## Data Flow
 
@@ -49,118 +49,13 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
    `origin/main`, merges in memory; falls back to local SQLite queries when no synced data
    exists or `--local` is passed.
 
-`sessions.active_min` is hands-on time: the sum of consecutive message-timestamp gaps under a
-10-min idle cutoff (derived in `scan.mjs`). Unlike elapsed (`ended_at − started_at`), idle gaps
-don't count — reports surface both ("Active" vs "Elapsed"). Synced (in the per-session
-snapshot rows) so cross-device insights aggregate it; foreign snapshots predating the field
-contribute 0 until re-pushed.
+Billable-token math, schema, `session_categories` unit-split, and `active_min` →
+`skills/traceme/reference/data-model.md`.
 
-Schema (all per-session, recomputed on each scan): `sessions` (one row per transcript) +
-`session_models` / `session_tools` / `session_skills` / `session_categories` breakdowns.
-`session_categories` buckets by tool category for the dashboard's Plugins/Subagents/MCPs view.
-**Two distinct units, never summed:** `subagent.tokens` are the *true* tokens of sidechain
-(subagent) assistant turns; `mcp`/`plugin`/`builtin` carry no real tokens — their
-`tool_result`-size estimate (`length/4`) lives in a separate `bytes_est` column (no per-tool
-token attribution exists in the transcript). Local-device only; not synced.
+Multi-device encrypted sync architecture, snapshot data model, merge readers →
+`skills/traceme/reference/sync.md`.
 
-**Billable basis:** the canonical "tokens" metric across report/insights/dashboard/sync is
-`input + output + cache_creation` (billable) — re-read cache (`cache_read`) is excluded from
-headline totals and exposed as its own dimension, since it is the same context re-read each turn
-and inflates an idle session. `total_tokens` (all four) is retained for completeness; derived
-queries return `tokens`/`billable_tokens` (billable) plus `cache_read`. Daily snapshots carry
-`billable_tokens` + `cache_read_tokens`; merged reads fall back to `total_tokens` for snapshots an
-older device hasn't re-pushed. `daily_takeover`
-holds the only non-transcript source. `traceme_meta` holds scan cursors (`cur:<path>`), the cwd→repo
-cache (`repo:<cwd>`), `device_id`, and sync timestamps.
-
-## Multi-Device Encrypted Sync
-
-All devices push per-device `.enc` files directly to `main`. Only `.enc` files (age-encrypted) touch the remote repo. The sync repo is separate from the config repo.
-
-### Architecture
-```
-Device A (linxu-win)             GitHub (traceme-history)         Device B (linxu-mac)
-     |                                |                                |
-     | traceme sync push             |                                |
-     | → dump SQLite → JSON          |                                |
-     | → age encrypt                 |                                |
-     | → push main:YYYY/MM/DD/       |                                |
-     |        linxu-win.enc          |                                |
-     |──────────────────────────────>|                                |
-     |                                |                                |
-     |                                |     traceme sync pull         |
-     |                                |     → fetch main               |
-     |                                |     → decrypt linxu-win.enc    |
-     |                                |     → merge into SQLite        |
-     |                                |<───────────────────────────────|
-```
-
-### Repo Structure (traceme-history)
-
-Snapshot paths are `YYYY/MM/DD/<device-name>.enc` — one directory per day, one `.enc` file per
-device. The per-day directory leaves room for future sibling files (other tools' data) without
-another path redesign. All devices push directly to `main`:
-```
-main:
-  2026/06/09/
-    linxu-win.enc
-    linxu-mac.enc
-  2026/06/10/
-    linxu-win.enc
-    linxu-mac.enc
-```
-
-### Commands
-```
-traceme sync setup             Generate keypair, init sync repo, auto-pull from other devices
-traceme sync push [date|--all] Encrypt & push daily snapshot (--all: backfill all history)
-traceme sync pull [date|--all] Pull & import from other devices (--all: full sync)
-traceme sync verify [date]     Compare local SQLite vs merged aggregate
-traceme sync status            Show encryption key, remote, and sync health (last_push/last_pull)
-traceme export [date] [--csv]  Export daily summaries as JSON or CSV
-traceme rescan [--all] [--prune] Re-derive sessions from transcripts (--all: full rebuild; --prune: drop stale)
-```
-
-`traceme report`/`traceme stats` read all device files in the date directory from the
-cached `origin/main` ref by default (via `sync.readMergedSnapshot`) and merge in memory,
-labeling output with the contributing devices. Pass `--local` to force local-SQLite-only
-output (e.g. before any sync has run, or to inspect just this device's data).
-
-`traceme sync status` shows sync health: encryption key fingerprint, remote URL, local repo
-status, and `last_push`/`last_pull` timestamps. `traceme export [date] [--csv]` exports daily
-per-project aggregates as JSON or CSV. `traceme rescan` re-derives the local DB from the
-transcripts (`--all` ignores cursors for a full rebuild; `--prune` drops sessions whose
-transcript no longer exists) — safe to run anytime since all data is jsonl-derived.
-
-Auto-sync runs at the end of Stop/SessionEnd processing in `hooks/traceme-hook.js` — pushes
-today's per-device snapshot directly to `main`. Report reads all device files in the date
-directory and merges in memory. No separate aggregate step needed. Remote resolves from
-`TRACEME_SYNC_REMOTE` env var, falling back to the sync repo's `origin` if unset.
-
-The snapshot carries `daily_summary` (incl. `billable_tokens`/`cache_read_tokens`), `tool_usage`,
-`model_facts` (per project×model components — lights up cross-device per-model views),
-`skill_usage` (per project×skill call counts — cross-device skill rankings), and `sessions`
-(incl. `active_min` — cross-device Active/Elapsed time). `readMergedSnapshot` exposes merged
-`model_facts`/`skill_usage`/`sessions`, which `insights` aggregates for its Model/Skill/Time
-sections (per-day local fallback when a day has no synced snapshot). `merge.mjs` has ONE low-level reader, `loadDeviceSnapshots({from,to,skipSelf})`
-(cached `origin/main`, no network); `readMergedSnapshot(date)` (per-day merge, for report/insights)
-and `readDeviceFacts(from,to)` (per-device rows + per-device `modelFacts`, for the dashboard's
-all-devices vs. single-device view) are both built on it. The local device is excluded from
-`readDeviceFacts` — the live DB represents it, avoiding a double-count against its pushed snapshot.
-
-### Key Files
-| File | Role |
-|------|------|
-| `scripts/crypto.mjs` | Zero-dep AES-256-GCM encryption (Node `crypto`, no external CLI) |
-| `scripts/sync.mjs` | Sync engine: dump, encrypt, push, pull, decrypt, merge, verify, backfill, `readMergedSnapshot`, `readDeviceFacts` |
-| `scripts/migrate-legacy-paths.mjs` | One-time, manual: re-paths existing remote `YYYY-MM-DD.enc` snapshots to `YYYY/MM/DD.enc`. Not part of the CLI — `node scripts/migrate-legacy-paths.mjs` |
-| `~/.claude/traceme/key.txt` | Symmetric key (hex, never committed, gitignored) |
-| `~/.claude/traceme/sync-repo/` | Local clone of traceme-history repo |
-
-### Environment, Key Sharing & Privacy
-
-Env vars, multi-device key sharing steps, and the sync data model (what's synced vs.
-excluded) → `skills/traceme/reference/sync.md`.
+Dashboard full filter list → `skills/traceme/reference/dashboard.md`.
 
 ## Invariants
 
@@ -169,12 +64,8 @@ excluded) → `skills/traceme/reference/sync.md`.
 - Zero npm dependencies — uses Node 24 `node:sqlite` built-in
 - Prompt text is **never** stored or read — the scanner only counts prompts; it never persists their content (structural guarantee, not a convention)
 - Sync repo contains ONLY `.enc` files — no plaintext ever touches GitHub
-- Project = git repo basename of the transcript's `cwd` (display name); `repo_origin` = normalized
-  git remote (cached per cwd) and is the **grouping identity** — report/insights/dashboard group by
-  `repo_origin` so two repos sharing a basename don't merge. The dashboard suffixes the remote tail
-  (`name (tail)`) when one basename maps to >1 remote. Remote-less repos share `''` and still merge
-  (no identity without a remote)
 - Scan is idempotent: a session is fully recomputed and replaced on each pass; aggregates are query-time only
+- Project grouping identity is `repo_origin` (normalized git remote), not basename. Remote-less repos share `''` and merge. Dashboard suffixes remote tail when one basename maps to >1 remote.
 
 ## Tests
 

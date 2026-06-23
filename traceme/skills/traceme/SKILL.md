@@ -72,17 +72,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard            # Gene
 node "${CLAUDE_PLUGIN_ROOT}/scripts/traceme-cli.mjs" dashboard --no-open  # Write file only, don't open browser
 ```
 
-Generates an interactive HTML dashboard at `~/.claude/traceme/dashboard.html` and opens it.
-It embeds the **last 90 days** of data and renders with **Apache ECharts via CDN** (needs internet
-on first open). Filter entirely in-browser — no CLI re-run: pick the **date range**, filter by
-**projects** and **devices** (all vs. single device, when sync is set up), switch grouping
-**model / project / device / category**, toggle calendar intensity between **tokens and cost**,
-and toggle the **cache_read** layer. The token/cost/session/calendar/trend views combine local
-live data with foreign devices' synced snapshots; per-model, tool-category, skill, and "Elapsed"
-are **local-device only** (only tokens/cost/sessions are synced). Calendar/trend default to
-*billable* tokens (`input+output+cache_creation`, excludes re-read cache); the tool-category chart
-keeps `subagent` (actual tokens) apart from MCP/plugin/builtin (`≈ result-bytes`, coarse estimate);
-"Elapsed" is gross wall-clock incl. idle. Run `rescan --all` once to backfill older sessions.
+Generates an interactive HTML dashboard (Apache ECharts, CDN) embedding the last 90 days.
+Filter in-browser by date range, projects, devices (all vs. single), grouping (model/project/device/category),
+and toggle calendar intensity (tokens/cost) + cache_read layer. Full filter list → `reference/dashboard.md`.
+Run `rescan --all` once before first open to backfill older sessions.
 
 ### Errors
 ```bash
