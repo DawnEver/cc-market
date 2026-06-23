@@ -37,39 +37,7 @@ To run every JS suite manually:
 node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
 ```
 
-| Test file | Tests | Coverage |
-|---|---|---|
-| `takeover/tests/lib.test.mjs` | 56 | provider config, model resolution, API, retry |
-| `takeover/tests/mcp-server.test.mjs` | 15 | TOOLS schema, JSON-RPC, validation, dispatch routing (review for all providers) |
-| `takeover/tests/app-server.test.mjs` | 13 | JSON-RPC client, `_rejectAllPending` timer cleanup, `_pendingCount` source guard |
-| `takeover/tests/discovery.test.mjs` | 4 | codex binary discovery |
-| `takeover/tests/image.test.mjs` | 2 | image gen/edit error paths |
-| `rem/tests/frontmatter.test.mjs` | 13 | frontmatter parsing, field get/set |
-| `rem/tests/date-path.test.mjs` | 16 | date formatting, path resolution, memory dir security |
-| `rem/tests/lib.test.mjs` | 26 | index parsing, constants, file collection, state, findProjectRoot, scope ignore (isScopeIgnored, findAllScopes/findChildScopes) |
-| `rem/tests/inject-rules.test.mjs` | 9 | Codex host detection, `.claude/rules` file collection, additionalContext build |
-| `rem/tests/memory-state.test.mjs` | 13 | _meta.json state: load, save, bump, drop, self-heal, scope isolation |
-| `rem/tests/scope-validate.test.mjs` | 7 | scope isolation check/fix, intermediate file integrity, dangling migrated→ tombstone |
-| `rem/tests/scope-split.test.mjs` | 19 | scope-split: path extraction, common-prefix, subdir inference, clustering, propose thresholds, move+tombstone execute |
-| `rem/tests/rem-hook.test.mjs` | 32 | isFreshSession, hasSubstantiveWork, decideStop |
-| `rem/tests/migrations.test.mjs` | 9 | `migrate()`: volatile field stripping, _meta.json import, gitignore block normalization, legacy task-dir cleanup, idempotence |
-| `rem/tests/task-lib.test.mjs` | 58 | scan, parse, markFinding, scanAllScopes, formatScopeReport (module/severity/filter opts + footer counts), resolvedConfidence, getFindingDetail, parseReportOpts, CLI auto-close/show/remove |
-| `rem/tests/check-docs.test.mjs` | 29 | collectDocs, crossReference, formatReport, CLI |
-| `sharp-review/tests/lib.test.mjs` | 21 | SR-ID parsing, module/category inference (incl. path inference), frontmatter |
-| `sharp-review/tests/manifest.test.mjs` | 42 | classifyLowValue, numstat/name-status parsing, buildManifest, decideMode, renderManifestText, extractHunkHeaders |
-| `sharp-review/tests/hook.test.mjs` | 4 | findGitRoot project-root resolution |
-| `sharp-review/tests/migrations.test.mjs` | 6 | `migrate()`: legacy finding-file consolidation, config relocation to `.claude/sharp-review.json`, idempotence |
-| `sharp-review/tests/profiles.test.mjs` | 19 | PROFILES registry, resolveProfile/resolveWeights, pickProfileKey bands, normalizeCustomProfile + mergeProfiles (custom profiles) |
-| `sharp-review/tests/pick-profile.test.mjs` | 10 | profile pick CLI: --profile override, weighted default, corrupt-config degrade, per-project weights, custom profile from config |
-| `watch/tests/` (Python) | 48 | config, daemon, components, registry |
-| `traceme/tests/crypto.test.mjs` | 9 | AES-256-GCM encrypt/decrypt |
-| `traceme/tests/db.test.mjs` | 10 | replaceSession, derived daily/model/tool/skill queries, billable basis, category unit-split (tokens vs bytes_est), `categorizeTool`, takeover fold-in |
-| `traceme/tests/scan.test.mjs` | 5 | transcript scan: token aggregation, message-id dedup, cursor skip, idempotent re-scan, category bucketing |
-| `traceme/tests/report.test.mjs` | 7 | generateReport/generateStats, merged vs local-only data source |
-| `traceme/tests/dashboard.test.mjs` | 9 | buildDashboardHtml: ECharts CDN, flat fact-table payload, interactive controls incl. device dimension, cross-device data, data-honesty labels, embedded-JSON escaping |
-| `traceme/tests/sync.test.mjs` | 11 | dump/import (incl. skill_usage + active_min), readMergedSnapshot, readDeviceFacts, mergeSkillFacts (collision-proof key, repo_origin identity), mergeModelFacts, verifyConsistency |
-| `traceme/tests/pricing.test.mjs` | 6 | model matching: dot/dash canonicalization, longest-prefix, aliases, fallback, calcCost |
-| `tests/gen-codex.test.mjs` | 9 | Codex artifact generation: interface synthesis, clamping, drop Claude-only keys, mcpServers/skills wiring, marketplace transpile, idempotence |
+See each plugin's AGENTS.md § Testing for per-suite coverage.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
