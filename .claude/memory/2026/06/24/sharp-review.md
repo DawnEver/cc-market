@@ -30,7 +30,7 @@ codex_status reports installed+authenticated (codex-cli 0.141.0), but call_model
 ### [SR-20260624-002] [HIGH] cc-market/watch/skills/watch/SKILL.md — Runtime SKILL.md is 170 lines — the largest always-loaded doc; full decision tree inlined
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Extract the per-status Decision Tree branches (Steps 2-4b, deploy_worktree_dirty/degraded/complete handling) into reference/decision-tree.md, leaving SKILL.md with the monitor-run + branch dispatch only
 
@@ -41,7 +41,7 @@ Steps 2 (branch-on-status, ~50 lines), 4b (plugin self-update), and 6 (in-sessio
 ### [SR-20260624-003] [HIGH] cc-market/traceme/AGENTS.md — Dev doc is 185 lines and restates runtime billable-token math, schema, and full sync data-model
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Move billable-basis math, session_categories unit-split, and the multi-device snapshot data model into skills/traceme/reference/; keep AGENTS.md to architecture diagram + file map + invariants
 
@@ -52,7 +52,7 @@ The 'Billable basis' and 'session_categories' paragraphs and the entire 'Multi-D
 ### [SR-20260624-004] [MEDIUM] cc-market/sharp-review/AGENTS.md — 160-line dev doc restates Wave-Gate, host-adaptive fan-out, and generalized-mode procedure already in SKILL.md/reference
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Trim AGENTS.md to the architecture diagram + design seams + dev-only invariants; replace the Wave Gate, host-adaptive fan-out, and generalized-mode prose with one-line links to SKILL.md/reference
 
@@ -63,7 +63,7 @@ The 'Host-adaptive fan-out' block duplicates SKILL.md Step 3a/3b nearly verbatim
 ### [SR-20260624-005] [MEDIUM] cc-market/sharp-review/skills/sharp-review/SKILL.md — 168-line runtime SKILL.md carries the Codex raw-fan-out raw.json schema and seed-mod reviewer-rotation mechanism inline
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Move Step 3b (Codex direct fan-out: seed-mod pairing, raw.json schema, post-review --raw call) into reference/host-fanout.md; keep SKILL.md to the host branch decision + links
 
@@ -74,7 +74,7 @@ Step 3b (lines 82-107) is host-specific mechanism + a JSON schema — exactly th
 ### [SR-20260624-006] [MEDIUM] cc-market/rem/.claude/rules/rem/hook-task-guard.md — Dev-only rules file restates the runtime taskActiveUntil procedure that evolve/sharp-review need at runtime
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Reduce hook-task-guard.md to the dev-only 'why' (the pending-work gate exists) and link the runtime 'set taskActiveUntil at round start' instruction to evolve/sharp-review SKILL.md where it actually executes
 
@@ -85,7 +85,7 @@ This rules file (always-injected during rem dev, NOT at skill runtime) tells 'an
 ### [SR-20260624-007] [MEDIUM] cc-market/evolve/AGENTS.md — Evolve docs narrate sharp-review's internal Workflow-vs-raw-fanout fork — a lower-layer implementation detail
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** State only evolve's contract ('run sharp-review, read OPEN findings from backlog'); drop the explanation of how sharp-review picks Workflow vs spawn_agent internally
 
@@ -96,7 +96,7 @@ Both AGENTS.md and reference/round-protocol.md (lines 16-20) explain that 'the W
 ### [SR-20260624-008] [MEDIUM] cc-market/evolve/skills/evolve/reference/round-protocol.md — Reference file is 261 lines — by far the largest doc in the repo
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Split round-protocol.md into per-concern files (fan-out/grouping, gates, TDD+commit) or fold the host-adaptivity table back to a single line, since attention-gate.md/termination.md/state-schema.md already exist as siblings
 
@@ -107,7 +107,7 @@ At 261 lines it is loaded whole whenever /evolve needs the protocol; the host-ad
 ### [SR-20260624-009] [LOW] cc-market/rem/skills/rem/SKILL.md — 127-line runtime SKILL.md embeds a full script-usage table that mostly duplicates reference/scripts.md
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Keep only the scripts the /rem happy-path actually invokes inline; move the full 6-row script table to reference/scripts.md (which already exists) and link
 
@@ -118,7 +118,7 @@ reference/scripts.md is explicitly cited as 'full script list', yet SKILL.md re-
 ### [SR-20260624-010] [LOW] cc-market/sharp-review/AGENTS.md — Wave-Gate 'implementation detail not covered there' in AGENTS.md is runtime behavior the skill may need
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Move lastReviewRef/lastReviewDiff delta-comparison and ref-vanished fallback into reference/profiles-and-modes.md (where thresholds already live) and keep AGENTS.md pointing there
 
@@ -129,7 +129,7 @@ AGENTS.md states it intentionally documents Wave-Gate mechanics 'not covered' in
 ### [SR-20260624-011] [LOW] cc-market/traceme/CLAUDE.md — traceme/CLAUDE.md omits the @.claude/rules/invariants.md include that every other plugin has
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Either add a .claude/rules/invariants.md for traceme (its invariants currently live only in AGENTS.md) or document why traceme has no always-injected dev rules
 
@@ -140,7 +140,7 @@ rem/sharp-review/evolve/takeover CLAUDE.md all chain '@AGENTS.md + @.claude/rule
 ### [SR-20260624-012] [INFO] cc-market/AGENTS.md — Root AGENTS.md inlines the entire per-plugin test-coverage table (~30 rows) that duplicates each plugin's own AGENTS.md test section
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Keep the run-command and the changed-plugin mapping; drop the per-test-file row table (each plugin's AGENTS.md already lists its suites) to a single 'see each plugin's Testing section' line
 
@@ -151,7 +151,7 @@ The Tests table restates counts/coverage already maintained in rem/AGENTS.md, ta
 ### [SR-20260624-013] [HIGH] rem/.claude/rules/invariants.md — 83-line invariants.md restates runtime facts (frontmatter schema, path format, index rules, memory state) already in skills/rem/reference/*.md — violates its own stated principle
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Collapse each section to a one-line dev constraint + link to the reference/* file that owns the runtime truth
 
@@ -162,7 +162,7 @@ Six sections each restate 3-10 lines of runtime behavior that memory-conventions
 ### [SR-20260624-014] [HIGH] rem/skills/rem/SKILL.md — Lines 10-16 inline restate three-tier system + frontmatter fields, then line 18 links to reference/memory-conventions.md — 'for safety' duplication that risks silent drift
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Delete lines 10-16; replace with one line linking to reference/memory-conventions.md
 
@@ -173,7 +173,7 @@ cc-market invariants.md says don't duplicate reference content back into SKILL.m
 ### [SR-20260624-015] [HIGH] sharp-review/skills/sharp-review/SKILL.md — 168-line SKILL.md (largest in repo) includes 50+ lines of Codex-specific Step 3b fan-out that burns prompt budget on every Claude Code run where it can never execute
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Move Step 3b (Codex fan-out) into reference/codex-fan-out.md; keep a 2-line dispatch + link, 3a stays inline as common path
 
@@ -184,7 +184,7 @@ Step 3b defines raw.json schema, reviewer-pair selection, spawn_agent per review
 ### [SR-20260624-016] [MEDIUM] rem/skills/todo/SKILL.md — Line 91 'Sharp-review owns findings: post-review.js writes sharp-review.md with rem frontmatter' leaks sharp-review's internal write mechanism into a rem file
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Describe what /todo consumes (the findings), not how sharp-review produces them internally
 
@@ -195,7 +195,7 @@ Step 3b defines raw.json schema, reviewer-pair selection, spawn_agent per review
 ### [SR-20260624-017] [MEDIUM] evolve/skills/evolve/SKILL.md — Lines 45-47 and 110-113 directly manipulate rem's internal state key hook.taskActiveUntil in .claude/.rem-state.json — leaks rem's internal schema into evolve's runtime instructions
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Add setTaskGuard/clearTaskGuard to evolve.mjs; SKILL.md only calls 'node evolve.mjs guard 30' / 'guard --clear'
 
@@ -206,7 +206,7 @@ evolve depends on rem so coupling is real, but the literal JSON path/key in SKIL
 ### [SR-20260624-018] [MEDIUM] cc-market/AGENTS.md — Test table (lines 40-72) duplicates per-plugin AGENTS.md test documentation — 32 lines of test counts/coverage kept in sync in two places
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Replace table with one line: 'See each plugin's AGENTS.md § Testing'
 
@@ -217,7 +217,7 @@ Each plugin's AGENTS.md already lists its tests and coverage; the root table is 
 ### [SR-20260624-019] [MEDIUM] sharp-review/AGENTS.md — Architecture diagram (lines 8-37) restates the flow SKILL.md's Step 1-6 already owns — dev doc duplicates runtime doc
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Collapse to one-line architecture map + link to skills/sharp-review/SKILL.md for the step-by-step
 
@@ -228,7 +228,7 @@ The diagram spells out pick-profile.js, diff-manifest.js, merge/dedup, post-revi
 ### [SR-20260624-020] [MEDIUM] takeover/.claude/rules/invariants.md — 60-line invariants.md restates retry-logic table (HTTP status→behavior) and mode flags that are runtime behaviors, not dev-only constraints
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Move retry table and mode flags to skills/takeover-result/reference/; invariants.md keeps dev-only constraints
 
@@ -239,7 +239,7 @@ Retry table and mode-flag mapping are runtime reference belonging in reference/ 
 ### [SR-20260624-021] [MEDIUM] rem/.claude/rules/rem/hook-task-guard.md — Separate rules file duplicates the taskActiveUntil mechanism already in skills/rem/reference/state-schema.md — a third copy of the same fact
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Merge into invariants.md as a one-sentence dev constraint linking to state-schema.md
 
@@ -250,7 +250,7 @@ The mechanism is described in hook-task-guard.md, state-schema.md, rem-hook.js s
 ### [SR-20260624-022] [LOW] watch/skills/watch/SKILL.md — 170-line SKILL.md (2nd largest); the happy path is 3 lines buried inside a 47-line Step 2 branch wall
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Move anomaly-handling sub-branches into reference/decision-tree.md; SKILL.md keeps Step 1→branch→happy + link
 
@@ -261,7 +261,7 @@ The 90%-case healthy path is surrounded by edge-case branches the agent must par
 ### [SR-20260624-023] [LOW] traceme/skills/traceme/SKILL.md — 141-line SKILL.md; the dashboard description alone is 13 verbose lines in an always-loaded runtime prompt
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Trim dashboard to 3 lines (what it does + key filters); move full filter list to --help/README
 
@@ -272,7 +272,7 @@ The agent just needs the command exists and to pass args through; the detailed U
 ### [SR-20260624-024] [INFO] sharp-review/README.md — Lines 56-66 restate the 'How It Works' flow and Wave Gate already owned by AGENTS.md's diagram — third copy of the same sequence
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** README is user-facing pitch + install; link to AGENTS.md for architecture rather than restate it
 
@@ -283,7 +283,7 @@ AGENTS.md owns the diagram, SKILL.md owns the steps; README need not be a third 
 ### [SR-20260624-025] [INFO] rem/AGENTS.md — File-structure tree (lines 35-64) duplicates what the directory listing already conveys; 57 of 91 lines are diagram+tree
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** FIXED
 - **Confidence:** single-reviewer
 - **Suggestion:** Keep the architecture flow diagram; drop the file-structure tree — the filesystem is the source of truth for layout
 
