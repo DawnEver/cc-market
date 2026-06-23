@@ -35,6 +35,16 @@ accumulates; a manual `/sharp-review` bypasses the gate entirely. Gate logic, fo
 
 Config — `.claude/sharp-review.json` → `thresholds` (see the config file section above).
 
+### Implementation: delta comparison
+
+The hook's `reviewGate` state prevents the "one more file re-triggers" problem:
+
+- `lastReviewRef` — the commit last reviewed. Skipped sessions do NOT update it; changes keep
+  accumulating until the threshold is crossed.
+- `lastReviewDiff` — the diff stat at the time of the last review. On same-ref checks, only the
+  **delta** (current diff minus last reviewed diff) is compared against the threshold.
+- Ref vanished (rebase/gc): falls back to `HEAD~1`.
+
 ## Profile selection (weighting math)
 
 A *profile* is the unit of selection; a *source* is the named trigger it reacts to (diff and

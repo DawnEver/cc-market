@@ -4,61 +4,20 @@ Post-feature code review plugin for Claude Code. Three parallel reviewers with J
 
 ## Architecture
 
-```
-Stop → sharp-review-hook.js
-         ├── Source gate (sources.mjs evaluateSources, pure): the hook does the git/clock I/O,
-         │     builds ctx, and asks every source adapter if it fired.
-         │       diff     → wave gate (lastReviewRef..WORKTREE thresholds → SKILL.md)
-         │       codebase → time interval since last review (architecture survey)
-         │       deps     → a lockfile changed
-         │       docs     → ≥N doc files changed
-         │     none fired → skip (accumulates); any fired → record reviewGate.firedSources
-         ├── Classify (claude -p): none / once / multi
-         └── Trigger /sharp-review skill:
-               ├── pick-profile.js --sources <firedSources> → single GLOBAL weighted draw over
-               │     the eligible profiles (diff | architecture | security | docs | deps); orphan
-               │     mass (cold sources) folds into diff; stateless, no provider binding
-               ├── diff-manifest.js → { mode, range, stats, diff?, manifestText?, excludedSummary }
-               │     Smart filtering: lockfiles, generated, binary, pure renames
-               │     mode = review (≤ inlineDiffLimit) | agent (> inlineDiffLimit) | empty (no files)
-               ├── Workflow(sharp-review-workflow.js, { date, mode, range, stats, diff?, manifestText?, excludedSummary })
-               │     ├── review mode: full diff inlined via takeover mode="review"
-               │     └── agent mode: manifest only, reviewers explore via takeover mode="agent"
-               ├── 2 of 3 reviewers, schema-constrained
-               ├── Merge & dedup (≥2 reviewers = high confidence)
-               └── post-review.js:
-                     ├── Write .claude/memory/YYYY/MM/DD/sharp-review.md (single file w/ rem frontmatter)
-                     └── stamp-memory.js → index in MEMORY.md
-
-Generalized content review (external consumers):
-  Caller → Workflow(sharp-review-workflow.js, { contentType: "content", content, reviewScope, findingSchema, reviewers, pickStrategy: "all", ... })
-            ├── Parallel reviewers (all, configurable identities) with JSON Schema enforcement
-            ├── Merge & dedup by configurable key fields
-            └── Return { merged, markdown, summary } → caller handles pipeline integration
-```
+Full flow: Stop hook → classify → `/sharp-review` skill (Step 1-6) → memory entry.
+Diagram and per-step detail → **`skills/sharp-review/SKILL.md`**.
 
 ### Host-adaptive fan-out (Claude Code + Codex)
 
-The reviewer fan-out tool is host-specific; merge/render/write-back is shared and tested
-(`lib/findings.mjs` `mergeFindings`/`renderReviewMarkdown`, invoked by `post-review.js`):
-- **Claude Code** — the `Workflow` tool (`sharp-review-workflow.js`) fans out reviewers in a
-  sandboxed VM, merges/renders inline (the VM can't import `lib`), returns `{ merged, markdown }`
-  → `post-review.js --findings/--markdown`.
-- **Codex** — no `Workflow` tool/VM. The skill fans out reviewers directly (`spawn_agent` /
-  takeover `call_model`), collects raw per-reviewer `{ findings }`, and calls
-  `post-review.js --raw` → the **same** shared merge/render. Host branches: `skills/sharp-review/SKILL.md` Step 3a/3b.
-
-The Workflow VM's inline merge is a deliberate duplicate of `mergeFindings` (the VM is sandboxed
-with no imports); both are covered by tests (`merge-render.test.mjs`, `post-review-raw.test.mjs`).
+Two hosts, one merge/render. Claude Code uses the `Workflow` tool; Codex fans out reviewers
+directly and feeds `post-review.js --raw`. Full procedure → **`skills/sharp-review/SKILL.md`** Step 3
+(Claude Code 3a, Codex 3b → **`reference/codex-fan-out.md`**).
 
 ### Wave Gate
 
-Reviews are gated by change accumulation, not per-session triggers. This prevents the "just reviewed, next stop triggers again" problem. Thresholds and config → `skills/sharp-review/reference/profiles-and-modes.md`.
-
-Implementation detail not covered there:
-- `lastReviewRef` tracks which commit was last reviewed. Skipped sessions do NOT update it — changes keep accumulating.
-- `lastReviewDiff` records the diff stat at the time of the last review. On same-ref checks, only the **delta** (current diff minus last reviewed diff) is compared against the threshold — preventing "one more file" from re-triggering after the threshold is already crossed.
-- Ref vanished (rebase/gc): falls back to `HEAD~1`.
+Reviews gated by change accumulation, not per-session. Thresholds, delta-comparison mechanics
+(`lastReviewRef`/`lastReviewDiff`/ref-vanished fallback), and config keys →
+**`skills/sharp-review/reference/profiles-and-modes.md`**.
 
 ## File Structure
 
@@ -119,21 +78,10 @@ table/thresholds, and config keys — live in `skills/sharp-review/reference/pro
 
 ### Generalized Content Review
 
-The workflow engine supports arbitrary content review via `contentType: "content"`. This decouples the review orchestration (parallel fanout, schema enforcement, dedup merge, confidence tagging) from the review target (code diffs).
-
-**External consumer example — ai-post 三方会审:**
-
-```
-ai-post /post-review
-  ├── Defines 2 reviewer identities (读者代理人, 技术核查员) with custom finding schemas
-  ├── Runs 2 Workflow(sharp-review-workflow.js, { contentType: "content", ... }) in parallel
-  │     ├── Identity A: hook quality, AI-taste per paragraph, humor density, rhythm
-  │     └── Identity B: code correctness, install steps, terminology, architecture accuracy
-  ├── Each workflow returns { merged, markdown, summary }
-  └── post-review synthesizes cross-identity verdict (✅/⚠️/❌) + platform overview
-```
-
-Full parameter reference → `skills/sharp-review/SKILL.md` § Generalized Mode.
+The workflow engine supports arbitrary content review beyond code diffs (parallel fanout,
+schema enforcement, dedup merge, confidence tagging). Full parameter reference and external
+consumer example (ai-post 三方会审) → **`skills/sharp-review/SKILL.md`** Generalized Mode →
+**`reference/generalized-mode.md`**.
 
 ## Key Invariants
 

@@ -81,29 +81,10 @@ The `architecture` profile forces agent mode and uses neither `diff` nor `manife
 
 #### Step 3b — Codex (no Workflow tool): direct parallel fan-out
 
-Same gate as 3a: if the profile honors the diff manifest and `mode === "empty"`, report
-`Sharp review skipped: …` and stop. Otherwise:
-
-1. Pick the active reviewer pair the same way the workflow does — `seed mod 3` over
-   `[A:Codex, B:DeepSeek, C:Opus]` (combos AB/AC/BC) — using `result.seed`.
-2. Build each reviewer's prompt from the same scope/diff/manifest payload (Step 2) and fan
-   them out **in parallel** — `spawn_agent` one worker per reviewer, or the takeover
-   `call_model` MCP tool (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`).
-   Each reviewer must return ONLY `{ "findings": [...] }` matching the schema in Step 3a.
-3. Collect the raw per-reviewer results into a `raw.json` (use the Write tool):
-
-   ```json
-   {
-     "reviewers": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"},{"key":"C","name":"Opus"}],
-     "active":    [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"}],
-     "profileLabel": "diff review",
-     "rawResults": [ {"findings":[...]}, {"findings":[...]} ]
-   }
-   ```
-   `rawResults[i]` aligns positionally with `active[i]`; a failed reviewer is `null`.
-
-4. Hand it to `post-review.js --raw` (Step 4) — it runs the shared merge/render and writes
-   the memory entry. No client-side merge or `SR-` id assignment.
+Same empty-diff gate as 3a. Fan out reviewers in parallel via `spawn_agent` / takeover
+`call_model`, collect raw results, and feed `post-review.js --raw`. Full procedure,
+seed-mod-3 rotation, `raw.json` schema, and positional alignment →
+**`reference/codex-fan-out.md`**.
 
 ### Step 4 — Write memory entry & sync
 

@@ -53,11 +53,7 @@ node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --rescan
 
 ## How It Works
 
-1. **Wave Gate** checks accumulated changes against thresholds (see below). Skips if below — changes keep accumulating across sessions.
-2. **Hook** classifies the session (none/once/multi) when gate passes
-3. **Skill** gathers git diff, launches 3 parallel reviewers via Workflow
-4. **Workflow** merges findings, deduplicates, assigns IDs
-5. **post-review.js** writes a single memory entry, cross-links SR-IDs, stamps index, delegates to rem engine
+Full architecture and flow: Stop hook → classify → skill (profile pick, diff manifest, parallel reviewers, merge, memory write). See **`AGENTS.md`** for the architecture diagram and component map.
 
 ### Wave Gate
 
