@@ -11,6 +11,7 @@
         "Plugin layering: each plugin's boundary is clear, and its docs do NOT describe a lower layer's internals (rem = base; sharp-review above it; evolve on top). Flag leaked implementation detail across layers",
         "Cross-file duplication: the same fact restated in both SKILL.md and AGENTS.md (or any two docs) — these drift; one must be the source and the other link to it",
         "Progressive disclosure: runtime files (SKILL.md) carry only the execution path + clear I/O + links to reference/. Mechanism, schemas, weight math, and edge cases must live in reference/*.md (loaded on demand), not the always-loaded skill",
+        "Dev-vs-runtime boundary: .claude/rules/invariants.md (and plugin CLAUDE.md/AGENTS.md) are dev-context only — NOT injected when the skill runs in a user's project. They must NOT state or restate runtime mechanism/procedure/behavior that the agent needs at runtime — that lives only in SKILL.md/reference/*.md and drifts if duplicated. invariants.md should hold dev-only constraints (code invariants, ownership boundaries, the why behind a design) and link to reference/ rather than restating it",
         "File bloat: flag any single file over 100 lines — especially SKILL.md and other runtime docs — with a concrete split/extract suggestion",
         "Profile/prompt economy: review templates and framings must be tight; flag verbose or low-signal instruction text"
       ]
