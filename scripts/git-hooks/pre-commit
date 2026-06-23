@@ -42,9 +42,11 @@ selected=()
 [ "$run_bundle" -eq 1 ] && selected+=("tests/bundle-integrity.test.mjs")
 # shared/ owns the canonical modules bundled into every plugin — run its own suite when touched.
 { has shared || has tests; } && selected+=("shared/tests/*.test.mjs")
-for p in "${node_tests[@]}"; do
-  selected+=("$p/tests/*.test.mjs")
-done
+if [ "${#node_tests[@]}" -gt 0 ]; then
+  for p in "${node_tests[@]}"; do
+    selected+=("$p/tests/*.test.mjs")
+  done
+fi
 
 failed=0
 # Unset GIT_* so tests that spin up temp git repos (e.g. check-docs CLI) don't inherit
