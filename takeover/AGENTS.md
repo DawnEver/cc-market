@@ -58,7 +58,7 @@ takeover/
 │   ├── app-server.test.mjs  JSON-RPC client
 │   ├── image.test.mjs       Image gen/edit
 ├── .claude/rules/           Injected every session (invariants only)
-├── CLAUDE.md                Entry point → @AGENTS.md + @.claude/rules/*.md
+├── CLAUDE.md                Entry point → @AGENTS.md
 └── AGENTS.md                This file
 ```
 
