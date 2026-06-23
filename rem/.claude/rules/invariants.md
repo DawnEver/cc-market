@@ -13,62 +13,57 @@ tombstone in the parent's `_meta.json` so the move is traceable and history is n
 lost. `scope-validate.mjs` flags dangling `migrated→` tombstones whose child scope is missing.
 This is a structural relocation, not an eviction — never treat it as license to delete memory.
 
-## Path format: nested YYYY/MM/DD/ only
+## Hook pending-work gate
 
-Memory files MUST live at `.claude/memory/YYYY/MM/DD/slug.md` — nested per-day directories.
-The old flat `YYYY-MM-DD/slug.md` format is rejected by `extractDateFromPath` and must be
-migrated via `migrate.mjs` (which runs `migrateFlatDirs` before `stamp-memory.js`). Do not
-read, write, or accept old-format paths anywhere. `parseIndexEntry` normalizes old-format
-index entries to nested form on read via `normalizeMemoryPath`.
+`rem-hook.js` gates Stop-hook state advancement on `hasPendingWork` (background tasks or
+`taskActiveUntil`). Do not bypass or weaken this gate — it prevents mid-flight interruption of
+multi-round skills. The runtime `taskActiveUntil` procedure is documented in
+`skills/rem/SKILL.md` and `skills/rem/reference/state-schema.md`.
+
+## Path format → `skills/rem/reference/memory-conventions.md`
+
+Do not read, write, or accept old flat-date `YYYY-MM-DD/slug.md` paths anywhere — only
+nested `YYYY/MM/DD/slug.md`. The format spec and migration rules live in
+`skills/rem/reference/memory-conventions.md`.
 
 ## Path security
 
-Use `resolveMemoryPath()` + `isInsideMemoryDir()` before any file I/O on paths that could come from user input or index entries.
+Use `resolveMemoryPath()` + `isInsideMemoryDir()` before any file I/O on paths that could
+come from user input or index entries.
 
 ```js
 const file = resolveMemoryPath(relPath);
 if (!isInsideMemoryDir(file)) throw new Error("path traversal denied");
 ```
 
-## Frontmatter
+## Frontmatter → `skills/rem/reference/memory-conventions.md`
 
-Memory files frontmatter contains content fields ONLY: `name`, `description`, `metadata.type`.
-Volatile metadata (accessed, count, tier, dropped) lives in gitignored `_meta.json` per date
-directory — never in frontmatter. Full schema → `skills/rem/reference/memory-conventions.md`.
+Content fields (`name`, `description`, `metadata.type`) live in file YAML frontmatter. Volatile
+metadata (`accessed`, `count`, `tier`, `dropped`) lives in per-date `_meta.json` — never in
+frontmatter. Full schema is in `skills/rem/reference/memory-conventions.md`.
 
-## Index
+## Index → `skills/rem/reference/memory-conventions.md`
 
-`MEMORY.md` is a generated, gitignored file — rebuilt by `rebuildIndex(scopeRoot)` on each
-session start, touch, prune, and stamp. Entries sorted by `accessed` descending, max 20
-(`MAX_ENTRIES`). Use `parseIndex()` and `formatIndexEntry()` from `lib.mjs` — never
-hand-roll index parsing.
+`MEMORY.md` is a generated, gitignored file. Use `parseIndex()` / `formatIndexEntry()` from
+`lib.mjs` — never hand-roll index parsing. Index rules (max entries, sort order) are in
+`skills/rem/reference/memory-conventions.md`.
 
-## Memory state
+## Memory state → `skills/rem/reference/state-schema.md`
 
-Volatile per-entry metadata (accessed, count, tier, dropped) stored in
-`<scope>/.claude/memory/YYYY/MM/DD/_meta.json` — gitignored per-date shards. Use
-`loadMemoryState(scopeRoot)`, `getMemoryMeta(scopeRoot, relPath)`, `saveMemoryMeta(scopeRoot,
-relPath, patch)`, `bumpAccessed(scopeRoot, relPath, date)`, and `dropFromIndex(scopeRoot,
-relPath, reason)` — never read/write `_meta.json` directly. Missing `_meta.json` files
-self-heal: entries default to path-date accessed/count=1/tier=short.
+Use `loadMemoryState()`, `getMemoryMeta()`, `saveMemoryMeta()`, `bumpAccessed()`, and
+`dropFromIndex()` — never read/write `_meta.json` directly. The state schema is in
+`skills/rem/reference/state-schema.md`.
 
 ## Scope isolation
 
 Scopes are discovered purely by filesystem: any directory with `.claude/memory/` is a scope.
-`findAllScopes()` discovers all scopes (max depth 4, no name assumptions), skipping any
-directory matching a `scopes.ignore` glob/name pattern in `.rem-state.json` (an ignored
-parent also prunes its descendants) via the pure `isScopeIgnored()` helper. `rebuildIndex()`
-is single-scope — multi-scope rebuilds use explicit `findAllScopes().forEach(rebuildIndex)`.
-`scope-validate.mjs` runs at SessionStart (`--fix`) to ensure intermediate file integrity
-across all scopes. Each scope owns independent `_meta.json` files and `MEMORY.md`. Child
-scopes can be created on demand by `scope-split.js` (mechanism/procedure documented for the
-agent in `skills/rem/reference/scope-split.md` — not restated here).
+`findAllScopes()` discovers all scopes (max depth 4), `isScopeIgnored()` skips directories
+matching `scopes.ignore` patterns. Each scope owns independent `_meta.json` files and `MEMORY.md`.
 
 ## State
 
 Unified state in `.claude/.rem-state.json`. Use `loadState()`/`saveState()` — never
-read/write directly. `appendEvent()` for prune log (auto-trims to 15). Hook state keyed under
-`state.hook`, prune state under `state.prune`.
+read/write directly. `appendEvent()` for prune log (auto-trims to 15).
 
 ### deepMerge preserves foreign keys
 

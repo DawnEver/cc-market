@@ -88,4 +88,4 @@ behavior confirmed) — don't leave it for the next review to rediscover.
 
 **Rem** owns the task engine: report, add, check, show, mark, remove.
 
-**Sharp-review** owns findings: post-review.js writes `sharp-review.md` with rem frontmatter.
+**Sharp-review** owns findings: it writes the finding file (`.claude/memory/YYYY/MM/DD/sharp-review.md`).

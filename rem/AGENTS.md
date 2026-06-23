@@ -34,33 +34,14 @@ Three-tier memory system (rules / long-term / short-term) → `skills/rem/refere
 
 ```
 rem/
-├── hooks/
-│   ├── hooks.json           Hook registration (SessionStart + Stop)
-│   └── rem-hook.js          Stop hook: session-depth gate for /rem
-├── scripts/
-│   ├── lib.mjs              Shared library: paths, frontmatter, index, state, date, module inference, memory cross-reference
-│   ├── stamp-memory.js      Initialize .claude/memory/ and MEMORY.md index
-│   ├── inject-rules.js      SessionStart hook: inject host `.claude/rules/**/*.md` as additionalContext — Codex-only (Claude auto-loads them; no-op there)
-│   ├── prune-memory.js      Evict stale short-term, demote inactive long-term
-│   ├── touch-memory.js      Bump accessed timestamp, promote short→long
-│   ├── compact.js           Distill memory into .claude/rules/rem/ (--check/--execute/--validate)
-│   ├── scope-split.js       Relocate a memory cluster into a child scope (--check/--propose/--execute)
-│   ├── rem-prep.js          Pre-REM scan: transcript parse, auto-bump, promotion candidates
-│   ├── check-docs.js         Doc freshness check at compact time
-│   ├── task-lib.mjs          Task pure logic: scan, parse, archive, report helpers
-│   └── task-engine.js        Task CLI (todo): report, add, remove, mark, help
-├── skills/
-│   ├── rem/SKILL.md         /rem skill definition and workflow
-│   └── todo/SKILL.md         /todo skill — user-facing task management
-├── tests/
-│   ├── frontmatter.test.mjs  frontmatter parsing, field get/set, tier, stamping
-│   ├── date-path.test.mjs    date formatting, path resolution, memory dir security
-│   ├── lib.test.mjs          index parsing, constants, file collection, state, findProjectRoot
-│   ├── inject-rules.test.mjs host detection, rule-file collection, context build
-│   └── rem-hook.test.mjs     isFreshSession, hasSubstantiveWork, decideStop
-├── .claude/rules/           Injected every session (invariants only)
-├── CLAUDE.md                Entry point → @AGENTS.md + @.claude/rules/*.md
-└── AGENTS.md                This file
+├── hooks/          hooks.json + rem-hook.js
+├── scripts/        lib.mjs, stamp, prune, touch, compact, scope-split,
+│                   rem-prep, check-docs, inject-rules, task-engine, task-lib
+├── skills/         rem/SKILL.md + todo/SKILL.md
+├── tests/          *.test.mjs (see Testing section below)
+├── .claude/rules/  invariants only
+├── CLAUDE.md
+└── AGENTS.md
 ```
 
 ## Key Invariants

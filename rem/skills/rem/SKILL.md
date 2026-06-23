@@ -7,30 +7,22 @@ description: REM sleep for Claude sessions — summarize what changed, update me
 
 ## Memory Mechanism (global conventions)
 
-These conventions apply to ALL projects. Only loaded via `/rem` — not burned every session.
-
-Three tiers: `.claude/rules/*.md` (always injected, never evicted), long-term memory
-(`tier: long`, immune to 90d eviction), and short-term memory (`tier: short`, 90d eviction
-window). Each memory file has YAML frontmatter (`name`, `description`, `metadata.type`,
-`created`, `accessed`, `tier`, `access_count`) and is indexed in `.claude/rules/MEMORY.md`
-(max 20 entries, sorted by `accessed`).
 
 Full conventions — tier promotion rules, frontmatter schema, scoped memory (monorepo),
 eviction policy, rules-vs-memory boundary — → `reference/memory-conventions.md`.
 
-### Scripts (plugin, at `${CLAUDE_PLUGIN_ROOT}/scripts/`)
-| Script | Usage |
-|---|---|
-| `stamp-memory.js` | Initialize: create dirs + MEMORY.md, add `created`/`accessed`/`tier` to all files, scan & index |
-| `touch-memory.js <path>` | Bump `accessed` to today. `--promote` to upgrade `tier: short` → `long`. |
-| `prune-memory.js` | Enforce 20-entry cap + 90d eviction (short-term only, long-term protected). `--evict-stale`. |
-| `compact.js` | Orchestrate compact mode. `--check`, `--execute --distilled <paths>`, `--validate`. |
-| `scope-split.js` | Propose/execute splitting a memory cluster into a child scope. `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>`. |
-| `rem-prep.js` | Pre-REM automation: event log, batch touch, auto-promote, compact check. `--transcript <path> --promote`. |
+### Scripts
+
+Core scripts the happy-path invokes — full table with all scripts and flags → `reference/scripts.md`.
+
+- `prune-memory.js --evict-stale` — always run first
+- `rem-prep.js --transcript <path> --promote` — batch touch, auto-promote, compact check
+- `stamp-memory.js` — auto-index new memory files
+- `compact.js --check` / `scope-split.js --check` — gated procedures (see below)
 
 ### Reference
 
-- Full script list (incl. `check-docs.js`, `task-engine.js`) → `reference/scripts.md`
+- Full script reference (incl. `check-docs.js`, `task-engine.js`, all flags) → `reference/scripts.md`
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
 - Compact procedure (memory ≥20 entries; user-gated distill) → `reference/compact.md`
 - Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`
