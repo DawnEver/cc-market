@@ -18,7 +18,12 @@ Then register the hooks in `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prune-memory.js\" --evict-stale",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prune-memory.js\" --evict-stale --quiet",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.js\"",
             "timeout": 5
           }
         ]
@@ -60,7 +65,7 @@ Three-tier memory system (rules / long-term / short-term) and promotion rules �
 
 | Skill | Purpose |
 |---|---|
-| `/rem` | REM sleep — summarize, update memory, compact if needed |
+| `/rem` | REM sleep — summarize, update memory, crystallize if needed |
 | `/todo` | Task management — view, add, sync, and resolve findings |
 
 ## Scripts & Files
@@ -73,4 +78,4 @@ Full script flag reference → `skills/rem/reference/scripts.md`. File structure
 node --test cc-market/rem/tests/*.test.mjs
 ```
 
-A pre-commit hook in the cc-market repo runs all plugin tests before every commit.
+A pre-commit hook in the cc-market repo runs the tests for any plugin whose files are staged.

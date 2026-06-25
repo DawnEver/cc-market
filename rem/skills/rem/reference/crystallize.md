@@ -1,14 +1,14 @@
-# REM — Compact procedure (reference)
+# REM — Crystallize procedure (reference)
 
-Run this only when `compact.js --check` exits 0 (memory index ≥ 20 entries). The everyday
+Run this only when `crystallize.js --check` exits 0 (memory index ≥ 20 entries). The everyday
 `/rem` flow never touches it. Distilling memory into always-injected rules is a user-gated
 operation — present the proposal before acting.
 
-**If compact needed, present the proposal to the user before acting:**
+**If crystallize needed, present the proposal to the user before acting:**
 
 1. Run the propose command to get structured data:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --propose
+node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --propose
 ```
 This outputs JSON with every indexed entry, including its tier, access_count, and description.
 
@@ -28,7 +28,7 @@ This outputs JSON with every indexed entry, including its tier, access_count, an
 
 5. Run the cleanup script with ONLY the distilled paths:
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --execute --distilled 2026/05/27/feedback_git_commit.md,2026/05/28/retrospect_hook_task_guard.md
+node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --execute --distilled 2026/05/27/feedback_git_commit.md,2026/05/28/retrospect_hook_task_guard.md
 ```
 This removes only the distilled entries from the index — un-distilled entries stay. Without `--distilled`, clears all entries (full reset).
 
@@ -40,12 +40,12 @@ If exit 1, uncommitted changes were found and doc files are stale — update the
 
 **Manual verification:**
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/compact.js --validate
+node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --validate
 ```
 
-**Namespace rule (enforced by compact.js):**
+**Namespace rule (enforced by crystallize.js):**
 - Hand-written rules (one-off, project-specific) → `.claude/rules/<topic>.md`
-- Compact-distilled rules (from memory consolidation) → `.claude/rules/rem/<topic>.md`
-- `.claude/memory/` is append-only — compact.js verifies no files were deleted
+- Crystallized rules (from memory consolidation) → `.claude/rules/rem/<topic>.md`
+- `.claude/memory/` is append-only — crystallize.js verifies no files were deleted
 
 Then continue with the standard REM session.

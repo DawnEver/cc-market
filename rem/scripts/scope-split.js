@@ -8,7 +8,7 @@
 //
 // Generic and structure-agnostic: a candidate child scope must correspond to a real
 // subdirectory that the clustered entries reference. In a flat repo with no internal
-// module boundary, --check exits 1 and nothing is proposed. User-gated like compact:
+// module boundary, --check exits 1 and nothing is proposed. User-gated like crystallize:
 // the model presents --propose output, the user confirms each split, then --execute runs.
 //
 // Workflow:

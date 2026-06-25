@@ -20,7 +20,7 @@ mechanism. Bridge it at the **plugin level**, not per-project:
   project Codex opens. No-op under Claude Code (already auto-loaded → would duplicate).
 - Host detection uses the resolved `${CLAUDE_PLUGIN_ROOT}`: Codex substitutes it beneath
   `.codex/plugins/…`, Claude beneath `.claude/plugins/…` (`isCodexHost()`).
-- Why rem owns it: rem already manages the rules lifecycle and compacts memory into the host
+- Why rem owns it: rem already manages the rules lifecycle and crystallizes memory into the host
   project's `.claude/rules/rem/` — exactly the content that would otherwise be invisible.
 - Tests: `rem/tests/inject-rules.test.mjs`.
 

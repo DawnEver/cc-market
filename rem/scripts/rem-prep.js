@@ -202,15 +202,15 @@ if (promoted > 0) {
   console.log('  (no promotion candidates — run with --promote to auto-upgrade)');
 }
 
-// ── 4. Compact check ──
-console.log('\n─── Compact status ──');
+// ── 4. Crystallize check ──
+console.log('\n─── Crystallize status ──');
 if (existsSync(scopeIndexFile)) {
   try {
     const entries = readFileSync(scopeIndexFile, 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
     if (entries.length >= MAX_ENTRIES) {
-      console.log(`  ⚠ ${entries.length} entries — compact recommended`);
+      console.log(`  ⚠ ${entries.length} entries — crystallize recommended`);
     } else {
-      console.log(`  ✓ ${entries.length} entries (<${MAX_ENTRIES}) — no compact needed`);
+      console.log(`  ✓ ${entries.length} entries (<${MAX_ENTRIES}) — no crystallize needed`);
     }
   } catch { console.log('  (error reading MEMORY.md)'); }
 } else {

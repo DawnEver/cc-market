@@ -53,7 +53,7 @@ codex plugin add takeover@cc-market   # then rem / sharp-review / evolve / watch
 | Plugin | Description |
 |---|---|
 | [`takeover`](takeover/README.md) | Multi-model AI orchestration: delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider |
-| [`rem`](rem/README.md) | REM sleep for Claude sessions: memory pruning, session summarization, compaction, and automatic eviction |
+| [`rem`](rem/README.md) | REM sleep for Claude sessions: memory pruning, session summarization, crystallization, and automatic eviction |
 | [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 3 parallel reviewers, task sync, rem-integrated memory lifecycle |
 | [`traceme`](traceme/README.md) | Personal observability: token/cost reports, tool usage stats, multi-device encrypted sync |
 | [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair |

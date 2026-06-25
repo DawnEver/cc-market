@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// check-docs.js — detect doc staleness at compact time
+// check-docs.js — detect doc staleness at crystallize time
 // Project-agnostic: discovers doc files at all levels, checks uncommitted changes.
 
 import { readdirSync } from 'fs';

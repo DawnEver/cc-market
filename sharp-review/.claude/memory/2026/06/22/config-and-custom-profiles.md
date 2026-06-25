@@ -39,4 +39,4 @@ diff 评审默认 scope 原"~400 行"已同步对齐到 300/600,避免两 profil
 - 测试:`profiles.test.mjs`(normalizeCustomProfile/mergeProfiles)、`pick-profile.test.mjs`
   (config 文件读取 + 自定义 profile 选取)、`migrations.test.mjs`(config 迁移幂等/不覆盖)。
 - 渐进式披露同批:SKILL.md 295→168、rem SKILL 157→114,机制下沉 `reference/profiles-and-modes.md`
-  与 `reference/compact.md`。
+  与 `reference/crystallize.md`。

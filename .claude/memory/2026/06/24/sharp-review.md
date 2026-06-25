@@ -111,7 +111,7 @@ At 261 lines it is loaded whole whenever /evolve needs the protocol; the host-ad
 - **Confidence:** single-reviewer
 - **Suggestion:** Keep only the scripts the /rem happy-path actually invokes inline; move the full 6-row script table to reference/scripts.md (which already exists) and link
 
-reference/scripts.md is explicitly cited as 'full script list', yet SKILL.md re-lists stamp/touch/prune/compact/scope-split/rem-prep with flags — the same drift-prone duplication the cc-market invariants.md calls out.
+reference/scripts.md is explicitly cited as 'full script list', yet SKILL.md re-lists stamp/touch/prune/crystallize/scope-split/rem-prep with flags — the same drift-prone duplication the cc-market invariants.md calls out.
 
 ---
 

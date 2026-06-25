@@ -14,7 +14,7 @@ Two related issues with the memory promotion/access-tracking mechanism:
    when created, so this threshold was almost never reached — promotion to long-term
    essentially never happened automatically.
 2. `accessed` was only bumped for memory files read *before* `/rem` started (rem-prep
-   step 0). Files read/edited *during* `/rem` itself (e.g. consolidated during compact)
+   step 0). Files read/edited *during* `/rem` itself (e.g. consolidated during crystallize)
    never got their `accessed`/`access_count` updated.
 
 ## Fix
@@ -28,7 +28,7 @@ Two related issues with the memory promotion/access-tracking mechanism:
 - `skills/rem/SKILL.md`: documented `access_count` in the memory file format/promotion
   sections, and added a new Standard step 4 — re-run
   `rem-prep.js --transcript ... --promote` at the END of the `/rem` flow, after
-  steps 1-3 (summarize/update memory/compact), to catch memory files touched during
+  steps 1-3 (summarize/update memory/crystallize), to catch memory files touched during
   `/rem` itself.
 - `lib.mjs` `INDEX_HEADER`, `.claude/rules/invariants.md`, `README.md` updated to document
   `access_count`.

@@ -21,7 +21,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" report
 node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" add --summary "Fix login timeout" --severity MEDIUM --module auth
 ```
 
-Options: `--severity` (HIGH|MEDIUM|LOW, default MEDIUM), `--module` (default 'manual').
+Options: `--severity` (HIGH|MEDIUM|LOW, default MEDIUM), `--module` (default 'manual'), `--scope <path>` (target scope, default: auto-detect from cwd).
 
 Generates a `MANUAL-YYYYMMDD-NNN` ID and writes to `.claude/memory/YYYY/MM/DD/manual.md` with rem frontmatter.
 

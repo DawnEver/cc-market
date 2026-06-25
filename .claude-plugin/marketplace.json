@@ -1,7 +1,7 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
   "name": "cc-market",
-  "version": "2.2.5",
+  "version": "2.3.1",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
     "name": "Mingyang Bao",
@@ -53,7 +53,7 @@
       "name": "rem",
       "source": "./rem",
       "displayName": "REM",
-      "description": "REM sleep for Claude sessions — auto-prunes stale memory on session start, consolidates learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
+      "description": "REM sleep for Claude sessions — auto-prunes stale memory on session start, crystallizes learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
       "author": {
         "name": "Mingyang Bao"
       },

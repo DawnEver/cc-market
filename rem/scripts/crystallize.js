@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Compact orchestrator for the REM memory system.
+// Crystallize orchestrator for the REM memory system.
 //
-//   node compact.js --check       → exit 0 if compact needed (≥20 entries), exit 1 otherwise
-//   node compact.js --propose      → JSON listing of all indexed entries for user review
-//   node compact.js --execute      → after model distilled rules into .claude/rules/rem/,
+//   node crystallize.js --check       → exit 0 if crystallize needed (≥20 entries), exit 1 otherwise
+//   node crystallize.js --propose      → JSON listing of all indexed entries for user review
+//   node crystallize.js --execute      → after model distilled rules into .claude/rules/rem/,
 //                                    validate and clear the MEMORY.md index
-//   node compact.js --validate     → check .claude/rules/rem/ namespace integrity
+//   node crystallize.js --validate     → check .claude/rules/rem/ namespace integrity
 //
 // Workflow:
-//   1. Model runs --check; if exit 0 → compact needed
+//   1. Model runs --check; if exit 0 → crystallize needed
 //   2. Model runs --propose → presents entry list to user for approval
 //   3. Model reads approved memory files, distills to .claude/rules/rem/<topic>.md
 //   4. Model runs --execute → validates rules exist, clears index, logs summary
@@ -25,23 +25,23 @@ import {
 const args = process.argv.slice(2);
 const mode = args[0] || '--check';
 
-// ── --check: is compact needed? ──
+// ── --check: is crystallize needed? ──
 if (mode === '--check') {
   if (!existsSync(indexFile)) {
-    console.log('[compact] MEMORY.md not found — nothing to compact');
+    console.log('[crystallize] MEMORY.md not found — nothing to crystallize');
     process.exit(1);
   }
   const content = readFileSync(indexFile, 'utf8');
   const entryCount = content.split('\n').filter(l => /^-\s+\[/.test(l)).length;
   if (entryCount >= MAX_ENTRIES) {
-    console.log(`[compact] ${entryCount} entries (≥${MAX_ENTRIES}) — compact needed`);
+    console.log(`[crystallize] ${entryCount} entries (≥${MAX_ENTRIES}) — crystallize needed`);
     process.exit(0);
   }
-  console.log(`[compact] ${entryCount} entries (<${MAX_ENTRIES}) — not needed`);
+  console.log(`[crystallize] ${entryCount} entries (<${MAX_ENTRIES}) — not needed`);
   process.exit(1);
 }
 
-// ── --propose: list all indexed entries for user review before compact ──
+// ── --propose: list all indexed entries for user review before crystallize ──
 if (mode === '--propose') {
   if (!existsSync(indexFile)) {
     console.log(JSON.stringify({ entryCount: 0, maxEntries: MAX_ENTRIES, entries: [] }));
@@ -89,7 +89,7 @@ if (mode === '--propose') {
 // ── --validate: check rem/ namespace integrity ──
 if (mode === '--validate') {
   if (!existsSync(remRulesDir)) {
-    console.log('[compact] .claude/rules/rem/ does not exist');
+    console.log('[crystallize] .claude/rules/rem/ does not exist');
     process.exit(0);
   }
 
@@ -98,11 +98,11 @@ if (mode === '--validate') {
     .map(e => e.name);
 
   if (remFiles.length === 0) {
-    console.log('[compact] rem/ is empty — nothing to validate');
+    console.log('[crystallize] rem/ is empty — nothing to validate');
     process.exit(0);
   }
 
-  console.log(`[compact] rem/ contains ${remFiles.length} rule(s):`);
+  console.log(`[crystallize] rem/ contains ${remFiles.length} rule(s):`);
   for (const f of remFiles) {
     const content = readFileSync(join(remRulesDir, f), 'utf8');
     const hasContent = content.trim().length > 0;
@@ -120,20 +120,20 @@ if (mode === '--execute') {
 
   // 1. Ensure rem/ has at least one rule file
   if (!existsSync(remRulesDir)) {
-    console.error('[compact] .claude/rules/rem/ not found — create it and add rule files first');
+    console.error('[crystallize] .claude/rules/rem/ not found — create it and add rule files first');
     process.exit(1);
   }
   const remFiles = readdirSync(remRulesDir, { withFileTypes: true })
     .filter(e => e.isFile() && e.name.endsWith('.md'));
   if (remFiles.length === 0) {
-    console.error('[compact] rem/ is empty — distill rules there before executing');
+    console.error('[crystallize] rem/ is empty — distill rules there before executing');
     process.exit(1);
   }
-  console.log(`[compact] ${remFiles.length} rule(s) in rem/: ${remFiles.map(e => e.name).join(', ')}`);
+  console.log(`[crystallize] ${remFiles.length} rule(s) in rem/: ${remFiles.map(e => e.name).join(', ')}`);
 
   // 2. Verify no memory files were deleted (append-only rule)
   if (!existsSync(memoryDir)) {
-    console.error('[compact] .claude/memory/ directory not found');
+    console.error('[crystallize] .claude/memory/ directory not found');
     process.exit(1);
   }
   const indexedPaths = [];
@@ -144,16 +144,16 @@ if (mode === '--execute') {
   }
   const missing = indexedPaths.filter(p => !existsSync(join(memoryDir, p)));
   if (missing.length > 0) {
-    console.error('[compact] append-only violation — indexed memory files deleted:');
+    console.error('[crystallize] append-only violation — indexed memory files deleted:');
     for (const p of missing) console.error(`  ${p}`);
     process.exit(1);
   }
   const memoryCount = collectMemoryFiles(memoryDir).length;
-  console.log(`[compact] ${indexedPaths.length} indexed, ${memoryCount} total memory file(s)`);
+  console.log(`[crystallize] ${indexedPaths.length} indexed, ${memoryCount} total memory file(s)`);
 
   // 3. Apply drops
   if (!existsSync(indexFile)) {
-    console.log('[compact] MEMORY.md not found');
+    console.log('[crystallize] MEMORY.md not found');
     process.exit(0);
   }
 
@@ -162,21 +162,21 @@ if (mode === '--execute') {
   if (distilledPaths && distilledPaths.length > 0) {
     // Granular mode: drop only distilled entries
     for (const p of distilledPaths) {
-      dropFromIndex(scopeRoot, p, 'compacted');
+      dropFromIndex(scopeRoot, p, 'crystallized');
     }
-    console.log(`[compact] dropped ${distilledPaths.length}/${indexedPaths.length} distilled entries from index`);
+    console.log(`[crystallize] dropped ${distilledPaths.length}/${indexedPaths.length} distilled entries from index`);
   } else {
     // Full mode: drop all
     for (const p of indexedPaths) {
-      dropFromIndex(scopeRoot, p, 'compacted');
+      dropFromIndex(scopeRoot, p, 'crystallized');
     }
-    console.log(`[compact] cleared ${indexedPaths.length} index entries`);
+    console.log(`[crystallize] cleared ${indexedPaths.length} index entries`);
   }
 
   // 4. Rebuild index
   rebuildIndex(scopeRoot);
 
-  // 5. Detect SR-ID findings being compacted
+  // 5. Detect SR-ID findings being crystallized
   const srIds = [];
   for (const p of pathsToDrop) {
     const memFile = join(memoryDir, p);
@@ -190,14 +190,14 @@ if (mode === '--execute') {
     } catch { /* skip */ }
   }
   if (srIds.length > 0) {
-    console.log(`[compact] ${srIds.length} SR finding(s) compacted into rules:`);
+    console.log(`[crystallize] ${srIds.length} SR finding(s) crystallized into rules:`);
     console.log('  → Mark resolved: edit **Status:** OPEN → **Status:** FIXED in the memory file, then post-review --rescan');
   }
 
-  console.log('[compact] done — memory consolidated into .claude/rules/rem/');
+  console.log('[crystallize] done — memory crystallized into .claude/rules/rem/');
   process.exit(0);
 }
 
 // ── default ──
-console.log('Usage: node compact.js [--check|--propose|--validate|--execute]');
+console.log('Usage: node crystallize.js [--check|--propose|--validate|--execute]');
 process.exit(1);

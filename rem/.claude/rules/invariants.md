@@ -4,7 +4,7 @@ Always-injected behavioral constraints for working on the rem plugin.
 
 ## Append-only (with one carve-out: relocation)
 
-Memory files in `.claude/memory/` are NEVER deleted. `prune-memory.js` and `compact.js` only
+Memory files in `.claude/memory/` are NEVER deleted. `prune-memory.js` and `crystallize.js` only
 mark entries as dropped in `_meta.json` — files stay on disk forever.
 
 The single exception is `scope-split.js`, which may **relocate** a file from a parent scope

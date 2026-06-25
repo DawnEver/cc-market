@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // Initialize memory system for a project:
 //   1. Create .claude/memory/ and .claude/rules/ dirs if missing
-//   2. Run scope-validate --fix to ensure intermediate file integrity
-//   3. Warn on memory files missing `name:` frontmatter
-//   4. Rebuild MEMORY.md index (generated, gitignored)
+//   2. Warn on memory files missing `name:` frontmatter
+//   3. Rebuild MEMORY.md index (generated, gitignored)
 // Idempotent — safe to run multiple times.
 
 import { readFileSync, existsSync, mkdirSync } from 'fs';

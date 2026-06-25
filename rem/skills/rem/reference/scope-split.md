@@ -2,7 +2,7 @@
 
 Relocate a cluster of memory entries into a **child scope** when a scope's memory has grown
 large *and* a real subdirectory already owns a cohesive cluster of entries. This is distinct
-from **compact** (which distills memory → `.claude/rules/rem/`): a split moves entries into a
+from **crystallize** (which distills memory → `.claude/rules/rem/`): a split moves entries into a
 nested scope that gets its own independent `.claude/memory/` + `MEMORY.md`.
 
 Generic and structure-agnostic. A child scope only forms where a real internal module
@@ -12,7 +12,7 @@ is proposed — the mechanism self-disables. Every split is confirmed by the use
 
 ## When to run
 
-After prune, alongside the compact check. Run:
+After prune, alongside the crystallize check. Run:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --check

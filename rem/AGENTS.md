@@ -16,8 +16,8 @@ SessionStart → prune-memory.js --evict-stale
     ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
     ├── Model summarizes learnings → writes memory files
     ├── Update MEMORY.md index
-    ├── If ≥20 entries → compact into .claude/rules/rem/
-    │   └── check-docs.js — audit doc freshness after compaction
+    ├── If ≥20 entries → crystallize into .claude/rules/rem/
+    │   └── check-docs.js — audit doc freshness after crystallization
     ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
 
   /todo skill (user-facing task management):
@@ -35,8 +35,8 @@ Three-tier memory system (rules / long-term / short-term) → `skills/rem/refere
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js
-├── scripts/        lib.mjs, stamp, prune, touch, compact, scope-split,
-│                   rem-prep, check-docs, inject-rules, task-engine, task-lib
+├── scripts/        lib.mjs, stamp-memory.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
+│                   rem-prep.js, check-docs.js, inject-rules.js, task-engine.js, task-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md
 ├── tests/          *.test.mjs (see Testing section below)
 ├── .claude/rules/  invariants only
@@ -50,8 +50,8 @@ See `.claude/rules/invariants.md` (always-injected) for append-only, path securi
 
 ## Reference
 
-Script flag reference, the `.claude/.rem-state.json` schema, and the (rare, user-gated) compact
-procedure now live in `skills/rem/reference/` (`scripts.md`, `state-schema.md`, `compact.md`) —
+Script flag reference, the `.claude/.rem-state.json` schema, and the (rare, user-gated) crystallize
+procedure now live in `skills/rem/reference/` (`scripts.md`, `state-schema.md`, `crystallize.md`) —
 loaded on demand by `/rem`.
 
 ## Testing
@@ -60,9 +60,9 @@ loaded on demand by `/rem`.
 node --test cc-market/rem/tests/*.test.mjs
 ```
 
-Pre-commit hook runs all rem tests + takeover + sharp-review tests. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
+Pre-commit hook runs rem tests when rem files are staged. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `scope-split.test.mjs`.
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`.
 
 ## Standard
 

@@ -1,7 +1,7 @@
 {
   "name": "rem",
-  "version": "1.0.37",
-  "description": "REM sleep for your Claude sessions — prune stale memory, consolidate learnings, maintain .claude/memory/ with timestamps and automatic eviction",
+  "version": "1.1.1",
+  "description": "REM sleep for your Claude sessions — prune stale memory, crystallize learnings, maintain .claude/memory/ with timestamps and automatic eviction",
   "author": {
     "name": "Mingyang Bao"
   },
@@ -12,13 +12,14 @@
     "retrospect",
     "prune",
     "eviction",
+    "crystallize",
     "summarize"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "REM",
-    "shortDescription": "REM sleep for your Claude sessions — prune stale memory, consolidate learnings,",
-    "longDescription": "REM sleep for Claude sessions — auto-prunes stale memory on session start, consolidates learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
+    "shortDescription": "REM sleep for your Claude sessions — prune stale memory, crystallize learnings,",
+    "longDescription": "REM sleep for Claude sessions — auto-prunes stale memory on session start, crystallizes learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

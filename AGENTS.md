@@ -14,7 +14,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 |---|---|---|
 | [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
 | [`takeover`](takeover/README.md) | `takeover/` | Multi-model AI orchestration via MCP |
-| [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, compaction, eviction |
+| [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, crystallization, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |

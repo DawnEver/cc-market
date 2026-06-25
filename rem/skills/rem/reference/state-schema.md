@@ -18,7 +18,12 @@
     "events": [{ "ts": "...", "type": "evict", "path": "...", "reason": "stale-90d" }]
   },
   "scopes": {
-    "ignore": ["vendor", "test-*", "packages/legacy"]
+    "ignore": ["vendor", "test-*", "packages/legacy"],
+    "split": {
+      "minOwnEntries": 30,
+      "minClusterEntries": 5,
+      "maxBytes": 524288
+    }
   }
 }
 ```

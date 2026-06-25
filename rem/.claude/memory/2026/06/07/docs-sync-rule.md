@@ -16,4 +16,4 @@ When memory or code structure changes (files added/removed/split, new modules cr
 
 **Why:** These files form a progressive-disclosure chain and MUST stay consistent. Outdated AGENTS.md causes confusion for future agents working on the plugin.
 
-**How to apply:** After any structural change, read the affected doc files and update them to reflect the current state. Don't add this to invariants directly — let compaction promote it when the rule has proven stable.
+**How to apply:** After any structural change, read the affected doc files and update them to reflect the current state. Don't add this to invariants directly — let crystallization promote it when the rule has proven stable.

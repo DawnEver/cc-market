@@ -282,17 +282,17 @@ Promotion: run \`node scripts/touch-memory.js <path> --promote\` to upgrade shor
            or automatic when access_count >= 3 (rem-prep.js --promote)
 Demotion:  long-term not accessed between two prune cycles → auto-demoted to short
 Prune:     run \`node scripts/prune-memory.js --evict-stale\` (short-term eviction + long-term demotion check)
-Compact:   run \`node scripts/compact.js --check\` when index grows large
+Crystallize:   run \`node scripts/crystallize.js --check\` when index grows large
 
 Path format:  ../memory/YYYY/MM/DD/slug.md — nested per-day directories (required).
 
 Frontmatter (content fields only):
   - name:        short kebab-case slug (required)
   - description: one-line summary (required)
-  - metadata.type: user | feedback | project | reference (required)
+  - metadata.type: user | feedback | project | reference
 
 Volatile metadata (accessed, count, tier, dropped) lives in gitignored
-_memory/YYYY/MM/DD/_meta.json per date directory — never in frontmatter.
+.claude/memory/YYYY/MM/DD/_meta.json per date directory — never in frontmatter.
 -->
 
 `;
