@@ -5,6 +5,31 @@ description: REM sleep for Claude sessions — summarize what changed, update me
 
 # REM
 
+## Execution mode — offload the standard pass to a fork (read first)
+
+Unlike sharp-review (which runs on git state and is dispatched to a fresh subagent), rem must
+**summarize what changed in THIS session** — that needs the live conversation. So rem is
+offloaded via a **`fork`** (`Agent` tool, `subagent_type: "fork"`), which inherits the full
+context yet keeps all its prune/prep/stamp/memory-write tool output **out of the main
+session**. When `/rem` is triggered:
+
+1. **Main loop** first runs the two **user-gated** checks itself, because a background fork
+   cannot prompt the user:
+   - `crystallize.js --check` (exit 0 = needed) → if needed, run the interactive distill
+     procedure (`reference/crystallize.md`) in the main loop **before** forking.
+   - `scope-split.js --check` (exit 0 = candidate) → if a candidate exists, run the
+     interactive split (`reference/scope-split.md`) in the main loop first.
+   If neither check fires, skip straight to the fork.
+2. **Main loop** then dispatches **one** `fork` to run the **standard pass** (prune → rem-prep
+   → summarize → write memory → stamp → re-run rem-prep) and return only a one-line recap.
+   The fork inherits the conversation, so its summary is first-hand, not reconstructed from a
+   raw transcript. It MUST NOT re-fork (recursion guard) and MUST NOT attempt crystallize or
+   scope-split (those are handled in the main loop above, or deferred to next session).
+3. **Main loop** relays the fork's one-line recap.
+
+Lightweight (doc-only / non-code) sessions are cheap enough to run inline — forking is
+optional there.
+
 ## Memory Mechanism (global conventions)
 
 

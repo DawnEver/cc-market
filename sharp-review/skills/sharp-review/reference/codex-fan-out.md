@@ -1,7 +1,9 @@
-# Sharp Review — Codex Fan-Out Procedure (reference)
+# Sharp Review — Direct Fan-Out Procedure (reference)
 
-On-demand detail for Codex hosts (no `Workflow` tool). The skill reads this only when running
-on Codex. Claude Code hosts skip this entirely — they use the `Workflow` tool (Step 3a).
+On-demand detail for whoever runs without the `Workflow` tool — i.e. the **standard path**: a
+Claude worker subagent dispatched by the Execution-mode preamble (fans out via the `Agent`
+tool), or a Codex host (fans out via `spawn_agent`). Only an inline Generalized-Mode caller in
+the main loop skips this and uses the `Workflow` tool (Step 3a).
 
 ## Empty-diff gate
 
@@ -26,8 +28,9 @@ Provider mapping: A → `codex`, B → `deepseek`, C → `claude`.
 
 1. Pick the active reviewer pair via `seed mod 3` using `result.seed`.
 2. Build each reviewer's prompt from the same scope/diff/manifest payload (Step 2) and fan
-   them out **in parallel** — `spawn_agent` one worker per reviewer, or the takeover
-   `call_model` MCP tool (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`).
+   them out **in parallel** — one worker per reviewer via the `Agent` tool (Claude worker
+   subagent) or `spawn_agent` (Codex), or the takeover `call_model` MCP tool
+   (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`).
    Each reviewer must return ONLY `{ "findings": [...] }` matching the finding schema (see
    `reference/profiles-and-modes.md` > Reviewer schema).
 3. Collect the raw per-reviewer results into a `raw.json`:

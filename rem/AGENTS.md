@@ -13,6 +13,9 @@ SessionStart → prune-memory.js --evict-stale
   Stop → rem-hook.js (gates after ≥3 stops AND (≥2 min session OR ≥30s + substantive code edits))
      ↓
   /rem skill:
+    ├── main loop: run user-gated crystallize/scope-split checks first (a fork can't prompt)
+    ├── then dispatch a `fork` for the standard pass (inherits session context → first-hand summary,
+    │   keeps prune/prep/stamp/memory-write noise out of the main session) → returns a one-line recap
     ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
     ├── Model summarizes learnings → writes memory files
     ├── Update MEMORY.md index
