@@ -20,10 +20,15 @@ Then run setup to symlink:
 node scripts/setup/setup.js
 ```
 
-> **On Codex:** install with `codex plugin add sharp-review@cc-market`. The Stop hook and the
-> review skill both run on Codex; reviewer fan-out is host-adaptive (no `Workflow` VM on Codex
-> — the skill fans out reviewers directly and feeds `post-review.js --raw` the same shared
-> merge/render). `/sharp-review` is a Claude slash-command; on Codex invoke the skill directly.
+> The standard trigger runs the **entire** review inside a dispatched worker subagent, so the
+> diff/reviewer/merge noise never touches the main session — only the one-line summary returns.
+> The worker fans out reviewers directly and feeds `post-review.js --raw` the shared
+> merge/render (the `Workflow` VM path is reserved for inline Generalized-Mode callers).
+>
+> **On Codex:** install with `codex plugin add sharp-review@cc-market`. Codex has no
+> worker-subagent type, so it runs the skill **inline** (still fanning out reviewers via
+> `spawn_agent` and feeding `post-review.js --raw`). `/sharp-review` is a Claude slash-command;
+> on Codex invoke the skill directly.
 
 ## Usage
 

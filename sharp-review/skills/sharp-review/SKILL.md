@@ -7,6 +7,16 @@ description: Post-feature sharp review (锐评) —parallel reviewers, merge fin
 
 Post-feature review: 2 of 3 reviewers, each JSON-Schema-constrained, cross-checked and merged into a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter. Normally invoked by the Stop hook once enough change accumulates (Wave Gate); `/sharp-review` runs it manually. Trigger thresholds, profile-weighting math, mode internals, and config keys → **`reference/profiles-and-modes.md`**.
 
+## Execution mode (read first)
+
+Review runs on git state, not the conversation — so offload it: **main loop dispatches one
+`general-purpose` subagent** to run Steps 1–6 and return only the `Sharp review: <summary>`
+line (pass it the hook's `firedSources`). Zero leakage into the main session. The worker uses
+Step 3b (no `Workflow` tool in a subagent) — it **does** fan out reviewer subagents, but must
+not spawn a second *worker* to re-run this skill (recursion). The 3a `Workflow` path is only
+for inline Generalized-Mode callers, never the standard trigger. Hosts without a subagent type
+(e.g. Codex) run the skill inline instead of dispatching a worker.
+
 ## Execution
 
 ### Step 1 — Pick profile
@@ -36,21 +46,24 @@ node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD" --
 
 `--range`/`--path` scope the review. Capture the JSON output — it carries `mode`, `range`, `seed`, `stats`, and (mode-dependent) `diff` | `manifestText` + `excludedSummary`. Full payload schema → `reference/profiles-and-modes.md`.
 
-### Step 3 — Run reviewers (host-adaptive fan-out)
+### Step 3 — Run reviewers (fan-out)
 
-Two hosts, one merge. The reviewer fan-out tool differs by host; the merge + render +
-write-back is identical (shared `mergeFindings`/`renderReviewMarkdown` in `lib.mjs`, invoked
-by `post-review.js`). Pick the branch for the host you are running under:
+One merge, two possible fan-out tools. The merge + render + write-back is identical (shared
+`mergeFindings`/`renderReviewMarkdown` in `lib.mjs`, invoked by `post-review.js`). Pick the
+branch by **how this skill is running**:
 
-- **Claude Code** — use the `Workflow` tool (3a below). It fans out reviewers in a sandboxed
-  VM, merges/renders inline, and returns `{ reviewFile, markdown, merged, summary }`.
-- **Codex (or any host without the `Workflow` tool)** — fan out reviewers yourself in
-  parallel via `spawn_agent` (or the takeover `call_model` MCP tool), collect each reviewer's
-  raw `{ findings: [...] }`, and hand the **raw** results to `post-review.js --raw` (3b below),
-  which runs the same merge/render. Do NOT merge or assign `SR-` ids yourself — the shared lib
-  owns that so both hosts produce byte-identical output.
+- **Standard trigger (you are the dispatched worker subagent) OR Codex** — you have no
+  `Workflow` tool. Fan out reviewers yourself in parallel via the `Agent` tool / `spawn_agent`
+  (or the takeover `call_model` MCP tool), collect each reviewer's raw `{ findings: [...] }`,
+  and hand the **raw** results to `post-review.js --raw` (**Step 3b below**). This is the
+  normal path. Do NOT merge or assign `SR-` ids yourself — the shared lib owns that so every
+  host produces byte-identical output.
+- **Inline in main loop (Generalized Mode external caller only)** — the `Workflow` tool is
+  available; use it (3a) to fan out in a sandboxed VM, merge/render inline, and get back
+  `{ reviewFile, markdown, merged, summary }`. The standard `/sharp-review` trigger never
+  reaches this branch (it always runs as a worker subagent — see Execution mode at top).
 
-#### Step 3a — Claude Code: Workflow
+#### Step 3a — Workflow (inline / generalized only)
 
 If the profile honors the diff manifest (`profile.mode === null`, i.e. `diff`/`security`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory. (Agent-mode profiles — `architecture`/`docs`/`deps` — ignore empty: they explore the repo, not a diff, so always proceed for them.)
 
@@ -79,12 +92,12 @@ Workflow({
 
 The `architecture` profile forces agent mode and uses neither `diff` nor `manifestText` — `stats`/`range`/`seed` are still passed (the workflow requires `stats`). The workflow picks 2 of 3 reviewers (`seed mod 3`) and constrains each to the finding schema. Reviewer roster + finding schema + per-mode prompt behavior → `reference/profiles-and-modes.md`.
 
-#### Step 3b — Codex (no Workflow tool): direct parallel fan-out
+#### Step 3b — Direct parallel fan-out (worker subagent / Codex — the normal path)
 
-Same empty-diff gate as 3a. Fan out reviewers in parallel via `spawn_agent` / takeover
-`call_model`, collect raw results, and feed `post-review.js --raw`. Full procedure,
-seed-mod-3 rotation, `raw.json` schema, and positional alignment →
-**`reference/codex-fan-out.md`**.
+Same empty-diff gate as 3a. Fan out reviewers in parallel via the `Agent` tool (Claude worker
+subagent) / `spawn_agent` / takeover `call_model`, collect raw results, and feed
+`post-review.js --raw`. Full procedure, seed-mod-3 rotation, `raw.json` schema, and positional
+alignment → **`reference/direct-fanout.md`**.
 
 ### Step 4 — Write memory entry & sync
 

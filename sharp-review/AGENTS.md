@@ -4,14 +4,27 @@ Post-feature code review plugin for Claude Code. Three parallel reviewers with J
 
 ## Architecture
 
-Full flow: Stop hook → classify → `/sharp-review` skill (Step 1-6) → memory entry.
-Diagram and per-step detail → **`skills/sharp-review/SKILL.md`**.
+Full flow: Stop hook → classify → main loop dispatches **one worker subagent** → worker runs
+`/sharp-review` Steps 1-6 → memory entry → worker returns only `Sharp review: <summary>`.
+Diagram and per-step detail → **`skills/sharp-review/SKILL.md`** (see Execution-mode preamble).
 
-### Host-adaptive fan-out (Claude Code + Codex)
+### Subagent execution (context isolation)
 
-Two hosts, one merge/render. Claude Code uses the `Workflow` tool; Codex fans out reviewers
-directly and feeds `post-review.js --raw`. Full procedure → **`skills/sharp-review/SKILL.md`** Step 3
-(Claude Code 3a, Codex 3b → **`reference/codex-fan-out.md`**).
+The standard trigger runs the **entire** review inside a dispatched `general-purpose` worker
+subagent, so none of the diff/reviewer/merge noise touches the main session — only the
+one-line summary returns. Sharp review is context-independent (operates on git state), so a
+fresh subagent suffices; rem, by contrast, needs session context and is offloaded via `fork`.
+The worker still fans out reviewer subagents (Step 3b) — the recursion guard only forbids
+spawning a *second worker* for the same skill. Codex, lacking a subagent type, runs the skill
+inline.
+
+### Fan-out (worker subagent / Codex + inline Workflow)
+
+One merge/render, two fan-out tools. The standard path (worker subagent on Claude, or Codex)
+has no `Workflow` tool, so it fans out reviewers directly and feeds `post-review.js --raw`.
+Only an inline Generalized-Mode caller in the main loop uses the `Workflow` tool. Full
+procedure → **`skills/sharp-review/SKILL.md`** Step 3 (3a Workflow / 3b direct →
+**`reference/direct-fanout.md`**).
 
 ### Wave Gate
 

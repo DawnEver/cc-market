@@ -305,7 +305,16 @@ async function main() {
   reviewGate.reviewCount += 1;
   saveReviewGate(reviewGate);
 
-  process.stderr.write('/sharp-review\n', () => process.exit(2));
+  // Delegate, don't run inline: review operates on git state, so dispatch a fresh worker
+  // subagent to run the whole skill and return only its summary — keeps the main session clean.
+  const sources = (reviewGate.firedSources || []).join(',') || 'diff';
+  const instruction =
+    `Run /sharp-review now, delegated: dispatch a worker subagent (general-purpose on Claude; ` +
+    `if the host has no subagent type, e.g. Codex, run the skill inline instead) to execute the ` +
+    `skill and relay only its \`Sharp review: <summary>\` line — do not run the steps inline ` +
+    `yourself. The worker runs this skill once and must not spawn a second worker for it, but it ` +
+    `still fans out reviewer subagents per Step 3b. Fired trigger sources: ${sources}.\n`;
+  process.stderr.write(instruction, () => process.exit(2));
 }
 
 // Only run when executed directly (not when imported for testing)
