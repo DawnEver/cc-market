@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
  * SessionStart hook — inject the host project's `.claude/rules/**\/*.md` into the
- * session as `additionalContext`, but ONLY under Codex.
+ * session as `additionalContext`, but ONLY under Codex and ONLY on a fresh session
+ * (not a resume — the rules are already in context from the original session).
  *
  * Why: Claude Code natively auto-loads `.claude/rules/` every session. Codex has
  * no such mechanism. This hook is the plugin-level, project-agnostic bridge: it
  * ships once in rem's hooks.json and, for whatever project Codex opens, reads that
  * project's own rules and feeds them in. Under Claude Code it is a no-op (the rules
- * are already loaded, so injecting would duplicate them).
+ * are already loaded, so injecting would duplicate them). On a resumed Codex session
+ * (transcript already has content) it also skips — the rules were injected on the
+ * original SessionStart and persist through the resume.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -45,7 +48,11 @@ export function collectRuleFiles(projectRoot) {
  * rules), or null when there are no rule files.
  */
 export function buildRulesContext(projectRoot) {
-  const files = collectRuleFiles(projectRoot);
+  return buildContextFromFiles(projectRoot, collectRuleFiles(projectRoot));
+}
+
+/** Build context text from an explicit file list (used by multi-scope collection). */
+export function buildContextFromFiles(projectRoot, files) {
   if (!files.length) return null;
   const blocks = files.map((file) => {
     const rel = path.relative(projectRoot, file);
@@ -55,22 +62,111 @@ export function buildRulesContext(projectRoot) {
   return blocks.join("\n\n");
 }
 
-function readStdinCwd() {
+/**
+ * Walk up from startDir to find the nearest .git directory — i.e. the project root.
+ * Falls back to startDir when no .git is found (mirrors shared/lib.mjs:findProjectRoot).
+ */
+export function findGitRoot(startDir) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    if (fs.existsSync(path.join(dir, ".git"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(startDir);
+}
+
+/**
+ * Walk UP from cwd toward projectRoot. Every directory that contains .claude/memory/
+ * is a scope. Returns [rootScope, …, leafScope] — furthest ancestor first, nearest
+ * scope to cwd last. Returns [] when no scope (no .claude/memory/) is found anywhere.
+ */
+export function findScopeChain(cwd, projectRoot) {
+  const scopes = [];
+  let dir = path.resolve(cwd);
+  const root = path.resolve(projectRoot);
+
+  while (true) {
+    if (fs.existsSync(path.join(dir, ".claude", "memory"))) {
+      scopes.push(dir);
+    }
+    if (dir === root) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    // Never walk above the project root (handles cross-drive too)
+    const rel = path.relative(root, parent);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) break;
+    dir = parent;
+  }
+
+  scopes.reverse();
+  return scopes;
+}
+
+/** Collect rule files from every scope in the chain, deduplicated by absolute path. */
+export function collectChainRuleFiles(scopeChain) {
+  const seen = new Set();
+  const files = [];
+  for (const scopeDir of scopeChain) {
+    for (const file of collectRuleFiles(scopeDir)) {
+      if (!seen.has(file)) {
+        seen.add(file);
+        files.push(file);
+      }
+    }
+  }
+  return files;
+}
+
+/**
+ * Read the full hook payload from stdin. Returns { cwd, transcript_path } (both
+ * may be undefined if stdin is absent or malformed).
+ */
+function readStdinPayload() {
   try {
     const raw = fs.readFileSync(0, "utf8");
-    const payload = JSON.parse(raw);
-    if (payload && typeof payload.cwd === "string") return payload.cwd;
+    return JSON.parse(raw);
   } catch {
-    /* no/invalid stdin — fall back to process cwd */
+    return {};
   }
-  return process.cwd();
+}
+
+/** True when the transcript already has content — i.e. this is a resume, not a fresh session. */
+export function isResume(transcriptPath) {
+  if (!transcriptPath) return false;
+  try {
+    return fs.statSync(transcriptPath).size > 500;
+  } catch {
+    return false;
+  }
 }
 
 function main() {
   if (!isCodexHost()) return; // Claude Code already auto-loads rules
-  const projectRoot = readStdinCwd();
-  const context = buildRulesContext(projectRoot);
-  if (!context) return;
+  const payload = readStdinPayload();
+
+  // On resume the rules are already in context from the original session — don't re-inject.
+  if (isResume(payload.transcript_path)) return;
+
+  const cwd = typeof payload.cwd === "string"
+    ? path.resolve(payload.cwd)
+    : process.cwd();
+  const projectRoot = findGitRoot(cwd);
+  const scopeChain = findScopeChain(cwd, projectRoot);
+
+  // Collect rules from all scopes in the chain; fall back to single-directory
+  // collection at the project root when no scopes (.claude/memory/) exist.
+  let files;
+  if (scopeChain.length > 0) {
+    files = collectChainRuleFiles(scopeChain);
+  } else {
+    files = collectRuleFiles(projectRoot);
+  }
+
+  if (!files.length) return;
+  const context = buildContextFromFiles(projectRoot, files);
+
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
