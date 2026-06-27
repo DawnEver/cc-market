@@ -20,6 +20,34 @@ import { loadReviewConfig } from '../scripts/lib/config.mjs';
 // Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
 export function findGitRoot(startDir) { return findProjectRoot(startDir); }
 
+export function resolveReviewWorkerTarget(env = process.env) {
+  if (env.CODEX_HOME || env.CODEX_SANDBOX) {
+    return {
+      agentType: 'worker',
+      host: 'codex',
+      setup: 'Tell it to use the sharp-review skill',
+      reason: 'codex-built-in-worker',
+    };
+  }
+
+  return {
+    agentType: 'sharp-review:sharp-review',
+    host: 'claude',
+    setup: 'The worker executes directly',
+    reason: 'claude-dedicated-agent',
+  };
+}
+
+export function buildDispatchInstruction(sources, target = resolveReviewWorkerTarget()) {
+  const firedSources = sources || 'diff';
+  return (
+    `Dispatch ONE ${target.agentType} subagent with firedSources: ${firedSources}. ` +
+    `${target.setup}, execute Steps 1-6 directly (no Workflow tool; Step 3b fan-out), ` +
+    `and do not re-dispatch. Relay only its \`Sharp review: <summary>\` line; do not ` +
+    `run the steps inline yourself.\n`
+  );
+}
+
 const projectDir = findProjectRoot();
 const unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
 const MEMORY_MAX = 20;
@@ -308,11 +336,7 @@ async function main() {
   // Delegate, don't run inline: review operates on git state, so dispatch a fresh worker
   // subagent to run the whole skill and return only its summary — keeps the main session clean.
   const sources = (reviewGate.firedSources || []).join(',') || 'diff';
-  const instruction =
-    `Dispatch ONE sharp-review:sharp-review subagent with firedSources: ${sources}. ` +
-    `The worker executes directly (no Workflow tool → Step 3b fan-out) and must not ` +
-    `re-dispatch. Relay only its \`Sharp review: <summary>\` line; do not run the steps ` +
-    `inline yourself.\n`;
+  const instruction = buildDispatchInstruction(sources, resolveReviewWorkerTarget());
   process.stderr.write(instruction, () => process.exit(2));
 }
 

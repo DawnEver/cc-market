@@ -9,7 +9,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-import { findGitRoot } from "../hooks/sharp-review-hook.js";
+import {
+  buildDispatchInstruction,
+  findGitRoot,
+  resolveReviewWorkerTarget,
+} from "../hooks/sharp-review-hook.js";
 
 describe("findGitRoot", () => {
   let savedEnv;
@@ -64,5 +68,38 @@ describe("findGitRoot", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("buildDispatchInstruction", () => {
+  test("resolves the dedicated sharp-review agent outside Codex", () => {
+    assert.deepEqual(resolveReviewWorkerTarget({}), {
+      agentType: "sharp-review:sharp-review",
+      host: "claude",
+      setup: "The worker executes directly",
+      reason: "claude-dedicated-agent",
+    });
+  });
+
+  test("resolves Codex to the built-in worker agent", () => {
+    assert.deepEqual(resolveReviewWorkerTarget({ CODEX_HOME: "/tmp/codex" }), {
+      agentType: "worker",
+      host: "codex",
+      setup: "Tell it to use the sharp-review skill",
+      reason: "codex-built-in-worker",
+    });
+  });
+
+  test("uses the dedicated sharp-review agent outside Codex", () => {
+    const text = buildDispatchInstruction("diff", resolveReviewWorkerTarget({}));
+    assert.match(text, /Dispatch ONE sharp-review:sharp-review subagent/);
+    assert.match(text, /firedSources: diff/);
+  });
+
+  test("uses Codex worker subagent because plugin agent types are not registered", () => {
+    const text = buildDispatchInstruction("diff", resolveReviewWorkerTarget({ CODEX_HOME: "/tmp/codex" }));
+    assert.match(text, /Dispatch ONE worker subagent/);
+    assert.match(text, /use the sharp-review skill/);
+    assert.doesNotMatch(text, /sharp-review:sharp-review/);
   });
 });
