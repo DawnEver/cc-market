@@ -7,36 +7,13 @@ description: Post-feature sharp review (锐评) —parallel reviewers, merge fin
 
 Post-feature review: 2 of 3 reviewers, each JSON-Schema-constrained, cross-checked and merged into a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter. Normally invoked by the Stop hook once enough change accumulates (Wave Gate); `/sharp-review` runs it manually. Trigger thresholds, profile-weighting math, mode internals, and config keys → **`reference/profiles-and-modes.md`**.
 
-## Execution mode — run the whole review in a subagent (read first)
+## Execution mode (read first)
 
-Sharp review operates entirely on **git state** (diff manifest, refs), never on the live
-conversation — so it is context-independent and MUST be offloaded so it never pollutes the
-main session. When this skill is triggered:
-
-1. **Main loop** does NOT run Steps 1–6 inline. It dispatches **one** `general-purpose`
-   subagent (via the `Agent` tool) whose entire task is to perform Steps 1–6 below and return
-   **only** the final one line: `Sharp review: <summary>` (or the skip line). Pass the
-   subagent the hook's fired trigger sources (`reviewGate.firedSources`, e.g. `diff,docs`) so
-   it can constrain the profile pick. The main loop relays that one line and nothing else —
-   this preserves the attention-gate (Step 6) with zero leakage.
-2. **The dispatched worker subagent** executes Steps 1–6 **directly**. It is the worker —
-   it MUST NOT dispatch another subagent to run the skill (recursion guard). Inside a
-   subagent the `Workflow` tool is unavailable, so the worker fans out reviewers itself via
-   the `Agent` tool — **always Step 3b**, never 3a.
-
-The only time Steps 1–6 run inline in the main loop (and may use the 3a `Workflow` path) is an
-external **Generalized Mode** caller (see bottom of file) that is already running its own
-orchestration — not the standard `/sharp-review` trigger.
-
-Dispatch prompt for the worker (fill in the sources):
-
-```
-You are the sharp-review worker. Execute Steps 1–6 of the sharp-review SKILL.md directly —
-do NOT dispatch another subagent (you are the worker; that would recurse). You have no
-Workflow tool, so fan out reviewers yourself via the Agent tool using Step 3b. Fired trigger
-sources from the hook: <firedSources>. Return ONLY the final line `Sharp review: <summary>`
-(or the skip line) — no findings, no intermediate output.
-```
+Review runs on git state, not the conversation — so offload it: **main loop dispatches one
+`general-purpose` subagent** to run Steps 1–6 and return only the `Sharp review: <summary>`
+line (pass it the hook's `firedSources`). Zero leakage into the main session; the worker uses
+Step 3b (no `Workflow` tool in a subagent) and must not re-dispatch (recursion). The 3a
+`Workflow` path is only for inline Generalized-Mode callers, never the standard trigger.
 
 ## Execution
 
