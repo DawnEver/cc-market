@@ -21,7 +21,7 @@ One merge/render, two fan-out tools. The standard path (worker subagent on Claud
 has no `Workflow` tool, so it fans out reviewers directly and feeds `post-review.js --raw`.
 Only an inline Generalized-Mode caller in the main loop uses the `Workflow` tool. Full
 procedure → **`skills/sharp-review/SKILL.md`** Step 3 (3a Workflow / 3b direct →
-**`reference/codex-fan-out.md`**).
+**`reference/direct-fanout.md`**).
 
 ### Wave Gate
 

@@ -118,7 +118,7 @@ The `architecture` profile forces agent mode and uses neither `diff` nor `manife
 Same empty-diff gate as 3a. Fan out reviewers in parallel via the `Agent` tool (Claude worker
 subagent) / `spawn_agent` / takeover `call_model`, collect raw results, and feed
 `post-review.js --raw`. Full procedure, seed-mod-3 rotation, `raw.json` schema, and positional
-alignment → **`reference/codex-fan-out.md`**.
+alignment → **`reference/direct-fanout.md`**.
 
 ### Step 4 — Write memory entry & sync
 
