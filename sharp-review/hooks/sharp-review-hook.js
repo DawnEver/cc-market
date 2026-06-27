@@ -309,10 +309,10 @@ async function main() {
   // subagent to run the whole skill and return only its summary — keeps the main session clean.
   const sources = (reviewGate.firedSources || []).join(',') || 'diff';
   const instruction =
-    `Dispatch ONE general-purpose subagent to run the /sharp-review skill (Steps 1-6) as the ` +
-    `worker — fired trigger sources: ${sources}. The worker executes directly (no Workflow tool ` +
-    `in a subagent → Step 3b fan-out) and must not re-dispatch. Relay only its ` +
-    `\`Sharp review: <summary>\` line; do not run the steps inline yourself.\n`;
+    `Dispatch ONE sharp-review:sharp-review subagent with firedSources: ${sources}. ` +
+    `The worker executes directly (no Workflow tool → Step 3b fan-out) and must not ` +
+    `re-dispatch. Relay only its \`Sharp review: <summary>\` line; do not run the steps ` +
+    `inline yourself.\n`;
   process.stderr.write(instruction, () => process.exit(2));
 }
 

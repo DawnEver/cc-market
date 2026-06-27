@@ -10,9 +10,11 @@ Diagram and per-step detail → **`skills/sharp-review/SKILL.md`** (see Executio
 
 ### Subagent execution (context isolation)
 
-The standard trigger runs the **entire** review inside a dispatched `general-purpose` worker
-subagent, so none of the diff/reviewer/merge noise touches the main session — only the
-one-line summary returns. Sharp review is context-independent (operates on git state), so a
+The standard trigger runs the **entire** review inside a dispatched `sharp-review:sharp-review`
+worker subagent, so none of the diff/reviewer/merge noise touches the main session — only the
+one-line summary returns. The dedicated agent (`agents/sharp-review.md`) carries a focused
+system prompt with the full review procedure, avoiding the `general-purpose` agent's broad
+toolset and instructions. Sharp review is context-independent (operates on git state), so a
 fresh subagent suffices; rem, by contrast, needs session context and is offloaded via `fork`.
 
 ### Fan-out (worker subagent / Codex + inline Workflow)
@@ -34,6 +36,9 @@ Reviews gated by change accumulation, not per-session. Thresholds, delta-compari
 ```
 sharp-review/
 ├── .claude-plugin/plugin.json    Plugin manifest
+├── .codex-plugin/plugin.json     Codex plugin manifest (generated)
+├── agents/
+│   └── sharp-review.md           Dedicated subagent: focused system prompt, runs Steps 1-6
 ├── .claude/rules/invariants.md   Always-injected constraints
 ├── hooks/
 │   ├── hooks.json                Hook registration (Stop)

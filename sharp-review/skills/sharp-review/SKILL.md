@@ -10,7 +10,7 @@ Post-feature review: 2 of 3 reviewers, each JSON-Schema-constrained, cross-check
 ## Execution mode (read first)
 
 Review runs on git state, not the conversation — so offload it: **main loop dispatches one
-`general-purpose` subagent** to run Steps 1–6 and return only the `Sharp review: <summary>`
+`sharp-review:sharp-review` subagent** to run Steps 1–6 and return only the `Sharp review: <summary>`
 line (pass it the hook's `firedSources`). Zero leakage into the main session; the worker uses
 Step 3b (no `Workflow` tool in a subagent) and must not re-dispatch (recursion). The 3a
 `Workflow` path is only for inline Generalized-Mode callers, never the standard trigger.
