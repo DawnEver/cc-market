@@ -53,3 +53,19 @@ the dev copy is visible while developing and only the runtime copy is visible wh
 `lib.mjs`/`README.md` — nobody editing in this repo saw the mismatch). `invariants.md`
 should hold things that are true ONLY for developers: internal constraints, gotchas,
 ownership boundaries, "why" behind a design choice — not user-facing config/behavior.
+
+## Refactors carry the names and delete the dead weight
+
+Backward compatibility is not a concern here (see AGENTS.md § Standard), so a refactor is
+not done until it is *clean*:
+
+- **Rename to match meaning.** When a file/script/symbol no longer fits what it does, rename
+  it (`git mv`) and update every reference in the same change — don't leave a misnamed file
+  (e.g. `codex-fan-out.md` after the path stopped being Codex-only). A stale name is a future
+  reader's wrong mental model.
+- **Delete what the change orphaned.** Scripts, references, or files that nothing reaches
+  after a change must be removed, not left "just in case". Verify with a repo grep before
+  deleting; if something is still used by one path (e.g. `sharp-review-workflow.js` by the
+  inline Generalized-Mode caller), keep it and say why.
+- **Review your own diff for simplicity.** Before committing, re-read the edit: cut
+  redundancy, avoid restating the same fact in two places, keep it minimal and elegant.
