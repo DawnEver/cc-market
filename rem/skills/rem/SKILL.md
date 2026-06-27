@@ -5,6 +5,25 @@ description: REM sleep for Claude sessions — summarize what changed, update me
 
 # REM
 
+## Execution mode (read first)
+
+rem summarizes **this session**, so it needs live context — offload via **`fork`**
+(`subagent_type: "fork"`), not a fresh subagent: the fork inherits the conversation (first-hand
+summary) yet keeps prune/prep/stamp/memory-write noise out of the main session.
+
+1. **Main loop first** runs the user-gated checks (a background fork can't prompt):
+   `crystallize.js --check` and `scope-split.js --check` — if either fires, do its interactive
+   procedure (`reference/crystallize.md` / `scope-split.md`) inline before forking.
+2. **Then dispatch one `fork`** for the standard pass (prune → rem-prep → summarize → write
+   memory → stamp → re-run rem-prep), returning a one-line recap. The fork must not re-fork or
+   touch crystallize/scope-split.
+
+The gated checks in step 1 run before the fork writes this session's entries, so a threshold
+crossing *caused by this session* is intentionally caught on the **next** rem cycle, not now —
+that one-cycle lag is the price of the fork not being able to prompt, not a bug.
+
+Lightweight (doc-only) sessions are cheap — running inline is fine.
+
 ## Memory Mechanism (global conventions)
 
 
