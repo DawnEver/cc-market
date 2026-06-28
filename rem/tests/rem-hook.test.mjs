@@ -14,6 +14,8 @@ import {
   hasSubstantiveWork,
   readTranscriptTail,
   decideStop,
+  isCodexHost,
+  resolveHookExit,
 } from "../hooks/rem-hook.js";
 
 // ── Constants expected from rem-hook.js ──
@@ -294,5 +296,28 @@ describe("decideStop", () => {
     assert.equal(result.decision, "allow");
     assert.equal(result.state.hook.remDone, true);
     assert.equal(result.state.hook.remPending, false);
+  });
+});
+
+describe("host-specific hook exit behavior", () => {
+  test("detects Codex host from CODEX_HOME or CODEX_SANDBOX", () => {
+    assert.equal(isCodexHost({}), false);
+    assert.equal(isCodexHost({ CODEX_HOME: "/home/u/.codex" }), true);
+    assert.equal(isCodexHost({ CODEX_SANDBOX: "1" }), true);
+  });
+
+  test("allows normal stops without stderr", () => {
+    assert.deepEqual(resolveHookExit("allow", {}), { code: 0, stderr: "" });
+  });
+
+  test("Claude deny injects /rem and blocks stop", () => {
+    assert.deepEqual(resolveHookExit("deny", {}), { code: 2, stderr: "/rem\n" });
+  });
+
+  test("Codex deny exits cleanly instead of injecting a slash command", () => {
+    const result = resolveHookExit("deny", { CODEX_HOME: "/home/u/.codex" });
+    assert.equal(result.code, 0);
+    assert.match(result.stderr, /REM due/);
+    assert.doesNotMatch(result.stderr, /^\/rem$/m);
   });
 });

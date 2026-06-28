@@ -107,6 +107,16 @@ export function decideStop(state, input, now) {
   return { state, decision };
 }
 
+export function isCodexHost(env = process.env) {
+  return Boolean(env.CODEX_HOME || env.CODEX_SANDBOX);
+}
+
+export function resolveHookExit(decision, env = process.env) {
+  if (decision !== 'deny') return { code: 0, stderr: '' };
+  if (isCodexHost(env)) return { code: 0, stderr: '[rem-hook] REM due; run /rem manually or invoke the rem skill.\n' };
+  return { code: 2, stderr: '/rem\n' };
+}
+
 // ── Main ──
 
 // Only run main logic when executed directly (not imported for testing)
@@ -117,9 +127,7 @@ if (isMain(import.meta)) {
   const { state: newState, decision } = decideStop(state, input, now);
   saveState(newState);
 
-  if (decision === 'deny') {
-    process.stderr.write('/rem\n', () => process.exit(2));
-  } else {
-    process.exit(0);
-  }
+  const { code, stderr } = resolveHookExit(decision);
+  if (stderr) process.stderr.write(stderr, () => process.exit(code));
+  else process.exit(code);
 }

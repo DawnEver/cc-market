@@ -51,6 +51,14 @@ rem/
 
 See `.claude/rules/invariants.md` (always-injected) for append-only, path security, frontmatter, index, and state constraints.
 
+## Host Behavior
+
+Claude Code uses the Stop hook's non-zero slash-command injection convention to
+auto-trigger `/rem` when the session is due for memory consolidation. Codex does
+not use that convention for REM: when due, `rem-hook.js` exits successfully and
+prints a reminder to invoke the rem skill directly, avoiding Codex hook failure
+noise.
+
 ## Reference
 
 Script flag reference, the `.claude/.rem-state.json` schema, and the (rare, user-gated) crystallize
