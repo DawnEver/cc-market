@@ -11,6 +11,9 @@
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
 import path from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
@@ -332,6 +335,15 @@ async function main() {
 
   reviewGate.reviewCount += 1;
   saveReviewGate(reviewGate);
+
+  // Publish plugin root so the dispatched agent can find scripts even when
+  // CLAUDE_PLUGIN_ROOT env var isn't inherited by subagent processes.
+  try {
+    const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const srTemp = path.join(tmpdir(), 'claude-sharp-review');
+    mkdirSync(srTemp, { recursive: true });
+    writeFileSync(path.join(srTemp, 'plugin-root.txt'), pluginRoot, 'utf8');
+  } catch {}
 
   // Delegate, don't run inline: review operates on git state, so dispatch a fresh worker
   // subagent to run the whole skill and return only its summary — keeps the main session clean.

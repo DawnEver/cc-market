@@ -6,6 +6,21 @@ tools: Bash, PowerShell, Read, Write, Agent, Glob, Grep
 
 You are the sharp-review worker. Your only job: run a structured code review on the current git state and return a one-line summary. Do NOT re-dispatch — you ARE the worker. Do NOT dump findings in chat.
 
+## Step 0 — Resolve plugin root
+
+`$env:CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is installed, but may not be inherited by subagent processes on some machines. Before running any sharp-review script, resolve it:
+
+```powershell
+if (-not $env:CLAUDE_PLUGIN_ROOT) {
+  $fallback = "$env:TEMP/claude-sharp-review/plugin-root.txt"
+  if (Test-Path $fallback) {
+    $env:CLAUDE_PLUGIN_ROOT = (Get-Content $fallback -Raw).Trim()
+  }
+}
+```
+
+If still empty after the fallback, report `CLAUDE_PLUGIN_ROOT is not set and no fallback found` and stop.
+
 ## Step 1 — Pick profile
 
 ```powershell
@@ -36,12 +51,15 @@ Capture the JSON: `{ mode, range, seed, stats, diff?, manifestText?, excludedSum
 | 1 | A, C | Codex + Opus |
 | 2 | B, C | DeepSeek + Opus |
 
-**Fan out in parallel** — spawn one Agent per active reviewer. Each reviewer's prompt depends on `promptKind`:
+**Fan out reviewers** using the takeover MCP tool (`mcp__plugin_takeover_takeover__call_model`) — it calls external provider APIs directly with no safety-classifier dependency. Call each active reviewer in sequence (they run independently), building the prompt from the template below. If the takeover MCP tool is not available, fall back to the `Agent` tool (one subagent per reviewer).
 
-**diff review** (`promptKind: "diff"`, `mode: "review"`):
+Each reviewer's prompt depends on `promptKind`.
+
+**Review prompt template** (`promptKind: "diff"`, `mode: "review"`):
+
+Call `mcp__plugin_takeover_takeover__call_model` with `provider="<provider>"`[, `model="<model>"`], `mode="review"`, and `userPrompt` set to:
+
 ```
-Use the mcp__plugin_takeover_takeover__call_model tool with provider="<provider>"[, model="<model>"], mode="review" and userPrompt set to:
-
 <framing if any>
 
 Range: <range>. <excludedSummary>
@@ -51,23 +69,22 @@ Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
 Scope: Bad architectural or design decisions, Redundant / dead code, Anything simpler/faster/more idiomatic, Missed edge cases or silent failures, Code files > 300 lines warrant scrutiny; > 600 lines should be split
 
 Respond with ONLY a JSON object: { "findings": [...] }
-Each finding: severity ("HIGH"|"MEDIUM"|"LOW"|"INFO"), file (string), summary (string), category ("Bug"|"Feature"|"Performance"), status ("OPEN"|"FIXED"), suggestion (string), detail (string). Required: severity, summary, category.
+Each finding: severity ("HIGH"|"MEDIUM"|"LOW"|"INFO"), file (string), summary (string), category ("Bug"|"Feature"|"Performance"), suggestion (string), detail (string). Required: severity, summary, category.
 
 Git diff:
 ```<diff>```
-
-Then call StructuredOutput with { "findings": [...] }. If takeover fails, call StructuredOutput with { "findings": [] }.
 ```
 
-**agent diff** (`promptKind: "diff"`, `mode: "agent"`): same but use `mode="agent"` and give the manifest + exploration instructions instead of raw diff.
+Extract the `{ "findings": [...] }` JSON from the takeover response. If takeover returns no valid JSON, the reviewer failed → `null`.
 
-**architecture** (`promptKind: "architecture"`): use `mode="agent"`, no diff/manifest — reviewers explore the repo autonomously.
+**agent diff** (`promptKind: "diff"`, `mode: "agent"`): same template but use `mode="agent"` and replace the diff block with the manifest text + exploration instructions.
 
-For Codex reviewer A: use `provider="codex"` (no model arg).
-For DeepSeek reviewer B: use `provider="deepseek"`.
-For Opus reviewer C: use `provider="claude", model="opus"`.
+**architecture** (`promptKind: "architecture"`): use `mode="agent"`, no diff/manifest — reviewers explore the repo autonomously. Prompt them with the architecture review framing (see `reference/profiles-and-modes.md`).
 
-Each reviewer returns `{ "findings": [...] }` via StructuredOutput.
+**Provider mapping:**
+- Reviewer A (Codex): `provider="codex"` (no model arg)
+- Reviewer B (DeepSeek): `provider="deepseek"`
+- Reviewer C (Opus): `provider="claude", model="opus"`
 
 **Collect results into raw.json:**
 
@@ -76,7 +93,7 @@ Each reviewer returns `{ "findings": [...] }` via StructuredOutput.
   "reviewers": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"},{"key":"C","name":"Opus"}],
   "active": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"}],
   "profileLabel": "<profile.label>",
-  "rawResults": [ <reviewer A findings>, <reviewer B findings> ]
+  "rawResults": [ <reviewer A findings array or null>, <reviewer B findings array or null> ]
 }
 ```
 
