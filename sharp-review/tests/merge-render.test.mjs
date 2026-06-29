@@ -58,6 +58,24 @@ describe('mergeFindings', () => {
     assert.equal(merged.length, 1);
     assert.equal(merged[0].id, 'XR-20260621-001');
   });
+
+  test('preserves arbitrary finding fields (content-review schema)', () => {
+    // External callers (e.g. ai-post) use a non-code finding shape. The merge must
+    // carry those fields through to `merged` — only `id`/`confidence` are added and
+    // the code-shaped fields fall back to defaults.
+    const raw = [
+      { findings: [{ location: '开头', dimension: 'hook', rating: '2/5', issue: '套话', suggestion: '换具体事件' }] },
+      { findings: [{ location: '开头', dimension: 'hook', rating: '2/5', issue: '套话', suggestion: '换具体事件' }] },
+    ];
+    const merged = mergeFindings(raw, { date, idPrefix: 'CR-A', dedupKeyFields: ['location', 'dimension'] });
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].id, 'CR-A-20260621-001');
+    assert.equal(merged[0].location, '开头');
+    assert.equal(merged[0].dimension, 'hook');
+    assert.equal(merged[0].rating, '2/5');
+    assert.equal(merged[0].issue, '套话');
+    assert.match(merged[0].confidence, /high-confidence/);
+  });
 });
 
 describe('renderReviewMarkdown', () => {

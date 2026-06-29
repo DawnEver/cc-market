@@ -54,11 +54,13 @@ sharp-review/
 │   ├── sources.mjs               Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 │   ├── pick-profile.js               Source-constrained weighted profile pick (--sources); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
-│   └── post-review.js                Write memory entry → stamp. `--raw` merges+renders raw per-reviewer findings via lib (host-agnostic — same output on Claude worker subagent and Codex); `--rescan` re-derives frontmatter from an edited memory file
+│   ├── post-review.js                Write memory entry → stamp. `--raw` merges+renders raw per-reviewer findings via lib (host-agnostic — same output on Claude worker subagent and Codex); `--rescan` re-derives frontmatter from an edited memory file
+│   └── merge-findings.js             External seam: merge raw per-reviewer findings via the SAME lib engine and print `{ reviewFile, markdown, merged, summary }` to stdout — writes NO memory. For content-review callers (ai-post 三方会审) that own their own persistence
 ├── tests/                        Tests (node:test)
 │   ├── lib.test.mjs              Frontmatter, category inference, markdown parsing
 │   ├── merge-render.test.mjs     Host-agnostic mergeFindings/renderReviewMarkdown/buildDedupKey
 │   ├── post-review-raw.test.mjs  post-review.js --raw end-to-end (raw fan-out → memory entry)
+│   ├── merge-findings-cli.test.mjs  merge-findings.js stdout seam (content-review merge, no memory write)
 │   ├── manifest.test.mjs         Diff manifest: parsing, filtering, mode decision, rendering
 │   ├── hook.test.mjs             Git root resolution
 │   └── migrations.test.mjs       Legacy format migration

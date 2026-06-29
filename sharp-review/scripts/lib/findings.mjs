@@ -90,7 +90,11 @@ export function mergeFindings(rawResults, { dedupKeyFields = DEFAULT_DEDUP_KEY_F
     const id = `${idPrefix}-${today}-${String(seq).padStart(3, '0')}`;
     const primary = group[0];
     const confidence = group.length >= 2 ? 'high-confidence (≥2 reviewers)' : 'single-reviewer';
+    // Spread `primary` first so content-review callers (custom finding schemas,
+    // e.g. ai-post's location/dimension/rating/issue) keep their own fields; then
+    // overlay the code-shaped fields the markdown renderer needs (with defaults).
     merged.push({
+      ...primary,
       id,
       severity: primary.severity || 'MEDIUM',
       file: primary.file || '',
