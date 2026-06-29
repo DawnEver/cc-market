@@ -138,14 +138,17 @@ Then take the response and call the StructuredOutput tool with it.
 If the takeover tool call fails, call StructuredOutput with { "findings": [] }.`;
 }
 
-function buildCodeReviewPrompt(reviewer, args) {
-  const scope = args.reviewScope || DEFAULT_REVIEW_SCOPE;
+function buildCodeReviewPrompt(reviewer, args, profile) {
+  const scope = profile?.reviewScope || args.reviewScope || DEFAULT_REVIEW_SCOPE;
   const findingsFormat = buildFindingsFormat(args.findingSchema || DEFAULT_FINDING);
   const prefix = `Range: ${args.range}.${args.path ? ` Scope: ${args.path}.` : ''} ${args.excludedSummary || ''}`;
+  const promptKind = profile?.promptKind || args.promptKind || 'diff';
+  const framing = profile?.framing || args.framing || null;
+  const mode = profile?.mode || args.mode;
 
   // Architecture profile: holistic survey, no diff/manifest. Reviewers explore the repo freely.
-  if (args.promptKind === 'architecture') {
-    const archBody = `${args.framing || 'Survey the current codebase architecture as a whole.'}
+  if (promptKind === 'architecture') {
+    const archBody = `${framing || 'Survey the current codebase architecture as a whole.'}
 
 ## Your job — explore autonomously
 - You have full tool access. Walk the repo: read the directory structure, entry points, build/config
@@ -160,9 +163,9 @@ ${findingsFormat}`;
     return wrapTakeoverCall(reviewer, 'agent', archBody, findingsFormat);
   }
 
-  const intro = args.framing ? `${args.framing}\n\n` : '';
+  const intro = framing ? `${framing}\n\n` : '';
 
-  if (args.mode === 'review') {
+  if (mode === 'review') {
     const reviewBody = `${intro}${prefix}
 
 Review the following git diff. Be BLUNT. Praise nothing that doesn't deserve it.
@@ -215,6 +218,20 @@ const findingsSchema = buildFindingsSchema(findingSchema);
 const reviewers = A.reviewers || DEFAULT_REVIEWERS;
 const pickStrategy = A.pickStrategy || 'seed-mod';
 const dedupKeyFields = A.dedupKeyFields || DEFAULT_DEDUP_KEY_FIELDS;
+
+// Resolve profiles: multi-profile array (new) or legacy single-profile fallback.
+const rawProfiles = Array.isArray(A.profiles) && A.profiles.length ? A.profiles : null;
+const profiles = rawProfiles || [{
+  key: A.promptKind || 'diff',
+  label: A.profileLabel || 'current branch',
+  mode: A.mode,
+  promptKind: A.promptKind,
+  framing: A.framing,
+  reviewScope: A.reviewScope,
+}];
+const profileLabel = rawProfiles
+  ? rawProfiles.map(p => p.label).join(' + ')
+  : (A.profileLabel || 'current branch');
 
 // Validate required args
 if (contentType === 'code') {
@@ -273,12 +290,13 @@ if (contentType === 'code') {
 } else {
   log(`Content review mode | ${active.length} reviewers | ${A.content.length} chars of content`);
 }
-log(`Launching ${active.length} parallel reviewers (${active.map(r => r.name).join(' + ')})...`);
+const profileLabels = active.map((r, i) => `${r.name}(${profiles[i]?.label || profileLabel})`);
+log(`Launching ${active.length} parallel reviewers (${profileLabels.join(' + ')})...`);
 
-const raw = await parallel(active.map(r => () =>
+const raw = await parallel(active.map((r, i) => () =>
   agent(
-    promptBuilder(r, A),
-    { label: `Reviewer ${r.key} (${r.name})`, phase: 'Review', schema: findingsSchema }
+    promptBuilder(r, A, profiles[i]),
+    { label: `Reviewer ${r.key} (${r.name}) [${profiles[i]?.label || profileLabel}]`, phase: 'Review', schema: findingsSchema }
   )
 )).catch(() => active.map(() => null));
 
@@ -340,12 +358,14 @@ const timestamp = dateStr + ' (session)';
 const reviewFile = `.claude/memory/${dateStr.replace(/-/g, '/')}/sharp-review.md`;
 
 const lines = [];
-lines.push(`## Review ${timestamp} — ${A.profileLabel || 'current branch'}`);
+lines.push(`## Review ${timestamp} — ${profileLabel}`);
 lines.push('');
 lines.push('### Reviewer Status');
 for (const r of reviewers) {
   const status = Array.isArray(slotResults[r.key]?.findings) ? 'OK' : (active.some(a => a.key === r.key) ? 'FAILED' : 'skipped');
-  lines.push(`- Reviewer ${r.key} (${r.name}): ${status}`);
+  const aIdx = active.findIndex(a => a.key === r.key);
+  const profileNote = aIdx >= 0 && profiles[aIdx] ? ` [${profiles[aIdx].label}]` : '';
+  lines.push(`- Reviewer ${r.key} (${r.name}): ${status}${profileNote}`);
 }
 if (succeeded.length < active.length) lines.push(`- Warning: only ${succeeded.length}/${active.length} reviewers succeeded`);
 lines.push('');

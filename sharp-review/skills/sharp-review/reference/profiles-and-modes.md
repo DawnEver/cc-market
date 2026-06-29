@@ -48,25 +48,25 @@ The hook's `reviewGate` state prevents the "one more file re-triggers" problem:
 ## Profile selection (weighting math)
 
 A *profile* is the unit of selection; a *source* is the named trigger it reacts to (diff and
-security share the `diff` trigger). Selection is a single **global** weighted draw over the
-profiles whose source fired this round — no pick-source-then-profile two-step. Provider
-selection is unaffected; profiles never bind a provider.
+security share the `diff` trigger). Each round picks **2 profiles** via weighted random draw
+**without replacement** from the profiles whose source fired. Each profile stands on its own
+weight — no orphan-mass folding. Provider selection is unaffected; profiles never bind a
+provider. Reviewer-to-profile assignment is shuffled so no profile is predictably bound to a
+specific reviewer model.
 
 | Profile | Source | Weight | Mode | Reviews |
 |---|---|---|---|---|
-| `diff` | `diff` | 0.6 | honors diff-manifest | the git diff — bugs & cleanup (default) |
+| `diff` | `diff` | 0.5 | honors diff-manifest | the git diff — bugs & cleanup (default) |
 | `architecture` (架构锐评) | `codebase` | 0.2 | agent | whole codebase architecture |
 | `security` (安全锐评) | `diff` | 0.05 | honors diff-manifest | the diff for security vulnerabilities |
+| `adversarial` (对抗性审查) | `diff` | 0.1 | honors diff-manifest | blind spots, edge cases, implicit assumptions |
 | `docs` (文档锐评) | `docs` | 0.1 | agent | docs vs. current code |
 | `deps` (依赖锐评) | `deps` | 0.05 | agent | dependency risk (CVEs, licenses) |
 
-Default weights sum to 1.0 and are **global probabilities** — across reviews each profile runs
-at roughly its weight. A profile is only *eligible* when its source fired; the weight of any
-profile whose source is cold this round (its "orphan mass") folds into the catch-all `diff`
-review, so each eligible specialist keeps its **exact global share** and `diff` absorbs the
-slack (its effective rate rises above 0.6 when specialists are idle). If `diff` itself is cold
-(e.g. a doc-only change, so only the `docs` source fired), the orphan mass spreads across
-whatever is eligible. Set a weight to 0 in `profileWeights` to opt a profile out.
+If fewer than 2 profiles are eligible (e.g. only `codebase` source fires → only `architecture`),
+the round runs with a single profile. Set a weight to 0 in `profileWeights` to opt a profile out.
+Each reviewer receives its own profile's framing and scope — two reviewers review through two
+different lenses, producing complementary (not cross-validated) findings.
 
 **File-size convention** (built into the `architecture` profile's scope, every repo): code files
 > 300 lines warrant scrutiny and > 600 lines **must** be split; a single SKILL.md / AGENTS.md /

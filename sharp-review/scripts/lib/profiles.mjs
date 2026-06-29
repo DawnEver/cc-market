@@ -18,7 +18,7 @@ export const PROFILES = {
     key: 'diff',
     label: 'diff review',
     source: 'diff',
-    weight: 0.6,            // default probability
+    weight: 0.5,            // default probability
     mode: null,             // null = honor diff-manifest's decided mode (review/agent/empty)
     promptKind: 'diff',
     framing: null,          // null = workflow's existing default intro
@@ -56,6 +56,24 @@ export const PROFILES = {
       'SSRF and path traversal',
       'Unsafe deserialization',
       'Crypto misuse (weak algorithms, static IVs, predictable randomness)',
+    ].join(', '),
+  },
+  adversarial: {
+    key: 'adversarial',
+    label: 'adversarial review (对抗性审查)',
+    source: 'diff',
+    weight: 0.1,           // competes with diff + security when the diff source fires
+    mode: null,            // honor diff-manifest's decided mode
+    promptKind: 'diff',
+    framing: '对抗性审查: actively hunt for blind spots and assumptions the developer is unconsciously avoiding. Be the adversary — try to break the code, find what was NOT thought about.',
+    reviewScope: [
+      'Blind spots — what edge cases, failure modes, or risks did the developer unconsciously avoid thinking about?',
+      'Implicit assumptions — what does this code assume that is never checked, validated, or enforced?',
+      'Extreme-case validation — how does this code behave under worst-case inputs, concurrency stress, resource exhaustion, or malformed data?',
+      'Wishful thinking — where does the code "hope" nothing goes wrong instead of handling failure explicitly?',
+      'Silent tradeoffs — what was sacrificed without acknowledgement, and was the wrong choice made?',
+      'Missing negation — what test cases, error paths, or validation checks are conspicuously absent?',
+      'Overconfidence — where does the code assume external systems, user input, or internal state will always be well-behaved?',
     ].join(', '),
   },
   docs: {
@@ -154,35 +172,21 @@ export function resolveWeights(override, registry = PROFILES) {
   return weights;
 }
 
-// Collapse the GLOBAL weight distribution onto the profiles eligible this round (those whose
-// `source` trigger fired). Selection is a single global weighted draw — there is no "pick a
-// source, then a profile within it" stage. Profiles whose source is cold donate their weight
-// ("orphan mass") to the catch-all `diff` review, so every eligible *specialist* keeps its exact
-// GLOBAL weight and `diff` absorbs the slack (its effective rate sits above its base weight).
-// Edge case — `diff` itself ineligible (its source didn't fire, e.g. a doc-only change): the
-// orphan mass is spread across the eligible profiles in proportion to their weight, preserving
-// their relative global shares. Returns {} when nothing is eligible (caller skips the review).
-export function globalWeightsForSources(sourceKeys, override, fallbackKey = 'diff', registry = PROFILES) {
-  const fired = new Set(sourceKeys || []);
-  const all = resolveWeights(override, registry);  // global weights (non-positive already dropped)
+// Filter the global weight map to only profiles whose `source` trigger fired this round.
+// No orphan-mass folding — each profile stands on its own weight. Returns {} when nothing
+// is eligible (caller skips the review).
+export function eligibleWeights(sourceKeys, override, registry = PROFILES) {
+  const all = resolveWeights(override, registry);
+  if (!sourceKeys || !sourceKeys.length) return all;
+  const fired = new Set(sourceKeys);
   const eligible = {};
-  let orphan = 0;
   for (const [key, w] of Object.entries(all)) {
     if (fired.has(registry[key]?.source)) eligible[key] = w;
-    else orphan += w;
-  }
-  const keys = Object.keys(eligible);
-  if (!keys.length || orphan <= 0) return eligible;
-  if (eligible[fallbackKey] !== undefined) {
-    eligible[fallbackKey] += orphan;               // catch-all absorbs the slack
-  } else {
-    const total = keys.reduce((s, k) => s + eligible[k], 0);
-    for (const k of keys) eligible[k] += orphan * (eligible[k] / total);
   }
   return eligible;
 }
 
-// Pure weighted pick. `rand` ∈ [0,1) injected by the caller (Math.random in the script,
+// Weighted random pick. `rand` ∈ [0,1) injected by the caller (Math.random in the script,
 // fixed values in tests). Falls back to 'diff' when weights are empty/garbage.
 export function pickProfileKey(weights, rand) {
   const entries = Object.entries(weights).filter(([, w]) => Number.isFinite(w) && w > 0);
@@ -194,4 +198,31 @@ export function pickProfileKey(weights, rand) {
     if (threshold < 0) return key;
   }
   return entries[entries.length - 1][0];
+}
+
+// Weighted random pick of N keys without replacement. `rands` is an optional array of
+// random numbers ∈ [0,1) for deterministic testing; falls back to Math.random().
+// Returns up to min(n, eligible.length) keys. Falls back to ['diff'] when nothing is eligible.
+export function pickNProfileKeys(weights, n, rands) {
+  const entries = Object.entries(weights).filter(([, w]) => Number.isFinite(w) && w > 0);
+  if (!entries.length) return ['diff'];
+
+  const remaining = [...entries];
+  const results = [];
+
+  for (let i = 0; i < n && remaining.length > 0; i++) {
+    const total = remaining.reduce((s, [, w]) => s + w, 0);
+    const rand = (rands && i < rands.length) ? rands[i] : Math.random();
+    let threshold = Math.max(0, Math.min(rand, 0.999999)) * total;
+    let picked = remaining[remaining.length - 1][0];
+    for (const [key, w] of remaining) {
+      threshold -= w;
+      if (threshold < 0) { picked = key; break; }
+    }
+    results.push(picked);
+    const idx = remaining.findIndex(([k]) => k === picked);
+    if (idx >= 0) remaining.splice(idx, 1);
+  }
+
+  return results;
 }

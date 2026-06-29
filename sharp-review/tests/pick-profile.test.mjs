@@ -14,29 +14,32 @@ function run(args, projectDir) {
     encoding: 'utf8',
     env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir || HERE },
   });
-  return JSON.parse(out);
+  return JSON.parse(out); // array of profile objects
 }
 
-test('--profile forces a specific profile regardless of weights', () => {
+test('--profile forces a specific profile (single-element array)', () => {
   const arch = run(['--profile', 'architecture']);
-  assert.equal(arch.key, 'architecture');
-  assert.equal(arch.mode, 'agent');
-  assert.equal(arch.promptKind, 'architecture');
+  assert.ok(Array.isArray(arch) && arch.length === 1, 'forced profile returns single-element array');
+  assert.equal(arch[0].key, 'architecture');
+  assert.equal(arch[0].mode, 'agent');
+  assert.equal(arch[0].promptKind, 'architecture');
 
   const diff = run(['--profile', 'diff']);
-  assert.equal(diff.key, 'diff');
+  assert.equal(diff[0].key, 'diff');
 });
 
 test('--profile with unknown key falls back to diff', () => {
-  assert.equal(run(['--profile', 'nope']).key, 'diff');
+  assert.equal(run(['--profile', 'nope'])[0].key, 'diff');
 });
 
-const ALL_KEYS = ['diff', 'architecture', 'security', 'docs', 'deps'];
-
-test('default (weighted) run always emits a valid profile JSON', () => {
+test('output is always a non-empty array of profile objects', () => {
   const p = run([]);
-  assert.ok(ALL_KEYS.includes(p.key));
-  assert.ok('label' in p && 'mode' in p && 'promptKind' in p);
+  assert.ok(Array.isArray(p) && p.length >= 1, `is an array with ${p.length} items`);
+  for (const prof of p) {
+    assert.ok('key' in prof && 'label' in prof && 'mode' in prof && 'promptKind' in prof);
+  }
+  // Manual run (no --sources) with all profiles eligible → usually picks 2.
+  // Statistically overwhelming chance of picking 2 from 6 profiles.
 });
 
 test('corrupt/missing config degrades gracefully (no throw, valid output)', () => {
@@ -45,20 +48,28 @@ test('corrupt/missing config degrades gracefully (no throw, valid output)', () =
     mkdirSync(join(dir, '.claude'), { recursive: true });
     writeFileSync(join(dir, '.claude', 'sharp-review.json'), '{ not valid json', 'utf8');
     const p = run([], dir);
-    assert.ok(ALL_KEYS.includes(p.key));
+    assert.ok(Array.isArray(p) && p.length >= 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test('--sources constrains selection to that source set', () => {
-  // Only the codebase source → architecture is the sole eligible profile.
+  // Only the codebase source → architecture is the sole eligible profile → single element.
   for (let i = 0; i < 8; i++) {
-    assert.equal(run(['--sources', 'codebase']).key, 'architecture');
+    const p = run(['--sources', 'codebase']);
+    assert.equal(p.length, 1, 'only architecture eligible');
+    assert.equal(p[0].key, 'architecture');
   }
-  // Only the diff source → eligible profiles are diff + security (both source 'diff').
+  // Diff source → eligible are diff + security + adversarial (3 profiles) → picks 2.
+  const diffKeys = ['diff', 'security', 'adversarial'];
   for (let i = 0; i < 8; i++) {
-    assert.ok(['diff', 'security'].includes(run(['--sources', 'diff']).key));
+    const p = run(['--sources', 'diff']);
+    assert.ok(p.length === 2, `picks 2 from diff-eligible (got ${p.length})`);
+    for (const prof of p) {
+      assert.ok(diffKeys.includes(prof.key), `${prof.key} is diff-sourced`);
+    }
+    assert.notEqual(p[0].key, p[1].key, 'no duplicate picks');
   }
 });
 
@@ -72,7 +83,9 @@ test('--sources docs with per-project weight selects docs profile', () => {
   try {
     writeConfig(dir, { profileWeights: { docs: 1 } });
     for (let i = 0; i < 8; i++) {
-      assert.equal(run(['--sources', 'docs'], dir).key, 'docs');
+      const p = run(['--sources', 'docs'], dir);
+      assert.equal(p.length, 1, 'only docs eligible');
+      assert.equal(p[0].key, 'docs');
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -83,23 +96,23 @@ test('custom profile from config participates in selection and is resolvable', (
   const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
   try {
     writeConfig(dir, {
-      // zero the built-in codebase profile so the only eligible codebase profile is the custom one
       profileWeights: { architecture: 0 },
       customProfiles: [{
         key: 'arch-hygiene', source: 'codebase', weight: 1, label: '整洁锐评',
         framing: 'hygiene pass', reviewScope: ['boundaries', 'duplication'],
       }],
     });
+    // Only arch-hygiene eligible (architecture weight=0) → single element.
     for (let i = 0; i < 8; i++) {
       const p = run(['--sources', 'codebase'], dir);
-      assert.equal(p.key, 'arch-hygiene');
-      assert.equal(p.mode, 'agent');             // default for custom
-      assert.equal(p.promptKind, 'architecture');
-      assert.equal(p.framing, 'hygiene pass');
-      assert.equal(p.reviewScope, 'boundaries, duplication');
+      assert.equal(p.length, 1);
+      assert.equal(p[0].key, 'arch-hygiene');
+      assert.equal(p[0].mode, 'agent');
+      assert.equal(p[0].promptKind, 'architecture');
+      assert.equal(p[0].framing, 'hygiene pass');
+      assert.equal(p[0].reviewScope, 'boundaries, duplication');
     }
-    // forced selection of a custom key also works
-    assert.equal(run(['--profile', 'arch-hygiene'], dir).key, 'arch-hygiene');
+    assert.equal(run(['--profile', 'arch-hygiene'], dir)[0].key, 'arch-hygiene');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -107,22 +120,30 @@ test('custom profile from config participates in selection and is resolvable', (
 
 test('no --sources flag uses the full default rotation', () => {
   for (let i = 0; i < 12; i++) {
-    assert.ok(ALL_KEYS.includes(run([]).key));
+    const p = run([]);
+    assert.ok(Array.isArray(p) && p.length >= 1);
+    // At least one profile should be one of the known keys.
+    const keys = p.map(x => x.key);
+    assert.ok(keys.some(k => ['diff', 'architecture', 'security', 'docs', 'deps', 'adversarial'].includes(k)));
+    if (p.length >= 2) assert.notEqual(p[0].key, p[1].key, 'no duplicate');
   }
 });
 
 test('--profile override still works with --sources present', () => {
-  assert.equal(run(['--sources', 'codebase', '--profile', 'docs']).key, 'docs');
+  const p = run(['--sources', 'codebase', '--profile', 'docs']);
+  assert.equal(p.length, 1);
+  assert.equal(p[0].key, 'docs');
 });
 
 test('per-project profileWeights forcing architecture is honored', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pick-profile-'));
   try {
-    // Zero out every other profile so the weighted pick is deterministically architecture.
-    writeConfig(dir, { profileWeights: { diff: 0, architecture: 1, security: 0, docs: 0, deps: 0 } });
-    // Run several times; with all others at weight 0 it must always pick architecture.
+    writeConfig(dir, { profileWeights: { diff: 0, architecture: 1, security: 0, docs: 0, deps: 0, adversarial: 0 } });
+    // Only architecture has weight > 0 → single element.
     for (let i = 0; i < 8; i++) {
-      assert.equal(run([], dir).key, 'architecture');
+      const p = run([], dir);
+      assert.equal(p.length, 1);
+      assert.equal(p[0].key, 'architecture');
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

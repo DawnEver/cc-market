@@ -32,25 +32,33 @@ if (-not $env:CLAUDE_PLUGIN_ROOT) {
 
 If still empty after the fallback, report `CLAUDE_PLUGIN_ROOT is not set and no fallback found` and stop.
 
-### Step 1 — Pick profile
+### Step 1 — Pick profiles
 
-Each run rotates between review **profiles** (diff / architecture / security / docs / deps),
-picked by a source-aware weighted draw. The Stop hook records which trigger source(s) fired in
-`reviewGate.firedSources`; pass them so the pick is constrained to eligible profiles, and capture the JSON:
+Each run picks **2 profiles** via weighted random draw without replacement, filtered to those
+whose source fired this round. The Stop hook records which trigger source(s) fired in
+`reviewGate.firedSources`; pass them so the pick is constrained to eligible profiles. Capture
+the JSON **array**:
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js" --sources diff,docs
 ```
 
 ```json
-{ "key": "diff", "label": "diff review", "mode": null, "promptKind": "diff", "framing": null, "reviewScope": null }
+[
+  { "key": "adversarial", "label": "adversarial review (对抗性审查)", "mode": null, "promptKind": "diff", "framing": "…", "reviewScope": "…" },
+  { "key": "diff", "label": "diff review", "mode": null, "promptKind": "diff", "framing": null, "reviewScope": null }
+]
 ```
 
-Omit `--sources` for the full default rotation (manual run). Manual override: `--profile architecture`. Selection is stateless (weights only). Profile table + weighting math + per-project `profileWeights` → `reference/profiles-and-modes.md`.
+If fewer than 2 profiles are eligible (e.g. `--sources codebase` → only `architecture`), the
+array has a single element. Reviewer-to-profile assignment is **shuffled** — no profile is
+predictably bound to a specific reviewer model.
+
+Omit `--sources` for the full default rotation (manual run). Manual override: `--profile architecture` (returns single-element array). Selection is stateless (weights only). Profile table + weighting math + per-project `profileWeights` → `reference/profiles-and-modes.md`.
 
 ### Step 2 — Gather context
 
-`diff`/`security` profiles need the diff payload; `architecture`/`docs`/`deps` run in agent mode and explore the repo, but still need `stats`/`range`/`seed` — so **always** run `diff-manifest.js` (the ONLY allowed diff source; never run raw `git diff` or paste diff text):
+Diff-sourced profiles (`diff`/`security`/`adversarial`) need the diff payload; agent-mode profiles (`architecture`/`docs`/`deps`) explore the repo but still need `stats`/`range`/`seed` — so **always** run `diff-manifest.js` (the ONLY allowed diff source; never run raw `git diff` or paste diff text):
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js"                       # uncommitted vs HEAD (default)
@@ -78,9 +86,9 @@ branch by **how this skill is running**:
 
 #### Step 3a — Workflow (inline / generalized only)
 
-If the profile honors the diff manifest (`profile.mode === null`, i.e. `diff`/`security`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Do NOT invoke Workflow or write memory. (Agent-mode profiles — `architecture`/`docs`/`deps` — ignore empty: they explore the repo, not a diff, so always proceed for them.)
+If ALL profiles honor the diff manifest (all have `mode === null`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. If at least one profile is agent-mode (`architecture`/`docs`/`deps`), proceed — agent-mode profiles explore the repo, not a diff.
 
-Otherwise, pass the JSON fields into Workflow args, layering the profile on top:
+Otherwise, pass the manifest fields and the **profiles array** from Step 1 into Workflow args:
 
 ```js
 Workflow({
@@ -88,22 +96,26 @@ Workflow({
   args: {
     date: "<YYYY-MM-DD today>",
     seed: result.seed,              // time-based; rotates reviewer pair per round
-    mode: profile.mode || result.mode,   // architecture forces "agent"
-    promptKind: profile.promptKind,      // "diff" | "architecture"
-    framing: profile.framing,            // profile-specific prompt intro (null for diff)
-    profileLabel: profile.label,         // shown in the memory heading
-    reviewScope: profile.reviewScope,    // pass only when non-null (else workflow default)
+    mode: result.mode,              // fallback for profiles with mode===null
+    profiles: [                     // from pick-profile.js output (Step 1)
+      { key: "adversarial", label: "…", mode: null, promptKind: "diff", framing: "…", reviewScope: "…" },
+      { key: "diff", label: "…", mode: null, promptKind: "diff", framing: null, reviewScope: null },
+    ],
     range: result.range,
     path: result.path,              // only when --path was used
     stats: result.stats,
-    diff: result.diff,              // only review mode (omit for architecture)
-    manifestText: result.manifestText, // only agent diff mode (omit for architecture)
+    diff: result.diff,              // only review mode (omit for architecture-only)
+    manifestText: result.manifestText, // only agent diff mode (omit for architecture-only)
     excludedSummary: result.excludedSummary,
   }
 })
 ```
 
-The `architecture` profile forces agent mode and uses neither `diff` nor `manifestText` — `stats`/`range`/`seed` are still passed (the workflow requires `stats`). The workflow picks 2 of 3 reviewers (`seed mod 3`) and constrains each to the finding schema. Reviewer roster + finding schema + per-mode prompt behavior → `reference/profiles-and-modes.md`.
+Each active reviewer gets its own profile's framing/scope/promptKind/mode, assigned by
+shuffled index (the shuffle happens in `pick-profile.js` so the order in the array IS the
+shuffled assignment). The workflow picks 2 of 3 reviewers (`seed mod 3`) and pairs them
+1:1 with the 2 profiles — two lenses, two reviewers, one round. Reviewer roster + finding
+schema + per-mode prompt behavior → `reference/profiles-and-modes.md`.
 
 #### Step 3b — Direct parallel fan-out (worker subagent / Codex — the normal path)
 

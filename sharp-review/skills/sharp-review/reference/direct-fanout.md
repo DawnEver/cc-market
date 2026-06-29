@@ -19,9 +19,10 @@ JSON → `null` in `rawResults`.
 
 ## Empty-diff gate
 
-Same as 3a: if the profile honors the diff manifest AND `mode === "empty"`, report
+If ALL profiles honor the diff manifest (all `mode === null`) AND `mode === "empty"`, report
 `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop.
-Agent-mode profiles (`architecture`/`docs`/`deps`) ignore empty and always proceed.
+Agent-mode profiles (`architecture`/`docs`/`deps`) ignore empty and always proceed — if at
+least one agent-mode profile is in the pick, the review runs.
 
 ## Reviewer rotation (seed mod 3)
 
@@ -36,10 +37,15 @@ Agent-mode profiles (`architecture`/`docs`/`deps`) ignore empty and always proce
 
 Provider mapping: A → `codex`, B → `deepseek`, C → `claude`.
 
+Each active reviewer is assigned **a different profile** — the profiles array from
+`pick-profile.js` is shuffled, so reviewer[i] gets profiles[i]. Two reviewers review
+through two different lenses, at the same 2-reviewer cost.
+
 ## Step-by-step procedure
 
 1. Pick the active reviewer pair via `seed mod 3` using `result.seed`.
-2. Build each reviewer's prompt from the same scope/diff/manifest payload (Step 2).
+2. Build each reviewer's prompt from **its assigned profile's** framing/scope, using the
+   shared diff/manifest payload (Step 2) for diff-sourced profiles.
    **Call each active reviewer** via `mcp__plugin_takeover_takeover__call_model`
    (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`) with the review
    prompt as `userPrompt`. Extract `{ "findings": [...] }` from the response JSON.
@@ -53,11 +59,12 @@ Provider mapping: A → `codex`, B → `deepseek`, C → `claude`.
    {
      "reviewers": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"},{"key":"C","name":"Opus"}],
      "active":    [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"}],
-     "profileLabel": "diff review",
+     "profiles":  [{"key":"adversarial","label":"adversarial review (对抗性审查)",…}, {"key":"diff","label":"diff review",…}],
+     "profileLabel": "adversarial review (对抗性审查) + diff review",
      "rawResults": [ {"findings":[...]}, {"findings":[...]} ]
    }
    ```
-   `rawResults[i]` aligns positionally with `active[i]`; a failed reviewer is `null`.
+   `rawResults[i]` aligns positionally with `active[i]` and `profiles[i]`; a failed reviewer is `null`.
 4. Hand the raw.json to `post-review.js --raw` (Step 4) — it runs the shared merge/render and
    writes the memory entry. Do NOT merge or assign `SR-` ids yourself; the shared `lib.mjs`
    owns that so both hosts produce byte-identical output.
