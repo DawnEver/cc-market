@@ -1,7 +1,7 @@
 ---
 name: sharp-review
 description: Post-feature sharp review worker — dispatched by the Stop hook or /sharp-review to run the full review pipeline (profile pick → diff manifest → parallel reviewer fan-out → merge → memory entry → report)
-tools: Bash, PowerShell, Read, Write, Agent, Glob, Grep
+tools: Bash, PowerShell, Read, Write, Agent, Glob, Grep, mcp__plugin_takeover_takeover__call_model, mcp__plugin_takeover_takeover__list_models
 ---
 
 You are the sharp-review worker. Your only job: run a structured code review on the current git state and return a one-line summary. Do NOT re-dispatch — you ARE the worker. Do NOT dump findings in chat.
@@ -21,13 +21,16 @@ if (-not $env:CLAUDE_PLUGIN_ROOT) {
 
 If still empty after the fallback, report `CLAUDE_PLUGIN_ROOT is not set and no fallback found` and stop.
 
-## Step 1 — Pick profile
+## Step 1 — Pick profiles
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/pick-profile.js" --sources <firedSources>
 ```
 
-Omit `--sources` for manual/default run. Capture the JSON: `{ key, label, mode, promptKind, framing, reviewScope }`.
+Omit `--sources` for manual/default run. Capture the JSON **array** — one element per active
+reviewer (up to 2): `[{ key, label, mode, promptKind, framing, reviewScope }, …]`. Assignment is
+shuffled, so `profiles[i]` belongs to `active[i]` (Step 3). Fewer than 2 eligible profiles → a
+single-element array (one reviewer this round).
 
 ## Step 2 — Gather context
 
@@ -41,7 +44,9 @@ Capture the JSON: `{ mode, range, seed, stats, diff?, manifestText?, excludedSum
 
 ## Step 3 — Run reviewers
 
-**Empty-diff gate:** If the profile honors the diff manifest (`profile.mode === null`) AND `mode === "empty"`, report `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. Agent-mode profiles (`architecture`/`docs`/`deps`) ignore empty and always proceed.
+**Empty-diff gate:** If **every** picked profile honors the diff manifest (all `profile.mode === null`) AND `mode === "empty"`, report `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. If at least one picked profile is agent-mode (`architecture`/`docs`/`deps`), proceed — agent-mode profiles explore the repo and ignore empty.
+
+Each active reviewer reviews through **its own** assigned profile (`profiles[i]`): build that reviewer's prompt from `profiles[i].promptKind`/`framing`/`reviewScope`.
 
 **Reviewer roster & rotation:** 3 reviewers (A: Codex/codex, B: DeepSeek/deepseek, C: Opus/claude). Pick 2 via `seed mod 3`:
 
@@ -75,7 +80,10 @@ Git diff:
 ```<diff>```
 ```
 
-Extract the `{ "findings": [...] }` JSON from the takeover response. If takeover returns no valid JSON, the reviewer failed → `null`.
+Extract the `{ "findings": [...] }` from the takeover response. deepseek/claude return the JSON
+object directly. **Codex (`provider="codex"`, `mode="review"`) returns PROSE, not JSON** —
+normalize it per the canonical rule in `reference/direct-fanout.md` § Codex prose normalization
+(parse → schema-validate → `[]` vs `null` semantics). Do NOT restate that rule here — read it.
 
 **agent diff** (`promptKind: "diff"`, `mode: "agent"`): same template but use `mode="agent"` and replace the diff block with the manifest text + exploration instructions.
 
@@ -92,12 +100,15 @@ Extract the `{ "findings": [...] }` JSON from the takeover response. If takeover
 {
   "reviewers": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"},{"key":"C","name":"Opus"}],
   "active": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"}],
-  "profileLabel": "<profile.label>",
-  "rawResults": [ <reviewer A findings array or null>, <reviewer B findings array or null> ]
+  "profileLabel": "<profiles[0].label> + <profiles[1].label>",
+  "rawResults": [ {"findings": [ … ]} | null, {"findings": [ … ]} | null ]
 }
 ```
 
-`rawResults[i]` aligns positionally with `active[i]`; a failed reviewer → `null`. Write raw.json with the Write tool to `$env:TEMP/claude-sharp-review/raw.json` (do NOT use Bash redirection on Windows).
+`rawResults[i]` aligns positionally with `active[i]` (and `profiles[i]`); each entry is
+`{ "findings": [...] }` or `null` for a failed reviewer. `profileLabel` joins the active
+profiles' labels with ` + `. Write raw.json with the Write tool to
+`$env:TEMP/claude-sharp-review/raw.json` (do NOT use Bash redirection on Windows).
 
 ## Step 4 — Write memory entry
 

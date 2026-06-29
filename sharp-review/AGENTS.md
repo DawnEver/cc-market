@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code. Three parallel reviewers with JSON Schema constraints, cross-checked and merged. Findings stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
+Post-feature code review plugin for Claude Code. Three parallel reviewers whose findings are normalized to one schema, cross-checked and merged. (deepseek/claude return schema JSON directly; codex review-mode returns prose the worker normalizes into the schema before merge — see `skills/sharp-review/reference/direct-fanout.md` § Codex prose normalization.) Findings stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
 
 ## Architecture
 
@@ -20,10 +20,11 @@ fresh subagent suffices; rem, by contrast, needs session context and is offloade
 ### Fan-out (worker subagent / Codex)
 
 The worker subagent (Claude) or Codex worker fans out reviewers directly via the takeover
-`call_model` MCP tool (fallback: `Agent`/`spawn_agent`), collects each reviewer's raw
-`{ findings }`, and feeds `post-review.js --raw` — which runs the shared merge/render so every
-host produces byte-identical output. Full procedure → **`skills/sharp-review/SKILL.md`** Step 3
-→ **`reference/direct-fanout.md`**.
+`call_model` MCP tool (which the worker agent must list in its `tools:` allowlist; fallback:
+`Agent`/`spawn_agent`), collects each reviewer's `{ findings }` (normalizing codex prose into
+the schema — see direct-fanout.md), and feeds `post-review.js --raw` — which runs the shared
+merge/render so every host produces byte-identical output. Full procedure →
+**`skills/sharp-review/SKILL.md`** Step 3 → **`reference/direct-fanout.md`**.
 
 ### Wave Gate
 

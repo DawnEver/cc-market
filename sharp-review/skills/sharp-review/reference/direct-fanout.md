@@ -13,8 +13,9 @@ reviewer. These go through the safety classifier and may fail transiently. Use o
 the takeover MCP tool is not available.
 
 Call each active reviewer in sequence via takeover, collect their `{ "findings": [...] }`
-responses, and build `raw.json`. A reviewer whose takeover call fails or returns no valid
-JSON → `null` in `rawResults`.
+responses, and build `raw.json`. deepseek/claude return JSON directly; **codex review-mode
+returns prose** — normalize it per § Codex prose normalization below, which also defines the
+single `[]`-vs-`null` rule for all reviewers.
 
 ## Empty-diff gate
 
@@ -47,7 +48,8 @@ through two different lenses, at the same 2-reviewer cost.
    shared diff/manifest payload (Step 2) for diff-sourced profiles.
    **Call each active reviewer** via `mcp__plugin_takeover_takeover__call_model`
    (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`) with the review
-   prompt as `userPrompt`. Extract `{ "findings": [...] }` from the response JSON.
+   prompt as `userPrompt`. Extract `{ "findings": [...] }` from the response — directly for
+   deepseek/claude, or via § Codex prose normalization for codex review-mode.
    If the takeover tool is unavailable, fall back to the `Agent` tool (Claude Code) or
    `spawn_agent` (Codex) — one worker per reviewer.
    Each reviewer must return ONLY `{ "findings": [...] }` matching the finding schema (see
@@ -75,5 +77,28 @@ node "$env:CLAUDE_PLUGIN_ROOT/scripts/post-review.js" --date <YYYY-MM-DD> --raw 
 ```
 
 If `$env:CLAUDE_PLUGIN_ROOT` is empty, use the Step 0 fallback (check `$env:TEMP/claude-sharp-review/plugin-root.txt`) before running this command.
+
+## Codex prose normalization
+
+**Canonical rule** — both the worker agent (`agents/sharp-review.md`) and SKILL.md Step 3 link
+here; do not restate it elsewhere.
+
+Codex with `provider="codex"`, `mode="review"` uses its native review endpoint, which **ignores
+the JSON instruction and returns prose**. deepseek/claude return `{ "findings": [...] }`
+directly — use as-is. For codex, the host normalizes the prose:
+
+1. **Parse** each issue codex raises into a finding object `{ severity, file, summary, category,
+   suggestion, detail }` — `severity` ∈ `HIGH|MEDIUM|LOW|INFO`, `category` ∈ `Bug|Feature|
+   Performance`.
+2. **Schema-validate**: drop any parsed entry missing a required field (`severity`, `summary`,
+   `category`); do not invent `file`/severity not supported by the prose. Only validated
+   findings enter `rawResults`.
+3. **`[]` vs `null` (applies to every reviewer, not just codex):**
+   - `[]` — the reviewer **explicitly** signalled a clean pass (codex: an affirmative "no
+     material issues" statement; deepseek/claude: an empty `findings` array).
+   - `null` — the takeover call errored, OR the output is empty / truncated / off-topic /
+     unparseable with no extractable findings **and no affirmative clean signal**. Never map an
+     ambiguous non-affirmative response to `[]` — that silently hides a reviewer failure
+     (`merge` treats `null` = failed, `[]` = passed-clean).
 
 On Windows: write `raw.json` with the Write tool (not Bash redirection) — see SKILL.md Step 4.
