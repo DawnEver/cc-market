@@ -1,7 +1,7 @@
 /**
  * Integration tests for `post-review.js --raw`: the host-agnostic entry where raw
- * per-reviewer findings are merged + rendered + written in one step (the path Codex
- * and any non-Workflow-VM host use). Run:
+ * per-reviewer findings are merged + rendered + written in one step (the path the
+ * worker subagent and Codex use). Run:
  *   node --test cc-market/sharp-review/tests/post-review-raw.test.mjs
  */
 

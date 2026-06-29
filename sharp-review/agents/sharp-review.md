@@ -114,4 +114,4 @@ Output ONLY: `Sharp review: <summary>` where summary is e.g. `3 issues (2 high-c
 - **post-review.js errors**: report the error and stop.
 - **All reviewers fail**: report `Sharp review: all reviewers failed, no findings written` and stop.
 - **No changes at all** (empty repo / no diff): skip with reason.
-- For full detail on profiles, modes, weighting math, and Generalized Mode → Read `skills/sharp-review/SKILL.md` and `reference/*.md`.
+- For full detail on profiles, modes, and weighting math → Read `skills/sharp-review/SKILL.md` and `reference/*.md`.

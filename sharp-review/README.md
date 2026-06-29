@@ -23,7 +23,7 @@ node scripts/setup/setup.js
 > The standard trigger runs the **entire** review inside a dispatched worker subagent, so the
 > diff/reviewer/merge noise never touches the main session — only the one-line summary returns.
 > The worker fans out reviewers directly and feeds `post-review.js --raw` the shared
-> merge/render (the `Workflow` VM path is reserved for inline Generalized-Mode callers).
+> merge/render.
 >
 > **On Codex:** install with `codex plugin add sharp-review@cc-market`. The Stop hook and the
 > review skill both run on Codex, fanning out reviewers the same way. `/sharp-review` is a
@@ -79,31 +79,3 @@ Configure the threshold in `.claude/sharp-review.json`:
 { "inlineDiffLimit": 20000 }
 ```
 Default is 20000 characters (~5k tokens). Units are **chars** (not lines) because chars track actual context window cost — line counts mislead on minified or long-line content.
-
-## Generalized Content Review
-
-The workflow engine (`scripts/sharp-review-workflow.js`) supports arbitrary content review beyond code diffs. Other skills can configure reviewers, finding schemas, and review scope — the engine handles parallel multi-model fanout, structured output enforcement, dedup merge, and confidence tagging.
-
-### Use Cases
-
-| Consumer | Review Target | Identities | Models |
-|----------|--------------|------------|--------|
-| `/sharp-review` (built-in) | Git code diffs | 3 generic code reviewers | Codex + DeepSeek + Opus (2 picked) |
-| ai-post `/post-review` | Social media articles | 读者代理人 + 技术核查员 | Claude Sonnet + DeepSeek (×2 identities) |
-
-### Configuration
-
-Callers pass these `Workflow` args to override defaults:
-
-| Param | Default | Purpose |
-|-------|---------|---------|
-| `contentType` | `"code"` | `"content"` for arbitrary text |
-| `content` | — | Review target (required for content mode) |
-| `reviewScope` | Code dimensions | Comma-separated check dimensions |
-| `findingSchema` | Code schema | JSON Schema for findings |
-| `reviewers` | A/B/C | Custom reviewer identities |
-| `pickStrategy` | `"seed-mod"` | `"all"` to use all reviewers |
-| `dedupKeyFields` | `["file", "summary"]` | Fields for dedup key |
-| `idPrefix` | `"SR"` | Finding ID prefix |
-
-Full parameter reference → `skills/sharp-review/SKILL.md` § Generalized Mode.

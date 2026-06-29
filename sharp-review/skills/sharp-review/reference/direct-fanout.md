@@ -1,8 +1,7 @@
 # Sharp Review — Direct Fan-Out Procedure (reference)
 
-On-demand detail for whoever runs without the `Workflow` tool — i.e. the **standard path**:
-a Claude Code worker subagent, or a Codex worker. Only an inline Generalized-Mode caller in
-the main loop skips this and uses the `Workflow` tool (Step 3a).
+On-demand detail for the reviewer fan-out (SKILL.md Step 3): a Claude Code worker subagent,
+or a Codex worker.
 
 ## Fan-out tool preference
 
@@ -67,7 +66,7 @@ through two different lenses, at the same 2-reviewer cost.
    `rawResults[i]` aligns positionally with `active[i]` and `profiles[i]`; a failed reviewer is `null`.
 4. Hand the raw.json to `post-review.js --raw` (Step 4) — it runs the shared merge/render and
    writes the memory entry. Do NOT merge or assign `SR-` ids yourself; the shared `lib.mjs`
-   owns that so both hosts produce byte-identical output.
+   owns that so every host produces byte-identical output.
 
 ## Calling post-review
 

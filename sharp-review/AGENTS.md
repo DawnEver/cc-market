@@ -17,13 +17,13 @@ system prompt with the full review procedure, avoiding the `general-purpose` age
 toolset and instructions. Sharp review is context-independent (operates on git state), so a
 fresh subagent suffices; rem, by contrast, needs session context and is offloaded via `fork`.
 
-### Fan-out (worker subagent / Codex + inline Workflow)
+### Fan-out (worker subagent / Codex)
 
-One merge/render, two fan-out tools. The standard path (worker subagent on Claude, or Codex)
-has no `Workflow` tool, so it fans out reviewers directly and feeds `post-review.js --raw`.
-Only an inline Generalized-Mode caller in the main loop uses the `Workflow` tool. Full
-procedure → **`skills/sharp-review/SKILL.md`** Step 3 (3a Workflow / 3b direct →
-**`reference/direct-fanout.md`**).
+The worker subagent (Claude) or Codex worker fans out reviewers directly via the takeover
+`call_model` MCP tool (fallback: `Agent`/`spawn_agent`), collects each reviewer's raw
+`{ findings }`, and feeds `post-review.js --raw` — which runs the shared merge/render so every
+host produces byte-identical output. Full procedure → **`skills/sharp-review/SKILL.md`** Step 3
+→ **`reference/direct-fanout.md`**.
 
 ### Wave Gate
 
@@ -54,8 +54,7 @@ sharp-review/
 │   ├── sources.mjs               Source-adapter registry (pure): diff | codebase | deps | docs trigger logic + evaluateSources
 │   ├── pick-profile.js               Source-constrained weighted profile pick (--sources); stateless
 │   ├── diff-manifest.js              Analyze git diff → produce size-bounded manifest (review/agent/empty mode)
-│   ├── post-review.js                Write memory entry → stamp. `--raw` merges+renders raw per-reviewer findings via lib (host-agnostic entry, used by Codex / any non-Workflow-VM host); `--findings`+`--markdown` takes pre-merged input (Claude Workflow / external content callers)
-│   └── sharp-review-workflow.js   Review workflow (2 parallel reviewers, invoked by skill only)
+│   └── post-review.js                Write memory entry → stamp. `--raw` merges+renders raw per-reviewer findings via lib (host-agnostic — same output on Claude worker subagent and Codex); `--rescan` re-derives frontmatter from an edited memory file
 ├── tests/                        Tests (node:test)
 │   ├── lib.test.mjs              Frontmatter, category inference, markdown parsing
 │   ├── merge-render.test.mjs     Host-agnostic mergeFindings/renderReviewMarkdown/buildDedupKey
@@ -91,16 +90,9 @@ table/thresholds, and config keys — live in `skills/sharp-review/reference/pro
   review templates merged into `PROFILES` at pick time (`mergeProfiles`/`normalizeCustomProfile`)
   — a repo adds a profile without touching plugin code.
 
-### Generalized Content Review
-
-The workflow engine supports arbitrary content review beyond code diffs (parallel fanout,
-schema enforcement, dedup merge, confidence tagging). Full parameter reference and external
-consumer example (ai-post 三方会审) → **`skills/sharp-review/SKILL.md`** Generalized Mode →
-**`reference/generalized-mode.md`**.
-
 ## Key Invariants
 
-See `.claude/rules/invariants.md` (always-injected) for diff manifest, workflow args, dual-mode, schema, finding ID, and resolution constraints.
+See `.claude/rules/invariants.md` (always-injected) for diff manifest, schema, finding ID, and resolution constraints.
 
 - **Report**: `todo` / `todo report` scans all memory files on the fly — never stale.
 

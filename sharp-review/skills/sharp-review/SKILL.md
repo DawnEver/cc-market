@@ -11,9 +11,8 @@ Post-feature review: 2 of 3 reviewers, each JSON-Schema-constrained, cross-check
 
 Review runs on git state, not the conversation — so offload it: **main loop dispatches one
 `sharp-review:sharp-review` subagent** to run Steps 1–6 and return only the `Sharp review: <summary>`
-line (pass it the hook's `firedSources`). Zero leakage into the main session; the worker uses
-Step 3b (no `Workflow` tool in a subagent) and must not re-dispatch (recursion). The 3a
-`Workflow` path is only for inline Generalized-Mode callers, never the standard trigger.
+line (pass it the hook's `firedSources`). Zero leakage into the main session; the worker fans
+out reviewers directly (Step 3) and must not re-dispatch (recursion).
 
 ## Execution
 
@@ -69,83 +68,26 @@ node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD" --
 
 ### Step 3 — Run reviewers (fan-out)
 
-One merge, two possible fan-out tools. The merge + render + write-back is identical (shared
-`mergeFindings`/`renderReviewMarkdown` in `lib.mjs`, invoked by `post-review.js`). Pick the
-branch by **how this skill is running**:
+**Empty-diff gate:** If ALL profiles honor the diff manifest (all have `mode === null`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. If at least one profile is agent-mode (`architecture`/`docs`/`deps`), proceed — agent-mode profiles explore the repo, not a diff.
 
-- **Standard trigger (you are the dispatched worker subagent) OR Codex** — you have no
-  `Workflow` tool. Fan out reviewers yourself in parallel via the `Agent` tool / `spawn_agent`
-  (or the takeover `call_model` MCP tool), collect each reviewer's raw `{ findings: [...] }`,
-  and hand the **raw** results to `post-review.js --raw` (**Step 3b below**). This is the
-  normal path. Do NOT merge or assign `SR-` ids yourself — the shared lib owns that so every
-  host produces byte-identical output.
-- **Inline in main loop (Generalized Mode external caller only)** — the `Workflow` tool is
-  available; use it (3a) to fan out in a sandboxed VM, merge/render inline, and get back
-  `{ reviewFile, markdown, merged, summary }`. The standard `/sharp-review` trigger never
-  reaches this branch (it always runs as a worker subagent — see Execution mode at top).
-
-#### Step 3a — Workflow (inline / generalized only)
-
-If ALL profiles honor the diff manifest (all have `mode === null`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. If at least one profile is agent-mode (`architecture`/`docs`/`deps`), proceed — agent-mode profiles explore the repo, not a diff.
-
-Otherwise, pass the manifest fields and the **profiles array** from Step 1 into Workflow args:
-
-```js
-Workflow({
-  scriptPath: "${CLAUDE_PLUGIN_ROOT}/scripts/sharp-review-workflow.js",
-  args: {
-    date: "<YYYY-MM-DD today>",
-    seed: result.seed,              // time-based; rotates reviewer pair per round
-    mode: result.mode,              // fallback for profiles with mode===null
-    profiles: [                     // from pick-profile.js output (Step 1)
-      { key: "adversarial", label: "…", mode: null, promptKind: "diff", framing: "…", reviewScope: "…" },
-      { key: "diff", label: "…", mode: null, promptKind: "diff", framing: null, reviewScope: null },
-    ],
-    range: result.range,
-    path: result.path,              // only when --path was used
-    stats: result.stats,
-    diff: result.diff,              // only review mode (omit for architecture-only)
-    manifestText: result.manifestText, // only agent diff mode (omit for architecture-only)
-    excludedSummary: result.excludedSummary,
-  }
-})
-```
-
-Each active reviewer gets its own profile's framing/scope/promptKind/mode, assigned by
-shuffled index (the shuffle happens in `pick-profile.js` so the order in the array IS the
-shuffled assignment). The workflow picks 2 of 3 reviewers (`seed mod 3`) and pairs them
-1:1 with the 2 profiles — two lenses, two reviewers, one round. Reviewer roster + finding
-schema + per-mode prompt behavior → `reference/profiles-and-modes.md`.
-
-#### Step 3b — Direct parallel fan-out (worker subagent / Codex — the normal path)
-
-Same empty-diff gate as 3a. Fan out via `mcp__plugin_takeover_takeover__call_model`
-(primary — direct API calls, no safety-classifier dependency) for each active reviewer;
-fall back to the `Agent` tool (Claude Code) / `spawn_agent` (Codex) if takeover is
-unavailable. Collect raw results and feed `post-review.js --raw`. Full procedure,
-seed-mod-3 rotation, `raw.json` schema, and positional alignment →
+Otherwise fan out via `mcp__plugin_takeover_takeover__call_model` (primary — direct API
+calls, no safety-classifier dependency) for each active reviewer; fall back to the `Agent`
+tool (Claude Code) / `spawn_agent` (Codex) if takeover is unavailable. Collect each reviewer's
+raw `{ findings: [...] }` and feed the **raw** results to `post-review.js --raw`. Do NOT merge
+or assign `SR-` ids yourself — the shared `mergeFindings`/`renderReviewMarkdown` in `lib.mjs`
+(invoked by `post-review.js`) owns that, so every host produces byte-identical output. Full
+procedure, seed-mod-3 rotation, `raw.json` schema, and positional alignment →
 **`reference/direct-fanout.md`**.
 
 ### Step 4 — Write memory entry & sync
 
-**IMPORTANT on Windows**: Do NOT use Bash redirection (`>`) with Windows paths — Bash treats backslashes as escape characters and creates stray files in the wrong location. Instead, write temp files using the Write tool, then call post-review.js via PowerShell.
-
-**From Codex / raw fan-out (3b)** — write the `raw.json` from Step 3b, then:
+**IMPORTANT on Windows**: Do NOT use Bash redirection (`>`) with Windows paths — Bash treats backslashes as escape characters and creates stray files in the wrong location. Instead, write the `raw.json` from Step 3 using the Write tool, then call post-review.js via PowerShell:
 
 ```powershell
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/post-review.js" --date <YYYY-MM-DD> --raw "$env:TEMP/claude-sharp-review/raw.json"
 ```
 
-**From the Claude Workflow (3a)** — the workflow already merged/rendered, returning
-`{ reviewFile, markdown, merged, summary }`. Write two temp files with the Write tool:
-- `$env:TEMP/claude-sharp-review/findings.json` — contents: `result.merged` as JSON
-- `$env:TEMP/claude-sharp-review/review.md` — contents: `result.markdown`
-
-```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/scripts/post-review.js" --date <YYYY-MM-DD> --findings "$env:TEMP/claude-sharp-review/findings.json" --markdown "$env:TEMP/claude-sharp-review/review.md"
-```
-
-Either form writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
+This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
 
 ### Step 5 — Resolve findings
 
@@ -177,13 +119,3 @@ After the review:
 ## Usage
 
 Run `/sharp-review` after finishing a feature. No arguments needed.
-
----
-
-## Generalized Mode (Content Review)
-
-The workflow engine also supports arbitrary **content** review beyond code diffs — callers
-configure reviewers, finding schemas, and review scope; the engine handles parallel fanout, dedup
-merge, and confidence tagging. The standard `/sharp-review` flow never needs this. External
-callers (e.g. ai-post 三方会审): see **`reference/generalized-mode.md`** for the full Workflow
-args, parameter table, return value, and example.

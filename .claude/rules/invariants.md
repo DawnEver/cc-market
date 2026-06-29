@@ -65,7 +65,6 @@ not done until it is *clean*:
   reader's wrong mental model.
 - **Delete what the change orphaned.** Scripts, references, or files that nothing reaches
   after a change must be removed, not left "just in case". Verify with a repo grep before
-  deleting; if something is still used by one path (e.g. `sharp-review-workflow.js` by the
-  inline Generalized-Mode caller), keep it and say why.
+  deleting; if something is still used by another path, keep it and say why.
 - **Review your own diff for simplicity.** Before committing, re-read the edit: cut
   redundancy, avoid restating the same fact in two places, keep it minimal and elegant.
