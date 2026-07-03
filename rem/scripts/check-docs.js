@@ -3,7 +3,7 @@
 // Project-agnostic: discovers doc files at all levels, checks uncommitted changes.
 
 import { readdirSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { execFileSync } from "../shared/spawn.mjs";
 import { join, relative } from 'path';
 import { repoRoot } from './lib.mjs';
 
@@ -31,13 +31,13 @@ export function collectUncommitted(cwd) {
   const files = [];
   try {
     const diff = execFileSync('git', ['diff', '--name-only', 'HEAD'], {
-      cwd, timeout: 3000, encoding: 'utf8', windowsHide: true,
+      cwd, timeout: 3000, encoding: 'utf8',
     });
     files.push(...diff.trim().split('\n').filter(Boolean));
   } catch { /* not a git repo */ }
   try {
     const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
-      cwd, timeout: 3000, encoding: 'utf8', windowsHide: true,
+      cwd, timeout: 3000, encoding: 'utf8',
     });
     files.push(...untracked.trim().split('\n').filter(Boolean));
   } catch { /* not a git repo */ }

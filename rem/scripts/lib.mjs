@@ -5,6 +5,10 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSy
 import { join, dirname, resolve, relative, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from '../shared/state.mjs';
+import { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath } from '../shared/stamp.mjs';
+
+// Index entry format lives in shared/stamp.mjs (also used by sharp-review's post-review upsert)
+export { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath };
 
 // ── Paths ──
 
@@ -394,46 +398,6 @@ export function rebuildIndex(scopeRoot) {
 
   if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
   writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
-}
-
-// Regex to match and parse an index entry line
-const ENTRY_RE = /^-\s+\[(\d{4}-\d{2}-\d{2})\s+(.+?)\]\(\.\.\/memory\/(.+?\.md)\)\s*—\s*`created:\s*(\d{4}-\d{2}-\d{2}),\s*accessed:\s*(\d{4}-\d{2}-\d{2})`/;
-
-export function normalizeMemoryPath(relPath) {
-  return relPath.replace(/^(\d{4})-(\d{2})-(\d{2})\//, '$1/$2/$3/');
-}
-
-export function parseIndexEntry(line) {
-  const m = line.match(ENTRY_RE);
-  if (!m) return null;
-  return {
-    date: m[1],
-    title: m[2],
-    path: normalizeMemoryPath(m[3]),
-    created: m[4],
-    accessed: m[5],
-    accessedDate: parseDate(m[5]),
-    line,
-  };
-}
-
-export function formatIndexEntry(entry) {
-  return `- [${entry.date} ${entry.title}](../memory/${entry.path}) — \`created: ${entry.created}, accessed: ${entry.accessed}\``;
-}
-
-export function parseIndex(content) {
-  const lines = content.split('\n');
-  const header = [];
-  const entries = [];
-  for (const line of lines) {
-    const e = parseIndexEntry(line);
-    if (e) {
-      entries.push(e);
-    } else if (entries.length === 0) {
-      header.push(line);
-    }
-  }
-  return { header, entries };
 }
 
 // ── File collection ──

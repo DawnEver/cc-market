@@ -5,7 +5,6 @@
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { homedir } from 'os';
 
 // ── findProjectRoot: walk up to nearest .git ──
 
@@ -147,21 +146,4 @@ export function parseFindingsFromMarkdown(content, date) {
     });
   }
   return findings;
-}
-
-// ── resolvePluginDir: locate another cc-market plugin's install dir ──
-//
-// Relative paths like `../../rem` break once plugins are cached under
-// versioned dirs (cc-market/<plugin>/<version>/), so fall back to
-// installed_plugins.json (keyed by `<name>@cc-market`, latest installedAt wins).
-
-export function resolvePluginDir(name, fromDir) {
-  const flatCandidate = join(fromDir, '..', '..', name); // dev/flat repo layout
-  if (existsSync(join(flatCandidate, '.claude-plugin', 'plugin.json'))) return flatCandidate;
-
-  const installedPath = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
-  const data = JSON.parse(readFileSync(installedPath, 'utf8'));
-  const entries = data.plugins?.[`${name}@cc-market`];
-  if (!entries?.length) throw new Error(`Cannot resolve plugin dir for ${name}@cc-market`);
-  return entries.reduce((a, b) => new Date(a.installedAt) > new Date(b.installedAt) ? a : b).installPath;
 }

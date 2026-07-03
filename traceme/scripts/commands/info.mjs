@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from "../../shared/spawn.mjs";
 import { openDb } from '../db.mjs';
 import { getDbPath, TRACEME_DIR, ERROR_LOG } from '../lib.mjs';
 import { isSyncSetup } from '../sync.mjs';

@@ -3,7 +3,7 @@ import { getProjectName, getGitRemote, getProjectRoot, normalizeRemoteUrl, today
 import { scanTakeoverTraces } from '../scripts/ingest.mjs';
 import { scanAll } from '../scripts/scan.mjs';
 import { appendFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn } from "../shared/spawn.mjs";
 import { fileURLToPath } from 'node:url';
 
 function logError(msg) {
@@ -89,7 +89,6 @@ async function main() {
                 const child = spawn(process.execPath, [cli, 'sync', 'push'], {
                   detached: true,
                   stdio: 'ignore',
-                  windowsHide: true,
                 });
                 child.unref();
               } else {

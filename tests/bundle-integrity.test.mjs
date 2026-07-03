@@ -65,22 +65,26 @@ describe('bundle integrity', () => {
 });
 
 describe('import paths', () => {
-  const checkFile = (filePath, relPath) => {
+  // A shared/ import must resolve inside the plugin's own bundled shared/ dir —
+  // an import that escapes the plugin (e.g. up to cc-market/shared/) breaks once
+  // the plugin is installed standalone from the marketplace cache.
+  const checkFile = (filePath, relPath, pluginRoot) => {
     const src = readFileSync(filePath, 'utf8');
     // Create a fresh regex each call — avoids stale lastIndex if assert throws mid-loop
     const re = /from\s+['"]([^'"]*shared\/[^'"]+)['"]/g;
+    const bundledShared = join(pluginRoot, 'shared') + '/';
     let m;
     while ((m = re.exec(src)) !== null) {
-      const imp = m[1];
+      const resolved = join(dirname(filePath), m[1]).replace(/\\/g, '/');
       assert.ok(
-        imp.startsWith('./shared/') || imp.startsWith('../shared/'),
-        `${relPath}: import '${imp}' must use ./shared/ or ../shared/ (not ../../shared/)`
+        resolved.startsWith(bundledShared.replace(/\\/g, '/')),
+        `${relPath}: import '${m[1]}' resolves outside the plugin's shared/`
       );
     }
   };
 
   for (const plugin of PLUGINS) {
-    it(`${plugin} — no ../../shared/ imports`, () => {
+    it(`${plugin} — shared/ imports stay inside the plugin`, () => {
       const pluginRoot = join(ROOT, plugin);
       // Check all .js/.mjs files recursively (skip node_modules, tests)
       const walk = (dir) => {
@@ -89,7 +93,7 @@ describe('import paths', () => {
           const full = join(dir, entry.name);
           if (entry.isDirectory()) walk(full);
           else if (entry.name.endsWith('.mjs') || entry.name.endsWith('.js')) {
-            checkFile(full, full.replace(ROOT + '/', ''));
+            checkFile(full, full.replace(ROOT + '/', ''), pluginRoot);
           }
         }
       };

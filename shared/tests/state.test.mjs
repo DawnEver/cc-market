@@ -26,6 +26,10 @@ after(() => {
 describe('DEFAULT_STATE', async () => {
   const { DEFAULT_STATE } = await import(stateUrl);
 
+  it('has a schema version', () => {
+    assert.equal(DEFAULT_STATE.version, 1);
+  });
+
   it('has hook and prune keys', () => {
     assert.ok('hook' in DEFAULT_STATE);
     assert.ok('prune' in DEFAULT_STATE);

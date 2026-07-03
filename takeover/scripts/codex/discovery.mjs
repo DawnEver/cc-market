@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync } from "../../shared/spawn.mjs";
 
 export function findCodexBinary() {
   if (process.env.TAKEOVER_CODEX_BINARY) {
@@ -14,12 +14,11 @@ export function findCodexBinary() {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 10000,
     shell: process.platform === "win32",
-    windowsHide: true,
   });
   if (pathResult.status === 0) {
     if (process.platform === "win32") {
       // 'where codex' to resolve full path with extension
-      const where = spawnSync("where", ["codex"], { stdio: ["ignore", "pipe", "pipe"], timeout: 5000, windowsHide: true });
+      const where = spawnSync("where", ["codex"], { stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
       if (where.status === 0) {
         const lines = where.stdout.toString().trim().split("\n");
         // Prefer .cmd/.exe over extensionless (shell scripts on PATH)
@@ -61,7 +60,6 @@ export function checkCodexStatus(codexPath) {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 10000,
     shell: process.platform === "win32",
-    windowsHide: true,
   });
 
   if (version.error || version.status !== 0) {
@@ -77,7 +75,6 @@ export function checkCodexStatus(codexPath) {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 15000,
     shell: process.platform === "win32",
-    windowsHide: true,
   });
 
   let authenticated = false;

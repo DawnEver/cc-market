@@ -6,6 +6,9 @@
 //        (.claude/.rem-state.json → reviewGate.{profileWeights,customProfiles,thresholds,
 //        inlineDiffLimit,docsThreshold,codebaseIntervalMin}) into the tracked, shareable
 //        .claude/sharp-review.json so it travels with the repo.
+//
+// Retirement: both steps target pre-1.1 project layouts — safe to delete (reverting this
+// file to a no-op stub) once no active project predates sharp-review 1.2.
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';

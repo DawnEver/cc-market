@@ -5,6 +5,10 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkS
 import { dirname } from 'path';
 
 export const DEFAULT_STATE = {
+  // Schema version of the whole state file. Bump when a key's shape changes
+  // incompatibly; plugin migrations key off it. Key ownership table:
+  // cc-market/.claude/rules/invariants.md § "State file ownership".
+  version: 1,
   hook: {
     sessionKey: null,
     stopCount: 0,

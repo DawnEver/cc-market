@@ -14,7 +14,7 @@ import path from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from "../shared/spawn.mjs";
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
 import { evaluateSources, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
@@ -85,7 +85,7 @@ function loadClassifierMemory() {
 
 function getChangedFiles() {
   try {
-    const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString();
+    const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     return out.split('\n').map(l => {
       const p = l.slice(3).trim();
       const arrow = p.indexOf(' -> ');
@@ -98,20 +98,20 @@ function getChangedFiles() {
 
 function getCurrentHead() {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString().trim();
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
   } catch { return null; }
 }
 
 function gitRefExists(ref) {
   try {
-    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: 5000, stdio: 'ignore', windowsHide: true });
+    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: 5000, stdio: 'ignore' });
     return true;
   } catch { return false; }
 }
 
 function getDiffStat(sinceRef) {
   try {
-    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString();
+    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     const m = out.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
     if (!m) return { lines: 0, files: 0 };
     const files = parseInt(m[1], 10) || 0;
@@ -195,7 +195,6 @@ Respond ONLY with valid JSON: {"mode": "none"|"once"|"multi", "reason": "one sen
       env: { ...process.env, SHARP_REVIEW_CLASSIFY: '1' },
       timeout: 15000,
       encoding: 'utf8',
-      windowsHide: true,
     });
     const text = result.stdout || '';
     const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}');

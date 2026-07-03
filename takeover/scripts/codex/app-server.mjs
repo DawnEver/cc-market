@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn } from "../../shared/spawn.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -31,7 +31,6 @@ export class CodexAppServerClient {
       stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
       shell: process.platform === "win32",
-      windowsHide: true,
     });
 
     this.child.on("error", (err) => {

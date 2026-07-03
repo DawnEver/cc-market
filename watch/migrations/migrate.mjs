@@ -1,6 +1,9 @@
 // watch migration: ensure .claude/watch/ gitignore hygiene — tracked config
 // and components, gitignored runtime state/logs/secrets.
 // Idempotent — safe to re-run; no-op once a project is current.
+//
+// Retirement: gitignore hygiene is cheap and re-validates on every run — keep this one
+// indefinitely (it doubles as setup for projects that hand-created .claude/watch/).
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';

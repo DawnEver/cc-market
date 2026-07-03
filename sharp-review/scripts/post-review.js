@@ -2,21 +2,16 @@
 // post-review.js — write sharp review result as a rem memory entry
 // Takes raw per-reviewer findings (--raw) and creates
 // .claude/memory/YYYY/MM/DD/sharp-review.md with proper frontmatter.
-// Indexes via stamp-memory.js, archives resolved findings, syncs tasks.
+// Indexes via shared upsertIndexEntry (no rem-plugin dependency), archives resolved
+// findings, syncs tasks.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { join } from 'path';
 import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, mergeFindings, renderReviewMarkdown } from './lib.mjs';
-import { resolvePluginDir } from '../shared/lib.mjs';
+import { upsertIndexEntry } from '../shared/stamp.mjs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const MEMORY_DIR = join(ROOT, '.claude', 'memory');
-
-const REM_DIR = resolvePluginDir('rem', __dirname);
-const STAMP_SCRIPT = join(REM_DIR, 'scripts', 'stamp-memory.js');
 
 // ── Parse args ──
 
@@ -134,13 +129,15 @@ if (!existsSync(dirPath)) mkdirSync(dirPath, { recursive: true });
 atomicWrite(memFile, `${frontmatter}\n\n${markdown}`);
 console.log(`[post-review] Written: ${memFile}`);
 
-// ── Index with stamp-memory.js ──
+// ── Index the entry in MEMORY.md ──
+// In-process upsert via shared/stamp.mjs — rem's rebuildIndex() regenerates the
+// full index on next session start, so stamping just this entry keeps it coherent.
 
 try {
-  execFileSync('node', [STAMP_SCRIPT], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', windowsHide: true });
-  console.log('[post-review] stamp-memory.js OK');
+  upsertIndexEntry(ROOT, `${datePath}/sharp-review.md`, { name: `sharp-review-${date}`, date });
+  console.log('[post-review] index stamped');
 } catch (e) {
-  console.error(`[post-review] stamp-memory.js failed: ${e.stderr || e.message}`);
+  console.error(`[post-review] index stamp failed: ${e.message}`);
 }
 
 const open = findings.filter(f => f.status !== 'fixed' && f.status !== 'FIXED').length;

@@ -92,7 +92,7 @@ schema, and positional alignment → **`reference/direct-fanout.md`**.
 node "$env:CLAUDE_PLUGIN_ROOT/scripts/post-review.js" --date <YYYY-MM-DD> --raw "$env:TEMP/claude-sharp-review/raw.json"
 ```
 
-This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then runs stamp-memory.js.
+This writes `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter, then stamps its entry into `.claude/rules/MEMORY.md` in-process (no rem plugin needed).
 
 ### Step 5 — Resolve findings
 

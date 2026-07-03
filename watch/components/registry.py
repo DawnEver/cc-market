@@ -82,8 +82,10 @@ def discover_yaml(registry: ComponentRegistry, config: dict) -> None:
     """Register components declared in watch.yaml's 'components' section."""
     comps_cfg = config.get('components', {})
     for name, cfg in comps_cfg.items():
-        if isinstance(cfg, dict) and cfg.get('enabled') is True:
-            # Built-in component that needs its config
+        # Store the config even when enabled is false/omitted — registry.enabled()
+        # reads the flag from the stored config, so dropping `enabled: false`
+        # entries here would make built-ins impossible to disable via YAML.
+        if isinstance(cfg, dict):
             existing = registry.get(name)
             if existing:
                 registry._configs[name] = cfg

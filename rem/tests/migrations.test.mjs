@@ -173,6 +173,7 @@ describe('rem migrate()', () => {
       path.join(__dirname, '..', 'migrations', 'migrate.mjs'),
       'utf8',
     );
-    assert.match(source, /execFileSync\('node', \[stampScript\], \{[^}]*windowsHide: true/s);
+    // windowsHide is forced by the shared spawn wrapper — assert the wrapper is used.
+    assert.match(source, /import \{ execFileSync \} from ["']\.\.\/shared\/spawn\.mjs["']/);
   });
 });

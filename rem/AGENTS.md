@@ -79,5 +79,5 @@ Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-h
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic.
-- Keep `lib.mjs` as the single source of truth for paths, constants, and formats.
+- Keep `lib.mjs` as the single source of truth for paths, constants, and formats — except the MEMORY.md index entry format, which lives in `shared/stamp.mjs` (also consumed by sharp-review's post-review upsert) and is re-exported through `lib.mjs`.
 - **When memory entries are created or split**: update MEMORY.md, AGENTS.md, and README.md to reflect the new structure.

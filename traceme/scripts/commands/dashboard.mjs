@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from "../../shared/spawn.mjs";
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import {

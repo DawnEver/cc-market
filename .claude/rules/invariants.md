@@ -54,6 +54,25 @@ the dev copy is visible while developing and only the runtime copy is visible wh
 should hold things that are true ONLY for developers: internal constraints, gotchas,
 ownership boundaries, "why" behind a design choice — not user-facing config/behavior.
 
+## State file ownership (`.claude/.rem-state.json`)
+
+Several plugins share the one gitignored state file; `shared/state.mjs` `deepMerge`
+preserves keys it doesn't know about, so a plugin only ever touches its own top-level key.
+Each top-level key has exactly one owner — never write another plugin's key:
+
+| Key | Owner | Contents |
+|---|---|---|
+| `version` | shared/state.mjs | State schema version (bump on incompatible shape change) |
+| `hook` | rem | Stop-hook gate: stop counts, `remPending`, `taskActiveUntil` |
+| `prune` | rem | Prune timestamps + 15-entry event ring buffer |
+| `scopes` | rem | Scope-discovery ignore patterns |
+| `reviewGate` | sharp-review | Wave gate: mode, review counts, `lastReviewRef`/`lastReviewDiff` |
+| `evolveState` | evolve | Round loop: findings, `lastRoundAt`, `emptyRounds` |
+
+traceme (own SQLite DB), watch (`.claude/watch/state/alert.json`), and takeover keep state
+elsewhere and must not add keys here. Adding a key: claim it in this table first, add it to
+`DEFAULT_STATE` if shared, then rebundle `shared/` copies.
+
 ## Refactors carry the names and delete the dead weight
 
 Backward compatibility is not a concern here (see AGENTS.md § Standard), so a refactor is

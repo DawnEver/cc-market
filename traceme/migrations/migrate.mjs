@@ -3,6 +3,9 @@
 //
 // Old format: device/<name> branches with YYYY/MM/DD/cc.enc + main aggregated cc.enc
 // New format: main branch with YYYY/MM/DD/<device>.enc per-device files
+//
+// Retirement: targets the pre-0.3 sync layout — safe to delete (reverting this file to a
+// no-op stub) once every device has synced on the 0.3+ format.
 
 import { existsSync } from 'fs';
 import { join } from 'path';

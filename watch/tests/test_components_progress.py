@@ -272,6 +272,9 @@ class TestLoopCompleteStatus(unittest.TestCase):
                     'combine': 'sum',
                     'total_ops_path': '.claude/watch/active-run.json',
                 },
+                # disk_usage checks the machine's REAL disk — on a nearly-full
+                # dev drive it raises root_disk_full and masks `complete`.
+                'disk_usage': {'enabled': False},
             },
         }
         (self.proj / '.claude' / 'watch' / 'config.yaml').write_text(

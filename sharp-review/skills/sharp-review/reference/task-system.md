@@ -10,5 +10,5 @@ the frontmatter, the same as `post-review.js --rescan`.
 | File | Purpose |
 |---|---|
 | `.claude/memory/YYYY/MM/DD/sharp-review.md` | Single session review file with rem frontmatter — sole source of truth |
-| `.claude/rules/MEMORY.md` | Memory index — `stamp-memory.js` is sole maintainer (no separate Tasks section) |
+| `.claude/rules/MEMORY.md` | Memory index — rem's `rebuildIndex()` regenerates it each session; `post-review.js` upserts its own entry via `shared/stamp.mjs` (no separate Tasks section) |
 | `.claude/memory/YYYY/MM/DD/manual.md` | Manual tasks (MANUAL-*) — created by `todo add`, rem frontmatter |

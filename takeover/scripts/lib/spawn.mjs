@@ -1,6 +1,6 @@
 // spawn.mjs — Claude binary resolution + spawning claude -p (stream-json for large
 // prompts / images). Re-exported via scripts/lib.mjs.
-import { spawn } from "node:child_process";
+import { spawn } from "../../shared/spawn.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -100,7 +100,6 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
         env,
         stdio: ["pipe", "pipe", "pipe"],
         shell: false,
-        windowsHide: true,
       });
       const killTimer = armKillTimer(child, 600000);
       child.stdout.on("data", (d) => {
@@ -161,7 +160,6 @@ function stdinSpawnClaude(bin, fullPrompt, useStdin, env, onResult, images = nul
         env,
         stdio: ["ignore", "pipe", "pipe"],
         shell: false,
-        windowsHide: true,
       });
       const killTimer = armKillTimer(child, 300000);
       child.stdout.on("data", (d) => (stdout += d));

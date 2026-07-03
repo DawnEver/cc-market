@@ -3,7 +3,7 @@
 // Outputs JSON to stdout. Called by the sharp-review skill before the workflow.
 // Key invariant: maxBuffer 256MB on all git calls — default 1MB explodes on large diffs.
 
-import { execFileSync } from 'child_process';
+import { execFileSync } from "../shared/spawn.mjs";
 
 import {
   parseNumstatZ,
@@ -22,7 +22,7 @@ const MAX_BUFFER = 256 * 1024 * 1024; // 256MB
 function getArg(args, flag) { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; }
 
 function git(args) {
-  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: 'pipe', windowsHide: true });
+  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: 'pipe' });
 }
 
 // ── Range detection ──

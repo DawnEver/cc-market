@@ -11,11 +11,15 @@
 //   - stray state files left behind by plugins predating rem
 //   - .gitignore entries for rem-tracked .claude/ paths (_meta.json, memory, rules)
 //   - rebuildIndex for all scopes after migration
+//
+// Retirement: all steps target pre-1.1 project layouts — once every active project has
+// been migrated past rem 1.2, delete the legacy steps and keep only the gitignore +
+// rebuildIndex maintenance passes.
 
 import { existsSync, rmSync, mkdirSync, readdirSync, renameSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { execFileSync } from "../shared/spawn.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -267,7 +271,7 @@ export async function migrate(projectRoot) {
   const stampScript = join(__dirname, '..', 'scripts', 'stamp-memory.js');
   if (existsSync(stampScript) && existsSync(join(projectRoot, '.claude'))) {
     try {
-      const out = execFileSync('node', [stampScript], { cwd: projectRoot, encoding: 'utf8', windowsHide: true });
+      const out = execFileSync('node', [stampScript], { cwd: projectRoot, encoding: 'utf8' });
       if (/\[stamp-memory\]/.test(out)) {
         changed = true;
         summary.push('rebuilt MEMORY.md indexes for all scopes');

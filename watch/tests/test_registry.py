@@ -131,11 +131,15 @@ class TestDiscoverYaml(unittest.TestCase):
         discover_yaml(reg, {'components': {'fake': {'enabled': True, 'key': 'val'}}})
         self.assertEqual(reg.get_config('fake'), {'enabled': True, 'key': 'val'})
 
-    def test_ignores_disabled_component(self):
+    def test_enabled_false_disables_builtin(self):
+        # `enabled: false` must actually disable the component — the config is
+        # kept so registry.enabled() can see the flag (built-ins with NO config
+        # entry still default to enabled).
         reg = ComponentRegistry()
         reg.register(FakeComponent())
         discover_yaml(reg, {'components': {'fake': {'enabled': False}}})
-        self.assertEqual(reg.get_config('fake'), {})
+        self.assertEqual(reg.get_config('fake'), {'enabled': False})
+        self.assertEqual([c.name for c in reg.enabled()], [])
 
 
 class TestDiscoverProject(unittest.TestCase):
