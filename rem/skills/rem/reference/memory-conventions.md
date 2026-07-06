@@ -28,6 +28,33 @@ Volatile metadata (`accessed`, `count`, `tier`, `dropped`) lives in gitignored
 - `count` — number of distinct days this file was referenced; defaults to 1, auto-managed
 - `tier` — `short` by default; promoted to `long` automatically once `count >= 3`, or manually via `touch-memory.js --promote`
 
+## Event memory vs. living docs (two sibling collections)
+
+Dated memory files are **event snapshots**: immutable, append-only, dated by creation,
+decaying (90d eviction) — a record of what was learned *then*. **Living docs** are the
+opposite lifecycle: mutable, refreshed in place, code-anchored, never evicted — current truth
+that must track HEAD. Because their invariants are inverted (append-only is *required* for
+events and *forbidden* for docs), they are separate collections, not one kind with a special
+case. Living docs live **outside** the dated memory tree and are managed by `/refresh-docs` —
+full spec in that skill. Summary of the split:
+
+| | Event memory (`.claude/memory/`) | Living docs (`.claude/docs/`, `docs/`, or anywhere with `doc_source`) |
+|---|---|---|
+| Mutability | immutable, append-only | rewritten in place |
+| Identity | date path `YYYY/MM/DD/` | topic/architecture path |
+| Freshness | `accessed` recency | git drift (commits / churn / age) vs a local anchor |
+| Eviction | 90d window | never (not in the pruned tree) |
+| Frontmatter (tracked) | `name`/`description`/`type` | + `doc_source` (semantic binding), optional thresholds |
+| Volatile home (gitignored) | `_meta.json` (`accessed`/`count`/`tier`) | `.claude/.rem-state.json` `docs.anchors` (`git_hash`/`reviewed_at`) + `docs.roots` cache |
+
+Living docs have **no location config**: a doc's kind is its frontmatter, so bound docs are
+discovered repo-wide via `git ls-files` (honoring `.gitignore`) by their `doc_source` signature
+— they can live in the project's own doc system (`docs/`, etc.). The freshness anchor
+(`git_hash`/`reviewed_at`) is **device-local** (`.claude/.rem-state.json`), never in the tracked doc, so
+the doc stays pure and a fresh clone conservatively re-reviews. Discovery roots are cached the
+same way; multiple roots ⇒ user picks. No `doc_source` docs ⇒ dormant. Staleness is commits ≥ 15
+OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
+
 ## Index (`.claude/rules/MEMORY.md`)
 - Sorted by `accessed` newest-first, max 20 short-term entries (long-term entries are protected from count-based eviction)
 - Each line: `[date title](../memory/YYYY/MM/DD/slug.md) — created: ..., accessed: ...`

@@ -28,6 +28,18 @@ export const DEFAULT_STATE = {
     // with `/` match the path relative to the scan root. Supports `*` and `?`.
     ignore: [],
   },
+  docs: {
+    // Device-local CACHE of where bound docs (frontmatter `doc_source`) were
+    // discovered — NOT config. Source of truth stays the frontmatter signatures;
+    // this only memoizes the discovered doc root(s) to avoid re-walking the repo.
+    // null = never discovered; [] = discovered, none found; [..] = doc roots.
+    roots: null,
+    // Device-local freshness ANCHORS, keyed by repo-relative doc path:
+    // { "<relPath>": { git_hash, reviewed_at } }. Kept out of git (and out of the
+    // doc frontmatter) so the tracked doc stays pure semantic binding; the mutable
+    // "last validated at commit X" bookkeeping is per-device (OneDrive-synced).
+    anchors: {},
+  },
 };
 
 function deepMerge(defaults, partial) {

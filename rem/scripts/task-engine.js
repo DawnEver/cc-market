@@ -247,6 +247,12 @@ function handleShow(id) {
   const { findings, manual } = scanAllScopes();
   const all = [...findings, ...manual];
   const match = all.find(f => f.id === id);
+  // Virtual DOC- tasks aren't persisted in any file — render from the scan row.
+  if (id.startsWith('DOC-')) {
+    if (!match) { console.error(`${PREFIX} ${id} not found (no such stale doc)`); process.exit(1); }
+    console.log(`${match.id} [${match.severity}] ${match.summary}\n      doc: ${match.file}\n      → refresh via /refresh-docs (clears when git_hash advances)`);
+    return;
+  }
   const scope = match ? match._scopeRoot : findMemoryScope();
   const memDir = join(scope, '.claude', 'memory');
   const result = getFindingDetail(memDir, id);

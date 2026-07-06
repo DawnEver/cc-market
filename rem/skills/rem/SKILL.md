@@ -83,6 +83,7 @@ Brief summary only:
 - What was done in one sentence
 - Skip `.claude/rules/` and `.claude/memory/` updates unless something surprising came up
 - Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/check-docs.js` to detect stale docs — if exit 1, update the flagged files
+- Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/doc-freshness.js` to detect drifted knowledge-base docs (frontmatter `doc_source`/`git_hash`) — if exit 1, invoke `/refresh-docs` to update them (no-op for projects with no bound docs)
 
 ## Standard
 

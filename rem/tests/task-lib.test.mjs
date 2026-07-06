@@ -578,6 +578,12 @@ describe("resolvedConfidence", () => {
   test("returns null when no file field", () => {
     assert.equal(resolvedConfidence({ discovered: "2026-01-01" }, "2026-06-09"), null);
   });
+
+  test("returns null for virtual DOC- rows (no resolve lifecycle)", () => {
+    // DOC row's file is the doc itself; the file-modified heuristic is meaningless.
+    const f = { id: "DOC-docs/arch", file: "docs/arch.md", discovered: "2026-01-01" };
+    assert.equal(resolvedConfidence(f, "2026-06-09"), null);
+  });
 });
 
 // ── getFindingDetail ─────────────────────────────────────────────────────────────
@@ -708,3 +714,56 @@ describe("formatScopeReport", () => {
 
 
 
+
+// ── scanStaleDocs (virtual DOC- tasks) ──
+
+import { scanStaleDocs } from "../scripts/task-lib.mjs";
+import { saveAnchor } from "../scripts/doc-freshness.js";
+
+describe("scanStaleDocs", () => {
+  test("maps a drifted bound doc to a DOC- task row", () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "docscan-"));
+    const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", windowsHide: true });
+    try {
+      git("init", "-q");
+      git("config", "user.email", "t@t");
+      git("config", "user.name", "t");
+      fs.mkdirSync(path.join(repo, "src"));
+      fs.writeFileSync(path.join(repo, "src", "a.js"), "1");
+      git("add", "-A"); git("commit", "-qm", "c0");
+      const base = git("rev-parse", "--short", "HEAD").trim();
+
+      // Bound doc: frontmatter carries only the semantic binding; the anchor is
+      // device-local. Living docs live in .claude/docs (not the dated memory tree).
+      const d = path.join(repo, ".claude", "docs");
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "arch.md"), [
+        "---", "name: arch", "metadata:", "  doc_source: [src/]", "  stale_commits: 5", "---", "# arch",
+      ].join("\n"));
+      saveAnchor(repo, ".claude/docs/arch.md", { git_hash: base, reviewed_at: "2026-07-03" });
+      for (let i = 0; i < 6; i++) {
+        fs.writeFileSync(path.join(repo, "src", "a.js"), String(i + 2));
+        git("add", "-A"); git("commit", "-qm", `c${i + 1}`);
+      }
+
+      const rows = scanStaleDocs(repo, "2026-07-06");
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].id, "DOC-.claude/docs/arch"); // repo-relative identity
+      assert.equal(rows[0].module, "docs");
+      assert.equal(rows[0].status, "open");
+      assert.match(rows[0].summary, /6 commits/);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("no bound docs → no rows (self-disabled)", () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "docscan-"));
+    try {
+      fs.mkdirSync(path.join(repo, ".claude", "memory", "2026", "07", "03"), { recursive: true });
+      assert.deepEqual(scanStaleDocs(repo, "2026-07-06"), []);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});

@@ -206,3 +206,41 @@ describe('inferModuleFromPath', async () => {
     assert.equal(inferModuleFromPath('./././mesh/a.py'), 'mesh');
   });
 });
+
+// ── parseFrontmatter ──
+
+import { parseFrontmatter } from '../lib.mjs';
+
+describe('parseFrontmatter', () => {
+  it('parses scalars, nested map, inline array, block list', () => {
+    const md = [
+      '---',
+      'name: setup-architecture',
+      'metadata:',
+      '  type: reference',
+      '  doc_source: [scripts/setup/, README.md]',
+      '  git_hash: 2cf8505',
+      'tags:',
+      '  - a',
+      '  - b',
+      '---',
+      'body',
+    ].join('\n');
+    const fm = parseFrontmatter(md);
+    assert.equal(fm.name, 'setup-architecture');
+    assert.equal(fm.metadata.type, 'reference');
+    assert.deepEqual(fm.metadata.doc_source, ['scripts/setup/', 'README.md']);
+    assert.equal(fm.metadata.git_hash, '2cf8505');
+    assert.deepEqual(fm.tags, ['a', 'b']);
+  });
+
+  it('returns null without a frontmatter block', () => {
+    assert.equal(parseFrontmatter('no frontmatter'), null);
+    assert.equal(parseFrontmatter(''), null);
+  });
+
+  it('strips quotes from scalar values', () => {
+    const fm = parseFrontmatter('---\ndescription: "quoted value"\n---');
+    assert.equal(fm.description, 'quoted value');
+  });
+});

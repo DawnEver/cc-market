@@ -33,14 +33,24 @@ SessionStart → prune-memory.js --evict-stale
 
 Three-tier memory system (rules / long-term / short-term) → `skills/rem/reference/memory-conventions.md`.
 
+**Living docs** are a *separate collection* from dated event memory: mutable, code-anchored,
+refreshed in place, never evicted. Kept out of the memory tree, so prune/eviction never touches
+them — the opposed-lifecycle conflict is solved by separation, not a special case. The tracked
+doc frontmatter carries only the semantic binding (`doc_source` + optional thresholds);
+discovery is by that signature via `git ls-files` (honoring `.gitignore`). All volatile state is
+device-local in `.claude/.rem-state.json` `docs` (roots cache + per-doc `anchors` git_hash/reviewed_at) —
+no location config, user disambiguates multiple roots. `doc-freshness.js` detects git drift
+(commits / churn / age); `/refresh-docs` incrementally rewrites and re-anchors via `--set-anchor`.
+Stale docs surface in `/todo` as virtual `DOC-` rows. See `skills/refresh-docs/SKILL.md`.
+
 ## File Structure
 
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js
 ├── scripts/        lib.mjs, stamp-memory.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
-│                   rem-prep.js, check-docs.js, inject-rules.js, task-engine.js, task-lib.mjs, scope-validate.mjs
-├── skills/         rem/SKILL.md + todo/SKILL.md
+│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, task-engine.js, task-lib.mjs, scope-validate.mjs
+├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── tests/          *.test.mjs (see Testing section below)
 ├── .claude/rules/  invariants only
 ├── CLAUDE.md
@@ -73,7 +83,7 @@ node --test cc-market/rem/tests/*.test.mjs
 
 Pre-commit hook runs rem tests when rem files are staged. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`.
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`.
 
 ## Standard
 

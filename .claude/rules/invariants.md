@@ -66,6 +66,7 @@ Each top-level key has exactly one owner — never write another plugin's key:
 | `hook` | rem | Stop-hook gate: stop counts, `remPending`, `taskActiveUntil` |
 | `prune` | rem | Prune timestamps + 15-entry event ring buffer |
 | `scopes` | rem | Scope-discovery ignore patterns |
+| `docs` | rem | Device-local bound-doc state: discovered `roots` cache + per-doc freshness `anchors` (`git_hash`/`reviewed_at`) |
 | `reviewGate` | sharp-review | Wave gate: mode, review counts, `lastReviewRef`/`lastReviewDiff` |
 | `evolveState` | evolve | Round loop: findings, `lastRoundAt`, `emptyRounds` |
 

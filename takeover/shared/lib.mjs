@@ -52,6 +52,64 @@ export function readTranscriptTail(transcriptPath, maxLines = 40) {
   }
 }
 
+// ── parseFrontmatter: limited YAML frontmatter parser ──
+//
+// Parses the constrained YAML subset this repo actually uses in memory-file
+// frontmatter — NOT general YAML (no anchors, multi-line scalars, or flow maps).
+// Supports: `key: value`, one level of nested `key:` maps, inline arrays
+// `[a, b]`, and block lists (`  - item`). Returns the parsed object, or null if
+// there is no `---`-delimited frontmatter block. Deliberately dependency-free.
+
+function coerceScalar(raw) {
+  const s = raw.trim();
+  const inline = s.match(/^\[(.*)\]$/);
+  if (inline) {
+    return inline[1].split(',').map(x => x.trim().replace(/^['"]|['"]$/g, '')).filter(x => x.length > 0);
+  }
+  return s.replace(/^['"]|['"]$/g, '');
+}
+
+export function parseFrontmatter(content) {
+  const m = content && content.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return null;
+  const lines = m[1].split('\n');
+  const root = {};
+  const stack = [{ indent: -1, obj: root }];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const indent = line.length - line.trimStart().length;
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop();
+    const parent = stack[stack.length - 1].obj;
+    const kv = line.trim().match(/^([\w.-]+):\s*(.*)$/);
+    if (!kv) continue;
+    const [, key, rest] = kv;
+
+    if (rest !== '') { parent[key] = coerceScalar(rest); continue; }
+
+    // Empty value → nested map or block list; look at the next content line.
+    let j = i + 1;
+    while (j < lines.length && !lines[j].trim()) j++;
+    if (j < lines.length && /^\s*-\s+/.test(lines[j])) {
+      const arr = [];
+      while (j < lines.length) {
+        const item = lines[j].match(/^\s*-\s+(.+?)\s*$/);
+        if (!item) { if (!lines[j].trim()) { j++; continue; } break; }
+        arr.push(coerceScalar(item[1]));
+        j++;
+      }
+      parent[key] = arr;
+      i = j - 1;
+    } else {
+      const obj = {};
+      parent[key] = obj;
+      stack.push({ indent, obj });
+    }
+  }
+  return root;
+}
+
 // ── todayISO: YYYY-MM-DD date string ──
 
 export function todayISO(date) {

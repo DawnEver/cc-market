@@ -5,7 +5,8 @@ import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from '
 import { join, relative } from 'path';
 import { DAY_MS } from './lib.mjs';
 import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown, inferModuleFromPath } from '../shared/lib.mjs';
-import { findAllScopes, extractDateFromPath } from './lib.mjs';
+import { findAllScopes, extractDateFromPath, todayISO } from './lib.mjs';
+import { evaluateDocs } from './doc-freshness.js';
 
 // ── Paths ──
 
@@ -25,6 +26,9 @@ export function isStale(finding, today) {
 //   'medium' → the file was modified after the finding was discovered
 //   null     → no signal (or no file to check)
 export function resolvedConfidence(finding, today) {
+  // DOC- rows are virtual (git-derived); they have no mark/resolve lifecycle and
+  // their `file` is the doc itself, so the file-modified heuristic is meaningless.
+  if (finding.id?.startsWith('DOC-')) return null;
   if (!finding.file) return null;
   try {
     const absPath = join(ROOT, finding.file);
@@ -189,6 +193,36 @@ export function scanManualTasks(memDir) {
   return tasks;
 }
 
+// ── Stale-doc scanning (virtual DOC- tasks) ──
+//
+// Bound docs (frontmatter `doc_source` + `git_hash`) that have drifted past
+// threshold surface as virtual tasks — never persisted, derived live from git
+// state. They clear automatically once the doc is refreshed and its git_hash
+// advances, so there is no mark/remove lifecycle. ID: DOC-<repo-relative-path>.
+// Bound docs are discovered repo-wide by their frontmatter signature (see
+// doc-freshness.js) — no configured location. Conventionally kept out of the dated
+// memory tree, so prune/eviction never sees them. No bound docs ⇒ empty (dormant).
+export function scanStaleDocs(root, today = todayISO()) {
+  const stale = evaluateDocs(root, root, today);
+  return stale.map(d => {
+    const slug = d.relPath.replace(/\\/g, '/').replace(/\.md$/, '');
+    const n = v => v === Infinity ? '∞' : v;
+    const severity = d.commits === Infinity ? 'HIGH' : d.commits >= 30 || d.days >= 90 || d.lines >= 600 ? 'HIGH' : 'MEDIUM';
+    const range = d.git_hash ? `${d.git_hash}..HEAD` : 'unanchored';
+    return {
+      id: `DOC-${slug}`,
+      severity,
+      summary: `Refresh ${slug} — ${n(d.commits)} commits / ${n(d.lines)} lines / ${n(d.days)}d drift (${range})`,
+      status: 'open',
+      discovered: d.reviewed_at || extractDateFromPath(d.full) || today,
+      module: 'docs',
+      category: 'Docs',
+      file: d.relPath.replace(/\\/g, '/'),
+      suggestion: '', detail: '',
+    };
+  });
+}
+
 // ── Multi-scope scanning ──
 
 export function scanAllScopes() {
@@ -207,6 +241,13 @@ export function scanAllScopes() {
     allFindings.push(...findings);
     allManual.push(...manual);
   }
+
+  // Bound docs are a repo-wide collection (discovered by frontmatter, not per
+  // memory scope), so scan once at the root. Rendered alongside manual tasks —
+  // both are plain open rows. Zero-cost when no bound docs exist.
+  const docs = scanStaleDocs(ROOT);
+  for (const t of docs) t._scopeRoot = ROOT;
+  allManual.push(...docs);
 
   return { findings: allFindings, manual: allManual };
 }
