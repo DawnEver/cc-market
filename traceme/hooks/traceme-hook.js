@@ -15,14 +15,21 @@ function logError(msg) {
 const PUSH_INTERVAL_MS = 10 * 60 * 1000;
 
 async function main() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  const input = JSON.parse(Buffer.concat(chunks).toString());
-  const event = input.hook_event_name;
+  let event = 'unknown';
 
   rotateErrorLog();
 
   try {
+    const chunks = [];
+    for await (const chunk of process.stdin) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString();
+    if (!raw.trim()) {
+      // Empty stdin — nothing to do (e.g. manual hook invocation)
+      return;
+    }
+    const input = JSON.parse(raw);
+    event = input.hook_event_name || 'unknown';
+
     openDb();
 
     switch (event) {

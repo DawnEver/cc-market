@@ -58,7 +58,7 @@ export function getProjectName(cwd) {
 
 export function getGitRemote(cwd) {
   try {
-    return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 3000 }).trim();
+    return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return null;
   }
