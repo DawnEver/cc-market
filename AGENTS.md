@@ -18,6 +18,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
+| [`fabric`](fabric/README.md) | `fabric/` | Multi-provider agent session fabric: spawn & observe isolated child sessions of any provider, behind any orchestrating agent |
 
 Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 

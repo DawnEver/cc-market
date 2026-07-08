@@ -1,0 +1,17 @@
+{
+  "name": "fabric",
+  "version": "0.1.0",
+  "description": "Multi-provider agent session fabric — any agent (Claude / Codex / …) spawning and observing isolated child sessions of any provider. Ships a minimal Anthropic-compatible observe proxy that dissolves the Foundry-vs-tap conflict.",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "fabric",
+    "multi-model",
+    "orchestration",
+    "proxy",
+    "observe",
+    "deepseek",
+    "session"
+  ]
+}
