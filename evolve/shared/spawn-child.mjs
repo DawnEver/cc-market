@@ -1,5 +1,7 @@
-// shared/spawn-child.mjs — L1 session fabric primitive. Launch a headless child model
-// session (`claude -p`) for any provider, optionally behind the observe proxy.
+// shared/spawn-child.mjs — L1 session engine. Launch a headless child model session
+// (`claude -p`) for any provider, optionally behind the observe proxy. The single
+// implementation behind both fabric's `run_task` and takeover's claude/deepseek modes
+// (previously two forks: fabric spawnChild + takeover spawnClaudeP).
 //
 // The `observe` boolean is the whole design in one switch:
 //   observe:false → provider env direct (DeepSeek via Foundry). No capture, no overhead.
@@ -11,9 +13,44 @@
 // the design (structured I/O, no TTY question-guessing). Persistent interactive PTY
 // sessions are a separate subsystem (see fabric/README roadmap).
 
-import { loadProviderEnv, PROVIDER_ENV_KEYS } from './providers.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId, PROVIDER_ENV_KEYS } from './providers.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { spawn as hiddenSpawn } from './spawn.mjs';
+
+// ── Claude binary resolution (cross-platform) ───────────────────────────────
+
+// On Windows, spawn(shell:false) cannot launch the `claude.cmd`/`claude.ps1`
+// shims — it needs the real `claude.exe`. That .exe lives in the global npm
+// prefix at node_modules/@anthropic-ai/claude-code/bin/claude.exe, but the
+// prefix is install-specific (nvm4w → D:\nvm4w\nodejs, plain npm → ~\nodejs),
+// so it cannot be hardcoded. Resolve it dynamically:
+//   1. CLAUDE_CLI_PATH override (escape hatch)
+//   2. derive from the launcher shim found on PATH
+//   3. legacy ~/nodejs fallback
+const CLAUDE_EXE_REL = path.join('node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+
+export function resolveClaudeExe() {
+  if (process.env.CLAUDE_CLI_PATH) return process.env.CLAUDE_CLI_PATH;
+  if (process.platform !== 'win32') return 'claude';
+
+  // Find the directory of a claude shim on PATH; the npm global prefix (which
+  // holds the shims) also contains node_modules with the real .exe.
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    for (const shim of ['claude.cmd', 'claude.exe', 'claude.ps1', 'claude']) {
+      if (fs.existsSync(path.join(dir, shim))) {
+        const exe = path.join(dir, CLAUDE_EXE_REL);
+        if (fs.existsSync(exe)) return exe;
+      }
+    }
+  }
+  return path.join(os.homedir(), 'nodejs', CLAUDE_EXE_REL); // legacy fallback
+}
+
+// ── Env shaping ──────────────────────────────────────────────────────────────
 
 /**
  * Pure env-shaping — the error-prone core, unit-tested in isolation.
@@ -32,60 +69,174 @@ export function buildChildEnv({ provider, observe, proxyUrl, configPath }) {
   return env;
 }
 
+// ── Stream-json parsing (large prompts / images go via stdin) ────────────────
+
+export function parseStreamJsonOutput(raw) {
+  const lines = raw.split('\n').filter((l) => l.trim());
+  let text = '';
+  let usage = null;
+  for (const line of lines) {
+    try {
+      const msg = JSON.parse(line);
+      if (msg.type === 'assistant' && msg.message?.content) {
+        for (const block of (Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content])) {
+          if (block.type === 'text' || typeof block === 'string') {
+            text += (typeof block === 'string' ? block : block.text || '');
+          }
+        }
+      } else if (msg.type === 'result') {
+        if (msg.result) text += msg.result;
+        if (msg.usage) usage = msg.usage;
+      }
+    } catch {}
+  }
+  return { text: text.trim(), usage };
+}
+
+// Watchdog kill timer. The child_process `timeout` option is unusable here: on
+// spawn ENOENT Node emits 'error' but never 'exit', so its internal kill timer
+// is never cleared and keeps the event loop alive for the full timeout. This
+// timer is unref'd (never blocks process exit) and explicitly cleared.
+function armKillTimer(child, ms, onTimeout) {
+  const t = globalThis.setTimeout(() => { try { child.kill('SIGKILL'); } catch {} onTimeout(); }, ms);
+  t.unref?.();
+  return t;
+}
+
 /**
  * Spawn a headless child session and collect its output.
  * @param {object} opts
- * @param {string}  opts.provider        registry key ('deepseek', 'claude', ...)
- * @param {string}  opts.prompt          the task prompt (claude -p)
- * @param {string}  opts.runDir          isolated dir (config + http.jsonl land here)
- * @param {boolean} [opts.observe]       route through the observe proxy + capture jsonl
- * @param {string}  [opts.model]         Claude model id (proxy remaps it per provider)
- * @param {string}  [opts.cwd]           child working dir (default runDir)
- * @param {string[]}[opts.extraArgs]     extra claude CLI args
- * @param {string}  [opts.configPath]    override registry path
- * @param {number}  [opts.timeoutMs]     kill after this long (default 120000)
- * @param {Function}[opts._spawn]        injectable spawn (tests)
- * @param {string}  [opts._bin]          override the child binary (tests)
- * @returns {Promise<{code, stdout, stderr, jsonlPath, runDir}>}
+ * @param {string}  [opts.provider]       registry key ('deepseek', 'claude', ...); default 'claude'
+ * @param {string}  opts.prompt           the task prompt (claude -p)
+ * @param {string}  [opts.systemPrompt]   prepended to the prompt ("sys\n\n---\n\nprompt")
+ * @param {Array}   [opts.images]         [{media_type, data(base64)}] — forces stream-json stdin
+ * @param {string}  [opts.runDir]         isolated dir (config + http.jsonl land here). Omit to
+ *                                        run against the caller's own config/credentials.
+ * @param {boolean} [opts.observe]        route through the observe proxy + capture jsonl (needs runDir)
+ * @param {string}  [opts.model]          Claude model id. Native/observe → --model flag;
+ *                                        direct-connect API provider → exact env pin via resolveModel.
+ * @param {string}  [opts.cwd]            child working dir (default runDir or cwd)
+ * @param {string[]}[opts.extraArgs]      extra claude CLI args
+ * @param {string}  [opts.configPath]     override registry path
+ * @param {number}  [opts.timeoutMs]      kill after this long (default 120000)
+ * @param {AbortSignal} [opts.signal]     cancel the child
+ * @param {Function}[opts.onText]         streaming text callback (stream-json mode only)
+ * @param {Function}[opts._spawn]         injectable spawn (tests)
+ * @param {string}  [opts._bin]           override the child binary (tests)
+ * @returns {Promise<{code, stdout, stderr, usage, jsonlPath, runDir}>}
  */
 export async function spawnChild(opts) {
   const {
-    provider, prompt, runDir, observe = false, model,
-    cwd, extraArgs = [], configPath, timeoutMs = 120000,
+    provider = 'claude', prompt, systemPrompt, images, runDir, observe = false, model,
+    cwd, extraArgs = [], configPath, timeoutMs = 120000, signal, onText,
     _spawn = hiddenSpawn, _bin,
   } = opts;
-  if (!provider) throw new Error('spawnChild: provider is required');
-  if (!runDir) throw new Error('spawnChild: runDir is required');
+  if (!prompt) throw new Error('spawnChild: prompt is required');
+  if (observe && !runDir) throw new Error('spawnChild: observe mode requires runDir');
 
-  const { mkdirSync } = await import('node:fs');
-  const { join } = await import('node:path');
-  mkdirSync(runDir, { recursive: true });
-  const configDir = join(runDir, 'config');
-  mkdirSync(configDir, { recursive: true });
+  let configDir = null;
+  if (runDir) {
+    fs.mkdirSync(runDir, { recursive: true });
+    configDir = path.join(runDir, 'config');
+    fs.mkdirSync(configDir, { recursive: true });
+  }
 
   let proxy = null;
   if (observe) proxy = await startObserveProxy({ provider, runDir, configPath });
 
   try {
-    const env = {
-      ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }),
-      CLAUDE_CONFIG_DIR: configDir,
-    };
+    const env = buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath });
+    if (configDir) env.CLAUDE_CONFIG_DIR = configDir;
 
-    const bin = _bin || (process.platform === 'win32' ? 'claude.cmd' : 'claude');
-    const args = ['-p', prompt, ...(model ? ['--model', model] : []), ...extraArgs];
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${prompt}` : prompt;
+    const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
+
+    // Model: the proxy remaps the request body (observe) and native claude takes the
+    // flag; a direct-connect API provider gets an exact env pin instead — the flag
+    // would depend on tier-alias env vars being present.
+    const modelArgs = [];
+    if (model) {
+      const cfg = loadProviderConfig(provider, configPath);
+      if (observe || cfg.native) {
+        modelArgs.push('--model', model);
+      } else {
+        // Tier words + provider-native ids via resolveModel; full Claude ids by tier substring.
+        env.ANTHROPIC_MODEL = /^claude-/i.test(model) ? resolveModelFromId(cfg, model) : resolveModel(cfg, model);
+      }
+    }
+
+    const bin = _bin || resolveClaudeExe();
+    const args = useStdin
+      ? ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...extraArgs]
+      : ['-p', fullPrompt, ...modelArgs, ...extraArgs];
 
     const result = await new Promise((resolve, reject) => {
-      const child = _spawn(bin, args, { cwd: cwd || runDir, env });
-      let stdout = '', stderr = '';
-      const timer = setTimeout(() => { child.kill(); reject(new Error(`spawnChild: timeout after ${timeoutMs}ms`)); }, timeoutMs);
-      child.stdout?.on('data', (d) => { stdout += d; });
+      if (signal?.aborted) { reject(new Error('spawnChild: request cancelled')); return; }
+
+      const child = _spawn(bin, args, {
+        cwd: cwd || runDir || process.cwd(),
+        env,
+        stdio: [useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+        shell: false,
+      });
+
+      let stdout = '', stderr = '', settled = false;
+      const settle = (fn, val) => { if (!settled) { settled = true; cleanup(); fn(val); } };
+      const onAbort = () => { try { child.kill('SIGTERM'); } catch {} settle(reject, new Error('spawnChild: request cancelled')); };
+      const killTimer = armKillTimer(child, timeoutMs, () =>
+        settle(reject, new Error(`spawnChild: timeout after ${timeoutMs}ms`)));
+      const cleanup = () => {
+        clearTimeout(killTimer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+      };
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
+      child.stdout?.on('data', (d) => {
+        stdout += d;
+        if (useStdin && onText) {
+          for (const line of d.toString().split('\n').filter((l) => l.trim())) {
+            try {
+              const msg = JSON.parse(line);
+              if (msg.type === 'assistant' && msg.message?.content) {
+                for (const block of (Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content])) {
+                  const text = typeof block === 'string' ? block : (block.text || '');
+                  if (text) onText(text);
+                }
+              } else if (msg.type === 'result' && msg.result) onText(msg.result);
+            } catch {}
+          }
+        }
+      });
       child.stderr?.on('data', (d) => { stderr += d; });
-      child.on('error', (e) => { clearTimeout(timer); reject(e); });
-      child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+      child.on('error', (e) => settle(reject, e));
+      child.on('close', (code) => {
+        if (useStdin) {
+          const parsed = parseStreamJsonOutput(stdout);
+          settle(resolve, { code, stdout: parsed.text, stderr, usage: parsed.usage });
+        } else {
+          settle(resolve, { code, stdout, stderr, usage: null });
+        }
+      });
+
+      if (useStdin) {
+        let content;
+        if (images && images.length > 0) {
+          content = [{ type: 'text', text: fullPrompt }];
+          for (const img of images) {
+            content.push({
+              type: 'image',
+              source: { type: 'base64', media_type: img.media_type || 'image/png', data: img.data },
+            });
+          }
+        } else {
+          content = fullPrompt;
+        }
+        child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
+        child.stdin.end();
+      }
     });
 
-    return { ...result, jsonlPath: proxy?.jsonlPath ?? null, runDir };
+    return { ...result, jsonlPath: proxy?.jsonlPath ?? null, runDir: runDir ?? null };
   } finally {
     if (proxy) await proxy.close();
   }

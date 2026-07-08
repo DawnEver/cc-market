@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import http from 'node:http';
-import { writeFileSync, mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildChildEnv, spawnChild } from '../spawn-child.mjs';
@@ -72,9 +72,103 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   assert.equal(res.code, 0);
   assert.equal(res.stdout, 'child-said-ok');
   assert.equal(res.jsonlPath, null, 'no jsonl in normal mode');
-  assert.deepEqual(sink.args.slice(0, 4), ['-p', 'hello', '--model', 'claude-haiku-4-5']);
+  assert.deepEqual(sink.args.slice(0, 2), ['-p', 'hello']);
+  // Direct-connect API provider: model pinned via env (resolveModel), not --model —
+  // the CLI flag would rely on tier-alias env vars; the env pin is exact.
+  assert.equal(sink.env.ANTHROPIC_MODEL, 'deepseek-v4-flash');
+  assert.ok(!sink.args.includes('--model'));
   assert.ok(sink.env.CLAUDE_CONFIG_DIR.includes('config'), 'isolated config dir set');
   assert.equal(sink.env.CLAUDE_CODE_USE_FOUNDRY, '1', 'normal mode = Foundry direct');
+});
+
+test('spawnChild native claude without runDir: no isolation, --model passthrough', async () => {
+  const sink = {};
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'hello', model: 'claude-haiku-4-5',
+    configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
+  });
+  assert.equal(res.code, 0);
+  assert.deepEqual(sink.args.slice(0, 4), ['-p', 'hello', '--model', 'claude-haiku-4-5']);
+  assert.equal(sink.env.CLAUDE_CONFIG_DIR, process.env.CLAUDE_CONFIG_DIR, 'no isolated config dir');
+  assert.equal(res.runDir, null);
+});
+
+test('spawnChild prepends systemPrompt to the prompt', async () => {
+  const sink = {};
+  await spawnChild({
+    provider: 'claude', prompt: 'user says', systemPrompt: 'be terse',
+    configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
+  });
+  assert.equal(sink.args[1], 'be terse\n\n---\n\nuser says');
+});
+
+// Fake spawn with writable stdin for stream-json mode.
+function makeStdinFakeSpawn(sink, stdoutLines) {
+  return (bin, args, spawnOpts) => {
+    sink.bin = bin; sink.args = args; sink.env = spawnOpts.env;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    child.stdin = {
+      written: '',
+      write(d) { this.written += d; sink.stdinWritten = this.written; },
+      end() {
+        queueMicrotask(() => {
+          for (const line of stdoutLines) child.stdout.emit('data', line + '\n');
+          child.emit('close', 0);
+        });
+      },
+    };
+    return child;
+  };
+}
+
+test('spawnChild large prompt switches to stream-json stdin and parses output', async () => {
+  const sink = {};
+  const big = 'x'.repeat(2000);
+  const res = await spawnChild({
+    provider: 'claude', prompt: big,
+    configPath: fixture(),
+    _spawn: makeStdinFakeSpawn(sink, [
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'partial ' }] } }),
+      JSON.stringify({ type: 'result', result: 'final', usage: { input_tokens: 5, output_tokens: 7 } }),
+    ]),
+    _bin: 'fake-claude',
+  });
+  assert.ok(sink.args.includes('--input-format') && sink.args.includes('stream-json'));
+  const sent = JSON.parse(sink.stdinWritten);
+  assert.equal(sent.type, 'user');
+  assert.equal(sent.message.content, big);
+  assert.equal(res.stdout, 'partial final');
+  assert.deepEqual(res.usage, { input_tokens: 5, output_tokens: 7 });
+});
+
+test('spawnChild images force stream-json with image blocks', async () => {
+  const sink = {};
+  await spawnChild({
+    provider: 'claude', prompt: 'look',
+    images: [{ media_type: 'image/png', data: 'aGk=' }],
+    configPath: fixture(),
+    _spawn: makeStdinFakeSpawn(sink, [JSON.stringify({ type: 'result', result: 'ok' })]),
+    _bin: 'fake-claude',
+  });
+  const sent = JSON.parse(sink.stdinWritten);
+  assert.equal(sent.message.content.length, 2);
+  assert.equal(sent.message.content[1].type, 'image');
+  assert.equal(sent.message.content[1].source.data, 'aGk=');
+});
+
+test('spawnChild rejects when the abort signal fires', async () => {
+  const ctl = new AbortController();
+  ctl.abort();
+  await assert.rejects(
+    spawnChild({
+      provider: 'claude', prompt: 'hi', signal: ctl.signal,
+      configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
+    }),
+    /cancelled/i
+  );
 });
 
 test('spawnChild observe mode starts proxy, points child at it, captures jsonl', async () => {

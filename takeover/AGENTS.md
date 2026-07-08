@@ -22,22 +22,29 @@ Multi-model AI orchestration via MCP. Routes tasks to Claude, Codex, DeepSeek, o
 
 ## File Structure
 
+Takeover is a **policy layer**: the execution engines (claude child sessions,
+raw Anthropic HTTP, codex app-server client) live in the bundled `shared/`
+(canonical source: `cc-market/shared/`, shared with the fabric plugin). This
+plugin shapes prompts, picks an engine per mode, and formats MCP results.
+
 ```
 takeover/
+├── shared/                  Bundled engine layer (DO NOT edit here — edit cc-market/shared/)
+│   ├── spawn-child.mjs      Claude child engine: exe resolution, provider env, stream-json, images
+│   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
+│   ├── providers.mjs        Provider registry/routing (single source of truth)
+│   └── codex/               Codex app-server client + task runner + binary discovery
 ├── scripts/
-│   ├── lib.mjs              Barrel: re-exports lib/* (+ codex discovery) so `./lib.mjs` import sites stay stable
-│   ├── lib/                 Concern modules:
-│   │   ├── config.mjs       Provider config (cached 60s TTL) + env, model resolution, model listing
+│   ├── lib.mjs              Barrel: re-exports lib/* (+ shared codex discovery) so `./lib.mjs` import sites stay stable
+│   ├── lib/                 Policy modules:
+│   │   ├── config.mjs       Re-exports shared/providers.mjs (+ SCRIPT_DIR)
 │   │   ├── errors.mjs       Error taxonomy (TakeoverError + subclasses)
 │   │   ├── trace.mjs        TraceMe NDJSON emission + structured request logging
-│   │   ├── spawn.mjs        Claude binary resolution + spawn claude -p (stream-json)
+│   │   ├── spawn.mjs        spawnClaudeP: MCP-shape wrapper over shared spawn-child
 │   │   ├── parse.mjs        Command-block flag parsing, prompt building, text extraction
-│   │   └── callers.mjs      Anthropic API caller (retry + SSE) + Codex companion
+│   │   └── callers.mjs      Codex companion wrapper; re-exports shared anthropic-http
 │   ├── mcp-server.mjs       MCP stdio server (JSON-RPC): call_model (provider dispatch map) + list_models + codex_status
-│   └── codex/
-│       ├── discovery.mjs    Codex binary detection
-│       ├── app-server.mjs   JSON-RPC 2.0 client with lock timeout (30s)
-│       ├── task.mjs         Task execution with streaming
+│   └── codex/               Takeover-only codex policy (client comes from shared/codex/)
 │       ├── review.mjs       Adversarial code review via review/start
 │       └── image.mjs        Image gen/edit via codex exec --full-auto
 ├── agents/takeover.md       Subagent: context gathering (50K char budget) + handoff

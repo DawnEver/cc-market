@@ -6,7 +6,8 @@ Always-injected behavioral constraints for working on the takeover plugin.
 
 - **Codex app-server**: prompts go in `turn/start` message body (JSON-RPC params), never in spawn args.
 - **Codex exec** (images): prompt goes after `--` argument, via `spawn` args — this is the CLI convention for `codex exec`.
-- **Native Claude**: prompt piped to subprocess stdin.
+- **Native Claude**: via the shared child engine (`shared/spawn-child.mjs`) — argv for
+  short prompts, stream-json over stdin for large prompts/images.
 - **API**: prompt in HTTP request body.
 
 ## Codex app-server

@@ -29,6 +29,11 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 - **L0 provider routing** — `shared/providers.mjs` (canonical, bundled; shared with
   takeover). Reads `~/.claude/claude_env_settings.json`, normalizes vanilla/Foundry,
   resolves model aliases.
+- **L1 engines** — `shared/spawn-child.mjs` (the claude child engine: exe resolution,
+  provider env, optional config isolation, stream-json/images), `shared/anthropic-http.mjs`
+  (raw single-turn HTTP, retry + SSE), `shared/codex/` (codex app-server client + task
+  runner). One implementation each, shared with takeover — takeover is the stateless
+  policy consumer of the same engines.
 - **L1 observe proxy** — `shared/observe-proxy.mjs`. `startObserveProxy({provider,
   runDir})` → `{url, port, jsonlPath, close}`. Buffers+remaps the request body, streams
   the SSE response back **unbuffered**, tees request/response to `runDir/http.jsonl`.

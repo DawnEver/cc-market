@@ -125,5 +125,13 @@ Design decisions this session: dual-form MCP+library; provider routing promoted 
 root `shared/`. cc-lab's PTY driver stays as-is (its job is real-TUI observation, a
 different lifecycle from the headless fabric).
 
-Next (open): `spawn_session` daemon for persistent sessions; cc-lab's own driver could
-later consume the plugin's observe-proxy for its debug profile.
+Next (open): `spawn_session` daemon for persistent sessions.
+
+## Follow-through (2026-07-07, same day)
+
+The engines-into-shared refactor completed the layering (see cc-market
+`.claude/memory/2026/07/07/engines-into-shared.md`): codex adapter and the claude child
+engine each have one implementation in root `shared/`; takeover is a pure policy layer.
+cc-lab's driver gained `launch({observe: 'tap'|'proxy'|'none'})` — the 'proxy' profile
+consumes this plugin's observe-proxy (validated live against DeepSeek,
+`cases/observe-proxy-profile.case.mjs`), and the Foundry-strip is now tap-mode-only.

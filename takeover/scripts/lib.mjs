@@ -1,13 +1,14 @@
 // lib.mjs — Takeover shared library (barrel).
 // Concern modules live in ./lib/; lib.mjs re-exports them so the `./lib.mjs`
 // import sites (mcp-server, tests) stay stable:
-//   - lib/config.mjs   provider config/env, model resolution, model listing
+//   - lib/config.mjs   provider config/env (re-exports shared/providers.mjs)
 //   - lib/errors.mjs   error taxonomy (TakeoverError + subclasses)
 //   - lib/trace.mjs    TraceMe NDJSON + structured request logging
-//   - lib/spawn.mjs    claude binary resolution + spawn claude -p
+//   - lib/spawn.mjs    policy wrapper over the shared claude child engine
 //   - lib/parse.mjs    command-block flags, prompt building, text extraction
-//   - lib/callers.mjs  Anthropic API caller + Codex companion
-// Codex binary discovery is re-exported straight from ./codex/.
+//   - lib/callers.mjs  Codex companion (re-exports shared/anthropic-http.mjs)
+// Engines live in ../shared/ (spawn-child, anthropic-http, codex/); this
+// plugin only shapes prompts, picks engines per mode, and formats results.
 
 export * from "./lib/config.mjs";
 export * from "./lib/errors.mjs";
