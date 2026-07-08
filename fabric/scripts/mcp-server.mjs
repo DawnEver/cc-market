@@ -6,9 +6,10 @@
 // Tools:
 //   - list_providers : dump the provider registry (claude/codex/deepseek/…)
 //   - resolve_model  : map a Claude model id → a provider's real upstream id
-//   - run_task       : dispatch a one-shot headless child (claude -p) for any provider,
-//                      optionally behind the observe proxy — the stateless orchestration
-//                      primitive (spawn N concurrently for fan-out).
+//   - run_task       : dispatch a one-shot headless child and return its output — the
+//                      stateless orchestration primitive (spawn N concurrently for fan-out).
+//                      claude/deepseek run via `claude -p` (optionally behind the observe
+//                      proxy); provider="codex" runs via the codex app-server (native).
 //
 // Roadmap (next slice — needs a handle-holding daemon, since MCP calls are discrete but
 // child sessions are persistent): spawn_session / session_send / session_close for
@@ -21,6 +22,7 @@ import { tmpdir } from 'node:os';
 import { listModels, loadProviderConfig, resolveModelFromId } from '../shared/providers.mjs';
 import { spawnChild } from '../shared/spawn-child.mjs';
 import { summarizeFile } from '../shared/observe-reader.mjs';
+import { runCodexTask } from '../shared/codex/task.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginJson = JSON.parse(readFileSync(join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -57,15 +59,17 @@ export const TOOLS = [
   },
   {
     name: 'run_task',
-    description: 'Dispatch a one-shot headless child model session (claude -p) for a provider and return its output. Set observe:true to route through the observe proxy and capture the API traffic to http.jsonl. Spawn several concurrently for fan-out.',
+    description: 'Dispatch a one-shot headless child model session and return its output. Anthropic-compatible providers (claude/deepseek) run via `claude -p`; provider="codex" runs via the codex app-server. Set observe:true (non-codex) to route through the observe proxy and capture API traffic to http.jsonl. Spawn several concurrently for fan-out.',
     inputSchema: {
       type: 'object',
       properties: {
-        provider: { type: 'string', description: 'Provider key, e.g. "deepseek".' },
+        provider: { type: 'string', description: 'Provider key, e.g. "deepseek", "claude", "codex".' },
         prompt: { type: 'string', description: 'The task prompt.' },
         model: { type: 'string', description: 'Claude model id (proxy remaps it per provider). Optional.' },
-        observe: { type: 'boolean', description: 'Route through the observe proxy + capture jsonl. Default false.' },
-        runDir: { type: 'string', description: 'Isolated dir for config + capture. Defaults to a temp dir.' },
+        observe: { type: 'boolean', description: 'Route through the observe proxy + capture jsonl (non-codex). Default false.' },
+        write: { type: 'boolean', description: 'codex only: enable tools so the child can act (run git, edit files). Default false (read-only).' },
+        cwd: { type: 'string', description: 'Working dir for the child. codex runs its task here (e.g. the git repo). Defaults to the server cwd.' },
+        runDir: { type: 'string', description: 'Isolated dir for config + capture (non-codex). Defaults to a temp dir.' },
       },
       required: ['provider', 'prompt'],
     },
@@ -74,6 +78,7 @@ export const TOOLS = [
 
 export async function handleToolCall(name, args = {}, deps = {}) {
   const _spawnChild = deps.spawnChild || spawnChild;
+  const _runCodexTask = deps.runCodexTask || runCodexTask;
   switch (name) {
     case 'list_providers':
       return textResult(listModels());
@@ -84,6 +89,13 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     }
     case 'run_task': {
       if (!args.provider || !args.prompt) throw new Error('run_task: provider and prompt are required');
+      // codex is native (its own app-server, not Anthropic HTTP) — it can't ride the
+      // claude/spawnChild path. Route it to the codex adapter. `write` enables tools so
+      // the child can actually act (run git, edit files); default read-only.
+      if (args.provider === 'codex') {
+        const res = await _runCodexTask(args.prompt, undefined, args.model, !!args.write, args.cwd || process.cwd());
+        return textResult(res.content?.[0]?.text || '(no output)');
+      }
       const runDir = args.runDir || join(tmpdir(), `fabric-task-${Date.now()}`);
       const res = await _spawnChild({
         provider: args.provider, prompt: args.prompt, model: args.model,

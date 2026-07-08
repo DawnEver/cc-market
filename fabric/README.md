@@ -48,8 +48,11 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 - `list_providers` — dump the provider registry + model aliases.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
-- `run_task` — dispatch a one-shot headless child (`claude -p`) for a provider, optionally
-  behind the observe proxy. Spawn several concurrently for fan-out.
+- `run_task` — dispatch a one-shot headless child for a provider and return its output.
+  Anthropic-compatible providers (`claude` / `deepseek`) run via `claude -p`, optionally
+  behind the observe proxy. `provider: "codex"` runs via the codex app-server instead (codex
+  is native — not Anthropic HTTP); pass `write: true` to enable its tools (run git, edit
+  files) and `cwd` to point it at the target repo. Spawn several concurrently for fan-out.
 
 ## Roadmap (next slice)
 

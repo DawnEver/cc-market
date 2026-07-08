@@ -35,3 +35,34 @@ test('run_task surfaces a non-zero exit code + stderr', async () => {
   assert.match(text(res), /exit code 2/);
   assert.match(text(res), /boom/);
 });
+
+test('run_task routes provider=codex to the codex app-server, not spawnChild', async () => {
+  let codexArgs = null;
+  let spawnCalled = false;
+  const fakeRunCodexTask = async (prompt, systemPrompt, model, write, cwd) => {
+    codexArgs = { prompt, model, write, cwd };
+    return { content: [{ type: 'text', text: 'tidied by codex' }] };
+  };
+  const fakeSpawnChild = async () => { spawnCalled = true; return { code: 0, stdout: '', stderr: '', jsonlPath: null }; };
+  const res = await handleToolCall(
+    'run_task',
+    { provider: 'codex', prompt: 'run git-tidy', write: true, cwd: '/repo' },
+    { runCodexTask: fakeRunCodexTask, spawnChild: fakeSpawnChild },
+  );
+  assert.equal(spawnCalled, false, 'codex must not go through the claude spawnChild path');
+  assert.equal(codexArgs.prompt, 'run git-tidy');
+  assert.equal(codexArgs.write, true);
+  assert.equal(codexArgs.cwd, '/repo');
+  assert.match(text(res), /tidied by codex/);
+});
+
+test('run_task codex path defaults write=false and cwd=process.cwd()', async () => {
+  let codexArgs = null;
+  const fakeRunCodexTask = async (prompt, systemPrompt, model, write, cwd) => {
+    codexArgs = { write, cwd };
+    return { content: [{ type: 'text', text: 'ok' }] };
+  };
+  await handleToolCall('run_task', { provider: 'codex', prompt: 'x' }, { runCodexTask: fakeRunCodexTask });
+  assert.equal(codexArgs.write, false);
+  assert.equal(codexArgs.cwd, process.cwd());
+});

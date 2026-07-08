@@ -1,18 +1,37 @@
-import { spawn } from "../../shared/spawn.mjs";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// shared/codex/app-server.mjs — JSON-RPC 2.0 client for the codex app-server.
+// Canonical single implementation shared by takeover and fabric (previously
+// copy-forked into each plugin, differing only by the hardcoded client name).
+// The client identifies itself by the nearest enclosing plugin's
+// .claude-plugin/plugin.json — override via opts.clientInfo.
+import { spawn } from "../spawn.mjs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { findCodexBinary } from "./discovery.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-export const CLIENT_VERSION = JSON.parse(
-  readFileSync(join(__dirname, "..", "..", ".claude-plugin", "plugin.json"), "utf8"),
-).version;
+// Walk up from startPath (default: the entry script) to the nearest
+// .claude-plugin/plugin.json and return its {name, version}.
+export function resolveClientInfo(startPath = process.argv[1]) {
+  let dir = startPath ? dirname(startPath) : process.cwd();
+  while (true) {
+    const manifest = join(dir, ".claude-plugin", "plugin.json");
+    if (existsSync(manifest)) {
+      try {
+        const { name, version } = JSON.parse(readFileSync(manifest, "utf8"));
+        return { name: name || "cc-market", version: version || "0.0.0" };
+      } catch { break; }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return { name: "cc-market", version: "0.0.0" };
+}
 
 export class CodexAppServerClient {
   constructor(opts = {}) {
     this.codexPath = opts.codexPath;
     this.timeout = opts.timeout ?? 600000;
+    this.clientInfo = opts.clientInfo || resolveClientInfo();
     this.child = null;
     this.nextId = 1;
     this.pending = new Map();
@@ -54,12 +73,12 @@ export class CodexAppServerClient {
     });
 
     this.child.stderr.on("data", (d) => {
-      process.stderr.write(`mcp-takeover[codex]: ${d.toString().trim()}\n`);
+      process.stderr.write(`${this.clientInfo.name}[codex]: ${d.toString().trim()}\n`);
     });
 
     const initResult = await this.send("initialize", {
       protocolVersion: "1.0",
-      clientInfo: { name: "takeover", version: CLIENT_VERSION },
+      clientInfo: this.clientInfo,
       capabilities: {
         optOutNotificationMethods: [
           "item/agentMessage/delta",

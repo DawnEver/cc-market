@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "../../shared/spawn.mjs";
+import { spawnSync } from "../spawn.mjs";
 
 export function findCodexBinary() {
   if (process.env.TAKEOVER_CODEX_BINARY) {

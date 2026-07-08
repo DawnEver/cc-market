@@ -4,16 +4,17 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { CodexAppServerClient, CLIENT_VERSION } from "../scripts/codex/app-server.mjs";
+import { CodexAppServerClient, resolveClientInfo } from "../shared/codex/app-server.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-describe("CLIENT_VERSION", () => {
-  test("matches plugin.json version (no hardcoded drift)", () => {
-    const { version } = JSON.parse(
+describe("clientInfo", () => {
+  test("resolveClientInfo from inside takeover matches plugin.json (no hardcoded drift)", () => {
+    const { name, version } = JSON.parse(
       readFileSync(join(__dirname, "..", ".claude-plugin", "plugin.json"), "utf8"),
     );
-    assert.equal(CLIENT_VERSION, version);
+    const info = resolveClientInfo(join(__dirname, "..", "scripts", "mcp-server.mjs"));
+    assert.deepEqual(info, { name, version });
   });
 });
 
@@ -144,7 +145,7 @@ describe("withSharedClient queue counter (source guard)", () => {
   // every call — which silently broke ALL codex routing (review/task). A runtime test would
   // spawn a real codex app-server, so guard the source statically instead.
   const src = readFileSync(
-    join(__dirname, "..", "scripts", "codex", "app-server.mjs"),
+    join(__dirname, "..", "shared", "codex", "app-server.mjs"),
     "utf8",
   );
 

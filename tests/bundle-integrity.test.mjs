@@ -10,7 +10,17 @@ import assert from 'node:assert/strict';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
-const SHARED_FILES = readdirSync(join(ROOT, 'shared')).filter(f => f.endsWith('.mjs'));
+// Recursive relative paths (e.g. 'codex/task.mjs'), excluding shared/tests/
+function listSharedFiles(dir, prefix = '') {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'tests') continue;
+    if (entry.isDirectory()) out.push(...listSharedFiles(join(dir, entry.name), prefix + entry.name + '/'));
+    else if (entry.name.endsWith('.mjs')) out.push(prefix + entry.name);
+  }
+  return out;
+}
+const SHARED_FILES = listSharedFiles(join(ROOT, 'shared'));
 
 // All plugins with plugin.json — shared/ presence is asserted (not used as filter)
 const ALL_PLUGINS = readdirSync(ROOT).filter(name =>

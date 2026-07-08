@@ -1,7 +1,7 @@
 import { test, describe, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { findCodexBinary, checkCodexStatus } from "../scripts/codex/discovery.mjs";
+import { findCodexBinary, checkCodexStatus } from "../shared/codex/discovery.mjs";
 
 describe("findCodexBinary", () => {
   test("returns override from TAKEOVER_CODEX_BINARY", () => {

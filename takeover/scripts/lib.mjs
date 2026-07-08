@@ -16,4 +16,4 @@ export * from "./lib/spawn.mjs";
 export * from "./lib/parse.mjs";
 export * from "./lib/callers.mjs";
 
-export { findCodexBinary, checkCodexStatus } from "./codex/discovery.mjs";
+export { findCodexBinary, checkCodexStatus } from "../shared/codex/discovery.mjs";

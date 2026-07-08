@@ -27,8 +27,10 @@ bundle_shared() { # $1 = plugin name
   local tmp
   [ -d "$src" ] || return 0
   # Atomic: copy to tmp first, then replace — avoids empty dest if cp fails
+  # Recursive (shared/codex/ etc.), excluding shared/tests/
   tmp="$(mktemp -d)"
-  if ! cp "$src"/*.mjs "$tmp/"; then
+  if ! (cd "$src" && find . -name tests -prune -o -name '*.mjs' -print0 \
+        | tar --null -T - -cf - | tar -C "$tmp" -xf -); then
     rm -rf "$tmp"
     echo "pre-push: bundle_shared failed for $1 — no .mjs files in shared/" >&2
     return 1

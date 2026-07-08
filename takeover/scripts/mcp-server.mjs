@@ -19,7 +19,7 @@ import {
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
-import { withSharedClient } from "./codex/app-server.mjs";
+import { withSharedClient } from "../shared/codex/app-server.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginJson = JSON.parse(readFileSync(join(__dirname, "..", ".claude-plugin", "plugin.json"), "utf8"));
