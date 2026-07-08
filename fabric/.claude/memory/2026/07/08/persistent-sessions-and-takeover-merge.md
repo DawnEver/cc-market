@@ -56,3 +56,27 @@ that.**
   `mcp-server.mjs`. **Right move: extract `shared/mcp-rpc.mjs`** (transport + dispatch loop;
   each server passes its own `TOOLS` + `handleToolCall`). That captures the last real dup while
   preserving the layering. Not done in this change — flagged as the next slice.
+
+## SUPERSEDED same day — first-principles: converge to ONE call surface
+
+The "keep two plugins" conclusion above was still reasoning from *"two tools exist"*, not from
+user need. Re-derived from scratch (user pushback): the atomic operation is a single primitive
+**`invoke(model, input, options) → output`**. "takeover single task" = call it once; "orchestrate
+many" = call it N times. **Single-vs-many is NOT a design axis — it's just call count**, and
+fan-out is the *caller's* job (the agent / a Workflow), not a tool's. Neither plugin actually
+orchestrates today; the agent does, via repeated tool calls. So `call_model` and `run_task` are
+**the same operation** split only by history (takeover predates fabric; fabric grew from the
+cc-lab harness).
+
+The real axes are all *parameters* on that one call, never separate tools: state (one-shot /
+persistent — one-shot = a degenerate single-turn session), policy (raw / review / image / agent
+= pre-call prompt+endpoint choice), write, observe, result shaping. The mechanism/policy split is
+correct **internally** (`shared/` engines vs policy modules) but must not surface as two
+user-facing "run a model" tools.
+
+Target shape: one plugin, one mechanism (`shared/`), one call surface (`call` + `session.*`,
+one-shot as sugar over open+send+close), modes as options, fan-out delegated to the harness.
+takeover's review/image/commands/subagent/traceme survive as optional policy+ergonomics layers
+**on the same primitive**. This retracts the "do NOT merge" verdict. Next concrete step: unify
+`call_model` ∪ `run_task` into one tool (sessions already built), fold review/image into its
+`mode` param. Not yet executed — pending user go-ahead.
