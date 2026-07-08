@@ -77,6 +77,35 @@ user-facing "run a model" tools.
 Target shape: one plugin, one mechanism (`shared/`), one call surface (`call` + `session.*`,
 one-shot as sugar over open+send+close), modes as options, fan-out delegated to the harness.
 takeover's review/image/commands/subagent/traceme survive as optional policy+ergonomics layers
-**on the same primitive**. This retracts the "do NOT merge" verdict. Next concrete step: unify
-`call_model` ∪ `run_task` into one tool (sessions already built), fold review/image into its
-`mode` param. Not yet executed — pending user go-ahead.
+**on the same primitive**. This retracts the "do NOT merge" verdict.
+
+## EXECUTED 2026-07-08 — takeover folded into fabric
+
+Plugin name stays `fabric`; the takeover *capability* keeps its name inside it
+(`fabric:takeover` subagent, `/fabric:continue`, `fabric:takeover-result` skill).
+
+- **One `call` tool** = `call_model` ∪ `run_task`. `mode` enum (task/review/agent/
+  image-generate/image-edit) carries policy; `<command>` flags authoritative; `observe:true`
+  (non-codex) forces the harness engine behind the proxy (folds run_task's capture). Dispatch
+  matrix (provider bucket × mode) ported verbatim from takeover's handleCallModel →
+  `handleCall`. Base = takeover's dual-transport server (line + framed, framed needed for
+  Codex) + grafted fabric session/provider tools.
+- **Moved into fabric**: `scripts/{lib.mjs,lib/,codex/{review,image}.mjs}`, `prompts/`,
+  `agents/takeover.md`, `commands/{continue,models,summary}.md`, `skills/{takeover-result,
+  codex-image-result}`, 4 tests. All `../shared/*` imports resolve unchanged (fabric bundles
+  shared). SCRIPT_DIR/PROMPTS_DIR resolve to fabric/prompts.
+- **Namespace fix (the silent-failure risk)**: sharp-review's 5 hardcoded
+  `mcp__plugin_takeover_takeover__call_model` → `mcp__plugin_fabric_fabric__call` (+ agent
+  allowlist), else reviewers silently fall back to the flaky Agent path. Done atomically.
+  Also fixed the malformed `mcp__takeover__list_models` in models.md → list_providers.
+- **Packaging**: `git rm -r takeover/`; dropped its marketplace entry; enriched fabric's;
+  `commands` array into fabric plugin.json; regen `gen-codex`; updated pre-commit plugin
+  list, `codex-e2e-live.sh` (fabric + list_providers probe), root AGENTS.md + invariants.
+- **Validated**: full JS suite 825 pass / 0 fail (incl. bundle-integrity + gen-codex). Live
+  `call` on codex returns the computed answer. Codex app-server echoes input text items before
+  the answer — a PRE-EXISTING quirk (seen in old run_task too), not a merge regression.
+
+Deferred (next slice): extract `shared/mcp-rpc.mjs` (transport still ~140 lines, but now only
+one server uses it, so lower priority); the codex input-echo wart; renaming internal
+"mcp-takeover:" stderr prefixes (left to avoid touching the `takeover_traces.jsonl` traceme
+contract).

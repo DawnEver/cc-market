@@ -6,7 +6,7 @@
 # MCP tool discoverability, ${CLAUDE_PLUGIN_ROOT} resolution, .claude/rules injection) get
 # exercised here and again every time you use Codex normally afterwards.
 #
-# Installs the 4 in-scope plugins: takeover, rem, sharp-review, evolve.
+# Installs the 4 in-scope plugins: fabric, rem, sharp-review, evolve.
 #   (NOT watch — works but Notification degrades to Stop-only on Codex.  NOT traceme — unsupported.)
 # Uninstall later, cleanly, with:  codex plugin remove <name>@cc-market
 #
@@ -50,7 +50,7 @@ EXEC_FLAGS=(--dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-s
 sec "1. generate Codex artifacts + install plugins (real)"
 node "$REPO/scripts/gen-codex.mjs" "$REPO" 2>&1 | tail -3
 codex plugin marketplace add "$REPO" 2>&1 | grep -iv "PATH aliases" | tail -3
-for p in takeover rem sharp-review evolve; do
+for p in fabric rem sharp-review evolve; do
   echo "-- plugin add $p --"
   codex plugin add "$p@cc-market" 2>&1 | grep -iv "PATH aliases" | tail -2
 done
@@ -58,15 +58,15 @@ echo "-- plugin list --"
 codex plugin list 2>&1 | grep -iv "PATH aliases"
 verdict "all four plugins listed + enabled; no install errors"
 
-sec "1b. \${CLAUDE_PLUGIN_ROOT} preserved in the installed takeover .mcp.json"
+sec "1b. \${CLAUDE_PLUGIN_ROOT} preserved in the installed fabric .mcp.json"
 find "$HOME/.codex/plugins" -name .mcp.json -exec sh -c 'echo "$1:"; cat "$1"' _ {} \; 2>/dev/null | head -30
 verdict "the installed .mcp.json still contains \${CLAUDE_PLUGIN_ROOT} (Codex resolves it at runtime)"
 
 # ── 2. MCP tool discoverability + plugin-root resolution ──────────────────────────────
-sec "2. takeover MCP — list_models (proves MCP server boots + plugin root resolves)"
+sec "2. fabric MCP — list_providers (proves MCP server boots + plugin root resolves)"
 OUT2="$(mktemp)"
 run_to 180 codex exec "${EXEC_FLAGS[@]}" -o "$OUT2" \
-  'Call the takeover MCP tool named list_models with no arguments. Then reply with ONLY its raw JSON result. If no such tool is available to you, reply exactly: TOOL_NOT_FOUND.' \
+  'Call the fabric MCP tool named list_providers with no arguments. Then reply with ONLY its raw JSON result. If no such tool is available to you, reply exactly: TOOL_NOT_FOUND.' \
   2>&1 | grep -iv "PATH aliases" | tail -8
 echo "-- final message --"; [ -f "$OUT2" ] && cat "$OUT2" || echo "(none captured)"; rm -f "$OUT2"
 verdict "JSON list of models (NOT 'TOOL_NOT_FOUND') → MCP server started under Codex and \${CLAUDE_PLUGIN_ROOT} resolved"
@@ -103,7 +103,7 @@ verdict "sharp-review and evolve appear → skills ingested under Codex"
 # ── Cleanup (temp probe project only — the plugins stay installed) ────────────────────
 sec "cleanup"
 rm -rf "$PROJ" && echo "removed temp probe project (plugins remain installed in ~/.codex)"
-echo "to uninstall later:  for p in takeover rem sharp-review evolve; do codex plugin remove \$p@cc-market; done"
+echo "to uninstall later:  for p in fabric rem sharp-review evolve; do codex plugin remove \$p@cc-market; done"
 echo
 echo "========================= CODEX SETUP+E2E — END (copy to here) ========================="
 echo "(full log also saved at: $LOG)"

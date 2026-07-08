@@ -1,7 +1,7 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
   "name": "cc-market",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
     "name": "Mingyang Bao",
@@ -27,25 +27,6 @@
         "tdd",
         "loop",
         "autofix"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "takeover",
-      "source": "./takeover",
-      "displayName": "Takeover",
-      "description": "Multi-model AI orchestration — delegate tasks and planning to different model providers (DeepSeek, etc.) directly from Claude Code.",
-      "author": {
-        "name": "linxu"
-      },
-      "repository": "https://github.com/DawnEver/cc-market",
-      "license": "MIT",
-      "keywords": [
-        "multi-model",
-        "orchestration",
-        "deepseek",
-        "continue",
-        "plan"
       ],
       "category": "productivity"
     },
@@ -110,7 +91,7 @@
       "name": "fabric",
       "source": "./fabric",
       "displayName": "Fabric",
-      "description": "Multi-provider agent session fabric — any agent (claude / codex / …) spawning and observing isolated child sessions of any provider. Ships a minimal Anthropic-compatible observe proxy that dissolves the Foundry-vs-tap conflict, plus canonical provider routing shared with takeover.",
+      "description": "Multi-provider agent session fabric — any agent (claude / codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), persistent multi-turn sessions, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -120,6 +101,10 @@
         "fabric",
         "multi-model",
         "orchestration",
+        "handoff",
+        "takeover",
+        "session",
+        "review",
         "proxy",
         "observe",
         "deepseek"

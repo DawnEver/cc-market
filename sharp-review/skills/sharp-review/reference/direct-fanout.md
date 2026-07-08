@@ -5,12 +5,12 @@ or a Codex worker.
 
 ## Fan-out tool preference
 
-**Primary: `mcp__plugin_takeover_takeover__call_model`** — calls external provider APIs
+**Primary: `mcp__plugin_fabric_fabric__call`** — calls external provider APIs
 directly with no safety-classifier dependency. Works on both Claude Code and Codex.
 
 **Fallback: `Agent` tool** (Claude Code) or `spawn_agent` (Codex) — spawns a subagent per
 reviewer. These go through the safety classifier and may fail transiently. Use only when
-the takeover MCP tool is not available.
+the fabric MCP tool is not available.
 
 Call each active reviewer in sequence via takeover, collect their `{ "findings": [...] }`
 responses, and build `raw.json`. deepseek/claude return JSON directly; **codex review-mode
@@ -46,9 +46,9 @@ through two different lenses, at the same 2-reviewer cost.
 1. Pick the active reviewer pair via `seed mod 3` using `result.seed`.
 2. Build each reviewer's prompt from **its assigned profile's** framing/scope, using the
    shared diff/manifest payload (Step 2) for diff-sourced profiles.
-   **Call each active reviewer** via `mcp__plugin_takeover_takeover__call_model`
+   **Call each active reviewer** via `mcp__plugin_fabric_fabric__call`
    (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`) with the review
-   prompt as `userPrompt`. Extract `{ "findings": [...] }` from the response — directly for
+   prompt as `prompt`. Extract `{ "findings": [...] }` from the response — directly for
    deepseek/claude, or via § Codex prose normalization for codex review-mode.
    If the takeover tool is unavailable, fall back to the `Agent` tool (Claude Code) or
    `spawn_agent` (Codex) — one worker per reviewer.

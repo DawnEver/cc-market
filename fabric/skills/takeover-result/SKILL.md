@@ -1,13 +1,13 @@
 ---
 name: takeover-result
-description: Internal guidance for presenting takeover MCP tool output back to the user
+description: Internal guidance for presenting fabric MCP tool output back to the user
 ---
 
 # Takeover Result Handling
 
 ## Output Rules
 
-- Return the `call_model` output text verbatim to the user.
+- Return the `call` output text verbatim to the user.
 - Do not paraphrase, summarize, rewrite, or add commentary before or after it.
 - Do not fix or apply any suggestions from the output unless explicitly asked.
 - If the MCP tool returns an error (JSON-RPC error object), report the error clearly and suggest checking provider configuration in `~/.claude/claude_env_settings.json` — see `reference/provider-config.md` for the expected shape.

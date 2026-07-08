@@ -20,7 +20,7 @@ fresh subagent suffices; rem, by contrast, needs session context and is offloade
 ### Fan-out (worker subagent / Codex)
 
 The worker subagent (Claude) or Codex worker fans out reviewers directly via the takeover
-`call_model` MCP tool (which the worker agent must list in its `tools:` allowlist; fallback:
+`call` MCP tool (which the worker agent must list in its `tools:` allowlist; fallback:
 `Agent`/`spawn_agent`), collects each reviewer's `{ findings }` (normalizing codex prose into
 the schema — see direct-fanout.md), and feeds `post-review.js --raw` — which runs the shared
 merge/render so every host produces byte-identical output. Full procedure →

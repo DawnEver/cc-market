@@ -24,7 +24,7 @@ Every `spawn`/`spawnSync`/`execFileSync`/`execSync` that launches a console app
 MCP server, or background script MUST set `windowsHide: true` in its options. On Windows a
 console-subsystem child gets a fresh console window allocated (a visible terminal flash)
 whenever the parent has no console of its own — which is exactly the case for Claude Code
-hooks and the takeover MCP server. `windowsHide` suppresses that window and is a harmless
+hooks and the fabric MCP server. `windowsHide` suppresses that window and is a harmless
 no-op on macOS/Linux, so add it unconditionally.
 
 Also never wrap a background launch in `cmd /c start …`: `start` spawns its **own** console
@@ -70,7 +70,7 @@ Each top-level key has exactly one owner — never write another plugin's key:
 | `reviewGate` | sharp-review | Wave gate: mode, review counts, `lastReviewRef`/`lastReviewDiff` |
 | `evolveState` | evolve | Round loop: findings, `lastRoundAt`, `emptyRounds` |
 
-traceme (own SQLite DB), watch (`.claude/watch/state/alert.json`), and takeover keep state
+traceme (own SQLite DB), watch (`.claude/watch/state/alert.json`), and fabric keep state
 elsewhere and must not add keys here. Adding a key: claim it in this table first, add it to
 `DEFAULT_STATE` if shared, then rebundle `shared/` copies.
 

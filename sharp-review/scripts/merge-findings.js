@@ -2,7 +2,7 @@
 // merge-findings.js — merge raw per-reviewer findings and print the result to stdout.
 //
 // The external seam for content-review callers (e.g. ai-post 三方会审): fan out your
-// own reviewers however you like (takeover call_model, etc.), collect each reviewer's
+// own reviewers however you like (fabric call, etc.), collect each reviewer's
 // raw { findings: [...] }, and hand them here. This reuses the SAME merge/dedup/
 // confidence engine as `post-review.js --raw` (shared `lib.mjs`) but writes NO memory
 // entry — it just prints { reviewFile, markdown, merged, summary } as JSON so the

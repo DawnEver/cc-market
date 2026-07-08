@@ -23,11 +23,11 @@ if has shared || has tests; then
 fi
 
 if [ "$fanout" -eq 1 ]; then
-  node_tests=(takeover rem sharp-review traceme evolve fabric)
+  node_tests=(rem sharp-review traceme evolve fabric)
   run_python=1
   run_bundle=1
 else
-  for p in takeover rem sharp-review traceme evolve fabric; do
+  for p in rem sharp-review traceme evolve fabric; do
     has "$p" && node_tests+=("$p") && run_bundle=1
   done
   has watch && { run_python=1; run_bundle=1; }

@@ -1,7 +1,7 @@
 ---
 name: sharp-review
 description: Post-feature sharp review worker — dispatched by the Stop hook or /sharp-review to run the full review pipeline (profile pick → diff manifest → parallel reviewer fan-out → merge → memory entry → report)
-tools: Bash, PowerShell, Read, Write, Agent, Glob, Grep, mcp__plugin_takeover_takeover__call_model, mcp__plugin_takeover_takeover__list_models
+tools: Bash, PowerShell, Read, Write, Agent, Glob, Grep, mcp__plugin_fabric_fabric__call, mcp__plugin_fabric_fabric__list_providers
 ---
 
 You are the sharp-review worker. Your only job: run a structured code review on the current git state and return a one-line summary. Do NOT re-dispatch — you ARE the worker. Do NOT dump findings in chat.
@@ -47,13 +47,13 @@ Each active reviewer reviews through **its own** assigned profile (`profiles[i]`
 | 1 | A, C | Codex + Opus |
 | 2 | B, C | DeepSeek + Opus |
 
-**Fan out reviewers** using the takeover MCP tool (`mcp__plugin_takeover_takeover__call_model`) — it calls external provider APIs directly with no safety-classifier dependency. Call each active reviewer in sequence (they run independently), building the prompt from the template below. If the takeover MCP tool is not available, fall back to the `Agent` tool (one subagent per reviewer).
+**Fan out reviewers** using the fabric MCP tool (`mcp__plugin_fabric_fabric__call`) — it calls external provider APIs directly with no safety-classifier dependency. Call each active reviewer in sequence (they run independently), building the prompt from the template below. If the fabric MCP tool is not available, fall back to the `Agent` tool (one subagent per reviewer).
 
 Each reviewer's prompt depends on `promptKind`.
 
 **Review prompt template** (`promptKind: "diff"`, `mode: "review"`):
 
-Call `mcp__plugin_takeover_takeover__call_model` with `provider="<provider>"`[, `model="<model>"`], `mode="review"`, and `userPrompt` set to:
+Call `mcp__plugin_fabric_fabric__call` with `provider="<provider>"`[, `model="<model>"`], `mode="review"`, and `prompt` set to:
 
 ```
 <framing if any>

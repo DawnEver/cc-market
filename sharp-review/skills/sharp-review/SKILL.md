@@ -61,10 +61,10 @@ node "$env:CLAUDE_PLUGIN_ROOT/scripts/diff-manifest.js" --range "main...HEAD" --
 
 **Empty-diff gate:** If ALL profiles honor the diff manifest (all have `mode === null`) AND `mode === "empty"`: report in chat `Sharp review skipped: no reviewable changes after filtering (<excludedSummary>)` and stop. If at least one profile is agent-mode (`architecture`/`docs`/`deps`), proceed — agent-mode profiles explore the repo, not a diff.
 
-Otherwise fan out via `mcp__plugin_takeover_takeover__call_model` (primary — direct API
+Otherwise fan out via `mcp__plugin_fabric_fabric__call` (primary — direct API
 calls, no safety-classifier dependency) for each active reviewer; fall back to the `Agent`
 tool (Claude Code) / `spawn_agent` (Codex) if takeover is unavailable. **Prerequisite:** the
-dispatched `sharp-review:sharp-review` worker must list `mcp__plugin_takeover_takeover__call_model`
+dispatched `sharp-review:sharp-review` worker must list `mcp__plugin_fabric_fabric__call`
 in its `tools:` allowlist — an explicit allowlist excludes everything unnamed, so omitting it
 silently forces every reviewer onto the flaky `Agent` fallback (the cause of past all-reviewers-
 FAILED runs). Collect each reviewer's raw `{ findings: [...] }` and feed the **raw** results to

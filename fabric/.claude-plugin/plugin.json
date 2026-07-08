@@ -1,24 +1,34 @@
 {
   "name": "fabric",
   "version": "0.1.1",
-  "description": "Multi-provider agent session fabric — any agent (Claude / Codex / …) spawning and observing isolated child sessions of any provider. Ships a minimal Anthropic-compatible observe proxy that dissolves the Foundry-vs-tap conflict.",
+  "description": "Multi-provider agent session fabric — any agent (Claude / Codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes) + persistent multi-turn sessions + a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
   "author": {
     "name": "Mingyang Bao"
   },
+  "commands": [
+    "./commands/continue.md",
+    "./commands/models.md",
+    "./commands/summary.md"
+  ],
   "codexInterface": {
     "defaultPrompt": [
-      "Use the Fabric plugin to run child model sessions of any provider (deepseek / claude / codex).",
-      "Tools: list_providers, resolve_model, run_task (one-shot headless child; codex supports write:true + cwd).",
-      "Pass observe:true to run_task to capture the child API traffic into runDir/http.jsonl."
+      "Use the Fabric plugin to invoke, orchestrate, and hand off to models of any provider (deepseek / claude / codex).",
+      "Tools: call (one-shot; mode task/review/agent/image-*; codex supports write:true + cwd), spawn_session/session_send/session_close (persistent multi-turn), list_providers, resolve_model, codex_status.",
+      "Pass observe:true to call to capture the child API traffic into runDir/http.jsonl."
     ]
   },
   "keywords": [
     "fabric",
     "multi-model",
     "orchestration",
+    "handoff",
+    "takeover",
+    "session",
+    "review",
     "proxy",
     "observe",
     "deepseek",
-    "session"
+    "delegate",
+    "second-opinion"
   ]
 }

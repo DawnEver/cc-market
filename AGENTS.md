@@ -15,20 +15,19 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | Plugin | Directory | Description |
 |---|---|---|
 | [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
-| [`takeover`](takeover/README.md) | `takeover/` | Multi-model AI orchestration via MCP |
+| [`fabric`](fabric/README.md) | `fabric/` | Multi-provider session fabric: one `call` primitive (task/review/agent/image) + persistent sessions + observe proxy. Absorbed the former `takeover` plugin |
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, crystallization, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
-| [`fabric`](fabric/README.md) | `fabric/` | Multi-provider agent session fabric: spawn & observe isolated child sessions of any provider, behind any orchestrating agent |
 
 Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
 ## Tests & Git Hooks
 
 The pre-commit hook (`scripts/git-hooks/pre-commit`, wired via `core.hooksPath`) runs **only
-the tests for plugins whose files are staged** — committing a takeover-only change runs just
-`takeover/tests/*.test.mjs` (plus the cross-cutting `tests/bundle-integrity.test.mjs`). It
+the tests for plugins whose files are staged** — committing a fabric-only change runs just
+`fabric/tests/*.test.mjs` (plus the cross-cutting `tests/bundle-integrity.test.mjs`). It
 maps each changed top-level dir to its tests; `watch/` changes run the Python tests
 (`python -m unittest discover watch/tests/`, skipped if `python` is absent). Because `shared/`
 is bundled into every plugin, staging anything under `shared/` (or the root `tests/`) fans out
@@ -37,13 +36,13 @@ to **all** plugins. A commit touching no test-bearing dir (e.g. only root docs) 
 To run every JS suite manually:
 
 ```shell
-node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/fabric/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
+node --test cc-market/fabric/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
 ```
 
 See each plugin's AGENTS.md § Testing for per-suite coverage.
 
 Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised
-by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`takeover`,
+by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`fabric`,
 `rem`, `sharp-review`, `evolve`) into the real `~/.codex`, then probes hooks, `.claude/rules`
 injection, MCP exposure, and skill ingestion. `fabric` is also Codex-capable (consumed via its
 MCP server) but is not yet covered by the e2e script.

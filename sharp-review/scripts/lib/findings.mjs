@@ -54,7 +54,7 @@ export function mergeFollowup(existingFindings, incomingFindings, incomingMarkdo
 //
 // Extracted from the Claude Workflow VM script so BOTH hosts share one tested
 // implementation: Claude's Workflow returns raw per-reviewer findings → post-review
-// merges/renders; Codex fans out reviewers (spawn_agent / takeover call_model) → the
+// merges/renders; Codex fans out reviewers (spawn_agent / fabric call) → the
 // same merge/render. The Workflow VM (sandboxed, no import) cannot call these — it
 // passes raw results out to post-review.js, which can.
 

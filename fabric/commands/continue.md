@@ -4,9 +4,9 @@ argument-hint: "[--provider <name>] [--model <model>] [--review | --image | --im
 allowed-tools: Agent
 ---
 
-Invoke the `takeover:takeover` subagent via the `Agent` tool (`subagent_type: "takeover:takeover"`), forwarding the raw user request as the prompt.
+Invoke the `fabric:takeover` subagent via the `Agent` tool (`subagent_type: "fabric:takeover"`), forwarding the raw user request as the prompt.
 
-The subagent calls the target model via the `call_model` MCP tool and returns its output verbatim.
+The subagent calls the target model via the `call` MCP tool and returns its output verbatim.
 
 Raw user request:
 $ARGUMENTS

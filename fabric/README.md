@@ -26,16 +26,21 @@ Then register the MCP server in `~/.claude/settings.json`:
 
 ## Usage
 
-MCP `run_task` — one-shot headless children (spawn several concurrently for fan-out):
+MCP `call` — the one-shot primitive (call it N times concurrently for fan-out; `mode`
+selects policy: task/review/agent/image-generate/image-edit):
 
 ```json
 { "provider": "deepseek", "prompt": "Summarize the failure modes in this log: ..." }
 ```
 
 ```json
-{ "provider": "codex", "prompt": "Fix the failing test in tests/mcp-server.test.mjs",
+{ "provider": "codex", "mode": "task", "prompt": "Fix the failing test in tests/mcp-server.test.mjs",
   "write": true, "cwd": "/path/to/repo" }
 ```
+
+For a real multi-turn handoff (context retained across turns) use `spawn_session` /
+`session_send` / `session_close` instead of repeated `call`s. The `/continue` command
+drives the `takeover` handoff subagent over this surface.
 
 Library import — the same engines, directly:
 
@@ -79,14 +84,12 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Layers
 
-- **L0 provider routing** — `shared/providers.mjs` (canonical, bundled; shared with
-  takeover). Reads `~/.claude/claude_env_settings.json`, normalizes vanilla/Foundry,
+- **L0 provider routing** — `shared/providers.mjs` (canonical, bundled). Reads `~/.claude/claude_env_settings.json`, normalizes vanilla/Foundry,
   resolves model aliases.
 - **L1 engines** — `shared/spawn-child.mjs` (the claude child engine: exe resolution,
   provider env, optional config isolation, stream-json/images), `shared/anthropic-http.mjs`
   (raw single-turn HTTP, retry + SSE), `shared/codex/` (codex app-server client + task
-  runner). One implementation each, shared with takeover — takeover is the stateless
-  policy consumer of the same engines.
+  runner). One implementation each; the plugin's own L1 policy consumes them.
 - **L1 observe proxy** — `shared/observe-proxy.mjs`. `startObserveProxy({provider,
   runDir})` → `{url, port, jsonlPath, close}`. Buffers+remaps the request body, streams
   the SSE response back **unbuffered**, tees request/response to `runDir/http.jsonl`.
@@ -104,13 +107,15 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## MCP tools
 
+- `call` — the one-shot primitive: invoke a model and return its output. `mode`
+  (task/review/agent/image-*) carries policy; `<command>` flags in `prompt` override params.
+  Anthropic-compatible providers (`claude` / `deepseek`) run via `claude -p` or raw HTTP;
+  `provider: "codex"` runs via the codex app-server (native — pass `write: true` for tools,
+  `cwd` for the repo). `observe: true` (non-codex) captures API traffic to the proxy jsonl.
+  Call several concurrently for fan-out.
 - `list_providers` — dump the provider registry + model aliases.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
-- `run_task` — dispatch a one-shot headless child for a provider and return its output.
-  Anthropic-compatible providers (`claude` / `deepseek`) run via `claude -p`, optionally
-  behind the observe proxy. `provider: "codex"` runs via the codex app-server instead (codex
-  is native — not Anthropic HTTP); pass `write: true` to enable its tools (run git, edit
-  files) and `cwd` to point it at the target repo. Spawn several concurrently for fan-out.
+- `codex_status` — codex CLI install / version / auth check.
 - `spawn_session` / `session_send` / `session_close` / `list_sessions` — **persistent
   multi-turn** sessions over MCP. `spawn_session` returns an id; each `session_send` is one
   turn with context retained from earlier turns; `session_close` frees the child. Works for

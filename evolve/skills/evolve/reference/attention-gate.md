@@ -33,7 +33,7 @@ The gate **never prompts** (no human attention to protect). It returns `applied`
 resolved by policy) and `deferred` (irreversible/ambiguous, no safe default — left OPEN and
 logged, never blocked). Apply `applied`, record `deferred` in the round summary. An AI consumer
 that *wants* a second opinion on a deferred arch call may hand it to a stronger model via
-`takeover`, but must not block the loop on it.
+`fabric` (call), but must not block the loop on it.
 
 ## Both consumers
 

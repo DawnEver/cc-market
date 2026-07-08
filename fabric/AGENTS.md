@@ -1,43 +1,54 @@
 # Fabric Plugin — AGENTS.md
 
-Multi-provider agent **session fabric**: the session-engine substrate for any agent
-orchestrating child model sessions of any provider. Dual-form — an importable library
-(`shared/`) and an MCP server (`scripts/mcp-server.mjs`). Takeover is the stateless
-policy consumer of the same engines; fabric owns the substrate itself.
+Multi-provider agent **session fabric**: any agent (Claude / Codex / …) invoking,
+orchestrating, and handing off to models of any provider. Absorbed the former `takeover`
+plugin — its policy (modes, prompts, handoff UX) is now the L1/L2 layers on fabric's one
+call primitive. Dual-form: an importable library (`shared/`) and an MCP server
+(`scripts/mcp-server.mjs`).
 
-Design memory: `.claude/memory/2026/07/07/harness-as-fabric.md`.
+**First principle:** the atomic operation is `invoke(model, input, options) → output`.
+"One task" is one `call`; "orchestrate many" is the caller making N calls — fan-out is the
+orchestrator's job (the agent / a Workflow), never a tool's. So there is one call surface,
+not a "single" tool and a "batch" tool.
 
-## Architecture
+Design memories: `.claude/memory/2026/07/07/harness-as-fabric.md`,
+`.claude/memory/2026/07/08/persistent-sessions-and-takeover-merge.md`.
+
+## Architecture — four layers
 
 ```
-orchestrator agent (claude / codex / …)
-  → MCP: run_task(provider=deepseek, prompt="…")          one-shot fan-out
-  → library: openSession({provider, observe})             persistent multi-turn
-      → L1 engines: spawn-child (claude -p / stream-json)
-                    anthropic-http (raw HTTP + SSE)
-                    shared/codex/ (codex app-server — native, no proxy)
-      → L1 observe-proxy: child speaks vanilla Anthropic HTTP,
-        proxy owns endpoint/auth/model-alias, tees to runDir/http.jsonl
-  → L0 providers.mjs: registry, vanilla/Foundry normalization, model aliases
+L3 ORCHESTRATION  the caller: agent calls the primitive N times / Workflow fan-out
+                  (NOT a tool — "single vs many" is call count)
+L2 ERGONOMICS     commands (/continue /models /summary), the `takeover` handoff subagent
+                  (50K context-gathering), result skills (verbatim, SAVED-path images)
+L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
+                  scripts/codex (review, image) + prompts/ — mode dispatch matrix
+L0 MECHANISM      shared/: providers routing · spawn-child · anthropic-http ·
+                  codex/{app-server,task,session} · session registry · observe proxy
 ```
 
 ## File Structure
 
 ```
 fabric/
-├── shared/                  Bundled engine layer (DO NOT edit here — edit cc-market/shared/)
-│   ├── providers.mjs        L0 provider registry/routing (single source of truth)
+├── shared/                  Bundled engine layer L0 (DO NOT edit — edit cc-market/shared/)
+│   ├── providers.mjs        Provider registry/routing (single source of truth)
 │   ├── spawn-child.mjs      Claude child engine: exe resolution, provider env, stream-json
-│   ├── open-session.mjs     Persistent multi-turn claude/API child session (stream-json)
+│   ├── open-session.mjs     Persistent multi-turn claude/API child (stream-json)
 │   ├── session.mjs          Provider-dispatching opener + in-process session registry
-│   ├── codex/session.mjs    Persistent multi-turn codex session (app-server thread)
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
-│   ├── observe-proxy.mjs    Observe proxy: request buffered+remapped, SSE streamed
-│   ├── observe-reader.mjs   Capture reader: loadRows / mainTurns / summarize
-│   └── codex/               Codex app-server client + task runner + binary discovery
+│   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
+│   └── codex/               app-server client · task · session · discovery
 ├── scripts/
-│   └── mcp-server.mjs       MCP stdio server (JSON-RPC): list_providers / resolve_model / run_task
-├── tests/                   mcp-server + observe-proxy tests (node:test)
+│   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
+│   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
+│   │                        wrapper), callers (codex/API adapters), trace, errors
+│   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
+├── prompts/{task,review}.md L1 system prompts (mode → prompt)
+├── commands/                L2: continue.md · models.md · summary.md
+├── agents/takeover.md       L2: handoff subagent (context-gather → one call)
+├── skills/                  L2: takeover-result (verbatim) · codex-image-result (SAVED paths)
+├── tests/                   node:test suites
 ├── .claude/rules/           Injected every session (invariants only)
 ├── CLAUDE.md                Entry point → @AGENTS.md
 └── AGENTS.md                This file
@@ -45,22 +56,32 @@ fabric/
 
 ## MCP Server
 
-`mcp-server.mjs` implements JSON-RPC 2.0 over stdin/stdout (line transport; framed
-encoding supported on send). Tools:
+`mcp-server.mjs` implements JSON-RPC 2.0 over stdin/stdout (line + Content-Length framed
+transport — framed needed for Codex MCP startup). Tools:
 
 | Tool | Input | Routes to |
 |---|---|---|
-| `list_providers` | (none) | `listModels()` |
-| `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native providers: no remapping) |
-| `run_task` | `provider`, `prompt`, `model?`, `observe?`, `passthroughAuth?`, `write?`, `cwd?`, `runDir?`, `timeoutMs?` | codex: `runCodexTask()` (native app-server); others: `spawnChild()` via `claude -p`, optionally behind the observe proxy. `passthroughAuth?` — OAuth providers (claude) with `observe:true`: proxy forwards the child's own Authorization header instead of injecting a static key; defaults on for native claude |
+| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
 | `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}` |
 | `session_send` | `id`, `prompt` | `sendToSession()` → one turn, context retained |
 | `session_close` | `id` | `closeSession()` → tears down the child |
 | `list_sessions` | (none) | `listSessions()` |
+| `list_providers` | (none) | `listModels()` |
+| `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native: no remapping) |
+| `codex_status` | `codexPath?` | `checkCodexStatus()` |
 
-Exported for testing: `TOOLS`, `handleToolCall`, `handleRpcRequest`, `encodeRpcMessage`.
-All handlers take an injectable `deps` (`spawnChild`, `runCodexTask`, `createSession`,
-`sendToSession`, `closeSession`, `listSessions`) for hermetic tests.
+Exported for testing: `TOOLS`, `handleToolCall`, `handleCall`, `handleRpcRequest`,
+`encodeRpcMessage`, the dispatch maps. Handlers take injectable `deps` (`spawnChild`,
+`createSession`, `sendToSession`, `closeSession`, `listSessions`) for hermetic tests.
+
+### The `mode` dispatch matrix (L1 policy)
+
+| mode | codex | claude (native) | API provider |
+|---|---|---|---|
+| task | app-server (`write`, images) | `claude -p` (own OAuth) | raw HTTP completion |
+| agent | app-server | `claude -p` + harness | `claude -p` + provider env (NOT raw HTTP) |
+| review | native `review/start` | task + `review.md` prompt | task + `review.md` prompt |
+| image-generate / image-edit | app-server | — (ProviderError) | — |
 
 ### Persistent sessions — the server IS the daemon
 

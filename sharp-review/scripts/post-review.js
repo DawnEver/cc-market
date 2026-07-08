@@ -79,7 +79,7 @@ if (rescan) {
 //
 // --raw <file>: raw per-reviewer findings + reviewer metadata. Merge + render run HERE
 // (via shared lib) instead of inside the host fan-out, so any host — a Claude Code worker
-// subagent or Codex (spawn_agent / takeover call_model) — only has to collect raw reviewer
+// subagent or Codex (spawn_agent / fabric call) — only has to collect raw reviewer
 // output and hand it off. This keeps SR-id assignment and markdown rendering in one place,
 // producing byte-identical output across hosts.
 

@@ -5,7 +5,7 @@ When the takeover task references image files (paths ending in .png/.jpg/.jpeg/.
 ## Step 1 — Locate
 Use Glob or Read to verify each image file exists and is readable.
 
-## Step 2 — Pass paths to call_model
+## Step 2 — Pass paths to call
 Pass images as the `images` parameter with ONLY `path` and `media_type` — the MCP server
 reads files and base64-encodes them directly. Do NOT base64-encode yourself; do NOT read
 image file contents.

@@ -2,7 +2,7 @@
 name: takeover
 description: Hand off the current task to another AI model — use when the user wants a different model to take over investigation, debugging, or a substantial coding task
 # model: inherited from session (context-gathering only; remote model selected server-side)
-tools: mcp__plugin_takeover_takeover__call_model, mcp__plugin_takeover_takeover__list_models, Bash, Read, Glob, Grep
+tools: mcp__plugin_fabric_fabric__call, mcp__plugin_fabric_fabric__list_providers, Bash, Read, Glob, Grep
 skills:
   - takeover-result
 ---
@@ -38,16 +38,16 @@ The remote model has NO filesystem access. Package everything inline.
 → Read `prompts/review.md` for the adversarial review system prompt. The git diff is the primary context.
 
 - If no provider is specified and the task is ambiguous (user didn't say "use codex/claude/deepseek"):
-  - Call `list_models` via MCP to list available providers.
+  - Call `list_providers` via MCP to list available providers.
   - Present the list to the user and ask which provider to use.
   - Do NOT proceed to Phase 3 until a provider is chosen.
 
 ## Phase 3 — Call
-Call `call_model` exactly ONCE with:
+Call `call` exactly ONCE with:
 - `mode` — from Phase 1.
 - `images` — array of `{path, data, media_type}` (omit if none).
 - `write` — true if `--write` was detected and provider is codex (omit otherwise).
-- `userPrompt`:
+- `prompt`:
   ```
   <command>
   [FULL raw user request, e.g. "--provider claude review the skill"]
@@ -61,4 +61,4 @@ Call `call_model` exactly ONCE with:
   ```
 
 ## Phase 4 — Return
-Return `call_model` output verbatim. No commentary.
+Return `call` output verbatim. No commentary.

@@ -18,5 +18,5 @@ Providers other than `claude`/`codex` are configured in `~/.claude/claude_env_se
 providers, or `{ native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku }`
 for API providers.
 
-If `call_model` errors with a config-related message, check that the `env:<provider>` block
+If `call` errors with a config-related message, check that the `env:<provider>` block
 exists and has the required keys above.
