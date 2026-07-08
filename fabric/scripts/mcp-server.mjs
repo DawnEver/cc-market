@@ -10,10 +10,11 @@
 //                      stateless orchestration primitive (spawn N concurrently for fan-out).
 //                      claude/deepseek run via `claude -p` (optionally behind the observe
 //                      proxy); provider="codex" runs via the codex app-server (native).
-//
-// Roadmap (next slice — needs a handle-holding daemon, since MCP calls are discrete but
-// child sessions are persistent): spawn_session / session_send / session_close for
-// PERSISTENT multi-turn sessions. Not stubbed here — declared so the surface is honest.
+//   - spawn_session / session_send / session_close / list_sessions : PERSISTENT multi-turn
+//                      sessions. The "handle-holding daemon" is this very server — an MCP
+//                      stdio process is long-lived, so it holds live session handles in an
+//                      in-process registry (shared/session.mjs) across discrete tool calls.
+//                      Context is retained across turns; codex + claude + API alike.
 
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
@@ -23,6 +24,7 @@ import { listModels, loadProviderConfig, resolveModelFromId } from '../shared/pr
 import { spawnChild } from '../shared/spawn-child.mjs';
 import { summarizeFile } from '../shared/observe-reader.mjs';
 import { runCodexTask } from '../shared/codex/task.mjs';
+import { createSession, sendToSession, closeSession, listSessions } from '../shared/session.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginJson = JSON.parse(readFileSync(join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -76,11 +78,56 @@ export const TOOLS = [
       required: ['provider', 'prompt'],
     },
   },
+  {
+    name: 'spawn_session',
+    description: 'Open a PERSISTENT multi-turn child session and return its id. Unlike run_task (one-shot, stateless), the session stays alive across calls and retains context between turns. Drive it with session_send, then session_close when done. codex uses a native app-server thread; claude/API providers use a long-lived stream-json child.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string', description: 'Provider key: "codex", "claude", "deepseek", …' },
+        model: { type: 'string', description: 'Model id. Optional — uses provider default.' },
+        write: { type: 'boolean', description: 'codex only: enable tools so the session can act (git, edit files). Default false (read-only).' },
+        cwd: { type: 'string', description: 'Working dir for the session. Defaults to the server cwd.' },
+        observe: { type: 'boolean', description: 'Non-codex: route through the observe proxy + capture jsonl. Default false.' },
+      },
+      required: ['provider'],
+    },
+  },
+  {
+    name: 'session_send',
+    description: 'Send one turn to a persistent session (from spawn_session) and return its reply. Context from earlier turns is retained. Turns are serialized per session — await each before the next.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Session id returned by spawn_session.' },
+        prompt: { type: 'string', description: 'The turn text to send.' },
+      },
+      required: ['id', 'prompt'],
+    },
+  },
+  {
+    name: 'session_close',
+    description: 'Close a persistent session and free its child process. Always close sessions you spawn.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Session id returned by spawn_session.' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'list_sessions',
+    description: 'List the currently open persistent sessions held by this server (id, provider, turn count).',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 export async function handleToolCall(name, args = {}, deps = {}) {
   const _spawnChild = deps.spawnChild || spawnChild;
   const _runCodexTask = deps.runCodexTask || runCodexTask;
+  const _createSession = deps.createSession || createSession;
+  const _sendToSession = deps.sendToSession || sendToSession;
+  const _closeSession = deps.closeSession || closeSession;
+  const _listSessions = deps.listSessions || listSessions;
   switch (name) {
     case 'list_providers':
       return textResult(listModels());
@@ -109,6 +156,25 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       if (res.code !== 0) parts.push('', `(exit code ${res.code})`, res.stderr?.trim() || '');
       return textResult(parts.join('\n'));
     }
+    case 'spawn_session': {
+      if (!args.provider) throw new Error('spawn_session: provider is required');
+      const desc = await _createSession({
+        provider: args.provider, model: args.model, write: !!args.write,
+        cwd: args.cwd || process.cwd(), observe: !!args.observe,
+      });
+      return textResult(JSON.stringify(desc));
+    }
+    case 'session_send': {
+      if (!args.id || !args.prompt) throw new Error('session_send: id and prompt are required');
+      const res = await _sendToSession(args.id, args.prompt);
+      return textResult(res.text || '(no output)');
+    }
+    case 'session_close': {
+      if (!args.id) throw new Error('session_close: id is required');
+      return textResult(JSON.stringify(await _closeSession(args.id)));
+    }
+    case 'list_sessions':
+      return textResult(JSON.stringify(_listSessions()));
     default:
       throw new Error(`Tool not found: ${name}`);
   }

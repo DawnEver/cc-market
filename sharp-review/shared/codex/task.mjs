@@ -88,7 +88,7 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
   };
 }
 
-function extractItemText(item) {
+export function extractItemText(item) {
   if (item.text) return item.text;
   if (item.content) {
     if (typeof item.content === "string") return item.content;

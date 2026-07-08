@@ -111,13 +111,21 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
   behind the observe proxy. `provider: "codex"` runs via the codex app-server instead (codex
   is native — not Anthropic HTTP); pass `write: true` to enable its tools (run git, edit
   files) and `cwd` to point it at the target repo. Spawn several concurrently for fan-out.
+- `spawn_session` / `session_send` / `session_close` / `list_sessions` — **persistent
+  multi-turn** sessions over MCP. `spawn_session` returns an id; each `session_send` is one
+  turn with context retained from earlier turns; `session_close` frees the child. Works for
+  codex (app-server thread), claude, and API providers alike. Example:
 
-## Roadmap (next slice)
+  ```json
+  { "tool": "spawn_session", "arguments": { "provider": "codex", "cwd": "/repo", "write": true } }
+  → { "id": "sess-1-...", "provider": "codex", "nativeId": "thread-abc" }
+  { "tool": "session_send", "arguments": { "id": "sess-1-...", "prompt": "Investigate the failing test." } }
+  { "tool": "session_send", "arguments": { "id": "sess-1-...", "prompt": "Now fix it." } }   // remembers the investigation
+  { "tool": "session_close", "arguments": { "id": "sess-1-..." } }
+  ```
 
-- MCP `spawn_session` / `session_send` / `session_close` — expose `openSession` over MCP so a
-  running orchestrator agent can hold sessions across its own chat turns. Needs a handle-holding daemon
-  (MCP calls are discrete; the process must outlive them). The library primitive
-  (`openSession`) already exists; this is the transport wrapper.
+  No separate daemon: the MCP stdio server is itself long-lived, so it holds the live session
+  handles in an in-process registry across discrete tool calls.
 
 ## Auth note
 

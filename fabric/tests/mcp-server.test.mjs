@@ -8,7 +8,8 @@ import { TOOLS, handleToolCall } from '../scripts/mcp-server.mjs';
 const text = (r) => r.content[0].text;
 
 test('TOOLS registers the expected tool names', () => {
-  assert.deepEqual(TOOLS.map((t) => t.name).sort(), ['list_providers', 'resolve_model', 'run_task']);
+  assert.deepEqual(TOOLS.map((t) => t.name).sort(),
+    ['list_providers', 'list_sessions', 'resolve_model', 'run_task', 'session_close', 'session_send', 'spawn_session']);
 });
 
 test('unknown tool throws', async () => {
@@ -87,4 +88,47 @@ test('run_task codex path defaults write=false and cwd=process.cwd()', async () 
   await handleToolCall('run_task', { provider: 'codex', prompt: 'x' }, { runCodexTask: fakeRunCodexTask });
   assert.equal(codexArgs.write, false);
   assert.equal(codexArgs.cwd, process.cwd());
+});
+
+// ── Persistent session tools ─────────────────────────────────────────
+
+test('spawn_session creates a session and returns its descriptor', async () => {
+  let seen = null;
+  const fakeCreate = async (opts) => { seen = opts; return { id: 'sess-1', provider: opts.provider, nativeId: 'thread-1' }; };
+  const res = await handleToolCall('spawn_session', { provider: 'codex', write: true, cwd: '/repo' }, { createSession: fakeCreate });
+  assert.equal(seen.provider, 'codex');
+  assert.equal(seen.write, true);
+  assert.equal(seen.cwd, '/repo');
+  assert.deepEqual(JSON.parse(text(res)), { id: 'sess-1', provider: 'codex', nativeId: 'thread-1' });
+});
+
+test('spawn_session requires provider', async () => {
+  await assert.rejects(handleToolCall('spawn_session', {}), /provider is required/);
+});
+
+test('session_send routes to the registry and returns reply text', async () => {
+  let seen = null;
+  const fakeSend = async (id, prompt) => { seen = { id, prompt }; return { text: 'the reply', turn: 3 }; };
+  const res = await handleToolCall('session_send', { id: 'sess-1', prompt: 'continue' }, { sendToSession: fakeSend });
+  assert.deepEqual(seen, { id: 'sess-1', prompt: 'continue' });
+  assert.equal(text(res), 'the reply');
+});
+
+test('session_send requires id + prompt', async () => {
+  await assert.rejects(handleToolCall('session_send', { id: 'x' }), /required/);
+  await assert.rejects(handleToolCall('session_send', { prompt: 'x' }), /required/);
+});
+
+test('session_close closes via the registry', async () => {
+  let closedId = null;
+  const fakeClose = async (id) => { closedId = id; return { id, exitCode: 0, turns: 2 }; };
+  const res = await handleToolCall('session_close', { id: 'sess-1' }, { closeSession: fakeClose });
+  assert.equal(closedId, 'sess-1');
+  assert.equal(JSON.parse(text(res)).exitCode, 0);
+});
+
+test('list_sessions returns the open-session list', async () => {
+  const fakeList = () => [{ id: 'sess-1', provider: 'codex', turns: 2, createdAt: 0 }];
+  const res = await handleToolCall('list_sessions', {}, { listSessions: fakeList });
+  assert.equal(JSON.parse(text(res))[0].id, 'sess-1');
 });
