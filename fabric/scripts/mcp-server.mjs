@@ -40,7 +40,7 @@ import {
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
-import { withSharedClient } from "../engine/codex/app-server.mjs";
+import { withPooledClient } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId } from "../engine/providers.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
@@ -226,14 +226,14 @@ function emitTrace(data, provider, resolvedModel, mode) {
 async function dispatchCodexTask({ userPrompt, systemPrompt, model, write, resolvedImages }) {
   const hasImages = resolvedImages.length > 0;
   process.stderr.write(`fabric-mcp: calling codex (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`);
-  const data = await withSharedClient((client) =>
+  const data = await withPooledClient((client) =>
     callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, hasImages ? resolvedImages : null, client));
   return { data, resolvedModel: model || "default" };
 }
 
 async function dispatchCodexAgent({ userPrompt, systemPrompt, model, write, resolvedImages }) {
   process.stderr.write(`fabric-mcp: agent mode — provider=codex model=${model || "(none)"}\n`);
-  const data = await withSharedClient((client) =>
+  const data = await withPooledClient((client) =>
     callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, resolvedImages.length > 0 ? resolvedImages : null, client));
   return { data, resolvedModel: model || "default" };
 }
@@ -242,21 +242,21 @@ async function dispatchCodexReview({ userPrompt, model, imageURIs }) {
   process.stderr.write(`fabric-mcp: codex review (adversarial)...\n`);
   const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
   const { runCodexReview } = await import("./codex/review.mjs");
-  const data = await withSharedClient((client) => runCodexReview(promptWithImages, model || null, null, process.cwd(), client));
+  const data = await withPooledClient((client) => runCodexReview(promptWithImages, model || null, null, process.cwd(), client));
   return { data, resolvedModel: model || "default" };
 }
 
 async function dispatchCodexImageGenerate({ userPrompt }) {
   process.stderr.write(`fabric-mcp: codex image generate (app-server)...\n`);
   const { generateImage } = await import("./codex/image.mjs");
-  const data = await withSharedClient((client) => generateImage(userPrompt, { client }));
+  const data = await withPooledClient((client) => generateImage(userPrompt, { client }));
   return { data, resolvedModel: "codex-image-gen" };
 }
 
 async function dispatchCodexImageEdit({ userPrompt, systemPrompt }) {
   process.stderr.write(`fabric-mcp: codex image edit (app-server)...\n`);
   const { handleImageEdit } = await import("./codex/image.mjs");
-  const data = await withSharedClient((client) => handleImageEdit(userPrompt, systemPrompt, { client }));
+  const data = await withPooledClient((client) => handleImageEdit(userPrompt, systemPrompt, { client }));
   return { data, resolvedModel: "codex-image-edit" };
 }
 

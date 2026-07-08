@@ -246,3 +246,145 @@ export function withSharedClient(fn, { timeout = 30000, _getClient = getSharedCl
     throw err;
   });
 }
+
+// ── Client pool (concurrent codex calls) ─────────────────────────────
+// withSharedClient serializes ALL codex work onto one client (one lane). For a
+// fan-out — e.g. many image generations at once — that is the bottleneck.
+//
+// A pool instead keeps up to `size` warm app-server clients and lends each to
+// one call at a time. Exclusive checkout gives every call the SAME isolation the
+// mutex did (its own notification stream, no cross-talk — exactly how the
+// persistent-session path already runs one client per session), while up to
+// `size` calls proceed in parallel. Released clients stay warm for reuse; a
+// crashed one is dropped and replaced on demand.
+
+// A pooled call borrows one CodexAppServerClient for its EXCLUSIVE use. That
+// gives it the same isolation the mutex did — each client owns a private
+// per-instance notification registry (this.notificationHandlers), so clearing
+// handlers on the client you hold can never touch another call's client.
+
+// Guard config: a non-positive/non-finite size would deadlock (every caller
+// queues, nothing ever creates) or go unbounded (Infinity). Clamp to a positive
+// integer. (SR-048/049)
+function sanitizeSize(value, fallback) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+}
+
+const DEFAULT_POOL_SIZE = sanitizeSize(process.env.FABRIC_CODEX_POOL_SIZE, 8);
+
+async function defaultCreateClient() {
+  const client = new CodexAppServerClient();
+  await client.start();
+  return client;
+}
+
+function makePool(size, createClient) {
+  return { size, createClient, idle: [], total: 0, waiters: [], closed: false };
+}
+
+// Two pools: the production singleton (one warm pool, keyed only by size), and an
+// isolated pool for an injected factory so a test's _createClient can never swap
+// out or orphan the live pool. (SR-047/058)
+let _pool = null;
+let _testPool = null;
+
+function resolvePool(size, createClient, isTest) {
+  if (isTest) {
+    if (!_testPool || _testPool.size !== size || _testPool.createClient !== createClient) {
+      _testPool = makePool(size, createClient);
+    }
+    return _testPool;
+  }
+  if (!_pool || _pool.size !== size) _pool = makePool(size, createClient);
+  return _pool;
+}
+
+// Fill free capacity with fresh clients for queued waiters. Called from every
+// slot-freeing path so a create failure or dead-client release can never leave a
+// waiter stranded behind capacity that has already been freed — the invariant
+// "waiters non-empty ⇒ total === size" is repaired here, not just asserted. (SR-044/045/053)
+function pumpWaiters(pool) {
+  while (!pool.closed && pool.waiters.length && pool.total < pool.size) {
+    const waiter = pool.waiters.shift();
+    pool.total++;
+    pool.createClient().then(
+      (client) => {
+        if (pool.closed) { client.stop?.(); waiter.reject(new Error("codex pool closed")); return; }
+        waiter.resolve(client);
+      },
+      (err) => { pool.total--; waiter.reject(err); pumpWaiters(pool); },
+    );
+  }
+}
+
+async function acquireFromPool(pool) {
+  // Prefer a warm, live client.
+  while (pool.idle.length) {
+    const c = pool.idle.pop();
+    if (!c._closed) return c;
+    pool.total--; // discard a client that died while idle
+  }
+  // Room to grow: create a new client (count the slot before awaiting so
+  // concurrent acquirers don't oversubscribe).
+  if (pool.total < pool.size) {
+    pool.total++;
+    try {
+      return await pool.createClient();
+    } catch (err) {
+      pool.total--;
+      pumpWaiters(pool); // freed capacity — let any queued waiters try
+      throw err;
+    }
+  }
+  // At capacity — wait for a release (or a pumped creation) to hand us a client.
+  return new Promise((resolve, reject) => pool.waiters.push({ resolve, reject }));
+}
+
+function releaseToPool(pool, client) {
+  const dead = !client || client._closed;
+  if (dead) {
+    pool.total--;
+    pumpWaiters(pool); // a dead release frees a slot — refill for waiters
+    return;
+  }
+  if (pool.closed) { client.stop?.(); pool.total--; return; } // pool was reset under us
+  const waiter = pool.waiters.shift();
+  if (waiter) { waiter.resolve(client); return; } // hand the live client straight over
+  pool.idle.push(client); // keep it warm
+}
+
+/**
+ * Run `fn(client)` on a pooled codex client, allowing up to `size` calls to run
+ * concurrently. Drop-in concurrent alternative to withSharedClient.
+ * @param {Function} fn                receives a live CodexAppServerClient
+ * @param {object}   [opts]
+ * @param {number}   [opts.size]       max concurrent clients (default 8 / $FABRIC_CODEX_POOL_SIZE)
+ * @param {Function} [opts._createClient] injectable client factory (tests) — routes to an isolated pool
+ */
+export function withPooledClient(fn, { size, _createClient } = {}) {
+  const isTest = !!_createClient;
+  const pool = resolvePool(sanitizeSize(size, DEFAULT_POOL_SIZE), _createClient || defaultCreateClient, isTest);
+  return (async () => {
+    const client = await acquireFromPool(pool);
+    try {
+      return await fn(client);
+    } finally {
+      releaseToPool(pool, client);
+    }
+  })();
+}
+
+// Test hook: close idle clients, reject queued waiters, and drop pool state.
+// Checked-out clients aren't tracked; the `closed` flag makes their eventual
+// release close them instead of re-idling into an orphaned pool. (SR-046/055)
+export function _resetPool() {
+  for (const pool of [_pool, _testPool]) {
+    if (!pool) continue;
+    pool.closed = true;
+    for (const c of pool.idle.splice(0)) c.stop?.();
+    for (const w of pool.waiters.splice(0)) w.reject(new Error("codex pool reset"));
+  }
+  _pool = null;
+  _testPool = null;
+}

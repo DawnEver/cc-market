@@ -1,6 +1,6 @@
 {
   "name": "fabric",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Multi-provider agent session fabric — any agent (Claude / Codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes) + persistent multi-turn sessions + a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
   "author": {
     "name": "Mingyang Bao"
