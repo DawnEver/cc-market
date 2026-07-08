@@ -75,10 +75,12 @@ function makeFakeCodexClient() {
       this.sends.push({ method, params });
       if (method === 'thread/start') { emit('thread/started', { thread: { id: 'thread-1' } }); return { thread: { id: 'thread-1' } }; }
       if (method === 'turn/start') {
-        // Echo the turn input back as an item, then complete the turn.
         const said = params.input?.[0]?.text || '';
         queueMicrotask(() => {
-          emit('item/completed', { item: { text: `codex:${said}` } });
+          // The real app-server echoes the input as a userMessage item BEFORE the answer;
+          // extractItemText must skip it so the reply is just the agentMessage.
+          emit('item/completed', { item: { type: 'userMessage', content: [{ type: 'text', text: said }] } });
+          emit('item/completed', { item: { type: 'agentMessage', text: `codex:${said}` } });
           emit('turn/completed', { usage: { input_tokens: 1, output_tokens: 2 } });
         });
         return { id: 'turn' };

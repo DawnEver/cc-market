@@ -1,6 +1,6 @@
-import { openDb, closeDb, getMeta, setMeta, upsertTakeoverTokens } from '../scripts/db.mjs';
+import { openDb, closeDb, getMeta, setMeta, upsertFabricTokens } from '../scripts/db.mjs';
 import { getProjectName, getGitRemote, getProjectRoot, normalizeRemoteUrl, todayISO, ERROR_LOG, rotateErrorLog } from '../scripts/lib.mjs';
-import { scanTakeoverTraces } from '../scripts/ingest.mjs';
+import { scanFabricTraces } from '../scripts/ingest.mjs';
 import { scanAll } from '../scripts/scan.mjs';
 import { appendFileSync } from 'node:fs';
 import { spawn } from "../shared/spawn.mjs";
@@ -62,22 +62,22 @@ async function main() {
           logError(`scan failed: ${e.message}`);
         }
 
-        // Fold in takeover traces (NDJSON contract, not in the transcript).
+        // Fold in fabric traces (NDJSON contract, not in the transcript).
         try {
           const cwd = input.cwd || process.cwd();
           const project = getProjectName(cwd);
           const remote = getGitRemote(cwd);
           const repoOrigin = remote ? normalizeRemoteUrl(remote) : getProjectRoot(cwd);
           const date = todayISO();
-          const takeoverKey = `takeover_ts_${date}`;
-          const lastTs = getMeta(takeoverKey);
-          const { totalTokens, maxTs } = scanTakeoverTraces(date, lastTs);
+          const fabricKey = `fabric_ts_${date}`;
+          const lastTs = getMeta(fabricKey);
+          const { totalTokens, maxTs } = scanFabricTraces(date, lastTs);
           if (totalTokens > 0) {
-            if (maxTs) setMeta(takeoverKey, maxTs);
-            upsertTakeoverTokens(date, project, totalTokens, repoOrigin || '');
+            if (maxTs) setMeta(fabricKey, maxTs);
+            upsertFabricTokens(date, project, totalTokens, repoOrigin || '');
           }
         } catch (e) {
-          logError(`takeover trace ingest failed: ${e.message}`);
+          logError(`fabric trace ingest failed: ${e.message}`);
         }
 
         // Push encrypted daily snapshot. On Stop the session continues, so push

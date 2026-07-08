@@ -1,4 +1,4 @@
-// trace.mjs — TraceMe NDJSON emission + structured request logging (stderr ndjson).
+// trace.mjs — TraceMe NDJSON emission (fabric provider traces) + structured request logging (stderr ndjson).
 // Re-exported via scripts/lib.mjs.
 import fs from "node:fs";
 import os from "node:os";
@@ -8,7 +8,7 @@ import process from "node:process";
 // ── TraceMe integration (NDJSON contract, no code dependency) ───────────────
 
 const TRACEME_DIR = path.join(os.homedir(), '.claude', 'traceme');
-const TAKEOVER_TRACES_FILE = path.join(TRACEME_DIR, 'takeover_traces.jsonl');
+const FABRIC_TRACES_FILE = path.join(TRACEME_DIR, 'fabric_traces.jsonl');
 
 function parseTokenCount(s) {
   const t = String(s).trim().toLowerCase();
@@ -22,10 +22,10 @@ export function extractUsageFromStderr(stderr) {
   return { input_tokens: parseTokenCount(m[1]), output_tokens: parseTokenCount(m[2]) };
 }
 
-export function emitTakeoverTrace(entry) {
+export function emitProviderTrace(entry) {
   try {
     if (!fs.existsSync(TRACEME_DIR)) fs.mkdirSync(TRACEME_DIR, { recursive: true });
-    fs.appendFileSync(TAKEOVER_TRACES_FILE, JSON.stringify(entry) + '\n');
+    fs.appendFileSync(FABRIC_TRACES_FILE, JSON.stringify(entry) + '\n');
   } catch {}
 }
 
@@ -33,11 +33,11 @@ export function emitTakeoverTrace(entry) {
 
 let _requestSeq = 0;
 
-export function logTakeoverRequest(startTs, provider, model, mode, status, { durationMs, inputTokens, outputTokens, error } = {}) {
+export function logProviderRequest(startTs, provider, model, mode, status, { durationMs, inputTokens, outputTokens, error } = {}) {
   _requestSeq++;
   const entry = {
     ts: startTs,
-    request_id: `tk-${startTs.replace(/[^0-9]/g, '').slice(0, 14)}-${String(_requestSeq).padStart(4, '0')}`,
+    request_id: `fb-${startTs.replace(/[^0-9]/g, '').slice(0, 14)}-${String(_requestSeq).padStart(4, '0')}`,
     provider,
     model: model || 'default',
     mode: mode || 'task',

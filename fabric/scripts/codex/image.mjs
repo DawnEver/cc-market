@@ -191,6 +191,7 @@ function clearClientNotifications(cl) {
 }
 
 function extractItemText(item) {
+  if (item?.type === "userMessage") return ""; // skip the app-server's input echo
   if (item.text) return item.text;
   if (item.content) {
     if (typeof item.content === "string") return item.content;

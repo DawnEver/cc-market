@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import {
   openDb, closeDb,
   replaceSession,
-  upsertTakeoverTokens,
+  upsertFabricTokens,
   queryDailySummary, queryToolUsage, queryModelBreakdown,
   querySkillUsage, querySessionStats, queryDbStats, deleteSession, allSessionIds,
   queryCategoryBreakdown, queryModelFacts, querySessionFacts,
@@ -129,8 +129,8 @@ describe('DB Layer', { concurrency: 1 }, () => {
     assert.equal(categorizeTool('Edit'), 'builtin');
   });
 
-  it('upsertTakeoverTokens folds into daily summary total', () => {
-    upsertTakeoverTokens('2026-06-09', 'test-project', 1000, 'github.com/user/test-project');
+  it('upsertFabricTokens folds into daily summary total', () => {
+    upsertFabricTokens('2026-06-09', 'test-project', 1000, 'github.com/user/test-project');
     const rows = queryDailySummary('2026-06-09');
     assert.equal(rows[0].total_tokens, 3250);
   });

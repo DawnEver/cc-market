@@ -55,7 +55,7 @@ export function extractText(data) {
     .join("\n");
   if (!text && content.length > 0) {
     const types = [...new Set(content.map((b) => b.type))].join(", ");
-    process.stderr.write(`takeover: warning — response contained no text blocks (got: ${types})\n`);
+    process.stderr.write(`fabric: warning — response contained no text blocks (got: ${types})\n`);
   }
   return text;
 }

@@ -18,7 +18,7 @@ scan-time `*_cost` columns are kept only as a fallback for rows with no per-mode
 ```
 SessionStart → pull cross-device snapshots
 Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace session rows
-                → fold in takeover traces → push encrypted daily snapshot (throttled)
+                → fold in fabric traces → push encrypted daily snapshot (throttled)
 ```
 
 ## File Map
@@ -29,7 +29,7 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 | `hooks/hooks.json` | Registers SessionStart, Stop, SessionEnd |
 | `scripts/scan.mjs` | Incremental transcript scanner: per-file (size:mtime) cursor, message-id dedup, derives session/model/tool/skill facts |
 | `scripts/db.mjs` | SQLite wrapper: schema, `replaceSession`, derived queries |
-| `scripts/ingest.mjs` | Takeover NDJSON trace scanner (only non-transcript source) |
+| `scripts/ingest.mjs` | Fabric provider NDJSON trace scanner (only non-transcript source) |
 | `scripts/report.mjs` | Markdown report generator: per-project stats, model/tool usage |
 | `scripts/commands/dashboard.mjs` | `dashboard` command: interactive HTML dashboard — embeds a 90-day flat fact table + per-device synced facts, renders/filters client-side with ECharts (CDN) incl. all-devices vs. single-device view; `buildDashboardHtml` exported for tests |
 | `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights, dashboard |

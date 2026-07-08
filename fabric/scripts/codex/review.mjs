@@ -47,6 +47,7 @@ export async function runCodexReview(diff, model, context, cwd, client = null) {
   client.onNotification("item/completed", (params) => {
     const item = params.item || {};
     if (item.usage && !resultUsage) resultUsage = item.usage;
+    if (item.type === "userMessage") return; // skip the app-server's input echo
     if (item.text) resultText += item.text;
     else if (item.content) {
       if (typeof item.content === "string") resultText += item.content;

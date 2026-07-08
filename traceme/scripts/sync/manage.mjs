@@ -133,7 +133,7 @@ export async function purgeLocalData() {
   db.exec('DELETE FROM session_tools');
   db.exec('DELETE FROM session_skills');
   db.exec('DELETE FROM sessions');
-  db.exec('DELETE FROM daily_takeover');
+  db.exec('DELETE FROM daily_fabric');
   db.exec("DELETE FROM traceme_meta WHERE key LIKE 'cur:%'");
 
   // Refresh the cached origin/main ref so merged reports reflect the remote.

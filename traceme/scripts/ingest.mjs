@@ -2,20 +2,20 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TRACEME_DIR } from './lib.mjs';
 
-// --- Takeover trace scanning (NDJSON contract, no code dependency) ---
+// --- Fabric provider trace scanning (NDJSON contract, no code dependency) ---
 //
-// Token usage from takeover (other-model) requests does not flow through the
-// Claude Code transcript, so it cannot be derived by scan.mjs. The takeover
+// Token usage from fabric provider (other-model) requests does not flow through the
+// Claude Code transcript, so it cannot be derived by scan.mjs. The fabric
 // plugin appends one NDJSON record per request to this file; we fold the totals
-// into daily_takeover.
+// into daily_fabric.
 
-const TAKEOVER_TRACES_FILE = join(TRACEME_DIR, 'takeover_traces.jsonl');
+const FABRIC_TRACES_FILE = join(TRACEME_DIR, 'fabric_traces.jsonl');
 
-export function scanTakeoverTraces(date, since = null) {
+export function scanFabricTraces(date, since = null) {
   const traces = [];
   let maxTs = since || null;
   try {
-    const raw = readFileSync(TAKEOVER_TRACES_FILE, 'utf8');
+    const raw = readFileSync(FABRIC_TRACES_FILE, 'utf8');
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue;
       try {

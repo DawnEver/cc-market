@@ -25,7 +25,7 @@ export async function spawnClaudeP(userPrompt, opts = {}) {
     timeoutMs = 600000, ...rest
   } = opts;
   const label = provider || "claude";
-  process.stderr.write(`mcp-takeover: spawning claude (provider=${label} model=${model || "default"})...\n`);
+  process.stderr.write(`fabric: spawning claude (provider=${label} model=${model || "default"})...\n`);
 
   const res = await spawnChild({
     ...rest,

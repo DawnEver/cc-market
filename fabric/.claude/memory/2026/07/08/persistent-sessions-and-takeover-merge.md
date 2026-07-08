@@ -105,7 +105,26 @@ Plugin name stays `fabric`; the takeover *capability* keeps its name inside it
   `call` on codex returns the computed answer. Codex app-server echoes input text items before
   the answer — a PRE-EXISTING quirk (seen in old run_task too), not a merge regression.
 
-Deferred (next slice): extract `shared/mcp-rpc.mjs` (transport still ~140 lines, but now only
-one server uses it, so lower priority); the codex input-echo wart; renaming internal
-"mcp-takeover:" stderr prefixes (left to avoid touching the `takeover_traces.jsonl` traceme
-contract).
+## Follow-up cleanup — DONE 2026-07-08
+
+All three deferred items completed same day:
+
+- **`shared/mcp-rpc.mjs` extracted** — the ~140-line JSON-RPC stdio transport (encode /
+  framed+line parse / dispatch / read loop) now lives in one place via
+  `createStdioServer({serverInfo, tools, handleToolCall, label})`. fabric's mcp-server dropped
+  to a thin wrapper (re-exports send/handleRpcRequest/encodeRpcMessage for tests). Own test
+  suite `shared/tests/mcp-rpc.test.mjs`. Bundled to all plugins.
+- **Codex input-echo wart fixed** — the app-server emits an `item/completed` of `type:
+  "userMessage"` (the input echo) before the `agentMessage` answer. `extractItemText`
+  (shared/codex/task.mjs) + review.mjs + image.mjs now skip `userMessage` items. Verified
+  live: codex task returns just `"12"` instead of `"<prompt echo>12"`.
+- **Naming cleanup + traceme contract renamed** — stderr prefixes `mcp-takeover:` / `takeover:`
+  → `fabric:`; trace fns `emitTakeoverTrace`→`emitProviderTrace`, `logTakeoverRequest`→
+  `logProviderRequest`; request_id prefix `tk-`→`fb-`. The traceme NDJSON contract
+  `takeover_traces.jsonl` → `fabric_traces.jsonl` renamed on BOTH ends (fabric emitter +
+  traceme `ingest.mjs`), plus traceme internals `scanTakeoverTraces`→`scanFabricTraces`,
+  `upsertTakeoverTokens`→`upsertFabricTokens`, `takeoverByRepo`→`fabricByRepo`, DB table
+  `daily_takeover`→`daily_fabric`, hook meta key `takeover_ts_`→`fabric_ts_`. Backward-compat
+  is a non-concern (repo standard) so no shim; existing per-user telemetry re-derives.
+  `TAKEOVER_CONFIG_PATH` env kept as a compat alias in shared/providers (already had the
+  generic `CC_MARKET_CONFIG_PATH`). Full JS suite 966 pass / 0 fail.

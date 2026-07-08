@@ -19,7 +19,7 @@ import {
   parseCommandBlock,
   callAnthropicAPI,
   loadProviderEnv,
-  logTakeoverRequest,
+  logProviderRequest,
   TakeoverError,
   ConfigError,
   ProviderError,
@@ -660,13 +660,13 @@ describe("TakeoverError classes", () => {
 
 // ── Structured logging ───────────────────────────────────────────────────────
 
-describe("logTakeoverRequest", () => {
+describe("logProviderRequest", () => {
   test("emits valid ndjson to stderr", () => {
     let captured;
     const orig = process.stderr.write;
     process.stderr.write = (data) => { captured = data; return true; };
     try {
-      logTakeoverRequest("2026-06-12T10:00:00Z", "deepseek", "sonnet", "task", "ok", { durationMs: 1234, inputTokens: 500, outputTokens: 300 });
+      logProviderRequest("2026-06-12T10:00:00Z", "deepseek", "sonnet", "task", "ok", { durationMs: 1234, inputTokens: 500, outputTokens: 300 });
       assert.ok(captured, "should emit a log line");
       const entry = JSON.parse(captured);
       assert.equal(entry.provider, "deepseek");
@@ -676,7 +676,7 @@ describe("logTakeoverRequest", () => {
       assert.equal(entry.duration_ms, 1234);
       assert.equal(entry.input_tokens, 500);
       assert.equal(entry.output_tokens, 300);
-      assert.ok(entry.request_id?.startsWith("tk-"));
+      assert.ok(entry.request_id?.startsWith("fb-"));
     } finally {
       process.stderr.write = orig;
     }
@@ -687,7 +687,7 @@ describe("logTakeoverRequest", () => {
     const orig = process.stderr.write;
     process.stderr.write = (data) => { captured = data; return true; };
     try {
-      logTakeoverRequest("2026-06-12T10:00:00Z", "codex", "default", "review", "error", { durationMs: 5000, error: "timeout after 30s" });
+      logProviderRequest("2026-06-12T10:00:00Z", "codex", "default", "review", "error", { durationMs: 5000, error: "timeout after 30s" });
       const entry = JSON.parse(captured);
       assert.equal(entry.status, "error");
       assert.equal(entry.error, "timeout after 30s");

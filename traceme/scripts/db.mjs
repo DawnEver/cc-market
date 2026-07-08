@@ -82,7 +82,7 @@ export function openDb(opts = {}) {
       PRIMARY KEY (session_id, category)
     );
 
-    CREATE TABLE IF NOT EXISTS daily_takeover (
+    CREATE TABLE IF NOT EXISTS daily_fabric (
       date        TEXT NOT NULL,
       repo_origin TEXT NOT NULL DEFAULT '',
       project     TEXT NOT NULL,
@@ -182,12 +182,12 @@ export function setMeta(key, value) {
   db.prepare('INSERT OR REPLACE INTO traceme_meta (key, value) VALUES (?, ?)').run(key, String(value));
 }
 
-// ── Takeover tokens (separate source: not jsonl-derived) ──
+// ── Fabric provider tokens (separate source: not jsonl-derived) ──
 
-export function upsertTakeoverTokens(date, project, tokens, repoOrigin = '') {
+export function upsertFabricTokens(date, project, tokens, repoOrigin = '') {
   if (!db) throw new Error('DB not open');
   db.prepare(`
-    INSERT INTO daily_takeover (date, repo_origin, project, tokens)
+    INSERT INTO daily_fabric (date, repo_origin, project, tokens)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(date, repo_origin) DO UPDATE SET
       tokens = tokens + excluded.tokens,
@@ -195,9 +195,9 @@ export function upsertTakeoverTokens(date, project, tokens, repoOrigin = '') {
   `).run(date, repoOrigin, project, tokens);
 }
 
-function takeoverByRepo(date) {
+function fabricByRepo(date) {
   const out = {};
-  for (const r of db.prepare('SELECT repo_origin, project, tokens FROM daily_takeover WHERE date=?').all(date)) {
+  for (const r of db.prepare('SELECT repo_origin, project, tokens FROM daily_fabric WHERE date=?').all(date)) {
     out[r.repo_origin] = r;
   }
   return out;
@@ -226,11 +226,11 @@ export function queryDailySummary(date) {
     byRepo[r.repo_origin] = r;
   }
 
-  // Fold in takeover tokens (separate source) on the matching repo bucket.
-  for (const [repo, tk] of Object.entries(takeoverByRepo(date))) {
+  // Fold in fabric provider tokens (separate source) on the matching repo bucket.
+  for (const [repo, tk] of Object.entries(fabricByRepo(date))) {
     if (byRepo[repo]) {
       byRepo[repo].total_tokens += tk.tokens;
-      byRepo[repo].billable_tokens += tk.tokens; // takeover tokens are real output, not re-read cache
+      byRepo[repo].billable_tokens += tk.tokens; // fabric provider tokens are real output, not re-read cache
     } else {
       byRepo[repo] = { date, repo_origin: repo, project: tk.project, session_count: 0,
         prompt_count: 0, billable_tokens: tk.tokens, cache_read_tokens: 0, total_tokens: tk.tokens, total_cost: 0, top_model: null };

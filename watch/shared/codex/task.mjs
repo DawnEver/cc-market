@@ -89,6 +89,9 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
 }
 
 export function extractItemText(item) {
+  // The app-server echoes the turn's input back as a `userMessage` item/completed before the
+  // real answer. Skip it — otherwise the caller's own prompt is prepended to every reply.
+  if (item?.type === "userMessage") return "";
   if (item.text) return item.text;
   if (item.content) {
     if (typeof item.content === "string") return item.content;
