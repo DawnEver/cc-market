@@ -8,8 +8,8 @@ import http from 'node:http';
 import { writeFileSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { startObserveProxy } from '../shared/observe-proxy.mjs';
-import { clearConfigCache } from '../shared/providers.mjs';
+import { startObserveProxy } from '../engine/observe-proxy.mjs';
+import { clearConfigCache } from '../engine/providers.mjs';
 
 // A fake Anthropic-compatible upstream: captures the request, streams SSE back slowly.
 function startFakeUpstream() {

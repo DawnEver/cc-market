@@ -21,7 +21,7 @@ injected.
 
 Codex speaks its own app-server protocol (OpenAI-side), not Anthropic HTTP. It cannot ride
 the `spawnChild`/proxy path; keep the `provider === 'codex'` branch dispatching to
-`shared/codex/task.mjs` and reject any temptation to "unify" it behind the proxy.
+`engine/codex/task.mjs` and reject any temptation to "unify" it behind the proxy.
 
 ## windowsHide applies to the MCP server
 
@@ -29,10 +29,16 @@ Every `spawn`/`execFileSync` in `scripts/mcp-server.mjs` and the engines it call
 from a console-less parent — pass `windowsHide: true` unconditionally. See
 `cc-market/.claude/rules/invariants.md` for the full rule.
 
-## shared/ files are bundled copies
+## engine/ is canonical, shared/ is a bundled copy
 
-`fabric/shared/*` is a bundle of `cc-market/shared/` — never edit the copies here. Edit
-the canonical `cc-market/shared/` source; the pre-push hook rebundles.
+The L0 session/execution engines live in `fabric/engine/` — **fabric-owned canonical
+source, edit directly**. They were pulled out of `cc-market/shared/` once takeover was
+absorbed and fabric became their sole consumer, so other plugins no longer bundle them.
+
+`fabric/shared/*` is still a bundle of `cc-market/shared/` (now just the cross-plugin
+generic utils: `spawn/lib/state/stamp/attention`) — never edit the copies here; edit the
+canonical `cc-market/shared/` source, the pre-push hook rebundles. `engine/` reaches
+`spawn.mjs` via `../shared/spawn.mjs`, which is why fabric keeps a bundled `shared/`.
 
 ## Tests
 

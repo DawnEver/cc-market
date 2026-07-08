@@ -11,7 +11,7 @@
 //   - spawn_session / session_send / session_close / list_sessions : PERSISTENT multi-turn
 //                      sessions. This long-lived stdio server IS the handle-holding daemon —
 //                      it holds live session handles in an in-process registry
-//                      (shared/session.mjs) across discrete tool calls. codex + claude + API.
+//                      (engine/session.mjs) across discrete tool calls. codex + claude + API.
 //   - list_providers / resolve_model / codex_status : introspection.
 //
 // Layering: L0 mechanism = shared/ engines (providers, spawn-child, anthropic-http, codex,
@@ -40,12 +40,12 @@ import {
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
-import { withSharedClient } from "../shared/codex/app-server.mjs";
-import { resolveModelFromId } from "../shared/providers.mjs";
-import { spawnChild } from "../shared/spawn-child.mjs";
-import { summarizeFile } from "../shared/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, listSessions } from "../shared/session.mjs";
-import { createStdioServer, encodeRpcMessage } from "../shared/mcp-rpc.mjs";
+import { withSharedClient } from "../engine/codex/app-server.mjs";
+import { resolveModelFromId } from "../engine/providers.mjs";
+import { spawnChild } from "../engine/spawn-child.mjs";
+import { summarizeFile } from "../engine/observe-reader.mjs";
+import { createSession, sendToSession, closeSession, listSessions } from "../engine/session.mjs";
+import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginJson = JSON.parse(readFileSync(join(__dirname, "..", ".claude-plugin", "plugin.json"), "utf8"));

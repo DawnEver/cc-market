@@ -1,5 +1,5 @@
 import path from "node:path";
-import { CodexAppServerClient } from "../../shared/codex/app-server.mjs";
+import { CodexAppServerClient } from "../../engine/codex/app-server.mjs";
 
 // ── App-server image generation ─────────────────────────────────────
 

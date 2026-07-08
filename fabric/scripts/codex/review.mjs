@@ -1,4 +1,4 @@
-import { CodexAppServerClient } from "../../shared/codex/app-server.mjs";
+import { CodexAppServerClient } from "../../engine/codex/app-server.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

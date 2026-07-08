@@ -23,22 +23,28 @@ L2 ERGONOMICS     commands (/continue /models /summary), the `takeover` handoff 
                   (50K context-gathering), result skills (verbatim, SAVED-path images)
 L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
                   scripts/codex (review, image) + prompts/ — mode dispatch matrix
-L0 MECHANISM      shared/: providers routing · spawn-child · anthropic-http ·
-                  codex/{app-server,task,session} · session registry · observe proxy
+L0 MECHANISM      engine/ (fabric-owned, canonical): providers routing · spawn-child ·
+                  anthropic-http · codex/{app-server,task,session} · session registry ·
+                  observe proxy. (shared/ now holds only cross-plugin generic utils)
 ```
 
 ## File Structure
 
 ```
 fabric/
-├── shared/                  Bundled engine layer L0 (DO NOT edit — edit cc-market/shared/)
+├── engine/                  L0 mechanism — FABRIC-OWNED canonical (edit here directly).
+│   │                        Fabric-only since takeover was absorbed; no longer in shared/.
 │   ├── providers.mjs        Provider registry/routing (single source of truth)
 │   ├── spawn-child.mjs      Claude child engine: exe resolution, provider env, stream-json
 │   ├── open-session.mjs     Persistent multi-turn claude/API child (stream-json)
 │   ├── session.mjs          Provider-dispatching opener + in-process session registry
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
-│   └── codex/               app-server client · task · session · discovery
+│   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
+│   ├── codex/               app-server client · task · session · discovery
+│   └── tests/               engine unit suites (node:test)
+├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
+│                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
@@ -89,12 +95,12 @@ Exported for testing: `TOOLS`, `handleToolCall`, `handleCall`, `handleRpcRequest
 child that retains context across discrete tool calls. The "handle-holding daemon" the
 roadmap once called for turned out to need **no separate process**: an MCP stdio server is
 already long-lived (it stays up for the whole host session), so it holds live session
-handles in an in-process registry (`shared/session.mjs`) keyed by id. Both backends expose
+handles in an in-process registry (`engine/session.mjs`) keyed by id. Both backends expose
 the same `{ id, send, close }` surface:
 
-- **codex** → `shared/codex/session.mjs` `openCodexSession` — one app-server thread,
+- **codex** → `engine/codex/session.mjs` `openCodexSession` — one app-server thread,
   natively multi-turn (`thread/start` once, `turn/start` per send).
-- **claude / API** → `shared/open-session.mjs` `openSession` — a long-lived `claude`
+- **claude / API** → `engine/open-session.mjs` `openSession` — a long-lived `claude`
   stream-json child.
 
 ## Testing

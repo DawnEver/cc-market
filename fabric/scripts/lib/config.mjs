@@ -1,5 +1,5 @@
 // config.mjs — takeover's provider config surface. The provider-routing logic now lives
-// in the canonical shared/providers.mjs (single source of truth, shared with the fabric
+// in the canonical engine/providers.mjs (single source of truth, shared with the fabric
 // plugin); this module re-exports it and keeps only SCRIPT_DIR, which is takeover-specific.
 // Re-exported via scripts/lib.mjs.
 import path from "node:path";
@@ -18,4 +18,4 @@ export {
   clearConfigCache,
   resolveModel,
   listModels,
-} from "../../shared/providers.mjs";
+} from "../../engine/providers.mjs";

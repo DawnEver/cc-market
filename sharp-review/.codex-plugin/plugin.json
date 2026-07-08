@@ -1,6 +1,6 @@
 {
   "name": "sharp-review",
-  "version": "1.1.40",
+  "version": "1.1.41",
   "description": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge findings, sync task list",
   "author": {
     "name": "Mingyang Bao"

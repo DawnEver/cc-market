@@ -45,9 +45,9 @@ drives the `takeover` handoff subagent over this surface.
 Library import — the same engines, directly:
 
 ```js
-import { spawnChild } from './shared/spawn-child.mjs';
-import { openSession } from './shared/open-session.mjs';
-import { startObserveProxy } from './shared/observe-proxy.mjs';
+import { spawnChild } from './engine/spawn-child.mjs';
+import { openSession } from './engine/open-session.mjs';
+import { startObserveProxy } from './engine/observe-proxy.mjs';
 
 // one-shot
 const res = await spawnChild({ provider: 'deepseek', prompt: 'hello', observe: true, runDir });
@@ -84,13 +84,13 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Layers
 
-- **L0 provider routing** — `shared/providers.mjs` (canonical, bundled). Reads `~/.claude/claude_env_settings.json`, normalizes vanilla/Foundry,
+- **L0 provider routing** — `engine/providers.mjs` (fabric-owned, canonical). Reads `~/.claude/claude_env_settings.json`, normalizes vanilla/Foundry,
   resolves model aliases.
-- **L1 engines** — `shared/spawn-child.mjs` (the claude child engine: exe resolution,
-  provider env, optional config isolation, stream-json/images), `shared/anthropic-http.mjs`
-  (raw single-turn HTTP, retry + SSE), `shared/codex/` (codex app-server client + task
+- **L1 engines** — `engine/spawn-child.mjs` (the claude child engine: exe resolution,
+  provider env, optional config isolation, stream-json/images), `engine/anthropic-http.mjs`
+  (raw single-turn HTTP, retry + SSE), `engine/codex/` (codex app-server client + task
   runner). One implementation each; the plugin's own L1 policy consumes them.
-- **L1 observe proxy** — `shared/observe-proxy.mjs`. `startObserveProxy({provider,
+- **L1 observe proxy** — `engine/observe-proxy.mjs`. `startObserveProxy({provider,
   runDir})` → `{url, port, jsonlPath, close}`. Buffers+remaps the request body, streams
   the SSE response back **unbuffered**, tees request/response to `runDir/http.jsonl`.
 
@@ -103,7 +103,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
   returns each turn's text, context retained across turns. Turns/tool/question events arrive
   as structured JSON, not TTY. Open many concurrently for stateful fan-out.
 - `startObserveProxy({provider, runDir})` — the observe proxy.
-- `loadRows` / `mainTurns` / `summarize` (`shared/observe-reader.mjs`) — read the capture.
+- `loadRows` / `mainTurns` / `summarize` (`engine/observe-reader.mjs`) — read the capture.
 
 ## MCP tools
 

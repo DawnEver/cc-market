@@ -1,6 +1,6 @@
 // spawn.mjs — takeover policy wrapper over the shared claude child engine.
 // The engine (binary resolution, provider env, stream-json, images, timeouts)
-// lives in shared/spawn-child.mjs; this file only shapes the MCP result and
+// lives in engine/spawn-child.mjs; this file only shapes the MCP result and
 // applies takeover's usage-extraction priority. The wrapper consumes/normalizes
 // provider (→ label, default "claude"), model, systemPrompt, images, signal, and
 // timeoutMs (default 600000); all other options pass through to spawnChild untouched
@@ -14,7 +14,7 @@
 // gateway/proxy env from the parent session.
 import process from "node:process";
 
-import { spawnChild, resolveClaudeExe } from "../../shared/spawn-child.mjs";
+import { spawnChild, resolveClaudeExe } from "../../engine/spawn-child.mjs";
 import { extractUsageFromStderr } from "./trace.mjs";
 
 export { resolveClaudeExe };

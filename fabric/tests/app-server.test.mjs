@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { CodexAppServerClient, resolveClientInfo } from "../shared/codex/app-server.mjs";
+import { CodexAppServerClient, resolveClientInfo } from "../engine/codex/app-server.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -145,7 +145,7 @@ describe("withSharedClient queue counter (source guard)", () => {
   // every call — which silently broke ALL codex routing (review/task). A runtime test would
   // spawn a real codex app-server, so guard the source statically instead.
   const src = readFileSync(
-    join(__dirname, "..", "shared", "codex", "app-server.mjs"),
+    join(__dirname, "..", "engine", "codex", "app-server.mjs"),
     "utf8",
   );
 
