@@ -1,9 +1,16 @@
 {
   "name": "fabric",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multi-provider agent session fabric — any agent (Claude / Codex / …) spawning and observing isolated child sessions of any provider. Ships a minimal Anthropic-compatible observe proxy that dissolves the Foundry-vs-tap conflict.",
   "author": {
     "name": "Mingyang Bao"
+  },
+  "codexInterface": {
+    "defaultPrompt": [
+      "Use the Fabric plugin to run child model sessions of any provider (deepseek / claude / codex).",
+      "Tools: list_providers, resolve_model, run_task (one-shot headless child; codex supports write:true + cwd).",
+      "Pass observe:true to run_task to capture the child API traffic into runDir/http.jsonl."
+    ]
   },
   "keywords": [
     "fabric",

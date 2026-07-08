@@ -10,6 +10,8 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 
 ## Plugins
 
+<!-- plugin table: canonical list; keep the slim user-facing list in README.md in sync -->
+
 | Plugin | Directory | Description |
 |---|---|---|
 | [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
@@ -35,10 +37,16 @@ to **all** plugins. A commit touching no test-bearing dir (e.g. only root docs) 
 To run every JS suite manually:
 
 ```shell
-node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
+node --test cc-market/takeover/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/fabric/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
 ```
 
 See each plugin's AGENTS.md § Testing for per-suite coverage.
+
+Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised
+by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`takeover`,
+`rem`, `sharp-review`, `evolve`) into the real `~/.codex`, then probes hooks, `.claude/rules`
+injection, MCP exposure, and skill ingestion. `fabric` is also Codex-capable (consumed via its
+MCP server) but is not yet covered by the e2e script.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 

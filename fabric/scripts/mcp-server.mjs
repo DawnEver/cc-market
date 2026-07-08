@@ -67,9 +67,11 @@ export const TOOLS = [
         prompt: { type: 'string', description: 'The task prompt.' },
         model: { type: 'string', description: 'Claude model id (proxy remaps it per provider). Optional.' },
         observe: { type: 'boolean', description: 'Route through the observe proxy + capture jsonl (non-codex). Default false.' },
+        passthroughAuth: { type: 'boolean', description: 'observe only: proxy forwards the child\'s own Authorization header instead of injecting a static key. Needed for OAuth providers (claude); defaults on for native claude.' },
         write: { type: 'boolean', description: 'codex only: enable tools so the child can act (run git, edit files). Default false (read-only).' },
         cwd: { type: 'string', description: 'Working dir for the child. codex runs its task here (e.g. the git repo). Defaults to the server cwd.' },
         runDir: { type: 'string', description: 'Isolated dir for config + capture (non-codex). Defaults to a temp dir.' },
+        timeoutMs: { type: 'number', description: 'Non-codex only: kill the child after this many ms. Defaults to spawnChild\'s 120000.' },
       },
       required: ['provider', 'prompt'],
     },
@@ -99,7 +101,8 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       const runDir = args.runDir || join(tmpdir(), `fabric-task-${Date.now()}`);
       const res = await _spawnChild({
         provider: args.provider, prompt: args.prompt, model: args.model,
-        observe: !!args.observe, runDir,
+        observe: !!args.observe, passthroughAuth: args.passthroughAuth, runDir,
+        cwd: args.cwd, timeoutMs: args.timeoutMs,
       });
       const parts = [res.stdout?.trim() || '(no output)'];
       if (res.jsonlPath) parts.push('', `--- observe capture: ${res.jsonlPath} ---`, JSON.stringify(summarizeFile(res.jsonlPath)));

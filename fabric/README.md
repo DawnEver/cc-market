@@ -5,6 +5,59 @@ Multi-provider agent **session fabric** — the shared layer for any agent (`cla
 and its children can each be any provider. Dual-form: an importable library **and** an MCP
 server.
 
+## Install
+
+```shell
+/plugin install fabric@cc-market
+```
+
+Then register the MCP server in `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "fabric": {
+      "command": "node",
+      "args": ["<plugin-root>/scripts/mcp-server.mjs"]
+    }
+  }
+}
+```
+
+## Usage
+
+MCP `run_task` — one-shot headless children (spawn several concurrently for fan-out):
+
+```json
+{ "provider": "deepseek", "prompt": "Summarize the failure modes in this log: ..." }
+```
+
+```json
+{ "provider": "codex", "prompt": "Fix the failing test in tests/mcp-server.test.mjs",
+  "write": true, "cwd": "/path/to/repo" }
+```
+
+Library import — the same engines, directly:
+
+```js
+import { spawnChild } from './shared/spawn-child.mjs';
+import { openSession } from './shared/open-session.mjs';
+import { startObserveProxy } from './shared/observe-proxy.mjs';
+
+// one-shot
+const res = await spawnChild({ provider: 'deepseek', prompt: 'hello', observe: true, runDir });
+
+// persistent multi-turn
+const s = await openSession({ provider: 'claude' });
+const { text } = await s.send('What did we decide last turn?');
+await s.close();
+
+// observe proxy on its own
+const proxy = await startObserveProxy({ provider: 'deepseek', runDir });
+// ... point any Anthropic-HTTP client at proxy.url; capture lands in proxy.jsonlPath
+await proxy.close();
+```
+
 ## Why
 
 Running child model sessions has two modes:

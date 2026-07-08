@@ -18,18 +18,9 @@ out reviewers directly (Step 3) and must not re-dispatch (recursion).
 
 ### Step 0 — Resolve plugin root
 
-`$env:CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is installed, but may not be inherited on some machines. Before running any sharp-review script, resolve it:
-
-```powershell
-if (-not $env:CLAUDE_PLUGIN_ROOT) {
-  $fallback = "$env:TEMP/claude-sharp-review/plugin-root.txt"
-  if (Test-Path $fallback) {
-    $env:CLAUDE_PLUGIN_ROOT = (Get-Content $fallback -Raw).Trim()
-  }
-}
-```
-
-If still empty after the fallback, report `CLAUDE_PLUGIN_ROOT is not set and no fallback found` and stop.
+If `$env:CLAUDE_PLUGIN_ROOT` is empty (not inherited on some machines), resolve it via the
+PowerShell fallback in **`reference/windows-troubleshooting.md`** before running any
+sharp-review script; if still empty, report and stop as described there.
 
 ### Step 1 — Pick profiles
 

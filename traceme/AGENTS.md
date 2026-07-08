@@ -35,7 +35,7 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
 | `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights, dashboard |
 | `scripts/lib.mjs` | Shared: git helpers, paths, constants |
 | `skills/traceme/SKILL.md` | `/traceme` slash command |
-| `tests/` | Node built-in test runner, 58 tests across 6 suites |
+| `tests/` | Node built-in test runner — see `node --test traceme/tests/*.test.mjs` |
 
 ## Data Flow
 
@@ -73,4 +73,4 @@ Dashboard full filter list → `skills/traceme/reference/dashboard.md`.
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
-58 tests: DB derived queries incl. billable basis, category unit-split, flat fact tables + `categorizeTool` (10), transcript scan incl. dedup/cursor/idempotence + category bucketing (5), report incl. merged-vs-local (7), crypto (9), sync dump/import/merged + `readDeviceFacts` + `mergeSkillFacts`/`mergeModelFacts` (11), dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping (9), pricing model matching incl. dot/dash canonicalization + aliases (6), plus the shared `--test` run via pre-commit.
+Coverage by suite: DB derived queries incl. billable basis, category unit-split, flat fact tables + `categorizeTool`; transcript scan incl. dedup/cursor/idempotence + category bucketing; report incl. merged-vs-local; crypto; sync dump/import/merged + `readDeviceFacts` + `mergeSkillFacts`/`mergeModelFacts`; dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping; pricing model matching incl. dot/dash canonicalization + aliases. Run via pre-commit hook for exact counts.

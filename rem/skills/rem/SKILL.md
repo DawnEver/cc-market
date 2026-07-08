@@ -41,6 +41,7 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
 - Crystallize procedure (memory ≥20 entries; user-gated distill) → `reference/crystallize.md`
 - Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`
+- Standard-pass walkthrough + Lightweight variant → `reference/standard-procedure.md`
 
 ---
 
@@ -79,56 +80,18 @@ a split relocates entries into a nested scope rather than distilling them into r
 
 ## Lightweight (doc-only or non-code session)
 
-Brief summary only:
-- What was done in one sentence
-- Skip `.claude/rules/` and `.claude/memory/` updates unless something surprising came up
-- Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/check-docs.js` to detect stale docs — if exit 1, update the flagged files
-- Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/doc-freshness.js` to detect drifted knowledge-base docs (frontmatter `doc_source`/`git_hash`) — if exit 1, invoke `/refresh-docs` to update them (no-op for projects with no bound docs)
+Brief one-sentence summary; usually no memory/rules updates. Run the doc-staleness checks
+(`check-docs.js`, `doc-freshness.js`) — full checklist → **`reference/standard-procedure.md`** § Lightweight.
 
 ## Standard
 
-### 0. Run rem-prep (automated mechanical work)
+Short flow (run in the fork): **0.** `rem-prep.js --transcript "<transcript_path>" --promote`
+→ **1.** summarize (what changed, validation, blockers) → **2.** write `.claude/memory/YYYY/MM/DD/`
+entries + `stamp-memory.js` → **3.** update project docs if needed → **4.** re-run rem-prep to
+catch this session's own memory work.
 
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>" --promote
-```
-
-This single command does all of:
-- Shows recent prune events (demotions, evictions)
-- Scans transcript for `.claude/memory/` file reads → batch-touches `accessed` timestamps and bumps `access_count`
-- Auto-promotes short-term entries with `access_count >= 3` to `tier: long`
-- Reports crystallize status (warns if ≥20 entries)
-
-Review the output. Re-promote any entries that were demoted but you referenced this session.
-
-### 1. Summarize
-
-1. What changed and why
-2. How it was validated (tests run, manual checks, edge cases)
-3. Any open blockers or follow-up items
-
-### 2. Update project memory
-
-- `.claude/memory/YYYY/MM/DD/` — add/update content files under date directory
-- Run `stamp-memory.js` to auto-index new files:
-  ```bash
-  node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js
-  ```
-
-### 3. Update project docs if needed
-
-- If crystallize ran: `check-docs.js` already flagged stale docs above — update them now
-- If no crystallize: use judgment — update `AGENTS.md`, `README.md`, etc. if architecture, directory layout, setup steps, or hook behaviour changed this session
-
-### 4. Re-run rem-prep (catch this session's own memory work)
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>" --promote
-```
-
-Steps 1-3 above read/edit `.claude/memory/` files (e.g. consolidating entries during crystallize).
-Re-running rem-prep here bumps `accessed`/`access_count` for those files too — step 0 only
-saw memory files touched *before* `/rem` started, not the ones touched *during* it.
+Full step-by-step walkthrough (what rem-prep does, doc-update judgment, why step 4 exists) →
+**`reference/standard-procedure.md`**.
 
 ## Cross-project check
 

@@ -8,7 +8,7 @@ import http from 'node:http';
 import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildChildEnv, spawnChild } from '../spawn-child.mjs';
+import { buildChildEnv, spawnChild, resolveClaudeExe, clearClaudeExeCache } from '../spawn-child.mjs';
 import { clearConfigCache } from '../providers.mjs';
 
 const REG = {
@@ -46,7 +46,7 @@ test('buildChildEnv observe mode requires proxyUrl', () => {
   assert.throws(() => buildChildEnv({ provider: 'deepseek', observe: true, configPath: fixture() }), /requires proxyUrl/);
 });
 
-// Fake spawn: records argv/env, emits some stdout, closes 0.
+// Fake spawn: records argv/env, emits stream-json stdout, closes 0.
 function makeFakeSpawn(sink) {
   return (bin, args, spawnOpts) => {
     sink.bin = bin; sink.args = args; sink.env = spawnOpts.env;
@@ -55,7 +55,7 @@ function makeFakeSpawn(sink) {
     child.stderr = new EventEmitter();
     child.kill = () => {};
     queueMicrotask(() => {
-      child.stdout.emit('data', 'child-said-ok');
+      child.stdout.emit('data', JSON.stringify({ type: 'result', result: 'child-said-ok', usage: { input_tokens: 3, output_tokens: 4 } }) + '\n');
       child.emit('close', 0);
     });
     return child;
@@ -71,8 +71,9 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   });
   assert.equal(res.code, 0);
   assert.equal(res.stdout, 'child-said-ok');
+  assert.deepEqual(res.usage, { input_tokens: 3, output_tokens: 4 }, 'usage returned in argv (short-prompt) mode too');
   assert.equal(res.jsonlPath, null, 'no jsonl in normal mode');
-  assert.deepEqual(sink.args.slice(0, 2), ['-p', 'hello']);
+  assert.deepEqual(sink.args.slice(0, 4), ['-p', 'hello', '--output-format', 'stream-json']);
   // Direct-connect API provider: model pinned via env (resolveModel), not --model —
   // the CLI flag would rely on tier-alias env vars; the env pin is exact.
   assert.equal(sink.env.ANTHROPIC_MODEL, 'deepseek-v4-flash');
@@ -88,7 +89,7 @@ test('spawnChild native claude without runDir: no isolation, --model passthrough
     configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
   });
   assert.equal(res.code, 0);
-  assert.deepEqual(sink.args.slice(0, 4), ['-p', 'hello', '--model', 'claude-haiku-4-5']);
+  assert.deepEqual(sink.args.slice(0, 6), ['-p', 'hello', '--output-format', 'stream-json', '--model', 'claude-haiku-4-5']);
   assert.equal(sink.env.CLAUDE_CONFIG_DIR, process.env.CLAUDE_CONFIG_DIR, 'no isolated config dir');
   assert.equal(res.runDir, null);
 });
@@ -159,6 +160,158 @@ test('spawnChild images force stream-json with image blocks', async () => {
   assert.equal(sent.message.content[1].source.data, 'aGk=');
 });
 
+test('spawnChild onText survives JSON lines split across stdout chunks', async () => {
+  const line = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'split-text' }] } }) + '\n';
+  const chunks = [line.slice(0, 20), line.slice(20), JSON.stringify({ type: 'result', result: ' done' }) + '\n'];
+  const fakeSpawn = (bin, args, spawnOpts) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    child.stdin = {
+      write() {},
+      end() {
+        queueMicrotask(() => {
+          for (const c of chunks) child.stdout.emit('data', c);
+          child.emit('close', 0);
+        });
+      },
+    };
+    return child;
+  };
+  const seen = [];
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'x'.repeat(2000),
+    configPath: fixture(), _spawn: fakeSpawn, _bin: 'fake-claude',
+    onText: (t) => seen.push(t),
+  });
+  assert.deepEqual(seen, ['split-text', ' done'], 'no line dropped at a chunk boundary');
+  assert.equal(res.stdout, 'split-text done');
+});
+
+test('spawnChild flushes the onText line buffer on close (final chunk without trailing newline)', async () => {
+  const chunks = [
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'head ' }] } }) + '\n',
+    JSON.stringify({ type: 'result', result: 'tail-no-newline' }), // NO trailing \n
+  ];
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    child.stdin = {
+      write() {},
+      end() {
+        queueMicrotask(() => {
+          for (const c of chunks) child.stdout.emit('data', c);
+          child.emit('close', 0);
+        });
+      },
+    };
+    return child;
+  };
+  const seen = [];
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'x'.repeat(2000),
+    configPath: fixture(), _spawn: fakeSpawn, _bin: 'fake-claude',
+    onText: (t) => seen.push(t),
+  });
+  assert.deepEqual(seen, ['head ', 'tail-no-newline'], 'tail without newline still reaches onText');
+  assert.equal(res.stdout, 'head tail-no-newline');
+});
+
+// Fake spawn emitting arbitrary raw stdout text with a given exit code.
+function makePlainTextFakeSpawn(text, code) {
+  return () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stdout.emit('data', text);
+      child.emit('close', code);
+    });
+    return child;
+  };
+}
+
+test('spawnChild surfaces non-NDJSON stdout on failure (CLI usage error)', async () => {
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'hello', configPath: fixture(),
+    _spawn: makePlainTextFakeSpawn('Error: unknown flag\n', 1), _bin: 'fake-claude',
+  });
+  assert.equal(res.code, 1);
+  assert.ok(res.stdout.includes('Error: unknown flag'), 'raw stdout surfaced when stream-json yields no text');
+});
+
+test('spawnChild surfaces non-NDJSON stdout on zero exit too (banner/gateway HTML)', async () => {
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'hello', configPath: fixture(),
+    _spawn: makePlainTextFakeSpawn('Welcome banner, not JSON\n', 0), _bin: 'fake-claude',
+  });
+  assert.equal(res.code, 0);
+  assert.equal(res.stdout, 'Welcome banner, not JSON');
+});
+
+test('spawnChild streams onText in short-prompt (argv) mode too', async () => {
+  const seen = [];
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'short',
+    configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
+    onText: (t) => seen.push(t),
+  });
+  assert.deepEqual(seen, ['child-said-ok']);
+  assert.deepEqual(res.usage, { input_tokens: 3, output_tokens: 4 });
+});
+
+test('resolveClaudeExe memoizes, honors CLAUDE_CLI_PATH changes, and clearClaudeExeCache resets', () => {
+  const saved = process.env.CLAUDE_CLI_PATH;
+  try {
+    clearClaudeExeCache();
+    process.env.CLAUDE_CLI_PATH = '/tmp/claude-a';
+    assert.equal(resolveClaudeExe(), '/tmp/claude-a');
+    assert.equal(resolveClaudeExe(), '/tmp/claude-a', 'cached');
+    process.env.CLAUDE_CLI_PATH = '/tmp/claude-b';
+    assert.equal(resolveClaudeExe(), '/tmp/claude-b', 'cache bypassed when CLAUDE_CLI_PATH changes');
+    delete process.env.CLAUDE_CLI_PATH;
+    const computed = resolveClaudeExe();
+    assert.ok(computed && computed !== '/tmp/claude-b', 'recomputes when override removed');
+    assert.equal(resolveClaudeExe(), computed, 'computed path is memoized');
+    clearClaudeExeCache();
+    assert.equal(resolveClaudeExe(), computed, 'still resolves after cache clear');
+  } finally {
+    clearClaudeExeCache();
+    if (saved === undefined) delete process.env.CLAUDE_CLI_PATH; else process.env.CLAUDE_CLI_PATH = saved;
+  }
+});
+
+test('spawnChild observe mode defaults passthroughAuth on for native claude, forwards explicit value', async () => {
+  const proxyCalls = [];
+  const fakeProxy = async (opts) => {
+    proxyCalls.push(opts);
+    return { url: 'http://127.0.0.1:9', jsonlPath: null, close: async () => {} };
+  };
+  const runDir = mkdtempSync(join(tmpdir(), 'sc-pta-'));
+  await spawnChild({
+    provider: 'claude', prompt: 'hi', runDir, observe: true,
+    configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
+    _startObserveProxy: fakeProxy,
+  });
+  assert.equal(proxyCalls[0].passthroughAuth, true, 'native claude defaults passthroughAuth true');
+  await spawnChild({
+    provider: 'deepseek', prompt: 'hi', runDir, observe: true,
+    configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
+    _startObserveProxy: fakeProxy,
+  });
+  assert.equal(proxyCalls[1].passthroughAuth, false, 'static-key provider defaults false');
+  await spawnChild({
+    provider: 'deepseek', prompt: 'hi', runDir, observe: true, passthroughAuth: true,
+    configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
+    _startObserveProxy: fakeProxy,
+  });
+  assert.equal(proxyCalls[2].passthroughAuth, true, 'explicit passthroughAuth forwarded');
+});
+
 test('spawnChild rejects when the abort signal fires', async () => {
   const ctl = new AbortController();
   ctl.abort();
@@ -190,4 +343,62 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
   } finally {
     await new Promise((r) => upstream.close(r));
   }
+});
+
+// Argv-mode fake emitting caller-supplied stdout lines.
+function makeLinesFakeSpawn(sink, lines) {
+  return (bin, args, spawnOpts) => {
+    sink.bin = bin; sink.args = args; sink.env = spawnOpts.env;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      for (const line of lines) child.stdout.emit('data', line + '\n');
+      child.emit('close', 0);
+    });
+    return child;
+  };
+}
+
+test('spawnChild JSON-shaped error output still falls back to raw stdout', async () => {
+  const errLine = JSON.stringify({ error: { message: 'invalid api key' } });
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'oops',
+    configPath: fixture(),
+    _spawn: makeLinesFakeSpawn({}, [errLine]),
+    _bin: 'fake-claude',
+  });
+  assert.equal(res.stdout, errLine, 'non-stream-json JSON error is surfaced, not dropped');
+});
+
+test('spawnChild valid stream-json with empty result text yields empty stdout, not raw NDJSON', async () => {
+  const sink = {};
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'quiet',
+    configPath: fixture(),
+    _spawn: makeLinesFakeSpawn(sink, [
+      JSON.stringify({ type: 'result', result: '', usage: { input_tokens: 3, output_tokens: 0 } }),
+    ]),
+    _bin: 'fake-claude',
+  });
+  assert.equal(res.stdout, '', 'empty model response stays empty');
+  assert.deepEqual(res.usage, { input_tokens: 3, output_tokens: 0 });
+});
+
+test('spawnChild does not double-count text when result repeats the assistant text', async () => {
+  const seen = [];
+  const res = await spawnChild({
+    provider: 'claude', prompt: 'hi',
+    configPath: fixture(),
+    onText: (t) => seen.push(t),
+    _spawn: makeLinesFakeSpawn({}, [
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'the answer' }] } }),
+      JSON.stringify({ type: 'result', result: 'the answer', usage: { input_tokens: 1, output_tokens: 2 } }),
+    ]),
+    _bin: 'fake-claude',
+  });
+  assert.equal(res.stdout, 'the answer', 'result text must not be appended on top of assistant text');
+  assert.equal(seen.join(''), 'the answer', 'onText must not stream the answer twice');
+  assert.deepEqual(res.usage, { input_tokens: 1, output_tokens: 2 });
 });

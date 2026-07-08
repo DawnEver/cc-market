@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId, PROVIDER_ENV_KEYS } from './providers.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
+import { buildUserContent } from './anthropic-http.mjs';
 import { spawn as hiddenSpawn } from './spawn.mjs';
 
 // ── Claude binary resolution (cross-platform) ───────────────────────────────
@@ -32,8 +33,22 @@ import { spawn as hiddenSpawn } from './spawn.mjs';
 //   3. legacy ~/nodejs fallback
 const CLAUDE_EXE_REL = path.join('node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
 
+// Memoized: the PATH scan + fs.existsSync probes are pure per-process (keyed on the
+// CLAUDE_CLI_PATH override so changing the env var still takes effect).
+let _exeCache = null; // { override: string|undefined, exe: string }
+
+export function clearClaudeExeCache() { _exeCache = null; }
+
 export function resolveClaudeExe() {
-  if (process.env.CLAUDE_CLI_PATH) return process.env.CLAUDE_CLI_PATH;
+  const override = process.env.CLAUDE_CLI_PATH;
+  if (_exeCache && _exeCache.override === override) return _exeCache.exe;
+  const exe = computeClaudeExe(override);
+  _exeCache = { override, exe };
+  return exe;
+}
+
+function computeClaudeExe(override) {
+  if (override) return override;
   if (process.platform !== 'win32') return 'claude';
 
   // Find the directory of a claude shim on PATH; the npm global prefix (which
@@ -71,26 +86,49 @@ export function buildChildEnv({ provider, observe, proxyUrl, configPath }) {
 
 // ── Stream-json parsing (large prompts / images go via stdin) ────────────────
 
+// Text carried by one stream-json message ('' if none) — the single extraction
+// used by both parseStreamJsonOutput and the live onText handler.
+// Duplicate rule: some providers' final `result` message repeats the full assistant
+// text verbatim (observed with DeepSeek via Foundry) — a result equal to the
+// accumulated assistant text must be dropped, or callers see the answer twice.
+// Both consumers thread the accumulated assistant text in as `assistantAcc`.
+function extractStreamText(msg, assistantAcc = '') {
+  if (msg.type === 'assistant' && msg.message?.content) {
+    let text = '';
+    for (const block of (Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content])) {
+      if (block.type === 'text' || typeof block === 'string') {
+        text += (typeof block === 'string' ? block : block.text || '');
+      }
+    }
+    return text;
+  }
+  if (msg.type === 'result' && msg.result) {
+    return msg.result.trim() === assistantAcc.trim() ? '' : msg.result;
+  }
+  return '';
+}
+
 export function parseStreamJsonOutput(raw) {
   const lines = raw.split('\n').filter((l) => l.trim());
   let text = '';
+  let assistantAcc = '';
   let usage = null;
+  let parsedAny = false; // a RECOGNIZED stream-json message seen (object with a string
+  //                        .type) — distinguishes an empty model response from unparsable
+  //                        output. JSON-shaped error bodies ({"error":...}) don't count,
+  //                        so they still reach the caller via the raw-stdout fallback.
   for (const line of lines) {
     try {
       const msg = JSON.parse(line);
-      if (msg.type === 'assistant' && msg.message?.content) {
-        for (const block of (Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content])) {
-          if (block.type === 'text' || typeof block === 'string') {
-            text += (typeof block === 'string' ? block : block.text || '');
-          }
-        }
-      } else if (msg.type === 'result') {
-        if (msg.result) text += msg.result;
-        if (msg.usage) usage = msg.usage;
-      }
+      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') continue;
+      parsedAny = true;
+      const t = extractStreamText(msg, assistantAcc);
+      text += t;
+      if (msg.type === 'assistant') assistantAcc += t;
+      if (msg.type === 'result' && msg.usage) usage = msg.usage;
     } catch {}
   }
-  return { text: text.trim(), usage };
+  return { text: text.trim(), usage, parsedAny };
 }
 
 // Watchdog kill timer. The child_process `timeout` option is unusable here: on
@@ -113,6 +151,9 @@ function armKillTimer(child, ms, onTimeout) {
  * @param {string}  [opts.runDir]         isolated dir (config + http.jsonl land here). Omit to
  *                                        run against the caller's own config/credentials.
  * @param {boolean} [opts.observe]        route through the observe proxy + capture jsonl (needs runDir)
+ * @param {boolean} [opts.passthroughAuth] observe: forward the child's own Authorization header
+ *                                        instead of injecting a static key. Defaults on for
+ *                                        native OAuth providers (claude).
  * @param {string}  [opts.model]          Claude model id. Native/observe → --model flag;
  *                                        direct-connect API provider → exact env pin via resolveModel.
  * @param {string}  [opts.cwd]            child working dir (default runDir or cwd)
@@ -120,16 +161,17 @@ function armKillTimer(child, ms, onTimeout) {
  * @param {string}  [opts.configPath]     override registry path
  * @param {number}  [opts.timeoutMs]      kill after this long (default 120000)
  * @param {AbortSignal} [opts.signal]     cancel the child
- * @param {Function}[opts.onText]         streaming text callback (stream-json mode only)
+ * @param {Function}[opts.onText]         streaming text callback (both stdin and argv modes)
  * @param {Function}[opts._spawn]         injectable spawn (tests)
  * @param {string}  [opts._bin]           override the child binary (tests)
+ * @param {Function}[opts._startObserveProxy] injectable proxy starter (tests)
  * @returns {Promise<{code, stdout, stderr, usage, jsonlPath, runDir}>}
  */
 export async function spawnChild(opts) {
   const {
     provider = 'claude', prompt, systemPrompt, images, runDir, observe = false, model,
-    cwd, extraArgs = [], configPath, timeoutMs = 120000, signal, onText,
-    _spawn = hiddenSpawn, _bin,
+    cwd, extraArgs = [], configPath, timeoutMs = 120000, signal, onText, passthroughAuth,
+    _spawn = hiddenSpawn, _bin, _startObserveProxy = startObserveProxy,
   } = opts;
   if (!prompt) throw new Error('spawnChild: prompt is required');
   if (observe && !runDir) throw new Error('spawnChild: observe mode requires runDir');
@@ -142,7 +184,12 @@ export async function spawnChild(opts) {
   }
 
   let proxy = null;
-  if (observe) proxy = await startObserveProxy({ provider, runDir, configPath });
+  if (observe) {
+    // OAuth providers (native claude) have no static key to inject — the proxy must
+    // forward the child's own self-refreshing Authorization header.
+    const pta = passthroughAuth ?? !!loadProviderConfig(provider, configPath).native;
+    proxy = await _startObserveProxy({ provider, runDir, passthroughAuth: pta, configPath });
+  }
 
   try {
     const env = buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath });
@@ -166,9 +213,11 @@ export async function spawnChild(opts) {
     }
 
     const bin = _bin || resolveClaudeExe();
+    // Both modes emit stream-json on stdout so usage parsing + onText streaming are
+    // universal; argv mode just keeps the prompt on the command line.
     const args = useStdin
       ? ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...extraArgs]
-      : ['-p', fullPrompt, ...modelArgs, ...extraArgs];
+      : ['-p', fullPrompt, '--output-format', 'stream-json', ...modelArgs, ...extraArgs];
 
     const result = await new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new Error('spawnChild: request cancelled')); return; }
@@ -191,46 +240,39 @@ export async function spawnChild(opts) {
       };
       if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
+      let lineBuffer = '';
+      let streamedAssistant = ''; // for the result-repeats-assistant dedupe (see extractStreamText)
+      const emitLine = (line) => {
+        try {
+          const msg = JSON.parse(line);
+          const text = extractStreamText(msg, streamedAssistant);
+          if (msg?.type === 'assistant') streamedAssistant += text;
+          if (text) onText(text);
+        } catch {}
+      };
       child.stdout?.on('data', (d) => {
         stdout += d;
-        if (useStdin && onText) {
-          for (const line of d.toString().split('\n').filter((l) => l.trim())) {
-            try {
-              const msg = JSON.parse(line);
-              if (msg.type === 'assistant' && msg.message?.content) {
-                for (const block of (Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content])) {
-                  const text = typeof block === 'string' ? block : (block.text || '');
-                  if (text) onText(text);
-                }
-              } else if (msg.type === 'result' && msg.result) onText(msg.result);
-            } catch {}
-          }
+        if (onText) {
+          // Buffer partial lines: a JSON line can be split across chunk boundaries.
+          lineBuffer += d.toString();
+          const lines = lineBuffer.split('\n');
+          lineBuffer = lines.pop();
+          for (const line of lines.filter((l) => l.trim())) emitLine(line);
         }
       });
       child.stderr?.on('data', (d) => { stderr += d; });
       child.on('error', (e) => settle(reject, e));
       child.on('close', (code) => {
-        if (useStdin) {
-          const parsed = parseStreamJsonOutput(stdout);
-          settle(resolve, { code, stdout: parsed.text, stderr, usage: parsed.usage });
-        } else {
-          settle(resolve, { code, stdout, stderr, usage: null });
-        }
+        // Drain the tail: the last chunk may lack a trailing newline.
+        if (onText && lineBuffer.trim()) emitLine(lineBuffer.trim());
+        const parsed = parseStreamJsonOutput(stdout);
+        // Non-NDJSON stdout (CLI usage errors, banners, gateway HTML) would otherwise be
+        // silently dropped — fall back to the raw output when parsing yields no text.
+        settle(resolve, { code, stdout: parsed.parsedAny ? parsed.text : stdout.trim(), stderr, usage: parsed.usage });
       });
 
       if (useStdin) {
-        let content;
-        if (images && images.length > 0) {
-          content = [{ type: 'text', text: fullPrompt }];
-          for (const img of images) {
-            content.push({
-              type: 'image',
-              source: { type: 'base64', media_type: img.media_type || 'image/png', data: img.data },
-            });
-          }
-        } else {
-          content = fullPrompt;
-        }
+        const content = buildUserContent(fullPrompt, images);
         child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
         child.stdin.end();
       }

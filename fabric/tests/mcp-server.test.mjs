@@ -29,6 +29,28 @@ test('run_task dispatches to spawnChild and returns its output', async () => {
   assert.match(text(res), /hello from child/);
 });
 
+test('run_task forwards passthroughAuth to spawnChild', async () => {
+  let seen = null;
+  const fakeSpawnChild = async (opts) => { seen = opts; return { code: 0, stdout: 'ok', stderr: '', jsonlPath: null }; };
+  await handleToolCall('run_task', { provider: 'claude', prompt: 'p', observe: true, passthroughAuth: true }, { spawnChild: fakeSpawnChild });
+  assert.equal(seen.passthroughAuth, true);
+  await handleToolCall('run_task', { provider: 'deepseek', prompt: 'p' }, { spawnChild: fakeSpawnChild });
+  assert.equal(seen.passthroughAuth, undefined, 'omitted → spawnChild decides the default');
+  assert.ok(TOOLS.find((t) => t.name === 'run_task').inputSchema.properties.passthroughAuth, 'schema exposes passthroughAuth');
+});
+
+test('run_task forwards cwd and timeoutMs to spawnChild (non-codex)', async () => {
+  let seen = null;
+  const fakeSpawnChild = async (opts) => { seen = opts; return { code: 0, stdout: 'ok', stderr: '', jsonlPath: null }; };
+  await handleToolCall('run_task', { provider: 'deepseek', prompt: 'p', cwd: '/some/repo', timeoutMs: 5000 }, { spawnChild: fakeSpawnChild });
+  assert.equal(seen.cwd, '/some/repo');
+  assert.equal(seen.timeoutMs, 5000);
+  await handleToolCall('run_task', { provider: 'deepseek', prompt: 'p' }, { spawnChild: fakeSpawnChild });
+  assert.equal(seen.cwd, undefined, 'omitted → spawnChild defaults to runDir');
+  assert.equal(seen.timeoutMs, undefined, 'omitted → spawnChild default timeout');
+  assert.ok(TOOLS.find((t) => t.name === 'run_task').inputSchema.properties.timeoutMs, 'schema exposes timeoutMs');
+});
+
 test('run_task surfaces a non-zero exit code + stderr', async () => {
   const fakeSpawnChild = async () => ({ code: 2, stdout: '', stderr: 'boom', jsonlPath: null });
   const res = await handleToolCall('run_task', { provider: 'deepseek', prompt: 'x' }, { spawnChild: fakeSpawnChild });

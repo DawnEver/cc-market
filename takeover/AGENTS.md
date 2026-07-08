@@ -27,13 +27,21 @@ raw Anthropic HTTP, codex app-server client) live in the bundled `shared/`
 (canonical source: `cc-market/shared/`, shared with the fabric plugin). This
 plugin shapes prompts, picks an engine per mode, and formats MCP results.
 
+Note (intentional behavior): `provider=claude` now routes through the shared engine's
+`buildChildEnv` → `loadProviderEnv('claude')`, which strips provider env keys
+(`ANTHROPIC_BASE_URL`, auth tokens, etc.) from the inherited environment — the claude
+child always direct-connects with its own OAuth rather than inheriting a gateway env.
+
 ```
 takeover/
 ├── shared/                  Bundled engine layer (DO NOT edit here — edit cc-market/shared/)
 │   ├── spawn-child.mjs      Claude child engine: exe resolution, provider env, stream-json, images
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── providers.mjs        Provider registry/routing (single source of truth)
-│   └── codex/               Codex app-server client + task runner + binary discovery
+│   ├── codex/               Codex app-server client + task runner + binary discovery
+│   └── (rest of bundle)     attention.mjs, lib.mjs, observe-proxy.mjs, observe-reader.mjs,
+│                            open-session.mjs, spawn.mjs, stamp.mjs, state.mjs — bundled with
+│                            the full shared layer; not all are used by takeover directly
 ├── scripts/
 │   ├── lib.mjs              Barrel: re-exports lib/* (+ shared codex discovery) so `./lib.mjs` import sites stay stable
 │   ├── lib/                 Policy modules:

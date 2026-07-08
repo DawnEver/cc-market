@@ -11,40 +11,44 @@ function isRetryable(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
 
-export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null) {
+// Build the user-message content: a plain string, or text + image blocks.
+// Shared with spawn-child.mjs (stream-json stdin payload uses the same shape).
+export function buildUserContent(prompt, images) {
+  if (!images || images.length === 0) return prompt;
+  const content = [{ type: "text", text: prompt }];
+  for (const img of images) {
+    content.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: img.media_type || "image/png",
+        data: img.data,
+      },
+    });
+  }
+  return content;
+}
+
+export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null, { sseIdleTimeoutMs = 300000 } = {}) {
   if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${getConfigPath()}.`);
 
   const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
   const url = `${baseUrl}/messages`;
 
-  let content;
-  if (images && images.length > 0) {
-    content = [{ type: "text", text: userPrompt }];
-    for (const img of images) {
-      content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: img.media_type || "image/png",
-          data: img.data,
-        },
-      });
-    }
-  } else {
-    content = userPrompt;
-  }
-
   const body = {
     model,
     max_tokens: 16000,
-    messages: [{ role: "user", content }],
+    messages: [{ role: "user", content: buildUserContent(userPrompt, images) }],
   };
   if (systemPrompt) body.system = systemPrompt;
 
   const maxRetries = 2;
+  let useStream = stream; // mutable: cleared by the SSE fallback so the retry really is non-streaming
+  let lastError = null; // last retryable API error, surfaced by the exhaustion backstop
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (stream) body.stream = true;
+    if (useStream) body.stream = true;
+    else delete body.stream;
 
     // Use an AbortController with a clearable, unref'd timer rather than
     // AbortSignal.timeout(): the latter's timer is neither unref'd nor cleared
@@ -86,12 +90,18 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
     clearTimeout(timeoutId);
 
     if (res.ok) {
-      if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {
+      if (useStream && res.headers.get("content-type")?.includes("text/event-stream")) {
         try {
-          return await parseSSEStream(res.body);
+          return await parseSSEStream(res.body, { idleTimeoutMs: sseIdleTimeoutMs, signal });
         } catch (streamErr) {
+          if (signal?.aborted) throw new Error("Request cancelled");
           process.stderr.write(`anthropic-http: SSE streaming failed (${streamErr.message}), falling back to non-streaming...\n`);
-          delete body.stream;
+          // The streaming→non-streaming downgrade must not consume an attempt:
+          // on the final attempt a plain `continue` would exit the loop and
+          // resolve undefined. Safe from looping — useStream is now false, so
+          // this branch can't be re-entered.
+          useStream = false;
+          attempt--;
           continue;
         }
       }
@@ -99,18 +109,26 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
     }
 
     const errorText = await res.text();
-    if (attempt < maxRetries && isRetryable(res.status)) {
+    if (!isRetryable(res.status)) throw new Error(`API error ${res.status}: ${errorText}`);
+    if (attempt < maxRetries) {
       const delay = Math.pow(2, attempt) * 1000;
       process.stderr.write(`anthropic-http: retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...\n`);
       await setTimeout(delay);
       continue;
     }
-
-    throw new Error(`API error ${res.status}: ${errorText}`);
+    lastError = new Error(`API error ${res.status}: ${errorText}`);
   }
+
+  // Backstop: no path may fall out of the loop and resolve undefined.
+  throw new Error(`anthropic-http: retries exhausted${lastError ? `: ${lastError.message}` : ""}`);
 }
 
-async function parseSSEStream(body) {
+// Read an SSE body with an idle watchdog: each reader.read() races an unref'd
+// timer (reset per chunk) so a server that stalls mid-stream can't hang the
+// call forever, plus an optional caller abort signal. On stall/abort the
+// reader is cancelled and a descriptive error thrown — callAnthropicAPI's
+// catch turns a stall into the non-streaming retry.
+export async function parseSSEStream(body, { idleTimeoutMs = 300000, signal = null } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let accumulatedText = "";
@@ -118,8 +136,37 @@ async function parseSSEStream(body) {
   let stopReason = null;
   let buffer = "";
 
+  // Race a read against the idle timer (and the abort signal, if given).
+  const guardedRead = () => new Promise((resolve, reject) => {
+    let timerId, onAbort;
+    const cleanup = () => {
+      clearTimeout(timerId);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    };
+    timerId = globalThis.setTimeout(() => {
+      cleanup();
+      reject(new Error(`SSE stream stalled after ${idleTimeoutMs}ms`));
+    }, idleTimeoutMs);
+    timerId.unref?.();
+    if (signal) {
+      onAbort = () => { cleanup(); reject(new Error("Request aborted during SSE stream")); };
+      if (signal.aborted) return onAbort();
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    reader.read().then(
+      (result) => { cleanup(); resolve(result); },
+      (err) => { cleanup(); reject(err); }
+    );
+  });
+
   while (true) {
-    const { done, value } = await reader.read();
+    let done, value;
+    try {
+      ({ done, value } = await guardedRead());
+    } catch (err) {
+      reader.cancel().catch(() => {});
+      throw err;
+    }
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 

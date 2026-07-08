@@ -18,7 +18,9 @@ export function resolveClientInfo(startPath = process.argv[1]) {
       try {
         const { name, version } = JSON.parse(readFileSync(manifest, "utf8"));
         return { name: name || "cc-market", version: version || "0.0.0" };
-      } catch { break; }
+      } catch {
+        // Malformed manifest — keep walking up; a valid ancestor may still win.
+      }
     }
     const parent = dirname(dir);
     if (parent === dir) break;
@@ -196,35 +198,51 @@ export async function resetSharedClient() {
   _sharedClient = null;
 }
 
-export function withSharedClient(fn, { timeout = 30000 } = {}) {
+export function withSharedClient(fn, { timeout = 30000, _getClient = getSharedClient } = {}) {
   const prev = _lock;
-  let release, rejectLock;
-  _lock = new Promise((resolve, reject) => { release = resolve; rejectLock = reject; });
+  let release;
+  // The shared lock chain only ever *resolves* (on release) — a waiter's timeout
+  // must reject that waiter alone, never the chain the next caller inherits.
+  _lock = new Promise((resolve) => { release = resolve; });
 
-  const timeoutId = setTimeout(() => {
-    const queueDepth = _pendingCount || 0;
-    rejectLock(new Error(
-      `Lock acquisition timed out after ${timeout}ms. ` +
-      `This usually means the codex app-server process is stuck or has crashed. ` +
-      `Pending requests in queue: ${queueDepth}. Run resetSharedClient() to force-restart.`
-    ));
-  }, timeout);
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const queueDepth = _pendingCount || 0;
+      reject(new Error(
+        `Lock acquisition timed out after ${timeout}ms. ` +
+        `This usually means the codex app-server process is stuck or has crashed. ` +
+        `Pending requests in queue: ${queueDepth}. Run resetSharedClient() to force-restart.`
+      ));
+    }, timeout);
+  });
+  // If prev wins the race, nothing awaits timeoutPromise — swallow its rejection.
+  timeoutPromise.catch(() => {});
 
   _pendingCount++;
-
-  return prev.then(async () => {
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
     clearTimeout(timeoutId);
     _pendingCount--;
+  };
+
+  return Promise.race([prev, timeoutPromise]).then(async () => {
+    settle();
     try {
-      const client = await getSharedClient();
+      const client = await _getClient();
       return await fn(client);
     } finally {
       release();
     }
-  }).catch(err => {
-    clearTimeout(timeoutId);
-    _pendingCount--;
-    release();
+  }, (err) => {
+    // Only this caller's timeout lands here (prev never rejects). The previous
+    // holder is still running — releasing now would let the next caller overlap
+    // it. Keep the chain intact: this waiter's placeholder resolves only once
+    // prev does, preserving mutual exclusion and FIFO order.
+    settle();
+    prev.then(release);
     throw err;
   });
 }
