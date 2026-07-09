@@ -19,7 +19,7 @@ Design memories: `.claude/memory/2026/07/07/harness-as-fabric.md`,
 ```
 L3 ORCHESTRATION  the caller: agent calls the primitive N times / Workflow fan-out
                   (NOT a tool — "single vs many" is call count)
-L2 ERGONOMICS     commands (/continue /models /summary), the `takeover` handoff subagent
+L2 ERGONOMICS     commands (/continue /models /handoff), the `takeover` handoff subagent
                   (50K context-gathering), result skills (verbatim, SAVED-path images)
 L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
                   scripts/codex (review, image) + prompts/ — mode dispatch matrix
@@ -51,7 +51,7 @@ fabric/
 │   │                        wrapper), callers (codex/API adapters), trace, errors
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
-├── commands/                L2: continue.md · models.md · summary.md
+├── commands/                L2: continue.md · models.md · handoff.md
 ├── agents/takeover.md       L2: handoff subagent (context-gather → one call)
 ├── skills/                  L2: takeover-result (verbatim) · codex-image-result (SAVED paths)
 ├── tests/                   node:test suites
