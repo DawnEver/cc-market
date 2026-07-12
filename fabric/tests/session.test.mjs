@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createSession, sendToSession, closeSession, listSessions, _resetRegistry,
+  createSession, sendToSession, closeSession, listSessions, getSessionProvider, _resetRegistry,
 } from '../engine/session.mjs';
 import { openCodexSession } from '../engine/codex/session.mjs';
 
@@ -61,6 +61,13 @@ test('registry: ids are unique across creates', async () => {
   const b = await createSession({ provider: 'claude' }, async () => makeFakeHandle());
   assert.notEqual(a.id, b.id);
   assert.equal(listSessions().length, 2);
+});
+
+test('registry: getSessionProvider returns provider for known id, null for unknown', async () => {
+  _resetRegistry();
+  const a = await createSession({ provider: 'deepseek' }, async () => makeFakeHandle());
+  assert.equal(getSessionProvider(a.id), 'deepseek');
+  assert.equal(getSessionProvider('nonexistent'), null);
 });
 
 // ── Fake codex app-server client for openCodexSession ────────────────

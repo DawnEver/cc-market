@@ -47,6 +47,11 @@ export function buildPrompt(subcommand, userPrompt) {
 
 // ── Text extraction ──────────────────────────────────────────────────────────
 
+export function truncateText(text, maxChars = 0) {
+  if (!text || maxChars <= 0 || text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + `\n\n[...truncated ${text.length - maxChars} chars, ${Math.round((text.length - maxChars) / 4)} tok est.]`;
+}
+
 export function extractText(data) {
   const content = data.content || [];
   const text = content

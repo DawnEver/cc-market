@@ -29,6 +29,7 @@ import {
   resolveModel,
   buildPrompt,
   extractText,
+  truncateText,
   listModels,
   parseCommandBlock,
   callAnthropicAPI,
@@ -44,7 +45,7 @@ import { withPooledClient } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId } from "../engine/providers.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, listSessions } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, getSessionProvider } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -102,6 +103,12 @@ export const TOOLS = [
         cwd: { type: "string", description: "Working dir for the child. Defaults to the server cwd." },
         runDir: { type: "string", description: "observe only: isolated dir for config + capture. Defaults to a temp dir." },
         timeoutMs: { type: "number", description: "observe only: kill the child after this many ms." },
+        resultMode: {
+          type: "string",
+          enum: ["summary", "full", "truncate"],
+          description: "How to shape the result before returning to the parent. 'summary' (default): outputs >2000 chars are condensed via a cheap follow-up call — keeps findings/decisions/errors, drops narration. 'full': return the complete output unchanged. 'truncate': apply maxResultChars character truncation.",
+        },
+        maxResultChars: { type: "number", description: "Max chars when resultMode is 'truncate'. Default 2000 (0 = unlimited)." },
       },
       required: ["prompt"],
     },
@@ -114,7 +121,7 @@ export const TOOLS = [
       properties: {
         provider: { type: "string", description: 'Provider key: "codex", "claude", "deepseek", …' },
         model: { type: "string", description: "Model id. Optional — uses provider default." },
-        write: { type: "boolean", description: "codex only: enable tools so the session can act (git, edit files). Default false." },
+        write: { type: "boolean", description: "Enable tools so the session can edit files and run commands. codex: native app-server tools. Non-codex: spawns `claude -p` with --allowedTools per turn, accumulating history in the prompt. Default false." },
         cwd: { type: "string", description: "Working dir for the session. Defaults to the server cwd." },
         observe: { type: "boolean", description: "Non-codex: route through the observe proxy + capture jsonl. Default false." },
       },
@@ -129,6 +136,11 @@ export const TOOLS = [
       properties: {
         id: { type: "string", description: "Session id returned by spawn_session." },
         prompt: { type: "string", description: "The turn text to send." },
+        resultMode: {
+          type: "string",
+          enum: ["summary", "full", "truncate"],
+          description: "How to shape this turn's result before returning to the parent. Default 'summary'.",
+        },
       },
       required: ["id", "prompt"],
     },
@@ -219,6 +231,51 @@ function emitTrace(data, provider, resolvedModel, mode) {
     input_tokens: usage?.input_tokens || 0, output_tokens: usage?.output_tokens || 0,
     cache_read: usage?.cache_read_input_tokens || 0, cache_write: usage?.cache_creation_input_tokens || 0,
   });
+}
+
+// ── Result shaping: keep parent context clean ─────────────────────
+
+const SUMMARIZE_PROMPT = "Condense the following into a tight summary for a parent orchestrator. Keep: key findings, decisions, file changes, errors, next steps. Drop: narration, greetings, markdown fluff, play-by-play. 3-5 sentences max.";
+const SUMMARY_THRESHOLD = 2000;
+
+async function summarizeOutput(fullText, providerConfig, provider) {
+  if (!fullText || fullText.length <= SUMMARY_THRESHOLD) return fullText;
+
+  // Path 1: API provider (deepseek etc.) → fast HTTP call with haiku-tier model
+  if (providerConfig.baseUrl) {
+    try {
+      const summaryModel = providerConfig.defaultHaiku || providerConfig.defaultSonnet;
+      const data = await callAnthropicAPI(providerConfig, summaryModel, SUMMARIZE_PROMPT, fullText, null, true);
+      return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
+    } catch (e) {
+      process.stderr.write(`fabric-mcp: API summary via ${provider} failed (${e.message})\n`);
+    }
+  }
+
+  // Path 2: codex → app-server summary task (native protocol, no HTTP needed)
+  if (provider === "codex") {
+    try {
+      const data = await withPooledClient((client) =>
+        callCodexCompanion(fullText, SUMMARIZE_PROMPT, null, false, null, client));
+      return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
+    } catch (e) {
+      process.stderr.write(`fabric-mcp: codex summary failed (${e.message})\n`);
+    }
+  }
+
+  // Path 3: native claude without own API → try deepseek as backstop summarizer
+  if (!providerConfig.baseUrl && provider !== "codex") {
+    try {
+      const dsConfig = loadProviderConfig("deepseek");
+      if (dsConfig.baseUrl) {
+        const summaryModel = dsConfig.defaultHaiku || dsConfig.defaultSonnet;
+        const data = await callAnthropicAPI(dsConfig, summaryModel, SUMMARIZE_PROMPT, fullText, null, true);
+        return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
+      }
+    } catch {}
+  }
+
+  return truncateText(fullText, 4000);
 }
 
 // ── Provider dispatch (policy: mode × provider) ────────────────────
@@ -391,7 +448,17 @@ export async function handleCall(args, deps = {}) {
   }
 
   emitTrace(data, provider, resolvedModel, effectiveMode);
-  return { content: [{ type: "text", text: extractText(data) }] };
+  const fullText = extractText(data);
+  const resultMode = args.resultMode || "summary";
+  let resultText;
+  if (resultMode === "full") {
+    resultText = fullText;
+  } else if (resultMode === "truncate") {
+    resultText = truncateText(fullText, args.maxResultChars ?? 2000);
+  } else {
+    resultText = await summarizeOutput(fullText, providerConfig, provider);
+  }
+  return { content: [{ type: "text", text: resultText }] };
 }
 
 // ── Tool dispatch ─────────────────────────────────────────────────
@@ -415,7 +482,25 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "session_send": {
       if (!args.id || !args.prompt) throw new Error("session_send: id and prompt are required");
       const res = await _sendToSession(args.id, args.prompt);
-      return textResult(res.text || "(no output)");
+      const fullText = res.text || "(no output)";
+      const resultMode = args.resultMode || "summary";
+      let resultText;
+      if (resultMode === "full") {
+        resultText = fullText;
+      } else if (resultMode === "truncate") {
+        resultText = truncateText(fullText, 2000);
+      } else {
+        const sessionProvider = getSessionProvider(args.id);
+        if (sessionProvider) {
+          try {
+            const cfg = loadProviderConfig(sessionProvider);
+            resultText = await summarizeOutput(fullText, cfg, sessionProvider);
+          } catch { resultText = truncateText(fullText, 4000); }
+        } else {
+          resultText = truncateText(fullText, 4000);
+        }
+      }
+      return textResult(resultText);
     }
     case "session_close": {
       if (!args.id) throw new Error("session_close: id is required");

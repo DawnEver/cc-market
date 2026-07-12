@@ -56,6 +56,8 @@ describe("TOOLS registry", () => {
     assert.ok(tool.inputSchema.properties.observe, "observe folded in from run_task");
     assert.deepEqual(tool.inputSchema.properties.mode.enum,
       ["task", "review", "agent", "image-generate", "image-edit"]);
+    assert.deepEqual(tool.inputSchema.properties.resultMode.enum,
+      ["summary", "full", "truncate"]);
     assert.deepEqual(tool.inputSchema.required, ["prompt"]);
   });
 });

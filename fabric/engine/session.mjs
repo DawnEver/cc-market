@@ -12,19 +12,58 @@
 
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import process from "node:process";
 import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
+import { buildChildEnv } from "./spawn-child.mjs";
+import { spawn } from "../shared/spawn.mjs";
+
+// ── Write-capable stateless session (non-codex) ─────────────────────
+// Spawns a fresh `claude -p` with tools per turn; accumulates history in memory. Each
+// turn repays for prior context, but gives full write capability without a persistent harness.
+
+function openWriteSession({ provider, model, cwd }) {
+  const history = [];
+  const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+  const env = buildChildEnv({ provider, observe: false });
+
+  return {
+    id: `write-${idFragment()}`,
+    async send(text) {
+      history.push(`User: ${text}`);
+      const prompt = history.join("\n\n");
+      const child = spawn(bin, [
+        "-p",
+        ...(model ? ["--model", model] : []),
+        "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
+        "--permission-mode", "bypassPermissions",
+        prompt,
+      ], { cwd: cwd || process.cwd(), env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+
+      let stdout = "", stderr = "";
+      child.stdout.on("data", (d) => { stdout += d; });
+      child.stderr.on("data", (d) => { stderr += d; });
+      const code = await new Promise((resolve) => child.on("close", resolve));
+      if (code !== 0) throw new Error(`write session (${provider}): exited ${code}: ${stderr.slice(0, 300)}`);
+      const reply = stdout.trim();
+      history.push(`Assistant: ${reply}`);
+      return { text: reply, turn: Math.floor(history.length / 2) };
+    },
+    async close() {},
+  };
+}
 
 /**
  * Open a persistent session for any provider, returning a uniform handle.
  * @param {object} opts  provider (required), model?, write?, cwd?, observe?, runDir?
  */
 export async function openProviderSession(opts = {}) {
-  const { provider } = opts;
+  const { provider, write } = opts;
   if (!provider) throw new Error("openProviderSession: provider is required");
   if (provider === "codex") {
-    return openCodexSession({ model: opts.model, write: opts.write, cwd: opts.cwd, _client: opts._client });
+    return openCodexSession({ model: opts.model, write, cwd: opts.cwd, _client: opts._client });
   }
+  if (write) return openWriteSession(opts);
   const runDir = opts.runDir || join(tmpdir(), `fabric-session-${idFragment()}`);
   return openSession({ ...opts, runDir });
 }
@@ -72,6 +111,11 @@ export function listSessions() {
   return [...sessions.entries()].map(([id, e]) => ({
     id, provider: e.provider, turns: e.turns, createdAt: e.createdAt,
   }));
+}
+
+export function getSessionProvider(id) {
+  const entry = sessions.get(id);
+  return entry ? entry.provider : null;
 }
 
 // Test hook: drop all registry state without touching live handles.

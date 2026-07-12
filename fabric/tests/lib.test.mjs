@@ -16,6 +16,7 @@ import {
   resolveModel,
   buildPrompt,
   extractText,
+  truncateText,
   parseCommandBlock,
   callAnthropicAPI,
   loadProviderEnv,
@@ -174,6 +175,34 @@ describe("extractText", () => {
   test("skips non-text blocks", () => {
     const data = { content: [{ type: "tool_use", id: "x" }, { type: "text", text: "result" }] };
     assert.equal(extractText(data), "result");
+  });
+});
+
+// ── truncateText ─────────────────────────────────────────────────────────────
+
+describe("truncateText", () => {
+  test("returns text unchanged when under limit", () => {
+    assert.equal(truncateText("hello", 100), "hello");
+  });
+
+  test("truncates and appends notice when over limit", () => {
+    const result = truncateText("a".repeat(100), 50);
+    assert.ok(result.startsWith("a".repeat(50)));
+    assert.ok(result.includes("[...truncated 50 chars"));
+  });
+
+  test("returns text unchanged when maxChars is 0 (unlimited)", () => {
+    const long = "a".repeat(5000);
+    assert.equal(truncateText(long, 0), long);
+  });
+
+  test("returns text unchanged when maxChars is negative", () => {
+    assert.equal(truncateText("hello", -1), "hello");
+  });
+
+  test("handles null/undefined text", () => {
+    assert.equal(truncateText(null, 100), null);
+    assert.equal(truncateText(undefined, 100), undefined);
   });
 });
 
