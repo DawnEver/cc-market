@@ -61,13 +61,9 @@ export const TOOLS = [
   {
     name: "call",
     description:
-      "Invoke a model from any configured provider — one-shot. The atomic orchestration " +
-      "primitive: 'one task' is one call; run several concurrently for fan-out. " +
-      "Routes to Claude (native CLI), Codex (app-server), or any Anthropic-compatible API " +
-      "from ~/.claude/claude_env_settings.json. `mode` selects policy (task/review/agent/" +
-      "image-*). If `prompt` contains a <command> block with --provider/--model/--review/" +
-      "--image/--image-edit/--write flags, those are parsed authoritatively and override the " +
-      "params. For persistent multi-turn instead, use spawn_session.",
+      "One-shot model invocation. Routes to Claude (native), Codex (app-server), or any Anthropic-compatible API. " +
+      "`mode` selects policy: task/review/agent/image-*. <command> block flags override params. " +
+      "For persistent multi-turn, use spawn_session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -76,16 +72,11 @@ export const TOOLS = [
         mode: {
           type: "string",
           enum: ["task", "review", "agent", "image-generate", "image-edit"],
-          description:
-            "Operation mode (default 'task'). 'task' = code/investigation (API providers run " +
-            "raw completion, no harness). 'review' = adversarial code review (codex uses its " +
-            "native review endpoint; others run it as a task with the review system prompt). " +
-            "'agent' = full tool-access via the Claude Code harness + provider env. " +
-            "'image-generate' / 'image-edit' = codex only.",
+          description: "task=code (API:raw HTTP), review=adversarial, agent=full tools, image-*=codex only. Default 'task'.",
         },
-        write: { type: "boolean", description: "codex only: enable tools so the model can edit files / run commands. Ignored for other providers." },
-        systemPrompt: { type: "string", description: "Custom system prompt. Overrides `mode`'s system prompt if both set." },
-        prompt: { type: "string", description: "The user message or task to hand off." },
+        write: { type: "boolean", description: "Enable file-editing tools (codex only)." },
+        systemPrompt: { type: "string", description: "Custom system prompt (overrides mode default)." },
+        prompt: { type: "string", description: "The user message or task." },
         images: {
           type: "array",
           description: "Optional image attachments. Each is base64-encoded with a media type.",
@@ -98,39 +89,39 @@ export const TOOLS = [
             },
           },
         },
-        observe: { type: "boolean", description: "Non-codex: route the child through the observe proxy and capture API traffic to runDir/http.jsonl (debug). Forces the harness engine." },
-        passthroughAuth: { type: "boolean", description: "observe only: proxy forwards the child's own Authorization header instead of injecting a static key. Defaults on for native claude." },
-        cwd: { type: "string", description: "Working dir for the child. Defaults to the server cwd." },
-        runDir: { type: "string", description: "observe only: isolated dir for config + capture. Defaults to a temp dir." },
-        timeoutMs: { type: "number", description: "observe only: kill the child after this many ms." },
+        observe: { type: "boolean", description: "Capture API traffic via observe proxy + jsonl (non-codex)." },
+        passthroughAuth: { type: "boolean", description: "Forward child's Auth header (observe mode, defaults on for native claude)." },
+        cwd: { type: "string", description: "Working dir for the child." },
+        runDir: { type: "string", description: "Isolated temp dir for config + capture (observe mode)." },
+        timeoutMs: { type: "number", description: "Kill child after N ms (observe mode)." },
         resultMode: {
           type: "string",
           enum: ["summary", "full", "truncate"],
-          description: "How to shape the result before returning to the parent. 'summary' (default): outputs >2000 chars are condensed via a cheap follow-up call — keeps findings/decisions/errors, drops narration. 'full': return the complete output unchanged. 'truncate': apply maxResultChars character truncation.",
+          description: "summary: condense >2000 chars (default). full: return unchanged. truncate: cap at maxResultChars.",
         },
-        maxResultChars: { type: "number", description: "Max chars when resultMode is 'truncate'. Default 2000 (0 = unlimited)." },
+        maxResultChars: { type: "number", description: "Char limit when resultMode='truncate'. Default 2000, 0=unlimited." },
       },
       required: ["prompt"],
     },
   },
   {
     name: "spawn_session",
-    description: "Open a PERSISTENT multi-turn child session and return its id. Unlike `call` (one-shot, stateless), the session stays alive across calls and retains context between turns. Drive it with session_send, then session_close when done. codex uses a native app-server thread; claude/API use a long-lived stream-json child.",
+    description: "Open a persistent multi-turn session. Context retained across turns. Drive with session_send, close with session_close.",
     inputSchema: {
       type: "object",
       properties: {
         provider: { type: "string", description: 'Provider key: "codex", "claude", "deepseek", …' },
         model: { type: "string", description: "Model id. Optional — uses provider default." },
-        write: { type: "boolean", description: "Enable tools so the session can edit files and run commands. codex: native app-server tools. Non-codex: spawns `claude -p` with --allowedTools per turn, accumulating history in the prompt. Default false." },
-        cwd: { type: "string", description: "Working dir for the session. Defaults to the server cwd." },
-        observe: { type: "boolean", description: "Non-codex: route through the observe proxy + capture jsonl. Default false." },
+        write: { type: "boolean", description: "Enable file-editing tools. Default false." },
+        cwd: { type: "string", description: "Working dir." },
+        observe: { type: "boolean", description: "Capture API traffic (non-codex)." },
       },
       required: ["provider"],
     },
   },
   {
     name: "session_send",
-    description: "Send one turn to a persistent session (from spawn_session) and return its reply. Context from earlier turns is retained. Turns are serialized per session — await each before the next.",
+    description: "Send one turn to a session (from spawn_session). Context retained across turns.",
     inputSchema: {
       type: "object",
       properties: {
@@ -161,7 +152,7 @@ export const TOOLS = [
   },
   {
     name: "team_spawn",
-    description: "Create a named FLEET of persistent workers (Opus team mode). Each worker is a persistent session with its own provider — Opus can talk to any worker at any time via team_send, retaining full multi-turn context per worker. Close with team_close.",
+    description: "Create a fleet of persistent worker sessions. Talk to workers via team_send, close with team_close.",
     inputSchema: {
       type: "object",
       properties: {
@@ -186,7 +177,7 @@ export const TOOLS = [
   },
   {
     name: "team_send",
-    description: "Send one turn to a team worker. Context from earlier turns with this worker is retained — multi-turn conversation between Opus and this specific worker.",
+    description: "Send one turn to a team worker. Context retained across turns.",
     inputSchema: {
       type: "object",
       properties: {
@@ -199,7 +190,7 @@ export const TOOLS = [
   },
   {
     name: "team_status",
-    description: "Get status of all workers in a team (id, provider, turn count). The orchestrator's dashboard for multi-worker fleets.",
+    description: "Get status of all workers in a team (id, provider, turn count).",
     inputSchema: {
       type: "object",
       properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
@@ -208,7 +199,7 @@ export const TOOLS = [
   },
   {
     name: "team_synthesize",
-    description: "Collect the last turn from every worker in the team and run a synthesis pass — produces a unified summary for the orchestrator.",
+    description: "Synthesize all worker contexts into one unified summary.",
     inputSchema: {
       type: "object",
       properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
@@ -252,28 +243,25 @@ export const TOOLS = [
   {
     name: "fan_out",
     description:
-      "Run N tasks concurrently across providers and return ONE compact structured result. " +
-      "The orchestrator's primary primitive for parallel work distribution (Opus plans → " +
-      "DeepSeek/Codex workers execute in parallel). Each task is a lightweight call with " +
-      "resultMode:'summary' — summaries are collected into a single JSON response. " +
-      "Optionally runs a synthesis pass over all results. Far less parent-context pollution " +
-      "than N separate call() invocations.",
+      "Run N tasks concurrently across providers, return one compact JSON result. " +
+      "Each task gets resultMode:'summary'. Optional synthesis pass. " +
+      "Far less context pollution than N separate call()s.",
     inputSchema: {
       type: "object",
       properties: {
         tasks: {
           type: "array",
-          description: "Tasks to run in parallel. Each is a lightweight call spec.",
+          description: "Tasks to run in parallel.",
           items: {
             type: "object",
             properties: {
-              id: { type: "string", description: "Task id for result correlation. Auto-generated if omitted." },
-              provider: { type: "string", description: "Provider for this task." },
-              prompt: { type: "string", description: "The task prompt." },
-              mode: { type: "string", enum: ["task", "review", "agent"], description: "Operation mode. Default 'task'." },
-              write: { type: "boolean", description: "codex only: enable file-editing tools for this task." },
-              model: { type: "string", description: "Model override for this task." },
-              cwd: { type: "string", description: "Working dir for this task. Use separate dirs for concurrent write tasks." },
+              id: { type: "string", description: "Task id for result correlation." },
+              provider: { type: "string" },
+              prompt: { type: "string" },
+              mode: { type: "string", enum: ["task", "review", "agent"] },
+              write: { type: "boolean", description: "Enable file-editing tools (codex)." },
+              model: { type: "string" },
+              cwd: { type: "string", description: "Working dir." },
             },
             required: ["provider", "prompt"],
           },
