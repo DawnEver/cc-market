@@ -1,6 +1,6 @@
 ---
 name: watch
-description: "Unattended server & task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. Use when the user asks to supervise, monitor, watch, babysit a server, check health, auto-fix, restart on failure, rollback, or set up unattended ops."
+description: "Unattended supervision: health checks, anomaly detection, auto-repair, alerts"
 ---
 
 # watch — Unattended Operations Supervisor

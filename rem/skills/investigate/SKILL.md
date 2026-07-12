@@ -1,10 +1,6 @@
 ---
 name: investigate
-description: >
-  Research a question or proposal thoroughly, write a detailed memory file with findings,
-  and add a task to rem:todo. Do NOT execute any code changes — pure investigation mode.
-  Use when the user wants to understand feasibility, explore options, or document a
-  decision before acting.
+description: Research a question, write findings to memory, add todo. No code changes — pure investigation.
 ---
 
 # Investigate

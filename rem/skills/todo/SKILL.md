@@ -1,6 +1,6 @@
 ---
 name: todo
-description: List, add, mark, or remove entries in the persisted `/todo` task backlog. Only for explicit operations on that stored list — not for "go do X" requests to act ("去做", "做一下"). Backed by rem/scripts/task-engine.js.
+description: List, add, mark, remove entries in the persisted `/todo` backlog. Backed by rem/scripts/task-engine.js.
 ---
 
 # Tasks

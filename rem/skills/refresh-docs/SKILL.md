@@ -1,11 +1,6 @@
 ---
 name: refresh-docs
-description: >
-  Refresh stale knowledge-base docs, and create/bind new ones. Detects living docs whose
-  doc_source subtrees have drifted (by commits, churn, or age) past their device-local anchor,
-  then incrementally rewrites each — minimal changes, preserving human annotations — and
-  re-anchors to HEAD. Use to bring docs up to date with code, to turn a doc into a bound doc,
-  or after a todo report shows DOC- tasks.
+description: Refresh stale bound docs whose code has drifted, preserving human annotations. Also creates/binds new docs.
 ---
 
 # Refresh Docs

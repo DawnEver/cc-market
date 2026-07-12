@@ -1,6 +1,6 @@
 ---
 name: evolve
-description: Iterative TDD review→fix loop — each round critiques the codebase, fans out agents to fix findings, reviews the un-fixed and judges why, escalates hard calls to the human, runs the test suite before each commit (escalating on failure), and commits. Use when the user wants to drive a codebase to a clean state over multiple automated review/fix rounds.
+description: Iterative review→fix loop: critique, fan-out fix, verify, gate, TDD, commit per round
 ---
 
 # evolve — iterative review→fix loop

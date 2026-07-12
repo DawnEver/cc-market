@@ -60,113 +60,104 @@ const textResult = (s) => ({ content: [{ type: "text", text: s }] });
 export const TOOLS = [
   {
     name: "call",
-    description:
-      "One-shot model invocation. Routes to Claude (native), Codex (app-server), or any Anthropic-compatible API. " +
-      "`mode` selects policy: task/review/agent/image-*. <command> block flags override params. " +
-      "For persistent multi-turn, use spawn_session.",
+    description: "Invoke a model. <command> block flags in prompt override params. For persistent multi-turn use spawn_session.",
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: "Provider: claude, codex, deepseek, or a custom key from claude_env_settings.json. Optional if a <command> block sets --provider." },
-        model: { type: "string", description: "Model name. Optional — uses provider default." },
+        provider: { type: "string", description: "claude, codex, deepseek, or key from claude_env_settings.json" },
+        model: { type: "string", description: "Model override" },
         mode: {
           type: "string",
           enum: ["task", "review", "agent", "image-generate", "image-edit"],
-          description: "task=code (API:raw HTTP), review=adversarial, agent=full tools, image-*=codex only. Default 'task'.",
+          description: "task|review|agent|image-*. Default: task",
         },
-        write: { type: "boolean", description: "Enable file-editing tools (codex only)." },
-        systemPrompt: { type: "string", description: "Custom system prompt (overrides mode default)." },
-        prompt: { type: "string", description: "The user message or task." },
+        write: { type: "boolean", description: "Allow file writes (codex only)" },
+        systemPrompt: { type: "string", description: "System prompt override" },
+        prompt: { type: "string", description: "Message or task to send" },
         images: {
           type: "array",
-          description: "Optional image attachments. Each is base64-encoded with a media type.",
+          description: "Base64 images with media type",
           items: {
             type: "object",
             properties: {
-              path: { type: "string", description: "Original file path (for reference)" },
-              data: { type: "string", description: "Base64-encoded image data" },
-              media_type: { type: "string", description: "MIME type, e.g. image/png" },
+              path: { type: "string", description: "File path" },
+              data: { type: "string", description: "Base64 data" },
+              media_type: { type: "string", description: "MIME type" },
             },
           },
         },
-        observe: { type: "boolean", description: "Capture API traffic via observe proxy + jsonl (non-codex)." },
-        passthroughAuth: { type: "boolean", description: "Forward child's Auth header (observe mode, defaults on for native claude)." },
-        cwd: { type: "string", description: "Working dir for the child." },
-        runDir: { type: "string", description: "Isolated temp dir for config + capture (observe mode)." },
-        timeoutMs: { type: "number", description: "Kill child after N ms (observe mode)." },
+        observe: { type: "boolean", description: "Capture HTTP traffic to jsonl (non-codex)" },
+        cwd: { type: "string", description: "Working dir" },
+        timeoutMs: { type: "number", description: "Kill after N ms" },
         resultMode: {
           type: "string",
           enum: ["summary", "full", "truncate"],
-          description: "summary: condense >2000 chars (default). full: return unchanged. truncate: cap at maxResultChars.",
+          description: "summary|full|truncate. Default: summary",
         },
-        maxResultChars: { type: "number", description: "Char limit when resultMode='truncate'. Default 2000, 0=unlimited." },
+        maxResultChars: { type: "number", description: "Cap when truncate. 0=unlimited" },
       },
       required: ["prompt"],
     },
   },
   {
     name: "spawn_session",
-    description: "Open a persistent multi-turn session. Context retained across turns. Drive with session_send, close with session_close.",
+    description: "Open a persistent multi-turn session. Drive with session_send, close with session_close.",
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: 'Provider key: "codex", "claude", "deepseek", …' },
-        model: { type: "string", description: "Model id. Optional — uses provider default." },
-        write: { type: "boolean", description: "Enable file-editing tools. Default false." },
-        cwd: { type: "string", description: "Working dir." },
-        observe: { type: "boolean", description: "Capture API traffic (non-codex)." },
+        provider: { type: "string", description: "codex|claude|deepseek|…" },
+        model: { type: "string", description: "Model override" },
+        write: { type: "boolean", description: "Allow file writes" },
+        cwd: { type: "string", description: "Working dir" },
+        observe: { type: "boolean", description: "Capture HTTP traffic" },
       },
       required: ["provider"],
     },
   },
   {
     name: "session_send",
-    description: "Send one turn to a session (from spawn_session). Context retained across turns.",
+    description: "Send a turn to a session. Context retained across turns.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Session id returned by spawn_session." },
-        prompt: { type: "string", description: "The turn text to send." },
-        resultMode: {
-          type: "string",
-          enum: ["summary", "full", "truncate"],
-          description: "How to shape this turn's result before returning to the parent. Default 'summary'.",
-        },
+        id: { type: "string", description: "Session id" },
+        prompt: { type: "string", description: "Turn text" },
+        resultMode: { type: "string", enum: ["summary", "full", "truncate"], description: "Default: summary" },
       },
       required: ["id", "prompt"],
     },
   },
   {
     name: "session_close",
-    description: "Close a persistent session and free its child process. Always close sessions you spawn.",
+    description: "Close a session and free its process.",
     inputSchema: {
       type: "object",
-      properties: { id: { type: "string", description: "Session id returned by spawn_session." } },
+      properties: { id: { type: "string", description: "Session id" } },
       required: ["id"],
     },
   },
   {
     name: "list_sessions",
-    description: "List the currently open persistent sessions held by this server (id, provider, turn count).",
+    description: "List open sessions (id, provider, turn count).",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "team_spawn",
-    description: "Create a fleet of persistent worker sessions. Talk to workers via team_send, close with team_close.",
+    description: "Create a fleet of workers. Drive with team_send, close with team_close.",
     inputSchema: {
       type: "object",
       properties: {
         workers: {
           type: "array",
-          description: "Worker definitions. Each becomes a persistent session.",
+          description: "Worker specs",
           items: {
             type: "object",
             properties: {
-              id: { type: "string", description: "Worker name for routing (e.g. 'auth-review', 'bug-fix')." },
-              provider: { type: "string", description: "Provider for this worker." },
-              model: { type: "string", description: "Model override." },
-              write: { type: "boolean", description: "Enable file-editing tools for this worker." },
-              cwd: { type: "string", description: "Working dir. Use separate dirs for concurrent write workers." },
+              id: { type: "string", description: "Worker name" },
+              provider: { type: "string" },
+              model: { type: "string", description: "Model override" },
+              write: { type: "boolean", description: "Allow file writes" },
+              cwd: { type: "string", description: "Working dir" },
             },
             required: ["id", "provider"],
           },
@@ -177,96 +168,92 @@ export const TOOLS = [
   },
   {
     name: "team_send",
-    description: "Send one turn to a team worker. Context retained across turns.",
+    description: "Send a turn to a team worker.",
     inputSchema: {
       type: "object",
       properties: {
-        teamId: { type: "string", description: "Team id from team_spawn." },
-        workerId: { type: "string", description: "Worker id to talk to." },
-        prompt: { type: "string", description: "The turn text." },
+        teamId: { type: "string", description: "Team id" },
+        workerId: { type: "string", description: "Worker id" },
+        prompt: { type: "string", description: "Turn text" },
       },
       required: ["teamId", "workerId", "prompt"],
     },
   },
   {
     name: "team_status",
-    description: "Get status of all workers in a team (id, provider, turn count).",
+    description: "Get status of all workers in a team.",
     inputSchema: {
       type: "object",
-      properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
+      properties: { teamId: { type: "string", description: "Team id" } },
       required: ["teamId"],
     },
   },
   {
     name: "team_synthesize",
-    description: "Synthesize all worker contexts into one unified summary.",
+    description: "Synthesize all worker contexts into a summary.",
     inputSchema: {
       type: "object",
-      properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
+      properties: { teamId: { type: "string", description: "Team id" } },
       required: ["teamId"],
     },
   },
   {
     name: "team_close",
-    description: "Close all sessions in a team and free resources.",
+    description: "Close all team sessions and free resources.",
     inputSchema: {
       type: "object",
-      properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
+      properties: { teamId: { type: "string", description: "Team id" } },
       required: ["teamId"],
     },
   },
   {
     name: "list_providers",
-    description: "List all configured providers (claude/codex + any Anthropic-compatible API from claude_env_settings.json) and their model aliases.",
+    description: "List configured providers and model aliases.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "resolve_model",
-    description: 'Resolve a full Claude model id (e.g. "claude-haiku-4-5-...") to a provider\'s real upstream model id, using the provider\'s tier aliases.',
+    description: "Remap a Claude model id to a provider's upstream model id.",
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: 'Provider key, e.g. "deepseek".' },
-        model: { type: "string", description: "Full Claude model id to remap." },
+        provider: { type: "string", description: "Provider key" },
+        model: { type: "string", description: "Claude model id" },
       },
       required: ["provider", "model"],
     },
   },
   {
     name: "codex_status",
-    description: "Check Codex CLI installation status, version, and authentication state.",
+    description: "Check Codex CLI install and auth status.",
     inputSchema: {
       type: "object",
-      properties: { codexPath: { type: "string", description: "Optional path to codex binary. Auto-detected if omitted." } },
+      properties: { codexPath: { type: "string", description: "Path to codex binary" } },
     },
   },
   {
     name: "fan_out",
-    description:
-      "Run N tasks concurrently across providers, return one compact JSON result. " +
-      "Each task gets resultMode:'summary'. Optional synthesis pass. " +
-      "Far less context pollution than N separate call()s.",
+    description: "Run N tasks in parallel, return compact JSON. Each auto-summarized. Optional synthesis.",
     inputSchema: {
       type: "object",
       properties: {
         tasks: {
           type: "array",
-          description: "Tasks to run in parallel.",
           items: {
             type: "object",
             properties: {
-              id: { type: "string", description: "Task id for result correlation." },
+              id: { type: "string", description: "Task label" },
               provider: { type: "string" },
               prompt: { type: "string" },
               mode: { type: "string", enum: ["task", "review", "agent"] },
-              write: { type: "boolean", description: "Enable file-editing tools (codex)." },
+              write: { type: "boolean" },
               model: { type: "string" },
-              cwd: { type: "string", description: "Working dir." },
+              cwd: { type: "string", description: "Working dir" },
             },
             required: ["provider", "prompt"],
           },
         },
-        synthesize: { type: "boolean", description: "After all tasks complete, run a cheap synthesis pass to produce a unified summary. Default true." },
+        synthesize: { type: "boolean", description: "Synthesize results into summary. Default true" },
       },
       required: ["tasks"],
     },
