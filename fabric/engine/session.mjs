@@ -118,5 +118,59 @@ export function getSessionProvider(id) {
   return entry ? entry.provider : null;
 }
 
+// ── Team registry: fleet-of-workers abstraction ──────────────────────
+// A "team" is a named group of persistent sessions (workers). Opus can
+// spawn a team, send to individual workers, check status, and close the
+// fleet. Builds on the session primitives — each worker IS a session.
+
+const teams = new Map(); // teamId → { workers: Map<workerId, {sessionId, provider}>, createdAt }
+
+export async function createTeam(workers, _open = openProviderSession) {
+  if (!workers || !workers.length) throw new Error("createTeam: workers array is required and non-empty");
+  const teamId = `team-${idFragment()}`;
+  const workerMap = new Map();
+  const results = [];
+  for (const w of workers) {
+    if (!w.id || !w.provider) throw new Error("createTeam: each worker needs id and provider");
+    const desc = await createSession({
+      provider: w.provider, model: w.model, write: !!w.write,
+      cwd: w.cwd || process.cwd(), observe: false,
+    }, _open);
+    workerMap.set(w.id, { sessionId: desc.id, provider: w.provider });
+    results.push({ id: w.id, sessionId: desc.id, provider: w.provider, write: !!w.write });
+  }
+  teams.set(teamId, { workers: workerMap, createdAt: Date.now() });
+  return { teamId, workers: results };
+}
+
+export async function sendToTeamWorker(teamId, workerId, text) {
+  const team = teams.get(teamId);
+  if (!team) throw new Error(`No such team: ${teamId}`);
+  const worker = team.workers.get(workerId);
+  if (!worker) throw new Error(`No worker "${workerId}" in team ${teamId}`);
+  return sendToSession(worker.sessionId, text);
+}
+
+export function getTeamStatus(teamId) {
+  const team = teams.get(teamId);
+  if (!team) throw new Error(`No such team: ${teamId}`);
+  return [...team.workers.entries()].map(([id, w]) => {
+    const all = listSessions();
+    const s = all.find((x) => x.id === w.sessionId);
+    return { id, provider: w.provider, sessionId: w.sessionId, turns: s?.turns || 0 };
+  });
+}
+
+export async function closeTeam(teamId) {
+  const team = teams.get(teamId);
+  if (!team) throw new Error(`No such team: ${teamId}`);
+  const results = [];
+  for (const [id, w] of team.workers) {
+    try { results.push(await closeSession(w.sessionId)); } catch { results.push({ id: w.sessionId, closed: false }); }
+  }
+  teams.delete(teamId);
+  return results;
+}
+
 // Test hook: drop all registry state without touching live handles.
-export function _resetRegistry() { sessions.clear(); seq = 0; }
+export function _resetRegistry() { sessions.clear(); teams.clear(); seq = 0; }

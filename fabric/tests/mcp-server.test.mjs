@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  TOOLS, handleToolCall, handleCall, send, encodeRpcMessage,
+  TOOLS, handleToolCall, handleCall, handleFanOut, send, encodeRpcMessage,
   API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH,
 } from "../scripts/mcp-server.mjs";
 
@@ -44,8 +44,9 @@ function runServer(input) {
 describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
-      ["call", "codex_status", "list_providers", "list_sessions", "resolve_model",
-       "session_close", "session_send", "spawn_session"]);
+      ["call", "codex_status", "fan_out", "list_providers", "list_sessions",
+       "resolve_model", "session_close", "session_send", "spawn_session",
+       "team_close", "team_send", "team_spawn", "team_status", "team_synthesize"]);
   });
 
   test("call schema: prompt required, mode enum, options present", () => {
@@ -131,6 +132,61 @@ describe("call primitive", () => {
   });
 });
 
+// ── fan_out ─────────────────────────────────────────────────────────
+
+describe("fan_out", () => {
+  test("requires non-empty tasks array", async () => {
+    await assert.rejects(() => handleFanOut({}), /tasks array is required/);
+    await assert.rejects(() => handleFanOut({ tasks: [] }), /tasks array is required/);
+  });
+
+  test("runs tasks concurrently, returns structured JSON", async () => {
+    let calls = 0;
+    const fakeSpawnChild = async (opts) => {
+      calls++;
+      return { stdout: "Result " + calls, stderr: "", code: 0 };
+    };
+    // fan_out uses handleCall internally → needs spawnChild dep for observe path
+    // but summary mode uses the dispatch path directly (no observe)
+    const res = await handleFanOut({
+      tasks: [
+        { id: "t1", provider: "deepseek", prompt: "task one" },
+        { id: "t2", provider: "deepseek", prompt: "task two" },
+      ],
+      synthesize: false,
+    });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.count, 2);
+    assert.equal(parsed.tasks.length, 2);
+    assert.equal(parsed.tasks[0].id, "t1");
+    assert.equal(parsed.tasks[1].id, "t2");
+  });
+
+  test("captures task failures in structured result", async () => {
+    const res = await handleFanOut({
+      tasks: [
+        { provider: "deepseek", prompt: "ok task" },
+        { provider: "nonexistent", prompt: "bad provider" },
+      ],
+      synthesize: false,
+    });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.ok, false);
+    assert.equal(parsed.failed, 1);
+    assert.equal(parsed.tasks[0].ok, true);
+    assert.equal(parsed.tasks[1].ok, false);
+  });
+
+  test("fan_out tool routes through handleToolCall", async () => {
+    const res = await handleToolCall("fan_out", {
+      tasks: [{ provider: "deepseek", prompt: "test" }],
+      synthesize: false,
+    });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.count, 1);
+  });
+});
+
 // ── introspection ────────────────────────────────────────────────────
 
 describe("introspection tools", () => {
@@ -170,5 +226,59 @@ describe("session tools", () => {
     assert.equal(JSON.parse(text(res)).exitCode, 0);
     const listed = await handleToolCall("list_sessions", {}, { listSessions: () => [{ id: "sess-1", provider: "codex", turns: 2, createdAt: 0 }] });
     assert.equal(JSON.parse(text(listed))[0].id, "sess-1");
+  });
+});
+
+// ── team tools (injected fakes) ──────────────────────────────────────
+
+describe("team tools", () => {
+  test("team_spawn requires workers array", async () => {
+    await assert.rejects(() => handleToolCall("team_spawn", {}), /workers array is required/);
+    await assert.rejects(() => handleToolCall("team_spawn", { workers: [] }), /workers array is required/);
+  });
+
+  test("team_spawn creates team, returns descriptor", async () => {
+    const fakeCreateTeam = async (workers) => ({
+      teamId: "team-1",
+      workers: workers.map(w => ({ id: w.id, sessionId: `sess-${w.id}`, provider: w.provider, write: !!w.write })),
+    });
+    const res = await handleToolCall("team_spawn", {
+      workers: [
+        { id: "auth", provider: "deepseek" },
+        { id: "fix", provider: "codex", write: true },
+      ],
+    }, { createTeam: fakeCreateTeam });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.teamId, "team-1");
+    assert.equal(parsed.workers.length, 2);
+    assert.equal(parsed.workers[0].id, "auth");
+    assert.equal(parsed.workers[1].write, true);
+  });
+
+  test("team_send routes to worker, returns summarized reply", async () => {
+    const fakeSend = async (teamId, workerId, prompt) => ({ text: `${workerId}: ${prompt}`, turn: 3 });
+    const fakeStatus = (teamId) => [{ id: "auth", sessionId: "sess-auth", provider: "deepseek", turns: 3 }];
+    const res = await handleToolCall("team_send", {
+      teamId: "team-1", workerId: "auth", prompt: "review this",
+    }, { sendToTeamWorker: fakeSend, getTeamStatus: fakeStatus });
+    assert.match(text(res), /auth:/);
+  });
+
+  test("team_status returns worker list", async () => {
+    const fakeStatus = (teamId) => [
+      { id: "auth", provider: "deepseek", sessionId: "s-a", turns: 3 },
+      { id: "fix", provider: "codex", sessionId: "s-f", turns: 1 },
+    ];
+    const res = await handleToolCall("team_status", { teamId: "team-1" }, { getTeamStatus: fakeStatus });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0].id, "auth");
+  });
+
+  test("team_close closes all workers", async () => {
+    const fakeClose = async (teamId) => [{ id: "s-a", exitCode: 0 }, { id: "s-f", exitCode: 0 }];
+    const res = await handleToolCall("team_close", { teamId: "team-1" }, { closeTeam: fakeClose });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.length, 2);
   });
 });

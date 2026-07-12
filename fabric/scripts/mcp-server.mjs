@@ -45,7 +45,7 @@ import { withPooledClient } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId } from "../engine/providers.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, listSessions, getSessionProvider } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -160,6 +160,71 @@ export const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "team_spawn",
+    description: "Create a named FLEET of persistent workers (Opus team mode). Each worker is a persistent session with its own provider — Opus can talk to any worker at any time via team_send, retaining full multi-turn context per worker. Close with team_close.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workers: {
+          type: "array",
+          description: "Worker definitions. Each becomes a persistent session.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Worker name for routing (e.g. 'auth-review', 'bug-fix')." },
+              provider: { type: "string", description: "Provider for this worker." },
+              model: { type: "string", description: "Model override." },
+              write: { type: "boolean", description: "Enable file-editing tools for this worker." },
+              cwd: { type: "string", description: "Working dir. Use separate dirs for concurrent write workers." },
+            },
+            required: ["id", "provider"],
+          },
+        },
+      },
+      required: ["workers"],
+    },
+  },
+  {
+    name: "team_send",
+    description: "Send one turn to a team worker. Context from earlier turns with this worker is retained — multi-turn conversation between Opus and this specific worker.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        teamId: { type: "string", description: "Team id from team_spawn." },
+        workerId: { type: "string", description: "Worker id to talk to." },
+        prompt: { type: "string", description: "The turn text." },
+      },
+      required: ["teamId", "workerId", "prompt"],
+    },
+  },
+  {
+    name: "team_status",
+    description: "Get status of all workers in a team (id, provider, turn count). The orchestrator's dashboard for multi-worker fleets.",
+    inputSchema: {
+      type: "object",
+      properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
+      required: ["teamId"],
+    },
+  },
+  {
+    name: "team_synthesize",
+    description: "Collect the last turn from every worker in the team and run a synthesis pass — produces a unified summary for the orchestrator.",
+    inputSchema: {
+      type: "object",
+      properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
+      required: ["teamId"],
+    },
+  },
+  {
+    name: "team_close",
+    description: "Close all sessions in a team and free resources.",
+    inputSchema: {
+      type: "object",
+      properties: { teamId: { type: "string", description: "Team id from team_spawn." } },
+      required: ["teamId"],
+    },
+  },
+  {
     name: "list_providers",
     description: "List all configured providers (claude/codex + any Anthropic-compatible API from claude_env_settings.json) and their model aliases.",
     inputSchema: { type: "object", properties: {} },
@@ -182,6 +247,40 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: { codexPath: { type: "string", description: "Optional path to codex binary. Auto-detected if omitted." } },
+    },
+  },
+  {
+    name: "fan_out",
+    description:
+      "Run N tasks concurrently across providers and return ONE compact structured result. " +
+      "The orchestrator's primary primitive for parallel work distribution (Opus plans → " +
+      "DeepSeek/Codex workers execute in parallel). Each task is a lightweight call with " +
+      "resultMode:'summary' — summaries are collected into a single JSON response. " +
+      "Optionally runs a synthesis pass over all results. Far less parent-context pollution " +
+      "than N separate call() invocations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tasks: {
+          type: "array",
+          description: "Tasks to run in parallel. Each is a lightweight call spec.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Task id for result correlation. Auto-generated if omitted." },
+              provider: { type: "string", description: "Provider for this task." },
+              prompt: { type: "string", description: "The task prompt." },
+              mode: { type: "string", enum: ["task", "review", "agent"], description: "Operation mode. Default 'task'." },
+              write: { type: "boolean", description: "codex only: enable file-editing tools for this task." },
+              model: { type: "string", description: "Model override for this task." },
+              cwd: { type: "string", description: "Working dir for this task. Use separate dirs for concurrent write tasks." },
+            },
+            required: ["provider", "prompt"],
+          },
+        },
+        synthesize: { type: "boolean", description: "After all tasks complete, run a cheap synthesis pass to produce a unified summary. Default true." },
+      },
+      required: ["tasks"],
     },
   },
 ];
@@ -461,6 +560,78 @@ export async function handleCall(args, deps = {}) {
   return { content: [{ type: "text", text: resultText }] };
 }
 
+// ── fan_out: the orchestrator's parallel-work primitive ─────────
+
+export async function handleFanOut(args, deps) {
+  const { tasks, synthesize = true } = args;
+  if (!tasks || !tasks.length) throw new ConfigError("fan_out: tasks array is required and must be non-empty");
+
+  let idx = 0;
+  const settled = await Promise.allSettled(
+    tasks.map(async (task) => {
+      const i = idx++;
+      const id = task.id || `task-${i}`;
+      const t0 = Date.now();
+      try {
+        const res = await handleCall({
+          provider: task.provider,
+          prompt: task.prompt,
+          mode: task.mode || "task",
+          write: !!task.write,
+          model: task.model,
+          resultMode: "summary",
+          cwd: task.cwd,
+        }, deps);
+        const text = res.content[0].text;
+        const fullMatch = text.match(/\[Full: (\d+) chars/);
+        const summary = fullMatch
+          ? text.slice(0, text.lastIndexOf("\n\n[Full:")).trim()
+          : text;
+        return {
+          id, ok: true,
+          summary: summary.length > 400 ? summary.slice(0, 397) + "..." : summary,
+          estTokens: { in: Math.round((fullMatch ? parseInt(fullMatch[1]) : text.length) / 4), out: Math.round(text.length / 4) },
+          durationMs: Date.now() - t0,
+        };
+      } catch (e) {
+        return { id, ok: false, error: e.message.slice(0, 200), durationMs: Date.now() - t0 };
+      }
+    }),
+  );
+
+  const results = settled.map((s) => s.status === "fulfilled" ? s.value : { ok: false, error: s.reason?.message?.slice(0, 200) || "unknown error" });
+
+  let synthesis = null;
+  if (synthesize) {
+    const summaryText = results.map((r) =>
+      `[${r.id}] ${r.ok ? r.summary : `FAILED: ${r.error}`}`,
+    ).join("\n");
+    try {
+      const dsConfig = loadProviderConfig("deepseek");
+      if (dsConfig.baseUrl) {
+        const data = await callAnthropicAPI(
+          dsConfig, dsConfig.defaultHaiku || dsConfig.defaultSonnet,
+          "Synthesize these N parallel task results into a 2-3 sentence summary for the orchestrator. Flag failures, patterns, and follow-ups.",
+          summaryText, null, true,
+        );
+        synthesis = extractText(data);
+      }
+    } catch { /* synthesis is best-effort */ }
+  }
+
+  const allOk = results.every((r) => r.ok);
+  const totalEstTokens = results.reduce((s, r) => s + (r.estTokens?.in || 0) + (r.estTokens?.out || 0), 0);
+
+  return textResult(JSON.stringify({
+    ok: allOk,
+    count: results.length,
+    failed: results.filter((r) => !r.ok).length,
+    tasks: results,
+    totalEstTokens,
+    ...(synthesis ? { synthesis } : {}),
+  }));
+}
+
 // ── Tool dispatch ─────────────────────────────────────────────────
 
 export async function handleToolCall(name, args = {}, deps = {}) {
@@ -468,9 +639,15 @@ export async function handleToolCall(name, args = {}, deps = {}) {
   const _sendToSession = deps.sendToSession || sendToSession;
   const _closeSession = deps.closeSession || closeSession;
   const _listSessions = deps.listSessions || listSessions;
+  const _createTeam = deps.createTeam || createTeam;
+  const _sendToTeamWorker = deps.sendToTeamWorker || sendToTeamWorker;
+  const _getTeamStatus = deps.getTeamStatus || getTeamStatus;
+  const _closeTeam = deps.closeTeam || closeTeam;
   switch (name) {
     case "call":
       return await handleCall(args, deps);
+    case "fan_out":
+      return await handleFanOut(args, deps);
     case "spawn_session": {
       if (!args.provider) throw new Error("spawn_session: provider is required");
       const desc = await _createSession({
@@ -505,6 +682,62 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "session_close": {
       if (!args.id) throw new Error("session_close: id is required");
       return textResult(JSON.stringify(await _closeSession(args.id)));
+    }
+    case "team_spawn": {
+      if (!args.workers || !args.workers.length) throw new Error("team_spawn: workers array is required");
+      const desc = await _createTeam(args.workers);
+      return textResult(JSON.stringify(desc));
+    }
+    case "team_send": {
+      if (!args.teamId || !args.workerId || !args.prompt) throw new Error("team_send: teamId, workerId, and prompt are required");
+      const res = await _sendToTeamWorker(args.teamId, args.workerId, args.prompt);
+      const fullText = res.text || "(no output)";
+      const resultMode = args.resultMode || "summary";
+      let resultText;
+      if (resultMode === "full") {
+        resultText = fullText;
+      } else if (resultMode === "truncate") {
+        resultText = truncateText(fullText, 2000);
+      } else {
+        const worker = _getTeamStatus(args.teamId).find(w => w.id === args.workerId);
+        const workerProvider = worker ? getSessionProvider(worker.sessionId) : null;
+        if (workerProvider) {
+          try {
+            const cfg = loadProviderConfig(workerProvider);
+            resultText = await summarizeOutput(fullText, cfg, workerProvider);
+          } catch { resultText = truncateText(fullText, 4000); }
+        } else {
+          resultText = truncateText(fullText, 4000);
+        }
+      }
+      return textResult(resultText);
+    }
+    case "team_status": {
+      if (!args.teamId) throw new Error("team_status: teamId is required");
+      return textResult(JSON.stringify(_getTeamStatus(args.teamId)));
+    }
+    case "team_synthesize": {
+      if (!args.teamId) throw new Error("team_synthesize: teamId is required");
+      const status = _getTeamStatus(args.teamId);
+      // Summarize from status only (no full-turn fetch — lightweight)
+      const summary = status.map(w => `[${w.id}] provider=${w.provider} turns=${w.turns}`).join("\n");
+      let synthesis = null;
+      try {
+        const dsConfig = loadProviderConfig("deepseek");
+        if (dsConfig.baseUrl) {
+          const data = await callAnthropicAPI(
+            dsConfig, dsConfig.defaultHaiku || dsConfig.defaultSonnet,
+            "Synthesize this team status into a 2-3 sentence view for the orchestrator. Note worker activity levels and any patterns.",
+            summary, null, true,
+          );
+          synthesis = extractText(data);
+        }
+      } catch { /* best-effort */ }
+      return textResult(JSON.stringify({ teamId: args.teamId, workers: status, synthesis }));
+    }
+    case "team_close": {
+      if (!args.teamId) throw new Error("team_close: teamId is required");
+      return textResult(JSON.stringify(await _closeTeam(args.teamId)));
     }
     case "list_sessions":
       return textResult(JSON.stringify(_listSessions()));
