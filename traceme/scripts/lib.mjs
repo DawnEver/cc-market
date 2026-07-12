@@ -1,6 +1,6 @@
 import { existsSync, statSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, basename } from 'node:path';
+import { join, basename, dirname, resolve } from 'node:path';
 import { execFileSync } from "../shared/spawn.mjs";
 
 export const TRACEME_DIR = join(homedir(), '.claude', 'traceme');
@@ -46,7 +46,16 @@ export function categorizeTool(toolName, skillName) {
 
 export function getProjectRoot(cwd) {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 3000 }).trim();
+    const toplevel = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 3000 }).trim();
+    // Resolve git worktrees to their main repo root.
+    // In a worktree, --git-common-dir returns the main .git dir (absolute);
+    // in a regular repo it returns '.git' (relative to toplevel).
+    const commonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8', timeout: 3000 }).trim();
+    const resolved = resolve(toplevel, commonDir);
+    if (resolved !== join(toplevel, '.git')) {
+      return dirname(resolved);
+    }
+    return toplevel;
   } catch {
     return cwd;
   }

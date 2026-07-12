@@ -34,6 +34,13 @@ export function cmdInsights(args, VERSION) {
 
   const projectSearch = project ? project.toLowerCase() : null;
 
+  // Derive canonical project name from repo_origin (handles worktree names).
+  const canonical = (repoOrigin, proj) => {
+    if (!repoOrigin) return proj;
+    const last = repoOrigin.replace(/[\/\\]$/, '').split(/[\/\\]/).pop();
+    return last || proj;
+  };
+
   // ═══════════════════════════════════════════════
   // TOKEN CONSUMPTION (merged data per day)
   // ═══════════════════════════════════════════════
@@ -70,9 +77,9 @@ export function cmdInsights(args, VERSION) {
     daysWithData++;
     tokenByDay[day] = {};
     for (const r of rows) {
-      // group by repo_origin identity (so same-basename repos don't merge); label by project
+      // group by repo_origin identity (so same-basename repos don't merge); label by canonical project name
       const key = r.repo_origin || r.project;
-      projectLabel[key] = r.project;
+      projectLabel[key] = canonical(r.repo_origin, r.project);
       tokenByDay[day][key] = r;
       allProjects.add(key);
       if (!projectTokenTotals[key]) projectTokenTotals[key] = { sessions: 0, prompts: 0, tokens: 0, cost: 0 };
@@ -115,7 +122,7 @@ export function cmdInsights(args, VERSION) {
     if (!s.ended_at && durMin > 240) durMin = 240;
 
     const tkey = s.repo_origin || s.project;
-    projectLabel[tkey] = projectLabel[tkey] || s.project;
+    projectLabel[tkey] = projectLabel[tkey] || canonical(s.repo_origin, s.project);
     if (!timeByProject[tkey]) timeByProject[tkey] = { sessions: 0, totalMin: 0, activeMin: 0, countWithEnd: 0, sumWithEnd: 0 };
     timeByProject[tkey].sessions++;
     timeByProject[tkey].totalMin += durMin;
