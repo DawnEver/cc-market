@@ -53,7 +53,7 @@ Each reviewer's prompt depends on `promptKind`.
 
 **Review prompt template** (`promptKind: "diff"`, `mode: "review"`):
 
-Call `mcp__plugin_fabric_fabric__call` with `provider="<provider>"`[, `model="<model>"`], `mode="review"`, and `prompt` set to:
+Call `mcp__plugin_fabric_fabric__call` with `provider="<provider>"`[, `model="<model>"`], `mode="review"`, `resultMode="full"` (REQUIRED — default is `"summary"` which truncates findings!), and `prompt` set to:
 
 ```
 <framing if any>

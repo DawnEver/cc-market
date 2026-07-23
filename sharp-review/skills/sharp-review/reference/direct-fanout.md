@@ -47,8 +47,9 @@ through two different lenses, at the same 2-reviewer cost.
 2. Build each reviewer's prompt from **its assigned profile's** framing/scope, using the
    shared diff/manifest payload (Step 2) for diff-sourced profiles.
    **Call each active reviewer** via `mcp__plugin_fabric_fabric__call`
-   (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`) with the review
-   prompt as `prompt`. Extract `{ "findings": [...] }` from the response — directly for
+   (`provider="codex"|"deepseek"|"claude"`, `mode="review"|"agent"`, `resultMode="full"`)
+   — `resultMode` defaults to `"summary"` which TRUNCATES output; always set `"full"`.
+   Pass the review prompt as `prompt`. Extract `{ "findings": [...] }` from the response — directly for
    deepseek/claude, or via § Codex prose normalization for codex review-mode.
    If the takeover tool is unavailable, fall back to the `Agent` tool (Claude Code) or
    `spawn_agent` (Codex) — one worker per reviewer.
