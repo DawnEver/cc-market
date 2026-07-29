@@ -155,6 +155,35 @@ describe('appendEvent', async () => {
     assert.equal(state.prune.events.length, 1);
     assert.equal(state.prune.events[0].type, 'scratch');
   });
+
+  it('returns { persisted: true } on a successful write', () => {
+    const file = tmp('persisted.json');
+    const res = appendEvent(file, 'p', {});
+    assert.equal(res.persisted, true);
+  });
+});
+
+// ── withStateLock ──
+
+describe('withStateLock', async () => {
+  const { withStateLock, loadState } = await import(stateUrl);
+
+  it('loads fresh state inside the lock, mutates, and saves atomically', () => {
+    const file = tmp('wsl.json');
+    const res = withStateLock(file, (state) => {
+      state.hook.stopCount = 7;
+    });
+    assert.equal(res.persisted, true);
+    assert.equal(loadState(file).hook.stopCount, 7);
+  });
+
+  it('sees concurrent writes made before acquisition (no stale snapshot)', () => {
+    const file = tmp('wsl-fresh.json');
+    withStateLock(file, (s) => { s.hook.stopCount = 1; });
+    // A second mutation must observe the first one's write
+    withStateLock(file, (s) => { s.hook.stopCount = s.hook.stopCount + 1; });
+    assert.equal(loadState(file).hook.stopCount, 2);
+  });
 });
 
 // ── deepMerge edge cases ──

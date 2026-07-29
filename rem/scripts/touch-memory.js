@@ -45,15 +45,17 @@ const oldDropped = cur.dropped;
 
 // Mutations under the index lease lock (bumpAccessed/promote lock the per-date
 // _meta.json separately; rebuildIndex reuses this lock via reentrancy).
+// Fail-CLOSED (onTimeout: 'throw'): a mutating CLI must not run unlocked.
 let action;
+try {
 withLock(join(scope, '.claude', 'rules', 'MEMORY.md'), () => {
   // Bump accessed (touch clears dropped — re-indexes an evicted entry)
-  bumpAccessed(scope, relPath, today);
+  bumpAccessed(scope, relPath, today, { onTimeout: 'throw' });
 
   action = oldDropped ? 're-indexed (was dropped) + bumped' : 'bumped';
 
   if (promote) {
-    saveMemoryMeta(scope, relPath, { tier: 'long' });
+    saveMemoryMeta(scope, relPath, { tier: 'long' }, { onTimeout: 'throw' });
     if (cur.tier === 'long') {
       action = oldDropped ? 're-indexed + already long, bumped' : 'already long, bumped';
     } else {
@@ -62,7 +64,14 @@ withLock(join(scope, '.claude', 'rules', 'MEMORY.md'), () => {
   }
 
   // Rebuild index
-  rebuildIndex(scope);
-});
+  rebuildIndex(scope, { onTimeout: 'throw' });
+}, { onTimeout: 'throw' });
+} catch (err) {
+  if (err.code === 'LOCK_TIMEOUT') {
+    console.error(`[touch-memory] another process holds the index lock — refusing to run unlocked (${err.message})`);
+    process.exit(1);
+  }
+  throw err;
+}
 
 console.log(`[touch-memory] ${target} → ${action}`);

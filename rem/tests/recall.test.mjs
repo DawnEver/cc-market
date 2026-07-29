@@ -16,6 +16,7 @@ import {
   findScopeForCwd,
   isSkippable,
   collectCandidates,
+  scopeFingerprint,
   scoreEntry,
   selectTop,
   buildRecallContext,
@@ -44,6 +45,26 @@ describe("tokenize", () => {
   test("empty input", () => {
     assert.deepEqual(tokenize(""), []);
     assert.deepEqual(tokenize(null), []);
+  });
+
+  test("CJK runs are segmented into bigrams", () => {
+    const toks = tokenize("记住这个约定");
+    assert.ok(toks.includes("记住"));
+    assert.ok(toks.includes("约定"));
+    assert.ok(toks.includes("个约"));
+    assert.equal(toks.length, 5); // 记住 住这 这个 个约 约定
+  });
+
+  test("mixed CJK + latin prompt keeps both", () => {
+    const toks = tokenize("记住这个：不要 force-push 共享分支");
+    assert.ok(toks.includes("force"));
+    assert.ok(toks.includes("push")); // "push" from "force-push" split on '-'
+    assert.ok(toks.includes("共享"));
+    assert.ok(toks.includes("分支"));
+  });
+
+  test("single CJK char is kept as a token", () => {
+    assert.deepEqual(tokenize("好"), ["好"]);
   });
 });
 
@@ -184,6 +205,60 @@ describe("recall over a fixture scope", () => {
   });
 });
 
+// ── candidate cache ──────────────────────────────────────────────────────────
+
+describe("collectCandidates cache", () => {
+  let dir;
+  beforeEach(() => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rem-recall-cache-")));
+    fs.mkdirSync(path.join(dir, ".claude", "memory"), { recursive: true });
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("cache hit returns identical candidates without re-reading", () => {
+    mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
+      "body", { accessed: "2026-07-20", count: 2, tier: "short" });
+    const first = collectCandidates(dir);
+    const second = collectCandidates(dir); // served from cache
+    assert.deepEqual(second, first);
+    assert.equal(second[0].name, "git-rules");
+  });
+
+  test("fingerprint changes when a memory file is added → cache invalidated", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
+      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+    const fp1 = scopeFingerprint(dir);
+    collectCandidates(dir); // populate cache
+    mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
+      "body", { accessed: "2026-07-21", count: 1, tier: "short" });
+    const fp2 = scopeFingerprint(dir);
+    assert.notEqual(fp1, fp2);
+    const cands = collectCandidates(dir);
+    assert.deepEqual(cands.map((c) => c.name).sort(), ["one", "two"]);
+  });
+
+  test("fingerprint changes when _meta.json changes (drop → invalidated)", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
+      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+    assert.equal(collectCandidates(dir).length, 1);
+    // Drop the entry by rewriting _meta.json.
+    const metaFile = path.join(dir, ".claude", "memory", "2026", "07", "01", "_meta.json");
+    const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+    meta["one.md"].dropped = "evicted";
+    fs.writeFileSync(metaFile, JSON.stringify(meta) + " "); // size must change
+    assert.equal(collectCandidates(dir).length, 0);
+  });
+
+  test("useCache:false bypasses the cache", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
+      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+    const cands = collectCandidates(dir, { useCache: false });
+    assert.equal(cands.length, 1);
+  });
+});
+
 // ── CLI integration ──────────────────────────────────────────────────────────
 
 describe("recall.js CLI", () => {
@@ -215,6 +290,15 @@ describe("recall.js CLI", () => {
     assert.equal(out.hookSpecificOutput.hookEventName, "UserPromptSubmit");
     assert.match(out.hookSpecificOutput.additionalContext, /auto-recalled/);
     assert.match(out.hookSpecificOutput.additionalContext, /conventional commits/);
+  });
+
+  test("emits additionalContext for a fully Chinese prompt (CJK recall)", () => {
+    mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "提交信息风格约定", "feedback"),
+      "使用约定式提交。", { accessed: "2026-07-20", count: 3, tier: "short" });
+    const r = run({ prompt: "提交信息应该怎么写？", cwd: dir, session_id: "s1" });
+    assert.equal(r.status, 0);
+    const out = JSON.parse(r.stdout);
+    assert.match(out.hookSpecificOutput.additionalContext, /auto-recalled/);
   });
 
   test("silent when nothing matches", () => {

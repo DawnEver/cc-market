@@ -3,9 +3,16 @@
 // rebuildIndex) and sharp-review (post-review upsert). Keeping the format here
 // lets sharp-review stamp its own entry without resolving the rem plugin dir.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs';
 import { join } from 'path';
 import { withLock } from './lock.mjs';
+
+// tmp+rename write so concurrent readers never see a half-written file.
+export function atomicWriteFile(file, payload) {
+  const tmp = file + '.tmp';
+  writeFileSync(tmp, payload, 'utf8');
+  renameSync(tmp, file);
+}
 
 function parseDate(s) { return new Date(s).getTime(); }
 
@@ -57,7 +64,7 @@ export function parseIndex(content) {
 // regenerates the full index on the next session start, so a plain upsert here only
 // needs to keep the index coherent until then. Creates a minimal index if missing.
 
-export function upsertIndexEntry(scopeRoot, relPath, { name, date }) {
+export function upsertIndexEntry(scopeRoot, relPath, { name, date }, { onTimeout = 'proceed' } = {}) {
   const rulesDir = join(scopeRoot, '.claude', 'rules');
   const indexFile = join(rulesDir, 'MEMORY.md');
   const path = normalizeMemoryPath(relPath);
@@ -80,6 +87,6 @@ export function upsertIndexEntry(scopeRoot, relPath, { name, date }) {
 
     const lines = [...headerLines, formatIndexEntry(entry), ...kept.map(e => e.line)];
     if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-    writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
-  });
+    atomicWriteFile(indexFile, lines.join('\n') + '\n');
+  }, { onTimeout });
 }

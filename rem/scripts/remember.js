@@ -23,6 +23,14 @@ const TYPES = new Set(['user', 'feedback', 'project', 'reference']);
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const VOLATILE_RE = /^(accessed|count|tier|dropped)\s*:/m;
 
+// YAML-safe scalar for frontmatter values that come from free text: emit plain
+// only for a conservative safe alphabet, otherwise double-quote via
+// JSON.stringify (a JSON string is a valid YAML double-quoted scalar).
+const PLAIN_SAFE_RE = /^[\w][\w ./()+-]*$/u;
+function yamlScalar(s) {
+  return PLAIN_SAFE_RE.test(s) ? s : JSON.stringify(s);
+}
+
 function usage(msg) {
   if (msg) console.error(`[remember] ${msg}`);
   console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--update]');
@@ -69,11 +77,17 @@ if (!isInsideDir(memDir, file)) {
 }
 
 // ── Content ──
+if (description && /[\r\n]/.test(description)) {
+  usage('--description must be a single line (no newlines)');
+}
 const desc = description
   || body.split('\n').map(l => l.replace(/^#+\s*/, '').replace(/[*_`]/g, '').trim())
     .find(l => l.length > 0)?.slice(0, 80)
   || name;
-const content = `---\nname: ${name}\ndescription: ${desc}\nmetadata.type: ${type}\n---\n\n${body}`;
+// metadata.type is nested YAML — prune-memory.js and recall.js read it via the
+// structured parser as metadata.type. A flat dotted key would be invisible to
+// them (feedback entries would lose their eviction exemption and recall weight).
+const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\nmetadata:\n  type: ${type}\n---\n\n${body}`;
 
 // ── Overwrite guard ──
 if (existsSync(file)) {

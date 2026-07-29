@@ -7,6 +7,10 @@
  * (no model call, <200ms), and injects the top 1–3 entries as
  * `additionalContext`. No matches → exit 0 silently.
  *
+ * Candidate frontmatter is cached per scope in a per-host tmpdir file, keyed
+ * by a stat-only fingerprint of the memory tree (count + total size + max
+ * mtime, incl. _meta.json) — any write invalidates it, so it never goes stale.
+ *
  * Codex limitation: Codex has no UserPromptSubmit-equivalent hook, so on a
  * Codex host this script exits 0 silently (detected via inject-rules.js's
  * isCodexHost). Auto-recall is Claude Code only.
@@ -15,7 +19,9 @@
  * break the session.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { loadMemoryState } from "./lib.mjs";
@@ -46,10 +52,20 @@ const STOPWORDS = new Set([
 ]);
 
 /** Lowercase, split on non-alphanumeric, drop stopwords and tokens <3 chars. */
+// CJK runs (Han, Kana, Hangul) have no spaces to split on — segment them into
+// bigrams (single chars kept as-is) so Chinese/Japanese/Korean prompts can
+// match CJK memory names/descriptions instead of tokenizing to nothing.
+const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]+/gu;
+
 export function tokenize(text) {
   if (!text) return [];
   const out = new Set();
-  for (const tok of String(text).toLowerCase().split(/[^a-z0-9]+/)) {
+  const latin = String(text).toLowerCase().replace(CJK_RE, (run) => {
+    if (run.length === 1) { out.add(run); return " "; }
+    for (let i = 0; i < run.length - 1; i++) out.add(run.slice(i, i + 2));
+    return " ";
+  });
+  for (const tok of latin.split(/[^a-z0-9]+/)) {
     if (tok.length < 3) continue;
     if (STOPWORDS.has(tok)) continue;
     out.add(tok);
@@ -83,7 +99,7 @@ export function isSkippable(relPath) {
  * file, with its frontmatter fields and volatile meta. Bodies are NOT read
  * here (only for the winners) to stay under the latency budget.
  */
-export function collectCandidates(scopeRoot) {
+function collectCandidatesUncached(scopeRoot) {
   const state = loadMemoryState(scopeRoot);
   const memDir = path.join(scopeRoot, ".claude", "memory");
   const out = [];
@@ -107,6 +123,59 @@ export function collectCandidates(scopeRoot) {
     });
   }
   return out;
+}
+
+// ── Candidate cache ──
+// Reading every memory file's frontmatter on every prompt is too slow on
+// cloud-synced dirs (OneDrive placeholders). Cache candidates in a per-host
+// tmpdir file keyed by a stat-only fingerprint of the memory tree (file count
+// + max mtime + total size, including _meta.json). Any write from
+// remember.js / touch-memory.js / prune changes the fingerprint, so the cache
+// can never serve stale entries; stat calls themselves are cheap. The cache
+// lives in os.tmpdir() (not the synced tree) so multi-device setups each keep
+// their own — and it never shows up in git status.
+
+export function scopeFingerprint(scopeRoot) {
+  const memDir = path.join(scopeRoot, ".claude", "memory");
+  let count = 0, maxMtime = 0, totalSize = 0;
+  (function walk(dir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(full); continue; }
+      try {
+        const st = fs.statSync(full);
+        count++;
+        totalSize += st.size;
+        if (st.mtimeMs > maxMtime) maxMtime = st.mtimeMs;
+      } catch { /* vanished mid-walk */ }
+    }
+  })(memDir);
+  return `${count}:${totalSize}:${maxMtime}`;
+}
+
+function cacheFileFor(scopeRoot) {
+  const key = crypto.createHash("sha1").update(path.resolve(scopeRoot)).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), `rem-recall-${key}.json`);
+}
+
+export function collectCandidates(scopeRoot, { useCache = true } = {}) {
+  if (!useCache) return collectCandidatesUncached(scopeRoot);
+  const fingerprint = scopeFingerprint(scopeRoot);
+  const cacheFile = cacheFileFor(scopeRoot);
+  try {
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
+      return cached.candidates;
+    }
+  } catch { /* no/invalid cache — rebuild */ }
+  const candidates = collectCandidatesUncached(scopeRoot);
+  try {
+    fs.writeFileSync(cacheFile, JSON.stringify({ fingerprint, candidates }), "utf8");
+  } catch { /* cache is best-effort */ }
+  return candidates;
 }
 
 /**

@@ -32,11 +32,20 @@ for (const file of allFiles) {
   } catch { /* skip unreadable */ }
 }
 
-// Rebuild index for all scopes
-const scopes = findAllScopes();
-for (const scope of scopes) {
-  rebuildIndex(scope);
-}
+// Rebuild index for all scopes. Fail-CLOSED: stamp is a mutating CLI — a lock
+// timeout exits non-zero rather than writing the index unlocked.
+try {
+  const scopes = findAllScopes();
+  for (const scope of scopes) {
+    rebuildIndex(scope, { onTimeout: 'throw' });
+  }
 
-const scopeLabels = scopes.map(s => relative(process.cwd(), s).replace(/\\/g, '/') || '.').join(', ');
-console.log(`[stamp-memory] ${allFiles.length} files, ${warned} warned, ${scopes.length} scope(s) indexed (${scopeLabels})`);
+  const scopeLabels = scopes.map(s => relative(process.cwd(), s).replace(/\\/g, '/') || '.').join(', ');
+  console.log(`[stamp-memory] ${allFiles.length} files, ${warned} warned, ${scopes.length} scope(s) indexed (${scopeLabels})`);
+} catch (err) {
+  if (err.code === 'LOCK_TIMEOUT') {
+    console.error(`[stamp-memory] another process holds the index lock — refusing to run unlocked (${err.message})`);
+    process.exit(1);
+  }
+  throw err;
+}

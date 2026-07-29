@@ -49,9 +49,15 @@ This sets `tier: long`, making it immune to eviction.
 ---
 name: kebab-case-slug
 description: one-line summary
-metadata.type: user | feedback | project | reference
+metadata:
+  type: user | feedback | project | reference
 ---
 ```
+`metadata.type` is **nested** YAML — prune-memory.js and recall.js read it with the
+structured parser (`metadata.type`); a flat dotted `metadata.type:` key is invisible
+to them and silently drops the feedback exemption / recall weighting. `remember.js`
+emits this nested form and YAML-quotes the `description` when it contains colons or
+other metacharacters (hand-written files should do the same).
 Volatile metadata (`accessed`, `count`, `tier`, `dropped`) lives in gitignored
 `_meta.json` per date directory — never in frontmatter.
 - `count` — number of distinct days this file was referenced; defaults to 1, auto-managed

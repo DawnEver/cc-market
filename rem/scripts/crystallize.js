@@ -185,28 +185,47 @@ if (mode === '--execute') {
     process.exit(0);
   }
 
-  const pathsToDrop = distilledPaths || indexedPaths;
+  let pathsToDrop;
 
-  // Drops + index rebuild under the index lease lock (rebuildIndex nests via
-  // reentrancy; dropFromIndex locks the per-date _meta.json separately).
+  // Decision (fresh index read) + drops + rebuild atomically under the index
+  // lease lock — reading the index OUTSIDE the lock and dropping a stale set is
+  // a TOCTOU race vs. concurrent stamps. Fail-CLOSED on lock timeout (mutating
+  // CLI); rebuildIndex/dropFromIndex nest via reentrancy or separate lock paths.
+  try {
   withLock(indexFile, () => {
+    // Re-read the index inside the lock for the drop decision
+    const freshIndexed = [];
+    const freshRe = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
+    let fm;
+    while ((fm = freshRe.exec(readFileSync(indexFile, 'utf8'))) !== null) {
+      freshIndexed.push(fm[1]);
+    }
+    pathsToDrop = distilledPaths || freshIndexed;
+
     if (distilledPaths && distilledPaths.length > 0) {
       // Granular mode: drop only distilled entries
       for (const p of distilledPaths) {
-        dropFromIndex(scopeRoot, p, 'crystallized');
+        dropFromIndex(scopeRoot, p, 'crystallized', { onTimeout: 'throw' });
       }
-      console.log(`[crystallize] dropped ${distilledPaths.length}/${indexedPaths.length} distilled entries from index`);
+      console.log(`[crystallize] dropped ${distilledPaths.length}/${freshIndexed.length} distilled entries from index`);
     } else {
       // Full mode: drop all
-      for (const p of indexedPaths) {
-        dropFromIndex(scopeRoot, p, 'crystallized');
+      for (const p of freshIndexed) {
+        dropFromIndex(scopeRoot, p, 'crystallized', { onTimeout: 'throw' });
       }
-      console.log(`[crystallize] cleared ${indexedPaths.length} index entries`);
+      console.log(`[crystallize] cleared ${freshIndexed.length} index entries`);
     }
 
     // 4. Rebuild index
-    rebuildIndex(scopeRoot);
-  });
+    rebuildIndex(scopeRoot, { onTimeout: 'throw' });
+  }, { onTimeout: 'throw' });
+  } catch (err) {
+    if (err.code === 'LOCK_TIMEOUT') {
+      console.error(`[crystallize] another process holds the index lock — refusing to run unlocked (${err.message})`);
+      process.exit(1);
+    }
+    throw err;
+  }
 
   // 5. Detect SR-ID findings being crystallized
   const srIds = [];

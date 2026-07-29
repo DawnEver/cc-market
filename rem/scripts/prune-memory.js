@@ -12,10 +12,12 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { parseFrontmatter as parseNestedFrontmatter } from '../shared/lib.mjs';
 import { withLock } from '../shared/lock.mjs';
+import { withStateLock } from '../shared/state.mjs';
 import {
   scopeRoot,
+  stateFile,
   MAX_ENTRIES, STALE_DAYS, DAY_MS,
-  loadMemoryState, saveMemoryMeta, loadState, saveState, appendEvent, dayPrecision,
+  loadMemoryState, saveMemoryMeta, loadState, appendEvent, dayPrecision,
   rebuildIndex, collectMemoryFiles, parseFrontmatter,
   findAllScopes,
 } from './lib.mjs';
@@ -153,29 +155,40 @@ if (dryRun) {
 } else {
   // Mutation phase (meta drops, state, index rebuilds) under a prune-wide lease
   // lock; the per-file locks inside saveState/saveMemoryMeta/rebuildIndex nest
-  // safely (different lock paths).
+  // safely (different lock paths). Fail-CLOSED (onTimeout: 'throw'): prune
+  // --execute is a mutating CLI — running it without the lock would corrupt
+  // shared state, unlike hooks which proceed best-effort.
+  try {
   withLock(join(memDir, '.prune'), () => {
     for (const e of demoted) {
-      saveMemoryMeta(scopeRoot, e.path, { tier: 'short', count: 1 });
-      appendEvent('demote', { path: e.path, previousTier: 'long', reason: 'inactive between prune cycles' });
+      saveMemoryMeta(scopeRoot, e.path, { tier: 'short', count: 1 }, { onTimeout: 'throw' });
+      appendEvent('demote', { path: e.path, previousTier: 'long', reason: 'inactive between prune cycles' }, { onTimeout: 'throw' });
     }
 
-    state.prune.lastPruneAt = now;
-    saveState(state);
+    // Load→mutate→save the prune timestamp atomically — a stale snapshot here
+    // would clobber another process's concurrent state write (TOCTOU).
+    withStateLock(stateFile, (fresh) => { fresh.prune.lastPruneAt = now; }, { onTimeout: 'throw' });
 
     for (const p of dropSet) {
       const reason = staleEvictable.some(e => e.path === p) ? 'stale-90d' : 'over-capacity';
-      saveMemoryMeta(scopeRoot, p, { dropped: reason });
-      appendEvent('evict', { path: p, reason });
+      saveMemoryMeta(scopeRoot, p, { dropped: reason }, { onTimeout: 'throw' });
+      appendEvent('evict', { path: p, reason }, { onTimeout: 'throw' });
     }
 
     if (dropSet.size > 0 || demoted.length > 0) {
       const scopes = findAllScopes();
       for (const scope of scopes) {
-        rebuildIndex(scope);
+        rebuildIndex(scope, { onTimeout: 'throw' });
       }
     }
-  });
+  }, { onTimeout: 'throw' });
+  } catch (err) {
+    if (err.code === 'LOCK_TIMEOUT') {
+      console.error(`[prune-memory] another process holds the prune lock — refusing to run unlocked (${err.message})`);
+      process.exit(1);
+    }
+    throw err;
+  }
 
   if (dropSet.size === 0 && demoted.length === 0) {
     const total = longTerm.length + shortTerm.length;

@@ -6,7 +6,7 @@ import { join, dirname, resolve, relative, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { withLock } from '../shared/lock.mjs';
 import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from '../shared/state.mjs';
-import { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath } from '../shared/stamp.mjs';
+import { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath, atomicWriteFile } from '../shared/stamp.mjs';
 
 // Index entry format lives in shared/stamp.mjs (also used by sharp-review's post-review upsert)
 export { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath };
@@ -237,7 +237,7 @@ export function loadMemoryState(scopeRoot) {
   return map;
 }
 
-export function saveMemoryMeta(scopeRoot, relPath, patch) {
+export function saveMemoryMeta(scopeRoot, relPath, patch, { onTimeout = 'proceed' } = {}) {
   const date = extractDateFromPath(relPath);
   const file = metaPath(scopeRoot, date);
   const slug = relPath.split('/').pop();
@@ -253,7 +253,7 @@ export function saveMemoryMeta(scopeRoot, relPath, patch) {
 
     data[slug] = { ...(data[slug] || {}), ...patch };
     writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
-  });
+  }, { onTimeout });
 }
 
 export function getMemoryMeta(scopeRoot, relPath) {
@@ -263,14 +263,14 @@ export function getMemoryMeta(scopeRoot, relPath) {
   return { accessed: date, count: 1, tier: 'short' };
 }
 
-export function bumpAccessed(scopeRoot, relPath, date) {
+export function bumpAccessed(scopeRoot, relPath, date, opts) {
   const cur = getMemoryMeta(scopeRoot, relPath);
   const count = cur.accessed !== date ? cur.count + 1 : cur.count;
-  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count });
+  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count }, opts);
 }
 
-export function dropFromIndex(scopeRoot, relPath, reason) {
-  saveMemoryMeta(scopeRoot, relPath, { dropped: reason });
+export function dropFromIndex(scopeRoot, relPath, reason, opts) {
+  saveMemoryMeta(scopeRoot, relPath, { dropped: reason }, opts);
 }
 
 // ── Index ──
@@ -316,14 +316,12 @@ function buildIndexEntries(scopeRoot, state) {
     const absPath = join(memDir, relPath);
     let title = relPath.split('/').pop().replace('.md', '');
     let created = extractDateFromPath(relPath);
-    let description = '';
 
     if (existsSync(absPath)) {
       try {
         const content = readFileSync(absPath, 'utf8');
         const { fields } = parseFrontmatter(content);
         if (fields.name) title = fields.name;
-        if (fields.description) description = fields.description;
       } catch { /* use defaults */ }
     }
 
@@ -370,7 +368,7 @@ function buildIndexEntries(scopeRoot, state) {
   return entries;
 }
 
-export function rebuildIndex(scopeRoot) {
+export function rebuildIndex(scopeRoot, { onTimeout = 'proceed' } = {}) {
   const rulesDir = join(scopeRoot, '.claude', 'rules');
   const indexFile = join(rulesDir, 'MEMORY.md');
   // Serialize index rebuilds across concurrent processes (lock is reentrant, so
@@ -404,8 +402,8 @@ export function rebuildIndex(scopeRoot) {
   }
 
   if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-  writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
-  });
+  atomicWriteFile(indexFile, lines.join('\n') + '\n');
+  }, { onTimeout });
 }
 
 // ── File collection ──
@@ -598,5 +596,5 @@ export function executeScopeSplit(scopeRoot, subdirRel, entryRelPaths) {
 // ── State management (delegates to shared/state.mjs) ──
 
 export function loadState() { return _loadState(stateFile); }
-export function saveState(state) { return _saveState(stateFile, state); }
-export function appendEvent(type, detail) { return _appendEvent(stateFile, type, detail); }
+export function saveState(state, opts) { return _saveState(stateFile, state, opts); }
+export function appendEvent(type, detail, opts) { return _appendEvent(stateFile, type, detail, opts); }

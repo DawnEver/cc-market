@@ -47,21 +47,34 @@ export function isAwaitingInput(transcript) {
 export function isFreshSession(state, inputKey, now) {
   if (!state) return true;
   const storedKey = state.hook.sessionKey ?? null;
-  // A null inputKey is always-different from any stored key: without this, hooks
-  // whose input lacks session_id silently matched the stored session and leaked
-  // remPending across sessions within the 30-min window.
-  if (storedKey != null && storedKey !== inputKey) return true;
+  // A null inputKey is always-different: without a session discriminator there
+  // is no way to prove two invocations belong to the same session, so never
+  // carry remPending/remDone across them (null/null collision leak).
+  if (inputKey == null) return true;
+  // A keyed session following an unkeyed (legacy null) stored session is by
+  // definition a different session.
+  if (storedKey == null) return true;
+  if (storedKey !== inputKey) return true;
   if (now - (state.hook.lastTouched || 0) > SESSION_EXPIRY_MS) return true;
   return false;
 }
 
+// Fallback discriminator when the hook input carries neither session_id nor
+// transcript_path: a per-process id. Persisting it means the NEXT invocation
+// (a different process, hence a different fallback) sees storedKey != null &&
+// !== inputKey(null) → fresh — so two distinct sessions that both lack
+// session_id can never collide on a shared null key and leak remPending.
+const FALLBACK_SESSION_KEY = `proc-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+
 export function decideStop(state, input, now) {
-  const inputKey = input.session_id ?? null;
+  // transcript_path is stable within a session and unique across sessions —
+  // a valid discriminator for hosts that omit session_id.
+  const inputKey = input.session_id ?? input.transcript_path ?? null;
   const fresh = isFreshSession(state, inputKey, now);
 
   if (fresh) {
     state.hook = {
-      sessionKey: inputKey ?? null,
+      sessionKey: inputKey ?? FALLBACK_SESSION_KEY,
       stopCount: 0,
       firstStopAt: null,
       remPending: false,

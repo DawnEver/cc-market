@@ -62,11 +62,20 @@ describe("isFreshSession", () => {
     assert.equal(isFreshSession(state, "key-1", Date.now()), false);
   });
 
-  test("returns false when both keys are null", () => {
+  test("returns true when both keys are null (null is always-different)", () => {
+    // No discriminator either way → cannot prove same session → treat fresh so
+    // remPending/remDone never leak across unidentified sessions.
     const state = {
       hook: { sessionKey: null, lastTouched: Date.now() },
     };
-    assert.equal(isFreshSession(state, null, Date.now()), false);
+    assert.equal(isFreshSession(state, null, Date.now()), true);
+  });
+
+  test("returns true when keyed input follows an unkeyed (null) stored session", () => {
+    const state = {
+      hook: { sessionKey: null, lastTouched: Date.now() },
+    };
+    assert.equal(isFreshSession(state, "key-1", Date.now()), true);
   });
 
   test("handles missing lastTouched (treats as 0 → expired)", () => {
@@ -292,12 +301,37 @@ describe("decideStop", () => {
     // Stored session s1 has remPending set; a hook input with null session_id
     // must be treated as a different (fresh) session, not leak remPending.
     let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
-    const result = decideStop(state, { session_id: null, transcript_path: "/nonexistent" }, now);
-    assert.equal(result.state.hook.sessionKey, null);
+    const result = decideStop(state, { session_id: null, transcript_path: null }, now);
+    // No session_id and no transcript_path → per-process fallback key, never null.
+    assert.match(result.state.hook.sessionKey, /^proc-/);
     assert.equal(result.state.hook.remPending, false);
     assert.equal(result.state.hook.remDone, false);
     assert.equal(result.state.hook.stopCount, 1);
     assert.equal(result.decision, "allow");
+  });
+
+  test("two sessions that BOTH lack session_id and transcript_path never share state", () => {
+    const now = Date.now();
+    // First (unidentified) session accumulated remPending under a fallback key.
+    let state = { hook: { sessionKey: "proc-111-aaaa", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
+    // Second unidentified session: null input key is always-different → fresh.
+    const result = decideStop(state, { session_id: null, transcript_path: null }, now);
+    assert.equal(result.state.hook.remPending, false);
+    assert.equal(result.state.hook.remDone, false);
+    assert.equal(result.state.hook.stopCount, 1);
+    assert.match(result.state.hook.sessionKey, /^proc-/);
+  });
+
+  test("transcript_path discriminates sessions when session_id is absent", () => {
+    const now = Date.now();
+    // Same transcript_path, no session_id → NOT fresh (continuity preserved).
+    let state = { hook: { sessionKey: "/t/a.jsonl", stopCount: 1, firstStopAt: now - 60000, remPending: false, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
+    const same = decideStop(state, { session_id: null, transcript_path: "/t/a.jsonl" }, now);
+    assert.equal(same.state.hook.stopCount, 2);
+    // Different transcript_path → fresh.
+    const other = decideStop(state, { session_id: null, transcript_path: "/t/b.jsonl" }, now);
+    assert.equal(other.state.hook.stopCount, 1);
+    assert.equal(other.state.hook.sessionKey, "/t/b.jsonl");
   });
 
   test("sets remDone when remPending was true regardless of transcript", () => {

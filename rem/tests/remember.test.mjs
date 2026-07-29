@@ -11,6 +11,8 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { parseFrontmatter } from "../shared/lib.mjs";
+
 const SCRIPT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -63,8 +65,30 @@ describe("remember.js", () => {
     const out = run(...BASE).trim();
     assert.equal(out, memoryFile("no-force-push"));
     const content = fs.readFileSync(out, "utf8");
-    assert.match(content, /^---\nname: no-force-push\ndescription: Never force-push shared branches\.\nmetadata\.type: feedback\n---\n/);
+    assert.match(content, /^---\nname: no-force-push\ndescription: Never force-push shared branches\.\nmetadata:\n  type: feedback\n---\n/);
     assert.match(content, /Never force-push shared branches\./);
+  });
+
+  test("frontmatter parses to a nested metadata.type (prune/recall contract)", () => {
+    const out = run(...BASE).trim();
+    const fm = parseFrontmatter(fs.readFileSync(out, "utf8"));
+    assert.equal(fm.metadata.type, "feedback");
+    assert.equal(fm.name, "no-force-push");
+  });
+
+  test("quotes descriptions containing YAML metacharacters", () => {
+    run("--name", "colon-desc", "--type", "project", "--body", "Fix: use double quotes in commit messages");
+    const content = fs.readFileSync(memoryFile("colon-desc"), "utf8");
+    const fm = parseFrontmatter(content);
+    assert.equal(fm.description, "Fix: use double quotes in commit messages");
+    assert.equal(fm.metadata.type, "project");
+    // Round-trip through the structured parser must not collapse.
+    assert.match(content, /description: "Fix: use double quotes in commit messages"/);
+  });
+
+  test("rejects --description containing newlines (frontmatter injection)", () => {
+    const e = runFail("--name", "inject", "--type", "user", "--body", "x", "--description", "line1\naccessed: 2020-01-01");
+    assert.match(e.stderr, /single line/);
   });
 
   test("creates _meta.json entry with short tier defaults", () => {

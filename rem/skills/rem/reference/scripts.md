@@ -6,9 +6,9 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 |---|---|---|
 | `stamp-memory.js` | Create dirs, warn on missing `name:` frontmatter, rebuild MEMORY.md index | (none, idempotent) |
 | `remember.js` | Immediate save for explicit "remember this" requests: write dated memory file + `_meta.json` entry + index upsert | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` |
-| `prune-memory.js` | Enforce 20-entry cap + 90d eviction (short-term only, long-term protected) | `--evict-stale`, `--dry-run` |
+| `prune-memory.js` | Enforce 20-entry cap + 90d eviction (short-term only, long-term protected; `feedback`-type entries are exempt from the 90d stale eviction but still count toward the cap) | `--evict-stale`, `--dry-run` |
 | `touch-memory.js <path>` | Bump `accessed` to today | `--promote` (upgrade `tier: short` → `long`) |
-| `crystallize.js` | Orchestrate crystallize mode: distill memory into `.claude/rules/rem/` | `--check`, `--propose`, `--execute --distilled <paths>`, `--validate` |
+| `crystallize.js` | Orchestrate crystallize mode: distill memory into `.claude/rules/rem/` | `--check`, `--drift`, `--propose`, `--execute --distilled <paths>`, `--validate` |
 | `scope-split.js` | Relocate a memory cluster into a child scope (move + tombstone), user-gated | `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>` |
 | `scope-validate.mjs` | Verify scope isolation + intermediate file integrity across all scopes | `--check`, `--fix` |
 | `rem-prep.js` | Pre-REM automation: event log, batch touch, auto-promote, crystallize check | `--transcript <path>`, `--promote` |
