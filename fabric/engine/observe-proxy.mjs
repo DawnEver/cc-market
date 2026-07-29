@@ -13,7 +13,8 @@
 //   RESPONSE — SSE streamed back UNBUFFERED, teed to jsonl (the one real risk; validated).
 //
 // Provider routing (upstream/auth/model) comes from engine/providers.mjs — the single
-// source of truth. Auth forks by provider: static-key providers get x-api-key injected;
+// source of truth. Auth forks by provider: static-key providers get the token injected
+// in the header style matching its env var (Bearer for AUTH_TOKEN, else x-api-key);
 // pass passthroughAuth:true for OAuth providers (claude) to forward the child's own header.
 
 import http from 'node:http';
@@ -21,7 +22,7 @@ import https from 'node:https';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { URL } from 'node:url';
-import { resolveUpstream } from './providers.mjs';
+import { resolveUpstream, anthropicEndpoint } from './providers.mjs';
 
 /**
  * @param {object} opts
@@ -32,7 +33,7 @@ import { resolveUpstream } from './providers.mjs';
  * @returns {Promise<{url, port, jsonlPath, close}>}
  */
 export async function startObserveProxy({ provider, runDir, passthroughAuth = false, configPath }) {
-  const { baseUrl, token, resolveModel } = resolveUpstream(provider, configPath);
+  const { baseUrl, token, tokenStyle, resolveModel } = resolveUpstream(provider, configPath);
   const upstream = new URL(baseUrl);
   const isHttps = upstream.protocol === 'https:';
   const agent = isHttps ? https : http;
@@ -66,7 +67,9 @@ export async function startObserveProxy({ provider, runDir, passthroughAuth = fa
       } catch { /* non-JSON/empty body — forward verbatim */ }
 
       const inUrl = new URL(cReq.url, 'http://x');
-      const path = upstream.pathname.replace(/\/$/, '') + inUrl.pathname + inUrl.search;
+      // The child appends '/v1/messages' to its base; prepend the upstream's path
+      // prefix the same way anthropicEndpoint does (deduping a base ending in /v1).
+      const path = anthropicEndpoint(upstream.pathname, inUrl.pathname) + inUrl.search;
 
       const headers = { ...cReq.headers };
       delete headers['content-length'];
@@ -75,8 +78,15 @@ export async function startObserveProxy({ provider, runDir, passthroughAuth = fa
       headers['host'] = upstream.host;
       headers['content-length'] = Buffer.byteLength(body);
       if (!passthroughAuth && token) {
-        headers['x-api-key'] = token; // Anthropic-compatible gateways (incl. DeepSeek)
-        delete headers['authorization'];
+        // Header style matches the env var that supplied the token (providers.mjs):
+        // AUTH_TOKEN → Bearer, API_KEY/Foundry → x-api-key (DeepSeek/Kimi path).
+        if (tokenStyle === 'bearer') {
+          headers['authorization'] = `Bearer ${token}`;
+          delete headers['x-api-key'];
+        } else {
+          headers['x-api-key'] = token; // Anthropic-compatible gateways (incl. DeepSeek)
+          delete headers['authorization'];
+        }
       }
 
       append({ t: 'request', id, ts: started, provider, method: cReq.method, path, modelBefore, modelAfter, body: parsed ?? body.toString('utf8') });

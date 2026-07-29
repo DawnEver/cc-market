@@ -5,6 +5,46 @@ import { test, describe, mock } from "node:test";
 import assert from "node:assert/strict";
 import { callAnthropicAPI, buildUserContent, parseSSEStream } from "../engine/anthropic-http.mjs";
 
+describe("callAnthropicAPI URL + auth header", () => {
+  async function captureOneCall(providerConfig) {
+    const fetches = [];
+    globalThis.fetch = mock.fn(async (url, init) => {
+      fetches.push({ url, init });
+      return {
+        ok: true,
+        headers: { get: () => "application/json" },
+        json: async () => ({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: {} }),
+      };
+    });
+    try {
+      await callAnthropicAPI(providerConfig, "model", null, "user");
+    } finally {
+      globalThis.fetch = undefined;
+    }
+    return fetches[0];
+  }
+
+  test("appends /v1/messages to the base URL (kimi-style path prefix)", async () => {
+    const { url } = await captureOneCall({ baseUrl: "https://api.kimi.com/coding/", token: "sk", tokenStyle: "x-api-key" });
+    assert.equal(url, "https://api.kimi.com/coding/v1/messages");
+  });
+
+  test("does not double /v1 when the base already ends in it", async () => {
+    const { url } = await captureOneCall({ baseUrl: "https://example.test/v1", token: "sk" });
+    assert.equal(url, "https://example.test/v1/messages");
+  });
+
+  test("tokenStyle selects the auth header", async () => {
+    const apiKeyCall = await captureOneCall({ baseUrl: "https://api.deepseek.com/anthropic", token: "sk-ds", tokenStyle: "x-api-key" });
+    assert.equal(apiKeyCall.init.headers["x-api-key"], "sk-ds");
+    assert.equal(apiKeyCall.init.headers["Authorization"], undefined);
+
+    const bearerCall = await captureOneCall({ baseUrl: "https://example.test", token: "tok", tokenStyle: "bearer" });
+    assert.equal(bearerCall.init.headers["Authorization"], "Bearer tok");
+    assert.equal(bearerCall.init.headers["x-api-key"], undefined);
+  });
+});
+
 // A body whose reader yields one chunk, then never resolves again.
 function stallingBody({ onCancel } = {}) {
   let reads = 0;

@@ -5,7 +5,7 @@
 import process from "node:process";
 import { setTimeout } from "node:timers/promises";
 
-import { getConfigPath } from "./providers.mjs";
+import { getConfigPath, anthropicEndpoint } from "./providers.mjs";
 
 function isRetryable(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
@@ -32,8 +32,14 @@ export function buildUserContent(prompt, images) {
 export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null, { sseIdleTimeoutMs = 300000 } = {}) {
   if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${getConfigPath()}.`);
 
-  const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
-  const url = `${baseUrl}/messages`;
+  // Same URL Claude Code itself hits: ANTHROPIC_BASE_URL + '/v1/messages'
+  // (deduped when the base already ends in /v1).
+  const url = anthropicEndpoint(providerConfig.baseUrl, "/v1/messages");
+  // Header matches the env var that supplied the token (see providers.mjs):
+  // ANTHROPIC_AUTH_TOKEN → Bearer, ANTHROPIC_API_KEY (or Foundry key) → x-api-key.
+  const authHeaders = providerConfig.tokenStyle === 'bearer'
+    ? { "Authorization": `Bearer ${providerConfig.token}` }
+    : { "x-api-key": providerConfig.token };
 
   const body = {
     model,
@@ -70,7 +76,7 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": providerConfig.token,
+          ...authHeaders,
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify(body),

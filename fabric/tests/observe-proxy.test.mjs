@@ -13,10 +13,11 @@ import { clearConfigCache } from '../engine/providers.mjs';
 
 // A fake Anthropic-compatible upstream: captures the request, streams SSE back slowly.
 function startFakeUpstream() {
-  let seenModel = null, seenApiKey = null, seenPath = null;
+  let seenModel = null, seenApiKey = null, seenAuth = null, seenPath = null;
   const server = http.createServer((req, res) => {
     seenPath = req.url;
     seenApiKey = req.headers['x-api-key'];
+    seenAuth = req.headers['authorization'];
     const chunks = [];
     req.on('data', (d) => chunks.push(d));
     req.on('end', () => {
@@ -33,20 +34,21 @@ function startFakeUpstream() {
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address();
-      resolve({ port, get seenModel() { return seenModel; }, get seenApiKey() { return seenApiKey; }, get seenPath() { return seenPath; }, close: () => new Promise((r) => server.close(r)) });
+      resolve({ port, get seenModel() { return seenModel; }, get seenApiKey() { return seenApiKey; }, get seenAuth() { return seenAuth; }, get seenPath() { return seenPath; }, close: () => new Promise((r) => server.close(r)) });
     });
   });
 }
 
-function fixtureFor(port) {
+function fixtureFor(port, { basePath = '', env = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'obsproxy-'));
   const cfgPath = join(dir, 'reg.json');
   writeFileSync(cfgPath, JSON.stringify({
     'env:fake': {
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
-      ANTHROPIC_AUTH_TOKEN: 'sk-fake-key',
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}${basePath}`,
+      ANTHROPIC_API_KEY: 'sk-fake-key',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'fake-flash',
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'fake-pro',
+      ...env,
     },
   }));
   clearConfigCache();
@@ -98,4 +100,62 @@ test('proxy rewrites model, injects key, streams SSE unbuffered, captures jsonl'
   assert.equal(req.modelAfter, 'fake-flash');
   assert.equal(resp.status, 200);
   assert.ok(resp.body.includes('message_start'));
+});
+
+test('proxy joins the upstream path prefix like Claude Code (kimi-style /coding/)', async () => {
+  const up = await startFakeUpstream();
+  const { dir, cfgPath } = fixtureFor(up.port, { basePath: '/coding/' });
+  const proxy = await startObserveProxy({ provider: 'fake', runDir: dir, configPath: cfgPath });
+  try {
+    const res = await fetch(`${proxy.url}/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'fake-flash', messages: [] }),
+    });
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.equal(up.seenPath, '/coding/v1/messages', 'base path prefix + child /v1 suffix');
+  } finally {
+    await proxy.close();
+    await up.close();
+  }
+});
+
+test('proxy does not double /v1 when the upstream base already ends in it', async () => {
+  const up = await startFakeUpstream();
+  const { dir, cfgPath } = fixtureFor(up.port, { basePath: '/v1' });
+  const proxy = await startObserveProxy({ provider: 'fake', runDir: dir, configPath: cfgPath });
+  try {
+    const res = await fetch(`${proxy.url}/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'fake-flash', messages: [] }),
+    });
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.equal(up.seenPath, '/v1/messages', 'no /v1/v1');
+  } finally {
+    await proxy.close();
+    await up.close();
+  }
+});
+
+test('AUTH_TOKEN-sourced keys inject Authorization: Bearer, not x-api-key', async () => {
+  const up = await startFakeUpstream();
+  const { dir, cfgPath } = fixtureFor(up.port, { env: { ANTHROPIC_API_KEY: undefined, ANTHROPIC_AUTH_TOKEN: 'tok-bearer' } });
+  const proxy = await startObserveProxy({ provider: 'fake', runDir: dir, configPath: cfgPath });
+  try {
+    const res = await fetch(`${proxy.url}/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'placeholder' },
+      body: JSON.stringify({ model: 'fake-flash', messages: [] }),
+    });
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.equal(up.seenAuth, 'Bearer tok-bearer', 'bearer header injected');
+    assert.equal(up.seenApiKey, undefined, 'x-api-key stripped when bearer is used');
+  } finally {
+    await proxy.close();
+    await up.close();
+  }
 });

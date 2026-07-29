@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   loadProviderConfig, loadProviderEnv, resolveModel, resolveModelFromId,
-  resolveUpstream, clearConfigCache,
+  resolveUpstream, clearConfigCache, anthropicEndpoint,
 } from '../engine/providers.mjs';
 
 function fixture(obj) {
@@ -32,6 +32,12 @@ const REG = {
     ANTHROPIC_BASE_URL: 'https://example.test/v1/',
     ANTHROPIC_AUTH_TOKEN: 'tok-abc',
     ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-model',
+  },
+  'env:kimi': {
+    ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
+    ANTHROPIC_API_KEY: 'sk-kimi-test',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'k3-256k',
+    ANTHROPIC_DEFAULT_FABLE_MODEL: 'k3[1m]',
   },
 };
 
@@ -81,6 +87,51 @@ test('loadProviderEnv strips provider keys then overlays block', () => {
   assert.equal(env.CLAUDE_CODE_USE_FOUNDRY, '1');
 });
 
+test('native claude env strips parent ANTHROPIC_* model pins (fable leak regression)', () => {
+  // Regression: a parent shell exporting ANTHROPIC_DEFAULT_FABLE_MODEL (e.g. the kimi
+  // profile's k3[1m]) leaked into the native-claude child, which then died exit 1 with
+  // "selected model (k3) may not exist". Every ANTHROPIC_* routing key must be stripped.
+  const saved = process.env.ANTHROPIC_DEFAULT_FABLE_MODEL;
+  process.env.ANTHROPIC_DEFAULT_FABLE_MODEL = 'k3[1m]';
+  try {
+    const env = loadProviderEnv('claude', fixture(REG));
+    assert.equal(env.ANTHROPIC_DEFAULT_FABLE_MODEL, undefined);
+    assert.equal(env.ANTHROPIC_MODEL, undefined);
+    assert.equal(env.ANTHROPIC_BASE_URL, undefined);
+  } finally {
+    if (saved === undefined) delete process.env.ANTHROPIC_DEFAULT_FABLE_MODEL;
+    else process.env.ANTHROPIC_DEFAULT_FABLE_MODEL = saved;
+  }
+});
+
+test('fable tier resolves from full ids and bare tier words', () => {
+  const cfg = loadProviderConfig('kimi', fixture(REG));
+  assert.equal(cfg.defaultFable, 'k3[1m]');
+  assert.equal(resolveModelFromId(cfg, 'claude-fable-5'), 'k3[1m]');
+  assert.equal(resolveModel(cfg, 'fable'), 'k3[1m]');
+});
+
 test('unknown provider lists available ones', () => {
   assert.throws(() => loadProviderConfig('nope', fixture(REG)), /Available|not found/);
+});
+
+test('tokenStyle records which env var supplied the token', () => {
+  // ANTHROPIC_AUTH_TOKEN → Bearer header; ANTHROPIC_API_KEY → x-api-key; Foundry → x-api-key.
+  assert.equal(loadProviderConfig('vanilla', fixture(REG)).tokenStyle, 'bearer');
+  assert.equal(loadProviderConfig('kimi', fixture(REG)).tokenStyle, 'x-api-key');
+  assert.equal(loadProviderConfig('deepseek', fixture(REG)).tokenStyle, 'x-api-key');
+  assert.equal(resolveUpstream('vanilla', fixture(REG)).tokenStyle, 'bearer');
+});
+
+test('anthropicEndpoint builds the /v1/messages URL Claude Code itself hits', () => {
+  // Per-provider: the constructed endpoint must match the live upstream path.
+  assert.equal(anthropicEndpoint('https://api.kimi.com/coding/', '/v1/messages'),
+    'https://api.kimi.com/coding/v1/messages');
+  assert.equal(anthropicEndpoint('https://api.deepseek.com/anthropic', '/v1/messages'),
+    'https://api.deepseek.com/anthropic/v1/messages');
+  // Base already ending in /v1 must not double up.
+  assert.equal(anthropicEndpoint('https://example.test/v1/', '/v1/messages'),
+    'https://example.test/v1/messages');
+  assert.equal(anthropicEndpoint('https://api.anthropic.com', '/v1/messages'),
+    'https://api.anthropic.com/v1/messages');
 });

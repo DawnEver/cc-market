@@ -22,11 +22,13 @@ export const PROVIDER_ENV_KEYS = [
   'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY',
   'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_DEFAULT_FABLE_MODEL',
   'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_EFFORT_LEVEL',
   'CLAUDE_CODE_USE_FOUNDRY', 'ANTHROPIC_FOUNDRY_BASE_URL', 'ANTHROPIC_FOUNDRY_API_KEY',
   'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
   'ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES',
+  'ANTHROPIC_DEFAULT_FABLE_MODEL_SUPPORTED_CAPABILITIES',
 ];
 
 /** Read the raw registry, or throw a helpful error if absent. */
@@ -78,16 +80,22 @@ export function loadProviderConfig(provider, configPath = getConfigPath()) {
   const useFoundry = env.CLAUDE_CODE_USE_FOUNDRY === "1" || env.CLAUDE_CODE_USE_FOUNDRY === 1;
   const baseUrl = useFoundry ? env.ANTHROPIC_FOUNDRY_BASE_URL : env.ANTHROPIC_BASE_URL;
   // Direct Anthropic-compatible providers may key their token as either
-  // ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY — accept both.
+  // ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY — accept both, but remember which
+  // var supplied it: the two map to different request headers, exactly as Claude
+  // Code itself sends them (AUTH_TOKEN → `Authorization: Bearer`, API_KEY →
+  // `x-api-key`). tokenStyle records that so the proxy/raw-HTTP path can emit
+  // the matching header instead of guessing.
   const token = useFoundry ? env.ANTHROPIC_FOUNDRY_API_KEY : (env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY);
+  const tokenStyle = !useFoundry && env.ANTHROPIC_AUTH_TOKEN ? 'bearer' : 'x-api-key';
   if (!baseUrl) throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_BASE_URL" : "ANTHROPIC_BASE_URL"} in ${configPath}.`);
   if (!token)   throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_API_KEY" : "ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY"} in ${configPath}.`);
 
   const result = {
-    native: false, baseUrl, token,
+    native: false, baseUrl, token, tokenStyle,
     defaultSonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
     defaultOpus: env.ANTHROPIC_DEFAULT_OPUS_MODEL,
     defaultHaiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+    defaultFable: env.ANTHROPIC_DEFAULT_FABLE_MODEL,
   };
   _configCache.set(`${provider}:${configPath}`, { config: result, ts: Date.now() });
   return result;
@@ -95,7 +103,19 @@ export function loadProviderConfig(provider, configPath = getConfigPath()) {
 
 export function clearConfigCache() { _configCache.clear(); }
 
-const TIER_MAP = { sonnet: 'defaultSonnet', opus: 'defaultOpus', haiku: 'defaultHaiku' };
+/**
+ * Join an Anthropic-style base URL with a request suffix (e.g. '/v1/messages'),
+ * mirroring how Claude Code appends '/v1/messages' to ANTHROPIC_BASE_URL.
+ * Trims trailing slashes on the base and dedupes a base that already ends in
+ * '/v1' so `https://example.test/v1` + '/v1/messages' doesn't become '/v1/v1/...'.
+ */
+export function anthropicEndpoint(baseUrl, suffix) {
+  const base = String(baseUrl).replace(/\/+$/, '');
+  if (base.endsWith('/v1') && suffix.startsWith('/v1/')) return base + suffix.slice(3);
+  return base + suffix;
+}
+
+const TIER_MAP = { sonnet: 'defaultSonnet', opus: 'defaultOpus', haiku: 'defaultHaiku', fable: 'defaultFable' };
 
 /** Resolve a bare tier word ('opus'/'sonnet'/'haiku') to the provider's model id. */
 export function resolveModel(providerConfig, requestedModel) {
@@ -109,15 +129,16 @@ export function resolveModel(providerConfig, requestedModel) {
  * Resolve a FULL Claude model id (e.g. "claude-haiku-4-5-20251001") to the provider's id
  * by tier substring. This is what the observe proxy needs: the child sends a real Claude
  * model id (it thinks it's talking to Anthropic), and the proxy must remap it in-body.
- * Falls back to the opus-tier default, then the original id.
+ * Falls back to the fable/opus-tier default, then the original id.
  */
 export function resolveModelFromId(providerConfig, fullId) {
   if (typeof fullId !== 'string') return fullId;
   const m = fullId.toLowerCase();
   if (m.includes('haiku') && providerConfig.defaultHaiku) return providerConfig.defaultHaiku;
+  if (m.includes('fable') && providerConfig.defaultFable) return providerConfig.defaultFable;
   if (m.includes('sonnet') && providerConfig.defaultSonnet) return providerConfig.defaultSonnet;
   if (m.includes('opus') && providerConfig.defaultOpus) return providerConfig.defaultOpus;
-  return providerConfig.defaultOpus || providerConfig.defaultSonnet || fullId;
+  return providerConfig.defaultFable || providerConfig.defaultOpus || providerConfig.defaultSonnet || fullId;
 }
 
 /**
@@ -131,6 +152,7 @@ export function resolveUpstream(provider, configPath = getConfigPath()) {
   return {
     baseUrl: cfg.baseUrl.replace(/\/+$/, ''),
     token: cfg.token,
+    tokenStyle: cfg.tokenStyle,
     resolveModel: (fullId) => resolveModelFromId(cfg, fullId),
   };
 }
@@ -153,6 +175,7 @@ export function listModels(configPath = getConfigPath()) {
     const env = config[`env:${name}`];
     const models = [];
     if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL) models.push(`haiku=${env.ANTHROPIC_DEFAULT_HAIKU_MODEL}`);
+    if (env.ANTHROPIC_DEFAULT_FABLE_MODEL) models.push(`fable=${env.ANTHROPIC_DEFAULT_FABLE_MODEL}`);
     if (env.ANTHROPIC_DEFAULT_SONNET_MODEL) models.push(`sonnet=${env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
     if (env.ANTHROPIC_DEFAULT_OPUS_MODEL) models.push(`opus=${env.ANTHROPIC_DEFAULT_OPUS_MODEL}`);
     const baseUrl = env.ANTHROPIC_FOUNDRY_BASE_URL || env.ANTHROPIC_BASE_URL || "?";

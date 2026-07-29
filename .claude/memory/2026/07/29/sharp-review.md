@@ -1,9 +1,12 @@
 ---
 name: sharp-review-2026-07-29
-description: Sharp review findings — 45 total
+description: Sharp review findings — 81 total
 metadata:
   type: project
 ---
+
+
+
 
 
 
@@ -537,3 +540,436 @@ The docstring says 'a lock is a best-effort guard, never a reason to block a hoo
 - **Suggestion:** Guard `Atomics.wait` with a check that `require('worker_threads').isMainThread` is false, or switch to a non-blocking poll (e.g., setTimeout with Promises) if ever used in a long-lived process.
 
 The comment assumes the lock is only used in sync CLI scripts that are short-lived. If the module is ever imported into a process that also handles other requests, the 50 ms blocking sleep will starve the event loop.
+
+
+## Review 2026-07-29 (follow-up)
+
+## Review 2026-07-29 (session) — docs review (文档锐评)
+
+### Reviewer Status
+- Reviewer A (Codex): skipped
+- Reviewer B (DeepSeek): skipped
+- Reviewer C (Opus): OK
+
+### Confirmed findings
+
+---
+
+### [SR-20260729-046] [HIGH] rem/skills/rem/reference/memory-conventions.md — Docs use `access_count` but the `_meta.json` field is `count` — wrong name still shipped after a prior review flagged it
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Rename every `access_count` reference to `count` in memory-conventions.md (L39-40), standard-procedure.md (L24,25,59) and crystallize.md (L41,44), or rename the code field once and update all docs.
+
+rem/scripts/lib.mjs bumpAccessed writes `count`; grep for `access_count` across rem/scripts/*.js returns zero hits. Docs instruct agents to read and act on a field that does not exist, so anything following memory-conventions.md verbatim reads undefined. The 2026-06-25 sharp-review memory recorded this exact mismatch — never fixed.
+
+---
+
+### [SR-20260729-047] [MEDIUM] rem/skills/rem/reference/memory-conventions.md — Promotion documented three different ways across three files
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** State one authoritative promotion path — automatic on `count >= 3` during bumpAccessed, with `touch-memory.js --promote` as the manual override — and drop or qualify the `rem-prep.js --promote` claim.
+
+L41 says `rem-prep.js --promote` automatically sets `tier: long`; L64 says promotion happens automatically once `count >= 3` or manually via `touch-memory.js --promote`; scripts.md documents only `touch-memory.js --promote`. Three docs, three mechanisms for one behavior.
+
+---
+
+### [SR-20260729-048] [MEDIUM] sharp-review/agents/sharp-review.md — Runtime plugin-cache copy still hardcodes the 3-reviewer seed%3 roster the repo replaced with dynamic list_providers rotation
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Bump the sharp-review plugin version so the cache refreshes to the dynamic-roster definition; add a test asserting agents/sharp-review.md contains no hardcoded reviewer table.
+
+Repo agents/sharp-review.md and reference/direct-fanout.md define `providers[seed % N]` / `providers[(seed+1) % N]` from fabric list_providers. The copy that actually executes still says `seed % 3` over a fixed Codex/DeepSeek/Opus roster, so it picks providers that may not be configured — this run selected DeepSeek, which has no ANTHROPIC_AUTH_TOKEN and hard-failed.
+
+---
+
+### [SR-20260729-049] [MEDIUM] sharp-review/skills/sharp-review/reference/direct-fanout.md — Rotation docs treat list_providers output as the eligible set, but listed providers can be unusable (missing auth token)
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Document that a listed provider may still fail with 'missing ANTHROPIC_AUTH_TOKEN', and require rotation to advance to the next provider index instead of recording a null reviewer.
+
+fabric list_providers enumerates deepseek/kimi from claude_env_settings.json regardless of token presence; providers.mjs only throws at call time (L91). A token-less provider therefore silently burns one of the two reviewer slots with no documented recovery.
+
+---
+
+### [SR-20260729-050] [LOW] fabric/README.md — Auth section explains token precedence but never names the config file a failing user must edit
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add the exact error string ('Provider "X" is missing ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY in <path>') and point at ~/.claude/claude_env_settings.json.
+
+README L138 covers ANTHROPIC_AUTH_TOKEN → Bearer vs ANTHROPIC_API_KEY → x-api-key, but a user hitting the providers.mjs L91 throw has no doc telling them where the config lives or which key to add.
+
+---
+
+### [SR-20260729-051] [LOW] shared/lock.mjs — New locking contract is documented nowhere a skill can see at runtime
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Document withLock's options (staleMs 60000, retryMs 50, timeoutMs 5000) and the onTimeout policy split ('throw' in lock.mjs vs 'proceed' in state.mjs/stamp.mjs) in a reference/*.md, not only in dev-only rules files.
+
+shared/lock.mjs exports withLock with four tuned defaults and two distinct timeout policies; state.mjs and stamp.mjs each default to 'proceed'. No SKILL.md or reference/*.md explains when a lock timeout silently proceeds versus throws, so callers cannot reason about partial writes. invariants.md is dev-context only and per the repo's own rule must not be where a runtime fact lives.
+
+
+## Review 2026-07-29 (follow-up)
+
+## Review 2026-07-29 (session) — docs review (文档锐评)
+
+### Reviewer Status
+- Reviewer A (Codex): skipped
+- Reviewer B (DeepSeek): FAILED
+- Reviewer C (Opus): OK
+- Warning: only 1/2 reviewers succeeded
+
+### Confirmed findings
+
+---
+
+### [SR-20260729-052] [HIGH] rem/skills/rem/reference/state-schema.md — state-schema.md is two schema revisions behind: missing `version` and `docs`, and documents a `scopes.split` block that does not exist
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Regenerate the JSON block from DEFAULT_STATE verbatim, delete the fabricated scopes.split, and document withStateLock(stateFile, fn, {onTimeout, atomic}) as the required read-modify-write API.
+
+shared/state.mjs DEFAULT_STATE has version:1, hook, prune, scopes:{ignore}, docs:{roots,anchors} (state.mjs:11-51). The reference JSON omits version and the entire docs key (the storage backend for /refresh-docs freshness anchors) and invents scopes.split with minOwnEntries/minClusterEntries/maxBytes — never written or read anywhere. It also claims state lives behind lib.mjs loadState/saveState/appendEvent while the concurrency-safe entry point is withStateLock from shared/state.mjs (prune-memory.js:15,170). An agent following this file will clobber the docs anchors.
+
+---
+
+### [SR-20260729-053] [HIGH] rem/skills/rem/reference/scripts.md — Script table omits recall.js, doc-freshness.js and inject-rules.js despite claiming to be the full reference
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add rows for recall.js, doc-freshness.js (incl. --set-anchor and exit-1 semantics) and inject-rules.js, or drop the 'all flags' claim in SKILL.md:41.
+
+rem/scripts/ contains 15 files; the table lists 11 and misses recall.js (the UserPromptSubmit auto-recall hook, documented only in README/AGENTS.md which are NOT visible at skill runtime), doc-freshness.js (invoked by standard-procedure.md:12 and SKILL.md:85 with no flag reference; takes --set-anchor <relPath> per doc-freshness.js:234) and inject-rules.js. SKILL.md:41 advertises this table as the full script reference (all flags), so the gap is a broken promise.
+
+---
+
+### [SR-20260729-054] [HIGH] rem/skills/investigate/SKILL.md — investigate/SKILL.md prescribes `metadata.type: research` — not a valid type; rejected by remember.js and mis-weighted by recall.js
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Either add `research` to TYPES in remember.js plus the conventions/recall weighting tables, or change the skill to `project` and have it call remember.js --type project --name … --body -.
+
+SKILL.md:16 prescribes metadata.type: research. remember.js:22 TYPES = {user, feedback, project, reference} hard-rejects anything else; memory-conventions.md lists the same four; recall.js:197 weights only user/feedback x2. Every investigate output lands as an unrecognized type: it can never be created via remember.js and silently loses recall weighting and the feedback prune exemption. The skill also has the agent hand-write frontmatter instead of calling remember.js.
+
+---
+
+### [SR-20260729-055] [HIGH] rem/skills/rem/reference/memory-conventions.md — Docs use `access_count` but the `_meta.json` field is `count` — wrong name still shipped after a prior review flagged it
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Rename every `access_count` reference to `count` in the three docs, or rename the code field once and update all docs.
+
+rem/scripts/lib.mjs bumpAccessed writes `count`; grep for `access_count` across rem/scripts/*.js returns zero hits. Docs instruct agents to read and act on a field that does not exist, so anything following memory-conventions.md verbatim reads undefined. The 2026-06-25 sharp-review memory recorded this exact mismatch — never fixed. Affects memory-conventions.md L39-40, standard-procedure.md L24,25,59 and crystallize.md L41,44.
+
+---
+
+### [SR-20260729-056] [MEDIUM] rem/skills/rem/reference/memory-conventions.md — Promotion documented three different ways across three files
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** State one authoritative promotion path — automatic on count >= 3 during bumpAccessed, with touch-memory.js --promote as the manual override — and drop or qualify the rem-prep.js --promote claim.
+
+L41 says `rem-prep.js --promote` automatically sets tier: long; L64 says promotion happens automatically once count >= 3 or manually via `touch-memory.js --promote`; scripts.md documents only `touch-memory.js --promote`. Three docs, three mechanisms for one behavior.
+
+---
+
+### [SR-20260729-057] [MEDIUM] rem/skills/rem/reference/scripts.md — Nothing documents that mutating scripts now fail CLOSED with exit 1 on lock timeout
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add a 'Concurrency & exit codes' section to scripts.md: mutating scripts fail closed (exit 1) on a 5s lock timeout and are safe to retry; hooks proceed unlocked with a warning. Include withLock's option defaults.
+
+shared/lock.mjs added a cross-process lease lock with caller-chosen timeout policy; every mutating CLI passes onTimeout:'throw' (prune-memory.js:158-188, crystallize.js:208-225, stamp-memory.js:40-48) and exits 1 on LockTimeoutError, while hooks default to 'proceed' and warn. An agent seeing exit 1 has no documented way to distinguish lock contention (retry) from real failure (stop) — the only description is a comment in lock.mjs, not loaded at skill runtime. Tuned defaults (staleMs 60000, retryMs 50, timeoutMs 5000) are likewise undocumented anywhere a skill can see.
+
+---
+
+### [SR-20260729-058] [MEDIUM] fabric/README.md — The 'Why' section still justifies the observe proxy with a DeepSeek-Foundry conflict that no longer exists
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Rewrite 'Why' provider-agnostically; keep Foundry as a supported-but-not-default example; change 'Foundry direct' to 'direct'.
+
+README.md:66-84 frames the design rationale as 'the child direct-connects to its provider (DeepSeek via Foundry env)' and 'claude-tap only intercepts vanilla ANTHROPIC_BASE_URL, which conflicts with Foundry routing (DeepSeek)'. DeepSeek migrated off Foundry to the direct Anthropic-compatible style; providers.mjs:80-91 keeps Foundry as a generic branch but not as the DeepSeek path. The motivating example is false and sends readers hunting for ANTHROPIC_FOUNDRY_* vars that are not set. README.md:83/100 and fabric/AGENTS.md's buildChildEnv note repeat 'Foundry direct' where it is just 'direct'.
+
+---
+
+### [SR-20260729-059] [MEDIUM] fabric/README.md — The `fable` model tier is fully implemented but appears in zero markdown files repo-wide
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Document the four tiers and the ANTHROPIC_DEFAULT_*_MODEL keys in fabric/README.md, and state the resolveModelFromId fallback order explicitly.
+
+providers.mjs:118 maps fable -> defaultFable in TIER_MAP, resolveModelFromId matches it (providers.mjs:138) and uses it as the FIRST fallback for any unmatched model id (defaultFable || defaultOpus || defaultSonnet || fullId, providers.mjs:141); listModels surfaces fable= from ANTHROPIC_DEFAULT_FABLE_MODEL (providers.mjs:178). A repo-wide grep for 'fable' across *.md returns nothing. Users cannot discover the tier, cannot know ANTHROPIC_DEFAULT_FABLE_MODEL is a recognized key, and cannot predict that setting it silently changes the fallback target for every unrecognized model id.
+
+---
+
+### [SR-20260729-060] [MEDIUM] sharp-review/agents/sharp-review.md — Runtime plugin-cache copy still hardcodes the 3-reviewer seed%3 roster the repo replaced with dynamic list_providers rotation
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Bump the sharp-review plugin version so the cache refreshes to the dynamic-roster definition; add a test asserting agents/sharp-review.md contains no hardcoded reviewer table.
+
+Repo agents/sharp-review.md and reference/direct-fanout.md define providers[seed % N] / providers[(seed+1) % N] from fabric list_providers. The copy that actually executes still says seed % 3 over a fixed Codex/DeepSeek/Opus roster, so it picks providers that may not be configured — this run selected DeepSeek, which has no ANTHROPIC_AUTH_TOKEN and hard-failed.
+
+---
+
+### [SR-20260729-061] [MEDIUM] sharp-review/skills/sharp-review/reference/direct-fanout.md — Rotation docs treat list_providers output as the eligible set, but listed providers can be unusable (missing auth token)
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Document that a listed provider may still fail with 'missing ANTHROPIC_AUTH_TOKEN', and require rotation to advance to the next provider index instead of recording a null reviewer.
+
+fabric list_providers enumerates deepseek/kimi from claude_env_settings.json regardless of token presence; providers.mjs only throws at call time (L91). A token-less provider therefore silently burns one of the two reviewer slots with no documented recovery.
+
+---
+
+### [SR-20260729-062] [MEDIUM] fabric/AGENTS.md — Bundled-shared inventory lists 5 files and omits lock.mjs, which bundle-integrity enforces
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Change to (spawn/lib/state/stamp/attention/lock) and note the inventory is machine-enforced by tests/bundle-integrity.test.mjs.
+
+fabric/AGENTS.md:46 says shared/ bundles (spawn/lib/state/stamp/attention). The actual bundle is 6 files — fabric/shared/lock.mjs exists and tests/bundle-integrity.test.mjs asserts every *.mjs under cc-market/shared/ is byte-identical in each plugin bundle. A developer trimming to match this list breaks the test; the omission also hides that a shared/lock.mjs edit fans out to fabric. rem/AGENTS.md:94 has the same blind spot.
+
+---
+
+### [SR-20260729-063] [MEDIUM] rem/scripts/lib.mjs — Generated MEMORY.md header teaches the flat `metadata.type:` frontmatter that memory-conventions.md says is silently broken
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Change the header to the nested metadata:/type: form and note a flat dotted key is not parsed. Same fix applies to investigate/SKILL.md:16.
+
+INDEX_HEADER (lib.mjs:300) documents frontmatter as a flat dotted `metadata.type:` key. memory-conventions.md:52-59 states this form is invisible to prune-memory.js and recall.js's structured parser and silently drops the feedback exemption / recall weighting; remember.js:87-90 emits the nested form with a comment warning against exactly this. INDEX_HEADER is written into every scope's always-injected .claude/rules/MEMORY.md, making this the most-read frontmatter spec in the system — and it contradicts the convention it enforces.
+
+---
+
+### [SR-20260729-064] [MEDIUM] AGENTS.md — The 'run every JS suite manually' command silently skips shared/tests and tests/bundle-integrity.test.mjs
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Replace the tail with cc-market/shared/tests/*.test.mjs cc-market/tests/*.test.mjs.
+
+AGENTS.md:39 lists fabric/rem/sharp-review/evolve/traceme tests plus tests/gen-codex.test.mjs under the heading 'To run every JS suite manually'. It omits cc-market/shared/tests/*.test.mjs (6 suites: attention, lib, lock, spawn, stamp, state — the entire lock coverage) and cc-market/tests/bundle-integrity.test.mjs. The same section says staging anything under shared/ fans out to all plugins, so a developer touching shared/lock.mjs runs this, sees green, and has tested none of the lock's own suite.
+
+---
+
+### [SR-20260729-065] [LOW] rem/README.md — recall.js tmpdir candidate cache and the rem-locks tmpdir directory are undocumented device-local side effects
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add a 'Device-local artifacts' note to rem/README.md listing both paths, the invalidation rule (stat fingerprint / 60s stale-steal), and that deleting them is safe.
+
+recall.js:159-177 writes a per-scope candidate cache to os.tmpdir()/rem-recall-<key>.json keyed by a stat fingerprint. shared/lock.mjs lockFilePath writes every lockfile to os.tmpdir()/rem-locks/<sha256-prefix>.lock — deliberately device-local so a OneDrive-synced lockfile cannot mutex across hosts, explained only in a code comment. Neither appears in rem/README.md, rem/AGENTS.md or any reference/*.md, so a user debugging stale recall output or a wedged lock has no documented place to look and no documented remedy.
+
+---
+
+### [SR-20260729-066] [LOW] .claude/rules/rem/hook.md — Always-injected hook rule still lists an already-fixed state-carryover bug under 'Known issues'
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Delete the 'State carryover bug' bullet; keep the background_tasks/taskActiveUntil guidance, which still matches the code.
+
+hook.md claims remPending leaks across sessions when input.session_id is null, with a 'Fix: treat null session ID as always-different'. That fix shipped: rem-hook.js:62-77 derives inputKey = input.session_id ?? input.transcript_path ?? null and falls back to a per-process FALLBACK_SESSION_KEY so sessions cannot collide on a shared null key. Because the rule file is always injected, every session pays context for a stale bug report plus an instruction that would duplicate existing logic if followed.
+
+---
+
+### [SR-20260729-067] [LOW] rem/skills/rem/reference/crystallize.md — Inline node -e drift-drop snippet omits the fail-closed lock option and passes the wrong first argument
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Pass scopeRoot explicitly, add {onTimeout:'throw'}, follow with m.rebuildIndex(scopeRoot, {onTimeout:'throw'}) — or add a --drop-drifted flag to crystallize.js and delete the inline node -e.
+
+crystallize.md step 1 calls m.dropFromIndex(m.findMemoryScope(), '<path>', 'drifted') with three args. dropFromIndex(scopeRoot, relPath, reason, opts) (lib.mjs:272) forwards opts to saveMemoryMeta and every in-repo mutating caller passes {onTimeout:'throw'} (crystallize.js:208,214; prune-memory.js:164,174). Omitting it silently defaults to 'proceed' — writing the tombstone without the lock, exactly the race the lock was added for. Also findMemoryScope() returns the scope descriptor while dropFromIndex expects scopeRoot, and the snippet never calls rebuildIndex, so the drifted entry stays visible in MEMORY.md until the next stamp.
+
+---
+
+### [SR-20260729-068] [LOW] fabric/README.md — Auth section explains token precedence but never names the config file a failing user must edit
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add the exact error string and point at ~/.claude/claude_env_settings.json.
+
+README L138 covers ANTHROPIC_AUTH_TOKEN -> Bearer vs ANTHROPIC_API_KEY -> x-api-key, but a user hitting the providers.mjs L91 throw has no doc telling them where the config lives or which key to add.
+
+---
+
+### [SR-20260729-069] [INFO] shared/lock.mjs — Typo in the lock.mjs header comment explaining device-local lockfiles
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Fix in cc-market/shared/lock.mjs and re-run the bundle sync so the copies match.
+
+The header paragraph explaining why lockfiles live in os.tmpdir() misspells 'mutex'. Trivial, but this comment is the only written record of the device-local-lockfile rationale, and byte-identical bundling duplicates it into all 6 plugin bundles.
+
+
+## Review 2026-07-29 (follow-up)
+
+## Review 2026-07-29 (session) — docs review (文档锐评)
+
+### Reviewer Status
+- Reviewer A (Codex): skipped
+- Reviewer B (DeepSeek): skipped
+- Reviewer C (Opus): OK
+
+### Confirmed findings
+
+---
+
+### [SR-20260729-070] [HIGH] README.md — Root README still documents and instructs installing the `takeover` plugin, which no longer exists — the directory is gone, it is absent from marketplace.json, and its link is broken.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Delete the `takeover` row from the plugin table, replace `codex plugin add takeover@cc-market` and `/plugin install takeover@cc-market` with `fabric`, and add the missing `evolve` install line.
+
+`takeover/` does not exist at repo root; `cc-market/AGENTS.md` says fabric absorbed the former takeover plugin. Yet README.md:23 links `[takeover](takeover/README.md)` (dead link), README.md:49 tells Codex users `codex plugin add takeover@cc-market`, and README.md:57 tells Claude users `/plugin install takeover@cc-market`. `.claude-plugin/marketplace.json` has no takeover entry. Both install commands fail outright. The install block also omits `evolve@cc-market`, which IS in the marketplace and the table above it.
+
+---
+
+### [SR-20260729-071] [HIGH] fabric/README.md — README's MCP tool list omits six shipped tools — `fan_out`, `team_spawn`, `team_send`, `team_status`, `team_synthesize`, `team_close` — and `fan_out` directly contradicts the stated first principle.
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Document the team/* session-fleet tools and `fan_out` in both fabric/README.md § MCP tools and fabric/AGENTS.md's tool table, and either retract or qualify the "fan-out is never a tool's job" principle now that `fan_out` is a tool.
+
+`fabric/scripts/mcp-server.mjs` registers 13+ tools (lines 62–235): call, spawn_session, session_send, session_close, list_sessions, team_spawn, team_send, team_status, team_synthesize, team_close, list_providers, resolve_model, codex_status, fan_out. README § MCP tools lists 8; fabric/AGENTS.md's table lists the same 8. fabric/AGENTS.md's First principle states "fan-out is the orchestrator's job … never a tool's. So there is one call surface, not a 'single' tool and a 'batch' tool." A `fan_out` tool now exists — the doc's central design claim is false.
+
+---
+
+### [SR-20260729-072] [HIGH] fabric/README.md — Install section tells users to hand-register the MCP server in `~/.claude/settings.json`, but the plugin ships `fabric/.mcp.json` and auto-registers it.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Delete the manual `mcpServers` JSON block; state that `/plugin install fabric@cc-market` registers the server automatically via the bundled `.mcp.json`.
+
+`fabric/.mcp.json` declares `mcpServers.fabric` with `${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs`. README lines 12–24 still say to register in `~/.claude/settings.json` with a hardcoded `<plugin-root>` path. Following it yields two fabric server instances with divergent in-process session registries, plus an absolute path that breaks on plugin update.
+
+---
+
+### [SR-20260729-073] [MEDIUM] rem/README.md — Install section tells users to hand-register four hooks in `~/.claude/settings.json`, duplicating `rem/hooks/hooks.json` which the plugin already registers.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Replace the 45-line JSON block with a one-line statement that the plugin registers SessionStart/UserPromptSubmit/Stop hooks automatically; keep only the Codex note.
+
+`rem/hooks/hooks.json` declares all four hooks with the exact commands the README reproduces. Following the README double-registers everything: `prune-memory.js --evict-stale` runs twice per SessionStart (two writers racing on `.claude/.rem-state.json` and MEMORY.md), `recall.js` injects duplicate additionalContext, and the Stop hook double-advances the stop counter — halving the effective ≥3-stop threshold gating `/rem`.
+
+---
+
+### [SR-20260729-074] [MEDIUM] sharp-review/README.md — Install instructions are inconsistent with every other plugin and reference a `scripts/setup/setup.js` that does not exist in this repo.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Use `/plugin install sharp-review@cc-market` like the other plugin READMEs; drop the `claude_settings.json` hand-edit and the `node scripts/setup/setup.js` step.
+
+sharp-review/README.md:7–20 says to hand-edit `claude_settings.json` and run `node scripts/setup/setup.js`. There is no `scripts/setup/` under cc-market — that setup.js lives in the parent config-sync repo, which a marketplace user does not have. All other plugin READMEs use `/plugin install <name>@cc-market`.
+
+---
+
+### [SR-20260729-075] [MEDIUM] README.md — Plugin table claims sharp-review runs "3 parallel reviewers"; the code and the plugin's own docs say 2 of N.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Change to "2 of N parallel reviewers (dynamic provider roster)" to match cc-market/AGENTS.md and sharp-review/README.md.
+
+README.md:26 says "3 parallel reviewers". cc-market/AGENTS.md and sharp-review/README.md both say 2 of N (dynamic roster). Commit 0e0e95b changed this and the root README was not updated despite its own keep-in-sync comment.
+
+---
+
+### [SR-20260729-076] [MEDIUM] rem/skills/rem/reference/scripts.md — The "REM Scripts Reference" table is presented as complete but omits three of the fifteen scripts, including both hook entry points.
+
+- **Category:** Feature
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add rows for `recall.js`, `inject-rules.js`, and `doc-freshness.js` (with its flags), and add the undocumented `--rescan` (crystallize.js) and `--fix`/`--quiet` (prune-memory.js) flags.
+
+Missing: `recall.js` (UserPromptSubmit auto-recall hook), `inject-rules.js` (Codex SessionStart rules injector), `doc-freshness.js` (git-drift engine behind `/refresh-docs`). Matters because at runtime the `/rem` skill sees only SKILL.md and reference/*.md — an agent consulting this table cannot learn these scripts exist. Flag coverage is also stale: `--rescan`, `--fix`, `--quiet` (what hooks.json actually passes) are unlisted.
+
+---
+
+### [SR-20260729-077] [MEDIUM] fabric/AGENTS.md — The File Structure block documents an `engine/tests/` directory that does not exist.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Delete the `engine/tests/` line; all suites live in `fabric/tests/`. Also add `lock.mjs` to the shared/ contents list.
+
+`ls fabric/engine` shows no tests/ directory; every suite is in `fabric/tests/`, matching the AGENTS.md § Testing command — the doc contradicts itself. The same block lists shared/ as "spawn/lib/state/stamp/attention" but it also contains lock.mjs.
+
+---
+
+### [SR-20260729-078] [LOW] rem/skills/rem/reference/memory-conventions.md — The promotion counter is named `access_count` in prose, `count` in the format section, and `accessCount` in the JSON the code emits — three names for one field.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Standardize on `count` (the on-disk `_meta.json` key), and note the `accessCount` alias where crystallize --propose JSON is described.
+
+The actual `_meta.json` key is `count` (`rem/scripts/lib.mjs:233,263,268`; `rem-prep.js:166,188` gates on `meta.count >= 3`). `access_count` appears nowhere in code. `crystallize.js:103` emits `accessCount` in --propose but `count` in --drift (line 65). An agent following crystallize.md and reading `entry.access_count` gets undefined and silently classifies every entry as below the >= 5 rule-worthy threshold.
+
+---
+
+### [SR-20260729-079] [LOW] sharp-review/AGENTS.md — Test-file listing is missing three of the ten suites on disk.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Add `pick-profile.test.mjs`, `profiles.test.mjs`, and `sources.test.mjs` to the tree under `tests/`.
+
+AGENTS.md enumerates 7 suites; disk has 10. The three missing cover exactly the newest subsystem (source-adapter registry and weighted profile selection) the same AGENTS.md describes at length. Recurrence of the class flagged in SR-20260625-013 for rem/AGENTS.md.
+
+---
+
+### [SR-20260729-080] [LOW] fabric/README.md — § Layers describes `engine/codex/` as "codex app-server client + task runner", omitting the session and discovery modules the README's own persistent-session docs depend on.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Update to "codex app-server client, task runner, session, discovery".
+
+`fabric/engine/codex/` contains app-server.mjs, task.mjs, session.mjs, discovery.mjs. The README's L1 bullet names only the first two, yet its § MCP tools documents `spawn_session` (codex/session.mjs) and `codex_status` (codex/discovery.mjs). fabric/AGENTS.md gets this right, so the two docs disagree.
+
+---
+
+### [SR-20260729-081] [INFO] fabric/shared/codex 2 — A stray empty directory named `codex 2` (an OneDrive duplicate artifact) sits in fabric's bundled shared/ tree.
+
+- **Category:** Bug
+- **Status:** OPEN
+- **Confidence:** single-reviewer
+- **Suggestion:** Delete the empty `codex 2` directory; consider having the bundle-integrity test flag unexpected entries in */shared/.
+
+Empty directory, documented nowhere, classic OneDrive conflict-copy suffix. All six bundled shared/*.mjs copies are otherwise byte-identical to cc-market/shared/ across every plugin — no bundle drift.

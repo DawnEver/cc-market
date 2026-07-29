@@ -10,7 +10,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildChildEnv } from './spawn-child.mjs';
+import { buildChildEnv, hookFreeArgs } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
@@ -48,7 +48,7 @@ export async function openSession(opts) {
   const bin = _bin || (process.platform === 'win32' ? 'claude.cmd' : 'claude');
   const args = [
     '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
-    ...(model ? ['--model', model] : []), ...extraArgs,
+    ...(model ? ['--model', model] : []), ...hookFreeArgs(extraArgs), ...extraArgs,
   ];
 
   const child = _spawn(bin, args, { cwd: cwd || runDir, env, stdio: ['pipe', 'pipe', 'pipe'] });

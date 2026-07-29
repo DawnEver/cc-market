@@ -134,6 +134,8 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Auth note
 
-Static-key providers (DeepSeek) get `x-api-key` injected. OAuth providers (`claude`) must
+Static-key providers get the token injected in the header style matching the env var that
+supplied it: `ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` (and
+Foundry keys, e.g. DeepSeek/Kimi) → `x-api-key`. OAuth providers (`claude`) must
 use `passthroughAuth: true` — the proxy forwards the child's own refreshing token rather
 than holding credentials.

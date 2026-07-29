@@ -86,6 +86,18 @@ export function buildChildEnv({ provider, observe, proxyUrl, configPath }) {
 
 // ── Stream-json parsing (large prompts / images go via stdin) ────────────────
 
+// Headless children must not inherit the host's hooks: user/project Stop hooks
+// (sharp-review gate, rem, traceme SessionStart pulls, …) fire inside the child
+// too, where they can inject more turns and keep the one-shot `claude -p` child
+// alive forever (observed: native claude child hung past its timeout because the
+// inherited sharp-review Stop hook dispatched a reviewer inside it). Hooks are a
+// host-session concern; a fabric worker child always runs hook-free. A caller
+// passing its own --settings via extraArgs takes precedence.
+export const HOOK_FREE_SETTINGS = '{"disableAllHooks":true}';
+export function hookFreeArgs(extraArgs = []) {
+  return extraArgs.includes('--settings') ? [] : ['--settings', HOOK_FREE_SETTINGS];
+}
+
 // Text carried by one stream-json message ('' if none) — the single extraction
 // used by both parseStreamJsonOutput and the live onText handler.
 // Duplicate rule: some providers' final `result` message repeats the full assistant
@@ -216,8 +228,8 @@ export async function spawnChild(opts) {
     // Both modes emit stream-json on stdout so usage parsing + onText streaming are
     // universal; argv mode just keeps the prompt on the command line.
     const args = useStdin
-      ? ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...extraArgs]
-      : ['-p', fullPrompt, '--output-format', 'stream-json', ...modelArgs, ...extraArgs];
+      ? ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...hookFreeArgs(extraArgs), ...extraArgs]
+      : ['-p', fullPrompt, '--output-format', 'stream-json', ...modelArgs, ...hookFreeArgs(extraArgs), ...extraArgs];
 
     const result = await new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new Error('spawnChild: request cancelled')); return; }

@@ -402,3 +402,27 @@ test('spawnChild does not double-count text when result repeats the assistant te
   assert.equal(seen.join(''), 'the answer', 'onText must not stream the answer twice');
   assert.deepEqual(res.usage, { input_tokens: 1, output_tokens: 2 });
 });
+
+test('headless children run hook-free via --settings disableAllHooks', async () => {
+  // Regression: an inherited Stop hook (sharp-review gate) once kept a one-shot
+  // `claude -p` child alive past its timeout by injecting more turns.
+  const sink = {};
+  await spawnChild({
+    provider: 'deepseek', prompt: 'hello',
+    configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
+  });
+  const i = sink.args.indexOf('--settings');
+  assert.ok(i !== -1, '--settings passed');
+  assert.deepEqual(JSON.parse(sink.args[i + 1]), { disableAllHooks: true });
+});
+
+test('caller-supplied --settings in extraArgs wins over the hook-free default', async () => {
+  const sink = {};
+  await spawnChild({
+    provider: 'deepseek', prompt: 'hello', extraArgs: ['--settings', '{"custom":true}'],
+    configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
+  });
+  const occurrences = sink.args.filter((a) => a === '--settings').length;
+  assert.equal(occurrences, 1, 'no duplicate --settings');
+  assert.deepEqual(JSON.parse(sink.args[sink.args.indexOf('--settings') + 1]), { custom: true });
+});

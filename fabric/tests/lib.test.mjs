@@ -336,7 +336,7 @@ describe("callAnthropicAPI", () => {
         "user"
       );
       assert.equal(fetches.length, 1);
-      assert.equal(fetches[0].url, "https://api.example.com/anthropic/messages");
+      assert.equal(fetches[0].url, "https://api.example.com/anthropic/v1/messages");
     } finally {
       globalThis.fetch = undefined;
     }
