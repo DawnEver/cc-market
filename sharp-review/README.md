@@ -1,6 +1,6 @@
 # Sharp Review (锐评)
 
-Post-feature code review with 3 independent AI reviewers. Each reviewer is constrained by JSON Schema; findings are cross-checked, merged, and synced to a structured task list.
+Post-feature code review with independent AI reviewers (2 of N, drawn dynamically from fabric `list_providers`). Each reviewer is constrained by JSON Schema; findings are cross-checked, merged, and synced to a structured task list.
 
 ## Install
 
@@ -39,7 +39,7 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 |---|---|---|
 | `none` | Trivial/doc-only tasks | 0 (skipped) |
 | `once` | Moderate code changes | 1 pass |
-| `multi` | Complex/risky changes | 2 parallel (picked from 3 backends) + merge |
+| `multi` | Complex/risky changes | 2 parallel (picked dynamically from N provider backends) + merge |
 
 ## Output
 

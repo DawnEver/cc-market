@@ -17,7 +17,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
 | [`fabric`](fabric/README.md) | `fabric/` | Multi-provider session fabric: one `call` primitive (task/review/agent/image) + persistent sessions + observe proxy. Absorbed the former `takeover` plugin |
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, crystallization, eviction |
-| [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 3 parallel reviewers, task sync, memory cross-reference |
+| [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
 

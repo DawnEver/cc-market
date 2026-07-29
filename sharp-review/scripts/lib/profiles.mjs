@@ -4,7 +4,7 @@
 
 // ── Review profiles ──
 // A profile is a review *template* (scope, prompt framing, forced mode) — NOT bound to any
-// provider. Provider/model selection stays the per-reviewer seed-mod rotation. Profiles are
+// provider. Provider/model selection is a per-reviewer dynamic 2-of-N rotation seeded by diff-manifest. Profiles are
 // selected probabilistically per trigger (see pickProfileKey); weights are tunable per project
 // via reviewGate.profileWeights in .claude/.rem-state.json.
 

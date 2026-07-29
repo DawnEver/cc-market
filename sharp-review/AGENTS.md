@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code. Three parallel reviewers whose findings are normalized to one schema, cross-checked and merged. (deepseek/claude return schema JSON directly; codex review-mode returns prose the worker normalizes into the schema before merge — see `skills/sharp-review/reference/direct-fanout.md` § Codex prose normalization.) Findings stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
+Post-feature code review plugin for Claude Code. Parallel reviewers drawn dynamically from fabric `list_providers` (2 of N), whose findings are normalized to one schema, cross-checked and merged. (Anthropic-compatible providers — claude/deepseek/kimi — return schema JSON directly; codex review-mode returns prose the worker normalizes into the schema before merge — see `skills/sharp-review/reference/direct-fanout.md` § Codex prose normalization.) Findings stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
 
 ## Architecture
 
@@ -77,7 +77,8 @@ table/thresholds, and config keys — live in `skills/sharp-review/reference/pro
 (don't restate them here; they drift). What's dev-only:
 
 - A profile is a review *template* (scope + prompt framing + forced mode) in `PROFILES`
-  (`lib/profiles.mjs`), orthogonal to providers (seed-mod reviewer rotation unchanged). The
+  (`lib/profiles.mjs`), orthogonal to providers (dynamic 2-of-N reviewer rotation, seeded by
+  diff-manifest). The
   **profile is the single unit of selection**; a `source` (`sources.mjs`) is just its trigger —
   no pick-source-then-profile two-step.
 - `pick-profile.js --sources <fired>` does one global weighted draw via `globalWeightsForSources`.

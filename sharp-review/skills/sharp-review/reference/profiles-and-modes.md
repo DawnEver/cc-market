@@ -133,8 +133,9 @@ Size-bounded by construction — every field is guaranteed under safe limits:
 
 ## Reviewer schema (what each reviewer must return)
 
-2 of 3 reviewers run, picked by `seed mod 3` (combos AB/AC/BC) so same-day rounds rotate the
-pair: A (Codex), B (DeepSeek), C (Opus). Each is JSON-Schema-constrained to a finding with:
+2 of N reviewers run, picked by `seed mod N` over the provider roster from fabric
+`list_providers` (alphabetical order) so same-day rounds rotate the pair — see
+`direct-fanout.md` § Reviewer rotation. Each is JSON-Schema-constrained to a finding with:
 `severity` (HIGH|MEDIUM|LOW|INFO), `file`, `summary` (one line), `category`
 (Bug|Feature|Performance), `status` (OPEN|FIXED), `suggestion` (one line).
 

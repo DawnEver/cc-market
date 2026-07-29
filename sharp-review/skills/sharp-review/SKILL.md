@@ -5,7 +5,7 @@ description: Post-feature sharp review (锐评) —parallel reviewers, merge fin
 
 # Sharp Review (锐评)
 
-Post-feature review: 2 of 3 reviewers, each JSON-Schema-constrained, cross-checked and merged into a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter. Normally invoked by the Stop hook once enough change accumulates (Wave Gate); `/sharp-review` runs it manually. Trigger thresholds, profile-weighting math, mode internals, and config keys → **`reference/profiles-and-modes.md`**.
+Post-feature review: 2 of N reviewers (N = providers returned by fabric `list_providers`), each JSON-Schema-constrained, cross-checked and merged into a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter. Normally invoked by the Stop hook once enough change accumulates (Wave Gate); `/sharp-review` runs it manually. Trigger thresholds, profile-weighting math, mode internals, and config keys → **`reference/profiles-and-modes.md`**.
 
 ## Execution mode (read first)
 
@@ -68,12 +68,13 @@ to the `Agent` tool (Claude Code) / `spawn_agent` (Codex) if takeover is unavail
 dispatched `sharp-review:sharp-review` worker must list `mcp__plugin_fabric_fabric__call`
 in its `tools:` allowlist — an explicit allowlist excludes everything unnamed, so omitting it
 silently forces every reviewer onto the flaky `Agent` fallback (the cause of past all-reviewers-
-FAILED runs). Collect each reviewer's raw `{ findings: [...] }` and feed the **raw** results to
-`post-review.js --raw`. deepseek/claude return JSON directly; **codex review-mode returns prose**
+FAILED runs). The rotation also needs `mcp__plugin_fabric_fabric__list_providers` in the
+allowlist (Step 3 picks the pair dynamically from its output). Collect each reviewer's raw `{ findings: [...] }` and feed the **raw** results to
+`post-review.js --raw`. Anthropic-compatible providers (`claude`/`deepseek`/`kimi`) return JSON directly; **codex review-mode returns prose**
 — normalize per `reference/direct-fanout.md` § Codex prose normalization (which also defines the
 single `[]`-vs-`null` rule). Do NOT merge or assign `SR-` ids yourself — the shared
 `mergeFindings`/`renderReviewMarkdown` in `lib.mjs` (invoked by `post-review.js`) owns that, so
-every host produces byte-identical output. Full procedure, seed-mod-3 rotation, `raw.json`
+every host produces byte-identical output. Full procedure, dynamic 2-of-N rotation, `raw.json`
 schema, and positional alignment → **`reference/direct-fanout.md`**.
 
 ### Step 4 — Write memory entry & sync

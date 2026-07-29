@@ -39,13 +39,13 @@ Capture the JSON: `{ mode, range, seed, stats, diff?, manifestText?, excludedSum
 
 Each active reviewer reviews through **its own** assigned profile (`profiles[i]`): build that reviewer's prompt from `profiles[i].promptKind`/`framing`/`reviewScope`.
 
-**Reviewer roster & rotation:** 3 reviewers (A: Codex/codex, B: DeepSeek/deepseek, C: Opus/claude). Pick 2 via `seed mod 3`:
-
-| seed % 3 | Active | Combo |
-|----------|--------|-------|
-| 0 | A, B | Codex + DeepSeek |
-| 1 | A, C | Codex + Opus |
-| 2 | B, C | DeepSeek + Opus |
+**Reviewer roster & rotation (dynamic):** call `mcp__plugin_fabric_fabric__list_providers`,
+order the returned provider keys alphabetically, N = count. Active pair =
+`providers[seed % N]` and `providers[(seed + 1) % N]` (2 of N; N==2 → both always run;
+N==1 → single reviewer). Provider handling is keyed on the provider key, not position:
+`codex` review-mode returns prose (normalize per `reference/direct-fanout.md` § Codex prose
+normalization); Anthropic-compatible providers (`claude`, `deepseek`, `kimi`, …) return JSON
+directly. `claude` is called with `model="opus"`; others take their configured default.
 
 **Fan out reviewers** using the fabric MCP tool (`mcp__plugin_fabric_fabric__call`) — it calls external provider APIs directly with no safety-classifier dependency. Call each active reviewer in sequence (they run independently), building the prompt from the template below. If the fabric MCP tool is not available, fall back to the `Agent` tool (one subagent per reviewer).
 
@@ -71,7 +71,8 @@ Git diff:
 ```<diff>```
 ```
 
-Extract the `{ "findings": [...] }` from the takeover response. deepseek/claude return the JSON
+Extract the `{ "findings": [...] }` from the takeover response. Anthropic-compatible
+providers (`claude`/`deepseek`/`kimi`) return the JSON
 object directly. **Codex (`provider="codex"`, `mode="review"`) returns PROSE, not JSON** —
 normalize it per the canonical rule in `reference/direct-fanout.md` § Codex prose normalization
 (parse → schema-validate → `[]` vs `null` semantics). Do NOT restate that rule here — read it.
@@ -80,17 +81,15 @@ normalize it per the canonical rule in `reference/direct-fanout.md` § Codex pro
 
 **architecture** (`promptKind: "architecture"`): use `mode="agent"`, no diff/manifest — reviewers explore the repo autonomously. Prompt them with the architecture review framing (see `reference/profiles-and-modes.md`).
 
-**Provider mapping:**
-- Reviewer A (Codex): `provider="codex"` (no model arg)
-- Reviewer B (DeepSeek): `provider="deepseek"`
-- Reviewer C (Opus): `provider="claude", model="opus"`
+**Provider mapping:** use the provider keys from `list_providers` verbatim —
+`provider="<key>"` for each active reviewer, `model="opus"` only when the key is `claude`.
 
 **Collect results into raw.json:**
 
 ```json
 {
-  "reviewers": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"},{"key":"C","name":"Opus"}],
-  "active": [{"key":"A","name":"Codex"},{"key":"B","name":"DeepSeek"}],
+  "reviewers": [{"key":"claude","name":"claude"},{"key":"codex","name":"codex"},{"key":"deepseek","name":"deepseek"},{"key":"kimi","name":"kimi"}],
+  "active": [{"key":"codex","name":"codex"},{"key":"deepseek","name":"deepseek"}],
   "profileLabel": "<profiles[0].label> + <profiles[1].label>",
   "rawResults": [ {"findings": [ … ]} | null, {"findings": [ … ]} | null ]
 }
