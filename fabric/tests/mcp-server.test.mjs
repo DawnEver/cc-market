@@ -6,16 +6,44 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TOOLS, handleToolCall, handleCall, handleFanOut, send, encodeRpcMessage,
   API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH,
 } from "../scripts/mcp-server.mjs";
+import { clearConfigCache } from "../engine/providers.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.join(__dirname, "..", "scripts", "mcp-server.mjs");
 const text = (r) => r.content[0].text;
+
+// Hermetic provider registry: point CC_MARKET_CONFIG_PATH at a temp fixture so tests
+// never depend on the host's ~/.claude/claude_env_settings.json.
+function withConfigFixture(obj, fn) {
+  const p = path.join(os.tmpdir(), `fabric-test-settings-${process.pid}-${Date.now()}.json`);
+  fs.writeFileSync(p, JSON.stringify(obj));
+  const prev = process.env.CC_MARKET_CONFIG_PATH;
+  process.env.CC_MARKET_CONFIG_PATH = p;
+  clearConfigCache();
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prev === undefined) delete process.env.CC_MARKET_CONFIG_PATH; else process.env.CC_MARKET_CONFIG_PATH = prev;
+      clearConfigCache();
+      fs.unlinkSync(p);
+    });
+}
+
+const DEEPSEEK_FIXTURE = {
+  "env:deepseek": {
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
+    ANTHROPIC_AUTH_TOKEN: "sk-fake",
+    ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash",
+  },
+};
 
 function parseFramedMessage(output) {
   const headerEnd = output.indexOf("\r\n\r\n");
@@ -102,7 +130,9 @@ describe("call primitive", () => {
 
   test("rejects image modes for non-codex providers", async () => {
     await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }), /not supported for provider/);
-    await assert.rejects(() => handleCall({ provider: "deepseek", prompt: "x", mode: "image-generate" }), /not supported for provider/);
+    // API provider: fixture keeps this hermetic (no host claude_env_settings.json needed).
+    await withConfigFixture(DEEPSEEK_FIXTURE, () =>
+      assert.rejects(() => handleCall({ provider: "deepseek", prompt: "x", mode: "image-generate" }), /not supported for provider/));
   });
 
   test("review mode is available for non-codex providers (sharp-review regression)", () => {
@@ -163,13 +193,16 @@ describe("fan_out", () => {
   });
 
   test("captures task failures in structured result", async () => {
+    // Success path is hermetic: observe:true routes through the injected spawnChild,
+    // so no real provider config or network is needed.
+    const fakeSpawnChild = async () => ({ code: 0, stdout: "done", stderr: "", jsonlPath: null });
     const res = await handleFanOut({
       tasks: [
-        { provider: "deepseek", prompt: "ok task" },
+        { provider: "deepseek", prompt: "ok task", observe: true },
         { provider: "nonexistent", prompt: "bad provider" },
       ],
       synthesize: false,
-    });
+    }, { spawnChild: fakeSpawnChild });
     const parsed = JSON.parse(text(res));
     assert.equal(parsed.ok, false);
     assert.equal(parsed.failed, 1);

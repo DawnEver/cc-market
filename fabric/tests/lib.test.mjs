@@ -68,6 +68,21 @@ describe("loadProviderConfig", () => {
     }
   });
 
+  test("accepts ANTHROPIC_API_KEY as the token (direct Anthropic-compatible providers)", () => {
+    const p = makeTempSettings({
+      "env:kimi": {
+        ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+        ANTHROPIC_API_KEY: "sk-key",
+      },
+    });
+    try {
+      const result = loadProviderConfig("kimi", p);
+      assert.equal(result.token, "sk-key");
+    } finally {
+      fs.unlinkSync(p);
+    }
+  });
+
   test("throws when config file does not exist", () => {
     assert.throws(() => loadProviderConfig("deepseek", "/nonexistent/path.json"), /Config file not found/);
   });

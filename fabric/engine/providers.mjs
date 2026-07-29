@@ -5,7 +5,7 @@
 // plugin and takeover share one implementation instead of two.
 //
 // The config file keys providers as `env:<name>` (e.g. env:deepseek). A provider block
-// is either vanilla (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN) or Foundry
+// is either vanilla (ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY) or Foundry
 // (CLAUDE_CODE_USE_FOUNDRY=1 + ANTHROPIC_FOUNDRY_*). resolveUpstream normalizes both.
 
 import fs from "node:fs";
@@ -77,9 +77,11 @@ export function loadProviderConfig(provider, configPath = getConfigPath()) {
 
   const useFoundry = env.CLAUDE_CODE_USE_FOUNDRY === "1" || env.CLAUDE_CODE_USE_FOUNDRY === 1;
   const baseUrl = useFoundry ? env.ANTHROPIC_FOUNDRY_BASE_URL : env.ANTHROPIC_BASE_URL;
-  const token = useFoundry ? env.ANTHROPIC_FOUNDRY_API_KEY : env.ANTHROPIC_AUTH_TOKEN;
+  // Direct Anthropic-compatible providers may key their token as either
+  // ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY — accept both.
+  const token = useFoundry ? env.ANTHROPIC_FOUNDRY_API_KEY : (env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY);
   if (!baseUrl) throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_BASE_URL" : "ANTHROPIC_BASE_URL"} in ${configPath}.`);
-  if (!token)   throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_API_KEY" : "ANTHROPIC_AUTH_TOKEN"} in ${configPath}.`);
+  if (!token)   throw new Error(`Provider "${provider}" is missing ${useFoundry ? "ANTHROPIC_FOUNDRY_API_KEY" : "ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY"} in ${configPath}.`);
 
   const result = {
     native: false, baseUrl, token,

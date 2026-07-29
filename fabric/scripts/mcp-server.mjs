@@ -554,6 +554,7 @@ export async function handleFanOut(args, deps) {
           mode: task.mode || "task",
           write: !!task.write,
           model: task.model,
+          observe: task.observe,
           resultMode: "summary",
           cwd: task.cwd,
         }, deps);
