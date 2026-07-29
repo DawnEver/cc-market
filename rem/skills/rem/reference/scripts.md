@@ -5,6 +5,7 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | Script | Usage | Key Flags |
 |---|---|---|
 | `stamp-memory.js` | Create dirs, warn on missing `name:` frontmatter, rebuild MEMORY.md index | (none, idempotent) |
+| `remember.js` | Immediate save for explicit "remember this" requests: write dated memory file + `_meta.json` entry + index upsert | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` |
 | `prune-memory.js` | Enforce 20-entry cap + 90d eviction (short-term only, long-term protected) | `--evict-stale`, `--dry-run` |
 | `touch-memory.js <path>` | Bump `accessed` to today | `--promote` (upgrade `tier: short` → `long`) |
 | `crystallize.js` | Orchestrate crystallize mode: distill memory into `.claude/rules/rem/` | `--check`, `--propose`, `--execute --distilled <paths>`, `--validate` |

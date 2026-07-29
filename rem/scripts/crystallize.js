@@ -2,6 +2,7 @@
 // Crystallize orchestrator for the REM memory system.
 //
 //   node crystallize.js --check       → exit 0 if crystallize needed (≥20 entries), exit 1 otherwise
+//   node crystallize.js --drift       → JSON listing of long-term entries as drift-verification candidates
 //   node crystallize.js --propose      → JSON listing of all indexed entries for user review
 //   node crystallize.js --execute      → after model distilled rules into .claude/rules/rem/,
 //                                    validate and clear the MEMORY.md index
@@ -14,12 +15,13 @@
 //   4. Model runs --execute → validates rules exist, clears index, logs summary
 
 import { SR_ID_RE } from '../shared/lib.mjs';
+import { withLock } from '../shared/lock.mjs';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
   scopeIndexFile as indexFile, remRulesDir, scopeMemoryDir as memoryDir,
   scopeRoot, MAX_ENTRIES, collectMemoryFiles,
-  getMemoryMeta, getField, rebuildIndex, dropFromIndex,
+  getMemoryMeta, getField, rebuildIndex, dropFromIndex, loadMemoryState,
 } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -39,6 +41,32 @@ if (mode === '--check') {
   }
   console.log(`[crystallize] ${entryCount} entries (<${MAX_ENTRIES}) — not needed`);
   process.exit(1);
+}
+
+// ── --drift: list long-term entries as drift-verification candidates ──
+// The model verifies each against current code/git state before distilling —
+// see skills/rem/reference/crystallize.md § Drift verification.
+if (mode === '--drift') {
+  const state = loadMemoryState(scopeRoot);
+  const candidates = [];
+  for (const [relPath, meta] of state) {
+    if (meta.dropped || relPath.startsWith('tasks/')) continue;
+    if (meta.tier !== 'long') continue;
+    let name = relPath.split('/').pop().replace(/\.md$/, '');
+    const absPath = join(memoryDir, relPath);
+    if (existsSync(absPath)) {
+      try { name = getField(readFileSync(absPath, 'utf8'), 'name') || name; } catch { /* default */ }
+    }
+    candidates.push({
+      path: relPath,
+      name,
+      created: relPath.match(/(\d{4})\/(\d{2})\/(\d{2})/)?.slice(1).join('-') || '',
+      accessed: meta.accessed,
+      count: meta.count,
+    });
+  }
+  console.log(JSON.stringify({ driftCandidates: candidates }, null, 2));
+  process.exit(0);
 }
 
 // ── --propose: list all indexed entries for user review before crystallize ──
@@ -159,22 +187,26 @@ if (mode === '--execute') {
 
   const pathsToDrop = distilledPaths || indexedPaths;
 
-  if (distilledPaths && distilledPaths.length > 0) {
-    // Granular mode: drop only distilled entries
-    for (const p of distilledPaths) {
-      dropFromIndex(scopeRoot, p, 'crystallized');
+  // Drops + index rebuild under the index lease lock (rebuildIndex nests via
+  // reentrancy; dropFromIndex locks the per-date _meta.json separately).
+  withLock(indexFile, () => {
+    if (distilledPaths && distilledPaths.length > 0) {
+      // Granular mode: drop only distilled entries
+      for (const p of distilledPaths) {
+        dropFromIndex(scopeRoot, p, 'crystallized');
+      }
+      console.log(`[crystallize] dropped ${distilledPaths.length}/${indexedPaths.length} distilled entries from index`);
+    } else {
+      // Full mode: drop all
+      for (const p of indexedPaths) {
+        dropFromIndex(scopeRoot, p, 'crystallized');
+      }
+      console.log(`[crystallize] cleared ${indexedPaths.length} index entries`);
     }
-    console.log(`[crystallize] dropped ${distilledPaths.length}/${indexedPaths.length} distilled entries from index`);
-  } else {
-    // Full mode: drop all
-    for (const p of indexedPaths) {
-      dropFromIndex(scopeRoot, p, 'crystallized');
-    }
-    console.log(`[crystallize] cleared ${indexedPaths.length} index entries`);
-  }
 
-  // 4. Rebuild index
-  rebuildIndex(scopeRoot);
+    // 4. Rebuild index
+    rebuildIndex(scopeRoot);
+  });
 
   // 5. Detect SR-ID findings being crystallized
   const srIds = [];
@@ -199,5 +231,5 @@ if (mode === '--execute') {
 }
 
 // ── default ──
-console.log('Usage: node crystallize.js [--check|--propose|--validate|--execute]');
+console.log('Usage: node crystallize.js [--check|--drift|--propose|--validate|--execute]');
 process.exit(1);

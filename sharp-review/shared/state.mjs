@@ -3,6 +3,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
+import { withLock } from './lock.mjs';
 
 export const DEFAULT_STATE = {
   // Schema version of the whole state file. Bump when a key's shape changes
@@ -81,31 +82,38 @@ export function loadState(stateFile) {
 // intermittently fail on Windows under OneDrive/AV — retry once, then give up without
 // throwing. Returns { persisted } so callers (e.g. evolve's loop) can fall back to in-memory
 // state instead of blocking. Pre-atomic callers ignore the return value, so this is safe.
+// The write phase is lease-locked (shared/lock.mjs) against concurrent processes.
 export function saveState(stateFile, state, { atomic = false } = {}) {
-  const dir = dirname(stateFile);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const payload = JSON.stringify(state, null, 2);
+  return withLock(stateFile, () => {
+    const dir = dirname(stateFile);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const payload = JSON.stringify(state, null, 2);
 
-  if (!atomic) {
-    writeFileSync(stateFile, payload, 'utf8');
-    return { persisted: true };
-  }
+    if (!atomic) {
+      writeFileSync(stateFile, payload, 'utf8');
+      return { persisted: true };
+    }
 
-  const tmp = stateFile + '.tmp';
-  const tryWrite = () => { writeFileSync(tmp, payload, 'utf8'); renameSync(tmp, stateFile); };
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { tryWrite(); return { persisted: true }; }
-    catch { /* retry once (Windows/OneDrive rename flake) */ }
-  }
-  try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
-  return { persisted: false };
+    const tmp = stateFile + '.tmp';
+    const tryWrite = () => { writeFileSync(tmp, payload, 'utf8'); renameSync(tmp, stateFile); };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { tryWrite(); return { persisted: true }; }
+      catch { /* retry once (Windows/OneDrive rename flake) */ }
+    }
+    try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
+    return { persisted: false };
+  });
 }
 
+// appendEvent is a load→modify→save critical section: the lock is reentrant, so
+// the inner saveState reuses the held lock instead of re-acquiring.
 export function appendEvent(stateFile, type, detail) {
-  const state = loadState(stateFile);
-  state.prune.events.push({ ts: new Date().toISOString(), type, ...detail });
-  if (state.prune.events.length > 15) {
-    state.prune.events = state.prune.events.slice(-15);
-  }
-  saveState(stateFile, state);
+  withLock(stateFile, () => {
+    const state = loadState(stateFile);
+    state.prune.events.push({ ts: new Date().toISOString(), type, ...detail });
+    if (state.prune.events.length > 15) {
+      state.prune.events = state.prune.events.slice(-15);
+    }
+    saveState(stateFile, state);
+  });
 }

@@ -29,6 +29,17 @@ Then register the hooks in `~/.claude/settings.json`:
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/recall.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -48,6 +59,8 @@ Then register the hooks in `~/.claude/settings.json`:
 > additionally, rem's SessionStart hook injects the host project's `.claude/rules/**/*.md`
 > into context (Codex doesn't auto-load them — Claude Code does, where this step is a no-op).
 > `/rem` and `/todo` are Claude slash-commands; on Codex invoke the underlying skills directly.
+> Prompt-time auto-recall (`recall.js`) is Claude Code only — Codex has no
+> `UserPromptSubmit`-equivalent hook, so the script exits silently there.
 
 ## Usage
 

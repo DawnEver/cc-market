@@ -6,6 +6,24 @@ operation — present the proposal before acting.
 
 **If crystallize needed, present the proposal to the user before acting:**
 
+0. **Drift verification (long-term memory vs. current reality).** Before distilling,
+   list the drift-verification candidates:
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --drift
+   ```
+   This outputs JSON with every `tier: long` entry (path, name, created/accessed,
+   count) — long-term memories are the ones most likely to have silently drifted as
+   the code moved. For each candidate, verify it against current code/git state:
+   grep for the functions, flags, and paths it mentions; check recent `git log` for
+   the files it references. Then:
+   - **Still accurate** → proceed with it as a normal crystallize candidate below.
+   - **Contradicted but fixable** → correct the memory file in place (edit the body;
+     the file itself is never deleted) and treat the corrected version as the candidate.
+   - **Contradicted and no longer useful** → propose dropping it in the same
+     user-confirmed step below (step 3), marked as drifted rather than rule-worthy.
+     When the user confirms a drift-drop, its tombstone reason in `_meta.json` is
+     `dropped: 'drifted'` (distinct from `'crystallized'` used for distilled entries).
+
 1. Run the propose command to get structured data:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --propose

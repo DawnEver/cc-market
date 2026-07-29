@@ -19,7 +19,6 @@ import {
 } from "../hooks/rem-hook.js";
 
 // ── Constants expected from rem-hook.js ──
-const MIN_STOP_COUNT = 3;
 const MIN_SESSION_MS = 2 * 60 * 1000;
 const MIN_SESSION_MS_SUBSTANTIVE = 30 * 1000;
 const SESSION_EXPIRY_MS = 30 * 60 * 1000;
@@ -39,11 +38,11 @@ describe("isFreshSession", () => {
     assert.equal(isFreshSession(state, "new-key", Date.now()), true);
   });
 
-  test("returns false when null input key with stored key (treated as same session)", () => {
+  test("returns true when null input key with stored key (null is always-different)", () => {
     const state = {
       hook: { sessionKey: "old-key", lastTouched: Date.now() },
     };
-    assert.equal(isFreshSession(state, null, Date.now()), false);
+    assert.equal(isFreshSession(state, null, Date.now()), true);
   });
 
   test("returns true when expired (>30 min since last touch)", () => {
@@ -286,6 +285,19 @@ describe("decideStop", () => {
     assert.equal(result.decision, "allow");
     assert.equal(result.state.hook.remPending, false);
     assert.equal(result.state.hook.remDone, true);
+  });
+
+  test("null session_id does not inherit remPending from a stored session", () => {
+    const now = Date.now();
+    // Stored session s1 has remPending set; a hook input with null session_id
+    // must be treated as a different (fresh) session, not leak remPending.
+    let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
+    const result = decideStop(state, { session_id: null, transcript_path: "/nonexistent" }, now);
+    assert.equal(result.state.hook.sessionKey, null);
+    assert.equal(result.state.hook.remPending, false);
+    assert.equal(result.state.hook.remDone, false);
+    assert.equal(result.state.hook.stopCount, 1);
+    assert.equal(result.decision, "allow");
   });
 
   test("sets remDone when remPending was true regardless of transcript", () => {

@@ -47,7 +47,10 @@ export function isAwaitingInput(transcript) {
 export function isFreshSession(state, inputKey, now) {
   if (!state) return true;
   const storedKey = state.hook.sessionKey ?? null;
-  if (inputKey != null && storedKey != null && storedKey !== inputKey) return true;
+  // A null inputKey is always-different from any stored key: without this, hooks
+  // whose input lacks session_id silently matched the stored session and leaked
+  // remPending across sessions within the 30-min window.
+  if (storedKey != null && storedKey !== inputKey) return true;
   if (now - (state.hook.lastTouched || 0) > SESSION_EXPIRY_MS) return true;
   return false;
 }

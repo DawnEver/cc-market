@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, renameSync } from 'fs';
 import { join, dirname, resolve, relative, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
+import { withLock } from '../shared/lock.mjs';
 import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from '../shared/state.mjs';
 import { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath } from '../shared/stamp.mjs';
 
@@ -241,15 +242,18 @@ export function saveMemoryMeta(scopeRoot, relPath, patch) {
   const file = metaPath(scopeRoot, date);
   const slug = relPath.split('/').pop();
 
-  let data = {};
-  if (existsSync(file)) {
-    try { data = JSON.parse(readFileSync(file, 'utf8')); } catch { /* start fresh */ }
-  } else {
-    mkdirSync(dirname(file), { recursive: true });
-  }
+  // Read-modify-write of this date dir's _meta.json under its lease lock.
+  withLock(file, () => {
+    let data = {};
+    if (existsSync(file)) {
+      try { data = JSON.parse(readFileSync(file, 'utf8')); } catch { /* start fresh */ }
+    } else {
+      mkdirSync(dirname(file), { recursive: true });
+    }
 
-  data[slug] = { ...(data[slug] || {}), ...patch };
-  writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    data[slug] = { ...(data[slug] || {}), ...patch };
+    writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+  });
 }
 
 export function getMemoryMeta(scopeRoot, relPath) {
@@ -369,6 +373,9 @@ function buildIndexEntries(scopeRoot, state) {
 export function rebuildIndex(scopeRoot) {
   const rulesDir = join(scopeRoot, '.claude', 'rules');
   const indexFile = join(rulesDir, 'MEMORY.md');
+  // Serialize index rebuilds across concurrent processes (lock is reentrant, so
+  // callers that already hold the index lock — e.g. touch-memory.js — nest safely).
+  withLock(indexFile, () => {
   const state = loadMemoryState(scopeRoot);
 
   const entries = buildIndexEntries(scopeRoot, state);
@@ -398,6 +405,7 @@ export function rebuildIndex(scopeRoot) {
 
   if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
   writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
+  });
 }
 
 // ── File collection ──

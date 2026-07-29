@@ -33,6 +33,7 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 - `prune-memory.js --evict-stale` — always run first
 - `rem-prep.js --transcript <path> --promote` — batch touch, auto-promote, crystallize check
 - `stamp-memory.js` — auto-index new memory files
+- `remember.js` — immediate save for explicit "remember this" requests (run it right away, don't wait for `/rem`; see `reference/memory-conventions.md` § When memory is written)
 - `crystallize.js --check` / `scope-split.js --check` — gated procedures (see below)
 
 ### Reference

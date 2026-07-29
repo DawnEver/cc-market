@@ -10,6 +10,8 @@ SessionStart → prune-memory.js --evict-stale
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
+  UserPromptSubmit → recall.js (Claude Code only: heuristic memory recall → additionalContext; silent on Codex)
+     ↓
   Stop → rem-hook.js (gates after ≥3 stops AND (≥2 min session OR ≥30s + substantive code edits))
      ↓
   /rem skill:
@@ -48,8 +50,8 @@ Stale docs surface in `/todo` as virtual `DOC-` rows. See `skills/refresh-docs/S
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js
-├── scripts/        lib.mjs, stamp-memory.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
-│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, task-engine.js, task-lib.mjs, scope-validate.mjs
+├── scripts/        lib.mjs, stamp-memory.js, remember.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
+│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, task-engine.js, task-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── tests/          *.test.mjs (see Testing section below)
 ├── .claude/rules/  invariants only
@@ -83,7 +85,7 @@ node --test cc-market/rem/tests/*.test.mjs
 
 Pre-commit hook runs rem tests when rem files are staged. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`.
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`, `recall.test.mjs`, `remember.test.mjs`, `crystallize.test.mjs`, `prune-memory.test.mjs`.
 
 ## Standard
 

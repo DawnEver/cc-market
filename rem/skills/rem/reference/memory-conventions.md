@@ -1,5 +1,34 @@
 # Memory Conventions (global, all projects)
 
+## When memory is written
+
+Two paths:
+
+1. **Immediate (`remember.js`)** — when the user explicitly asks to remember something
+   ("remember this", "记住这个"), save it right away instead of waiting for `/rem`:
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body "<text>"
+   ```
+   It writes the dated memory file with valid frontmatter, creates the `_meta.json`
+   entry, and upserts the index in one step. Refuses to overwrite a different-bodied
+   file without `--update`. Host-agnostic (plain CLI — works on Claude Code and Codex).
+2. **Session consolidation (`/rem`)** — everything learned during a session that the user
+   didn't explicitly ask to keep. See `standard-procedure.md`.
+
+## Per-type save constraints
+
+- **`user`** — facts about the user: preferences, role, environment, workflow habits.
+- **`feedback`** — ONLY for behaviors the user explicitly corrected or confirmed
+  (e.g. "don't do X", "always do Y"). Never infer feedback from silence or from a
+  single unconfirmed guess. Record: the rule, **why** the user wants it, and
+  **how to apply** it in future sessions.
+- **`project`** — project context that is NOT derivable from reading the code:
+  deadlines, stakeholder decisions, external constraints, why an approach was chosen.
+  Anything a `grep` of the repo would reveal does not belong here.
+- **`reference`** — pointers to external systems/entry points: dashboards, issue
+  trackers, docs sites, credentials locations — where to look, not what it says.
+
+
 ## Three-tier loading
 | Tier | When | Content | Eviction |
 |---|---|---|---|

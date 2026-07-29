@@ -5,6 +5,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { withLock } from './lock.mjs';
 
 function parseDate(s) { return new Date(s).getTime(); }
 
@@ -61,21 +62,24 @@ export function upsertIndexEntry(scopeRoot, relPath, { name, date }) {
   const indexFile = join(rulesDir, 'MEMORY.md');
   const path = normalizeMemoryPath(relPath);
 
-  const content = existsSync(indexFile)
-    ? readFileSync(indexFile, 'utf8')
-    : '# Memory Index\n\n## Entries';
-  const { header, entries } = parseIndex(content);
+  // Read-modify-write of MEMORY.md under the index lock.
+  withLock(indexFile, () => {
+    const content = existsSync(indexFile)
+      ? readFileSync(indexFile, 'utf8')
+      : '# Memory Index\n\n## Entries';
+    const { header, entries } = parseIndex(content);
 
-  const dateInPath = path.match(/^(\d{4})\/(\d{2})\/(\d{2})\//);
-  const created = dateInPath ? `${dateInPath[1]}-${dateInPath[2]}-${dateInPath[3]}` : date;
-  const entry = { date, title: name, path, created, accessed: date };
+    const dateInPath = path.match(/^(\d{4})\/(\d{2})\/(\d{2})\//);
+    const created = dateInPath ? `${dateInPath[1]}-${dateInPath[2]}-${dateInPath[3]}` : date;
+    const entry = { date, title: name, path, created, accessed: date };
 
-  const kept = entries.filter(e => e.path !== path);
-  const headerLines = header
-    .filter(l => l.trim() !== '_(no entries)_')
-    .join('\n').replace(/\s+$/, '').split('\n');
+    const kept = entries.filter(e => e.path !== path);
+    const headerLines = header
+      .filter(l => l.trim() !== '_(no entries)_')
+      .join('\n').replace(/\s+$/, '').split('\n');
 
-  const lines = [...headerLines, formatIndexEntry(entry), ...kept.map(e => e.line)];
-  if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-  writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
+    const lines = [...headerLines, formatIndexEntry(entry), ...kept.map(e => e.line)];
+    if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(indexFile, lines.join('\n') + '\n', 'utf8');
+  });
 }

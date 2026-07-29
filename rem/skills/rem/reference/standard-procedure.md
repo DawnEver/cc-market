@@ -36,6 +36,9 @@ Review the output. Re-promote any entries that were demoted but you referenced t
 ### 2. Update project memory
 
 - `.claude/memory/YYYY/MM/DD/` — add/update content files under date directory
+- If the user explicitly asked to remember something this session and it was NOT already
+  saved inline via `remember.js`, save it now with `remember.js` (see
+  `memory-conventions.md` § When memory is written) rather than hand-writing the file
 - Run `stamp-memory.js` to auto-index new files:
   ```bash
   node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js
