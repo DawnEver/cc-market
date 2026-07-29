@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  TOOLS, handleToolCall, handleCall, handleFanOut, send, encodeRpcMessage,
+  TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
   API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH,
 } from "../scripts/mcp-server.mjs";
 import { clearConfigCache } from "../engine/providers.mjs";
@@ -171,13 +171,6 @@ describe("fan_out", () => {
   });
 
   test("runs tasks concurrently, returns structured JSON", async () => {
-    let calls = 0;
-    const fakeSpawnChild = async (opts) => {
-      calls++;
-      return { stdout: "Result " + calls, stderr: "", code: 0 };
-    };
-    // fan_out uses handleCall internally → needs spawnChild dep for observe path
-    // but summary mode uses the dispatch path directly (no observe)
     const res = await handleFanOut({
       tasks: [
         { id: "t1", provider: "deepseek", prompt: "task one" },
@@ -289,8 +282,8 @@ describe("team tools", () => {
   });
 
   test("team_send routes to worker, returns summarized reply", async () => {
-    const fakeSend = async (teamId, workerId, prompt) => ({ text: `${workerId}: ${prompt}`, turn: 3 });
-    const fakeStatus = (teamId) => [{ id: "auth", sessionId: "sess-auth", provider: "deepseek", turns: 3 }];
+    const fakeSend = async (_teamId, workerId, prompt) => ({ text: `${workerId}: ${prompt}`, turn: 3 });
+    const fakeStatus = () => [{ id: "auth", sessionId: "sess-auth", provider: "deepseek", turns: 3 }];
     const res = await handleToolCall("team_send", {
       teamId: "team-1", workerId: "auth", prompt: "review this",
     }, { sendToTeamWorker: fakeSend, getTeamStatus: fakeStatus });
@@ -298,7 +291,7 @@ describe("team tools", () => {
   });
 
   test("team_status returns worker list", async () => {
-    const fakeStatus = (teamId) => [
+    const fakeStatus = () => [
       { id: "auth", provider: "deepseek", sessionId: "s-a", turns: 3 },
       { id: "fix", provider: "codex", sessionId: "s-f", turns: 1 },
     ];
@@ -309,7 +302,7 @@ describe("team tools", () => {
   });
 
   test("team_close closes all workers", async () => {
-    const fakeClose = async (teamId) => [{ id: "s-a", exitCode: 0 }, { id: "s-f", exitCode: 0 }];
+    const fakeClose = async () => [{ id: "s-a", exitCode: 0 }, { id: "s-f", exitCode: 0 }];
     const res = await handleToolCall("team_close", { teamId: "team-1" }, { closeTeam: fakeClose });
     const parsed = JSON.parse(text(res));
     assert.equal(parsed.length, 2);
