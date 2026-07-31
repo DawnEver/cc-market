@@ -133,11 +133,18 @@ function collectCandidatesUncached(scopeRoot) {
 // Reading every memory file's frontmatter on every prompt is too slow on
 // cloud-synced dirs (OneDrive placeholders). Cache candidates in a per-host
 // tmpdir file keyed by a stat-only fingerprint of the memory tree (file count
-// + max mtime + total size, including _meta.json). Any write from
-// remember.js / touch-memory.js / prune changes the fingerprint, so the cache
-// can never serve stale entries; stat calls themselves are cheap. The cache
-// lives in os.tmpdir() (not the synced tree) so multi-device setups each keep
-// their own — and it never shows up in git status.
+// + max mtime + total size, including _meta.json).
+//
+// The whole tree is re-statted at most once per FINGERPRINT_TTL_MS (30s):
+// within the window the cache is served without touching the memory tree at
+// all, so the per-prompt cost is a single statSync on the cache file. Any
+// write from remember.js / touch-memory.js / prune changes the fingerprint and
+// is picked up on the next expiry (staleness bounded by the TTL — acceptable
+// for best-effort recall). The cache lives in os.tmpdir() (not the synced
+// tree) so multi-device setups each keep their own — and it never shows up in
+// git status.
+
+export const FINGERPRINT_TTL_MS = 30_000;
 
 export function scopeFingerprint(scopeRoot) {
   const memDir = path.join(scopeRoot, ".claude", "memory");
@@ -165,21 +172,35 @@ function cacheFileFor(scopeRoot) {
   return path.join(os.tmpdir(), `rem-recall-${key}.json`);
 }
 
-export function collectCandidates(scopeRoot, { useCache = true, info } = {}) {
+export function collectCandidates(scopeRoot, { useCache = true, info, now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
   if (!useCache) return collectCandidatesUncached(scopeRoot);
-  const fingerprint = scopeFingerprint(scopeRoot);
   const cacheFile = cacheFileFor(scopeRoot);
+  let cached = null;
   try {
-    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-    if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
-      if (info) info.cacheHit = true;
-      return cached.candidates;
-    }
+    cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
   } catch { /* no/invalid cache — rebuild */ }
-  if (info) info.cacheHit = false;
+
+  // Fast path: cache fresh within TTL → serve without touching the memory tree.
+  if (cached && Array.isArray(cached.candidates) && Number.isFinite(cached.ts) && now - cached.ts < ttl) {
+    if (info) { info.cacheHit = true; info.fast = true; }
+    return cached.candidates;
+  }
+
+  // TTL expired → re-stat the tree and compare fingerprints.
+  const fingerprint = scopeFingerprint(scopeRoot);
+  if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
+    // Tree unchanged → reuse candidates, only refresh the TTL stamp.
+    cached.ts = now;
+    try { fs.writeFileSync(cacheFile, JSON.stringify(cached), "utf8"); } catch { /* best-effort */ }
+    if (info) { info.cacheHit = true; info.fast = false; }
+    return cached.candidates;
+  }
+
+  // Tree changed → rebuild candidates.
+  if (info) { info.cacheHit = false; info.fast = false; }
   const candidates = collectCandidatesUncached(scopeRoot);
   try {
-    fs.writeFileSync(cacheFile, JSON.stringify({ fingerprint, candidates }), "utf8");
+    fs.writeFileSync(cacheFile, JSON.stringify({ ts: now, fingerprint, candidates }), "utf8");
   } catch { /* cache is best-effort */ }
   return candidates;
 }
@@ -249,7 +270,7 @@ function printTelemetry() {
     if (r.done === false) {
       console.log(`${r.t}  KILLED mid-run (hook timeout or crash)`);
     } else {
-      console.log(`${r.t}  ${String(r.ms).padStart(5)}ms  cache=${r.cache ? "hit " : "MISS"}  cands=${r.cands}  injected=${r.injected}`);
+      console.log(`${r.t}  ${String(r.ms).padStart(5)}ms  cache=${r.cache ? "hit " : "MISS"}  fast=${r.fast ? "yes" : " no"}  cands=${r.cands}  injected=${r.injected}`);
     }
   }
   const times = rows.filter((r) => r.done !== false).map((r) => r.ms).sort((a, b) => a - b);
@@ -350,6 +371,7 @@ function main() {
     done: true,
     ms: Date.now() - T0,
     cache: info.cacheHit !== false,
+    fast: info.fast === true,
     cands: candidates.length,
     injected: Boolean(context),
   });

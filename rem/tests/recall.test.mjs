@@ -212,6 +212,7 @@ describe("recall over a fixture scope", () => {
 
 describe("collectCandidates cache", () => {
   let dir;
+  const T0 = Date.parse("2026-07-31T00:00:00Z"); // fixed clock for TTL tests
   beforeEach(() => {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rem-recall-cache-")));
     fs.mkdirSync(path.join(dir, ".claude", "memory"), { recursive: true });
@@ -223,35 +224,69 @@ describe("collectCandidates cache", () => {
   test("cache hit returns identical candidates without re-reading", () => {
     mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
       "body", { accessed: "2026-07-20", count: 2, tier: "short" });
-    const first = collectCandidates(dir);
-    const second = collectCandidates(dir); // served from cache
+    const first = collectCandidates(dir, { now: T0 });
+    const info = {};
+    const second = collectCandidates(dir, { now: T0 + 1000, info }); // within TTL → fast path
     assert.deepEqual(second, first);
     assert.equal(second[0].name, "git-rules");
+    assert.equal(info.cacheHit, true);
+    assert.equal(info.fast, true);
   });
 
-  test("fingerprint changes when a memory file is added → cache invalidated", () => {
+  test("fingerprint changes when a memory file is added → cache invalidated after TTL", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
       "body", { accessed: "2026-07-20", count: 1, tier: "short" });
     const fp1 = scopeFingerprint(dir);
-    collectCandidates(dir); // populate cache
+    collectCandidates(dir, { now: T0 }); // populate cache
     mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
       "body", { accessed: "2026-07-21", count: 1, tier: "short" });
     const fp2 = scopeFingerprint(dir);
     assert.notEqual(fp1, fp2);
-    const cands = collectCandidates(dir);
+    const cands = collectCandidates(dir, { now: T0 + 60_000 }); // TTL expired → re-stat picks it up
     assert.deepEqual(cands.map((c) => c.name).sort(), ["one", "two"]);
   });
 
-  test("fingerprint changes when _meta.json changes (drop → invalidated)", () => {
+  test("fingerprint changes when _meta.json changes (drop → invalidated after TTL)", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
       "body", { accessed: "2026-07-20", count: 1, tier: "short" });
-    assert.equal(collectCandidates(dir).length, 1);
+    assert.equal(collectCandidates(dir, { now: T0 }).length, 1);
     // Drop the entry by rewriting _meta.json.
     const metaFile = path.join(dir, ".claude", "memory", "2026", "07", "01", "_meta.json");
     const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
     meta["one.md"].dropped = "evicted";
     fs.writeFileSync(metaFile, JSON.stringify(meta) + " "); // size must change
-    assert.equal(collectCandidates(dir).length, 0);
+    assert.equal(collectCandidates(dir, { now: T0 + 60_000 }).length, 0);
+  });
+
+  test("within TTL the cache is served without re-stating the tree (bounded staleness)", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
+      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+    assert.equal(collectCandidates(dir, { now: T0 }).length, 1);
+    // A memory write lands within the TTL window.
+    mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
+      "body", { accessed: "2026-07-21", count: 1, tier: "short" });
+    const info = {};
+    const withinTtl = collectCandidates(dir, { now: T0 + 1000, info });
+    assert.equal(withinTtl.length, 1); // stale — the tree was not re-walked
+    assert.equal(info.cacheHit, true);
+    assert.equal(info.fast, true);
+    // After the TTL expires the tree is re-statted and the write is picked up.
+    const info2 = {};
+    const afterTtl = collectCandidates(dir, { now: T0 + 60_000, info: info2 });
+    assert.equal(afterTtl.length, 2);
+    assert.equal(info2.cacheHit, false);
+    assert.equal(info2.fast, false);
+  });
+
+  test("TTL expiry with unchanged tree reuses candidates (fingerprint still guards correctness)", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
+      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+    const first = collectCandidates(dir, { now: T0 });
+    const info = {};
+    const second = collectCandidates(dir, { now: T0 + 60_000, info });
+    assert.deepEqual(second, first);   // same candidates, no frontmatter re-read
+    assert.equal(info.cacheHit, true); // fingerprint matched → reused
+    assert.equal(info.fast, false);    // but the tree was re-statted
   });
 
   test("useCache:false bypasses the cache", () => {
@@ -397,6 +432,7 @@ describe("telemetry", () => {
     assert.equal(ring[0].done, true);
     assert.ok(Number.isFinite(ring[0].ms));
     assert.equal(typeof ring[0].cache, "boolean");
+    assert.equal(typeof ring[0].fast, "boolean");
 
     const t = spawnSync(process.execPath, [RECALL_JS, "--telemetry"], {
       encoding: "utf8",
