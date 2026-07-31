@@ -34,10 +34,13 @@ export const PROFILES = {
     framing: '架构锐评: survey the CURRENT codebase architecture as a whole — this is NOT a diff review.',
     reviewScope: [
       'Module boundaries and layering violations',
+      'Import architecture — map the import graph: circular imports, barrel (lib.mjs / index) re-export cycles, imports reaching across module or plugin boundaries into another module\'s internals, and import direction contradicting the documented layering',
       'Coupling / cohesion problems and circular dependencies',
       'Duplication and missing abstractions across the codebase',
       'File size — code files > 300 lines warrant scrutiny; > 600 lines MUST be split into smaller modules',
       'Doc size — any single SKILL.md / AGENTS.md / CLAUDE.md > 100 lines warrants scrutiny: push mechanism, schemas, and edge-cases into reference/* (progressive disclosure), keeping runtime docs to the execution path',
+      'Rules-vs-memory boundary — AGENTS.md and every scope .claude/rules/*.md hold ONLY core development principles: flag always-loaded docs bloated with mechanism, schemas, edge-cases, or one-off decisions that belong in .claude/memory/ (progressive disclosure); a bloated rule set is a per-session context tax',
+      'Suppression abuse — flag # noqa / type: ignore / eslint-disable / @ts-ignore / pylint|ruff|mypy disable used to escape a check rather than fix a real defect: broad or disable-all suppressions, the same suppression repeated across lines for one defect, and suppressions silencing the very errors the repo checks exist to catch',
       'Inconsistent patterns, dead subsystems, scalability / extensibility limits',
     ].join(', '),
   },
