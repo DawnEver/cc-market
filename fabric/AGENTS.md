@@ -126,9 +126,12 @@ credentials; only text comes back.
   (session registry, teams, MCP tools) is agnostic. Team workers take `node`/`project` too,
   so a team can mix local and remote workers transparently.
 - **Config** (`engine/node-config.mjs`): the `fabric` block of `claude_env_settings.json` —
-  `token` (shared secret), `nodes` (peers), `serve` (this machine: port/name/`projects`
-  alias map). Riding the synced env-settings file means the node roster and token propagate
-  to every machine automatically.
+  `token` (shared secret), `nodes` (peers; `host` may be IP or DNS name), `serve` (port/
+  name/`projects` alias map). Riding the synced env-settings file means the node roster and
+  token propagate to every machine automatically; since `serve` is therefore shared,
+  `serve.byHost` carries per-machine overrides (matched against `os.hostname()`
+  case-insensitively, FQDN or short name; `projects` merge per-alias) — resolved by
+  `loadServeConfig()`, used by `scripts/serve.mjs`.
 
 ## Testing
 

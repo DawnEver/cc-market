@@ -11,7 +11,7 @@ import net from "node:net";
 
 import { createNodeServer, AUTH_ERROR } from "../engine/node-server.mjs";
 import { connectNode, openRemoteSession } from "../engine/node-client.mjs";
-import { loadFabricConfig, resolveNode } from "../engine/node-config.mjs";
+import { loadFabricConfig, resolveNode, loadServeConfig } from "../engine/node-config.mjs";
 import { openProviderSession, createTeam, sendToTeamWorker, closeTeam, _resetRegistry } from "../engine/session.mjs";
 
 const TOKEN = "test-secret";
@@ -190,6 +190,52 @@ test("a team can mix in remote workers ({host,port,token} node spec)", async () 
     _resetRegistry();
     await server.close();
   }
+});
+
+test("node host may be a DNS name, not just an IP", async () => {
+  const { server, port } = await startServer();
+  try {
+    // "localhost" exercises the DNS-resolution path in net.connect — same as an AD FQDN.
+    const handle = await openRemoteSession({ host: "localhost", port, token: TOKEN, provider: "x" });
+    const r = await handle.send("dns");
+    assert.equal(r.text, "echo:dns");
+    await handle.close();
+  } finally { await server.close(); }
+});
+
+test("loadServeConfig merges the matching byHost override (case-insensitive, FQDN or short)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fabric-servecfg-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  writeFileSync(cfgPath, JSON.stringify({
+    fabric: {
+      token: "shared",
+      serve: {
+        port: 7677,
+        projects: { common: "/common", thesis: "/default/thesis" },
+        byHost: {
+          "DUIP622037": { port: 8000, projects: { thesis: "D:/repos/thesis" } },
+          "mac.local": { name: "mac" },
+        },
+      },
+    },
+  }));
+  try {
+    // FQDN hostname matches the short byHost key, case-insensitively.
+    const s = loadServeConfig(cfgPath, "duip622037.ad.nottingham.ac.uk");
+    assert.equal(s.port, 8000);
+    assert.equal(s.projects.thesis, "D:/repos/thesis"); // override wins
+    assert.equal(s.projects.common, "/common");         // base aliases survive the merge
+    assert.equal(s.token, "shared");                    // falls back to fabric.token
+
+    const mac = loadServeConfig(cfgPath, "MAC");
+    assert.equal(mac.name, "mac");
+    assert.equal(mac.port, 7677);
+
+    const other = loadServeConfig(cfgPath, "unknown-box");
+    assert.equal(other.port, 7677);
+    assert.equal(other.projects.thesis, "/default/thesis");
+    assert.equal(other.byHost, undefined); // byHost itself never leaks into the result
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("loadFabricConfig + resolveNode read the fabric block", () => {

@@ -144,10 +144,19 @@ shared filesystem. The remote session runs in the remote machine's own project d
    ```json
    "fabric": {
      "token": "a-shared-secret",
-     "nodes": { "desktop": { "host": "192.168.1.10", "port": 7677 } },
-     "serve": { "port": 7677, "projects": { "thesis": "C:/work/thesis" } }
+     "nodes": { "desktop": { "host": "duip622037.ad.nottingham.ac.uk", "port": 7677 } },
+     "serve": {
+       "port": 7677,
+       "projects": { "thesis": "C:/work/thesis" },
+       "byHost": { "duip622037": { "projects": { "thesis": "D:/repos/thesis" } } }
+     }
    }
    ```
+
+   `host` may be an IP or DNS name. Because the file is synced to every machine, `serve`
+   is shared — `serve.byHost` holds per-machine overrides keyed by hostname
+   (case-insensitive, FQDN or short name); `projects` maps merge, override winning
+   per alias.
 
 2. On each peer machine, start the node server: `node scripts/serve.mjs`
 3. From any session, spawn remotely — same tools, plus `node`/`project`:

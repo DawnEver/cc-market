@@ -9,12 +9,11 @@
 
 import { hostname } from "node:os";
 import { createNodeServer } from "../engine/node-server.mjs";
-import { loadFabricConfig } from "../engine/node-config.mjs";
+import { loadServeConfig } from "../engine/node-config.mjs";
 import { getConfigPath } from "../engine/providers.mjs";
 
-const fab = loadFabricConfig();
-const serve = fab.serve || {};
-const token = serve.token || fab.token;
+const serve = loadServeConfig(); // serve defaults + this hostname's byHost override
+const token = serve.token;
 if (!token) {
   process.stderr.write(`fabric serve: no token configured. Set "fabric": { "token": "..." } in ${getConfigPath()}\n`);
   process.exit(1);
