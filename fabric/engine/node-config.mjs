@@ -9,7 +9,7 @@
 //       "port": 7677,                                 // defaults for every machine
 //       "projects": { "thesis": "C:/work/thesis" },
 //       "byHost": {                                   // per-machine overrides, keyed by hostname
-//         "duip622037": { "projects": { "thesis": "D:/repos/thesis" } }
+//         "my-desktop": { "projects": { "thesis": "D:/repos/thesis" } }
 //       }
 //     }
 //   }

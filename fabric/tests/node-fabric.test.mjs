@@ -213,7 +213,7 @@ test("loadServeConfig merges the matching byHost override (case-insensitive, FQD
         port: 7677,
         projects: { common: "/common", thesis: "/default/thesis" },
         byHost: {
-          "DUIP622037": { port: 8000, projects: { thesis: "D:/repos/thesis" } },
+          "HOST-A": { port: 8000, projects: { thesis: "D:/repos/thesis" } },
           "mac.local": { name: "mac" },
         },
       },
@@ -221,7 +221,7 @@ test("loadServeConfig merges the matching byHost override (case-insensitive, FQD
   }));
   try {
     // FQDN hostname matches the short byHost key, case-insensitively.
-    const s = loadServeConfig(cfgPath, "duip622037.ad.nottingham.ac.uk");
+    const s = loadServeConfig(cfgPath, "host-a.example.corp");
     assert.equal(s.port, 8000);
     assert.equal(s.projects.thesis, "D:/repos/thesis"); // override wins
     assert.equal(s.projects.common, "/common");         // base aliases survive the merge

@@ -144,11 +144,11 @@ shared filesystem. The remote session runs in the remote machine's own project d
    ```json
    "fabric": {
      "token": "a-shared-secret",
-     "nodes": { "desktop": { "host": "duip622037.ad.nottingham.ac.uk", "port": 7677 } },
+     "nodes": { "desktop": { "host": "my-desktop.example.corp", "port": 7677 } },
      "serve": {
        "port": 7677,
        "projects": { "thesis": "C:/work/thesis" },
-       "byHost": { "duip622037": { "projects": { "thesis": "D:/repos/thesis" } } }
+       "byHost": { "my-desktop": { "projects": { "thesis": "D:/repos/thesis" } } }
      }
    }
    ```
