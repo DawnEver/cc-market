@@ -28,6 +28,10 @@ import { loadMemoryState } from "./lib.mjs";
 import { parseFrontmatter } from "../shared/lib.mjs";
 import { isCodexHost } from "./inject-rules.js";
 
+// Module-eval start: excludes node boot + import load (unmeasurable from
+// inside), captures everything else. Used by the telemetry ring.
+const T0 = Date.now();
+
 // Body = everything after the closing --- of the frontmatter block.
 function bodyOf(content) {
   const m = content && content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
@@ -161,21 +165,102 @@ function cacheFileFor(scopeRoot) {
   return path.join(os.tmpdir(), `rem-recall-${key}.json`);
 }
 
-export function collectCandidates(scopeRoot, { useCache = true } = {}) {
+export function collectCandidates(scopeRoot, { useCache = true, info } = {}) {
   if (!useCache) return collectCandidatesUncached(scopeRoot);
   const fingerprint = scopeFingerprint(scopeRoot);
   const cacheFile = cacheFileFor(scopeRoot);
   try {
     const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
     if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
+      if (info) info.cacheHit = true;
       return cached.candidates;
     }
   } catch { /* no/invalid cache — rebuild */ }
+  if (info) info.cacheHit = false;
   const candidates = collectCandidatesUncached(scopeRoot);
   try {
     fs.writeFileSync(cacheFile, JSON.stringify({ fingerprint, candidates }), "utf8");
   } catch { /* cache is best-effort */ }
   return candidates;
+}
+
+// ── Telemetry ──
+// Per-scope ring (last 20 runs) in a device-local tmpdir file, next to the
+// candidate cache. Exists to answer "why did the hook time out?" with data.
+// A run writes a pending row BEFORE the potentially slow work and finalizes
+// it after: a row stuck at done:false means the process was killed mid-run
+// (e.g. by the hook timeout) — exactly the events this exists to capture.
+// Read with `recall.js --telemetry`.
+
+const TELEMETRY_RING = 20;
+
+function telemetryFileFor(scopeRoot) {
+  const key = crypto.createHash("sha1").update(path.resolve(scopeRoot)).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), `rem-recall-telemetry-${key}.json`);
+}
+
+function readRing(file) {
+  try {
+    const ring = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(ring) ? ring : [];
+  } catch { return []; }
+}
+
+export function appendTelemetry(scopeRoot, record) {
+  try {
+    const file = telemetryFileFor(scopeRoot);
+    const ring = readRing(file);
+    ring.push(record);
+    fs.writeFileSync(file, JSON.stringify(ring.slice(-TELEMETRY_RING)), "utf8");
+  } catch { /* telemetry is best-effort */ }
+}
+
+/** Replace the newest pending (done:false) row with the completed record. */
+export function finalizeTelemetry(scopeRoot, record) {
+  try {
+    const file = telemetryFileFor(scopeRoot);
+    const ring = readRing(file);
+    for (let i = ring.length - 1; i >= 0; i--) {
+      if (ring[i] && ring[i].done === false) { ring[i] = record; break; }
+    }
+    fs.writeFileSync(file, JSON.stringify(ring.slice(-TELEMETRY_RING)), "utf8");
+  } catch { /* telemetry is best-effort */ }
+}
+
+function printTelemetry() {
+  // Scan tmpdir for all scope rings (telemetry files are per-scope, keyed by
+  // an opaque hash — enumerate rather than guess the current scope).
+  let files = [];
+  try {
+    files = fs.readdirSync(os.tmpdir())
+      .filter((f) => f.startsWith("rem-recall-telemetry-") && f.endsWith(".json"));
+  } catch { /* none */ }
+  const rows = [];
+  for (const f of files) {
+    try {
+      for (const r of JSON.parse(fs.readFileSync(path.join(os.tmpdir(), f), "utf8"))) {
+        rows.push(r);
+      }
+    } catch { /* skip corrupt ring */ }
+  }
+  rows.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+  if (!rows.length) { console.log("no telemetry recorded yet"); return; }
+  for (const r of rows) {
+    if (r.done === false) {
+      console.log(`${r.t}  KILLED mid-run (hook timeout or crash)`);
+    } else {
+      console.log(`${r.t}  ${String(r.ms).padStart(5)}ms  cache=${r.cache ? "hit " : "MISS"}  cands=${r.cands}  injected=${r.injected}`);
+    }
+  }
+  const times = rows.filter((r) => r.done !== false).map((r) => r.ms).sort((a, b) => a - b);
+  const killed = rows.length - times.length;
+  if (times.length) {
+    const max = times[times.length - 1];
+    const p95 = times[Math.min(times.length - 1, Math.floor(times.length * 0.95))];
+    console.log(`\n${times.length} completed — max ${max}ms, p95 ${p95}ms; ${killed} killed mid-run`);
+  } else {
+    console.log(`\n0 completed, ${killed} killed mid-run`);
+  }
 }
 
 /**
@@ -242,6 +327,7 @@ function readStdinPayload() {
 }
 
 function main() {
+  if (process.argv.includes("--telemetry")) { printTelemetry(); return; }
   // Codex has no UserPromptSubmit hook — exit silently (see header comment).
   if (isCodexHost()) return;
   const payload = readStdinPayload();
@@ -254,8 +340,19 @@ function main() {
   const scope = findScopeForCwd(cwd);
   if (!scope) return;
 
-  const winners = selectTop(collectCandidates(scope), tokens, Date.now());
+  const info = {};
+  appendTelemetry(scope, { t: new Date().toISOString(), done: false });
+  const candidates = collectCandidates(scope, { info });
+  const winners = selectTop(candidates, tokens, Date.now());
   const context = buildRecallContext(winners);
+  finalizeTelemetry(scope, {
+    t: new Date().toISOString(),
+    done: true,
+    ms: Date.now() - T0,
+    cache: info.cacheHit !== false,
+    cands: candidates.length,
+    injected: Boolean(context),
+  });
   if (!context) return;
 
   process.stdout.write(

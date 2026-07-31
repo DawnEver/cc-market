@@ -10,6 +10,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 
 import {
   tokenize,
@@ -20,6 +21,8 @@ import {
   scoreEntry,
   selectTop,
   buildRecallContext,
+  appendTelemetry,
+  finalizeTelemetry,
 } from "../scripts/recall.js";
 
 const RECALL_JS = fileURLToPath(new URL("../scripts/recall.js", import.meta.url));
@@ -339,5 +342,69 @@ describe("recall.js CLI", () => {
     const elapsed = Date.now() - t0;
     assert.equal(r.status, 0);
     assert.ok(elapsed < 2000, `took ${elapsed}ms`); // generous CI bound incl. node startup
+  });
+});
+
+// ── telemetry ────────────────────────────────────────────────────────────────
+
+describe("telemetry", () => {
+  let dir;
+  beforeEach(() => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rem-recall-tele-")));
+    fs.mkdirSync(path.join(dir, ".claude", "memory"), { recursive: true });
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function ringFile(scopeDir) {
+    const key = crypto.createHash("sha1").update(path.resolve(scopeDir)).digest("hex").slice(0, 16);
+    return path.join(os.tmpdir(), `rem-recall-telemetry-${key}.json`);
+  }
+  function readRing(scopeDir) {
+    return JSON.parse(fs.readFileSync(ringFile(scopeDir), "utf8"));
+  }
+
+  test("finalizeTelemetry replaces the newest pending row", () => {
+    appendTelemetry(dir, { t: "2026-07-31T00:00:00Z", done: false });
+    appendTelemetry(dir, { t: "2026-07-31T00:00:01Z", done: false });
+    finalizeTelemetry(dir, { t: "2026-07-31T00:00:02Z", done: true, ms: 42 });
+    const ring = readRing(dir);
+    assert.equal(ring.length, 2);
+    assert.equal(ring[0].done, false); // older pending row untouched
+    assert.equal(ring[1].ms, 42);
+    fs.rmSync(ringFile(dir), { force: true });
+  });
+
+  test("ring is trimmed to 20 entries", () => {
+    for (let i = 0; i < 25; i++) appendTelemetry(dir, { t: `t${i}`, done: true, ms: i });
+    assert.equal(readRing(dir).length, 20);
+    fs.rmSync(ringFile(dir), { force: true });
+  });
+
+  test("a CLI run leaves a completed telemetry row; --telemetry prints it", () => {
+    mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
+      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+    const r = spawnSync(process.execPath, [RECALL_JS], {
+      input: JSON.stringify({ prompt: "git commit style", cwd: dir }),
+      encoding: "utf8",
+      env: process.env,
+      windowsHide: true,
+    });
+    assert.equal(r.status, 0);
+    const ring = readRing(dir);
+    assert.equal(ring.length, 1);
+    assert.equal(ring[0].done, true);
+    assert.ok(Number.isFinite(ring[0].ms));
+    assert.equal(typeof ring[0].cache, "boolean");
+
+    const t = spawnSync(process.execPath, [RECALL_JS, "--telemetry"], {
+      encoding: "utf8",
+      env: process.env,
+      windowsHide: true,
+    });
+    assert.equal(t.status, 0);
+    assert.match(t.stdout, /completed/);
+    fs.rmSync(ringFile(dir), { force: true });
   });
 });

@@ -15,3 +15,4 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | `check-docs.js` | Doc freshness check at crystallize time | `--json` |
 | `task-engine.js` | Task CLI (`/todo`) | `report`, `add`, `remove`, `show`, `mark`, `check`, `help` |
 | `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, markFinding, groupBy* |
+| `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` (Claude Code only) | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
