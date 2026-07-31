@@ -39,8 +39,8 @@ management platform is a separate project; this node protocol is its shared foun
 
 ## Deliberate v1 limits (revisit later)
 
-- No mDNS discovery (config roster only), no TLS (LAN + token; use tailscale for WAN),
-  no reconnect/resume (remote session dies with its connection from the client's view;
-  server keeps the handle until closed — could leak until server restart), no async
-  completion callbacks (a `send` awaits the full turn over the socket), `call`/`fan_out`
-  one-shots not yet node-routable (sessions/teams only).
+- No mDNS discovery (config roster only), transport is TLS-PSK (token-derived; no cert management),
+  no reconnect/resume (a remote session is owned by the connection that spawned it and is
+  closed by the server when that socket drops), no async completion callbacks (a `send`
+  awaits the full turn over the socket), `call`/`fan_out` one-shots not yet node-routable
+  (sessions/teams only).

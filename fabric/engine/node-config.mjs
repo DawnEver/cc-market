@@ -25,10 +25,17 @@ import fs from "node:fs";
 import os from "node:os";
 import { getConfigPath } from "./providers.mjs";
 
-/** The `fabric` block of the config, or {} if absent/unreadable. */
+const _fabricCache = new Map(); // configPath → { mtimeMs, fabric } — mtime-invalidated
+
+/** The `fabric` block of the config, or {} if absent/unreadable. Cached per path by mtime. */
 export function loadFabricConfig(configPath = getConfigPath()) {
   try {
-    return JSON.parse(fs.readFileSync(configPath, "utf8")).fabric || {};
+    const { mtimeMs } = fs.statSync(configPath);
+    const hit = _fabricCache.get(configPath);
+    if (hit && hit.mtimeMs === mtimeMs) return hit.fabric;
+    const fabric = JSON.parse(fs.readFileSync(configPath, "utf8")).fabric || {};
+    _fabricCache.set(configPath, { mtimeMs, fabric });
+    return fabric;
   } catch {
     return {};
   }

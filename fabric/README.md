@@ -137,6 +137,9 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 Fabric nodes let sessions run on peer machines, teammate-style: pure message-passing, no
 shared filesystem. The remote session runs in the remote machine's own project directory
 (referenced by an alias registered there) with its own credentials; only text travels.
+Transport is TLS-PSK: the shared token doubles as the pre-shared key, so all traffic is
+encrypted and mutually authenticated with zero certificates — a wrong token fails the
+handshake itself.
 
 1. Configure the `fabric` block in `~/.claude/claude_env_settings.json` (synced to all
    machines):

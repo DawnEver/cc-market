@@ -4,19 +4,26 @@
 // exposes — so the session registry / teams treat a remote machine exactly like a local
 // provider (a teammate you exchange messages with, never a filesystem you reach into).
 
-import net from "node:net";
+import tls from "node:tls";
+import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "./node-tls.mjs";
 
-/** Connect to a peer node. Resolves to { request(method, params), close() }. */
+/** Connect to a peer node over TLS-PSK. Resolves to { request(method, params), close() }. */
 export function connectNode({ host, port, token, connectTimeoutMs = 5000 }) {
   return new Promise((resolve, reject) => {
-    const socket = net.connect({ host, port });
+    const socket = tls.connect({
+      host, port,
+      pskCallback: () => ({ psk: pskFromToken(token), identity: PSK_IDENTITY }),
+      ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
+      // PSK authenticates the server (it must hold the same token); no cert to verify.
+      checkServerIdentity: () => undefined,
+    });
     const timer = setTimeout(() => {
       socket.destroy();
       reject(new Error(`connectNode: timed out connecting to ${host}:${port}`));
     }, connectTimeoutMs);
 
     socket.once("error", (e) => { clearTimeout(timer); reject(e); });
-    socket.once("connect", () => {
+    socket.once("secureConnect", () => {
       clearTimeout(timer);
       const pending = new Map(); // id → {resolve, reject}
       let seq = 0;

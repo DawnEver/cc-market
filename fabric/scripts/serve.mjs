@@ -21,7 +21,14 @@ if (!token) {
 
 const args = process.argv.slice(2);
 const portFlag = args.indexOf("--port");
-const port = portFlag !== -1 ? Number(args[portFlag + 1]) : (serve.port ?? 7677);
+let port = serve.port ?? 7677;
+if (portFlag !== -1) {
+  port = Number(args[portFlag + 1]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    process.stderr.write(`fabric serve: --port requires a port number 1-65535, got "${args[portFlag + 1] ?? ""}"\n`);
+    process.exit(1);
+  }
+}
 const name = serve.name || hostname();
 const projects = serve.projects || {};
 

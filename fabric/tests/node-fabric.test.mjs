@@ -4,10 +4,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import net from "node:net";
+import { spawnSync } from "node:child_process";
+import tls from "node:tls";
+import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "../engine/node-tls.mjs";
 
 import { createNodeServer, AUTH_ERROR } from "../engine/node-server.mjs";
 import { connectNode, openRemoteSession } from "../engine/node-client.mjs";
@@ -43,6 +46,20 @@ function fakeSessionDeps() {
   };
 }
 
+// Raw TLS-PSK socket for wire-level tests (bypasses connectNode's request framing).
+function tlsRaw(port, token = TOKEN) {
+  return new Promise((resolve, reject) => {
+    const sock = tls.connect({
+      host: "127.0.0.1", port,
+      pskCallback: () => ({ psk: pskFromToken(token), identity: PSK_IDENTITY }),
+      ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
+      checkServerIdentity: () => undefined,
+    });
+    sock.once("secureConnect", () => resolve(sock));
+    sock.once("error", reject);
+  });
+}
+
 async function startServer(extra = {}) {
   const deps = fakeSessionDeps();
   const server = createNodeServer({ token: TOKEN, name: "testnode", deps, ...extra });
@@ -54,12 +71,24 @@ test("createNodeServer refuses to start without a token", () => {
   assert.throws(() => createNodeServer({}), /token/);
 });
 
-test("rejects requests with a bad token", async () => {
+test("a wrong token fails the TLS-PSK handshake outright", async () => {
   const { server, port } = await startServer();
   try {
-    const conn = await connectNode({ host: "127.0.0.1", port, token: "wrong" });
-    await assert.rejects(() => conn.request("node/status", {}), (e) => e.code === AUTH_ERROR);
-    conn.close();
+    await assert.rejects(() => connectNode({ host: "127.0.0.1", port, token: "wrong" }));
+  } finally { await server.close(); }
+});
+
+test("request-level bad token still gets AUTH_ERROR (defense in depth)", async () => {
+  const { server, port } = await startServer();
+  try {
+    // Correct PSK (handshake passes) but a bad params.token on the request itself.
+    const sock = await tlsRaw(port);
+    let received = "";
+    sock.on("data", (c) => { received += c; });
+    sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: "bad" } })}\n`);
+    for (let i = 0; i < 100 && !received.includes("\n"); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(JSON.parse(received.split("\n")[0]).error.code, AUTH_ERROR);
+    sock.destroy();
   } finally { await server.close(); }
 });
 
@@ -128,20 +157,22 @@ test("openRemoteSession returns a uniform {id, send, close} handle", async () =>
 });
 
 test("pending requests reject when the connection drops", async () => {
-  // A raw server that accepts, reads, and never replies — then dies.
-  const raw = net.createServer((sock) => setTimeout(() => sock.destroy(), 50));
-  const port = await new Promise((res) => raw.listen(0, "127.0.0.1", () => res(raw.address().port)));
-  try {
-    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
-    await assert.rejects(() => conn.request("node/status", {}), /connection/i);
-  } finally { raw.close(); }
+  // A send that never resolves keeps a request pending; killing the server must reject it.
+  const deps = fakeSessionDeps();
+  deps.sendToSession = () => new Promise(() => {});
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+  const desc = await conn.request("node/spawn", { provider: "x" });
+  const hanging = conn.request("node/send", { id: desc.id, prompt: "never answered" });
+  await server.close(); // destroys the socket mid-request
+  await assert.rejects(() => hanging, /connection/i);
 });
 
 test("malformed JSON on the wire does not kill the server", async () => {
   const { server, port } = await startServer();
   try {
-    const sock = net.connect({ host: "127.0.0.1", port });
-    await new Promise((r) => sock.on("connect", r));
+    const sock = await tlsRaw(port);
     sock.write("this is not json\n");
     sock.end();
     // Server must still answer a well-formed client afterwards.
@@ -258,5 +289,135 @@ test("loadFabricConfig + resolveNode read the fabric block", () => {
     assert.equal(m.token, "own"); // per-node override wins
     assert.throws(() => resolveNode("ghost", cfgPath), /ghost/);
     assert.deepEqual(loadFabricConfig(join(dir, "missing.json")), {});
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- session ownership (SR-001/SR-010) ---
+
+test("node/send and node/close reject session ids not owned by the connection", async () => {
+  const { server, port } = await startServer();
+  try {
+    const owner = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const other = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await owner.request("node/spawn", { provider: "x" });
+    await assert.rejects(() => other.request("node/send", { id: desc.id, prompt: "hi" }), (e) => e.code === -32602);
+    await assert.rejects(() => other.request("node/close", { id: desc.id }), (e) => e.code === -32602);
+    // status still lists everyone's sessions; the owner can still drive its own.
+    const status = await other.request("node/status", {});
+    assert.equal(status.sessions.length, 1);
+    assert.equal((await owner.request("node/send", { id: desc.id, prompt: "hi" })).text, "echo:hi");
+    await owner.request("node/close", { id: desc.id });
+    owner.close(); other.close();
+  } finally { await server.close(); }
+});
+
+test("sessions spawned on a connection are closed when its socket drops", async () => {
+  const { server, deps, port } = await startServer();
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await conn.request("node/spawn", { provider: "a" });
+    await conn.request("node/spawn", { provider: "b" });
+    assert.equal(deps.listSessions().length, 2);
+    conn.close();
+    // best-effort reap is async: poll briefly.
+    for (let i = 0; i < 50 && deps.listSessions().length > 0; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(deps.listSessions().length, 0);
+  } finally { await server.close(); }
+});
+
+// --- JSON-RPC error codes (SR-003) ---
+
+test("dispatch errors carry proper JSON-RPC codes", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = async () => { throw new Error("provider exploded"); };
+  const server = createNodeServer({ token: TOKEN, name: "t", deps, projects: {} });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await assert.rejects(() => conn.request("node/frobnicate", {}), (e) => e.code === -32601);
+    await assert.rejects(() => conn.request("node/spawn", {}), (e) => e.code === -32602);
+    await assert.rejects(() => conn.request("node/send", { id: "s" }), (e) => e.code === -32602);
+    await assert.rejects(() => conn.request("node/spawn", { provider: "x", project: "nope" }), (e) => e.code === -32602);
+    const desc = await conn.request("node/spawn", { provider: "x" });
+    await assert.rejects(() => conn.request("node/send", { id: desc.id, prompt: "p" }),
+      (e) => e.code === -32000 && /provider exploded/.test(e.message)); // runtime failure stays -32000
+    conn.close();
+  } finally { await server.close(); }
+});
+
+// --- notifications, token comparison, buffer cap (SR-006/SR-012/SR-014) ---
+
+test("requests without an id are notifications and never get a response", async () => {
+  const { server, port } = await startServer();
+  try {
+    const sock = await tlsRaw(port);
+    let received = "";
+    sock.on("data", (c) => { received += c; });
+    // notification (no id, even with a bad token) → silence; then a real request → one reply.
+    sock.write(`${JSON.stringify({ jsonrpc: "2.0", method: "node/status", params: { token: "bad" } })}\n`);
+    sock.write(`${JSON.stringify({ jsonrpc: "2.0", method: "node/status", params: { token: TOKEN } })}\n`);
+    sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: TOKEN } })}\n`);
+    for (let i = 0; i < 50 && !received.includes("\n"); i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 50)); // grace period for any spurious replies
+    const lines = received.split("\n").filter(Boolean);
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).id, 1);
+    sock.destroy();
+  } finally { await server.close(); }
+});
+
+test("a token of a different length is rejected, not a crash (timing-safe compare)", async () => {
+  const { server, port } = await startServer();
+  try {
+    await assert.rejects(() => connectNode({ host: "127.0.0.1", port, token: "x" }));
+  } finally { await server.close(); }
+});
+
+test("an oversized line without a newline gets the socket destroyed", async () => {
+  const { server, port } = await startServer();
+  try {
+    const sock = await tlsRaw(port);
+    const closed = new Promise((r) => sock.on("close", r));
+    sock.write("x".repeat(1024 * 1024 + 64));
+    await closed; // server must drop us, not buffer forever
+  } finally { await server.close(); }
+});
+
+// --- config caching (SR-004) ---
+
+test("loadFabricConfig caches by mtime and invalidates when the file changes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fabric-cfgcache-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  const stamp = (d) => utimesSync(cfgPath, d, d);
+  try {
+    writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "one" } }));
+    const t0 = new Date(Date.now() - 10000);
+    stamp(t0);
+    assert.equal(loadFabricConfig(cfgPath).token, "one");
+    // same mtime → cached content served, file not re-read.
+    writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "two" } }));
+    stamp(t0);
+    assert.equal(loadFabricConfig(cfgPath).token, "one");
+    // new mtime → cache invalidated.
+    stamp(new Date());
+    assert.equal(loadFabricConfig(cfgPath).token, "two");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- serve.mjs --port validation (SR-002) ---
+
+test("serve.mjs exits 1 on a missing or non-numeric --port value", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const serveScript = join(here, "..", "scripts", "serve.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fabric-serveport-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "t" } }));
+  const env = { ...process.env, CC_MARKET_CONFIG_PATH: cfgPath };
+  try {
+    for (const args of [["--port", "abc"], ["--port"]]) {
+      const r = spawnSync(process.execPath, [serveScript, ...args], { env, encoding: "utf8", windowsHide: true, timeout: 15000 });
+      assert.equal(r.status, 1, `args ${args.join(" ")}: ${r.stderr}`);
+      assert.match(r.stderr, /--port/);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

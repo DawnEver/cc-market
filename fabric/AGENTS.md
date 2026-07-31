@@ -116,8 +116,11 @@ by an **alias** registered on that machine, never by path), with that machine's 
 credentials; only text comes back.
 
 - **Server** (`engine/node-server.mjs`, CLI `node scripts/serve.mjs [--port N]`): exposes
-  `node/spawn|send|close|status` over newline-delimited JSON-RPC 2.0 on TCP. Every request
-  carries the shared token; the server refuses to start without one.
+  `node/spawn|send|close|status` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
+  (`engine/node-tls.mjs` — PSK derived from the shared token; wrong token fails the
+  handshake, all traffic encrypted, no certificates). Every request also carries the token;
+  the server refuses to start without one. Sessions are owned by the connection that
+  spawned them (send/close reject foreign ids; socket drop reaps its sessions).
 - **Client** (`engine/node-client.mjs`): `openRemoteSession()` returns the same
   `{id, send, close}` handle as any local provider session — one TCP connection per remote
   session, requests multiplexed by JSON-RPC id, pendings rejected on connection loss.
