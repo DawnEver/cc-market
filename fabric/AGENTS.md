@@ -41,12 +41,15 @@ fabric/
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
+│   ├── node-{server,client,config}.mjs  LAN node fabric: TCP JSON-RPC peer server, remote
+│   │                        session client, `fabric` config block (see § LAN node fabric)
 │   ├── codex/               app-server client · task · session · discovery
 │   └── tests/               engine unit suites (node:test)
 ├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
+│   ├── serve.mjs            CLI: run this machine as a fabric LAN node
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
 │   │                        wrapper), callers (codex/API adapters), trace, errors
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
@@ -68,10 +71,11 @@ transport — framed needed for Codex MCP startup). Tools:
 | Tool | Input | Routes to |
 |---|---|---|
 | `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
-| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}` |
+| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. With `node`, the session runs on that peer machine (see § LAN node fabric) |
 | `session_send` | `id`, `prompt` | `sendToSession()` → one turn, context retained |
 | `session_close` | `id` | `closeSession()` → tears down the child |
 | `list_sessions` | (none) | `listSessions()` |
+| `list_nodes` | (none) | Configured peer fabric nodes from the `fabric` config block |
 | `list_providers` | (none) | `listModels()` |
 | `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native: no remapping) |
 | `codex_status` | `codexPath?` | `checkCodexStatus()` |
@@ -102,6 +106,29 @@ the same `{ id, send, close }` surface:
   natively multi-turn (`thread/start` once, `turn/start` per send).
 - **claude / API** → `engine/open-session.mjs` `openSession` — a long-lived `claude`
   stream-json child.
+
+## LAN node fabric — devices as teammates
+
+Multiple machines cooperate by **message-passing only** — a peer device is a teammate you
+converse with, never a filesystem you reach into. No shared-filesystem assumption, no file
+transfer: a remote session runs in the remote machine's own project directory (referenced
+by an **alias** registered on that machine, never by path), with that machine's own
+credentials; only text comes back.
+
+- **Server** (`engine/node-server.mjs`, CLI `node scripts/serve.mjs [--port N]`): exposes
+  `node/spawn|send|close|status` over newline-delimited JSON-RPC 2.0 on TCP. Every request
+  carries the shared token; the server refuses to start without one.
+- **Client** (`engine/node-client.mjs`): `openRemoteSession()` returns the same
+  `{id, send, close}` handle as any local provider session — one TCP connection per remote
+  session, requests multiplexed by JSON-RPC id, pendings rejected on connection loss.
+- **Routing** (`engine/session.mjs`): `openProviderSession({node, project, ...})` — `node`
+  is a configured node name (or inline `{host, port, token}`); everything above the opener
+  (session registry, teams, MCP tools) is agnostic. Team workers take `node`/`project` too,
+  so a team can mix local and remote workers transparently.
+- **Config** (`engine/node-config.mjs`): the `fabric` block of `claude_env_settings.json` —
+  `token` (shared secret), `nodes` (peers), `serve` (this machine: port/name/`projects`
+  alias map). Riding the synced env-settings file means the node roster and token propagate
+  to every machine automatically.
 
 ## Testing
 

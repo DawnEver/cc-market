@@ -72,7 +72,7 @@ function runServer(input) {
 describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
-      ["call", "codex_status", "fan_out", "list_providers", "list_sessions",
+      ["call", "codex_status", "fan_out", "list_nodes", "list_providers", "list_sessions",
        "resolve_model", "session_close", "session_send", "spawn_session",
        "team_close", "team_send", "team_spawn", "team_status", "team_synthesize"]);
   });

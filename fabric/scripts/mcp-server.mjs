@@ -43,6 +43,7 @@ import {
 } from "./lib.mjs";
 import { withPooledClient } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId } from "../engine/providers.mjs";
+import { loadFabricConfig } from "../engine/node-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
 import { createSession, sendToSession, closeSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam } from "../engine/session.mjs";
@@ -110,6 +111,8 @@ export const TOOLS = [
         write: { type: "boolean", description: "Allow file writes" },
         cwd: { type: "string", description: "Working dir" },
         observe: { type: "boolean", description: "Capture HTTP traffic" },
+        node: { type: "string", description: "Peer fabric node name — run the session on that machine (message-passing only)" },
+        project: { type: "string", description: "Remote node's project alias (with node)" },
       },
       required: ["provider"],
     },
@@ -158,6 +161,8 @@ export const TOOLS = [
               model: { type: "string", description: "Model override" },
               write: { type: "boolean", description: "Allow file writes" },
               cwd: { type: "string", description: "Working dir" },
+              node: { type: "string", description: "Peer fabric node name — worker runs on that machine" },
+              project: { type: "string", description: "Remote node's project alias (with node)" },
             },
             required: ["id", "provider"],
           },
@@ -205,6 +210,11 @@ export const TOOLS = [
       properties: { teamId: { type: "string", description: "Team id" } },
       required: ["teamId"],
     },
+  },
+  {
+    name: "list_nodes",
+    description: "List configured peer fabric nodes (LAN machines reachable for remote sessions).",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_providers",
@@ -629,6 +639,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       const desc = await _createSession({
         provider: args.provider, model: args.model, write: !!args.write,
         cwd: args.cwd || process.cwd(), observe: !!args.observe,
+        node: args.node, project: args.project,
       });
       return textResult(JSON.stringify(desc));
     }
@@ -717,6 +728,11 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     }
     case "list_sessions":
       return textResult(JSON.stringify(_listSessions()));
+    case "list_nodes": {
+      const nodes = Object.entries(loadFabricConfig().nodes || {});
+      if (!nodes.length) return textResult('No fabric nodes configured. Add a "fabric" block (token + nodes) to claude_env_settings.json; run `node scripts/serve.mjs` on each peer machine.');
+      return textResult(nodes.map(([n, c]) => `${n} → ${c.host}:${c.port}`).join("\n"));
+    }
     case "list_providers":
       return textResult(listModels());
     case "resolve_model": {

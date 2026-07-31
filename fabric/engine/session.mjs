@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import process from "node:process";
 import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
+import { openRemoteSession } from "./node-client.mjs";
+import { resolveNode } from "./node-config.mjs";
 import { buildChildEnv } from "./spawn-child.mjs";
 import { spawn } from "../shared/spawn.mjs";
 
@@ -55,11 +57,17 @@ function openWriteSession({ provider, model, cwd }) {
 
 /**
  * Open a persistent session for any provider, returning a uniform handle.
- * @param {object} opts  provider (required), model?, write?, cwd?, observe?, runDir?
+ * @param {object} opts  provider (required), model?, write?, cwd?, observe?, runDir?,
+ *                       node? (peer node name or {host,port,token} — runs the session on
+ *                       that machine; `project` is the REMOTE node's project alias)
  */
 export async function openProviderSession(opts = {}) {
   const { provider, write } = opts;
   if (!provider) throw new Error("openProviderSession: provider is required");
+  if (opts.node) {
+    const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
+    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project });
+  }
   if (provider === "codex") {
     return openCodexSession({ model: opts.model, write, cwd: opts.cwd, _client: opts._client });
   }
@@ -135,9 +143,10 @@ export async function createTeam(workers, _open = openProviderSession) {
     const desc = await createSession({
       provider: w.provider, model: w.model, write: !!w.write,
       cwd: w.cwd || process.cwd(), observe: false,
+      node: w.node, project: w.project,
     }, _open);
-    workerMap.set(w.id, { sessionId: desc.id, provider: w.provider });
-    results.push({ id: w.id, sessionId: desc.id, provider: w.provider, write: !!w.write });
+    workerMap.set(w.id, { sessionId: desc.id, provider: w.provider, node: w.node ?? null });
+    results.push({ id: w.id, sessionId: desc.id, provider: w.provider, write: !!w.write, node: w.node ?? null });
   }
   teams.set(teamId, { workers: workerMap, createdAt: Date.now() });
   return { teamId, workers: results };

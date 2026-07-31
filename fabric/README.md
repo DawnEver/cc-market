@@ -132,6 +132,33 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
   No separate daemon: the MCP stdio server is itself long-lived, so it holds the live session
   handles in an in-process registry across discrete tool calls.
 
+## LAN nodes — sessions on other machines
+
+Fabric nodes let sessions run on peer machines, teammate-style: pure message-passing, no
+shared filesystem. The remote session runs in the remote machine's own project directory
+(referenced by an alias registered there) with its own credentials; only text travels.
+
+1. Configure the `fabric` block in `~/.claude/claude_env_settings.json` (synced to all
+   machines):
+
+   ```json
+   "fabric": {
+     "token": "a-shared-secret",
+     "nodes": { "desktop": { "host": "192.168.1.10", "port": 7677 } },
+     "serve": { "port": 7677, "projects": { "thesis": "C:/work/thesis" } }
+   }
+   ```
+
+2. On each peer machine, start the node server: `node scripts/serve.mjs`
+3. From any session, spawn remotely — same tools, plus `node`/`project`:
+
+   ```json
+   { "tool": "spawn_session", "arguments": { "provider": "codex", "node": "desktop", "project": "thesis", "write": true } }
+   ```
+
+   `team_spawn` workers accept `node`/`project` too, so a team can mix local and remote
+   workers. `list_nodes` shows the configured peers.
+
 ## Auth note
 
 Static-key providers get the token injected in the header style matching the env var that
