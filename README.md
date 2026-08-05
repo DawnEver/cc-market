@@ -27,6 +27,7 @@ Most plugins run on **both** hosts. What each does and where it runs:
 | [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |
 | [`traceme`](traceme/README.md) | Personal observability: token/cost reports, multi-device encrypted sync | yes | **no** (reads Claude transcript JSONL only) |
 | [`fabric`](fabric/README.md) | Spawn & observe isolated child agent sessions of any provider | yes | yes |
+| [`cc-latex`](cc-latex/README.md) | LaTeX writing: compile workflow, academic writing style, word counting | yes | yes |
 
 **What Codex consumes:** skills, hooks, and `mcpServers`, but **not** plugin slash-commands
 (those are Claude Code-only; the underlying capability is still reachable via the plugin's

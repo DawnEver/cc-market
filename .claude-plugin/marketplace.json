@@ -130,6 +130,25 @@
         "report"
       ],
       "category": "productivity"
+    },
+    {
+      "name": "cc-latex",
+      "source": "./cc-latex",
+      "displayName": "cc-latex",
+      "description": "LaTeX writing assistant — compile workflow, academic writing style, and word counting (texcount) for LaTeX documents. Per-section word counts with references excluded, targets and JSON output.",
+      "author": {
+        "name": "Mingyang Bao"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": [
+        "latex",
+        "writing",
+        "academic",
+        "word-count",
+        "texcount"
+      ],
+      "category": "productivity"
     }
   ]
 }

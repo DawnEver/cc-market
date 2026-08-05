@@ -1,0 +1,30 @@
+{
+  "name": "cc-latex",
+  "version": "1.0.0",
+  "description": "LaTeX writing assistant — compile workflow, academic writing style, and word counting (texcount) for LaTeX documents",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "latex",
+    "writing",
+    "academic",
+    "word-count",
+    "texcount",
+    "report"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "cc-latex",
+    "shortDescription": "LaTeX writing assistant — compile workflow, academic writing style, and word",
+    "longDescription": "LaTeX writing assistant — compile workflow, academic writing style, and word counting (texcount) for LaTeX documents. Per-section word counts with references excluded, targets and JSON output.",
+    "developerName": "Mingyang Bao",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use the cc-latex plugin."
+    ]
+  }
+}
