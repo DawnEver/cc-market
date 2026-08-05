@@ -1,6 +1,6 @@
 {
   "name": "cc-latex",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "LaTeX writing assistant — compile workflow, academic writing style, and word counting (texcount) for LaTeX documents",
   "author": {
     "name": "Mingyang Bao"

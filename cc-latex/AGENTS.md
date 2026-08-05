@@ -10,8 +10,9 @@ helper script, no hooks.
   and writing style. Full style rules live in `reference/writing-style.md`.
 - `skills/count-tex/` — `count-tex` skill: word counting; drives `scripts/word-count.mjs`.
 - `scripts/word-count.mjs` — finds `main.tex` (root, single depth-1 subdir, or explicit
-  path), runs `texcount -inc -sum -sub=section`, formats per-section table + total.
-  Single source of truth for texcount flags, output parsing, and the table format.
+  path), runs `texcount -inc -sum -sub=section`, formats the breakdown (per section, or
+  per file for chapter-style docs) + total. Single source of truth for texcount flags,
+  output parsing, and the table format.
 - `tests/word-count.test.mjs` — node:test suite; fixture pinned from real texcount 3.1.1
   output (both LF and CRLF).
 

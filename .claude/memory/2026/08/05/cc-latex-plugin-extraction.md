@@ -18,19 +18,27 @@ On 2026-08-05, created the `cc-latex` plugin in cc-market, extracted from
   `reference/writing-style.md`)
 - `skills/count-tex/` — word counting; drives `scripts/word-count.mjs`
 - `scripts/word-count.mjs` — finds `main.tex` (root, single depth-1 subdir,
-  explicit path), runs `texcount -inc -sum -sub=section`, parses sections
-  (`7+1+0 (1/0/0/0) Section: Name` lines, sum = text+headers+captions) and the
-  grand total (last `Sum count` line). `--target N` progress, `--json`, exit
-  codes 0/1/2. No hooks, no shared/ bundling, no state.
+  explicit path), runs `texcount -inc -sum -sub=section`, parses the breakdown
+  and the grand total (last `Sum count` line). `--target N` progress, `--json`,
+  exit codes 0/1/2. No hooks, no shared/ bundling, no state.
 - Tests pinned against real texcount 3.1.1 output (LF + CRLF fixture).
 
 ## Gotchas (why it is the way it is)
 
 - **CRLF**: Windows texcount emits `\r\n`; the parser splits on `/\r?\n/`.
   The LF-only fixture hid this — caught by the real-texcount smoke test.
-- **Per-section lines are indented** — `^\s*` in the section regex.
-- **Section subcounts only appear for the file that defines the sections**;
-  the last `Sum count:` line is the whole-document total.
+- **Per-unit lines are indented** — `^\s*` in the unit regex. The parenthesized
+  tuple is `(#headers/#floats/#inlines/#displayed)` — only inlines+displayed
+  belong in the -sum total.
+- **`Sum count` includes math**: text+headers+captions+inlines+displayed. The
+  trailing `Subcounts:` block's t+h+c values exclude math, so they do NOT add
+  up to the grand total — the parser adds inlines+displayed so rows match.
+- **Breakdown fallback**: `Section:` subcounts only appear for article-style
+  docs; chapter-style docs (`report` class, `\input`ed sections — e.g. the
+  year_1 report) emit none, so the parser falls back to the trailing per-file
+  summary rows (`197+1+0 (1/0/0/0) Included file: ./Sections/1-abstract.tex`).
+  Verified: year_1 rows (198+320+...+1546) sum to the 7733 grand total.
+- The last `Sum count:` line is the whole-document total.
 - `--texcount` accepts a quoted command (`node "C:\path with spaces\stub"`)
   via a mini quote-aware tokenizer — needed for OneDrive-style paths.
 - main.tex discovery: root wins over depth-1 subdirs; ambiguous depth-1

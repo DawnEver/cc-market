@@ -2,9 +2,11 @@
 // word-count.mjs — count words in a LaTeX project with texcount.
 //
 // Finds main.tex (project root, the single `*/main.tex` beneath it, or an explicit
-// path argument), runs `texcount -inc -sum -sub=section`, and prints a per-section
-// table plus the grand total. The bibliography is never counted: references live in
-// .bib files, outside the \input chain.
+// path argument), runs `texcount -inc -sum -sub=section`, and prints a breakdown
+// (per section for article-style docs, per file for chapter-style docs) plus the
+// grand total. The bibliography is never counted: references live in .bib files,
+// outside the \input chain. Sums follow texcount's "Sum count": text + headers +
+// captions + math (inline and displayed).
 //
 // Usage: node word-count.mjs [root] [--target N] [--json] [--texcount "cmd"]
 //   root       LaTeX project dir or path to main.tex (default: cwd)
@@ -19,11 +21,29 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// texcount 3.x section subcount line: "  7+1+0 (1/0/0/0) Section: Abstract".
-// Per-section sum = text + headers + captions.
-const SECTION_RE = /^\s*(\d+)\+(\d+)\+(\d+)\s+\(\S+\)\s+Section:\s+(.+)$/;
+// texcount 3.x subcount line: "  7+1+0 (1/0/0/0) Section: Abstract" — and the trailing
+// per-file summary (chapter-style docs, e.g. \input'd sections):
+// "  197+1+0 (1/0/0/0) Included file: ./Sections/1-abstract.tex".
+// Per-unit sum must mirror texcount's "Sum count": text + headers + captions + math
+// (inlines + displayed) — the per-unit sums then add up to the grand total exactly.
+const UNIT_RE = /^\s*(\d+)\+(\d+)\+(\d+)\s+\((\d+)\/(\d+)\/(\d+)\/(\d+)\)\s+(?:Section|Included file|File):\s+(.+)$/;
 // -sum summary line; the LAST one in the output is the grand total (Sum of files block).
 const SUM_RE = /^Sum count:\s*(\d+)$/;
+
+function toUnit(m) {
+  const text = Number(m[1]);
+  const headers = Number(m[2]);
+  const captions = Number(m[3]);
+  // The parenthesized tuple is (#headers/#floats/#inlines/#displayed); only the
+  // math counts (inlines + displayed) belong in the -sum total.
+  const inlines = Number(m[6]);
+  const displayed = Number(m[7]);
+  return {
+    name: m[8],
+    text, headers, captions,
+    sum: text + headers + captions + inlines + displayed,
+  };
+}
 
 /** Locate main.tex: an explicit file arg, the root itself, or a single depth-1 subdir. */
 export function findMainTex(root) {
@@ -60,17 +80,22 @@ export function runTexcount(cwd, main, command) {
   });
 }
 
-/** Parse texcount output into { sections, total }. Handles LF and CRLF line endings. */
+/**
+ * Parse texcount output into { sections, total }. Handles LF and CRLF line endings.
+ * `sections` are "Section:" subcounts when texcount emits them (article-style docs);
+ * chapter-style docs (report class, \input'd sections) have none, so the trailing
+ * per-file summary is used as the breakdown instead, labelled by file path.
+ */
 export function parseTexcount(output) {
   const sections = [];
+  const files = [];
   let total = null;
   for (const line of output.split(/\r?\n/)) {
-    const s = line.match(SECTION_RE);
-    if (s) {
-      const text = Number(s[1]);
-      const headers = Number(s[2]);
-      const captions = Number(s[3]);
-      sections.push({ name: s[4], text, headers, captions, sum: text + headers + captions });
+    const m = line.match(UNIT_RE);
+    if (m) {
+      const unit = toUnit(m);
+      if (line.includes('Section:')) sections.push(unit);
+      else files.push({ ...unit, name: unit.name.replace(/^\.\//, '') });
       continue;
     }
     const t = line.match(SUM_RE);
@@ -79,7 +104,7 @@ export function parseTexcount(output) {
   if (total === null) {
     throw new Error('could not parse texcount output: no "Sum count" line found');
   }
-  return { sections, total };
+  return { sections: sections.length > 0 ? sections : files, total };
 }
 
 /** Aligned per-section table plus the grand total. */

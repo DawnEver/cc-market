@@ -52,3 +52,55 @@ export const EXPECTED_SECTIONS = [
   { name: 'Aim', text: 8, headers: 1, captions: 0, sum: 9 },
 ];
 export const EXPECTED_TOTAL = 31;
+
+// Chapter-style document (report class, \input'd sections): texcount emits NO
+// "Section:" subcounts; the breakdown comes from the trailing per-file summary.
+// Trimmed from real texcount 3.1.1 output on the year_1 report (12 files, 7733 words).
+export const CHAPTER_FIXTURE = `File: main.tex
+Encoding: ascii
+Sum count: 0
+Words in text: 0
+Words in headers: 0
+Words outside text (captions, etc.): 0
+Number of headers: 0
+Number of floats/tables/figures: 0
+Number of math inlines: 0
+Number of math displayed: 0
+
+Included file: ./Sections/1-abstract.tex
+Encoding: ascii
+Sum count: 198
+Words in text: 197
+Words in headers: 1
+Words outside text (captions, etc.): 0
+Number of headers: 1
+Number of floats/tables/figures: 0
+Number of math inlines: 0
+Number of math displayed: 0
+
+Sum of files: main.tex
+File(s) total: main.tex
+Sum count: 7733
+Words in text: 7013
+Words in headers: 181
+Words outside text (captions, etc.): 271
+Number of headers: 42
+Number of floats/tables/figures: 18
+Number of math inlines: 242
+Number of math displayed: 26
+Files: 12
+Subcounts:
+  text+headers+captions (#headers/#floats/#inlines/#displayed)
+  197+1+0 (1/0/0/0) Included file: ./Sections/1-abstract.tex
+  317+3+0 (1/0/0/0) Included file: ./Sections/2-aim_objectives.tex
+  90+1+0 (1/0/1/0) Included file: ./Sections/4-methodology.tex
+`;
+
+// Per-file sum mirrors texcount's "Sum count" = text + headers + captions + math
+// (inlines + displayed) — the rows then add up to the grand total exactly.
+export const EXPECTED_CHAPTER_SECTIONS = [
+  { name: 'Sections/1-abstract.tex', text: 197, headers: 1, captions: 0, sum: 198 },
+  { name: 'Sections/2-aim_objectives.tex', text: 317, headers: 3, captions: 0, sum: 320 },
+  { name: 'Sections/4-methodology.tex', text: 90, headers: 1, captions: 0, sum: 92 },
+];
+export const EXPECTED_CHAPTER_TOTAL = 7733;

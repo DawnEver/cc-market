@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import {
   findMainTex, parseTexcount, formatTable, targetLine, fmt, tokenize,
 } from '../scripts/word-count.mjs';
-import { FIXTURE, EXPECTED_SECTIONS, EXPECTED_TOTAL } from './fixture.mjs';
+import {
+  FIXTURE, EXPECTED_SECTIONS, EXPECTED_TOTAL,
+  CHAPTER_FIXTURE, EXPECTED_CHAPTER_SECTIONS, EXPECTED_CHAPTER_TOTAL,
+} from './fixture.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/word-count.mjs', import.meta.url));
 const STUB = fileURLToPath(new URL('./stub-texcount.mjs', import.meta.url));
@@ -39,6 +42,12 @@ test('parseTexcount: handles CRLF line endings (Windows texcount)', () => {
   const { sections, total } = parseTexcount(FIXTURE.replace(/\n/g, '\r\n'));
   assert.deepEqual(sections, EXPECTED_SECTIONS);
   assert.equal(total, EXPECTED_TOTAL);
+});
+
+test('parseTexcount: chapter-style docs fall back to per-file breakdown', () => {
+  const { sections, total } = parseTexcount(CHAPTER_FIXTURE);
+  assert.deepEqual(sections, EXPECTED_CHAPTER_SECTIONS);
+  assert.equal(total, EXPECTED_CHAPTER_TOTAL);
 });
 
 test('parseTexcount: fails clearly when no Sum count is present', () => {

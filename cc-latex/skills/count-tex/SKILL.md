@@ -34,7 +34,13 @@ If a target was given, state the progress and flag which sections are still stub
 
 ## Notes
 
-- `-inc` follows `\input`; `-sum` merges text + headers + captions; `-sub=section` gives
-  per-section subcounts.
+- The breakdown is per section when texcount emits `Section:` subcounts (article-style
+  documents); chapter-style documents (`report` class, `\input`ed sections) get no
+  `Section:` lines, so the script falls back to one row per included file, labelled by
+  path (e.g. `Sections/5-progress.tex`).
+- Sums follow texcount's `Sum count`: text + headers + captions + math (inline and
+  displayed) — the rows add up to the grand total exactly.
+- `-inc` follows `\input`; `-sum` merges the components above; `-sub=section` requests
+  the subcounts.
 - If `texcount` is missing, install it with `tlmgr install texcount` (it is bundled with
   a full TeX Live / `pdflatex` install).
