@@ -94,13 +94,19 @@ test('spawnChild native claude without runDir: no isolation, --model passthrough
   assert.equal(res.runDir, null);
 });
 
-test('spawnChild prepends systemPrompt to the prompt', async () => {
+test('spawnChild prepends systemPrompt to the prompt (via stdin — the join is multiline)', async () => {
+  // The systemPrompt join inserts newlines, so it MUST take the stdin path: on the argv
+  // path `claude -p` truncates at the first line, i.e. the system prompt would be sent
+  // and the user prompt silently dropped.
   const sink = {};
   await spawnChild({
     provider: 'claude', prompt: 'user says', systemPrompt: 'be terse',
-    configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
+    configPath: fixture(),
+    _spawn: makeStdinFakeSpawn(sink, [JSON.stringify({ type: 'result', result: 'ok', usage: {} })]),
+    _bin: 'fake-claude',
   });
-  assert.equal(sink.args[1], 'be terse\n\n---\n\nuser says');
+  assert.ok(sink.args.includes('--input-format'), 'systemPrompt implies multiline implies stdin');
+  assert.equal(JSON.parse(sink.stdinWritten).message.content, 'be terse\n\n---\n\nuser says');
 });
 
 // Fake spawn with writable stdin for stream-json mode.
@@ -438,4 +444,22 @@ test('effortEnv maps named levels and passes numbers through', async () => {
   assert.deepEqual(effortEnv('max'), { MAX_THINKING_TOKENS: '32000' });
   assert.deepEqual(effortEnv(4096), { MAX_THINKING_TOKENS: '4096' });
   assert.throws(() => effortEnv('ultra'), /effort/);
+});
+
+test('spawnChild MULTILINE prompt goes via stdin even when short (argv -p truncates at the first line)', async () => {
+  // Measured on claude 2.1.226: `claude -p "line1\n\nline2"` sends only line1 upstream.
+  // Any prompt containing a newline must therefore take the stdin path regardless of length.
+  const sink = {};
+  const multi = 'User: Q1\n\nAssistant: A1\n\nUser: Q2';
+  await spawnChild({
+    provider: 'claude', prompt: multi,
+    configPath: fixture(),
+    _spawn: makeStdinFakeSpawn(sink, [
+      JSON.stringify({ type: 'result', result: 'ok', usage: {} }),
+    ]),
+    _bin: 'fake-claude',
+  });
+  assert.ok(sink.args.includes('--input-format'), 'short multiline prompt must switch to stdin mode');
+  assert.ok(!sink.args.includes(multi), 'the prompt must NOT appear in argv');
+  assert.equal(JSON.parse(sink.stdinWritten).message.content, multi, 'the FULL multiline prompt reaches stdin');
 });

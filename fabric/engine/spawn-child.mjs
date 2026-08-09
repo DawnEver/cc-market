@@ -218,7 +218,11 @@ export async function spawnChild(opts) {
     if (configDir) env.CLAUDE_CONFIG_DIR = configDir;
 
     const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${prompt}` : prompt;
-    const useStdin = fullPrompt.length > 1000 || (images && images.length > 0);
+    // stdin whenever the prompt is long, carries images, OR spans lines: `claude -p`
+    // truncates a multiline argv prompt to its FIRST line (measured on 2.1.226 — a tap
+    // capture showed only the first line of a joined history reaching the API), so a
+    // newline anywhere forces the stream-json stdin path regardless of length.
+    const useStdin = fullPrompt.length > 1000 || fullPrompt.includes('\n') || (images && images.length > 0);
 
     // Model: the proxy remaps the request body (observe) and native claude takes the
     // flag; a direct-connect API provider gets an exact env pin instead — the flag
