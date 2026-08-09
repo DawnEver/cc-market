@@ -177,3 +177,23 @@ test('listSessions surfaces pid/alive/lastActivity; pingSession answers facts', 
   await closeSession(desc.id);
   await assert.rejects(pingSession(desc.id), /No such session/);
 });
+
+// ── G7: the registry and the journal carry usage facts.
+test('listSessions surfaces usage; closeSession journals it', async () => {
+  const { mkdtempSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  process.env.FABRIC_JOURNAL_DIR = mkdtempSync(join(tmpdir(), 'fj-usage-'));
+  const { journalPath } = await import('../engine/journal.mjs');
+  const { createSession, listSessions, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const fakeOpen = async () => ({
+    id: 'n1', usage: { input_tokens: 5, output_tokens: 3, cost_usd: 0.001 },
+    send: async () => ({ text: 'x', turn: 1 }), close: async () => 0,
+  });
+  const desc = await createSession({ provider: 'deepseek' }, fakeOpen);
+  assert.deepEqual(listSessions()[0].usage, { input_tokens: 5, output_tokens: 3, cost_usd: 0.001 });
+  await closeSession(desc.id);
+  const rows = readFileSync(journalPath(), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rows.find((r) => r.event === 'close').usage, { input_tokens: 5, output_tokens: 3, cost_usd: 0.001 });
+});

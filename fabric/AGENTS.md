@@ -40,6 +40,8 @@ fabric/
 │   ├── session.mjs          Provider-dispatching opener + in-process session registry
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
+│   ├── journal.mjs          Append-only session journal (~/.fabric) + reconcile() for restart orphans
+│   ├── profile.mjs          Spawn profiles: allowedTools/permissionMode/envDeny — subtraction at the spawn point
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
 │   ├── node-{server,client,config}.mjs  LAN node fabric: TCP JSON-RPC peer server, remote
 │   │                        session client, `fabric` config block (see § LAN node fabric)
@@ -72,7 +74,7 @@ transport — framed needed for Codex MCP startup). Tools:
 | Tool | Input | Routes to |
 |---|---|---|
 | `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
-| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. With `node`, the session runs on that peer machine (see § LAN node fabric) |
+| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?`, `profile?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. With `node`, the session runs on that peer machine (see § LAN node fabric) |
 | `session_send` | `id`, `prompt` | `sendToSession()` → one turn, context retained |
 | `session_close` | `id` | `closeSession()` → tears down the child |
 | `list_sessions` | (none) | `listSessions()` |

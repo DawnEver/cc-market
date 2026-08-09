@@ -152,3 +152,33 @@ test('mid-turn child death rejects with the stderr tail', async () => {
   const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
   await assert.rejects(s.send('hi'), /requires --verbose/);
 });
+
+// ── G7: usage facts accumulate on the handle from stream-json result events.
+test('openSession accumulates usage/cost facts across turns', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-usage-'));
+  const fake = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    let sbuf = '';
+    child.stdin = {
+      write: (line) => {
+        sbuf += line;
+        let nl;
+        while ((nl = sbuf.indexOf('\n')) !== -1) {
+          sbuf = sbuf.slice(nl + 1);
+          queueMicrotask(() => {
+            child.stdout.emit('data', JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } }) + '\n');
+            child.stdout.emit('data', JSON.stringify({ type: 'result', subtype: 'success', total_cost_usd: 0.01, usage: { input_tokens: 100, output_tokens: 20 } }) + '\n');
+          });
+        }
+      },
+      end: () => { queueMicrotask(() => child.emit('close', 0)); },
+    };
+    return child;
+  };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
+  await s.send('one');
+  await s.send('two');
+  assert.deepEqual(s.usage, { input_tokens: 200, output_tokens: 40, cost_usd: 0.02 });
+  await s.close();
+});

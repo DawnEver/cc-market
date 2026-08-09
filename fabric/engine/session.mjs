@@ -136,7 +136,7 @@ export async function closeSession(id) {
   try { exitCode = await entry.handle.close(); }
   finally {
     sessions.delete(id);
-    recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns });
+    recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns, usage: entry.handle.usage ?? null });
   }
   return { id, exitCode: exitCode ?? null, turns: entry.turns };
 }
@@ -148,6 +148,7 @@ export function listSessions() {
     pid: e.handle.pid ?? null,
     alive: e.handle.alive ?? null,
     lastActivity: e.handle.lastActivity ?? null,
+    usage: e.handle.usage ?? null,
     node: e.node,
   }));
 }

@@ -72,6 +72,7 @@ export async function openSession(opts) {
   let buf = '';
   let lastActivity = Date.now();
   let errTail = '';          // last stderr bytes — the only clue when the child dies
+  const usage = { input_tokens: 0, output_tokens: 0, cost_usd: 0 }; // cumulative (G7)
 
   child.stderr?.on('data', (d) => {
     errTail = (errTail + d).slice(-STDERR_TAIL_BYTES);
@@ -89,6 +90,9 @@ export async function openSession(opts) {
       if (ev.type === 'assistant') acc += extractText(ev.message);
       else if (ev.type === 'result') {
         turnCount++;
+        usage.input_tokens += ev.usage?.input_tokens ?? 0;
+        usage.output_tokens += ev.usage?.output_tokens ?? 0;
+        usage.cost_usd += ev.total_cost_usd ?? 0;
         const p = pending; pending = null;
         const text = acc; acc = '';
         if (p) p.resolve({ text, turn: turnCount });
@@ -145,6 +149,7 @@ export async function openSession(opts) {
     get alive() { return !closed; },
     get lastActivity() { return lastActivity; },
     stderrTail: () => errTail,
+    get usage() { return { ...usage } },
     send, close,
   };
 }
