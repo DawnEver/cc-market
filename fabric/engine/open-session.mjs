@@ -77,8 +77,10 @@ export async function openSession(opts) {
     try {
       writeFileSync(transcriptPath, `[fabric ${provider}${model ? `/${model}` : ''}] session transcript — viewer window; closing it does NOT stop the session\n`);
       if (process.platform === 'win32') {
+        // UTF-8 on both ends: the transcript is UTF-8 and the console must both decode
+        // and render it, or em-dashes come out as GBK mojibake (observed 2026-08-09).
         _viewerSpawn('cmd', ['/c', 'start', `fabric ${provider}`, 'powershell', '-NoExit', '-Command',
-          `Get-Content -LiteralPath '${transcriptPath}' -Wait -Tail 100`], { stdio: 'ignore', detached: true });
+          `[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Content -LiteralPath '${transcriptPath}' -Wait -Tail 100 -Encoding UTF8`], { stdio: 'ignore', detached: true });
       } else {
         process.stderr.write(`fabric: visible terminal not implemented on ${process.platform}; transcript at ${transcriptPath}\n`);
       }
