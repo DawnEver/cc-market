@@ -24,13 +24,17 @@ passes resolve references and cross-references. Re-run after any change.
 - Figures: `\includegraphics` — place figures and tables near the relevant discussion,
   not at the end.
 - Citations: `\cite{key}` (natbib, numeric).
+- Display equations: a blank line after the equation opens a new paragraph — use it only
+  when the following text starts a new topic; a "where ..."-style explanation or a
+  sentence continuing the equation stays attached, with no blank line.
 
 ## Writing style
 
 Write fluent, concise academic English: short clear sentences, plain direct wording,
-cohesive flow, and semantic line breaks (roughly one sentence per source line). The full
-style rules with examples are in `reference/writing-style.md` — load it before drafting
-or rewriting prose.
+cohesive flow, and semantic line breaks (roughly one sentence per source line). One claim
+per sentence: split any sentence that combines a definition aside with a consequence.
+The full style rules with examples are in `reference/writing-style.md` — load it before
+drafting or rewriting prose.
 
 ## Word counts
 
