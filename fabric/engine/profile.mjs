@@ -23,7 +23,7 @@ export const TOOL_PRESETS = {
 };
 
 // The flags a profile owns; a caller's extraArgs must not smuggle them past it.
-export const PROFILE_OWNED_FLAGS = ["--allowedTools", "--permission-mode", "--dangerously-skip-permissions", "--tools"];
+export const PROFILE_OWNED_FLAGS = ["--allowedTools", "--permission-mode", "--dangerously-skip-permissions", "--tools", "--system-prompt-file", "--system-prompt"];
 
 function validate(profile) {
   if (profile?.permissionMode && !PERMISSION_MODES.includes(profile.permissionMode)) {
@@ -76,6 +76,11 @@ export function profileArgs(profile) {
   // toolsPreset trims the injected tool schema (cost); "full" or absent = all tools.
   if (profile.toolsPreset && profile.toolsPreset in TOOL_PRESETS) {
     args.push("--tools", TOOL_PRESETS[profile.toolsPreset].join(","));
+  }
+  // systemPromptFile replaces the stock system prompt (cache-key layer). A
+  // profile wins over the platform default; null disables injection entirely.
+  if (profile.systemPromptFile) {
+    args.push("--system-prompt-file", profile.systemPromptFile);
   }
   return args;
 }

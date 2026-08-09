@@ -125,3 +125,40 @@ test('applyProfileEnv envDeny is case-insensitive on win32', () => {
   const linux = applyProfileEnv({ Secret_Token: 'x' }, { envDeny: ['SECRET_TOKEN'] }, 'linux');
   assert.deepEqual(linux, { Secret_Token: 'x' }, 'linux keys are case-sensitive; distinct var survives');
 });
+
+// ── systemPromptFile injection ──
+
+test('profileArgs maps systemPromptFile to --system-prompt-file', () => {
+  assert.deepEqual(profileArgs({ systemPromptFile: 'C:/x/claude-base.md' }),
+    ['--system-prompt-file', 'C:/x/claude-base.md']);
+  assert.deepEqual(profileArgs({ toolsPreset: 'exec', systemPromptFile: 'C:/x/base.md' }),
+    ['--tools', 'Bash,Read,Write,Edit,Glob,Grep', '--system-prompt-file', 'C:/x/base.md']);
+});
+
+test('openSession injects fabric.systemPromptFile default + profile override wins', async () => {
+  const { openSession } = await import('../engine/open-session.mjs');
+  const { clearConfigCache } = await import('../engine/providers.mjs');
+  const cfgPath = join(mkdtempSync(join(tmpdir(), 'sysf-')), 'reg.json');
+  writeFileSync(cfgPath, JSON.stringify({
+    'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' },
+    fabric: { systemPromptFile: 'C:/default/claude-base.md' },
+  }));
+  clearConfigCache();
+  let seen = null;
+  const fake = (bin, args) => {
+    seen = args;
+    const { EventEmitter } = eventsMod;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.stdin = { write: () => {}, end: () => queueMicrotask(() => child.emit('close', 0)) };
+    return child;
+  };
+  // default from config
+  const s1 = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'sysf1-')), configPath: cfgPath, _spawn: fake, _bin: 'fake' });
+  await s1.close();
+  assert.ok(seen.includes('--system-prompt-file') && seen[seen.indexOf('--system-prompt-file') + 1] === 'C:/default/claude-base.md');
+  // profile overrides
+  const s2 = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'sysf2-')), configPath: cfgPath, _spawn: fake, _bin: 'fake', profile: { systemPromptFile: 'C:/profile/base.md' } });
+  await s2.close();
+  assert.ok(seen[seen.indexOf('--system-prompt-file') + 1] === 'C:/profile/base.md');
+});

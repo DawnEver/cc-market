@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { buildChildEnv, hookFreeArgs, resolveClaudeExe, effortEnv } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { applyProfileEnv, profileArgs, stripProfileOwnedFlags } from './profile.mjs';
+import { loadFabricConfig } from './node-config.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
 const STDERR_TAIL_BYTES = 4096;
@@ -106,6 +107,11 @@ export async function openSession(opts) {
   // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true
   // (spawn EINVAL), which silently broke every Windows persistent session.
   const bin = _bin || resolveClaudeExe();
+  // Platform default system prompt (fabric.systemPromptFile in the config) applies
+  // when the profile does not name one — replaces the stock prompt on every spawn
+  // (cache-key layer; combined with toolsPreset = full cost chain).
+  const cfg = loadFabricConfig(configPath);
+  const sysFile = profile?.systemPromptFile ?? cfg.systemPromptFile ?? null;
   const args = [
     // --verbose is REQUIRED by the CLI for --print + stream-json output (exit 1 without);
     // the parser ignores the extra system events it adds.
@@ -114,6 +120,8 @@ export async function openSession(opts) {
     // Profile flags come LAST and profile-owned flags are stripped from extraArgs —
     // otherwise "last flag wins" lets a caller override the policy (sharp-review SR-017).
     ...(profile ? stripProfileOwnedFlags(extraArgs) : extraArgs), ...profileArgs(profile),
+    // Platform default (last, so an explicit profile flag still wins by position).
+    ...(sysFile && !profile?.systemPromptFile ? ['--system-prompt-file', sysFile] : []),
   ];
 
   const child = _spawn(bin, args, { cwd: cwd || runDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
