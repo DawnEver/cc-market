@@ -161,9 +161,11 @@ handshake itself.
    (case-insensitive, FQDN or short name); `projects` maps merge, override winning
    per alias.
 
-2. On each peer machine, start the node server in a terminal you keep open:
-   `scripts/serve.ps1` / `scripts\serve.cmd` / `scripts/serve.sh` (all wrap `node scripts/serve.mjs`).
-   Session-bound on purpose — never run it as a background service; closing the terminal stops the node.
+2. On each peer machine, bring fabric up in a terminal you keep open — node server +
+   management console together: `scripts\up.cmd` / `scripts/up.ps1` / `scripts/up.sh`
+   (both components idempotent — an already-running instance is detected and skipped).
+   Console: http://127.0.0.1:7678. Serve-only via `scripts/serve.*` remains available.
+   Session-bound on purpose — never run as a background service; closing the terminal stops both.
 3. **Open the firewall for inbound 7677** — once per machine. Windows blocks inbound Node by
    default (the serve log looks healthy while every peer times out; measured 2026-08-09).
    Admin PowerShell:

@@ -51,14 +51,18 @@ fabric/
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
-│   ├── web.mjs + web-ui.html  Local management console (http://127.0.0.1:7678): fleet status,
-│   │                        spawn/chat/close sessions on any node, journal orphans. Session-bound.
+│   ├── up.{mjs,cmd,ps1,sh}  Bring this machine UP: node server + console in one process,
+│   │                        both idempotent, session-bound. THE standard way to start.
 │   ├── ping.mjs             Probe every configured node → ALIVE + capacity facts, or DEAD + reason
 │   ├── serve.{mjs,ps1,cmd,sh}  CLI: run this machine as a fabric LAN node — session-bound
 │   │                        on purpose (never a background service; user directive 2026-08-09)
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
 │   │                        wrapper), callers (codex/API adapters), trace, errors
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
+├── web/                     Management console — a small structured web project:
+│   ├── server.mjs           HTTP shell: static + API wiring, startConsole() export
+│   ├── api.mjs              Pure JSON API handler (tested)
+│   └── public/              index.html · app.js · style.css (re-read per request)
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
 ├── commands/                L2: continue.md · models.md · handoff.md
 ├── agents/takeover.md       L2: handoff subagent (context-gather → one call)
