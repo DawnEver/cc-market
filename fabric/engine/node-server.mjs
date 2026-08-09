@@ -51,7 +51,7 @@ class RpcError extends Error {
 
 // Plugin version, best-effort: a peer scheduling against this node deserves to know
 // which fabric it is talking to.
-function pluginVersion() {
+export function pluginVersion() {
   try {
     const p = join(dirname(fileURLToPath(import.meta.url)), "..", ".claude-plugin", "plugin.json");
     return JSON.parse(readFileSync(p, "utf8")).version ?? "unknown";

@@ -13,7 +13,7 @@
 // both die with this terminal — never a background service, by directive.
 
 import { hostname } from "node:os";
-import { createNodeServer } from "../engine/node-server.mjs";
+import { createNodeServer, pluginVersion } from "../engine/node-server.mjs";
 import { loadServeConfig, loadFabricConfig } from "../engine/node-config.mjs";
 import { getConfigPath } from "../engine/providers.mjs";
 import { setJournalOwnerKind } from "../engine/session.mjs";
@@ -56,7 +56,7 @@ const tags = serve.tags || [];
 // then exit. Read-only; the probe is the same node/status a peer would issue.
 if (args.includes("--status")) {
   const { connectNode } = await import("../engine/node-client.mjs");
-  process.stdout.write(`name: ${name}\nport: ${port}\nprojects: ${Object.keys(projects).join(", ") || "(none)"}\ntags: ${tags.join(", ") || "(none)"}\n`);
+  process.stdout.write(`name: ${name}\nversion: ${pluginVersion()} (this checkout)\nport: ${port}\nprojects: ${Object.keys(projects).join(", ") || "(none)"}\ntags: ${tags.join(", ") || "(none)"}\n`);
   try {
     const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
     const st = await conn.request("node/status", {}, { timeoutMs: 5000 });
@@ -105,7 +105,9 @@ try {
 }
 if (bound) {
   const aliases = Object.keys(projects).join(", ") || "(none — peers can only spawn in this cwd)";
-  process.stdout.write(`fabric node "${name}" listening on port ${bound.port}; projects: ${aliases}\n`);
+  // Version on the banner: the operator's one-glance check that a restart actually
+  // loaded the new code (peers see the same figure via node/status and ping.mjs).
+  process.stdout.write(`fabric node "${name}" v${pluginVersion()} listening on port ${bound.port}; projects: ${aliases}\n`);
 }
 
 // ── 2. Management console (idempotent, --no-console to skip) ──
