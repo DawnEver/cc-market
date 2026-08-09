@@ -78,31 +78,63 @@ export async function openSession(opts) {
   if (showUi) {
     try {
       writeFileSync(transcriptPath, `[fabric ${provider}${model ? `/${model}` : ''}] session transcript — viewer window; closing it does NOT stop the session\n`);
-      if (process.platform === 'win32') {
+      if (process.platform === 'win32' && !interactive) {
         // UTF-8 on both ends: the transcript is UTF-8 and the console must both decode
         // and render it, or em-dashes come out as GBK mojibake (observed 2026-08-09).
         _viewerSpawn('cmd', ['/c', 'start', `fabric ${provider}`, 'powershell', '-NoExit', '-Command',
           `[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Content -LiteralPath '${transcriptPath}' -Wait -Tail 100 -Encoding UTF8`], { stdio: 'ignore', detached: true });
-      } else {
+      } else if (process.platform !== 'win32') {
         process.stderr.write(`fabric: visible terminal not implemented on ${process.platform}; transcript at ${transcriptPath}\n`);
       }
     } catch { /* the viewer must never break the session */ }
   }
 
-  // Interactive interjection: the human is ANOTHER SENDER, not the stdin owner. An
-  // input window appends lines to the inbox; the engine injects each one through the
-  // SAME serialized send chain the orchestrator uses, so both drive one conversation
-  // and neither can corrupt a turn in flight.
+  // Interactive interjection: the human is ANOTHER SENDER, not the stdin owner. ONE chat
+  // window shows the streaming transcript AND takes typed lines (non-blocking key polling);
+  // each Enter lands the line in the inbox, and the engine injects it through the SAME
+  // serialized send chain the orchestrator uses, so both drive one conversation and
+  // neither can corrupt a turn in flight.
   let inboxTimer = null;
   let inboxOffset = 0;
   if (interactive) {
     try {
       writeFileSync(inboxPath, '');
       if (process.platform === 'win32') {
-        _viewerSpawn('cmd', ['/c', 'start', `fabric ${provider} INPUT`, 'powershell', '-NoExit', '-Command',
-          `[Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'Type to interject; each line goes into the live session.'; while ($true) { $l = Read-Host 'you'; if ($l) { Add-Content -LiteralPath '${inboxPath}' -Value $l -Encoding UTF8 } }`], { stdio: 'ignore', detached: true });
+        const chatPs1 = join(runDir, 'chat.ps1');
+        writeFileSync(chatPs1, `param([string]$Transcript, [string]$Inbox)
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$utf8 = New-Object Text.UTF8Encoding $false
+Write-Host "fabric chat - transcript streams here; type and press Enter to interject. Closing this window does NOT stop the session." -ForegroundColor Cyan
+$off = 0; $line = ''
+while ($true) {
+  try {
+    $fs = [IO.File]::Open($Transcript, 'Open', 'Read', 'ReadWrite')
+    if ($fs.Length -gt $off) {
+      $fs.Position = $off
+      $buf = New-Object byte[] ($fs.Length - $off)
+      [void]$fs.Read($buf, 0, $buf.Length)
+      $off = $fs.Length
+      Write-Host -NoNewline $utf8.GetString($buf)
+    }
+    $fs.Close()
+  } catch {}
+  while ([Console]::KeyAvailable) {
+    $k = [Console]::ReadKey($true)
+    if ($k.Key -eq 'Enter') {
+      Write-Host ''
+      if ($line.Trim()) { [IO.File]::AppendAllText($Inbox, $line + "\`n", $utf8) }
+      $line = ''
+    } elseif ($k.Key -eq 'Backspace') {
+      if ($line.Length) { $line = $line.Substring(0, $line.Length - 1); Write-Host -NoNewline "\`b \`b" }
+    } elseif ($k.KeyChar) { $line += $k.KeyChar; Write-Host -NoNewline $k.KeyChar -ForegroundColor Yellow }
+  }
+  Start-Sleep -Milliseconds 150
+}
+`);
+        _viewerSpawn('cmd', ['/c', 'start', `fabric ${provider} chat`, 'powershell', '-NoExit', '-ExecutionPolicy', 'Bypass',
+          '-File', chatPs1, '-Transcript', transcriptPath, '-Inbox', inboxPath], { stdio: 'ignore', detached: true });
       }
-    } catch { /* input UI must never break the session */ }
+    } catch { /* chat UI must never break the session */ }
     inboxTimer = setInterval(() => {
       try {
         const raw = readFileSync(inboxPath, 'utf8');
