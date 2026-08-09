@@ -164,7 +164,16 @@ handshake itself.
 2. On each peer machine, start the node server in a terminal you keep open:
    `scripts/serve.ps1` / `scripts\serve.cmd` / `scripts/serve.sh` (all wrap `node scripts/serve.mjs`).
    Session-bound on purpose — never run it as a background service; closing the terminal stops the node.
-3. From any session, spawn remotely — same tools, plus `node`/`project`:
+3. **Open the firewall for inbound 7677** — once per machine. Windows blocks inbound Node by
+   default (the serve log looks healthy while every peer times out; measured 2026-08-09).
+   Admin PowerShell:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "fabric node 7677" -Direction Inbound -Protocol TCP -LocalPort 7677 -Action Allow
+   ```
+
+   Verify from any other machine: `node scripts/ping.mjs <name>` → `ALIVE` with capacity facts.
+4. From any session, spawn remotely — same tools, plus `node`/`project`:
 
    ```json
    { "tool": "spawn_session", "arguments": { "provider": "codex", "node": "desktop", "project": "thesis", "write": true } }
