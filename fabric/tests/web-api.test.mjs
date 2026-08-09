@@ -86,3 +86,12 @@ test('liveCatalogue probes identity and caches with TTL', async () => {
   assert.equal(liveCatalogue({ _now: () => t, _config: () => ({ nodes: {} }) }).probed_at, 1000, 'cached');
   assert.equal(liveCatalogue({ force: true, _now: () => t, _config: () => ({ nodes: {} }) }).probed_at, 2000, 'force re-probes');
 });
+
+test('clearing an orphan journals a loss event', async () => {
+  const events = [];
+  const api = createWebApi({ ...fakeDeps(), recordEvent: (e) => events.push(e) });
+  const r = await api.handle('POST', '/api/reconcile/clear', { id: 'orphan-1' });
+  assert.equal(r.status, 200);
+  assert.equal(events[0].event, 'loss');
+  assert.equal(events[0].id, 'orphan-1');
+});

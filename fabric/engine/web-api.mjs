@@ -10,7 +10,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
-import { reconcile } from "./journal.mjs";
+import { reconcile, recordEvent } from "./journal.mjs";
 import { loadFabricConfig } from "./node-config.mjs";
 import { connectNode } from "./node-client.mjs";
 import { getConfigPath } from "./providers.mjs";
@@ -115,6 +115,13 @@ export function createWebApi(deps = {}) {
         return { status: 200, body: _list().map((s) => ({ ...s, chattable: logs.has(s.id) })) };
       }
       if (method === "GET" && path === "/api/reconcile") return { status: 200, body: _reconcile() };
+      if (method === "POST" && path === "/api/reconcile/clear") {
+        if (!body?.id) return { status: 400, body: { error: "id is required" } };
+        // Clearing = journaling the loss; the record stays (append-only), reconcile stops
+        // reporting it. Only for records the operator has judged dead.
+        (deps.recordEvent || recordEvent)({ event: "loss", id: body.id, reason: "cleared from console" });
+        return { status: 200, body: { id: body.id, cleared: true } };
+      }
 
       if (method === "POST" && path === "/api/sessions") {
         if (!body?.provider) return { status: 400, body: { error: "provider is required" } };

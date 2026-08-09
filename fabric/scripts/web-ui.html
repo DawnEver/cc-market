@@ -33,8 +33,10 @@
                   padding:4px 8px; font-size:12px; width:100%; margin-bottom:6px; }
   form label { font-size:11px; color:var(--dim); }
   .inline { display:flex; gap:8px; } .inline > * { flex:1; }
-  .proj { margin:10px 0 4px; color:var(--accent); font-size:12px; cursor:pointer; }
-  .proj.sel { text-decoration:underline; }
+  .proj { background:#11151c; border:1px dashed var(--border); border-radius:6px; padding:6px 10px;
+          margin:10px 0 6px; color:var(--accent); font-size:12px; cursor:pointer;
+          display:flex; justify-content:space-between; }
+  .proj.sel { border-color:var(--accent); border-style:solid; }
   #chat { display:flex; flex-direction:column; min-height:0; border-right:none; }
   #msgs { flex:1; overflow-y:auto; padding:4px; }
   .msg { max-width:78%; margin:6px 0; padding:8px 12px; border-radius:8px; white-space:pre-wrap; word-break:break-word; }
@@ -86,8 +88,12 @@
     </form>
     <h2>Projects → Sessions</h2>
     <div id="tree" class="dim">—</div>
-    <h2>Journal orphans <span class="dim">(spawned, never closed — possible survivors of a crashed manager)</span></h2>
-    <div id="orphans" class="dim">—</div>
+    <div id="orphanWrap" style="display:none">
+      <details>
+        <summary>&#9888; unaccounted sessions (<span id="orphanCount">0</span>) — spawned but never closed; a crashed manager may have left the child running</summary>
+        <div id="orphans"></div>
+      </details>
+    </div>
   </section>
 
   <section id="chat">
@@ -193,20 +199,27 @@ function renderTree() {
     const noProj = all.filter((s) => !s.project);
     const byProj = (p) => all.filter((s) => s.project === p);
     const projHtml = projects.filter((p) => !selProject || p === selProject).map((p) => `
-      <div class="proj ${selProject === p ? 'sel' : ''}" onclick="pickProject('${p}')">▸ ${p} <span class="dim">(${byProj(p).length})</span></div>
+      <div class="proj ${selProject === p ? 'sel' : ''}" onclick="pickProject('${p}')">
+        <span>&#128193; ${p}</span><span class="dim">${byProj(p).length} session(s)</span></div>
       ${byProj(p).map((s) => sessCard(s, m.name)).join('') || ''}`).join('');
     return `<div><h2>${m.name}</h2>${projHtml}
-      ${(!selProject && noProj.length) ? `<div class="proj">▸ (no project)</div>` + noProj.map((s) => sessCard(s, m.name)).join('') : ''}</div>`;
+      ${(!selProject && noProj.length) ? `<div class="proj"><span>&#128193; (no project)</span><span class="dim">${noProj.length}</span></div>` + noProj.map((s) => sessCard(s, m.name)).join('') : ''}</div>`;
   }).join('');
 }
 
 async function refreshOrphans() {
   try {
     const o = await api('GET', '/api/reconcile');
-    $('#orphans').innerHTML = o.length
-      ? o.map((x) => `<div class="card"><b>${x.id}</b><br><span class="dim">pid ${x.pid ?? '—'} · alive ${x.pidAlive === null ? 'unknown (remote)' : x.pidAlive}${x.node ? ' · ' + x.node : ''}</span></div>`).join('')
-      : '<span class="dim">none</span>';
+    $('#orphanWrap').style.display = o.length ? '' : 'none';
+    $('#orphanCount').textContent = o.length;
+    $('#orphans').innerHTML = o.map((x) => `<div class="card">
+      <div class="row"><b>${x.id}</b>
+        <button onclick="clearOrphan('${x.id}')">clear record</button></div>
+      <span class="dim">pid ${x.pid ?? '—'} · alive ${x.pidAlive === null ? 'unknown (remote)' : x.pidAlive}${x.node ? ' · ' + x.node : ''} · ${new Date(x.ts).toLocaleString()}</span></div>`).join('');
   } catch { /* empty journal */ }
+}
+async function clearOrphan(id) {
+  try { await api('POST', '/api/reconcile/clear', { id }); refreshOrphans(); } catch (e) { alert(e.message); }
 }
 
 // ── chat: console-owned directly; shared foreign sessions attach on first click ──

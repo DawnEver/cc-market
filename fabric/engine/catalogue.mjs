@@ -23,7 +23,12 @@ function probeClaude() {
     name: "claude", kind: "native", version,
     identity: subscription ? `${subscription} subscription` : "not logged in",
     available: !!version && !!subscription,
-    models: [{ alias: "haiku", actual: "claude haiku (CLI alias)" }, { alias: "sonnet", actual: "claude sonnet (CLI alias)" }, { alias: "opus", actual: "claude opus (CLI alias)" }],
+    models: [
+      { alias: "haiku", actual: "claude-haiku-4-5" },
+      { alias: "sonnet", actual: "claude-sonnet-5" },
+      { alias: "opus", actual: "claude-opus-5" },
+      { alias: "fable", actual: "claude-fable-5" },
+    ],
   };
 }
 
