@@ -64,7 +64,7 @@ function pluginVersion() {
  *   tokens        additional ACCEPTED tokens — revoking a peer is deleting one entry
  *   maxSessions   static operator-declared ceiling on concurrent sessions
  */
-export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, maxSessions = DEFAULT_MAX_SESSIONS, deps = {} } = {}) {
+export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, maxSessions = DEFAULT_MAX_SESSIONS, deps = {}, _kill = null, _closeGraceMs = 3000 } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
   // The accepted SET (SR-033/051): one shared fleet-wide PSK could only be revoked by
   // re-keying every machine. `token` stays primary — it is what an older peer's bare
@@ -77,6 +77,8 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   const _closeSession = deps.closeSession || closeSession;
   const _listSessions = deps.listSessions || listSessions;
   const _pingSession = deps.pingSession || pingSession;
+  const kill = _kill || ((pid) => process.kill(pid));
+  const closeGraceMs = _closeGraceMs;
   const startedAt = Date.now();
   // SHARED sessions (v2): drivable by ANY token-holder, and never reaped on the
   // spawner's disconnect -- their lifecycle belongs to the journal/watchdog.
@@ -264,7 +266,21 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         server.listen(port, host, () => resolve({ port: server.address().port }));
       });
     },
-    close() {
+    async close() {
+      // Reap EVERY session this process spawned — owned AND shared. A session child is
+      // windowsHide by design, so when serve dies nothing visible remains to remind the
+      // operator it exists; leaving it running turns the journal's "orphan" from an
+      // exceptional fact into the steady state. Graceful close first; a close that hangs
+      // past its grace falls back to killing the child pid outright.
+      const live = _listSessions();
+      const grace = new Promise((r) => setTimeout(r, closeGraceMs).unref?.());
+      await Promise.race([
+        Promise.allSettled(live.map((s) => Promise.resolve(_closeSession(s.id)).catch(() => {}))),
+        grace,
+      ]);
+      for (const s of _listSessions()) {
+        if (s.pid) { try { kill(s.pid); } catch { /* already gone */ } }
+      }
       for (const s of sockets) s.destroy();
       return new Promise((resolve) => server.close(() => resolve()));
     },

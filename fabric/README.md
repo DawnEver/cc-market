@@ -166,7 +166,7 @@ handshake itself.
    server AND the management console in one process (both idempotent: an already-running
    instance is detected and skipped). Console: http://127.0.0.1:7678. Flags: `--port N`,
    `--console-port N`, `--no-console` (node only), `--status` (report and exit).
-   Session-bound on purpose — never run as a background service; closing the terminal stops both.
+   Session-bound on purpose — never run as a background service; closing the terminal stops both AND reaps every session child it spawned (graceful close, then hard kill) — session children are hidden windows, so nothing may outlive the serve invisibly.
 3. **Open the firewall for inbound 7677** — once per machine. Windows blocks inbound Node by
    default (the serve log looks healthy while every peer times out; measured 2026-08-09).
    Admin PowerShell:

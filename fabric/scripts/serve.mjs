@@ -125,5 +125,9 @@ if (wantConsole) {
 
 process.stdout.write(`fabric serve: close this terminal to stop ${wantConsole ? "both" : "the node"}.\n`);
 
-process.on("SIGINT", async () => { await server.close(); process.exit(0); });
-process.on("SIGTERM", async () => { await server.close(); process.exit(0); });
+// server.close() reaps every session child (they are windowsHide — invisible orphans
+// otherwise). SIGHUP is what Windows delivers when the terminal window is closed with X
+// (CTRL_CLOSE_EVENT, ~5s budget — the 3s close grace fits inside it).
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, async () => { await server.close(); process.exit(0); });
+}

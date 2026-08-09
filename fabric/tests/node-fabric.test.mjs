@@ -952,3 +952,31 @@ test("serve --status says no only for a refused connection, unknown for anything
     } finally { await new Promise((r) => squatter.close(r)); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ── serve shutdown must not orphan session children ──────────────────────────
+// A session child is windowsHide by design: when serve dies, nothing visible
+// remains to remind the operator it exists. close() therefore reaps EVERY
+// session this process spawned — graceful close first, hard pid-kill for one
+// that hangs past its grace.
+
+test("server.close() closes every live session before shutting down", async () => {
+  const { server, deps, port } = await startServer();
+  const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+  await conn.request("node/spawn", { provider: "deepseek" });
+  await conn.request("node/spawn", { provider: "deepseek", shared: true });
+  assert.equal(deps.listSessions().length, 2);
+  conn.close();
+  await server.close();
+  assert.equal(deps.listSessions().length, 0, "close() must reap owned AND shared sessions");
+});
+
+test("server.close() hard-kills a session whose graceful close hangs", async () => {
+  const killed = [];
+  const deps = fakeSessionDeps();
+  deps.closeSession = () => new Promise(() => {}); // never settles
+  deps.listSessions = () => [{ id: "sess-hung", provider: "deepseek", turns: 0, pid: 4242, alive: true }];
+  const server = createNodeServer({ token: TOKEN, name: "t", deps, _kill: (pid) => killed.push(pid), _closeGraceMs: 50 });
+  await server.listen(0, "127.0.0.1");
+  await server.close();
+  assert.deepEqual(killed, [4242], "a hung close must fall back to killing the child pid");
+});
