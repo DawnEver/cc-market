@@ -81,7 +81,7 @@ export async function openProviderSession(opts = {}) {
       throw new Error("openProviderSession: a remote spawn takes a profile NAME registered on the peer, not an object");
     }
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible });
+    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive });
   }
   // Local: resolve a NAME once so every backend below receives the object.
   const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig());

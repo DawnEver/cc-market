@@ -83,11 +83,11 @@ export function connectNode({ host, port, token, connectTimeoutMs = 5000 }) {
  * @param {object} opts  host, port, token, provider (required), model?, write?, project?
  */
 export async function openRemoteSession(opts) {
-  const { host, port, token, provider, model, write, project, profile, visible } = opts;
+  const { host, port, token, provider, model, write, project, profile, visible, interactive } = opts;
   if (!provider) throw new Error("openRemoteSession: provider is required");
   const conn = await connectNode({ host, port, token });
   try {
-    const desc = await conn.request("node/spawn", { provider, model, write: !!write, project, profile: profile ?? null, visible: !!visible });
+    const desc = await conn.request("node/spawn", { provider, model, write: !!write, project, profile: profile ?? null, visible: !!visible, interactive: !!interactive });
     return {
       id: desc.id,
       pid: desc.pid ?? null,

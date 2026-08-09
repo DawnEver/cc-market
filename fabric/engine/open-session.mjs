@@ -8,7 +8,7 @@
 // JSON, not TTY text to scrape — the clean path from the harness-as-fabric design.
 // Composes with observe via the same buildChildEnv switch as spawnChild.
 
-import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildChildEnv, hookFreeArgs, resolveClaudeExe } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
@@ -36,9 +36,10 @@ function extractText(assistantMsg) {
 export async function openSession(opts) {
   const {
     provider, model, observe = false, runDir, cwd, configPath, extraArgs = [], profile = null,
-    visible = false,
-    _spawn = hiddenSpawn, _bin, _viewerSpawn = hiddenSpawn,
+    visible = false, interactive = false,
+    _spawn = hiddenSpawn, _bin, _viewerSpawn = hiddenSpawn, _pollMs = 400,
   } = opts;
+  const showUi = visible || interactive; // interactive implies the transcript viewer
   if (!provider) throw new Error('openSession: provider is required');
   if (!runDir) throw new Error('openSession: runDir is required');
 
@@ -72,8 +73,9 @@ export async function openSession(opts) {
   // (for a remote session, that is the peer's desktop). Closing the window is harmless —
   // it is a viewer, never the session.
   const transcriptPath = join(runDir, 'transcript.log');
+  const inboxPath = join(runDir, 'inbox.txt');
   const tee = (line) => { try { appendFileSync(transcriptPath, line); } catch { /* viewer only */ } };
-  if (visible) {
+  if (showUi) {
     try {
       writeFileSync(transcriptPath, `[fabric ${provider}${model ? `/${model}` : ''}] session transcript — viewer window; closing it does NOT stop the session\n`);
       if (process.platform === 'win32') {
@@ -85,6 +87,37 @@ export async function openSession(opts) {
         process.stderr.write(`fabric: visible terminal not implemented on ${process.platform}; transcript at ${transcriptPath}\n`);
       }
     } catch { /* the viewer must never break the session */ }
+  }
+
+  // Interactive interjection: the human is ANOTHER SENDER, not the stdin owner. An
+  // input window appends lines to the inbox; the engine injects each one through the
+  // SAME serialized send chain the orchestrator uses, so both drive one conversation
+  // and neither can corrupt a turn in flight.
+  let inboxTimer = null;
+  let inboxOffset = 0;
+  if (interactive) {
+    try {
+      writeFileSync(inboxPath, '');
+      if (process.platform === 'win32') {
+        _viewerSpawn('cmd', ['/c', 'start', `fabric ${provider} INPUT`, 'powershell', '-NoExit', '-Command',
+          `[Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'Type to interject; each line goes into the live session.'; while ($true) { $l = Read-Host 'you'; if ($l) { Add-Content -LiteralPath '${inboxPath}' -Value $l -Encoding UTF8 } }`], { stdio: 'ignore', detached: true });
+      }
+    } catch { /* input UI must never break the session */ }
+    inboxTimer = setInterval(() => {
+      try {
+        const raw = readFileSync(inboxPath, 'utf8');
+        if (raw.length <= inboxOffset) return;
+        const chunk = raw.slice(inboxOffset);
+        const lastNl = chunk.lastIndexOf('\n');
+        if (lastNl === -1) return; // no complete line yet
+        inboxOffset += lastNl + 1;
+        for (const line of chunk.slice(0, lastNl).split('\n')) {
+          const text = line.replace(/^﻿/, '').trim();
+          if (text) send(text, 'human').catch((e) => tee(`\n[error] human turn failed: ${e.message}\n`));
+        }
+      } catch { /* inbox gone: viewer closed, nothing to inject */ }
+    }, _pollMs);
+    inboxTimer.unref?.();
   }
 
   let turnCount = 0;
@@ -119,7 +152,7 @@ export async function openSession(opts) {
         usage.cost_usd += ev.total_cost_usd ?? 0;
         const p = pending; pending = null;
         const text = acc; acc = '';
-        if (visible) tee(`\n[assistant · turn ${turnCount}]\n${text}\n`);
+        if (showUi) tee(`\n[assistant · turn ${turnCount}]\n${text}\n`);
         if (p) p.resolve({ text, turn: turnCount });
       }
     }
@@ -138,13 +171,14 @@ export async function openSession(opts) {
     if (pending) { pending.reject(e); pending = null; }
   });
 
-  function send(text) {
-    // Serialize: each send waits for the previous turn's result.
+  function send(text, _label = 'user') {
+    // Serialize: each send waits for the previous turn's result — orchestrator and
+    // human turns share this one chain.
     const run = () => new Promise((resolve, reject) => {
       if (closed) return reject(new Error('openSession: session is closed'));
       pending = { resolve, reject };
       lastActivity = Date.now();
-      if (visible) tee(`\n[user]\n${text}\n`);
+      if (showUi) tee(`\n[${_label}]\n${text}\n`);
       child.stdin.write(userLine(text));
     });
     chain = chain.then(run, run);
@@ -152,6 +186,7 @@ export async function openSession(opts) {
   }
 
   async function close() {
+    if (inboxTimer) { clearInterval(inboxTimer); inboxTimer = null; }
     if (!closed) {
       // Attach the close listener BEFORE ending stdin, else a fast exit can fire before
       // we're listening and we'd wait out the full fallback timeout.

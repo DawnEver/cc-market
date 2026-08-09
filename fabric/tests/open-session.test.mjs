@@ -182,3 +182,26 @@ test('openSession accumulates usage/cost facts across turns', async () => {
   assert.deepEqual(s.usage, { input_tokens: 200, output_tokens: 40, cost_usd: 0.02 });
   await s.close();
 });
+
+// ── Interactive interjection: a human line appended to the inbox is injected into the
+// SAME serialized send chain the orchestrator uses — both drive one conversation.
+test('interactive session injects inbox lines as human turns', async () => {
+  const { appendFileSync } = await import('node:fs');
+  const { readFileSync } = await import('node:fs');
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-inter-'));
+  const s = await openSession({
+    provider: 'deepseek', runDir, configPath: fixture(),
+    _spawn: makeFakeClaude(sink), _bin: 'fake', _viewerSpawn: () => {},
+    interactive: true, _pollMs: 50,
+  });
+  await s.send('orchestrator turn');
+  appendFileSync(join(runDir, 'inbox.txt'), 'human interjection\n');
+  await new Promise((r) => setTimeout(r, 400));
+  const sent = sink.writes.join('');
+  assert.match(sent, /human interjection/, 'human line must reach the child');
+  const transcript = readFileSync(join(runDir, 'transcript.log'), 'utf8');
+  assert.match(transcript, /\[human\]/, 'transcript must label the human turn');
+  assert.match(transcript, /\[user\]/, 'orchestrator turns keep their label');
+  await s.close();
+});
