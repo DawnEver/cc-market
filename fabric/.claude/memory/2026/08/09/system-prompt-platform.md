@@ -72,3 +72,16 @@ added to PROFILE_OWNED_FLAGS. codex has NO equivalent (fixed tool set).
   L2 ~/.codex/AGENTS.md (GLOBAL symlink) ✓ L3 project CLAUDE.md fallback ✓.
   Path gotcha: model_instructions_file must be FORWARD slashes (backslashes
   silently ignored via -c override).
+
+## 2026-08-09 iteration complete (commits b7bcd19/0807b30/cb8e6ae)
+- profile.style → dist auto-build (style-resolve.mjs, stale = style source
+  newer; rebuild via build.mjs). Priority: profile.systemPromptFile >
+  profile.style > fabric.systemPromptFile. Both spawn paths.
+- exclude-dynamic-system-prompt-sections: flag works on default prompt
+  (create 46,147 → 9,646, system 36,420 shared-hit) but the settings.json
+  field is IGNORED — native TUI keeps official prompt; fabric path doesn't
+  need it (full replace).
+- validate-cache.mjs: two-run usage check — claude-base.md healthy (15,600
+  read / 0 create). --tools=<list> equals form required when a prompt follows
+  on argv (separate-arg form mis-parses); fabric stdin spawns immune.
+- Sync/claude npm test now includes system-prompt tests (34 pass).
