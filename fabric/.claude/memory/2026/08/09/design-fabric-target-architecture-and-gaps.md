@@ -95,4 +95,19 @@ step 1, or step 1's fix is unguarded.
 
 After step 7 fabric is "fleet-grade transport" and all further fleet capability goes into
 swarm, not here. The review question for the user: agree the four surfaces are the FINAL
-fabric (i.e. everything else is swarm's), and agree the order 1→7.
+fabric (i.e. everything else is swarm's), and agree the order 1→7. **Approved 2026-08-09,
+with one revision: serve is session-bound like ci_loop, never a background service.**
+
+## Execution record (2026-08-09, all steps DONE)
+
+| step | commit | acceptance evidence |
+|---|---|---|
+| 1 G0+G8 | `aa4849a` | two defects: `.cmd` spawn (2 sites → resolveClaudeExe) AND missing `--verbose` (latent on every OS — sessions had NEVER worked on this CLI); live local FABRIC-SESSION-OK + remote FABRIC-REMOTE-OK via node G |
+| 2 G3+G5 | `df46eb5` | pid/alive/lastActivity + stderr tail in mid-turn errors (the bare "exit 1" had hidden the --verbose root cause); pingSession, node/ping, CONNECTION_LOST code |
+| 3 G1+G6 | `bf59306` | node/status {version,uptime,cpu,mem,tags}; scripts/ping.mjs (probe promoted to built-in); serve --status; live: ALIVE v0.1.9 cpu=32 |
+| 4 G4 | `cdb978b` | ~/.fabric/journal.jsonl spawn/close/loss; reconcile() with pid liveness; tests isolate the dir |
+| 5 G2 | `ba70fa8` | profiles: allowedTools/permissionMode/envDeny, subtraction-only, resolved once, forwarded to remote peers; MCP spawn_session takes profile |
+| 6 G7 | `c201c9b` | usage on handle/listSessions/journal; live deepseek: 27394/2 tokens $0.137, zero orphans after close |
+
+Suite: 237 tests, 0 fail. Remaining OPERATIONAL (not code): start serve.{ps1,cmd,sh} on
+WS1/WS2 in a kept-open terminal; add serve.tags per box; swarm-side reconcile consumer.
