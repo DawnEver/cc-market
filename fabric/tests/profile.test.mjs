@@ -94,6 +94,30 @@ test('resolveProfile rejects an unknown permissionMode', () => {
   assert.throws(() => resolveProfile({ permissionMode: 'bypass' }, {}), /permissionMode/);
 });
 
+// ── toolsPreset (role tiers) ──
+
+test('profileArgs maps toolsPreset to --tools (schema trimming)', () => {
+  assert.deepEqual(profileArgs({ toolsPreset: 'exec' }),
+    ['--tools', 'Bash,Read,Write,Edit,Glob,Grep']);
+  const coord = profileArgs({ toolsPreset: 'coord' })[1].split(',');
+  assert.deepEqual(coord, ['Read', 'Glob', 'Grep', 'Bash', 'SendMessage', 'PushNotification', 'WebFetch', 'WebSearch']);
+  // no toolsPreset / "full" → no --tools flag (all built-in schemas injected)
+  assert.deepEqual(profileArgs({}), []);
+  assert.deepEqual(profileArgs({ toolsPreset: 'full' }), []);
+  // composes with existing profile flags
+  assert.deepEqual(profileArgs({ allowedTools: 'Read', toolsPreset: 'exec' }),
+    ['--allowedTools', 'Read', '--tools', 'Bash,Read,Write,Edit,Glob,Grep']);
+});
+
+test('resolveProfile rejects an unknown toolsPreset', () => {
+  assert.throws(() => resolveProfile({ toolsPreset: 'hacker' }, {}), /toolsPreset/);
+});
+
+test('--tools is profile-owned: extraArgs cannot smuggle it past a profile', async () => {
+  const { stripProfileOwnedFlags } = await import('../engine/profile.mjs');
+  assert.deepEqual(stripProfileOwnedFlags(['--tools', 'Bash', '--model', 'x']), ['--model', 'x']);
+});
+
 // SR-009: envDeny is case-insensitive on Windows (env keys are).
 test('applyProfileEnv envDeny is case-insensitive on win32', () => {
   const out = applyProfileEnv({ Secret_Token: 'x', KEEP: '1' }, { envDeny: ['SECRET_TOKEN'] }, 'win32');

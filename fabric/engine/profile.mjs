@@ -11,12 +11,26 @@
 
 const PERMISSION_MODES = ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"];
 
+// Role-tier tool presets → `--tools` (schema trimming, NOT permissions).
+// Measured schema on claude 2.1.226: exec 6.1k / coord 7.7k / daily 16.4k tok;
+// full = no --tools flag (all 31 built-ins ≈ 33.6k).
+// exec: execution-only agents. coord: secondary coordination (dispatch, verify,
+// notify — no writes). daily: everyday interactive use (default).
+export const TOOL_PRESETS = {
+  exec: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+  coord: ["Read", "Glob", "Grep", "Bash", "SendMessage", "PushNotification", "WebFetch", "WebSearch"],
+  daily: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Skill", "Agent", "EnterWorktree", "ExitWorktree", "Monitor", "ScheduleWakeup", "WebFetch", "WebSearch", "SendMessage", "PushNotification"],
+};
+
 // The flags a profile owns; a caller's extraArgs must not smuggle them past it.
-export const PROFILE_OWNED_FLAGS = ["--allowedTools", "--permission-mode", "--dangerously-skip-permissions"];
+export const PROFILE_OWNED_FLAGS = ["--allowedTools", "--permission-mode", "--dangerously-skip-permissions", "--tools"];
 
 function validate(profile) {
   if (profile?.permissionMode && !PERMISSION_MODES.includes(profile.permissionMode)) {
     throw new Error(`profile permissionMode "${profile.permissionMode}" is not one of: ${PERMISSION_MODES.join(", ")}`);
+  }
+  if (profile?.toolsPreset && !(profile.toolsPreset in TOOL_PRESETS)) {
+    throw new Error(`profile toolsPreset "${profile.toolsPreset}" is not one of: ${Object.keys(TOOL_PRESETS).join(", ")} (or "full" for no --tools)`);
   }
   return profile;
 }
@@ -59,6 +73,10 @@ export function profileArgs(profile) {
     args.push("--allowedTools", Array.isArray(profile.allowedTools) ? profile.allowedTools.join(",") : profile.allowedTools);
   }
   if (profile.permissionMode) args.push("--permission-mode", profile.permissionMode);
+  // toolsPreset trims the injected tool schema (cost); "full" or absent = all tools.
+  if (profile.toolsPreset && profile.toolsPreset in TOOL_PRESETS) {
+    args.push("--tools", TOOL_PRESETS[profile.toolsPreset].join(","));
+  }
   return args;
 }
 
