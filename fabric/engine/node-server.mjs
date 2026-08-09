@@ -6,16 +6,23 @@
 // THIS machine's project directory (resolved from a project ALIAS registered in this
 // server's config) with this machine's credentials. No file transfer, no shared paths.
 //
-// Methods (every request must carry the shared token in params.token):
-//   node/status  → { name, version, uptime_s, cpu, mem_available_mb, mem_total_mb, tags, sessions }
+// Methods (every request must carry an ACCEPTED token in params.token):
+//   node/status  { detail?: 'light'|'full' } → { name, version, uptime_s, cpu, mem_*, tags,
+//                  maxSessions, sessions_count, sessions }
 //   node/spawn   { provider, model?, write?, project? } → { id, provider, nativeId, pid }
 //   node/send    { id, prompt } → { text, turn }
 //   node/ping    { id } → { id, provider, alive, pid, turns, lastActivity }
-//   node/close   { id } → { id, exitCode, turns }
+//   node/close   { id } → { id, exitCode, turns, usage? }
 //
 // Sessions are OWNED by the connection that spawned them: node/send and node/close only
 // accept ids owned by that connection, and when a socket drops its sessions are closed
 // (best-effort) so a dead peer can't leak children. node/status still lists all sessions.
+//
+// TRUST DOMAIN (SR-013): a node is ONE trust domain — holding an accepted token confers
+// full VISIBILITY of the box. node/status and node/ping are both read-only and both
+// unrestricted by owner, deliberately and consistently; ownership gates only the calls
+// that ACT on a session (node/send, node/close). Anyone who should not see this box's
+// sessions should not hold one of its tokens.
 
 import tls from "node:tls";
 import crypto from "node:crypto";
@@ -26,17 +33,20 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
 import { resolveProfile } from "./profile.mjs";
-import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "./node-tls.mjs";
+import {
+  PSK_IDENTITY, PSK_IDENTITY_PREFIX, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken,
+  tokenFingerprint, MAX_LINE_BYTES, MAX_REPLY_BYTES,
+} from "./node-tls.mjs";
 
 export const AUTH_ERROR = -32001;
-export const MAX_LINE_BYTES = 1024 * 1024; // per-socket buffer cap: an unbounded line is a DoS
+export const DEFAULT_MAX_SESSIONS = 64;
 
 // Hash both sides so lengths always match — timingSafeEqual throws on length mismatch.
 const digest = (s) => crypto.createHash("sha256").update(String(s)).digest();
 const tokenMatches = (given, expected) => crypto.timingSafeEqual(digest(given), digest(expected));
 
 class RpcError extends Error {
-  constructor(code, message) { super(message); this.code = code; }
+  constructor(code, message, data = undefined) { super(message); this.code = code; this.data = data; }
 }
 
 // Plugin version, best-effort: a peer scheduling against this node deserves to know
@@ -48,8 +58,20 @@ function pluginVersion() {
   } catch { return "unknown"; }
 }
 
-export function createNodeServer({ token, name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, deps = {} } = {}) {
+/**
+ * @param {object} opts
+ *   token         primary token (the one the legacy bare PSK identity maps to)
+ *   tokens        additional ACCEPTED tokens — revoking a peer is deleting one entry
+ *   maxSessions   static operator-declared ceiling on concurrent sessions
+ */
+export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, maxSessions = DEFAULT_MAX_SESSIONS, deps = {} } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
+  // The accepted SET (SR-033/051): one shared fleet-wide PSK could only be revoked by
+  // re-keying every machine. `token` stays primary — it is what an older peer's bare
+  // `fabric-node` identity resolves to.
+  const accepted = [...new Set([token, ...tokens].filter(Boolean).map(String))];
+  const byFingerprint = new Map(accepted.map((t) => [tokenFingerprint(t), t]));
+  const tokenAccepted = (given) => accepted.some((t) => tokenMatches(given, t));
   const _createSession = deps.createSession || createSession;
   const _sendToSession = deps.sendToSession || sendToSession;
   const _closeSession = deps.closeSession || closeSession;
@@ -63,8 +85,13 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
   // -32601 unknown method, -32602 missing/invalid params, -32000 runtime failure.
   async function dispatch(method, params, owned) {
     switch (method) {
-      case "node/status":
+      case "node/status": {
         // Capacity facts (G1): what a scheduler needs to ADMIT, reported not decided.
+        const detail = params.detail ?? "light";
+        if (detail !== "light" && detail !== "full") {
+          throw new RpcError(-32602, `node/status: detail must be "light" or "full", got "${detail}"`);
+        }
+        const live = _listSessions();
         return {
           name, version: pluginVersion(), uptime_s: Math.round((Date.now() - startedAt) / 1000),
           cpu: os.cpus().length,
@@ -72,17 +99,35 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
           mem_total_mb: Math.round(os.totalmem() / 1048576),
           tags,
           projects: Object.keys(projects),
-          sessions: _listSessions().map((sess) => ({
-            ...sess,
-            shared: shared.has(sess.id),
+          maxSessions,
+          sessions_count: live.length,
+          // A console polling every 6s across N nodes re-serializes this list each time,
+          // so `light` is the default and usage objects are opt-in (SR-029/046). The cost
+          // is O(sessions) either way; light just makes each row small.
+          sessions: live.map((sess) => {
             // cwd -> the alias whose root contains it; a session outside every alias
             // reports project null rather than a guess.
-            project: Object.entries(projects).find(([, root]) =>
-              sess.cwd && String(sess.cwd).replaceAll("\\", "/").startsWith(String(root).replaceAll("\\", "/")))?.[0] ?? null,
-          })),
+            const project = Object.entries(projects).find(([, root]) =>
+              sess.cwd && String(sess.cwd).replaceAll("\\", "/").startsWith(String(root).replaceAll("\\", "/")))?.[0] ?? null;
+            const common = { id: sess.id, provider: sess.provider, shared: shared.has(sess.id), project };
+            return detail === "full"
+              ? { ...sess, ...common }
+              : { ...common, alive: sess.alive ?? null, lastActivity: sess.lastActivity ?? null };
+          }),
         };
+      }
       case "node/spawn": {
         if (!params.provider) throw new RpcError(-32602, "node/spawn: provider is required");
+        // A STATIC operator-declared ceiling (SR-025/041), not a scheduling decision:
+        // dynamic admission (who gets the next slot, by load) stays in swarm. This only
+        // refuses past an invariant the operator wrote in serve.maxSessions, so a
+        // token-holder cannot fork-bomb the box between two of swarm's observations.
+        const current = _listSessions().length;
+        if (current >= maxSessions) {
+          throw new RpcError("CAPACITY_CEILING",
+            `node/spawn: this node is at its declared ceiling of ${maxSessions} session(s) (${current} running). Raise serve.maxSessions or close sessions first.`,
+            { maxSessions, sessions: current });
+        }
         let cwd;
         if (params.project != null) {
           cwd = projects[params.project];
@@ -110,7 +155,9 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
         if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/send: session "${params.id}" is not owned by this connection (spawn it shared to allow cross-connection driving)`);
         return _sendToSession(params.id, params.prompt);
       case "node/ping":
-        // Read-only liveness (G3): like node/status, not restricted to the owner.
+        // Read-only liveness (G3), unrestricted by owner — the SAME rule as node/status,
+        // stated in both places on purpose (SR-013). The node is one trust domain: an
+        // accepted token confers full visibility, and only acting on a session is gated.
         if (!params.id) throw new RpcError(-32602, "node/ping: id is required");
         return _pingSession(params.id);
       case "node/close":
@@ -123,10 +170,19 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
   }
 
   const sockets = new Set();
-  // TLS-PSK: the shared token IS the credential — wrong token fails the handshake, and all
-  // traffic is encrypted. No certificates to manage (see engine/node-tls.mjs).
+  // TLS-PSK: an accepted token IS the credential — an unaccepted one fails the handshake,
+  // and all traffic is encrypted. No certificates to manage (see engine/node-tls.mjs).
+  // The identity names WHICH accepted token the peer holds, by fingerprint; the bare
+  // legacy identity maps to the primary token so an older peer still connects.
   const server = tls.createServer({
-    pskCallback: (_socket, identity) => (identity === PSK_IDENTITY ? pskFromToken(token) : null),
+    pskCallback: (_socket, identity) => {
+      if (identity === PSK_IDENTITY) return pskFromToken(token);
+      if (typeof identity === "string" && identity.startsWith(PSK_IDENTITY_PREFIX)) {
+        const t = byFingerprint.get(identity.slice(PSK_IDENTITY_PREFIX.length));
+        if (t) return pskFromToken(t);
+      }
+      return null;
+    },
     ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
   }, (socket) => {
     sockets.add(socket);
@@ -141,7 +197,25 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
       process.stderr.write(`fabric node: socket error: ${e.message}\n`);
       socket.destroy();
     });
-    const reply = (rpc) => { try { socket.write(`${JSON.stringify(rpc)}\n`); } catch { /* socket gone */ } };
+    // The mirror of MAX_LINE_BYTES (SR-036): a reply is unbounded in exactly the way a
+    // request line is not allowed to be. Refusing it NAMES the size, so the caller can
+    // tell "the node would not send this" from "the node had nothing to say".
+    const reply = (rpc) => {
+      try {
+        let line = JSON.stringify(rpc);
+        if (line.length > MAX_REPLY_BYTES) {
+          line = JSON.stringify({
+            jsonrpc: "2.0", id: rpc.id,
+            error: {
+              code: "RESULT_TOO_LARGE",
+              message: `node reply for request ${rpc.id} was ${line.length} bytes, over the ${MAX_REPLY_BYTES}-byte cap; the result was not sent`,
+              data: { bytes: line.length, maxBytes: MAX_REPLY_BYTES },
+            },
+          });
+        }
+        socket.write(`${line}\n`);
+      } catch { /* socket gone */ }
+    };
 
     let buf = "";
     socket.on("data", (chunk) => {
@@ -160,14 +234,21 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
         try { req = JSON.parse(line); } catch { continue; } // garbage on the wire: ignore
         const { id, method, params = {} } = req;
         const notification = id === undefined; // JSON-RPC notification: never gets a response
-        if (params.token === undefined || !tokenMatches(params.token, token)) {
+        if (params.token === undefined || !tokenAccepted(params.token)) {
           if (!notification) reply({ jsonrpc: "2.0", id, error: { code: AUTH_ERROR, message: "unauthorized: bad or missing token" } });
           continue;
         }
         // Dispatch WITHOUT awaiting so long turns don't block other requests on this socket.
         dispatch(method, params, owned).then(
           (result) => { if (!notification) reply({ jsonrpc: "2.0", id, result }); },
-          (e) => { if (!notification) reply({ jsonrpc: "2.0", id, error: { code: e.code ?? -32000, message: e instanceof Error ? e.message : String(e) } }); },
+          (e) => {
+            if (notification) return;
+            const error = { code: e.code ?? -32000, message: e instanceof Error ? e.message : String(e) };
+            // `data` carries the machine-readable half (the ceiling and the current count,
+            // the byte size) — a caller must not have to parse the prose to act on it.
+            if (e?.data !== undefined) error.data = e.data;
+            reply({ jsonrpc: "2.0", id, error });
+          },
         );
       }
     });

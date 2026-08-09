@@ -51,11 +51,11 @@ fabric/
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
-│   ├── up.{mjs,cmd,ps1,sh}  Bring this machine UP: node server + console in one process,
-│   │                        both idempotent, session-bound. THE standard way to start.
 │   ├── ping.mjs             Probe every configured node → ALIVE + capacity facts, or DEAD + reason
-│   ├── serve.{mjs,ps1,cmd,sh}  CLI: run this machine as a fabric LAN node — session-bound
-│   │                        on purpose (never a background service; user directive 2026-08-09)
+│   ├── serve.{mjs,ps1,cmd,sh}  THE standard way to start: LAN node server + management
+│   │                        console in ONE process, both idempotent, session-bound on
+│   │                        purpose (never a background service; user directive 2026-08-09).
+│   │                        --port N · --console-port N · --no-console · --status
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
 │   │                        wrapper), callers (codex/API adapters), trace, errors
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
@@ -125,23 +125,48 @@ transfer: a remote session runs in the remote machine's own project directory (r
 by an **alias** registered on that machine, never by path), with that machine's own
 credentials; only text comes back.
 
-- **Server** (`engine/node-server.mjs`, CLI `node scripts/serve.mjs [--port N]`): exposes
-  `node/spawn|send|close|status` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
-  (`engine/node-tls.mjs` — PSK derived from the shared token; wrong token fails the
+- **Server** (`engine/node-server.mjs`, CLI `scripts/serve.*` — which also starts the
+  management console in the same process; `--no-console` for the node alone): exposes
+  `node/spawn|send|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
+  (`engine/node-tls.mjs` — PSK derived from a token; an unaccepted token fails the
   handshake, all traffic encrypted, no certificates). Every request also carries the token;
   the server refuses to start without one. Sessions are owned by the connection that
-  spawned them (send/close reject foreign ids; socket drop reaps its sessions).
+  spawned them (send/close reject foreign ids; socket drop reaps its non-shared sessions).
+  `serve.maxSessions` (default 64) is a **static operator-declared ceiling**: `node/spawn`
+  past it fails with `CAPACITY_CEILING`, and `node/status` reports the ceiling and the
+  count. Dynamic admission — who gets the next slot, by load — stays in swarm; this only
+  refuses past an invariant the operator wrote down.
+- **Tokens are per-node, and that is the norm.** A node accepts a **SET**: `fabric.token`
+  (primary) plus `fabric.tokens`, while a peer picks its own with `nodes.<name>.token`.
+  Issue one token per peer — revoking that peer is then deleting one entry on the node,
+  not re-keying the fleet. TLS-PSK carries one PSK per identity, so the peer's identity
+  says WHICH token it holds: `fabric-node:<sha256(token)[:12]>` (a hash — the identity
+  travels in the clear and must never be the credential). The bare legacy identity
+  `fabric-node` is still accepted and maps to the primary token, so an older peer connects.
+- **A node is ONE trust domain.** `node/status` and `node/ping` are read-only and NOT
+  owner-filtered: an accepted token confers full visibility of the box. Ownership gates
+  only the calls that ACT on a session. Do not issue a token to a peer that should not see
+  the machine's sessions. `node/status` takes `detail: 'light'|'full'` — light (the
+  default) is counts plus per-session liveness, full adds usage/turns/pid for a console
+  that renders cost.
 - **Client** (`engine/node-client.mjs`): `openRemoteSession()` returns the same
-  `{id, send, close}` handle as any local provider session — one TCP connection per remote
-  session, requests multiplexed by JSON-RPC id, pendings rejected on connection loss.
+  `{id, send, close}` handle as any local provider session. Sessions on the same peer share
+  **one pooled connection** (keyed `host:port:token`, refcounted, closed at 0), multiplexed
+  by JSON-RPC id. Every request carries a deadline — `REQUEST_TIMEOUT` (120s; 180s for a
+  spawn), deliberately distinct from `CONNECTION_LOST` so a caller can tell peer-stuck from
+  peer-gone — and a 30s heartbeat reaps a half-open peer before the next send hangs on it.
+  `poolStats()` reports the live connections without printing any token.
 - **Routing** (`engine/session.mjs`): `openProviderSession({node, project, ...})` — `node`
   is a configured node name (or inline `{host, port, token}`); everything above the opener
   (session registry, teams, MCP tools) is agnostic. Team workers take `node`/`project` too,
   so a team can mix local and remote workers transparently.
 - **Config** (`engine/node-config.mjs`): the `fabric` block of `claude_env_settings.json` —
-  `token` (shared secret), `nodes` (peers; `host` may be IP or DNS name), `serve` (port/
-  name/`projects` alias map). Riding the synced env-settings file means the node roster and
-  token propagate to every machine automatically; since `serve` is therefore shared,
+  `token`/`tokens` (accepted set), `nodes` (peers; `host` may be IP or DNS name, `token`
+  per peer), `serve` (port/name/`maxSessions`/`projects` alias map). Cached by mtime AND a
+  2s TTL, because mtime alone has 1-second granularity on Windows and a same-second edit
+  would otherwise stay invisible to a long-lived daemon forever. Riding the synced
+  env-settings file means the node roster and tokens propagate to every machine
+  automatically; since `serve` is therefore shared,
   `serve.byHost` carries per-machine overrides (matched against `os.hostname()`
   case-insensitively, FQDN or short name; `projects` merge per-alias) — resolved by
   `loadServeConfig()`, used by `scripts/serve.mjs`.

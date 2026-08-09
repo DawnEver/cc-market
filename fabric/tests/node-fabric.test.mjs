@@ -6,16 +6,17 @@
 process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'fj-test-'));
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import tls from "node:tls";
-import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "../engine/node-tls.mjs";
+import net from "node:net";
+import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken, identityForToken, MAX_LINE_BYTES } from "../engine/node-tls.mjs";
 
 import { createNodeServer, AUTH_ERROR } from "../engine/node-server.mjs";
-import { connectNode, openRemoteSession } from "../engine/node-client.mjs";
+import { connectNode, openRemoteSession, attachRemoteSession, poolStats, _setPoolHeartbeatMs } from "../engine/node-client.mjs";
 import { loadFabricConfig, resolveNode, loadServeConfig } from "../engine/node-config.mjs";
 import { openProviderSession, createTeam, sendToTeamWorker, closeTeam, _resetRegistry } from "../engine/session.mjs";
 
@@ -408,7 +409,7 @@ test("loadFabricConfig caches by mtime and invalidates when the file changes", (
 
 // --- serve.mjs --port validation (SR-002) ---
 
-test("serve.mjs exits 1 on a missing or non-numeric --port value", () => {
+test("serve.mjs exits 1 on a missing or non-numeric --port or --console-port value", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const serveScript = join(here, "..", "scripts", "serve.mjs");
   const dir = mkdtempSync(join(tmpdir(), "fabric-serveport-"));
@@ -416,11 +417,88 @@ test("serve.mjs exits 1 on a missing or non-numeric --port value", () => {
   writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "t" } }));
   const env = { ...process.env, CC_MARKET_CONFIG_PATH: cfgPath };
   try {
-    for (const args of [["--port", "abc"], ["--port"]]) {
+    for (const args of [["--port", "abc"], ["--port"], ["--console-port", "abc"], ["--console-port", "0"]]) {
       const r = spawnSync(process.execPath, [serveScript, ...args], { env, encoding: "utf8", windowsHide: true, timeout: 15000 });
       assert.equal(r.status, 1, `args ${args.join(" ")}: ${r.stderr}`);
-      assert.match(r.stderr, /--port/);
+      assert.match(r.stderr, /--(console-)?port/);
     }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ── SR-045: the journal's owner.kind defaults to 'lib', which is right for a library
+// caller and WRONG for every long-lived process that spawns sessions on someone's behalf.
+// The mechanism is tested in session.test.mjs; what nothing else checks is that each
+// process ENTRY POINT actually sets it. This is a SOURCE-level guard — it reads the
+// scripts rather than observing a journal, because reaching recordEvent through serve
+// needs a real provider child.
+
+test("every session-spawning entry point declares its journal owner kind (source guard)", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  // Comments must go FIRST: a guard that matches a commented-out call passes on exactly
+  // the change it exists to catch (verified by commenting the call out, 2026-08-09).
+  const stripComments = (s) => s
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").map((l) => l.replace(/(^|[^:"'`])\/\/.*$/, "$1")).join("\n");
+  for (const script of ["serve.mjs", "mcp-server.mjs"]) {
+    const src = stripComments(readFileSync(join(here, "..", "scripts", script), "utf8"));
+    assert.match(src, /import \{[^}]*setJournalOwnerKind[^}]*\} from "\.\.\/engine\/session\.mjs"/,
+      `${script} must import setJournalOwnerKind`);
+    const call = src.match(/setJournalOwnerKind\(\s*["']([^"']+)["']\s*\)/);
+    assert.ok(call, `${script} must call setJournalOwnerKind`);
+    assert.notEqual(call[1], "lib", `${script} must not journal as the default library owner`);
+  }
+});
+
+// ── serve is THE one entry point: it starts the LAN node AND the console in one process
+// (scripts/up.* was the duplicated second spelling, deleted). --no-console opts out.
+
+test("serve.mjs starts the node and the console together; --no-console starts only the node", async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const serveScript = join(here, "..", "scripts", "serve.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fabric-serveboth-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "serve-test-token" } }));
+
+  // A free port, released before the child claims it.
+  const freePort = () => new Promise((resolve) => {
+    const s = net.createServer();
+    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+  const listening = (port) => new Promise((resolve) => {
+    const s = net.connect(port, "127.0.0.1");
+    s.on("connect", () => { s.destroy(); resolve(true); });
+    s.on("error", () => resolve(false));
+  });
+
+  async function run(extra) {
+    const nodePort = await freePort();
+    const consolePort = await freePort();
+    const child = spawn(process.execPath,
+      [serveScript, "--port", String(nodePort), "--console-port", String(consolePort), ...extra],
+      { env: { ...process.env, CC_MARKET_CONFIG_PATH: cfgPath }, windowsHide: true });
+    let out = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { out += d; });
+    try {
+      for (let i = 0; i < 300 && !/close this terminal/.test(out); i++) await new Promise((r) => setTimeout(r, 50));
+      assert.match(out, /close this terminal/, `serve never finished starting: ${out}`);
+      return { out, node: await listening(nodePort), console: await listening(consolePort) };
+    } finally {
+      child.kill();
+      await new Promise((r) => child.on("exit", r));
+    }
+  }
+
+  try {
+    const both = await run([]);
+    assert.ok(both.node, "the LAN node must be listening");
+    assert.ok(both.console, "the console must be listening — serve starts both");
+    assert.match(both.out, /fabric console: http:\/\/127\.0\.0\.1:/);
+
+    const nodeOnly = await run(["--no-console"]);
+    assert.ok(nodeOnly.node, "the LAN node must still be listening");
+    assert.equal(nodeOnly.console, false, "--no-console must leave the console port free");
+    assert.doesNotMatch(nodeOnly.out, /fabric console/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -527,4 +605,350 @@ test("node/status carries the project list and maps session cwd to a project ali
     assert.equal(st.sessions[0].project, "thesis", "cwd under the alias root maps to the alias");
     conn.close();
   } finally { await server.close(); }
+});
+
+// ── SR-004/023/043: a peer that ACCEPTS and then goes silent is a different failure from
+// a peer that drops. Without a per-request deadline the caller waits forever.
+
+test("a request to an accept-then-silent peer rejects with REQUEST_TIMEOUT, not CONNECTION_LOST", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = () => new Promise(() => {}); // accepted, never answered
+  const server = createNodeServer({ token: TOKEN, name: "silent", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", { provider: "x" });
+    const started = Date.now();
+    await assert.rejects(
+      () => conn.request("node/send", { id: desc.id, prompt: "hi" }, { timeoutMs: 200 }),
+      (e) => e.code === "REQUEST_TIMEOUT" && /timed out/i.test(e.message),
+    );
+    assert.ok(Date.now() - started < 3000, "must reject at its own deadline, not hang");
+    // The connection stays usable, and the timed-out pending is gone.
+    assert.equal((await conn.request("node/status", {})).name, "silent");
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("a late reply to a timed-out request is dropped, not delivered", async () => {
+  const deps = fakeSessionDeps();
+  let release;
+  deps.sendToSession = () => new Promise((r) => { release = () => r({ text: "late", turn: 9 }); });
+  const server = createNodeServer({ token: TOKEN, name: "late", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", { provider: "x" });
+    await assert.rejects(() => conn.request("node/send", { id: desc.id, prompt: "hi" }, { timeoutMs: 100 }),
+      (e) => e.code === "REQUEST_TIMEOUT");
+    release();
+    await new Promise((r) => setTimeout(r, 100));
+    const st = await conn.request("node/status", {});
+    assert.equal(st.name, "late", "the late reply must not have been mistaken for this one");
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("node/spawn gets a longer default deadline than an ordinary request", async () => {
+  const { DEFAULT_REQUEST_TIMEOUT_MS, SPAWN_REQUEST_TIMEOUT_MS } = await import("../engine/node-client.mjs");
+  assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 120000);
+  assert.ok(SPAWN_REQUEST_TIMEOUT_MS > DEFAULT_REQUEST_TIMEOUT_MS, "a spawn may legitimately take longer");
+});
+
+// ── SR-030: the client read buffer was unbounded while the server capped its own.
+
+test("a peer that floods without a newline is dropped, and says so as RESPONSE_TOO_LARGE", async () => {
+  // A raw TLS-PSK peer that floods without ever sending a newline.
+  let peerSock = null;
+  const raw = await new Promise((resolve) => {
+    const s = tls.createServer({
+      pskCallback: () => pskFromToken(TOKEN),
+      ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
+    }, (c) => { peerSock = c; c.on("error", () => {}); c.write("x".repeat(MAX_LINE_BYTES + 4096)); });
+    s.listen(0, "127.0.0.1", () => resolve(s));
+  });
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port: raw.address().port, token: TOKEN });
+    for (let i = 0; i < 300 && !conn.destroyed; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(conn.destroyed, "the client must drop a peer that floods it past the cap");
+    // The CAUSE survives the socket: a later request names the flood, not a bare loss.
+    await assert.rejects(() => conn.request("node/status", {}, { timeoutMs: 2000 }),
+      (e) => e.code === "RESPONSE_TOO_LARGE");
+  } finally { peerSock?.destroy(); raw.close(); }
+});
+
+// ── SR-027/048: one TCP connection per remote session is linear fd cost with no
+// heartbeat. Sessions to the SAME peer must share one pooled, multiplexed connection.
+
+test("two sessions on one peer share a single pooled connection, released at refcount 0", async () => {
+  const { server, port } = await startServer();
+  const here = () => poolStats().filter((p) => p.port === port);
+  try {
+    const a = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "a" });
+    const b = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "b" });
+    assert.equal(here().length, 1, "one pooled connection for the peer");
+    assert.equal(here()[0].refs, 2, "both sessions hold a reference");
+    assert.equal((await a.send("one")).text, "echo:one");
+    assert.equal((await b.send("two")).text, "echo:two");
+    await a.close();
+    assert.equal(here()[0]?.refs, 1, "closing one session must not drop the shared socket");
+    assert.equal((await b.send("still here")).text, "echo:still here");
+    await b.close();
+    assert.equal(here().length, 0, "the connection closes when the last session releases it");
+  } finally { await server.close(); }
+});
+
+test("attachRemoteSession shares the same pooled connection as a spawned session", async () => {
+  const { server, port } = await startServer();
+  try {
+    const a = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "a", shared: true });
+    const b = await attachRemoteSession({ host: "127.0.0.1", port, token: TOKEN, id: a.id });
+    const here = poolStats().filter((p) => p.port === port);
+    assert.equal(here.length, 1);
+    assert.equal(here[0].refs, 2);
+    assert.equal((await b.send("hi")).text, "echo:hi");
+    await b.close(); // closes the REMOTE session and releases one reference
+    // a's own close() now finds the session gone — it must still release its reference,
+    // or a failed close would leak the pooled socket forever.
+    await assert.rejects(() => a.close(), (e) => e.code === -32602);
+    assert.equal(poolStats().filter((p) => p.port === port).length, 0, "a failed close still releases");
+  } finally { await server.close(); }
+});
+
+test("a pooled connection never leaks the token in poolStats", async () => {
+  const { server, port } = await startServer();
+  try {
+    const a = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "a" });
+    assert.ok(!JSON.stringify(poolStats()).includes(TOKEN), "observability must not print the credential");
+    await a.close();
+  } finally { await server.close(); }
+});
+
+test("the pool heartbeat reaps a peer that stops answering", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: TOKEN, name: "heart", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  _setPoolHeartbeatMs(50);
+  try {
+    const h = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "a" });
+    assert.equal(poolStats().filter((p) => p.port === port).length, 1);
+    await server.close(); // peer gone; the heartbeat must notice without a send
+    for (let i = 0; i < 100 && poolStats().some((p) => p.port === port); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(poolStats().filter((p) => p.port === port).length, 0, "a dead pooled connection is evicted");
+    await assert.rejects(() => h.send("anyone there"), (e) => e.code === "CONNECTION_LOST");
+  } finally { _setPoolHeartbeatMs(null); await server.close(); }
+});
+
+// ── SR-013/029/046: node/status served the whole registry, usage objects included, on
+// every 6-second console poll. `detail` lets a caller ask for what it renders.
+
+test("node/status defaults to a light summary and returns usage only for detail full", async () => {
+  const deps = fakeSessionDeps();
+  deps.listSessions = () => [{
+    id: "s1", provider: "claude", turns: 3, alive: true, lastActivity: 42,
+    usage: { cost_usd: 1.25, input_tokens: 99 }, cwd: "/data/thesis/sub", pid: 7,
+  }];
+  const server = createNodeServer({ token: TOKEN, name: "n", deps, projects: { thesis: "/data/thesis" } });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const light = await conn.request("node/status", {});
+    assert.equal(light.sessions_count, 1);
+    const ls = light.sessions[0];
+    assert.deepEqual(Object.keys(ls).sort(), ["alive", "id", "lastActivity", "project", "provider", "shared"].sort());
+    assert.equal(ls.project, "thesis");
+    assert.equal(ls.usage, undefined, "light must not carry usage objects");
+
+    const full = await conn.request("node/status", { detail: "full" });
+    assert.equal(full.sessions[0].usage.cost_usd, 1.25);
+    assert.equal(full.sessions[0].turns, 3);
+    await assert.rejects(() => conn.request("node/status", { detail: "medium" }), (e) => e.code === -32602);
+    conn.close();
+  } finally { await server.close(); }
+});
+
+// ── SR-036: an unbounded reply is the mirror of an unbounded request line.
+
+test("a reply larger than the cap is replaced by a structured RESULT_TOO_LARGE error", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = async () => ({ text: "y".repeat(9 * 1024 * 1024), turn: 1 });
+  const server = createNodeServer({ token: TOKEN, name: "big", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", { provider: "x" });
+    await assert.rejects(
+      () => conn.request("node/send", { id: desc.id, prompt: "p" }, { timeoutMs: 15000 }),
+      (e) => e.code === "RESULT_TOO_LARGE" && /\d{6,}/.test(e.message),
+    );
+    assert.equal((await conn.request("node/status", {})).name, "big", "the connection survives");
+    conn.close();
+  } finally { await server.close(); }
+});
+
+// ── SR-025/041: a static operator-declared ceiling. Dynamic admission stays in swarm;
+// this only refuses past an invariant the operator wrote down.
+
+test("node/spawn refuses past serve.maxSessions with CAPACITY_CEILING, and status reports the ceiling", async () => {
+  const { server, port } = await startServer({ maxSessions: 1 });
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const st0 = await conn.request("node/status", {});
+    assert.equal(st0.maxSessions, 1);
+    assert.equal(st0.sessions_count, 0);
+    await conn.request("node/spawn", { provider: "a" });
+    await assert.rejects(() => conn.request("node/spawn", { provider: "b" }), (e) =>
+      e.code === "CAPACITY_CEILING" && e.data.maxSessions === 1 && e.data.sessions === 1);
+    assert.equal((await conn.request("node/status", {})).sessions_count, 1);
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("maxSessions defaults to 64 when the operator declares nothing", async () => {
+  const { server, port } = await startServer();
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    assert.equal((await conn.request("node/status", {})).maxSessions, 64);
+    conn.close();
+  } finally { await server.close(); }
+});
+
+// ── SR-011: a close that reports no cost leaves the journal with no cost facts to record.
+
+test("node/close returns the session usage and the handle exposes it after close", async () => {
+  const deps = fakeSessionDeps();
+  deps.closeSession = async (id) => ({ id, exitCode: 0, turns: 4, usage: { cost_usd: 0.5 } });
+  const server = createNodeServer({ token: TOKEN, name: "n", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const h = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "x" });
+    const code = await h.close();
+    assert.equal(code, 0, "close() still returns the exit code scalar the registry reads");
+    assert.deepEqual(h.usage, { cost_usd: 0.5 }, "the registry journals handle.usage");
+    assert.equal(h.turns, 4);
+  } finally { await server.close(); }
+});
+
+test("a remote handle records liveness facts observed via ping()", async () => {
+  const deps = fakeSessionDeps();
+  deps.pingSession = async (id) => ({ id, alive: false, pid: 3, turns: 2, lastActivity: 7, usage: { cost_usd: 0.25 } });
+  const server = createNodeServer({ token: TOKEN, name: "n", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const h = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "x" });
+    await h.ping();
+    assert.equal(h.alive, false, "an observed-dead remote is visible to listSessions()");
+    assert.deepEqual(h.usage, { cost_usd: 0.25 });
+    await h.close();
+  } finally { await server.close(); }
+});
+
+// ── SR-033/051: one fleet-wide PSK cannot be revoked without re-syncing every machine.
+// A SET of accepted tokens makes revocation a one-line edit on the node.
+
+test("a server accepts any token in its set, and rejects one that was never issued", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: "primary-token", tokens: ["peer-b-token"], name: "n", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    for (const t of ["primary-token", "peer-b-token"]) {
+      const conn = await connectNode({ host: "127.0.0.1", port, token: t });
+      assert.equal((await conn.request("node/status", {})).name, "n", `token ${t} must be accepted`);
+      conn.close();
+    }
+    await assert.rejects(() => connectNode({ host: "127.0.0.1", port, token: "revoked-token" }));
+  } finally { await server.close(); }
+});
+
+test("the PSK identity fingerprints the token, and the legacy bare identity maps to the primary", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: "primary-token", tokens: ["peer-b-token"], name: "n", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    assert.match(identityForToken("peer-b-token"), /^fabric-node:[0-9a-f]{12}$/);
+    assert.notEqual(identityForToken("peer-b-token"), identityForToken("primary-token"));
+    // A peer running an older fabric sends the bare identity: it maps to the primary token.
+    const legacy = await new Promise((resolve, reject) => {
+      const s = tls.connect({
+        host: "127.0.0.1", port,
+        pskCallback: () => ({ psk: pskFromToken("primary-token"), identity: PSK_IDENTITY }),
+        ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
+        checkServerIdentity: () => undefined,
+      });
+      s.once("secureConnect", () => resolve(s));
+      s.once("error", reject);
+    });
+    legacy.destroy();
+  } finally { await server.close(); }
+});
+
+test("a per-request token from outside the accepted set is refused after a good handshake", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: "primary-token", tokens: ["peer-b-token"], name: "n", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const sock = await new Promise((resolve, reject) => {
+      const s = tls.connect({
+        host: "127.0.0.1", port,
+        pskCallback: () => ({ psk: pskFromToken("peer-b-token"), identity: identityForToken("peer-b-token") }),
+        ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
+        checkServerIdentity: () => undefined,
+      });
+      s.once("secureConnect", () => resolve(s));
+      s.once("error", reject);
+    });
+    let received = "";
+    sock.on("data", (c) => { received += c; });
+    sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: "primary-token" } })}\n`);
+    sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "node/status", params: { token: "never-issued" } })}\n`);
+    for (let i = 0; i < 100 && received.split("\n").filter(Boolean).length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    const [r1, r2] = received.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    assert.equal(r1.result.name, "n", "any accepted token authorizes a request");
+    assert.equal(r2.error.code, AUTH_ERROR);
+    sock.destroy();
+  } finally { await server.close(); }
+});
+
+// ── SR-053: mtimeMs has 1-second granularity on Windows, so a same-second edit was
+// invisible to a long-lived daemon forever.
+
+test("loadFabricConfig expires its cache after a TTL even when mtime is unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fabric-cfgttl-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  const t0 = new Date(Date.now() - 10000);
+  try {
+    writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "one" } }));
+    utimesSync(cfgPath, t0, t0);
+    assert.equal(loadFabricConfig(cfgPath).token, "one");
+    writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "two" } }));
+    utimesSync(cfgPath, t0, t0); // same mtime: only a TTL can save the reader
+    assert.equal(loadFabricConfig(cfgPath).token, "one", "still fresh within the TTL");
+    assert.equal(loadFabricConfig(cfgPath, { ttlMs: 0 }).token, "two", "an expired entry is re-read");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ── SR-014: "serving: no" for a TLS/auth failure is a lie in exactly the case you would
+// run the diagnostic for.
+
+test("serve --status says no only for a refused connection, unknown for anything else", async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const serveScript = join(here, "..", "scripts", "serve.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fabric-servestatus-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  writeFileSync(cfgPath, JSON.stringify({ fabric: { token: "t" } }));
+  const run = (port) => spawnSync(process.execPath, [serveScript, "--status", "--port", String(port)],
+    { env: { ...process.env, CC_MARKET_CONFIG_PATH: cfgPath }, encoding: "utf8", windowsHide: true, timeout: 30000 });
+  const free = await new Promise((resolve) => {
+    const s = net.createServer();
+    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+  try {
+    assert.match(run(free).stdout, /serving: no \(/);
+    // A port held by something that is not a fabric node: NOT "no" — we cannot tell.
+    const squatter = net.createServer((c) => c.on("error", () => {}));
+    await new Promise((r) => squatter.listen(free, "127.0.0.1", r));
+    try {
+      assert.match(run(free).stdout, /serving: unknown \(/);
+    } finally { await new Promise((r) => squatter.close(r)); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

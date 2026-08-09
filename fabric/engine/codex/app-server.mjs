@@ -375,6 +375,23 @@ export function withPooledClient(fn, { size, _createClient } = {}) {
   })();
 }
 
+/**
+ * A snapshot of the live pool. acquireFromPool has no timeout — a leaked `fn(client)`
+ * holds its slot forever and waiters queue unboundedly — so a saturated pool has to be
+ * an OBSERVABLE fact rather than an inferred one (sharp-review SR-054). `waiters > 0`
+ * means callers are queued behind checked-out clients; a waiter count that never falls
+ * is a leaked slot. Reports the test pool when one is active, else the production pool.
+ * @returns {{size:number,total:number,idle:number,waiters:number,saturated:boolean}}
+ */
+export function poolStats() {
+  const pool = _testPool || _pool;
+  if (!pool) return { size: DEFAULT_POOL_SIZE, total: 0, idle: 0, waiters: 0, saturated: false };
+  return {
+    size: pool.size, total: pool.total, idle: pool.idle.length,
+    waiters: pool.waiters.length, saturated: pool.total >= pool.size,
+  };
+}
+
 // Test hook: close idle clients, reject queued waiters, and drop pool state.
 // Checked-out clients aren't tracked; the `closed` flag makes their eventual
 // release close them instead of re-idling into an orphaned pool. (SR-046/055)

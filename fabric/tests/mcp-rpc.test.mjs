@@ -135,6 +135,56 @@ test("main clamps an invalid maxConcurrency instead of deadlocking", async () =>
   assert.equal(completed, 2, "requests still processed under a clamped cap");
 });
 
+// SR-050: cheap ops must not queue behind wedged model turns. A saturated
+// heavyweight pool is the normal state under fan-out; if session_close sits in that
+// same queue you cannot cancel your way out of a hang — a liveness problem, not latency.
+test("a saturated heavy pool still lets a lightweight tool run", async () => {
+  const wedge = deferred();
+  const ran = [];
+  const handleToolCall = async (name) => {
+    ran.push(name);
+    if (name === "session_send") await wedge.promise;
+    return { content: [{ type: "text", text: "ok" }] };
+  };
+  const out = { write: () => true };
+  const rpc = createStdioServer({
+    serverInfo: { name: "t", version: "9" }, tools: [], handleToolCall, out, maxConcurrency: 1,
+  });
+  const stream = (async function* () {
+    yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "session_send", arguments: {} } }) + "\n");
+    yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "session_close", arguments: {} } }) + "\n");
+    await wedge.promise;
+  })();
+  const done = rpc.main(stream);
+  // Let the close land while the single heavy slot is still held by the wedged send.
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.deepEqual(ran, ["session_send", "session_close"], "session_close must not queue behind a wedged send");
+  wedge.resolve();
+  await done;
+});
+
+test("lightweight tools have their own bound, and heavy tools keep theirs", async () => {
+  const gate = deferred();
+  let lightStarted = 0;
+  const handleToolCall = async () => { lightStarted++; await gate.promise; return { content: [] }; };
+  const out = { write: () => true };
+  const rpc = createStdioServer({
+    serverInfo: { name: "t", version: "9" }, tools: [], handleToolCall, out,
+    maxConcurrency: 8, maxLightConcurrency: 2,
+  });
+  const stream = (async function* () {
+    for (let i = 1; i <= 3; i++) {
+      yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "list_sessions", arguments: {} } }) + "\n");
+    }
+    await gate.promise;
+  })();
+  const done = rpc.main(stream);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(lightStarted, 2, "the light pool is bounded too (cap = 2)");
+  gate.resolve();
+  await done;
+});
+
 // SR-050/056: an escape from a handler (e.g. a throwing out.write inside the
 // error path) must not surface as an unhandled rejection — one bad call cannot
 // crash the process. The dispatcher must swallow escapes, not rely on

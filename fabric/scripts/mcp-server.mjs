@@ -41,12 +41,12 @@ import {
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
-import { withPooledClient } from "../engine/codex/app-server.mjs";
+import { withPooledClient, poolStats } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -167,6 +167,7 @@ export const TOOLS = [
               cwd: { type: "string", description: "Working dir" },
               node: { type: "string", description: "Peer fabric node name — worker runs on that machine" },
               project: { type: "string", description: "Remote node's project alias (with node)" },
+              profile: { type: "string", description: "Named spawn profile from fabric.profiles — the worker's tool/permission/env policy" },
             },
             required: ["id", "provider"],
           },
@@ -746,11 +747,15 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     }
     case "codex_status": {
       const status = checkCodexStatus(args.codexPath || null);
+      // Pool saturation is a fact the caller needs to read a slow codex call correctly:
+      // waiters > 0 means calls are QUEUED, not running (SR-054).
+      const pool = poolStats();
       const lines = [
         `Installed: ${status.installed}`,
         status.path ? `Path: ${status.path}` : "",
         status.version ? `Version: ${status.version}` : "",
         `Authenticated: ${status.authenticated}`,
+        `Pool: ${pool.total}/${pool.size} clients (${pool.idle} idle, ${pool.waiters} waiting)${pool.saturated ? " — SATURATED" : ""}`,
         status.error ? `Error: ${status.error}` : "",
       ];
       return textResult(lines.filter(Boolean).join("\n"));
@@ -774,6 +779,10 @@ export const handleRpcRequest = rpc.handleRpcRequest;
 export { encodeRpcMessage };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  // Sessions spawned from here are held by THIS process; the journal records that so the
+  // layer above can route a close/ping to the daemon that owns the handle (SR-045). Set
+  // only when RUNNING as the server — an importer of this module is not that daemon.
+  setJournalOwnerKind("mcp");
   rpc.main().catch((error) => {
     process.stderr.write(`fabric-mcp fatal: ${error.message}\n`);
     process.exitCode = 1;

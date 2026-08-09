@@ -7,8 +7,8 @@
 //   web/server.mjs   this file: static + API wiring, exported as startConsole()
 //
 // Run standalone (`node web/server.mjs [--port N]`) or together with the LAN node
-// server via `scripts/up.mjs`. Loopback only; session-bound — it dies with the
-// terminal that started it.
+// server via `scripts/serve.mjs`, which starts both. Loopback only; session-bound — it
+// dies with the terminal that started it.
 
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";

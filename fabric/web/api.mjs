@@ -50,21 +50,27 @@ export function catalogue({ _config = loadFabricConfig, _configPath = getConfigP
   return { providers, nodes, efforts: ["low", "medium", "high", "max"] };
 }
 
-/** Probe every configured node for its status facts (the ping.mjs logic, reusable). */
-export async function pingNodes({ _connect = connectNode, _config = loadFabricConfig } = {}) {
+/**
+ * Probe every configured node for its status facts (the ping.mjs logic, reusable).
+ * @param detail 'light' (counts + per-session liveness) or 'full' (adds usage/turns/pid).
+ *   Ask for what the VIEW renders: the console polls this every few seconds across every
+ *   node, so a usage object per session is paid for on every tick (SR-029/046).
+ * Nodes are probed concurrently, each with its own deadline: one wedged peer must not
+ * hold the whole fleet view (SR-043).
+ */
+export async function pingNodes({ _connect = connectNode, _config = loadFabricConfig, detail = "light" } = {}) {
   const fc = _config();
-  const out = [];
-  for (const [name, n] of Object.entries(fc.nodes || {})) {
+  const probe = async ([name, n]) => {
+    let conn = null;
     try {
-      const conn = await _connect({ host: n.host, port: n.port, token: n.token || fc.token, connectTimeoutMs: 3000 });
-      const st = await conn.request("node/status", {});
-      conn.close();
-      out.push({ name, alive: true, ...st });
+      conn = await _connect({ host: n.host, port: n.port, token: n.token || fc.token, connectTimeoutMs: 3000 });
+      const st = await conn.request("node/status", { detail }, { timeoutMs: 10000 });
+      return { name, alive: true, ...st };
     } catch (e) {
-      out.push({ name, alive: false, error: String(e.message).slice(0, 120) });
-    }
-  }
-  return out;
+      return { name, alive: false, error: `${e.code ? `${e.code}: ` : ""}${String(e.message).slice(0, 300)}` };
+    } finally { conn?.close(); }
+  };
+  return Promise.all(Object.entries(fc.nodes || {}).map(probe));
 }
 
 export function createWebApi(deps = {}) {
@@ -94,7 +100,8 @@ export function createWebApi(deps = {}) {
         // Machines = configured nodes, with THIS machine identified (serve name match),
         // each carrying projects + sessions (shared/project flags from node/status) and
         // the console's own in-process sessions folded under the self machine.
-        const machines = await _nodes();
+        // 'full': the fleet tree renders per-session cost, which only full carries.
+        const machines = await _nodes({ detail: "full" });
         let selfName = null;
         try { selfName = loadServeConfig().name; } catch { /* no serve block */ }
         const own = _list();

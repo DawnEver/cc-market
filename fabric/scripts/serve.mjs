@@ -1,16 +1,29 @@
 #!/usr/bin/env node
-// scripts/serve.mjs — run this machine as a fabric LAN node.
+// scripts/serve.mjs — bring this machine UP as a fabric member, in THIS terminal: the LAN
+// node server AND the management console, in ONE process.
 //
-//   node scripts/serve.mjs [--port N]
+//   node scripts/serve.mjs [--port N] [--console-port N] [--no-console] [--status]
 //
-// Reads the `fabric` block of claude_env_settings.json (token, serve.{port,host,name,projects})
-// and exposes node/spawn|send|close|status to peer fabric nodes. Peers reference projects by
-// the aliases registered here — pure message-passing, no shared filesystem.
+// Reads the `fabric` block of claude_env_settings.json (token/tokens, serve.{port,host,
+// name,projects,maxSessions}) and exposes node/spawn|send|close|status|ping to peer fabric
+// nodes. Peers reference projects by the aliases registered here — pure message-passing,
+// no shared filesystem.
+//
+// Both components are idempotent (an already-running instance is detected and skipped) and
+// both die with this terminal — never a background service, by directive.
 
 import { hostname } from "node:os";
 import { createNodeServer } from "../engine/node-server.mjs";
 import { loadServeConfig, loadFabricConfig } from "../engine/node-config.mjs";
 import { getConfigPath } from "../engine/providers.mjs";
+import { setJournalOwnerKind } from "../engine/session.mjs";
+import { startConsole, consoleAlreadyServing } from "../web/server.mjs";
+
+// Journal ownership (SR-045): a session spawned through this process belongs to the SERVE
+// daemon, not to a library caller. The default 'lib' would misattribute every peer-driven
+// and console-driven session — exactly the multi-process case the owner fact exists to
+// disambiguate. Set before anything can spawn, so no event can be journaled unowned.
+setJournalOwnerKind("serve");
 
 const serve = loadServeConfig(); // serve defaults + this hostname's byHost override
 const token = serve.token;
@@ -20,15 +33,21 @@ if (!token) {
 }
 
 const args = process.argv.slice(2);
-const portFlag = args.indexOf("--port");
-let port = serve.port ?? 7677;
-if (portFlag !== -1) {
-  port = Number(args[portFlag + 1]);
+/** Read a --flag N port, validating it; `dflt` when the flag is absent. */
+function portFlag(name, dflt) {
+  const i = args.indexOf(name);
+  if (i === -1) return dflt;
+  const port = Number(args[i + 1]);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    process.stderr.write(`fabric serve: --port requires a port number 1-65535, got "${args[portFlag + 1] ?? ""}"\n`);
+    process.stderr.write(`fabric serve: ${name} requires a port number 1-65535, got "${args[i + 1] ?? ""}"\n`);
     process.exit(1);
   }
+  return port;
 }
+
+const port = portFlag("--port", serve.port ?? 7677);
+const consolePort = portFlag("--console-port", serve.consolePort ?? 7678);
+const wantConsole = !args.includes("--no-console");
 const name = serve.name || hostname();
 const projects = serve.projects || {};
 const tags = serve.tags || [];
@@ -40,25 +59,35 @@ if (args.includes("--status")) {
   process.stdout.write(`name: ${name}\nport: ${port}\nprojects: ${Object.keys(projects).join(", ") || "(none)"}\ntags: ${tags.join(", ") || "(none)"}\n`);
   try {
     const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
-    const st = await conn.request("node/status", {});
+    const st = await conn.request("node/status", {}, { timeoutMs: 5000 });
     conn.close();
-    process.stdout.write(`serving: yes (version ${st.version}, up ${st.uptime_s}s, ${st.sessions.length} session(s), ${st.mem_available_mb} MB free)\n`);
-  } catch {
-    process.stdout.write("serving: no (nothing answered on this port)\n");
+    process.stdout.write(`serving: yes (version ${st.version}, up ${st.uptime_s}s, ${st.sessions_count} session(s) of max ${st.maxSessions}, ${st.mem_available_mb} MB free)\n`);
+  } catch (e) {
+    // Only a REFUSED connection proves nothing is serving. A timeout, a TLS/PSK mismatch
+    // or a rejected token all mean "something is there and we could not talk to it" —
+    // which is exactly the case you run this diagnostic for (SR-014).
+    if (e.code === "ECONNREFUSED") {
+      process.stdout.write("serving: no (connection refused — nothing is listening on this port)\n");
+    } else {
+      process.stdout.write(`serving: unknown (${e.code ?? "no code"}: ${e.message})\n`);
+    }
   }
+  process.stdout.write(`console: ${await consoleAlreadyServing(consolePort) ? `yes (http://127.0.0.1:${consolePort})` : "no"}\n`);
   process.exit(0);
 }
 
+// ── 1. LAN node server (idempotent) ──
 const fabricCfg = loadFabricConfig();
 const server = createNodeServer({
-  token, name, projects, tags,
+  token, tokens: serve.tokens || [], name, projects, tags,
   profiles: fabricCfg.profiles || {}, defaultProfile: serve.defaultProfile ?? null,
+  ...(serve.maxSessions != null ? { maxSessions: serve.maxSessions } : {}),
 });
 
 // Idempotent start: a second serve on the same port detects the live one and exits 0
 // (previously a bare EADDRINUSE crash). Lifecycle stays session-bound: the server dies
 // with this terminal, and ONLY a fabric node answering our token counts as "already up".
-let bound;
+let bound = null;
 try {
   bound = await server.listen(port, serve.host || "0.0.0.0");
 } catch (e) {
@@ -66,19 +95,35 @@ try {
   try {
     const { connectNode } = await import("../engine/node-client.mjs");
     const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
-    const st = await conn.request("node/status", {});
+    const st = await conn.request("node/status", {}, { timeoutMs: 5000 });
     conn.close();
-    process.stdout.write(`fabric node "${st.name}" already serving on port ${port} (v${st.version}, up ${st.uptime_s}s) — nothing to do
-`);
-    process.exit(0);
+    process.stdout.write(`fabric node "${st.name}" already serving on port ${port} (v${st.version}, up ${st.uptime_s}s) — skipped\n`);
   } catch {
-    process.stderr.write(`fabric serve: port ${port} is taken by something that is NOT a fabric node with this token
-`);
+    process.stderr.write(`fabric serve: port ${port} is taken by something that is NOT a fabric node with this token\n`);
     process.exit(1);
   }
 }
-const aliases = Object.keys(projects).join(", ") || "(none — peers can only spawn in this cwd)";
-process.stdout.write(`fabric node "${name}" listening on port ${bound.port}; projects: ${aliases}\n`);
+if (bound) {
+  const aliases = Object.keys(projects).join(", ") || "(none — peers can only spawn in this cwd)";
+  process.stdout.write(`fabric node "${name}" listening on port ${bound.port}; projects: ${aliases}\n`);
+}
+
+// ── 2. Management console (idempotent, --no-console to skip) ──
+if (wantConsole) {
+  try {
+    await startConsole({ port: consolePort });
+    process.stdout.write(`fabric console: http://127.0.0.1:${consolePort}\n`);
+  } catch (e) {
+    if (e.code === "EADDRINUSE" && await consoleAlreadyServing(consolePort)) {
+      process.stdout.write(`fabric console already serving on http://127.0.0.1:${consolePort} — skipped\n`);
+    } else {
+      process.stderr.write(`fabric serve: console failed: ${e.message}\n`);
+      process.exit(1);
+    }
+  }
+}
+
+process.stdout.write(`fabric serve: close this terminal to stop ${wantConsole ? "both" : "the node"}.\n`);
 
 process.on("SIGINT", async () => { await server.close(); process.exit(0); });
 process.on("SIGTERM", async () => { await server.close(); process.exit(0); });

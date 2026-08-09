@@ -56,15 +56,37 @@ function sanitizeConcurrency(value, fallback) {
 }
 
 const DEFAULT_MAX_CONCURRENCY = sanitizeConcurrency(process.env.FABRIC_MCP_MAX_CONCURRENCY, 8);
+const DEFAULT_MAX_LIGHT_CONCURRENCY = sanitizeConcurrency(process.env.FABRIC_MCP_LIGHT_CONCURRENCY, 8);
+
+// Two pools, because the calls have two cost classes. Everything that drives a model —
+// call, fan_out, a session turn, a spawn, a team op — is minutes long and belongs in the
+// bounded heavyweight pool. Everything that only reads or frees registry state is
+// microseconds and gets its own pool, so `session_close` can never sit in the queue
+// behind the wedged `session_send` it exists to cancel (sharp-review SR-050).
+export const LIGHTWEIGHT_TOOLS = new Set([
+  "list_sessions", "list_nodes", "list_providers", "resolve_model", "codex_status",
+  "session_close", "session_ping",
+]);
 
 /**
  * Build a stdio JSON-RPC server bound to one tool registry.
  * @param {object} o  serverInfo:{name,version}, tools:[], handleToolCall(name,args), label, out,
- *                    maxConcurrency (default 8, or $FABRIC_MCP_MAX_CONCURRENCY)
+ *                    maxConcurrency (default 8, or $FABRIC_MCP_MAX_CONCURRENCY),
+ *                    maxLightConcurrency (default 8, or $FABRIC_MCP_LIGHT_CONCURRENCY),
+ *                    lightweightTools (Set of tool names routed to the light pool)
  * @returns {{ send, handleRpcRequest, main }}
  */
-export function createStdioServer({ serverInfo, tools, handleToolCall, label = "mcp", out = process.stdout, maxConcurrency = DEFAULT_MAX_CONCURRENCY }) {
+export function createStdioServer({
+  serverInfo, tools, handleToolCall, label = "mcp", out = process.stdout,
+  maxConcurrency = DEFAULT_MAX_CONCURRENCY,
+  maxLightConcurrency = DEFAULT_MAX_LIGHT_CONCURRENCY,
+  lightweightTools = LIGHTWEIGHT_TOOLS,
+}) {
   const limit = sanitizeConcurrency(maxConcurrency, DEFAULT_MAX_CONCURRENCY);
+  const lightLimit = sanitizeConcurrency(maxLightConcurrency, DEFAULT_MAX_LIGHT_CONCURRENCY);
+  // Protocol traffic (initialize/ping/tools/list) is cheap by construction, so only a
+  // tools/call outside the light set is charged to the heavy pool.
+  const isLightweight = (req) => req?.method !== "tools/call" || lightweightTools.has(req?.params?.name);
   // Each RPC message is encoded to a SINGLE string and emitted with ONE out.write.
   // Node serializes whole write() calls, so concurrent handlers cannot interleave
   // bytes — provided this one-message-per-write invariant holds (no streamed/partial
@@ -105,7 +127,8 @@ export function createStdioServer({ serverInfo, tools, handleToolCall, label = "
   }
 
   async function main(input = process.stdin) {
-    const limiter = createLimiter(limit);
+    const heavy = createLimiter(limit);
+    const light = createLimiter(lightLimit);
     const inflight = new Set();
 
     // Dispatch a request WITHOUT blocking the read loop on its completion — the
@@ -117,6 +140,7 @@ export function createStdioServer({ serverInfo, tools, handleToolCall, label = "
     // path, or limiter.release throwing) so a single bad call can neither crash
     // the process with an unhandled rejection nor tear down the drain. (SR-050/056)
     const dispatch = async (req, transport) => {
+      const limiter = isLightweight(req) ? light : heavy;
       await limiter.acquire();
       const p = (async () => {
         try { await handleRpcRequest(req, transport); }

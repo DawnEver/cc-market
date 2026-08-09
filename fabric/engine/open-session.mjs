@@ -8,8 +8,9 @@
 // JSON, not TTY text to scrape — the clean path from the harness-as-fabric design.
 // Composes with observe via the same buildChildEnv switch as spawnChild.
 
-import { mkdirSync, appendFileSync, writeFileSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, appendFileSync, writeFileSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
+import { join, resolve, basename } from 'node:path';
+import { tmpdir } from 'node:os';
 import { buildChildEnv, hookFreeArgs, resolveClaudeExe, effortEnv } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { applyProfileEnv, profileArgs, stripProfileOwnedFlags } from './profile.mjs';
@@ -17,6 +18,48 @@ import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
 const STDERR_TAIL_BYTES = 4096;
 const userLine = (text) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n';
+
+// Env vars whose VALUE is a credential. The stderr tail flows into Error messages, MCP
+// tool results and the journal (session.mjs journals e.message as the loss reason), and
+// children routinely spill their env on a startup auth failure — so the tail is scrubbed
+// at its source, where the child's own env is known (sharp-review SR-008).
+const SECRET_KEY_RE = /TOKEN|KEY|SECRET|PASSWORD/i;
+const MIN_SECRET_LEN = 6; // below this a "value" is a flag like "1", not a credential
+
+function secretValuesOf(env) {
+  return Object.entries(env)
+    .filter(([k, v]) => SECRET_KEY_RE.test(k) && typeof v === 'string' && v.length >= MIN_SECRET_LEN)
+    .map(([, v]) => v)
+    .sort((a, b) => b.length - a.length); // longest first: a prefix must not mask its superstring
+}
+
+// A runDir fabric minted for itself in the OS temp dir — the only kind close() may remove.
+const FABRIC_TMP_DIR_RE = /^fabric-(session|call)-/;
+function isFabricTmpDir(dir) {
+  try {
+    return resolve(dir).startsWith(resolve(tmpdir())) && FABRIC_TMP_DIR_RE.test(basename(dir));
+  } catch { return false; }
+}
+
+// Sessions that crashed (or predate the cleanup) leave their runDir behind; sweep the
+// stale ones once per process so tmp cannot grow without bound (SR-034).
+const GC_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+function gcStaleRunDirs(now = Date.now()) {
+  let removed = 0;
+  try {
+    for (const name of readdirSync(tmpdir())) {
+      if (!FABRIC_TMP_DIR_RE.test(name)) continue;
+      const p = join(tmpdir(), name);
+      try {
+        if (now - statSync(p).mtimeMs < GC_AGE_MS) continue;
+        rmSync(p, { recursive: true, force: true });
+        removed++;
+      } catch { /* in use by another process, or already gone */ }
+    }
+  } catch { /* no readable tmpdir: nothing to reclaim */ }
+  return removed;
+}
+if (!process.env.FABRIC_NO_TMP_GC) gcStaleRunDirs();
 
 function extractText(assistantMsg) {
   const c = assistantMsg?.content;
@@ -28,17 +71,20 @@ function extractText(assistantMsg) {
 /**
  * Open a persistent child session.
  * @param {object} opts  provider, model?, observe?, runDir, cwd?, configPath?, extraArgs?
+ *                       ownsRunDir? (default: true for a fabric-minted tmp runDir),
  *                       _spawn?/_bin? for tests.
  * @returns {Promise<{runDir, jsonlPath, send, close, turns}>}
- *   send(text) → Promise<{text, turn}>  (await sequentially; one turn at a time)
+ *   send(text, label?, {timeoutMs}?) → Promise<{text, turn}>  (await sequentially)
  *   close()    → Promise<number|null>   (exit code)
  */
 export async function openSession(opts) {
   const {
     provider, model, observe = false, runDir, cwd, configPath, extraArgs = [], profile = null,
-    visible = false, interactive = false, effort = null,
+    visible = false, interactive = false, effort = null, ownsRunDir,
     _spawn = hiddenSpawn, _bin, _viewerSpawn = hiddenSpawn, _pollMs = 400,
   } = opts;
+  // Only a directory fabric itself minted is ours to delete; a caller's runDir is not.
+  const reclaimRunDir = ownsRunDir ?? isFabricTmpDir(runDir || '');
   const showUi = visible || interactive; // interactive implies the transcript viewer
   if (!provider) throw new Error('openSession: provider is required');
   if (!runDir) throw new Error('openSession: runDir is required');
@@ -164,12 +210,38 @@ while ($true) {
   let chain = Promise.resolve(); // serializes send() calls
   let buf = '';
   let lastActivity = Date.now();
-  let errTail = '';          // last stderr bytes — the only clue when the child dies
-  const usage = { input_tokens: 0, output_tokens: 0, cost_usd: 0 }; // cumulative (G7)
+  // Cumulative usage (G7). Cache tokens are usually the dominant input term, so a total
+  // built on input_tokens alone under-counts by a growing fraction (SR-012); `partial`
+  // records that at least one turn reported no usage at all.
+  const usage = {
+    input_tokens: 0, output_tokens: 0,
+    cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
+    cost_usd: 0, partial: false,
+  };
+
+  // Last stderr BYTES — the only clue when the child dies. Kept as Buffers: coercing each
+  // chunk to a string decoded at an arbitrary boundary, tearing multibyte UTF-8, and made
+  // the "BYTES" cap a character count (SR-008).
+  const errChunks = [];
+  let errBytes = 0;
+  const secrets = secretValuesOf(env);
+  const scrub = (text) => secrets.reduce((s, v) => s.split(v).join('[redacted]'), text);
 
   child.stderr?.on('data', (d) => {
-    errTail = (errTail + d).slice(-STDERR_TAIL_BYTES);
+    const b = Buffer.isBuffer(d) ? d : Buffer.from(String(d), 'utf8');
+    errChunks.push(b);
+    errBytes += b.length;
+    while (errChunks.length > 1 && errBytes - errChunks[0].length >= STDERR_TAIL_BYTES) {
+      errBytes -= errChunks.shift().length;
+    }
   });
+
+  function errTail() {
+    if (!errChunks.length) return '';
+    const text = Buffer.concat(errChunks).subarray(-STDERR_TAIL_BYTES).toString('utf8');
+    // The cut itself can land mid-character; drop the one replacement char it produces.
+    return scrub(text.startsWith('�') ? text.slice(1) : text);
+  }
 
   child.stdout?.on('data', (d) => {
     lastActivity = Date.now();
@@ -183,8 +255,14 @@ while ($true) {
       if (ev.type === 'assistant') acc += extractText(ev.message);
       else if (ev.type === 'result') {
         turnCount++;
-        usage.input_tokens += ev.usage?.input_tokens ?? 0;
-        usage.output_tokens += ev.usage?.output_tokens ?? 0;
+        if (ev.usage) {
+          usage.input_tokens += ev.usage.input_tokens ?? 0;
+          usage.output_tokens += ev.usage.output_tokens ?? 0;
+          usage.cache_creation_input_tokens += ev.usage.cache_creation_input_tokens ?? 0;
+          usage.cache_read_input_tokens += ev.usage.cache_read_input_tokens ?? 0;
+        } else {
+          usage.partial = true; // a turn we cannot account for — say so, do not imply zero
+        }
         usage.cost_usd += ev.total_cost_usd ?? 0;
         const p = pending; pending = null;
         const text = acc; acc = '';
@@ -197,7 +275,8 @@ while ($true) {
   child.on('close', (code) => {
     closed = true; exitCode = code;
     if (pending) {
-      const tail = errTail.trim() ? `; stderr: ${errTail.trim()}` : '';
+      const t = errTail().trim();
+      const tail = t ? `; stderr: ${t}` : '';
       pending.reject(new Error(`openSession: child closed (code ${code}) mid-turn${tail}`));
       pending = null;
     }
@@ -207,12 +286,34 @@ while ($true) {
     if (pending) { pending.reject(e); pending = null; }
   });
 
-  function send(text, _label = 'user') {
+  /**
+   * @param {number} [opts.timeoutMs] Per-turn deadline. Default: none — a turn may legitimately
+   *   take many minutes. On expiry the child is KILLED and the session marked closed: a turn
+   *   abandoned mid-flight leaves the conversation state unknowable, and leaving the child alive
+   *   would let a late result answer the wrong caller while the serialized chain stays wedged
+   *   (SR-052). Callers get code 'TURN_TIMEOUT'; later sends fail fast with "session is closed".
+   */
+  function send(text, _label = 'user', { timeoutMs } = {}) {
     // Serialize: each send waits for the previous turn's result — orchestrator and
     // human turns share this one chain.
     const run = () => new Promise((resolve, reject) => {
       if (closed) return reject(new Error('openSession: session is closed'));
-      pending = { resolve, reject };
+      let timer = null;
+      const settle = (fn) => (v) => { if (timer) { clearTimeout(timer); timer = null; } fn(v); };
+      const slot = { resolve: settle(resolve), reject: settle(reject) };
+      pending = slot;
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          if (pending !== slot) return; // already answered
+          pending = null;
+          closed = true;
+          const e = new Error(`openSession: turn timed out after ${timeoutMs}ms`);
+          e.code = 'TURN_TIMEOUT';
+          try { child.kill?.('SIGKILL'); } catch { /* already gone */ }
+          slot.reject(e);
+        }, timeoutMs);
+        timer.unref?.();
+      }
       lastActivity = Date.now();
       if (showUi) tee(`\n[${_label}]\n${text}\n`);
       child.stdin.write(userLine(text));
@@ -235,6 +336,11 @@ while ($true) {
 
     }
     if (proxy) await proxy.close();
+    // Reclaim the tmp runDir (config dir, observe http.jsonl, transcript). Best-effort and
+    // last: a directory we cannot remove must not turn a successful close into a failure.
+    if (reclaimRunDir) {
+      try { rmSync(runDir, { recursive: true, force: true }); } catch { /* in use; the GC sweep gets it */ }
+    }
     return exitCode;
   }
 
@@ -245,8 +351,13 @@ while ($true) {
     pid: child.pid ?? null,
     get alive() { return !closed; },
     get lastActivity() { return lastActivity; },
-    stderrTail: () => errTail,
-    get usage() { return { ...usage } },
+    stderrTail: errTail, // already secret-scrubbed at the source
+    get usage() {
+      return {
+        ...usage,
+        total_input_tokens: usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens,
+      };
+    },
     send, close,
   };
 }

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import * as eventsMod from 'node:events';
 import { resolveProfile, applyProfileEnv, profileArgs } from '../engine/profile.mjs';
 
 test('resolveProfile: object passes through; unknown name throws with available list', () => {
@@ -57,7 +58,6 @@ test('openSession applies profile: env subtracted, flags appended', async () => 
   assert.ok(!('SECRET_TOKEN' in seen.env), 'denied env var must not reach the child');
   assert.ok(seen.args.includes('--allowedTools'), 'profile tools flag missing');
 });
-import * as eventsMod from 'node:events';
 
 // ── sharp-review 2026-08-09 fixes ──
 

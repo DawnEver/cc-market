@@ -131,6 +131,24 @@ describe("withPooledClient", () => {
     assert.equal(v, 1, "size 0 clamped to the default; the call ran");
   });
 
+  // SR-054: acquire has no timeout, so a leaked fn(client) holds its slot forever and
+  // waiters queue unboundedly. Saturation must at least be an OBSERVABLE fact.
+  it("poolStats reports the waiter count while the pool is saturated", async () => {
+    _resetPool();
+    const { poolStats } = await import("../engine/codex/app-server.mjs");
+    const gate = deferred();
+    const _createClient = async () => ({ _closed: false, stop() {} });
+    const held = withPooledClient(async () => { await gate.promise; }, { size: 1, _createClient });
+    const queued = withPooledClient(async () => "second", { size: 1, _createClient });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    const stats = poolStats();
+    assert.equal(stats.size, 1);
+    assert.equal(stats.waiters, 1, "a queued caller must be visible as a waiter");
+    gate.resolve();
+    await Promise.all([held, queued]);
+    assert.equal(poolStats().waiters, 0, "the waiter count drains with the queue");
+  });
+
   // SR-046/055: reset must not silently orphan warm clients — it should close them.
   it("_resetPool closes idle clients", async () => {
     _resetPool();

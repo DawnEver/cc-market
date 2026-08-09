@@ -3,10 +3,12 @@
 // with the rest of the config). Shape:
 //
 //   "fabric": {
-//     "token": "shared-secret",                       // auth for all nodes (per-node override allowed)
-//     "nodes": { "desktop": { "host": "10.0.0.2", "port": 7677 } },   // host may be an IP or DNS name
+//     "token": "shared-secret",                       // PRIMARY token this machine accepts
+//     "tokens": ["peer-b-secret"],                    // additional ACCEPTED tokens
+//     "nodes": { "desktop": { "host": "10.0.0.2", "port": 7677, "token": "peer-b-secret" } },
 //     "serve": {
 //       "port": 7677,                                 // defaults for every machine
+//       "maxSessions": 64,                            // static ceiling on concurrent sessions
 //       "projects": { "thesis": "C:/work/thesis" },
 //       "byHost": {                                   // per-machine overrides, keyed by hostname
 //         "my-desktop": { "projects": { "thesis": "D:/repos/thesis" } }
@@ -25,16 +27,23 @@ import fs from "node:fs";
 import os from "node:os";
 import { getConfigPath } from "./providers.mjs";
 
-const _fabricCache = new Map(); // configPath → { mtimeMs, fabric } — mtime-invalidated
+const _fabricCache = new Map(); // configPath → { mtimeMs, readAt, fabric }
+// mtimeMs has 1-second granularity on Windows, so an edit landing in the same second as
+// the last read is invisible to mtime alone — permanently, for a daemon (SR-053). The TTL
+// bounds that blindness to a couple of seconds without re-reading on every call.
+export const CONFIG_CACHE_TTL_MS = 2000;
 
-/** The `fabric` block of the config, or {} if absent/unreadable. Cached per path by mtime. */
-export function loadFabricConfig(configPath = getConfigPath()) {
+/**
+ * The `fabric` block of the config, or {} if absent/unreadable.
+ * Cached per path by mtime AND a short TTL.
+ */
+export function loadFabricConfig(configPath = getConfigPath(), { ttlMs = CONFIG_CACHE_TTL_MS } = {}) {
   try {
     const { mtimeMs } = fs.statSync(configPath);
     const hit = _fabricCache.get(configPath);
-    if (hit && hit.mtimeMs === mtimeMs) return hit.fabric;
+    if (hit && hit.mtimeMs === mtimeMs && Date.now() - hit.readAt < ttlMs) return hit.fabric;
     const fabric = JSON.parse(fs.readFileSync(configPath, "utf8")).fabric || {};
-    _fabricCache.set(configPath, { mtimeMs, fabric });
+    _fabricCache.set(configPath, { mtimeMs, readAt: Date.now(), fabric });
     return fabric;
   } catch {
     return {};
@@ -44,7 +53,10 @@ export function loadFabricConfig(configPath = getConfigPath()) {
 /**
  * This machine's effective serve config: `serve` defaults with the matching `serve.byHost`
  * entry merged on top (hostname matched case-insensitively, FQDN or short name; `projects`
- * maps merge per-alias). Returns `{port?, host?, name?, projects, token?}`.
+ * maps merge per-alias). Returns `{port?, host?, name?, projects, token?, tokens}`.
+ *
+ * `tokens` is the ACCEPTED SET, unioned across fabric/serve/byHost: revoking a peer means
+ * deleting one entry here, not re-keying every machine (SR-051). `token` stays primary.
  */
 export function loadServeConfig(configPath = getConfigPath(), hostName = os.hostname()) {
   const fab = loadFabricConfig(configPath);
@@ -57,6 +69,7 @@ export function loadServeConfig(configPath = getConfigPath(), hostName = os.host
     ...base, ...override,
     projects: { ...(base.projects || {}), ...(override.projects || {}) },
     token: override.token || base.token || fab.token,
+    tokens: [...new Set([...(fab.tokens || []), ...(base.tokens || []), ...(override.tokens || [])])],
   };
 }
 

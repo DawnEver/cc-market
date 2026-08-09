@@ -153,10 +153,10 @@ test('mid-turn child death rejects with the stderr tail', async () => {
   await assert.rejects(s.send('hi'), /requires --verbose/);
 });
 
-// ── G7: usage facts accumulate on the handle from stream-json result events.
-test('openSession accumulates usage/cost facts across turns', async () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'os-usage-'));
-  const fake = () => {
+// A fake child answering every turn with one assistant line plus a `result` event
+// carrying the given fields — the usage-accounting fixture.
+function resultFake(resultExtra) {
+  return () => {
     const child = new EventEmitter();
     child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
     let sbuf = '';
@@ -168,7 +168,7 @@ test('openSession accumulates usage/cost facts across turns', async () => {
           sbuf = sbuf.slice(nl + 1);
           queueMicrotask(() => {
             child.stdout.emit('data', JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } }) + '\n');
-            child.stdout.emit('data', JSON.stringify({ type: 'result', subtype: 'success', total_cost_usd: 0.01, usage: { input_tokens: 100, output_tokens: 20 } }) + '\n');
+            child.stdout.emit('data', JSON.stringify({ type: 'result', subtype: 'success', ...resultExtra }) + '\n');
           });
         }
       },
@@ -176,10 +176,137 @@ test('openSession accumulates usage/cost facts across turns', async () => {
     };
     return child;
   };
+}
+
+// ── G7: usage facts accumulate on the handle from stream-json result events.
+test('openSession accumulates usage/cost facts across turns', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-usage-'));
+  const fake = resultFake({
+    total_cost_usd: 0.01,
+    usage: { input_tokens: 100, output_tokens: 20, cache_creation_input_tokens: 300, cache_read_input_tokens: 1000 },
+  });
   const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
   await s.send('one');
   await s.send('two');
-  assert.deepEqual(s.usage, { input_tokens: 200, output_tokens: 40, cost_usd: 0.02 });
+  // SR-012: cache tokens are usually the DOMINANT input term; dropping them makes any
+  // budget built on input_tokens a systematic undercount that grows with session length.
+  assert.deepEqual(s.usage, {
+    input_tokens: 200, output_tokens: 40,
+    cache_creation_input_tokens: 600, cache_read_input_tokens: 2000,
+    total_input_tokens: 2800, cost_usd: 0.02, partial: false,
+  });
+  await s.close();
+});
+
+// SR-012: a result event with NO usage block means the totals are missing a turn — say so
+// rather than reporting a total that quietly under-counts.
+test('a result event without usage marks the totals partial', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-partial-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: resultFake({}), _bin: 'fake' });
+  await s.send('one');
+  assert.equal(s.usage.partial, true);
+  assert.equal(s.usage.total_input_tokens, 0);
+  await s.close();
+});
+
+// ── SR-008: the stderr tail reaches an Error message, the MCP tool result and the
+// journal (session.mjs journals e.message on loss). A child that spills its provider
+// credentials on a startup failure must not leak them through that path.
+test('the stderr tail redacts secret env values before it reaches an Error', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-scrub-'));
+  const secret = 'sk-live-DEADBEEF0123456789';
+  const cfg = join(mkdtempSync(join(tmpdir(), 'opensess-scrub-')), 'reg.json');
+  writeFileSync(cfg, JSON.stringify({ 'env:deepseek': {
+    CLAUDE_CODE_USE_FOUNDRY: '1', ANTHROPIC_FOUNDRY_BASE_URL: 'https://x/anthropic',
+    ANTHROPIC_FOUNDRY_API_KEY: secret, ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash',
+  } }));
+  clearConfigCache();
+  const fake = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.stdin = {
+      write: () => queueMicrotask(() => {
+        child.stderr.emit('data', Buffer.from(`auth failed for key ${secret} at https://x\n`));
+        child.emit('close', 1);
+      }),
+      end: () => {},
+    };
+    return child;
+  };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: cfg, _spawn: fake, _bin: 'fake' });
+  const err = await s.send('hi').then(() => null, (e) => e);
+  assert.ok(err, 'the turn must reject');
+  assert.ok(!err.message.includes(secret), `the key leaked into the error: ${err.message}`);
+  assert.match(err.message, /\[redacted\]/);
+  assert.match(err.message, /auth failed for key/, 'the diagnostic itself survives');
+  assert.ok(!s.stderrTail().includes(secret), 'the exposed tail accessor is scrubbed too');
+});
+
+// SR-008: STDERR_TAIL_BYTES is a BYTE budget, and concatenating Buffers via string
+// coercion decoded each chunk at an arbitrary boundary, corrupting multibyte UTF-8.
+test('the stderr tail is bounded in bytes and never tears a multibyte character', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-tail-'));
+  let emit;
+  const fake = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.stdin = { write: () => {}, end: () => {} };
+    emit = (b) => child.stderr.emit('data', b);
+    return child;
+  };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
+  // A 3-byte character split across two chunks — string coercion would yield mojibake.
+  const euro = Buffer.from('€', 'utf8');
+  emit(Buffer.from('start ')); emit(euro.subarray(0, 1)); emit(euro.subarray(1)); emit(Buffer.from(' end'));
+  assert.equal(s.stderrTail(), 'start € end');
+
+  emit(Buffer.from('x'.repeat(9000)));
+  assert.ok(Buffer.byteLength(s.stderrTail(), 'utf8') <= 4096, 'the cap is a byte cap, as the name says');
+});
+
+// ── SR-034: openSession's own tmp runDir (config dir, observe http.jsonl, transcript)
+// leaked one directory per session, forever.
+test('close() removes a fabric-created tmp runDir but never a caller-supplied one', async () => {
+  const { existsSync } = await import('node:fs');
+  const sink = { writes: [] };
+  const own = mkdtempSync(join(tmpdir(), 'fabric-session-'));
+  const s1 = await openSession({ provider: 'deepseek', runDir: own, configPath: fixture(), _spawn: makeFakeClaude(sink), _bin: 'fake' });
+  await s1.close();
+  assert.equal(existsSync(own), false, 'fabric made this dir, fabric reclaims it');
+
+  const theirs = mkdtempSync(join(tmpdir(), 'os-caller-'));
+  const s2 = await openSession({ provider: 'deepseek', runDir: theirs, configPath: fixture(), _spawn: makeFakeClaude(sink), _bin: 'fake' });
+  await s2.close();
+  assert.equal(existsSync(theirs), true, 'a caller-supplied dir is not ours to delete');
+});
+
+// ── SR-052: `closed` is only set on close/error. A child killed out of band still has a
+// writable stdin pipe, so the turn hangs — and the serialized chain bricks every later
+// caller. An abandoned turn leaves the conversation state unknowable, so the session dies.
+test('send({timeoutMs}) rejects with TURN_TIMEOUT and kills the session', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-timeout-'));
+  let killed = 0;
+  const fake = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.stdin = { write: () => {}, end: () => {} }; // accepts the turn, never answers
+    child.kill = () => { killed++; queueMicrotask(() => child.emit('close', null)); };
+    return child;
+  };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
+  const err = await s.send('hi', 'user', { timeoutMs: 60 }).then(() => null, (e) => e);
+  assert.equal(err?.code, 'TURN_TIMEOUT');
+  assert.equal(killed, 1, 'the child is killed — an abandoned turn leaves state unknowable');
+  assert.equal(s.alive, false);
+  await assert.rejects(s.send('again'), /closed/, 'later sends fail fast instead of hanging on the chain');
+});
+
+test('send has no timeout by default', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-notimeout-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink), _bin: 'fake' });
+  const r = await s.send('hello');
+  assert.equal(r.text, 'echo:hello');
   await s.close();
 });
 
