@@ -72,7 +72,7 @@
         <div><label>model</label><select name="model" id="modelSel"></select></div>
       </div>
       <div class="inline">
-        <div><label>effort</label><select name="effort" id="effortSel"><option value="">default</option></select></div>
+        <div><label>effort</label><select name="effort" id="effortSel"></select></div>
         <div><label>project</label><select name="project" id="projectSel"></select></div>
       </div>
       <div class="dim" id="providerIdent"></div>
@@ -122,8 +122,11 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','
 // ── catalogue: live-probed identity; the UI never invents a model name ──
 function fillModels() {
   const p = catalogue.providers.find((x) => x.name === $('#providerSel').value);
-  $('#modelSel').innerHTML = '<option value="">default</option>' +
-    (p?.models || []).map((m) => `<option value="${m.alias}">${m.alias} → ${esc(m.actual)}</option>`).join('');
+  // Every axis is EXPLICIT: no "default" escapes. codex has no alias table, so its one
+  // honest option is its own named default.
+  $('#modelSel').innerHTML =
+    (p?.models || []).map((m) => `<option value="${m.alias}">${m.alias} → ${esc(m.actual)}</option>`).join('') ||
+    (p ? `<option value="">${p.name} built-in default</option>` : '');
   $('#providerIdent').textContent = p ? `${p.name}${p.version ? ' ' + p.version : ''} — ${p.identity}${p.available ? '' : ' (UNAVAILABLE)'}` : '';
 }
 async function loadCatalogue(force) {
@@ -137,8 +140,8 @@ async function loadCatalogue(force) {
     fillModels();
     const withHaiku = catalogue.providers.find((p) => p.name === $('#providerSel').value)?.models.some((m) => m.alias === 'haiku');
     if (withHaiku) $('#modelSel').value = 'haiku';
-    $('#effortSel').innerHTML = '<option value="">default</option>' +
-      catalogue.efforts.map((e) => `<option value="${e.name}">${e.name} (${e.tokens} tk)</option>`).join('');
+    $('#effortSel').innerHTML =
+      catalogue.efforts.map((e) => `<option value="${e.name}" ${e.name === 'medium' ? 'selected' : ''}>${e.name} (${e.tokens} tk)</option>`).join('');
   } catch (e) { console.error('catalogue', e); }
 }
 
