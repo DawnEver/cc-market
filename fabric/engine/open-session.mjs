@@ -15,6 +15,7 @@ import { buildChildEnv, hookFreeArgs, resolveClaudeExe, effortEnv } from './spaw
 import { startObserveProxy } from './observe-proxy.mjs';
 import { applyProfileEnv, profileArgs, stripProfileOwnedFlags } from './profile.mjs';
 import { loadFabricConfig } from './node-config.mjs';
+import { resolveStyleFile } from './style-resolve.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
 const STDERR_TAIL_BYTES = 4096;
@@ -111,7 +112,13 @@ export async function openSession(opts) {
   // when the profile does not name one — replaces the stock prompt on every spawn
   // (cache-key layer; combined with toolsPreset = full cost chain).
   const cfg = loadFabricConfig(configPath);
-  const sysFile = profile?.systemPromptFile ?? cfg.systemPromptFile ?? null;
+  // Priority: profile.systemPromptFile > profile.style (resolved from the
+  // platform dir, auto-built) > cfg.systemPromptFile (platform default).
+  let sysFile = profile?.systemPromptFile ?? null;
+  if (!sysFile && profile?.style && cfg.systemPromptFile) {
+    sysFile = resolveStyleFile(profile.style, cfg.systemPromptFile);
+  }
+  sysFile ??= cfg.systemPromptFile ?? null;
   const args = [
     // --verbose is REQUIRED by the CLI for --print + stream-json output (exit 1 without);
     // the parser ignores the extra system events it adds.

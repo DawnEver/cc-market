@@ -5,7 +5,7 @@ process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await im
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as eventsMod from 'node:events';
@@ -161,4 +161,40 @@ test('openSession injects fabric.systemPromptFile default + profile override win
   const s2 = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'sysf2-')), configPath: cfgPath, _spawn: fake, _bin: 'fake', profile: { systemPromptFile: 'C:/profile/base.md' } });
   await s2.close();
   assert.ok(seen[seen.indexOf('--system-prompt-file') + 1] === 'C:/profile/base.md');
+});
+
+// ── style resolution ──
+
+test('profile style resolves to built dist file (auto-build when missing)', async () => {
+  const { openSession } = await import('../engine/open-session.mjs');
+  const { clearConfigCache } = await import('../engine/providers.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'style-'));
+  const cfgPath = join(dir, 'reg.json');
+  writeFileSync(cfgPath, JSON.stringify({
+    'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' },
+    fabric: { systemPromptFile: join(dir, 'platform', 'claude-base.md') },
+  }));
+  clearConfigCache();
+  // fake platform dir: build.mjs + style source
+  mkdirSync(join(dir, 'platform', 'dist'), { recursive: true });
+  mkdirSync(join(dir, 'platform', '.claude', 'output-styles'), { recursive: true });
+  writeFileSync(join(dir, 'platform', 'claude-base.md'), 'BASE\n');
+  writeFileSync(join(dir, 'platform', '.claude', 'output-styles', 'academic.md'),
+    '---\nname: Academic\n---\nACADEMIC BODY\n');
+  const { execFileSync } = await import('node:child_process');
+  writeFileSync(join(dir, 'platform', 'build.mjs'), `
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+mkdirSync(join(import.meta.dirname, 'dist'), { recursive: true });
+writeFileSync(join(import.meta.dirname, 'dist', 'academic.claude.md'), 'BASE\\n\\nACADEMIC BODY\\n');
+`);
+  let seen = null;
+  const fake = (bin, args) => { seen = args; const { EventEmitter } = eventsMod; const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.stdin = { write: () => {}, end: () => queueMicrotask(() => c.emit('close', 0)) }; return c; };
+  const s = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'style-run-')), configPath: cfgPath, _spawn: fake, _bin: 'fake', profile: { style: 'academic' } });
+  await s.close();
+  const idx = seen.indexOf('--system-prompt-file');
+  assert.ok(idx >= 0, '--system-prompt-file must be injected for a style');
+  assert.match(seen[idx + 1], /[\\/]dist[\\/]academic\.claude\.md$/);
+  const dist = seen[idx + 1];
+  assert.match(readFileSync(dist, 'utf8'), /ACADEMIC BODY/, 'dist must contain the built style body');
 });

@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId, PROVIDER_ENV_KEYS } from './providers.mjs';
 import { loadFabricConfig } from './node-config.mjs';
+import { resolveStyleFile } from './style-resolve.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { buildUserContent } from './anthropic-http.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
@@ -192,7 +193,7 @@ function armKillTimer(child, ms, onTimeout) {
  */
 export async function spawnChild(opts) {
   const {
-    provider = 'claude', prompt, systemPrompt, systemPromptFile, images, runDir, observe = false, model,
+    provider = 'claude', prompt, systemPrompt, systemPromptFile, style, images, runDir, observe = false, model,
     cwd, extraArgs = [], configPath, timeoutMs = 120000, signal, onText, passthroughAuth,
     _spawn = hiddenSpawn, _bin, _startObserveProxy = startObserveProxy,
   } = opts;
@@ -241,8 +242,10 @@ export async function spawnChild(opts) {
 
     const bin = _bin || resolveClaudeExe();
     // Platform default system prompt (fabric.systemPromptFile) — same cache-key layer
-    // as the persistent-session path; an explicit systemPromptFile wins.
-    const sysFile = systemPromptFile ?? loadFabricConfig(configPath).systemPromptFile ?? null;
+    // as the persistent-session path; an explicit systemPromptFile wins; `style`
+    // resolves to a built dist file (auto-built when stale) from the platform dir.
+    const cfgSysFile = loadFabricConfig(configPath).systemPromptFile ?? null;
+    const sysFile = systemPromptFile ?? (style && cfgSysFile ? resolveStyleFile(style, cfgSysFile) : null) ?? cfgSysFile;
     const sysArgs = sysFile ? ['--system-prompt-file', sysFile] : [];
     // Both modes emit stream-json on stdout so usage parsing + onText streaming are
     // universal; argv mode just keeps the prompt on the command line.
