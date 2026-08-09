@@ -86,3 +86,30 @@ test('send after close rejects', async () => {
   await s.close();
   await assert.rejects(s.send('too late'), /closed/);
 });
+
+// ── G0 (2026-08-09): the default bin must be the resolved real executable, never a
+// `.cmd` shim — Node ≥20.12 rejects .cmd without shell:true (spawn EINVAL), which broke
+// every persistent session on Windows while spawn-child (using resolveClaudeExe) worked.
+test('openSession default bin is resolveClaudeExe(), not a .cmd shim', async () => {
+  const { resolveClaudeExe } = await import('../engine/spawn-child.mjs');
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-bin-'));
+  let seenBin = null;
+  const capture = (bin, args, opts) => { seenBin = bin; return makeFakeClaude(sink)(bin, args, opts); };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: capture });
+  await s.close();
+  assert.equal(seenBin, resolveClaudeExe());
+  assert.ok(!/\.cmd$/i.test(seenBin), `bin must not be a .cmd shim, got: ${seenBin}`);
+});
+
+// The CLI refuses `--print --output-format stream-json` without `--verbose`
+// ("requires --verbose", exit 1) — a latent defect on every platform, found live 2026-08-09.
+test('openSession passes --verbose (required by --print stream-json)', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-verbose-'));
+  let seenArgs = null;
+  const capture = (bin, args, opts) => { seenArgs = args; return makeFakeClaude(sink)(bin, args, opts); };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: capture, _bin: 'fake' });
+  await s.close();
+  assert.ok(seenArgs.includes('--verbose'), `args must include --verbose, got: ${seenArgs.join(' ')}`);
+});

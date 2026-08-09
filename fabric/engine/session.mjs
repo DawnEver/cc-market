@@ -17,16 +17,18 @@ import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
 import { openRemoteSession } from "./node-client.mjs";
 import { resolveNode } from "./node-config.mjs";
-import { buildChildEnv } from "./spawn-child.mjs";
+import { buildChildEnv, resolveClaudeExe } from "./spawn-child.mjs";
 import { spawn } from "../shared/spawn.mjs";
 
 // ── Write-capable stateless session (non-codex) ─────────────────────
 // Spawns a fresh `claude -p` with tools per turn; accumulates history in memory. Each
 // turn repays for prior context, but gives full write capability without a persistent harness.
 
-function openWriteSession({ provider, model, cwd }) {
+function openWriteSession({ provider, model, cwd, _spawn = spawn }) {
   const history = [];
-  const bin = process.platform === "win32" ? "claude.cmd" : "claude";
+  // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true
+  // (spawn EINVAL); same defect as open-session.mjs had, fixed at both sites 2026-08-09.
+  const bin = resolveClaudeExe();
   const env = buildChildEnv({ provider, observe: false });
 
   return {
@@ -34,7 +36,7 @@ function openWriteSession({ provider, model, cwd }) {
     async send(text) {
       history.push(`User: ${text}`);
       const prompt = history.join("\n\n");
-      const child = spawn(bin, [
+      const child = _spawn(bin, [
         "-p",
         ...(model ? ["--model", model] : []),
         "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",

@@ -132,3 +132,25 @@ test('openCodexSession: write:true enables tools', async () => {
   assert.equal(turn.params.tools, undefined); // tools enabled (not disabled)
   await s.close();
 });
+
+// ── G0 (2026-08-09): write sessions must spawn the resolved real executable, never a
+// `.cmd` shim (spawn EINVAL on Node ≥20.12 / Windows). Mirrors the open-session test.
+test('openWriteSession spawns resolveClaudeExe(), not a .cmd shim', async () => {
+  const { openProviderSession } = await import('../engine/session.mjs');
+  const { resolveClaudeExe } = await import('../engine/spawn-child.mjs');
+  const { EventEmitter } = await import('node:events');
+  let seenBin = null;
+  const fakeSpawn = (bin) => {
+    seenBin = bin;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => { child.stdout.emit('data', 'ok'); child.emit('close', 0); });
+    return child;
+  };
+  const s = await openProviderSession({ provider: 'deepseek', write: true, _spawn: fakeSpawn });
+  await s.send('hi');
+  await s.close();
+  assert.equal(seenBin, resolveClaudeExe());
+  assert.ok(!/\.cmd$/i.test(seenBin), `bin must not be a .cmd shim, got: ${seenBin}`);
+});

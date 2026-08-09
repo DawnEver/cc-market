@@ -10,7 +10,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildChildEnv, hookFreeArgs } from './spawn-child.mjs';
+import { buildChildEnv, hookFreeArgs, resolveClaudeExe } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
@@ -45,9 +45,13 @@ export async function openSession(opts) {
 
   const proxy = observe ? await startObserveProxy({ provider, runDir, configPath }) : null;
   const env = { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), CLAUDE_CONFIG_DIR: configDir };
-  const bin = _bin || (process.platform === 'win32' ? 'claude.cmd' : 'claude');
+  // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true
+  // (spawn EINVAL), which silently broke every Windows persistent session.
+  const bin = _bin || resolveClaudeExe();
   const args = [
-    '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
+    // --verbose is REQUIRED by the CLI for --print + stream-json output (exit 1 without);
+    // the parser ignores the extra system events it adds.
+    '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
     ...(model ? ['--model', model] : []), ...hookFreeArgs(extraArgs), ...extraArgs,
   ];
 

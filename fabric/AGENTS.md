@@ -49,7 +49,8 @@ fabric/
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
-│   ├── serve.mjs            CLI: run this machine as a fabric LAN node
+│   ├── serve.{mjs,ps1,cmd,sh}  CLI: run this machine as a fabric LAN node — session-bound
+│   │                        on purpose (never a background service; user directive 2026-08-09)
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
 │   │                        wrapper), callers (codex/API adapters), trace, errors
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit

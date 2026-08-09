@@ -161,7 +161,9 @@ handshake itself.
    (case-insensitive, FQDN or short name); `projects` maps merge, override winning
    per alias.
 
-2. On each peer machine, start the node server: `node scripts/serve.mjs`
+2. On each peer machine, start the node server in a terminal you keep open:
+   `scripts/serve.ps1` / `scripts\serve.cmd` / `scripts/serve.sh` (all wrap `node scripts/serve.mjs`).
+   Session-bound on purpose — never run it as a background service; closing the terminal stops the node.
 3. From any session, spawn remotely — same tools, plus `node`/`project`:
 
    ```json
