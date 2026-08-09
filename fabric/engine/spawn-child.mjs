@@ -67,7 +67,7 @@ function computeClaudeExe(override) {
 
 // Thinking effort (the third spawn axis after provider and model): named levels map to
 // the harness's MAX_THINKING_TOKENS budget; a number passes through as the budget itself.
-const EFFORT_LEVELS = { low: 1024, medium: 8192, high: 16384, max: 32000 };
+export const EFFORT_LEVELS = { low: 1024, medium: 8192, high: 16384, max: 32000 };
 export function effortEnv(effort) {
   if (effort == null) return {};
   if (typeof effort === "number") return { MAX_THINKING_TOKENS: String(effort) };

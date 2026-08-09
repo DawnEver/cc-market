@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import process from "node:process";
 import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
-import { openRemoteSession } from "./node-client.mjs";
+import { openRemoteSession, attachRemoteSession } from "./node-client.mjs";
 import { resolveNode, loadFabricConfig } from "./node-config.mjs";
 import { resolveProfile, applyProfileEnv } from "./profile.mjs";
 import { buildChildEnv, resolveClaudeExe, effortEnv } from "./spawn-child.mjs";
@@ -81,7 +81,7 @@ export async function openProviderSession(opts = {}) {
       throw new Error("openProviderSession: a remote spawn takes a profile NAME registered on the peer, not an object");
     }
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: opts.effort ?? null });
+    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: opts.effort ?? null, shared: !!opts.shared });
   }
   // Local: resolve a NAME once so every backend below receives the object.
   const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig());
@@ -110,7 +110,7 @@ function idFragment() {
 export async function createSession(opts, _open = openProviderSession) {
   const handle = await _open(opts);
   const id = `sess-${idFragment()}`;
-  sessions.set(id, { handle, provider: opts.provider, node: opts.node ?? null, createdAt: Date.now(), turns: 0 });
+  sessions.set(id, { handle, provider: opts.provider, node: opts.node ?? null, cwd: opts.cwd ?? null, createdAt: Date.now(), turns: 0 });
   recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, provider: opts.provider, node: opts.node ?? null });
   return { id, provider: opts.provider, nativeId: handle.id ?? null, pid: handle.pid ?? null };
 }
@@ -153,6 +153,19 @@ export async function closeSession(id) {
   return { id, exitCode: exitCode ?? null, turns: entry.turns };
 }
 
+/**
+ * Adopt an EXISTING remote session (v2): registers an attach handle so this console
+ * can chat with a session another manager spawned as shared.
+ */
+export async function attachSession({ node, remoteId }, _attach = null) {
+  const n = typeof node === "object" ? node : resolveNode(node);
+  const doAttach = _attach || attachRemoteSession;
+  const handle = await doAttach({ ...n, id: remoteId });
+  const id = `sess-${idFragment()}`;
+  sessions.set(id, { handle, provider: "attached", node: typeof node === "string" ? node : (n.host ?? null), cwd: null, createdAt: Date.now(), turns: 0 });
+  return { id, provider: "attached", nativeId: remoteId, pid: null };
+}
+
 export function listSessions() {
   return [...sessions.entries()].map(([id, e]) => ({
     id, provider: e.provider, turns: e.turns, createdAt: e.createdAt,
@@ -161,7 +174,7 @@ export function listSessions() {
     alive: e.handle.alive ?? null,
     lastActivity: e.handle.lastActivity ?? null,
     usage: e.handle.usage ?? null,
-    node: e.node,
+    node: e.node, cwd: e.cwd,
   }));
 }
 

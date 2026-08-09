@@ -56,6 +56,9 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
   const _listSessions = deps.listSessions || listSessions;
   const _pingSession = deps.pingSession || pingSession;
   const startedAt = Date.now();
+  // SHARED sessions (v2): drivable by ANY token-holder, and never reaped on the
+  // spawner's disconnect -- their lifecycle belongs to the journal/watchdog.
+  const shared = new Set();
 
   // -32601 unknown method, -32602 missing/invalid params, -32000 runtime failure.
   async function dispatch(method, params, owned) {
@@ -67,7 +70,16 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
           cpu: os.cpus().length,
           mem_available_mb: Math.round(os.freemem() / 1048576),
           mem_total_mb: Math.round(os.totalmem() / 1048576),
-          tags, sessions: _listSessions(),
+          tags,
+          projects: Object.keys(projects),
+          sessions: _listSessions().map((sess) => ({
+            ...sess,
+            shared: shared.has(sess.id),
+            // cwd -> the alias whose root contains it; a session outside every alias
+            // reports project null rather than a guess.
+            project: Object.entries(projects).find(([, root]) =>
+              sess.cwd && String(sess.cwd).replaceAll("\\", "/").startsWith(String(root).replaceAll("\\", "/")))?.[0] ?? null,
+          })),
         };
       case "node/spawn": {
         if (!params.provider) throw new RpcError(-32602, "node/spawn: provider is required");
@@ -90,12 +102,12 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
           cwd: cwd || process.cwd(), observe: false, profile,
           visible: !!params.visible, interactive: !!params.interactive, effort: params.effort ?? null,
         });
-        owned.add(desc.id);
-        return desc;
+        if (params.shared) shared.add(desc.id); else owned.add(desc.id);
+        return { ...desc, shared: !!params.shared };
       }
       case "node/send":
         if (!params.id || !params.prompt) throw new RpcError(-32602, "node/send: id and prompt are required");
-        if (!owned.has(params.id)) throw new RpcError(-32602, `node/send: session "${params.id}" is not owned by this connection`);
+        if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/send: session "${params.id}" is not owned by this connection (spawn it shared to allow cross-connection driving)`);
         return _sendToSession(params.id, params.prompt);
       case "node/ping":
         // Read-only liveness (G3): like node/status, not restricted to the owner.
@@ -103,8 +115,8 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
         return _pingSession(params.id);
       case "node/close":
         if (!params.id) throw new RpcError(-32602, "node/close: id is required");
-        if (!owned.has(params.id)) throw new RpcError(-32602, `node/close: session "${params.id}" is not owned by this connection`);
-        return _closeSession(params.id).then((r) => { owned.delete(params.id); return r; });
+        if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/close: session "${params.id}" is not owned by this connection`);
+        return _closeSession(params.id).then((r) => { owned.delete(params.id); shared.delete(params.id); return r; });
       default:
         throw new RpcError(-32601, `Method not found: ${method}`);
     }

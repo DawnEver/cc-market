@@ -69,3 +69,20 @@ test('catalogue lists builtin + configured providers, nodes and efforts', async 
   assert.equal(r.body.providers[0].name, 'claude');
   assert.deepEqual(r.body.nodes, ['G']);
 });
+
+test('liveCatalogue probes identity and caches with TTL', async () => {
+  const { liveCatalogue, _resetCatalogueCache } = await import('../engine/catalogue.mjs');
+  _resetCatalogueCache();
+  let t = 1000;
+  const cat = liveCatalogue({ _now: () => t, _config: () => ({ nodes: { G: {} } }) });
+  assert.equal(cat.probed_at, 1000);
+  const claude = cat.providers.find((p) => p.name === 'claude');
+  assert.ok('identity' in claude && 'available' in claude && 'version' in claude);
+  const codex = cat.providers.find((p) => p.name === 'codex');
+  assert.ok(typeof codex.available === 'boolean');
+  assert.deepEqual(cat.nodes, ['G']);
+  assert.equal(cat.efforts.find((e) => e.name === 'high').tokens, 16384);
+  t = 2000;
+  assert.equal(liveCatalogue({ _now: () => t, _config: () => ({ nodes: {} }) }).probed_at, 1000, 'cached');
+  assert.equal(liveCatalogue({ force: true, _now: () => t, _config: () => ({ nodes: {} }) }).probed_at, 2000, 'force re-probes');
+});

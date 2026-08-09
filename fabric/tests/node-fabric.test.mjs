@@ -494,3 +494,37 @@ test("node/spawn rejects inline profile objects and resolves names server-side",
     conn.close();
   } finally { await server.close(); }
 });
+
+// ── v2: SHARED sessions — any token-holder may drive them, and the spawner's
+// disconnect must NOT reap them (lifecycle belongs to the journal instead).
+test("a shared session is drivable by a second connection and survives the spawner's disconnect", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await c1.request("node/spawn", { provider: "deepseek", shared: true });
+    const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const r = await c2.request("node/send", { id: desc.id, prompt: "hi" });
+    assert.equal(r.text, "echo:hi", "second connection must drive a shared session");
+    c1.close();
+    await new Promise((res) => setTimeout(res, 100));
+    assert.equal(deps.listSessions().length, 1, "spawner disconnect must not reap a shared session");
+    await c2.request("node/close", { id: desc.id });
+    c2.close();
+  } finally { await server.close(); }
+});
+
+test("node/status carries the project list and maps session cwd to a project alias", async () => {
+  const deps = fakeSessionDeps();
+  deps.listSessions = () => [{ id: "s1", provider: "deepseek", turns: 0, cwd: "/data/thesis/sub" }];
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps, projects: { thesis: "/data/thesis" } });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const st = await conn.request("node/status", {});
+    assert.deepEqual(st.projects, ["thesis"]);
+    assert.equal(st.sessions[0].project, "thesis", "cwd under the alias root maps to the alias");
+    conn.close();
+  } finally { await server.close(); }
+});

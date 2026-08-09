@@ -197,3 +197,19 @@ test('listSessions surfaces usage; closeSession journals it', async () => {
   const rows = readFileSync(journalPath(), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(rows.find((r) => r.event === 'close').usage, { input_tokens: 5, output_tokens: 3, cost_usd: 0.001 });
 });
+
+// ── v2: the registry records cwd, and attachSession adopts an EXISTING remote
+// session into this console's registry for chatting.
+test('registry records cwd; attachSession registers a remote handle', async () => {
+  const { createSession, listSessions, attachSession, sendToSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const fakeOpen = async (opts) => ({ id: 'n1', pid: 1, send: async () => ({ text: 'x', turn: 1 }), close: async () => 0, cwd: opts.cwd });
+  const d = await createSession({ provider: 'deepseek', cwd: '/proj/x' }, fakeOpen);
+  assert.equal(listSessions()[0].cwd, '/proj/x');
+  await closeSession(d.id);
+  const fakeAttach = async () => ({ id: 'remote-9', send: async (t) => ({ text: `r:${t}`, turn: 1 }), close: async () => 0 });
+  const a = await attachSession({ node: 'WS1', remoteId: 'remote-9' }, fakeAttach);
+  assert.equal((await sendToSession(a.id, 'ping')).text, 'r:ping');
+  assert.equal(listSessions()[0].node, 'WS1');
+  await closeSession(a.id);
+});

@@ -9,19 +9,22 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:13px/1.5 "Segoe UI", system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; }
-  header { padding:8px 16px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:baseline; }
+  header { padding:8px 16px; border-bottom:1px solid var(--border); display:flex; gap:14px; align-items:baseline; }
   header h1 { font-size:15px; margin:0; color:var(--accent); }
-  header span { color:var(--dim); font-size:12px; }
-  main { flex:1; display:grid; grid-template-columns: 270px 320px 1fr; min-height:0; }
+  header .dim { font-size:12px; }
+  header button { margin-left:auto; }
+  main { flex:1; display:grid; grid-template-columns: 280px 360px 1fr; min-height:0; }
   section { border-right:1px solid var(--border); overflow-y:auto; padding:10px; }
   h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:6px 0; }
   .card { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-bottom:8px; }
-  .card b { color:var(--fg); }
+  .card.click { cursor:pointer; }
+  .card.sel { border-color:var(--accent); }
   .ok { color:var(--ok); } .bad { color:var(--bad); }
   .dim { color:var(--dim); font-size:12px; }
-  .sess { cursor:pointer; }
-  .sess.sel { border-color:var(--accent); }
-  .sess .row { display:flex; justify-content:space-between; gap:6px; }
+  .badge { font-size:10px; border:1px solid var(--border); border-radius:10px; padding:0 7px; color:var(--dim); }
+  .badge.self { color:var(--ok); border-color:var(--ok); }
+  .badge.shared { color:var(--accent); border-color:var(--accent); }
+  .row { display:flex; justify-content:space-between; gap:6px; align-items:center; }
   button { background:#21262d; color:var(--fg); border:1px solid var(--border); border-radius:5px;
            padding:3px 10px; cursor:pointer; font-size:12px; }
   button:hover { border-color:var(--accent); }
@@ -30,6 +33,8 @@
                   padding:4px 8px; font-size:12px; width:100%; margin-bottom:6px; }
   form label { font-size:11px; color:var(--dim); }
   .inline { display:flex; gap:8px; } .inline > * { flex:1; }
+  .proj { margin:10px 0 4px; color:var(--accent); font-size:12px; cursor:pointer; }
+  .proj.sel { text-decoration:underline; }
   #chat { display:flex; flex-direction:column; min-height:0; border-right:none; }
   #msgs { flex:1; overflow-y:auto; padding:4px; }
   .msg { max-width:78%; margin:6px 0; padding:8px 12px; border-radius:8px; white-space:pre-wrap; word-break:break-word; }
@@ -45,17 +50,20 @@
 </style>
 </head>
 <body>
-<header><h1>fabric console</h1><span>local · session-bound · closing the terminal stops it</span></header>
+<header>
+  <h1>fabric console</h1>
+  <span class="dim" id="fleetSummary">…</span>
+  <span class="dim" id="catAge"></span>
+  <button onclick="loadCatalogue(true)">⟳ re-probe</button>
+</header>
 <main>
-  <section id="nodesPane">
-    <h2>Fleet</h2>
-    <div id="nodes" class="dim">probing…</div>
-    <h2>Journal orphans</h2>
-    <div id="orphans" class="dim">—</div>
+  <section>
+    <h2>Machines <span class="dim">(click = filter)</span></h2>
+    <div id="machines" class="dim">probing…</div>
   </section>
 
-  <section id="sessPane">
-    <h2>Spawn</h2>
+  <section>
+    <h2>Spawn <span class="dim" id="spawnWhere"></span></h2>
     <form id="spawnForm" class="card" onsubmit="return false">
       <div class="inline">
         <div><label>provider</label><select name="provider" id="providerSel" onchange="fillModels()"></select></div>
@@ -63,11 +71,11 @@
       </div>
       <div class="inline">
         <div><label>effort</label><select name="effort" id="effortSel"><option value="">default</option></select></div>
-        <div><label>node</label><select name="node" id="nodeSel"><option value="">local</option></select></div>
+        <div><label>project</label><select name="project" id="projectSel"><option value="">(node default)</option></select></div>
       </div>
-      <details><summary>more (project · profile · flags)</summary>
-        <label>project alias (remote)</label><input name="project" placeholder="motronics-studio">
-        <label>profile</label><input name="profile" placeholder="named profile">
+      <div class="dim" id="providerIdent"></div>
+      <details><summary>more (profile · flags)</summary>
+        <label>profile</label><input name="profile" placeholder="named profile on the target node">
         <div class="inline">
           <label><input type="checkbox" name="write" style="width:auto"> write</label>
           <label><input type="checkbox" name="visible" style="width:auto"> visible</label>
@@ -76,12 +84,14 @@
       </details>
       <button class="primary" onclick="spawn()">Spawn session</button>
     </form>
-    <h2>Sessions</h2>
-    <div id="sessions" class="dim">none</div>
+    <h2>Projects → Sessions</h2>
+    <div id="tree" class="dim">—</div>
+    <h2>Journal orphans <span class="dim">(spawned, never closed — possible survivors of a crashed manager)</span></h2>
+    <div id="orphans" class="dim">—</div>
   </section>
 
   <section id="chat">
-    <div id="msgs"><div id="chatEmpty">Select a session to chat, or spawn one.</div></div>
+    <div id="msgs"><div id="chatEmpty">Pick a session (any machine) to chat. Shared sessions attach automatically.</div></div>
     <div id="composer">
       <input id="prompt" placeholder="message… (Enter to send)" onkeydown="if(event.key==='Enter')send()">
       <button class="primary" onclick="send()">Send</button>
@@ -90,8 +100,9 @@
 </main>
 <script>
 const $ = (s) => document.querySelector(s);
-let selected = null;
-let sending = false;
+let fleet = [], catalogue = { providers: [], nodes: [], efforts: [] };
+let selMachine = null, selProject = null, selected = null, sending = false;
+const attached = new Map(); // remote `${node}:${id}` → console session id
 
 const api = async (method, path, body) => {
   const r = await fetch(path, { method, headers: { 'content-type': 'application/json' },
@@ -100,37 +111,118 @@ const api = async (method, path, body) => {
   if (!r.ok) throw new Error(j.error || r.status);
   return j;
 };
-const esc = (s) => s.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
-async function refreshNodes() {
+// ── catalogue: live-probed identity; the UI never invents a model name ──
+function fillModels() {
+  const p = catalogue.providers.find((x) => x.name === $('#providerSel').value);
+  $('#modelSel').innerHTML = '<option value="">default</option>' +
+    (p?.models || []).map((m) => `<option value="${m.alias}">${m.alias} → ${esc(m.actual)}</option>`).join('');
+  $('#providerIdent').textContent = p ? `${p.name}${p.version ? ' ' + p.version : ''} — ${p.identity}${p.available ? '' : ' (UNAVAILABLE)'}` : '';
+}
+async function loadCatalogue(force) {
   try {
-    const nodes = await api('GET', '/api/nodes');
-    $('#nodes').innerHTML = nodes.map((n) => n.alive
-      ? `<div class="card"><b>${n.name}</b> <span class="ok">●</span> v${esc(String(n.version))}<br>
-         <span class="dim">cpu ${n.cpu} · free ${n.mem_available_mb} MB / ${n.mem_total_mb} MB · up ${n.uptime_s}s
-         · ${n.sessions.length} session(s)${n.tags?.length ? ' · ' + n.tags.join(',') : ''}</span></div>`
-      : `<div class="card"><b>${n.name}</b> <span class="bad">●</span><br><span class="dim">${esc(n.error || 'dead')}</span></div>`
-    ).join('');
-  } catch (e) { $('#nodes').textContent = 'fleet probe failed: ' + e.message; }
+    catalogue = await api('GET', '/api/catalogue' + (force ? '?force=1' : ''));
+    $('#catAge').textContent = 'catalogue probed ' + new Date(catalogue.probed_at).toLocaleTimeString();
+    $('#providerSel').innerHTML = catalogue.providers.map((p) =>
+      `<option value="${p.name}" ${p.available ? '' : 'disabled'}>${p.name}${p.available ? '' : ' (unavailable)'}</option>`).join('');
+    const firstOk = catalogue.providers.find((p) => p.available && p.name === 'deepseek') || catalogue.providers.find((p) => p.available);
+    if (firstOk) $('#providerSel').value = firstOk.name;
+    fillModels();
+    const withHaiku = catalogue.providers.find((p) => p.name === $('#providerSel').value)?.models.some((m) => m.alias === 'haiku');
+    if (withHaiku) $('#modelSel').value = 'haiku';
+    $('#effortSel').innerHTML = '<option value="">default</option>' +
+      catalogue.efforts.map((e) => `<option value="${e.name}">${e.name} (${e.tokens} tk)</option>`).join('');
+  } catch (e) { console.error('catalogue', e); }
+}
+
+// ── fleet: Machine → Project → Session; selection is a FILTER, never navigation ──
+async function refreshFleet() {
+  try { fleet = await api('GET', '/api/fleet'); } catch (e) { $('#machines').textContent = e.message; return; }
+  const alive = fleet.filter((m) => m.alive);
+  const nSess = alive.reduce((a, m) => a + (m.sessions?.length ?? 0) + (m.console_sessions?.length ?? 0), 0);
+  $('#fleetSummary').textContent = `${alive.length}/${fleet.length} machines · ${nSess} session(s)`;
+  $('#machines').innerHTML = fleet.map((m) => m.alive ? `
+    <div class="card click ${selMachine === m.name ? 'sel' : ''}" onclick="pickMachine('${m.name}')">
+      <div class="row"><b>${m.name}</b>
+        <span>${m.self ? '<span class="badge self">this machine</span>' : ''} <span class="ok">●</span></span></div>
+      <span class="dim">v${esc(m.version)} · cpu ${m.cpu} · free ${m.mem_available_mb} MB · up ${m.uptime_s}s
+      · ${(m.sessions?.length ?? 0) + (m.console_sessions?.length ?? 0)} sess${m.tags?.length ? ' · ' + m.tags.join(',') : ''}</span>
+    </div>` : `
+    <div class="card"><div class="row"><b>${m.name}</b><span class="bad">●</span></div>
+      <span class="dim">${esc(m.error || 'dead')}</span></div>`).join('');
+  renderTree();
+  refreshOrphans();
+}
+
+function pickMachine(n) { selMachine = selMachine === n ? null : n; selProject = null; refreshFleet(); updateSpawnWhere(); }
+function pickProject(p) { selProject = selProject === p ? null : p; renderTree(); updateSpawnWhere(); }
+function updateSpawnWhere() {
+  $('#spawnWhere').textContent = '→ ' + (selMachine ?? 'pick a machine') + (selProject ? ' / ' + selProject : '');
+  const mch = fleet.find((m) => m.name === selMachine);
+  $('#projectSel').innerHTML = '<option value="">(node default)</option>' +
+    (mch?.projects || []).map((p) => `<option ${p === selProject ? 'selected' : ''}>${p}</option>`).join('');
+}
+
+function sessCard(s, machine) {
+  const key = machine + ':' + (s.nativeId ?? s.id);
+  const mine = s.chattable || attached.has(key);
+  const consoleId = s.chattable ? s.id : attached.get(key);
+  const isSel = selected && consoleId === selected;
+  const canChat = mine || s.shared;
+  return `<div class="card ${canChat ? 'click' : ''} ${isSel ? 'sel' : ''}"
+      ${canChat ? `onclick="openChat('${machine}','${s.id}','${consoleId ?? ''}',${!!s.chattable})"` : ''}>
+    <div class="row"><b>${s.id}</b><span>
+      ${s.shared ? '<span class="badge shared">shared</span>' : ''}
+      <span class="${s.alive === false ? 'bad' : 'ok'}">●</span></span></div>
+    <span class="dim">${s.provider}${s.pid ? ' · pid ' + s.pid : ''} · turns ${s.turns}
+      ${s.usage?.cost_usd ? ' · $' + s.usage.cost_usd.toFixed(3) : ''}</span>
+    ${canChat ? '' : '<div class="dim">owned by another connection — spawn shared to allow cross-console driving</div>'}
+    ${mine ? `<div class="row" style="margin-top:4px"><button onclick="event.stopPropagation();closeSess('${consoleId}')">close</button></div>` : ''}
+  </div>`;
+}
+
+function renderTree() {
+  const machines = fleet.filter((m) => m.alive && (!selMachine || m.name === selMachine));
+  if (!machines.length) { $('#tree').innerHTML = '<span class="dim">no machine selected/alive</span>'; return; }
+  $('#tree').innerHTML = machines.map((m) => {
+    const remote = (m.sessions || []).filter((s) => !(m.console_sessions || []).some((c) => c.nativeId === s.id));
+    const all = [...(m.console_sessions || []).map((s) => ({ ...s, _m: m.name })),
+                 ...remote.map((s) => ({ ...s, _m: m.name }))];
+    const projects = [...new Set([...(m.projects || []), ...all.map((s) => s.project).filter(Boolean)])];
+    const noProj = all.filter((s) => !s.project);
+    const byProj = (p) => all.filter((s) => s.project === p);
+    const projHtml = projects.filter((p) => !selProject || p === selProject).map((p) => `
+      <div class="proj ${selProject === p ? 'sel' : ''}" onclick="pickProject('${p}')">▸ ${p} <span class="dim">(${byProj(p).length})</span></div>
+      ${byProj(p).map((s) => sessCard(s, m.name)).join('') || ''}`).join('');
+    return `<div><h2>${m.name}</h2>${projHtml}
+      ${(!selProject && noProj.length) ? `<div class="proj">▸ (no project)</div>` + noProj.map((s) => sessCard(s, m.name)).join('') : ''}</div>`;
+  }).join('');
+}
+
+async function refreshOrphans() {
   try {
     const o = await api('GET', '/api/reconcile');
     $('#orphans').innerHTML = o.length
       ? o.map((x) => `<div class="card"><b>${x.id}</b><br><span class="dim">pid ${x.pid ?? '—'} · alive ${x.pidAlive === null ? 'unknown (remote)' : x.pidAlive}${x.node ? ' · ' + x.node : ''}</span></div>`).join('')
       : '<span class="dim">none</span>';
-  } catch { /* journal empty */ }
+  } catch { /* empty journal */ }
 }
 
-async function refreshSessions() {
+// ── chat: console-owned directly; shared foreign sessions attach on first click ──
+async function openChat(machine, remoteId, consoleId, isMine) {
   try {
-    const list = await api('GET', '/api/sessions');
-    $('#sessions').innerHTML = list.length ? list.map((s) => `
-      <div class="card sess ${s.id === selected ? 'sel' : ''}" onclick="select('${s.id}')">
-        <div class="row"><b>${s.id}</b><span class="${s.alive === false ? 'bad' : 'ok'}">●</span></div>
-        <span class="dim">${s.provider}${s.node ? ' @ ' + s.node : ''} · turns ${s.turns}
-        ${s.pid ? ' · pid ' + s.pid : ''}${s.usage ? ' · $' + s.usage.cost_usd.toFixed(3) : ''}</span>
-        <div class="row" style="margin-top:4px"><button onclick="event.stopPropagation();closeSess('${s.id}')">close</button></div>
-      </div>`).join('') : '<span class="dim">none — spawn one above</span>';
-  } catch (e) { $('#sessions').textContent = e.message; }
+    if (isMine) { selected = consoleId || remoteId; }
+    else {
+      const key = machine + ':' + remoteId;
+      if (!attached.has(key)) {
+        const desc = await api('POST', '/api/attach', { node: machine, remoteId });
+        attached.set(key, desc.id);
+      }
+      selected = attached.get(key);
+    }
+    renderTree(); refreshChat();
+  } catch (e) { alert('attach failed: ' + e.message); }
 }
 
 async function refreshChat() {
@@ -144,18 +236,19 @@ async function refreshChat() {
   } catch { /* closed */ }
 }
 
-function select(id) { selected = id; refreshSessions(); refreshChat(); }
-
 async function spawn() {
+  if (!selMachine) { alert('pick a machine on the left first'); return; }
   const f = new FormData($('#spawnForm'));
   const v = (k) => (f.get(k) || '').toString().trim() || undefined;
   try {
     const desc = await api('POST', '/api/sessions', {
       provider: v('provider'), model: v('model'), effort: v('effort'),
-      node: v('node'), project: v('project'), profile: v('profile'),
+      node: selMachine, project: v('project') ?? selProject,
+      profile: v('profile'),
       write: f.get('write') === 'on', visible: f.get('visible') === 'on', interactive: f.get('interactive') === 'on',
     });
-    select(desc.id);
+    selected = desc.id;
+    refreshFleet(); refreshChat();
   } catch (e) { alert('spawn failed: ' + e.message); }
 }
 
@@ -164,41 +257,22 @@ async function send() {
   const text = box.value.trim();
   if (!text || !selected || sending) return;
   box.value = '';
-  sending = true;
-  refreshChat();
+  sending = true; refreshChat();
   try { await api('POST', `/api/sessions/${selected}/send`, { prompt: text }); }
   catch (e) { alert('send failed: ' + e.message); }
   sending = false;
-  refreshChat(); refreshSessions();
+  refreshChat(); refreshFleet();
 }
 
 async function closeSess(id) {
   try { await api('POST', `/api/sessions/${id}/close`, {}); } catch {}
   if (selected === id) { selected = null; $('#msgs').innerHTML = '<div id="chatEmpty">Session closed.</div>'; }
-  refreshSessions();
+  refreshFleet();
 }
 
-let catalogue = { providers: [], nodes: [], efforts: [] };
-function fillModels() {
-  const p = catalogue.providers.find((x) => x.name === $('#providerSel').value);
-  $('#modelSel').innerHTML = '<option value="">default</option>' +
-    (p?.models || []).map((m) => `<option>${m}</option>`).join('');
-}
-async function loadCatalogue() {
-  try {
-    catalogue = await api('GET', '/api/catalogue');
-    $('#providerSel').innerHTML = catalogue.providers.map((p) => `<option>${p.name}</option>`).join('');
-    $('#providerSel').value = catalogue.providers.some((p) => p.name === 'deepseek') ? 'deepseek' : catalogue.providers[0]?.name;
-    fillModels();
-    if (catalogue.providers.find((p) => p.name === $('#providerSel').value)?.models.includes('haiku')) $('#modelSel').value = 'haiku';
-    $('#effortSel').innerHTML = '<option value="">default</option>' + catalogue.efforts.map((e) => `<option>${e}</option>`).join('');
-    $('#nodeSel').innerHTML = '<option value="">local</option>' + catalogue.nodes.map((n) => `<option>${n}</option>`).join('');
-  } catch (e) { console.error('catalogue', e); }
-}
-loadCatalogue();
-refreshNodes(); refreshSessions();
-setInterval(refreshNodes, 7000);
-setInterval(refreshSessions, 4000);
+loadCatalogue(false);
+refreshFleet();
+setInterval(refreshFleet, 6000);
 setInterval(refreshChat, 2500);
 </script>
 </body>

@@ -49,8 +49,12 @@ export async function openSession(opts) {
 
   const proxy = observe ? await startObserveProxy({ provider, runDir, configPath }) : null;
   // Profile (G2): env subtraction and tool/permission flags attach HERE — the spawn point.
+  // NATIVE claude authenticates via the user's real config dir (OAuth credentials) — the
+  // isolation override would log every native session out. API providers auth via env
+  // vars, so they keep the isolated dir.
+  const configOverride = provider === 'claude' ? {} : { CLAUDE_CONFIG_DIR: configDir };
   const env = applyProfileEnv(
-    { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), ...effortEnv(effort), CLAUDE_CONFIG_DIR: configDir },
+    { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), ...effortEnv(effort), ...configOverride },
     profile,
   );
   // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true

@@ -216,3 +216,20 @@ test('openSession applies effort to the child env', async () => {
   await s.close();
   assert.equal(seenEnv.MAX_THINKING_TOKENS, '16384');
 });
+
+// Native claude authenticates via the user's real config dir (OAuth credentials);
+// overriding CLAUDE_CONFIG_DIR to a fresh dir logged every native session out
+// (observed live: "Not logged in - Please run /login").
+test('native claude keeps the real CLAUDE_CONFIG_DIR; API providers get isolation', async () => {
+  const sink = { writes: [] };
+  let envs = [];
+  const capture = (bin, args, opts) => { envs.push(opts.env); return makeFakeClaude(sink)(bin, args, opts); };
+  const s1 = await openSession({ provider: 'claude', runDir: mkdtempSync(join(tmpdir(), 'os-nat-')), _spawn: capture, _bin: 'fake' });
+  await s1.close();
+  assert.ok(!('CLAUDE_CONFIG_DIR' in envs[0]) || envs[0].CLAUDE_CONFIG_DIR === process.env.CLAUDE_CONFIG_DIR,
+    'native claude must not be re-homed away from its credentials');
+  const s2 = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'os-api-')), configPath: fixture(), _spawn: capture, _bin: 'fake' });
+  await s2.close();
+  assert.ok(envs[1].CLAUDE_CONFIG_DIR && envs[1].CLAUDE_CONFIG_DIR !== process.env.CLAUDE_CONFIG_DIR,
+    'API providers keep the isolated config dir');
+});

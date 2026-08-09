@@ -83,11 +83,11 @@ export function connectNode({ host, port, token, connectTimeoutMs = 5000 }) {
  * @param {object} opts  host, port, token, provider (required), model?, write?, project?
  */
 export async function openRemoteSession(opts) {
-  const { host, port, token, provider, model, write, project, profile, visible, interactive, effort } = opts;
+  const { host, port, token, provider, model, write, project, profile, visible, interactive, effort, shared } = opts;
   if (!provider) throw new Error("openRemoteSession: provider is required");
   const conn = await connectNode({ host, port, token });
   try {
-    const desc = await conn.request("node/spawn", { provider, model, write: !!write, project, profile: profile ?? null, visible: !!visible, interactive: !!interactive, effort: effort ?? null });
+    const desc = await conn.request("node/spawn", { provider, model, write: !!write, project, profile: profile ?? null, visible: !!visible, interactive: !!interactive, effort: effort ?? null, shared: !!shared });
     return {
       id: desc.id,
       pid: desc.pid ?? null,
@@ -102,4 +102,21 @@ export async function openRemoteSession(opts) {
     conn.close();
     throw e;
   }
+}
+
+/**
+ * Attach to an EXISTING session on a peer (shared, or owned by a dead connection whose
+ * record survived). Same uniform handle; close() closes the REMOTE session.
+ */
+export async function attachRemoteSession({ host, port, token, id }) {
+  const conn = await connectNode({ host, port, token });
+  return {
+    id,
+    send: (text) => conn.request("node/send", { id, prompt: text }),
+    ping: () => conn.request("node/ping", { id }),
+    async close() {
+      try { return (await conn.request("node/close", { id }))?.exitCode ?? null; }
+      finally { conn.close(); }
+    },
+  };
 }

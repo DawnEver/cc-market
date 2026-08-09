@@ -14,6 +14,9 @@ import { reconcile } from "./journal.mjs";
 import { loadFabricConfig } from "./node-config.mjs";
 import { connectNode } from "./node-client.mjs";
 import { getConfigPath } from "./providers.mjs";
+import { liveCatalogue } from "./catalogue.mjs";
+import { loadServeConfig } from "./node-config.mjs";
+import { attachSession } from "./session.mjs";
 
 /**
  * Structured provider/model/node catalogue for UI dropdowns. Models are the tier
@@ -72,7 +75,8 @@ export function createWebApi(deps = {}) {
   const _ping = deps.pingSession || pingSession;
   const _nodes = deps.pingNodes || pingNodes;
   const _reconcile = deps.reconcile || reconcile;
-  const _catalogue = deps.catalogue || catalogue;
+  const _catalogue = deps.catalogue || liveCatalogue;
+  const _attach = deps.attachSession || attachSession;
 
   const logs = new Map(); // sessionId → [{role, text, ts}]
   const log = (id, role, text) => {
@@ -83,7 +87,30 @@ export function createWebApi(deps = {}) {
   async function handle(method, path, body) {
     try {
       if (method === "GET" && path === "/api/nodes") return { status: 200, body: await _nodes() };
-      if (method === "GET" && path === "/api/catalogue") return { status: 200, body: _catalogue() };
+      if (method === "GET" && path.startsWith("/api/catalogue")) {
+        return { status: 200, body: _catalogue({ force: path.includes("force=1") }) };
+      }
+      if (method === "GET" && path === "/api/fleet") {
+        // Machines = configured nodes, with THIS machine identified (serve name match),
+        // each carrying projects + sessions (shared/project flags from node/status) and
+        // the console's own in-process sessions folded under the self machine.
+        const machines = await _nodes();
+        let selfName = null;
+        try { selfName = loadServeConfig().name; } catch { /* no serve block */ }
+        const own = _list();
+        const ownByNode = (n) => own.filter((s2) => (s2.node ?? selfName) === n);
+        return { status: 200, body: machines.map((mch) => ({
+          ...mch,
+          self: mch.name === selfName,
+          console_sessions: ownByNode(mch.name).map((s2) => ({ ...s2, chattable: true })),
+        })) };
+      }
+      if (method === "POST" && path === "/api/attach") {
+        if (!body?.node || !body?.remoteId) return { status: 400, body: { error: "node and remoteId are required" } };
+        const desc = await _attach({ node: body.node, remoteId: body.remoteId });
+        logs.set(desc.id, []);
+        return { status: 200, body: desc };
+      }
       if (method === "GET" && path === "/api/sessions") {
         return { status: 200, body: _list().map((s) => ({ ...s, chattable: logs.has(s.id) })) };
       }
@@ -96,6 +123,9 @@ export function createWebApi(deps = {}) {
           node: body.node || undefined, project: body.project || undefined,
           profile: body.profile || undefined, effort: body.effort || undefined,
           write: !!body.write, visible: !!body.visible, interactive: !!body.interactive,
+          // Sessions opened on a node default to SHARED so any machine's console can
+          // manage them; body.shared=false opts out.
+          shared: body.node ? body.shared !== false : false,
         });
         logs.set(desc.id, []);
         return { status: 200, body: desc };
