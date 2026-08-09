@@ -51,6 +51,9 @@ fabric/
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
+│   ├── web.mjs + web-ui.html  Local management console (http://127.0.0.1:7678): fleet status,
+│   │                        spawn/chat/close sessions on any node, journal orphans. Session-bound.
+│   ├── ping.mjs             Probe every configured node → ALIVE + capacity facts, or DEAD + reason
 │   ├── serve.{mjs,ps1,cmd,sh}  CLI: run this machine as a fabric LAN node — session-bound
 │   │                        on purpose (never a background service; user directive 2026-08-09)
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
