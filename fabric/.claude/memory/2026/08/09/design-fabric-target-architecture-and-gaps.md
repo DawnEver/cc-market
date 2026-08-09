@@ -109,5 +109,13 @@ with one revision: serve is session-bound like ci_loop, never a background servi
 | 5 G2 | `ba70fa8` | profiles: allowedTools/permissionMode/envDeny, subtraction-only, resolved once, forwarded to remote peers; MCP spawn_session takes profile |
 | 6 G7 | `c201c9b` | usage on handle/listSessions/journal; live deepseek: 27394/2 tokens $0.137, zero orphans after close |
 
-Suite: 237 tests, 0 fail. Remaining OPERATIONAL (not code): start serve.{ps1,cmd,sh} on
-WS1/WS2 in a kept-open terminal; add serve.tags per box; swarm-side reconcile consumer.
+Suite: 237 tests, 0 fail.
+
+**Fleet first-light (same day):** all three nodes ALIVE at once — G cpu=32, WS1 cpu=32,
+WS2 cpu=24/30GB free — `ping.mjs` exit 0, and live remote round trips on BOTH peers
+(FABRIC-WS1-OK pid 1568, FABRIC-WS2-OK pid 35592). One operational lesson recorded in
+README setup: Windows blocks inbound 7677 by default and the symptom is deceptive (serve
+log healthy, every peer times out); the New-NetFirewallRule step is now step 3 of setup.
+
+Remaining OPERATIONAL: serve.tags per box (declare femm etc.); swarm-side reconcile
+consumer; keep the three serve terminals open (session-bound by directive).
