@@ -257,7 +257,10 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   });
 
   // A failed handshake (wrong PSK, non-TLS client) must not crash the server.
-  server.on("tlsClientError", (e) => process.stderr.write(`fabric node: TLS handshake failed: ${e.message}\n`));
+  // The remote address is the diagnosis: a LAN peer's IP means a token mismatch on that
+  // box (config not yet synced), anything else is a stray non-fabric client on the port.
+  server.on("tlsClientError", (e, sock) => process.stderr.write(
+    `fabric node: TLS handshake failed from ${sock?.remoteAddress ?? "?"}:${sock?.remotePort ?? "?"}: ${e.message}\n`));
 
   return {
     listen(port = 0, host = "0.0.0.0") {
