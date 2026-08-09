@@ -248,10 +248,13 @@ export async function spawnChild(opts) {
     const sysFile = systemPromptFile ?? (style && cfgSysFile ? resolveStyleFile(style, cfgSysFile) : null) ?? cfgSysFile;
     const sysArgs = sysFile ? ['--system-prompt-file', sysFile] : [];
     // Both modes emit stream-json on stdout so usage parsing + onText streaming are
-    // universal; argv mode just keeps the prompt on the command line.
+    // universal; argv mode just keeps the prompt on the command line. --verbose is
+    // REQUIRED by the CLI for --print + stream-json (exit 1 without — the same
+    // requirement open-session.mjs documents); its extra system events on stdout
+    // are skipped by parseStreamJsonOutput/emitLine.
     const args = useStdin
-      ? ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...sysArgs, ...hookFreeArgs(extraArgs), ...extraArgs]
-      : ['-p', fullPrompt, '--output-format', 'stream-json', ...modelArgs, ...sysArgs, ...hookFreeArgs(extraArgs), ...extraArgs];
+      ? ['-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...sysArgs, ...hookFreeArgs(extraArgs), ...extraArgs]
+      : ['-p', fullPrompt, '--verbose', '--output-format', 'stream-json', ...modelArgs, ...sysArgs, ...hookFreeArgs(extraArgs), ...extraArgs];
 
     const result = await new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new Error('spawnChild: request cancelled')); return; }

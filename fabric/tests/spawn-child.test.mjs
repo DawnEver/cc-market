@@ -73,7 +73,7 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   assert.equal(res.stdout, 'child-said-ok');
   assert.deepEqual(res.usage, { input_tokens: 3, output_tokens: 4 }, 'usage returned in argv (short-prompt) mode too');
   assert.equal(res.jsonlPath, null, 'no jsonl in normal mode');
-  assert.deepEqual(sink.args.slice(0, 4), ['-p', 'hello', '--output-format', 'stream-json']);
+  assert.deepEqual(sink.args.slice(0, 5), ['-p', 'hello', '--verbose', '--output-format', 'stream-json']);
   // Direct-connect API provider: model pinned via env (resolveModel), not --model —
   // the CLI flag would rely on tier-alias env vars; the env pin is exact.
   assert.equal(sink.env.ANTHROPIC_MODEL, 'deepseek-v4-flash');
@@ -89,7 +89,7 @@ test('spawnChild native claude without runDir: no isolation, --model passthrough
     configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
   });
   assert.equal(res.code, 0);
-  assert.deepEqual(sink.args.slice(0, 6), ['-p', 'hello', '--output-format', 'stream-json', '--model', 'claude-haiku-4-5']);
+  assert.deepEqual(sink.args.slice(0, 7), ['-p', 'hello', '--verbose', '--output-format', 'stream-json', '--model', 'claude-haiku-4-5']);
   assert.equal(sink.env.CLAUDE_CONFIG_DIR, process.env.CLAUDE_CONFIG_DIR, 'no isolated config dir');
   assert.equal(res.runDir, null);
 });
