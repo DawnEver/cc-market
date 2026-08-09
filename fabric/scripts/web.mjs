@@ -26,6 +26,15 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "web-ui.html");
 const api = createWebApi();
 
+// Idempotent start (same contract as serve.mjs): if a console already answers on this
+// port, say so and exit 0 instead of a bare EADDRINUSE crash.
+async function alreadyServing() {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/catalogue`, { signal: AbortSignal.timeout(2000) });
+    return r.ok;
+  } catch { return false; }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://127.0.0.1");
   if (req.method === "GET" && url.pathname === "/") {
@@ -45,6 +54,14 @@ const server = createServer(async (req, res) => {
   res.end(JSON.stringify(out.body));
 });
 
+server.on("error", async (e) => {
+  if (e.code === "EADDRINUSE" && await alreadyServing()) {
+    process.stdout.write(`fabric console already serving on http://127.0.0.1:${port} — nothing to do\n`);
+    process.exit(0);
+  }
+  process.stderr.write(`fabric console: ${e.message}\n`);
+  process.exit(1);
+});
 server.listen(port, "127.0.0.1", () => {
   process.stdout.write(`fabric console: http://127.0.0.1:${port}  (local only; close this terminal to stop)\n`);
 });
