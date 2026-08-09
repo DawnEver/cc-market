@@ -119,3 +119,26 @@ log healthy, every peer times out); the New-NetFirewallRule step is now step 3 o
 
 Remaining OPERATIONAL: serve.tags per box (declare femm etc.); swarm-side reconcile
 consumer; keep the three serve terminals open (session-bound by directive).
+
+## Same-day extensions (user directives + sharp-review)
+
+Sharp-review of the G0-G8 batch: 22 findings, 5 HIGH — all HIGH closed in `2dca8bd`
+(peer-side profile NAME enforcement, extraArgs cannot override profile flags, reconcile
+never pid-checks remote sessions, failed closes journal close_failed, plus win32
+case-insensitive envDeny / profiled-write safe default / alive never true-by-default).
+Then three user-directed features, each live-verified:
+
+* **visible:true** — transcript viewer terminal on the machine running the session
+  (windowsHide stays the default; the viewer is a window onto the session, never the
+  session). UTF-8 both ends (`fbe432e`).
+* **interactive:true** — ONE chat window: streaming transcript + typed interjections;
+  the human is ANOTHER SENDER through the same serialized send chain, labelled [human].
+  Proved live twice: checkpoints correctly summarized the human's interjections
+  (`48cd169`, `1d8bf96`).
+* **effort** — the third spawn axis (provider + model + effort): low/medium/high/max or
+  a token number → MAX_THINKING_TOKENS, wired through node/spawn + MCP (`ef3ecc2`).
+* serve is IDEMPOTENT (second start detects the live node via its own token, exits 0)
+  and remains session-bound; MEDIUM/LOW review findings remain open in
+  cc-market/.claude/memory/2026/08/09/sharp-review.md for a later pass.
+
+Suite: 246 tests, 0 fail.
