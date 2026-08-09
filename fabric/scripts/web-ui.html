@@ -73,7 +73,7 @@
       </div>
       <div class="inline">
         <div><label>effort</label><select name="effort" id="effortSel"><option value="">default</option></select></div>
-        <div><label>project</label><select name="project" id="projectSel"><option value="">(node default)</option></select></div>
+        <div><label>project</label><select name="project" id="projectSel"></select></div>
       </div>
       <div class="dim" id="providerIdent"></div>
       <details><summary>more (profile · flags)</summary>
@@ -166,8 +166,11 @@ function pickProject(p) { selProject = selProject === p ? null : p; renderTree()
 function updateSpawnWhere() {
   $('#spawnWhere').textContent = '→ ' + (selMachine ?? 'pick a machine') + (selProject ? ' / ' + selProject : '');
   const mch = fleet.find((m) => m.name === selMachine);
-  $('#projectSel').innerHTML = '<option value="">(node default)</option>' +
-    (mch?.projects || []).map((p) => `<option ${p === selProject ? 'selected' : ''}>${p}</option>`).join('');
+  // No "(node default)" escape: a session always lands in a NAMED project. First
+  // alias is the default; the current filter wins when one is selected.
+  $('#projectSel').innerHTML =
+    (mch?.projects || []).map((p, i) => `<option ${p === (selProject ?? mch.projects[0]) ? 'selected' : ''}>${p}</option>`).join('') ||
+    '<option value="" disabled>no projects registered on this node</option>';
 }
 
 function sessCard(s, machine) {
