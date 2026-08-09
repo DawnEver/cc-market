@@ -229,3 +229,29 @@ describe("buildUserContent", () => {
     ]);
   });
 });
+
+describe("callAnthropicAPI systemPromptFile (platform default)", () => {
+  test("systemPromptFile content becomes body.system when no explicit systemPrompt", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "sysf-http-"));
+    const file = join(dir, "base.md");
+    writeFileSync(file, "PLATFORM BASE TEXT\n");
+    let seen = null;
+    const fetchMock = async (url, opts) => {
+      seen = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ usage: {} }), body: { getReader: () => ({ read: async () => ({ done: true }) }) } };
+    };
+    const { callAnthropicAPI } = await import("../engine/anthropic-http.mjs");
+    // stub global fetch
+    const orig = globalThis.fetch;
+    globalThis.fetch = fetchMock;
+    try {
+      await callAnthropicAPI({ baseUrl: "https://x.test", token: "k", tokenStyle: "x-api-key", provider: "deepseek" }, "m1", null, "hi", null, false, null, { systemPromptFile: file });
+    } finally {
+      globalThis.fetch = orig;
+    }
+    assert.ok(seen && seen.system === "PLATFORM BASE TEXT\n", "systemPromptFile must populate body.system");
+  });
+});

@@ -42,7 +42,7 @@ import {
   ProviderError,
 } from "./lib.mjs";
 import { withPooledClient, poolStats } from "../engine/codex/app-server.mjs";
-import { resolveModelFromId } from "../engine/providers.mjs";
+import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
@@ -437,7 +437,11 @@ const CLAUDE_DISPATCH = {
 async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, signal }) {
   const resolvedModel = resolveModel(providerConfig, model || null);
   process.stderr.write(`fabric-mcp: calling ${resolvedModel} (API)...\n`);
-  const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, signal);
+  // Platform prompt for direct-connect API providers: the same
+  // fabric.systemPromptFile the claude-CLI paths inject (they have no CLI
+  // --system-prompt-file, so the file is read here and set as body.system).
+  const sysFile = loadFabricConfig(getConfigPath()).systemPromptFile;
+  const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, signal, { systemPromptFile: sysFile });
   return { data, resolvedModel };
 }
 
@@ -491,8 +495,17 @@ export async function handleCall(args, deps = {}) {
     return runObserved({ ...args, provider, prompt: userPrompt, model }, deps.spawnChild || spawnChild);
   }
 
+  // Instruction layering (systematic, all providers identical):
+  //   system layer  = platform prompt (fabric.systemPromptFile / codex
+  //                  model_instructions_file / API provider systemPromptFile)
+  //   per-call layer = mode template (mode-specific instructions ONLY — the
+  //                  platform/GLOBAL layers own universal principles, so
+  //                  prompts/*.md must not restate them; the overlap guard
+  //                  test enforces this) + customSystem (explicit override) +
+  //                  the user prompt, all as user messages.
   let systemPrompt = customSystem || "";
-  if (!customSystem && mode) systemPrompt = buildPrompt(mode, userPrompt).systemPrompt;
+  const modeInstruction = (!customSystem && mode) ? buildPrompt(mode, userPrompt).systemPrompt : "";
+  if (modeInstruction) userPrompt = `${modeInstruction}\n\n${userPrompt}`;
 
   const resolvedImages = resolveImages(images);
   const imageURIs = resolvedImages.length > 0

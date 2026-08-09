@@ -3,6 +3,7 @@
 // direct-connect API providers (deepseek etc.). Promoted from takeover's callers.mjs;
 // the CC-harness path is engine/spawn-child.mjs, the codex path engine/codex/.
 import process from "node:process";
+import { readFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
 
 import { getConfigPath, anthropicEndpoint } from "./providers.mjs";
@@ -29,7 +30,7 @@ export function buildUserContent(prompt, images) {
   return content;
 }
 
-export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null, { sseIdleTimeoutMs = 300000 } = {}) {
+export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null, { sseIdleTimeoutMs = 300000, systemPromptFile = null } = {}) {
   if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${getConfigPath()}.`);
 
   // Same URL Claude Code itself hits: ANTHROPIC_BASE_URL + '/v1/messages'
@@ -46,6 +47,12 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
     max_tokens: 16000,
     messages: [{ role: "user", content: buildUserContent(userPrompt, images) }],
   };
+  // Platform default (fabric.systemPromptFile) — direct-connect API providers
+  // have no CLI flag, so the file is read here and set as body.system. An
+  // explicit systemPrompt (customSystem) wins over it.
+  if (systemPromptFile && !systemPrompt) {
+    try { systemPrompt = readFileSync(systemPromptFile, "utf8"); } catch { /* file gone → skip */ }
+  }
   if (systemPrompt) body.system = systemPrompt;
 
   const maxRetries = 2;

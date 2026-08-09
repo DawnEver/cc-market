@@ -85,3 +85,19 @@ added to PROFILE_OWNED_FLAGS. codex has NO equivalent (fixed tool set).
   read / 0 create). --tools=<list> equals form required when a prompt follows
   on argv (separate-arg form mis-parses); fabric stdin spawns immune.
 - Sync/claude npm test now includes system-prompt tests (34 pass).
+
+## 2026-08-10 systematic cleanup (committed)
+Instruction layering unified across all three fabric paths — system layer
+(platform, persistent) vs per-call layer (mode template + customSystem + user
+prompt, user message) vs project layer. Changes:
+- prompts/task.md de-duplicated against GLOBAL (removed "Complete the task
+  fully"/"be concise"/"idiomatic code" — GLOBAL owns those); review.md kept
+  (adversarial stance is mode-specific).
+- mcp-server.mjs: mode template prepended to userPrompt on EVERY provider
+  (was: API→body.system, claude/codex→user message — inconsistent); systemPrompt
+  var now = customSystem only.
+- API providers (deepseek/kimi direct-connect) now get the platform prompt:
+  callAnthropicAPI reads fabric.systemPromptFile → body.system (was missing
+  entirely — the "all non-native paths get the custom prompt" gap).
+- Guard test prompts-overlap.test.mjs: mode templates must not restate GLOBAL
+  phrases (fails future dual-source edits). 317 fabric tests pass.
