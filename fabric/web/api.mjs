@@ -9,14 +9,14 @@
 // the durable trail stays in the journal, as everywhere else.
 
 import { readFileSync, existsSync } from "node:fs";
-import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
-import { reconcile, recordEvent } from "./journal.mjs";
-import { loadFabricConfig } from "./node-config.mjs";
-import { connectNode } from "./node-client.mjs";
-import { getConfigPath } from "./providers.mjs";
-import { liveCatalogue } from "./catalogue.mjs";
-import { loadServeConfig } from "./node-config.mjs";
-import { attachSession } from "./session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, pingSession } from "../engine/session.mjs";
+import { reconcile, recordEvent } from "../engine/journal.mjs";
+import { loadFabricConfig } from "../engine/node-config.mjs";
+import { connectNode } from "../engine/node-client.mjs";
+import { getConfigPath } from "../engine/providers.mjs";
+import { liveCatalogue } from "../engine/catalogue.mjs";
+import { loadServeConfig } from "../engine/node-config.mjs";
+import { attachSession } from "../engine/session.mjs";
 
 /**
  * Structured provider/model/node catalogue for UI dropdowns. Models are the tier

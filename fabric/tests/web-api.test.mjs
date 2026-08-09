@@ -1,10 +1,10 @@
-// Tests for engine/web-api.mjs — the local management console's JSON API. Pure handler
+// Tests for web/api.mjs — the local management console's JSON API. Pure handler
 // (method, path, body) → {status, body}; HTTP and HTML live in scripts/web.mjs.
 process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'fj-web-'));
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWebApi } from '../engine/web-api.mjs';
+import { createWebApi } from '../web/api.mjs';
 
 function fakeDeps() {
   const sessions = new Map();

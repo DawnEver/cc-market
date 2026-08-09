@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>fabric console</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>fabric console</h1>
+  <span class="dim" id="fleetSummary">…</span>
+  <span class="dim" id="catAge"></span>
+  <button onclick="loadCatalogue(true)">⟳ re-probe</button>
+</header>
+<main>
+  <section>
+    <h2>Machines <span class="dim">(click = filter)</span></h2>
+    <div id="machines" class="dim">probing…</div>
+  </section>
+
+  <section>
+    <h2>Spawn <span class="dim" id="spawnWhere"></span></h2>
+    <form id="spawnForm" class="card" onsubmit="return false">
+      <div class="inline">
+        <div><label>provider</label><select name="provider" id="providerSel" onchange="fillModels()"></select></div>
+        <div><label>model</label><select name="model" id="modelSel"></select></div>
+      </div>
+      <div class="inline">
+        <div><label>effort</label><select name="effort" id="effortSel"></select></div>
+        <div><label>project</label><select name="project" id="projectSel"></select></div>
+      </div>
+      <div class="dim" id="providerIdent"></div>
+      <details><summary>more (profile · flags)</summary>
+        <label>profile</label><input name="profile" placeholder="named profile on the target node">
+        <div class="inline">
+          <label><input type="checkbox" name="write" style="width:auto"> write</label>
+          <label><input type="checkbox" name="visible" style="width:auto"> visible</label>
+          <label><input type="checkbox" name="interactive" style="width:auto"> interactive</label>
+        </div>
+      </details>
+      <button class="primary" onclick="spawn()">Spawn session</button>
+    </form>
+    <h2>Projects → Sessions</h2>
+    <div id="tree" class="dim">—</div>
+    <div id="orphanWrap" style="display:none">
+      <details>
+        <summary>&#9888; unaccounted sessions (<span id="orphanCount">0</span>) — spawned but never closed; a crashed manager may have left the child running</summary>
+        <div id="orphans"></div>
+      </details>
+    </div>
+  </section>
+
+  <section id="chat">
+    <div id="msgs"><div id="chatEmpty">Pick a session (any machine) to chat. Shared sessions attach automatically.</div></div>
+    <div id="composer">
+      <input id="prompt" placeholder="message… (Enter to send)" onkeydown="if(event.key==='Enter')send()">
+      <button class="primary" onclick="send()">Send</button>
+    </div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
