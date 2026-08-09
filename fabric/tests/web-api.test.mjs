@@ -60,3 +60,12 @@ test('spawn requires provider; send requires prompt', async () => {
   const s = await api.handle('POST', '/api/sessions', { provider: 'deepseek' });
   assert.equal((await api.handle('POST', `/api/sessions/${s.body.id}/send`, {})).status, 400);
 });
+
+test('catalogue lists builtin + configured providers, nodes and efforts', async () => {
+  const api = createWebApi({ ...fakeDeps(), catalogue: () => ({
+    providers: [{ name: 'claude', models: ['haiku'] }], nodes: ['G'], efforts: ['low'] }) });
+  const r = await api.handle('GET', '/api/catalogue', null);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.providers[0].name, 'claude');
+  assert.deepEqual(r.body.nodes, ['G']);
+});

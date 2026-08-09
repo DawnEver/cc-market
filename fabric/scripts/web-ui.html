@@ -58,13 +58,12 @@
     <h2>Spawn</h2>
     <form id="spawnForm" class="card" onsubmit="return false">
       <div class="inline">
-        <div><label>provider</label><input name="provider" value="deepseek"></div>
-        <div><label>model</label><input name="model" value="haiku"></div>
+        <div><label>provider</label><select name="provider" id="providerSel" onchange="fillModels()"></select></div>
+        <div><label>model</label><select name="model" id="modelSel"></select></div>
       </div>
       <div class="inline">
-        <div><label>effort</label>
-          <select name="effort"><option value="">default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></div>
-        <div><label>node (blank = local)</label><input name="node" placeholder="G / WS1 / WS2"></div>
+        <div><label>effort</label><select name="effort" id="effortSel"><option value="">default</option></select></div>
+        <div><label>node</label><select name="node" id="nodeSel"><option value="">local</option></select></div>
       </div>
       <details><summary>more (project · profile · flags)</summary>
         <label>project alias (remote)</label><input name="project" placeholder="motronics-studio">
@@ -179,6 +178,24 @@ async function closeSess(id) {
   refreshSessions();
 }
 
+let catalogue = { providers: [], nodes: [], efforts: [] };
+function fillModels() {
+  const p = catalogue.providers.find((x) => x.name === $('#providerSel').value);
+  $('#modelSel').innerHTML = '<option value="">default</option>' +
+    (p?.models || []).map((m) => `<option>${m}</option>`).join('');
+}
+async function loadCatalogue() {
+  try {
+    catalogue = await api('GET', '/api/catalogue');
+    $('#providerSel').innerHTML = catalogue.providers.map((p) => `<option>${p.name}</option>`).join('');
+    $('#providerSel').value = catalogue.providers.some((p) => p.name === 'deepseek') ? 'deepseek' : catalogue.providers[0]?.name;
+    fillModels();
+    if (catalogue.providers.find((p) => p.name === $('#providerSel').value)?.models.includes('haiku')) $('#modelSel').value = 'haiku';
+    $('#effortSel').innerHTML = '<option value="">default</option>' + catalogue.efforts.map((e) => `<option>${e}</option>`).join('');
+    $('#nodeSel').innerHTML = '<option value="">local</option>' + catalogue.nodes.map((n) => `<option>${n}</option>`).join('');
+  } catch (e) { console.error('catalogue', e); }
+}
+loadCatalogue();
 refreshNodes(); refreshSessions();
 setInterval(refreshNodes, 7000);
 setInterval(refreshSessions, 4000);

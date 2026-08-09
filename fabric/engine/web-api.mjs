@@ -8,10 +8,44 @@
 // The console holds a per-session message log so the UI can render a conversation;
 // the durable trail stays in the journal, as everywhere else.
 
+import { readFileSync, existsSync } from "node:fs";
 import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
 import { reconcile } from "./journal.mjs";
 import { loadFabricConfig } from "./node-config.mjs";
 import { connectNode } from "./node-client.mjs";
+import { getConfigPath } from "./providers.mjs";
+
+/**
+ * Structured provider/model/node catalogue for UI dropdowns. Models are the tier
+ * ALIASES the config maps (haiku/sonnet/opus/fable); an empty list means "the
+ * provider picks its default" (codex). Nodes come from fabric.nodes; "" = local.
+ */
+export function catalogue({ _config = loadFabricConfig, _configPath = getConfigPath } = {}) {
+  const providers = [
+    { name: "claude", models: ["haiku", "sonnet", "opus"] },
+    { name: "codex", models: [] },
+  ];
+  try {
+    const p = _configPath();
+    if (existsSync(p)) {
+      const cfg = JSON.parse(readFileSync(p, "utf8"));
+      for (const k of Object.keys(cfg)) {
+        if (!k.startsWith("env:")) continue;
+        const env = cfg[k];
+        if (!env.ANTHROPIC_BASE_URL && !env.ANTHROPIC_FOUNDRY_BASE_URL) continue;
+        const models = [];
+        if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL) models.push("haiku");
+        if (env.ANTHROPIC_DEFAULT_SONNET_MODEL) models.push("sonnet");
+        if (env.ANTHROPIC_DEFAULT_OPUS_MODEL) models.push("opus");
+        if (env.ANTHROPIC_DEFAULT_FABLE_MODEL) models.push("fable");
+        providers.push({ name: k.slice(4), models });
+      }
+    }
+  } catch { /* config unreadable: builtin providers only */ }
+  let nodes = [];
+  try { nodes = Object.keys(_config().nodes || {}); } catch { /* no fabric block */ }
+  return { providers, nodes, efforts: ["low", "medium", "high", "max"] };
+}
 
 /** Probe every configured node for its status facts (the ping.mjs logic, reusable). */
 export async function pingNodes({ _connect = connectNode, _config = loadFabricConfig } = {}) {
@@ -38,6 +72,7 @@ export function createWebApi(deps = {}) {
   const _ping = deps.pingSession || pingSession;
   const _nodes = deps.pingNodes || pingNodes;
   const _reconcile = deps.reconcile || reconcile;
+  const _catalogue = deps.catalogue || catalogue;
 
   const logs = new Map(); // sessionId → [{role, text, ts}]
   const log = (id, role, text) => {
@@ -48,6 +83,7 @@ export function createWebApi(deps = {}) {
   async function handle(method, path, body) {
     try {
       if (method === "GET" && path === "/api/nodes") return { status: 200, body: await _nodes() };
+      if (method === "GET" && path === "/api/catalogue") return { status: 200, body: _catalogue() };
       if (method === "GET" && path === "/api/sessions") {
         return { status: 200, body: _list().map((s) => ({ ...s, chattable: logs.has(s.id) })) };
       }
