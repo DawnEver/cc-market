@@ -10,7 +10,7 @@
 
 import { mkdirSync, appendFileSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildChildEnv, hookFreeArgs, resolveClaudeExe } from './spawn-child.mjs';
+import { buildChildEnv, hookFreeArgs, resolveClaudeExe, effortEnv } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { applyProfileEnv, profileArgs, stripProfileOwnedFlags } from './profile.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
@@ -36,7 +36,7 @@ function extractText(assistantMsg) {
 export async function openSession(opts) {
   const {
     provider, model, observe = false, runDir, cwd, configPath, extraArgs = [], profile = null,
-    visible = false, interactive = false,
+    visible = false, interactive = false, effort = null,
     _spawn = hiddenSpawn, _bin, _viewerSpawn = hiddenSpawn, _pollMs = 400,
   } = opts;
   const showUi = visible || interactive; // interactive implies the transcript viewer
@@ -50,7 +50,7 @@ export async function openSession(opts) {
   const proxy = observe ? await startObserveProxy({ provider, runDir, configPath }) : null;
   // Profile (G2): env subtraction and tool/permission flags attach HERE — the spawn point.
   const env = applyProfileEnv(
-    { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), CLAUDE_CONFIG_DIR: configDir },
+    { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), ...effortEnv(effort), CLAUDE_CONFIG_DIR: configDir },
     profile,
   );
   // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true

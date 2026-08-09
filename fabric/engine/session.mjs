@@ -18,7 +18,7 @@ import { openCodexSession } from "./codex/session.mjs";
 import { openRemoteSession } from "./node-client.mjs";
 import { resolveNode, loadFabricConfig } from "./node-config.mjs";
 import { resolveProfile, applyProfileEnv } from "./profile.mjs";
-import { buildChildEnv, resolveClaudeExe } from "./spawn-child.mjs";
+import { buildChildEnv, resolveClaudeExe, effortEnv } from "./spawn-child.mjs";
 import { spawn } from "../shared/spawn.mjs";
 import { recordEvent } from "./journal.mjs";
 
@@ -26,12 +26,12 @@ import { recordEvent } from "./journal.mjs";
 // Spawns a fresh `claude -p` with tools per turn; accumulates history in memory. Each
 // turn repays for prior context, but gives full write capability without a persistent harness.
 
-function openWriteSession({ provider, model, cwd, profile = null, _spawn = spawn }) {
+function openWriteSession({ provider, model, cwd, profile = null, effort = null, _spawn = spawn }) {
   const history = [];
   // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true
   // (spawn EINVAL); same defect as open-session.mjs had, fixed at both sites 2026-08-09.
   const bin = resolveClaudeExe();
-  const env = applyProfileEnv(buildChildEnv({ provider, observe: false }), profile);
+  const env = applyProfileEnv({ ...buildChildEnv({ provider, observe: false }), ...effortEnv(effort) }, profile);
   const allowedTools = profile?.allowedTools
     ? (Array.isArray(profile.allowedTools) ? profile.allowedTools.join(",") : profile.allowedTools)
     : "Bash,Read,Write,Edit,Glob,Grep";
@@ -81,7 +81,7 @@ export async function openProviderSession(opts = {}) {
       throw new Error("openProviderSession: a remote spawn takes a profile NAME registered on the peer, not an object");
     }
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive });
+    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: opts.effort ?? null });
   }
   // Local: resolve a NAME once so every backend below receives the object.
   const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig());

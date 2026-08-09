@@ -116,6 +116,7 @@ export const TOOLS = [
         profile: { type: "string", description: "Named spawn profile from fabric.profiles (tool/permission/env policy; remote spawns resolve the name on the peer)" },
         visible: { type: "boolean", description: "Show a live transcript terminal on the machine running the session (default hidden)" },
         interactive: { type: "boolean", description: "Also open an input terminal there — a human can interject into the live session (implies visible)" },
+        effort: { type: "string", description: "Thinking effort: low|medium|high|max or a MAX_THINKING_TOKENS number" },
       },
       required: ["provider"],
     },
@@ -642,7 +643,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       const desc = await _createSession({
         provider: args.provider, model: args.model, write: !!args.write,
         cwd: args.cwd || process.cwd(), observe: !!args.observe,
-        node: args.node, project: args.project, profile: args.profile, visible: !!args.visible, interactive: !!args.interactive,
+        node: args.node, project: args.project, profile: args.profile, visible: !!args.visible, interactive: !!args.interactive, effort: args.effort,
       });
       return textResult(JSON.stringify(desc));
     }

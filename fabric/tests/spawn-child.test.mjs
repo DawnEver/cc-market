@@ -426,3 +426,16 @@ test('caller-supplied --settings in extraArgs wins over the hook-free default', 
   assert.equal(occurrences, 1, 'no duplicate --settings');
   assert.deepEqual(JSON.parse(sink.args[sink.args.indexOf('--settings') + 1]), { custom: true });
 });
+
+// ── effort: provider + model + thinking effort are the three spawn axes. Effort maps
+// to the claude harness's MAX_THINKING_TOKENS budget; numbers pass through.
+test('effortEnv maps named levels and passes numbers through', async () => {
+  const { effortEnv } = await import('../engine/spawn-child.mjs');
+  assert.deepEqual(effortEnv(undefined), {});
+  assert.deepEqual(effortEnv('low'), { MAX_THINKING_TOKENS: '1024' });
+  assert.deepEqual(effortEnv('medium'), { MAX_THINKING_TOKENS: '8192' });
+  assert.deepEqual(effortEnv('high'), { MAX_THINKING_TOKENS: '16384' });
+  assert.deepEqual(effortEnv('max'), { MAX_THINKING_TOKENS: '32000' });
+  assert.deepEqual(effortEnv(4096), { MAX_THINKING_TOKENS: '4096' });
+  assert.throws(() => effortEnv('ultra'), /effort/);
+});

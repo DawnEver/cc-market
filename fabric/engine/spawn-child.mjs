@@ -65,6 +65,16 @@ function computeClaudeExe(override) {
   return path.join(os.homedir(), 'nodejs', CLAUDE_EXE_REL); // legacy fallback
 }
 
+// Thinking effort (the third spawn axis after provider and model): named levels map to
+// the harness's MAX_THINKING_TOKENS budget; a number passes through as the budget itself.
+const EFFORT_LEVELS = { low: 1024, medium: 8192, high: 16384, max: 32000 };
+export function effortEnv(effort) {
+  if (effort == null) return {};
+  if (typeof effort === "number") return { MAX_THINKING_TOKENS: String(effort) };
+  if (effort in EFFORT_LEVELS) return { MAX_THINKING_TOKENS: String(EFFORT_LEVELS[effort]) };
+  throw new Error(`unknown effort "${effort}". Use ${Object.keys(EFFORT_LEVELS).join("/")} or a token number`);
+}
+
 // ── Env shaping ──────────────────────────────────────────────────────────────
 
 /**

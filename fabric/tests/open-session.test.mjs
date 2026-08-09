@@ -205,3 +205,14 @@ test('interactive session injects inbox lines as human turns', async () => {
   assert.match(transcript, /\[user\]/, 'orchestrator turns keep their label');
   await s.close();
 });
+
+// effort reaches the child env as a thinking budget.
+test('openSession applies effort to the child env', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-effort-'));
+  let seenEnv = null;
+  const capture = (bin, args, opts) => { seenEnv = opts.env; return makeFakeClaude(sink)(bin, args, opts); };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: capture, _bin: 'fake', effort: 'high' });
+  await s.close();
+  assert.equal(seenEnv.MAX_THINKING_TOKENS, '16384');
+});
