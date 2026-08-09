@@ -21,7 +21,7 @@ metadata:
 ### [SR-20260809-001] [HIGH] fabric/engine/node-server.mjs — The peer applies a CLIENT-SUPPLIED profile object verbatim and never consults its own fabric.profiles — remote 'enforcement at the peer's spawn point' is caller-controlled, i.e. no enforcement at all
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** node/spawn should accept a profile NAME only, resolve it against the server's own fabric.profiles, reject inline objects, and apply a server-side defaultProfile when none is named. Test: client sending an inline profile object must be rejected with -32602.
 
@@ -32,7 +32,7 @@ node/spawn does profile: params.profile ?? null and passes it straight into _cre
 ### [SR-20260809-002] [HIGH] fabric/engine/profile.mjs — "A profile only ever subtracts" is false — a profile can ADD Bash and set bypassPermissions, and extraArgs override the profile flags anyway
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Put profileArgs after extraArgs or strip --allowedTools/--permission-mode/--dangerously-* from extraArgs when a profile is present; add the test that plants those flags in extraArgs and asserts the profile wins; validate permissionMode against an enum; reword the comment (policy SET, not subtraction).
 
@@ -43,7 +43,7 @@ node/spawn does profile: params.profile ?? null and passes it straight into _cre
 ### [SR-20260809-003] [HIGH] fabric/engine/journal.mjs — reconcile() checks a REMOTE session's pid against the LOCAL process table, and PID reuse makes pidAlive:true an invitation to kill an unrelated process
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** If ev.node is set, return pidAlive: null (probe the peer via node/ping). For local records, record start-time or boot-id alongside pid and require both to match; treat records older than uptime as dead. Document the three states alive/dead/unknowable.
 
@@ -54,7 +54,7 @@ createSession journals pid: handle.pid — for a remote handle that is the child
 ### [SR-20260809-004] [MEDIUM] fabric/engine/node-client.mjs — request() has NO timeout — CONNECTION_LOST covers a peer that drops, never a peer that accepts and goes silent
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Add a per-request timeout (default ~30s, overridable for node/spawn/node/send) rejecting with code:'REQUEST_TIMEOUT', plus TCP keepalive; make ping.mjs use Promise.allSettled with its own deadline. Test: accept-then-silent server must reject within the deadline.
 
@@ -65,7 +65,7 @@ connectTimeoutMs guards only the TLS handshake. request() writes a line, parks a
 ### [SR-20260809-005] [MEDIUM] fabric/engine/session.mjs — alive: h.alive ?? true reports true unconditionally for write, codex and remote handles — three of four backends report liveness by wishful default
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Every handle declares its liveness semantics: alive: null for stateless backends plus a kind field ('stateless'|'child'|'remote'); pingSession catches remote failure and returns {alive:false, reason}. Add the negative test: ping on a write session must not claim alive:true.
 
@@ -76,7 +76,7 @@ Only openSession defines an alive getter. openWriteSession has no persistent chi
 ### [SR-20260809-006] [MEDIUM] fabric/engine/journal.mjs — Append-only journal with no rotation, no size bound, and a full-file synchronous read on every reconcile
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Rotate at a size ceiling and read only from the last rotation boundary, or checkpoint the open set periodically; state the bound in the header comment.
 
@@ -87,7 +87,7 @@ recordEvent appends to ~/.fabric/journal.jsonl forever; readJournal reads the en
 ### [SR-20260809-007] [MEDIUM] fabric/engine/journal.mjs — Both journal write and read fail SILENTLY — a swallowed spawn append or torn line makes a live session vanish from reconcile, the one thing the journal exists to prevent
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** A failed spawn-append should warn loudly on stderr and be counted; readJournal should report unparseable-line count so reconcile can say 'N events unreadable — list may be incomplete'.
 
@@ -98,7 +98,7 @@ recordEvent wraps everything in catch {}; readJournal drops unparseable lines. A
 ### [SR-20260809-008] [MEDIUM] fabric/engine/open-session.mjs — The stderr tail flows into Error messages sent to another model and journaled to disk — a child that echoes an API key in its error now leaks it
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Scrub provider env values from the tail before surfacing; never journal a raw stderr tail. Use Buffer.concat().subarray(-N).toString('utf8') so the name matches the unit.
 
@@ -109,7 +109,7 @@ errTail (last 4096 of raw child stderr) is interpolated into the rejection messa
 ### [SR-20260809-009] [MEDIUM] fabric/engine/profile.mjs — envDeny does exact-case key deletion, but Windows env vars are case-INSENSITIVE — envDeny:['SECRET_TOKEN'] does not remove Secret_Token
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Match case-insensitively (lowercase key index); add the test planting Secret_Token and denying SECRET_TOKEN; consider warning when a denied var is absent so a typo'd entry doesn't look identical to a successful subtraction.
 
@@ -120,7 +120,7 @@ for (const k of profile.envDeny) delete out[k] is exact-match against a {...proc
 ### [SR-20260809-010] [MEDIUM] fabric/engine/session.mjs — openWriteSession keeps bypassPermissions as the default even when a profile restricts allowedTools — a half-applied profile is worse than none
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** When a profile names no permissionMode, default to 'default' (prompting); intersect allowedTools with the backend default. Test both backends with the same profile and assert identical capability sets.
 
@@ -131,7 +131,7 @@ const permissionMode = profile?.permissionMode || 'bypassPermissions'. A profile
 ### [SR-20260809-011] [LOW] fabric/engine/session.mjs — Remote sessions never journal usage, and only CONNECTION_LOST is recorded as a loss — every other death leaves a permanent phantom orphan
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Have node/close return the remote handle's usage; journal a loss whenever a local handle reports alive === false at any observation point; distinguish null from {unavailable:true}.
 
@@ -142,7 +142,7 @@ closeSession journals usage: entry.handle.usage ?? null; the remote handle expos
 ### [SR-20260809-012] [LOW] fabric/engine/open-session.mjs — Usage accounting ignores cache tokens, so any scheduler budgeting on input_tokens undercounts by whatever fraction is cached
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Accumulate cache fields separately and expose total_input_tokens; set partial: true when a result event carries no usage.
 
@@ -153,7 +153,7 @@ usage.input_tokens += ev.usage?.input_tokens ?? 0 drops cache_creation_input_tok
 ### [SR-20260809-013] [LOW] fabric/engine/node-server.mjs — node/ping is deliberately not owner-restricted, so any authenticated peer can probe sessions belonging to another connection
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Either scope both node/status and node/ping to the owned set, or document the node as a single trust domain where the token confers full visibility.
 
@@ -164,7 +164,7 @@ node/send and node/close enforce owned.has(params.id); node/ping skips it citing
 ### [SR-20260809-014] [LOW] fabric/scripts/serve.mjs — --status prints 'serving: no (nothing answered)' for ANY failure, including wrong token or TLS mismatch — the diagnostic lies in exactly the case you'd run it for
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Print the caught error's code: 'serving: unknown (<code>)' for auth/TLS, reserving 'serving: no' for ECONNREFUSED.
 
@@ -175,7 +175,7 @@ The bare catch collapses ECONNREFUSED, timeout, PSK auth failure and protocol er
 ### [SR-20260809-015] [LOW] fabric/tests/profile.test.mjs — The added tests systematically test the happy direction; every negation that would catch the findings above is absent
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** For each HIGH/MEDIUM finding the failing test is 3-10 lines. Move the stray import to the top.
 
@@ -186,7 +186,7 @@ No test that node/spawn rejects a client-supplied profile; that extraArgs cannot
 ### [SR-20260809-016] [HIGH] fabric/engine/session.mjs:132 — Failed or timed-out closes are falsely journaled as successful closes
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Record close only after confirmed process exit; preserve or terminate a handle on timeout, and record a distinct close-failure/loss event.
 
@@ -197,7 +197,7 @@ closeSession() deletes the registry entry and records 'close' in finally, even i
 ### [SR-20260809-017] [HIGH] fabric/engine/open-session.mjs:57 — Caller arguments can override the supposedly non-bypassable spawn profile
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Reject profile-related flags in extraArgs, or validate duplicates and apply enforced profile arguments last.
 
@@ -208,7 +208,7 @@ profileArgs(profile) is placed before extraArgs. A later --allowedTools or --per
 ### [SR-20260809-018] [MEDIUM] fabric/engine/session.mjs:82 — Codex sessions silently ignore resolved profiles
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Map profile restrictions into the Codex backend, or explicitly reject profiles for Codex.
 
@@ -219,7 +219,7 @@ The profile is resolved before backend dispatch, but the Codex branch passes onl
 ### [SR-20260809-019] [MEDIUM] fabric/engine/session.mjs:188 — Team workers cannot receive spawn profiles
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Pass profile: w.profile through createTeam() and cover it in the team API schema and tests.
 
@@ -230,7 +230,7 @@ createTeam() reconstructs worker options without profile, so team workers silent
 ### [SR-20260809-020] [MEDIUM] fabric/engine/session.mjs:160 — Ping reports unobserved sessions as alive
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Return null/unknown when liveness is unavailable, or implement real liveness reporting on every handle.
 
@@ -241,7 +241,7 @@ The fallback uses h.alive ?? true. Both write-session and Codex handles lack ali
 ### [SR-20260809-021] [MEDIUM] fabric/engine/journal.mjs:19 — Journal failures and corrupt records are silently erased
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Expose persistence health or emit a structured warning, and report corrupt rows instead of silently dropping them.
 
@@ -252,7 +252,7 @@ recordEvent() swallows every write failure and readJournal() drops every malform
 ### [SR-20260809-022] [MEDIUM] fabric/engine/session.mjs:77 — Named profiles ignore the caller's configuration path
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Resolve profiles with loadFabricConfig(opts.configPath).
 
@@ -276,7 +276,7 @@ openProviderSession() loads profiles from the global default config while forwar
 ### [SR-20260809-023] [HIGH] fabric/engine/node-client.mjs — request() has no per-request timeout: a session_send to a hung or dead remote session hangs the MCP tool call forever.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Add a per-request timeout (e.g. 120s) with a structured REQUEST_TIMEOUT code that rejects the pending entry and marks the remote session lost.
 
@@ -287,7 +287,7 @@ connectNode() only times out the TCP connect. Once the socket is up, request() p
 ### [SR-20260809-024] [HIGH] fabric/engine/session.mjs — write:true claude sessions route to openWriteSession: a fresh claude -p process plus the FULL accumulated history re-sent every turn — O(n^2) tokens and one claude.exe boot per turn.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Make the persistent stream-json openSession carry write capability so write-mode workers retain context in-process; stop accumulating and re-sending the whole transcript.
 
@@ -298,7 +298,7 @@ openProviderSession routes write to openWriteSession, which keeps history in mem
 ### [SR-20260809-025] [HIGH] fabric/engine/node-server.mjs — node/spawn has zero admission control: mem_available_mb is reported but nothing ever refuses a spawn — a peer holding the shared token can fork-bomb a box with claude.exe children.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** ARCHITECTURE CONFLICT: fabric records facts, not decisions, but its own spawn path ignores the capacity fact it reports. Surface the conflict: either a floor-refusal (capacity FACT) or an atomic capacity claim the swarm must take; add a hard per-connection/per-node session cap regardless.
 
@@ -309,7 +309,7 @@ node/status reports cpu/mem_available_mb/mem_total_mb (G1) so the layer above ca
 ### [SR-20260809-026] [HIGH] fabric/engine/session.mjs — Profiles are resolved then silently dropped on the codex path: openCodexSession has no profile parameter, so a restrictive spawn profile is not enforced for codex sessions.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Pass profile into openCodexSession and enforce allowedTools/permissionMode/envDeny at the codex spawn, or refuse profile+codex combinations you cannot enforce.
 
@@ -320,7 +320,7 @@ openProviderSession resolves profile and passes it to the claude/write/remote pa
 ### [SR-20260809-027] [HIGH] fabric/engine/node-client.mjs — One TCP connection per remote session with no heartbeat: 100+ sessions means 100+ TLS sockets, and a dead/half-open peer is discovered only on the next send, which then hangs.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Multiplex multiple sessions over one pooled connection per peer (the pending-map already supports request multiplexing), and add a periodic node/ping heartbeat that reaps stale sockets.
 
@@ -331,7 +331,7 @@ openRemoteSession does connectNode() per session; each socket gets a fresh pendi
 ### [SR-20260809-028] [MEDIUM] fabric/engine/journal.mjs — The journal is a single append-only file with no locking, appended by every journaling process (MCP server, serve.mjs, consoles) and read in full on every reconcile; never rotated.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Per-process journal files or an append-time advisory lock; add rotation/compaction; make reconcile read only the tail or keep an offset.
 
@@ -342,7 +342,7 @@ recordEvent() does appendFileSync to ~/.fabric/journal.jsonl from any process. C
 ### [SR-20260809-029] [MEDIUM] fabric/engine/node-server.mjs — node/status serializes the full session registry (including usage) on every poll; a fleet console polling every 6s x N nodes x 100 sessions re-serializes everything each time.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Return a light summary (id/provider/turns/alive) in node/status; separate richer call for usage.
 
@@ -353,7 +353,7 @@ node/status calls _listSessions() mapping every registry entry including usage o
 ### [SR-20260809-030] [MEDIUM] fabric/engine/node-client.mjs — The client response buffer is unbounded: buf += chunk with no cap, unlike the server MAX_LINE_BYTES.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Mirror the server MAX_LINE_BYTES guard on the client read loop and drop/close on overflow.
 
@@ -364,7 +364,7 @@ node-server.mjs caps inbound at MAX_LINE_BYTES but the node-client data handler 
 ### [SR-20260809-031] [MEDIUM] fabric/engine/session.mjs — createTeam spawns workers strictly sequentially, and a mid-way spawn failure leaks the already-created sessions (in sessions Map but never in the team map).
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Spawn workers in parallel (Promise.all) and on any failure close already-spawned workers before throwing.
 
@@ -375,7 +375,7 @@ createTeam loops await createSession per worker; the teams map is only set after
 ### [SR-20260809-032] [MEDIUM] fabric/engine/session.mjs — getTeamStatus calls listSessions() once per worker — O(workers x sessions) per team_status; team_send calls it too.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Call listSessions() once, build an id-index, look up workers against it.
 
@@ -386,7 +386,7 @@ For each worker: const all = listSessions(); all.find(...). At 100 workers x 100
 ### [SR-20260809-033] [MEDIUM] fabric/engine/node-tls.mjs — A single shared PSK authenticates the whole fleet, every peer uses fixed identity fabric-node, node port binds 0.0.0.0, checkServerIdentity disabled.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Per-node tokens (node.token already overrides fabric.token — default it on) and distinct identities so the server can attribute connections.
 
@@ -397,7 +397,7 @@ The server pskCallback cannot distinguish who is connecting, only that they hold
 ### [SR-20260809-034] [MEDIUM] fabric/engine/open-session.mjs — openSession never cleans up its tmpdir runDir (config dir + observe http.jsonl) on close — sessions leak directories indefinitely.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Remove the runDir in close(), or garbage-collect fabric-session-* temp dirs on next launch.
 
@@ -408,7 +408,7 @@ close() ends stdin and closes the observe proxy but never removes runDir. With o
 ### [SR-20260809-035] [LOW] fabric/engine/journal.mjs — recordEvent does recursive mkdirSync + appendFileSync on every event — synchronous disk on the event loop hot path.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** mkdir once at module load; queue appends asynchronously.
 
@@ -419,7 +419,7 @@ Under bursty spawn/close each event is a synchronous disk syscall blocking the M
 ### [SR-20260809-036] [LOW] fabric/engine/node-server.mjs — The server writes unbounded responses (full session result) with no size cap on the reply side.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Cap node/send result size at the wire.
 
@@ -430,7 +430,7 @@ reply() does socket.write(JSON.stringify(rpc)) with no length guard; the MCP lay
 ### [SR-20260809-037] [LOW] fabric/engine/session.mjs — Teams are not journaled: a server restart loses team membership while the underlying sessions are recoverable via the journal.
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Journal team create/close events so reconcile can surface orphaned workers whose team is gone.
 
@@ -441,7 +441,7 @@ teams is in-process only; after a restart the children still run, reconcile find
 ### [SR-20260809-038] [LOW] fabric/engine/session.mjs — The feared in-process session-registry races do not exist: Node is single-threaded, Map operations are atomic between await points.
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Document that the real concurrency hazards are cross-process (journal) and remote-socket state, not the in-process Map.
 
@@ -452,7 +452,7 @@ sessions/teams Maps are touched from one thread only. The genuine races are the 
 ### [SR-20260809-040] [HIGH] fabric/engine/session.mjs — Concurrent sends to one session interleave for remote/write handles: no per-session send mutex in the registry; the open-session single pending slot means the second send overwrites the first resolve/reject and one caller turn is lost or hangs.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Serialize sends per session id in sendToSession (promise chain keyed by id, mirroring open-session own chain), or reject a send while one is in flight with a structured code.
 
@@ -463,7 +463,7 @@ open-session.mjs and codex/session.mjs serialize internally, but openRemoteSessi
 ### [SR-20260809-041] [HIGH] fabric/engine/node-server.mjs — No admission control on node/spawn: any token-holder can fork-bomb the box; the MCP-side 8-slot limiter does NOT exist in the node server — dispatch() fires every request unbounded. Architecture conflict: refusing is arguably swarm job.
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Flag the boundary: a static operator-declared ceiling (serve.maxSessions in config) refused past and reported in node/status is a declared invariant, not a scheduling decision. Dynamic admission stays in swarm.
 
@@ -474,7 +474,7 @@ Each spawn is a claude.exe child (~100-200MB RSS). 100 sessions plus parents is 
 ### [SR-20260809-042] [HIGH] fabric/engine/session.mjs — Codex sessions silently ignore spawn profiles — policy-at-spawn has a hole exactly where the most capable provider lives.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Pass profile into openCodexSession and map allowedTools/permissionMode onto the codex sandbox config, or refuse provider=codex with a profile until mapped (a named hole, not a silent one).
 
@@ -485,7 +485,7 @@ session.mjs:83 drops the resolved profile on the floor. A caller naming profile 
 ### [SR-20260809-043] [HIGH] fabric/engine/node-client.mjs — request() has no timeout: a hung peer wedges the caller serialized send chain AND holds an MCP limiter slot forever — 8 wedged calls exhaust FABRIC_MCP_MAX_CONCURRENCY and the whole MCP server stops answering.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Per-request timeout (caller-overridable) rejecting with a TIMEOUT code distinct from CONNECTION_LOST so swarm can tell peer-gone from peer-stuck.
 
@@ -496,7 +496,7 @@ pending entries are only removed on response or socket close. TLS stays up acros
 ### [SR-20260809-044] [HIGH] fabric/engine/journal.mjs — Journal: single append-only file written by every fabric process with no lock and no idempotency — concurrent appends can tear on Windows, torn lines are silently dropped by readJournal, and reconcile() does a full-file read.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Per-process journal files (journal-<pid>.jsonl) with reconcile merging, or an advisory lock per append (shared/lock.mjs exists). Track an offset or compact on close events.
 
@@ -507,7 +507,7 @@ appendFileSync from multiple processes has no line-integrity guarantee on Window
 ### [SR-20260809-045] [MEDIUM] fabric/engine/session.mjs — Session registry is process-local with no cross-process identity: multiple fabric processes per box hold disjoint registries; reconcile reports orphans by child pid but cannot say which registry process still holds the handle, so adopt is impossible and kill risks a live session.
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Make the journal the join point: record which process owns each id so swarm can route close/ping to the right daemon.
 
@@ -518,7 +518,7 @@ Each Claude host session spawns its own fabric MCP server; serve.mjs is another.
 ### [SR-20260809-046] [MEDIUM] fabric/engine/node-server.mjs — node/status returns the full session list on every call and is not owner-filtered: any token-holder sees every session pid, cwd-implied project and activity on the box.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Compact mode (counts + id/alive/lastActivity, no usage objects) or a since/cursor; document O(sessions) cost.
 
@@ -529,7 +529,7 @@ With console polling every few seconds x 100 sessions x 3 nodes, status becomes 
 ### [SR-20260809-047] [MEDIUM] fabric/engine/open-session.mjs — Per-session cost is a full claude.exe child; no shared-runtime option and no cap, and the resource fact surface is incomplete: node/status reports box-level mem, not per-session RSS, so a scheduler places sessions blind until the box thrashes.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Report per-session RSS in the liveness facts (pid is already there) so swarm admission has the real number; long-term a pooled runtime is the only scaling answer.
 
@@ -540,7 +540,7 @@ With console polling every few seconds x 100 sessions x 3 nodes, status becomes 
 ### [SR-20260809-048] [MEDIUM] fabric/engine/node-client.mjs — One TCP connection per remote session: linear fd/handle cost, and lifecycle coupling — socket drop = session death with no reattach; a 2-second LAN blip kills all sessions on that connection.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Share one connection per host:port, multiplex by JSON-RPC id (protocol already supports it); server-side per-connection ownership is the actual blocker — move ownership to a per-session token or accept same-peer shared ownership. Add a reattach path.
 
@@ -551,7 +551,7 @@ node-server reaps owned ids on connection close. At 7x24 a transient network bli
 ### [SR-20260809-049] [MEDIUM] fabric/engine/session.mjs — openWriteSession passes the ENTIRE history as one argv prompt — quadratic token cost AND a ~32k Windows argv ceiling that kills a write session with a spawn error around turn 5-10; defaults are the widest possible (bypassPermissions + Bash/Write/Edit).
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Move the prompt to stdin (spawn-child already has a useStdin path for >1000 chars); cap or summarize history; do not default to bypassPermissions — require the profile to widen.
 
@@ -562,7 +562,7 @@ history.join passed as an argv element to claude.exe; Windows CreateProcess comm
 ### [SR-20260809-050] [MEDIUM] fabric/engine/mcp-rpc.mjs — The 8-slot limiter gates all tool calls uniformly: cheap ops (list/ping/close) queue behind multi-minute model turns; close behind a stuck send cannot even cancel your way out.
 
 - **Category:** Performance
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Two pools: heavyweight (call/fan_out/session_send) bounded; lightweight (list/ping/close/status) separately bounded or unbounded.
 
@@ -573,7 +573,7 @@ Under load, session_close sits in the limiter queue behind the wedged send holdi
 ### [SR-20260809-051] [MEDIUM] fabric/engine/node-tls.mjs — Single fleet-wide PSK in a synced plaintext config is the only credential: no per-node identity, no revocation short of re-syncing every machine.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Server accepts a SET of accepted peer tokens so a peer can be revoked by removing one entry; per-node tokens already exist in config — make them the norm. Identity policy sits above fabric — flag, do not expand scope.
 
@@ -584,7 +584,7 @@ checkServerIdentity disabled is fine for PSK (the handshake authenticates); the 
 ### [SR-20260809-052] [MEDIUM] fabric/engine/open-session.mjs — send() to a dead-but-not-yet-closed child can hang: closed is only set on close/error events; a write to stdin of an out-of-band-killed child succeeds into a pipe that never answers — no per-turn timeout.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Optional per-turn timeoutMs on send() rejecting with TURN_TIMEOUT; combined with the client-side fix this closes both ends of the hang.
 
@@ -595,7 +595,7 @@ The chain design means one wedged turn bricks the session for every later caller
 ### [SR-20260809-053] [LOW] fabric/engine/node-config.mjs — loadFabricConfig caches by mtimeMs with 1s Windows granularity and never expires; a same-second config edit is invisible to long-lived daemons.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Short TTL in addition to mtime, or bigint-ns stat.
 
@@ -606,7 +606,7 @@ A profile tightened mid-session may silently not apply until mtime ticks past th
 ### [SR-20260809-054] [LOW] fabric/engine/codex/app-server.mjs — Codex pool: withPooledClient acquire has no timeout (asymmetric with withSharedClient lock timeout); a leaked fn(client) holds its slot forever, waiters queue unboundedly.
 
 - **Category:** Bug
-- **Status:** OPEN
+- **Status:** FIXED (f68c5c4; earlier HIGHs c201c9b-era)
 - **Confidence:** single-reviewer
 - **Suggestion:** Report pool waiter count in a status surface so a saturated pool is an observable fact; the per-request 600s timer mitigates most cases.
 
@@ -617,7 +617,7 @@ Mostly defended by the 600s request timer, hence LOW, but the asymmetry is worth
 ### [SR-20260809-056] [INFO] fabric/engine/session.mjs — Genuine strengths to preserve: uniform id/send/close handle across local/remote/codex; serialized per-child turn chains; CONNECTION_LOST as structured loss with journal events; per-connection ownership with reap-on-drop; the MCP limiter bounding fan-out from one host.
 
 - **Category:** Feature
-- **Status:** OPEN
+- **Status:** RESOLVED (no action -- strengths to preserve)
 - **Confidence:** single-reviewer
 - **Suggestion:** No action — these are the load-bearing choices the fixes above should preserve.
 
