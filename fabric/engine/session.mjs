@@ -16,7 +16,8 @@ import process from "node:process";
 import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
 import { openRemoteSession } from "./node-client.mjs";
-import { resolveNode } from "./node-config.mjs";
+import { resolveNode, loadFabricConfig } from "./node-config.mjs";
+import { resolveProfile, applyProfileEnv } from "./profile.mjs";
 import { buildChildEnv, resolveClaudeExe } from "./spawn-child.mjs";
 import { spawn } from "../shared/spawn.mjs";
 import { recordEvent } from "./journal.mjs";
@@ -25,12 +26,16 @@ import { recordEvent } from "./journal.mjs";
 // Spawns a fresh `claude -p` with tools per turn; accumulates history in memory. Each
 // turn repays for prior context, but gives full write capability without a persistent harness.
 
-function openWriteSession({ provider, model, cwd, _spawn = spawn }) {
+function openWriteSession({ provider, model, cwd, profile = null, _spawn = spawn }) {
   const history = [];
   // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true
   // (spawn EINVAL); same defect as open-session.mjs had, fixed at both sites 2026-08-09.
   const bin = resolveClaudeExe();
-  const env = buildChildEnv({ provider, observe: false });
+  const env = applyProfileEnv(buildChildEnv({ provider, observe: false }), profile);
+  const allowedTools = profile?.allowedTools
+    ? (Array.isArray(profile.allowedTools) ? profile.allowedTools.join(",") : profile.allowedTools)
+    : "Bash,Read,Write,Edit,Glob,Grep";
+  const permissionMode = profile?.permissionMode || "bypassPermissions";
 
   return {
     id: `write-${idFragment()}`,
@@ -40,8 +45,8 @@ function openWriteSession({ provider, model, cwd, _spawn = spawn }) {
       const child = _spawn(bin, [
         "-p",
         ...(model ? ["--model", model] : []),
-        "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
-        "--permission-mode", "bypassPermissions",
+        "--allowedTools", allowedTools,
+        "--permission-mode", permissionMode,
         prompt,
       ], { cwd: cwd || process.cwd(), env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
 
@@ -67,16 +72,19 @@ function openWriteSession({ provider, model, cwd, _spawn = spawn }) {
 export async function openProviderSession(opts = {}) {
   const { provider, write } = opts;
   if (!provider) throw new Error("openProviderSession: provider is required");
+  // Resolve a profile NAME here, once, so every backend below receives the object.
+  // A remote spawn forwards the resolved object — the peer enforces it at ITS spawn point.
+  const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig());
   if (opts.node) {
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project });
+    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile });
   }
   if (provider === "codex") {
     return openCodexSession({ model: opts.model, write, cwd: opts.cwd, _client: opts._client });
   }
-  if (write) return openWriteSession(opts);
+  if (write) return openWriteSession({ ...opts, profile });
   const runDir = opts.runDir || join(tmpdir(), `fabric-session-${idFragment()}`);
-  return openSession({ ...opts, runDir });
+  return openSession({ ...opts, profile, runDir });
 }
 
 // ── In-process registry (held by the long-lived MCP server) ──────────

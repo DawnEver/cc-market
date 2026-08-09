@@ -77,7 +77,7 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
         }
         const desc = await _createSession({
           provider: params.provider, model: params.model, write: !!params.write,
-          cwd: cwd || process.cwd(), observe: false,
+          cwd: cwd || process.cwd(), observe: false, profile: params.profile ?? null,
         });
         owned.add(desc.id);
         return desc;

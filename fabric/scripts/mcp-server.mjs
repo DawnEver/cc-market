@@ -113,6 +113,7 @@ export const TOOLS = [
         observe: { type: "boolean", description: "Capture HTTP traffic" },
         node: { type: "string", description: "Peer fabric node name — run the session on that machine (message-passing only)" },
         project: { type: "string", description: "Remote node's project alias (with node)" },
+        profile: { type: "string", description: "Named spawn profile from fabric.profiles (tool/permission/env subtraction)" },
       },
       required: ["provider"],
     },
@@ -639,7 +640,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       const desc = await _createSession({
         provider: args.provider, model: args.model, write: !!args.write,
         cwd: args.cwd || process.cwd(), observe: !!args.observe,
-        node: args.node, project: args.project,
+        node: args.node, project: args.project, profile: args.profile,
       });
       return textResult(JSON.stringify(desc));
     }

@@ -12,6 +12,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildChildEnv, hookFreeArgs, resolveClaudeExe } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
+import { applyProfileEnv, profileArgs } from './profile.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
 const STDERR_TAIL_BYTES = 4096;
@@ -34,7 +35,7 @@ function extractText(assistantMsg) {
  */
 export async function openSession(opts) {
   const {
-    provider, model, observe = false, runDir, cwd, configPath, extraArgs = [],
+    provider, model, observe = false, runDir, cwd, configPath, extraArgs = [], profile = null,
     _spawn = hiddenSpawn, _bin,
   } = opts;
   if (!provider) throw new Error('openSession: provider is required');
@@ -45,7 +46,11 @@ export async function openSession(opts) {
   mkdirSync(configDir, { recursive: true });
 
   const proxy = observe ? await startObserveProxy({ provider, runDir, configPath }) : null;
-  const env = { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), CLAUDE_CONFIG_DIR: configDir };
+  // Profile (G2): env subtraction and tool/permission flags attach HERE — the spawn point.
+  const env = applyProfileEnv(
+    { ...buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath }), CLAUDE_CONFIG_DIR: configDir },
+    profile,
+  );
   // resolveClaudeExe, never a `.cmd` shim: Node ≥20.12 rejects .cmd without shell:true
   // (spawn EINVAL), which silently broke every Windows persistent session.
   const bin = _bin || resolveClaudeExe();
@@ -53,7 +58,7 @@ export async function openSession(opts) {
     // --verbose is REQUIRED by the CLI for --print + stream-json output (exit 1 without);
     // the parser ignores the extra system events it adds.
     '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
-    ...(model ? ['--model', model] : []), ...hookFreeArgs(extraArgs), ...extraArgs,
+    ...(model ? ['--model', model] : []), ...profileArgs(profile), ...hookFreeArgs(extraArgs), ...extraArgs,
   ];
 
   const child = _spawn(bin, args, { cwd: cwd || runDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
