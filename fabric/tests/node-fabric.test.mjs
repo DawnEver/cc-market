@@ -421,3 +421,33 @@ test("serve.mjs exits 1 on a missing or non-numeric --port value", () => {
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ── G3/G5: node/ping answers liveness facts remotely; a dropped connection rejects
+// with a structured CONNECTION_LOST code, not a bare string.
+test("node/ping returns session facts; remote handle exposes ping()", async () => {
+  const deps = fakeSessionDeps();
+  deps.pingSession = async (id) => ({ id, alive: true, pid: 555, turns: 0, lastActivity: 1 });
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const s = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "deepseek" });
+    const facts = await s.ping();
+    assert.equal(facts.pid, 555);
+    assert.equal(facts.alive, true);
+    await s.close();
+  } finally { await server.close(); }
+});
+
+test("connection loss rejects pendings with code CONNECTION_LOST", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = () => new Promise(() => {});
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", { provider: "deepseek" });
+    const p = conn.request("node/send", { id: desc.id, prompt: "hang" });
+    await server.close(); // drops the socket mid-request
+    await assert.rejects(p, (e) => e.code === "CONNECTION_LOST" && /connection lost/.test(e.message));
+  } finally { await server.close(); }
+});

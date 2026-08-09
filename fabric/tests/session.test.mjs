@@ -154,3 +154,24 @@ test('openWriteSession spawns resolveClaudeExe(), not a .cmd shim', async () => 
   assert.equal(seenBin, resolveClaudeExe());
   assert.ok(!/\.cmd$/i.test(seenBin), `bin must not be a .cmd shim, got: ${seenBin}`);
 });
+
+// ── G3: the registry surfaces liveness facts and answers ping without a send.
+test('listSessions surfaces pid/alive/lastActivity; pingSession answers facts', async () => {
+  const { createSession, listSessions, pingSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  let alive = true;
+  const fakeOpen = async () => ({
+    id: 'native-1', pid: 999, get alive() { return alive; }, lastActivity: 123,
+    send: async () => ({ text: 'ok', turn: 1 }), close: async () => { alive = false; return 0; },
+  });
+  const desc = await createSession({ provider: 'deepseek' }, fakeOpen);
+  assert.equal(desc.pid, 999);
+  const [row] = listSessions();
+  assert.equal(row.pid, 999);
+  assert.equal(row.alive, true);
+  assert.equal(row.lastActivity, 123);
+  const ping = await pingSession(desc.id);
+  assert.deepEqual({ alive: ping.alive, pid: ping.pid }, { alive: true, pid: 999 });
+  await closeSession(desc.id);
+  await assert.rejects(pingSession(desc.id), /No such session/);
+});

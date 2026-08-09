@@ -19,7 +19,7 @@
 import tls from "node:tls";
 import crypto from "node:crypto";
 import process from "node:process";
-import { createSession, sendToSession, closeSession, listSessions } from "./session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
 import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "./node-tls.mjs";
 
 export const AUTH_ERROR = -32001;
@@ -39,6 +39,7 @@ export function createNodeServer({ token, name = null, projects = {}, deps = {} 
   const _sendToSession = deps.sendToSession || sendToSession;
   const _closeSession = deps.closeSession || closeSession;
   const _listSessions = deps.listSessions || listSessions;
+  const _pingSession = deps.pingSession || pingSession;
 
   // -32601 unknown method, -32602 missing/invalid params, -32000 runtime failure.
   async function dispatch(method, params, owned) {
@@ -63,6 +64,10 @@ export function createNodeServer({ token, name = null, projects = {}, deps = {} 
         if (!params.id || !params.prompt) throw new RpcError(-32602, "node/send: id and prompt are required");
         if (!owned.has(params.id)) throw new RpcError(-32602, `node/send: session "${params.id}" is not owned by this connection`);
         return _sendToSession(params.id, params.prompt);
+      case "node/ping":
+        // Read-only liveness (G3): like node/status, not restricted to the owner.
+        if (!params.id) throw new RpcError(-32602, "node/ping: id is required");
+        return _pingSession(params.id);
       case "node/close":
         if (!params.id) throw new RpcError(-32602, "node/close: id is required");
         if (!owned.has(params.id)) throw new RpcError(-32602, `node/close: session "${params.id}" is not owned by this connection`);

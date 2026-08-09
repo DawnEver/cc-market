@@ -14,6 +14,7 @@ import { buildChildEnv, hookFreeArgs, resolveClaudeExe } from './spawn-child.mjs
 import { startObserveProxy } from './observe-proxy.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
+const STDERR_TAIL_BYTES = 4096;
 const userLine = (text) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n';
 
 function extractText(assistantMsg) {
@@ -64,8 +65,15 @@ export async function openSession(opts) {
   let exitCode = null;
   let chain = Promise.resolve(); // serializes send() calls
   let buf = '';
+  let lastActivity = Date.now();
+  let errTail = '';          // last stderr bytes — the only clue when the child dies
+
+  child.stderr?.on('data', (d) => {
+    errTail = (errTail + d).slice(-STDERR_TAIL_BYTES);
+  });
 
   child.stdout?.on('data', (d) => {
+    lastActivity = Date.now();
     buf += d;
     let nl;
     while ((nl = buf.indexOf('\n')) !== -1) {
@@ -85,7 +93,11 @@ export async function openSession(opts) {
 
   child.on('close', (code) => {
     closed = true; exitCode = code;
-    if (pending) { pending.reject(new Error(`openSession: child closed (code ${code}) mid-turn`)); pending = null; }
+    if (pending) {
+      const tail = errTail.trim() ? `; stderr: ${errTail.trim()}` : '';
+      pending.reject(new Error(`openSession: child closed (code ${code}) mid-turn${tail}`));
+      pending = null;
+    }
   });
   child.on('error', (e) => {
     closed = true;
@@ -97,6 +109,7 @@ export async function openSession(opts) {
     const run = () => new Promise((resolve, reject) => {
       if (closed) return reject(new Error('openSession: session is closed'));
       pending = { resolve, reject };
+      lastActivity = Date.now();
       child.stdin.write(userLine(text));
     });
     chain = chain.then(run, run);
@@ -122,6 +135,11 @@ export async function openSession(opts) {
   return {
     runDir, jsonlPath: proxy?.jsonlPath ?? null,
     get turns() { return turnCount; },
+    // Liveness facts (G3): reported, never inferred — the layer above decides what to do.
+    pid: child.pid ?? null,
+    get alive() { return !closed; },
+    get lastActivity() { return lastActivity; },
+    stderrTail: () => errTail,
     send, close,
   };
 }

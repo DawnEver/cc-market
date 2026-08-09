@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import * as eventsMod from 'node:events';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -112,4 +113,42 @@ test('openSession passes --verbose (required by --print stream-json)', async () 
   const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: capture, _bin: 'fake' });
   await s.close();
   assert.ok(seenArgs.includes('--verbose'), `args must include --verbose, got: ${seenArgs.join(' ')}`);
+});
+
+// ── G3 (liveness facts): the handle must report pid / alive / lastActivity, and a
+// mid-turn child death must carry the stderr tail — "exit 1" with no stderr was the
+// exact debugging experience that motivated this (2026-08-09).
+test('openSession exposes pid/alive/lastActivity facts', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-facts-'));
+  const withPid = (bin, args, opts) => Object.assign(makeFakeClaude(sink)(bin, args, opts), { pid: 4242 });
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: withPid, _bin: 'fake' });
+  assert.equal(s.pid, 4242);
+  assert.equal(s.alive, true);
+  const before = s.lastActivity;
+  await s.send('hi');
+  assert.ok(s.lastActivity >= before, 'send must bump lastActivity');
+  await s.close();
+  assert.equal(s.alive, false);
+});
+
+test('mid-turn child death rejects with the stderr tail', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-stderr-'));
+  const fake = () => {
+    const { EventEmitter } = eventsMod;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.pid = 7;
+    child.stdin = {
+      write: () => queueMicrotask(() => {
+        child.stderr.emit('data', 'Error: When using --print, blah requires --verbose\n');
+        child.emit('close', 1);
+      }),
+      end: () => {},
+    };
+    return child;
+  };
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
+  await assert.rejects(s.send('hi'), /requires --verbose/);
 });

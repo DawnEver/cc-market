@@ -30,8 +30,14 @@ export function connectNode({ host, port, token, connectTimeoutMs = 5000 }) {
       let buf = "";
 
       socket.removeAllListeners("error");
+      // Structured loss (G5): a dropped peer rejects with code CONNECTION_LOST so the
+      // layer above can requeue by code, not by parsing prose.
+      const lostError = (why) => Object.assign(
+        new Error(`node connection lost (${host}:${port}): ${why}`),
+        { code: "CONNECTION_LOST", host, port },
+      );
       const fail = (why) => {
-        for (const p of pending.values()) p.reject(new Error(`node connection lost (${host}:${port}): ${why}`));
+        for (const p of pending.values()) p.reject(lostError(why));
         pending.clear();
       };
       socket.on("error", (e) => { fail(e.message); socket.destroy(); });
@@ -59,7 +65,7 @@ export function connectNode({ host, port, token, connectTimeoutMs = 5000 }) {
       resolve({
         request(method, params = {}) {
           return new Promise((res, rej) => {
-            if (socket.destroyed) return rej(new Error(`node connection lost (${host}:${port}): closed`));
+            if (socket.destroyed) return rej(lostError("closed"));
             const id = ++seq;
             pending.set(id, { resolve: res, reject: rej });
             socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params: { ...params, token } })}\n`);
@@ -84,7 +90,9 @@ export async function openRemoteSession(opts) {
     const desc = await conn.request("node/spawn", { provider, model, write: !!write, project });
     return {
       id: desc.id,
+      pid: desc.pid ?? null,
       send: (text) => conn.request("node/send", { id: desc.id, prompt: text }),
+      ping: () => conn.request("node/ping", { id: desc.id }),
       async close() {
         try { return (await conn.request("node/close", { id: desc.id }))?.exitCode ?? null; }
         finally { conn.close(); }

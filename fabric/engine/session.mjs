@@ -95,8 +95,8 @@ function idFragment() {
 export async function createSession(opts, _open = openProviderSession) {
   const handle = await _open(opts);
   const id = `sess-${idFragment()}`;
-  sessions.set(id, { handle, provider: opts.provider, createdAt: Date.now(), turns: 0 });
-  return { id, provider: opts.provider, nativeId: handle.id ?? null };
+  sessions.set(id, { handle, provider: opts.provider, node: opts.node ?? null, createdAt: Date.now(), turns: 0 });
+  return { id, provider: opts.provider, nativeId: handle.id ?? null, pid: handle.pid ?? null };
 }
 
 export async function sendToSession(id, text) {
@@ -120,7 +120,27 @@ export async function closeSession(id) {
 export function listSessions() {
   return [...sessions.entries()].map(([id, e]) => ({
     id, provider: e.provider, turns: e.turns, createdAt: e.createdAt,
+    // Liveness facts (G3) — read from the handle, null when a backend has none.
+    pid: e.handle.pid ?? null,
+    alive: e.handle.alive ?? null,
+    lastActivity: e.handle.lastActivity ?? null,
+    node: e.node,
   }));
+}
+
+/**
+ * Answer liveness facts for one session WITHOUT sending a turn (G3). Remote handles
+ * forward to the peer's node/ping; local handles answer from their own state.
+ */
+export async function pingSession(id) {
+  const entry = sessions.get(id);
+  if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  const h = entry.handle;
+  if (typeof h.ping === 'function') return { id, provider: entry.provider, ...(await h.ping()) };
+  return {
+    id, provider: entry.provider, turns: entry.turns,
+    alive: h.alive ?? true, pid: h.pid ?? null, lastActivity: h.lastActivity ?? null,
+  };
 }
 
 export function getSessionProvider(id) {
