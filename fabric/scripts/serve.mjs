@@ -9,7 +9,7 @@
 
 import { hostname } from "node:os";
 import { createNodeServer } from "../engine/node-server.mjs";
-import { loadServeConfig } from "../engine/node-config.mjs";
+import { loadServeConfig, loadFabricConfig } from "../engine/node-config.mjs";
 import { getConfigPath } from "../engine/providers.mjs";
 
 const serve = loadServeConfig(); // serve defaults + this hostname's byHost override
@@ -49,8 +49,34 @@ if (args.includes("--status")) {
   process.exit(0);
 }
 
-const server = createNodeServer({ token, name, projects, tags });
-const bound = await server.listen(port, serve.host || "0.0.0.0");
+const fabricCfg = loadFabricConfig();
+const server = createNodeServer({
+  token, name, projects, tags,
+  profiles: fabricCfg.profiles || {}, defaultProfile: serve.defaultProfile ?? null,
+});
+
+// Idempotent start: a second serve on the same port detects the live one and exits 0
+// (previously a bare EADDRINUSE crash). Lifecycle stays session-bound: the server dies
+// with this terminal, and ONLY a fabric node answering our token counts as "already up".
+let bound;
+try {
+  bound = await server.listen(port, serve.host || "0.0.0.0");
+} catch (e) {
+  if (e.code !== "EADDRINUSE") throw e;
+  try {
+    const { connectNode } = await import("../engine/node-client.mjs");
+    const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
+    const st = await conn.request("node/status", {});
+    conn.close();
+    process.stdout.write(`fabric node "${st.name}" already serving on port ${port} (v${st.version}, up ${st.uptime_s}s) — nothing to do
+`);
+    process.exit(0);
+  } catch {
+    process.stderr.write(`fabric serve: port ${port} is taken by something that is NOT a fabric node with this token
+`);
+    process.exit(1);
+  }
+}
 const aliases = Object.keys(projects).join(", ") || "(none — peers can only spawn in this cwd)";
 process.stdout.write(`fabric node "${name}" listening on port ${bound.port}; projects: ${aliases}\n`);
 

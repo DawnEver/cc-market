@@ -1,32 +1,53 @@
-// engine/profile.mjs — spawn profiles (G2). The spawn point is the only place where
-// credential SUBTRACTION cannot be bypassed, so this is where policy attaches: a profile
-// names what a child may do (tools, permission mode) and which env vars it must NOT
-// inherit. Fabric defines the MECHANISM; the caller's config names the roles.
+// engine/profile.mjs — spawn profiles (G2). The spawn point is where policy attaches:
+// a profile SETS what a child may do (allowedTools, permissionMode) and which env vars
+// it must NOT inherit (envDeny). A profile can grant as well as restrict — what makes
+// it a control is that it is applied LAST at the spawn point and that a REMOTE peer
+// resolves names against its OWN config (sharp-review 2026-08-09: a client-supplied
+// object obeyed verbatim is obedience, not enforcement).
 //
 // Config: the `fabric.profiles` block of claude_env_settings.json —
 //   "profiles": { "author": { "allowedTools": "Read,Grep", "permissionMode": "default",
 //                             "envDeny": ["INTEGRATOR_TOKEN"] } }
-// A profile only ever subtracts; there is deliberately no envAdd.
+
+const PERMISSION_MODES = ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"];
+
+// The flags a profile owns; a caller's extraArgs must not smuggle them past it.
+export const PROFILE_OWNED_FLAGS = ["--allowedTools", "--permission-mode", "--dangerously-skip-permissions"];
+
+function validate(profile) {
+  if (profile?.permissionMode && !PERMISSION_MODES.includes(profile.permissionMode)) {
+    throw new Error(`profile permissionMode "${profile.permissionMode}" is not one of: ${PERMISSION_MODES.join(", ")}`);
+  }
+  return profile;
+}
 
 /**
- * Resolve a profile reference: an object passes through, a name looks up
+ * Resolve a profile reference: an object passes through (validated), a name looks up
  * `cfg.profiles`, absent → null, unknown name → throw naming what exists.
  */
 export function resolveProfile(ref, cfg = {}) {
   if (ref == null) return null;
-  if (typeof ref === "object") return ref;
+  if (typeof ref === "object") return validate(ref);
   const profiles = cfg.profiles || {};
   if (!(ref in profiles)) {
     throw new Error(`unknown spawn profile "${ref}". Available: ${Object.keys(profiles).join(", ") || "(none configured — add fabric.profiles)"}`);
   }
-  return profiles[ref];
+  return validate(profiles[ref]);
 }
 
-/** Subtract the profile's envDeny vars. Never adds. */
-export function applyProfileEnv(env, profile) {
+/**
+ * Subtract the profile's envDeny vars. Case-insensitive on win32 — Windows env keys
+ * are case-insensitive, so an exact-match delete would silently no-op on Secret_Token.
+ */
+export function applyProfileEnv(env, profile, platform = process.platform) {
   if (!profile?.envDeny?.length) return env;
   const out = { ...env };
-  for (const k of profile.envDeny) delete out[k];
+  if (platform === "win32") {
+    const deny = new Set(profile.envDeny.map((k) => k.toLowerCase()));
+    for (const k of Object.keys(out)) if (deny.has(k.toLowerCase())) delete out[k];
+  } else {
+    for (const k of profile.envDeny) delete out[k];
+  }
   return out;
 }
 
@@ -39,4 +60,20 @@ export function profileArgs(profile) {
   }
   if (profile.permissionMode) args.push("--permission-mode", profile.permissionMode);
   return args;
+}
+
+/**
+ * Strip profile-owned flags (and their values) from caller extraArgs. Applied when a
+ * profile is present so "last flag wins" cannot be used to override it.
+ */
+export function stripProfileOwnedFlags(extraArgs = []) {
+  const out = [];
+  for (let i = 0; i < extraArgs.length; i++) {
+    if (PROFILE_OWNED_FLAGS.includes(extraArgs[i])) {
+      if (extraArgs[i] !== "--dangerously-skip-permissions") i++; // skip the value too
+      continue;
+    }
+    out.push(extraArgs[i]);
+  }
+  return out;
 }

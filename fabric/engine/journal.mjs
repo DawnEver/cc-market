@@ -43,7 +43,13 @@ export function reconcile({ _pidAlive = pidAlive } = {}) {
     if (ev.event === "spawn") open.set(ev.id, ev);
     else if (ev.event === "close" || ev.event === "loss") open.delete(ev.id);
   }
-  return [...open.values()].map((ev) => ({ ...ev, pidAlive: ev.pid ? _pidAlive(ev.pid) : false }));
+  // A remote session's pid lives in the PEER's process table — checking it locally is
+  // meaningless, and PID reuse would make pidAlive:true an invitation to kill an
+  // unrelated local process (sharp-review SR-003). Remote liveness is reported UNKNOWN.
+  return [...open.values()].map((ev) => ({
+    ...ev,
+    pidAlive: ev.node != null ? null : (ev.pid ? _pidAlive(ev.pid) : false),
+  }));
 }
 
 export function pidAlive(pid) {

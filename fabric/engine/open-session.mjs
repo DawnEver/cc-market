@@ -8,11 +8,11 @@
 // JSON, not TTY text to scrape — the clean path from the harness-as-fabric design.
 // Composes with observe via the same buildChildEnv switch as spawnChild.
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildChildEnv, hookFreeArgs, resolveClaudeExe } from './spawn-child.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
-import { applyProfileEnv, profileArgs } from './profile.mjs';
+import { applyProfileEnv, profileArgs, stripProfileOwnedFlags } from './profile.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 
 const STDERR_TAIL_BYTES = 4096;
@@ -36,7 +36,8 @@ function extractText(assistantMsg) {
 export async function openSession(opts) {
   const {
     provider, model, observe = false, runDir, cwd, configPath, extraArgs = [], profile = null,
-    _spawn = hiddenSpawn, _bin,
+    visible = false,
+    _spawn = hiddenSpawn, _bin, _viewerSpawn = hiddenSpawn,
   } = opts;
   if (!provider) throw new Error('openSession: provider is required');
   if (!runDir) throw new Error('openSession: runDir is required');
@@ -58,10 +59,31 @@ export async function openSession(opts) {
     // --verbose is REQUIRED by the CLI for --print + stream-json output (exit 1 without);
     // the parser ignores the extra system events it adds.
     '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
-    ...(model ? ['--model', model] : []), ...profileArgs(profile), ...hookFreeArgs(extraArgs), ...extraArgs,
+    ...(model ? ['--model', model] : []), ...hookFreeArgs(extraArgs),
+    // Profile flags come LAST and profile-owned flags are stripped from extraArgs —
+    // otherwise "last flag wins" lets a caller override the policy (sharp-review SR-017).
+    ...(profile ? stripProfileOwnedFlags(extraArgs) : extraArgs), ...profileArgs(profile),
   ];
 
   const child = _spawn(bin, args, { cwd: cwd || runDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
+
+  // Visible terminal (opt-in, default hidden): the protocol pipes stay untouched; each
+  // turn is teed to a transcript file and a real console window tails it on THIS machine
+  // (for a remote session, that is the peer's desktop). Closing the window is harmless —
+  // it is a viewer, never the session.
+  const transcriptPath = join(runDir, 'transcript.log');
+  const tee = (line) => { try { appendFileSync(transcriptPath, line); } catch { /* viewer only */ } };
+  if (visible) {
+    try {
+      writeFileSync(transcriptPath, `[fabric ${provider}${model ? `/${model}` : ''}] session transcript — viewer window; closing it does NOT stop the session\n`);
+      if (process.platform === 'win32') {
+        _viewerSpawn('cmd', ['/c', 'start', `fabric ${provider}`, 'powershell', '-NoExit', '-Command',
+          `Get-Content -LiteralPath '${transcriptPath}' -Wait -Tail 100`], { stdio: 'ignore', detached: true });
+      } else {
+        process.stderr.write(`fabric: visible terminal not implemented on ${process.platform}; transcript at ${transcriptPath}\n`);
+      }
+    } catch { /* the viewer must never break the session */ }
+  }
 
   let turnCount = 0;
   let pending = null;        // { resolve, reject, text }
@@ -95,6 +117,7 @@ export async function openSession(opts) {
         usage.cost_usd += ev.total_cost_usd ?? 0;
         const p = pending; pending = null;
         const text = acc; acc = '';
+        if (visible) tee(`\n[assistant · turn ${turnCount}]\n${text}\n`);
         if (p) p.resolve({ text, turn: turnCount });
       }
     }
@@ -119,6 +142,7 @@ export async function openSession(opts) {
       if (closed) return reject(new Error('openSession: session is closed'));
       pending = { resolve, reject };
       lastActivity = Date.now();
+      if (visible) tee(`\n[user]\n${text}\n`);
       child.stdin.write(userLine(text));
     });
     chain = chain.then(run, run);

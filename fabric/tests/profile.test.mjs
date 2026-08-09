@@ -58,3 +58,46 @@ test('openSession applies profile: env subtracted, flags appended', async () => 
   assert.ok(seen.args.includes('--allowedTools'), 'profile tools flag missing');
 });
 import * as eventsMod from 'node:events';
+
+// ── sharp-review 2026-08-09 fixes ──
+
+// SR-017/002: extraArgs must NOT override the profile — profile flags win.
+test('profile flags beat extraArgs (last-flag-wins order + strip)', async () => {
+  const { openSession } = await import('../engine/open-session.mjs');
+  const { clearConfigCache } = await import('../engine/providers.mjs');
+  const cfgPath = join(mkdtempSync(join(tmpdir(), 'prof2-')), 'reg.json');
+  writeFileSync(cfgPath, JSON.stringify({ 'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' } }));
+  clearConfigCache();
+  let seen = null;
+  const fake = (bin, args) => {
+    seen = args;
+    const { EventEmitter } = eventsMod;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.stdin = { write: () => {}, end: () => queueMicrotask(() => child.emit('close', 0)) };
+    return child;
+  };
+  const s = await openSession({
+    provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'prof2-run-')), configPath: cfgPath,
+    _spawn: fake, _bin: 'fake',
+    profile: { allowedTools: 'Read', permissionMode: 'plan' },
+    extraArgs: ['--permission-mode', 'bypassPermissions', '--allowedTools', 'Bash'],
+  });
+  await s.close();
+  const last = (flag) => seen.lastIndexOf(flag) >= 0 ? seen[seen.lastIndexOf(flag) + 1] : null;
+  assert.equal(last('--permission-mode'), 'plan', 'profile permissionMode must win over extraArgs');
+  assert.equal(last('--allowedTools'), 'Read', 'profile allowedTools must win over extraArgs');
+});
+
+// SR-002: permissionMode is validated against the CLI enum — a typo must throw, not no-op.
+test('resolveProfile rejects an unknown permissionMode', () => {
+  assert.throws(() => resolveProfile({ permissionMode: 'bypass' }, {}), /permissionMode/);
+});
+
+// SR-009: envDeny is case-insensitive on Windows (env keys are).
+test('applyProfileEnv envDeny is case-insensitive on win32', () => {
+  const out = applyProfileEnv({ Secret_Token: 'x', KEEP: '1' }, { envDeny: ['SECRET_TOKEN'] }, 'win32');
+  assert.deepEqual(out, { KEEP: '1' });
+  const linux = applyProfileEnv({ Secret_Token: 'x' }, { envDeny: ['SECRET_TOKEN'] }, 'linux');
+  assert.deepEqual(linux, { Secret_Token: 'x' }, 'linux keys are case-sensitive; distinct var survives');
+});

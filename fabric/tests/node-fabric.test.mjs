@@ -472,3 +472,25 @@ test("node/status reports version/uptime/cpu/memory capacity facts", async () =>
     conn.close();
   } finally { await server.close(); }
 });
+
+// SR-001: the peer must ENFORCE its own profiles — a client-supplied inline object is
+// obedience, not enforcement. Names resolve against the SERVER's config; objects → -32602.
+test("node/spawn rejects inline profile objects and resolves names server-side", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({
+    token: TOKEN, name: "testnode", deps,
+    profiles: { author: { allowedTools: "Read", permissionMode: "plan" } },
+  });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await assert.rejects(
+      conn.request("node/spawn", { provider: "deepseek", profile: { allowedTools: "Bash", permissionMode: "bypassPermissions" } }),
+      (e) => e.code === -32602 && /name/i.test(e.message),
+    );
+    await conn.request("node/spawn", { provider: "deepseek", profile: "author" });
+    assert.deepEqual(deps.opened.at(-1).profile, { allowedTools: "Read", permissionMode: "plan" });
+    await assert.rejects(conn.request("node/spawn", { provider: "deepseek", profile: "nope" }), /author/);
+    conn.close();
+  } finally { await server.close(); }
+});

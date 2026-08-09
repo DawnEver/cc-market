@@ -35,7 +35,9 @@ function openWriteSession({ provider, model, cwd, profile = null, _spawn = spawn
   const allowedTools = profile?.allowedTools
     ? (Array.isArray(profile.allowedTools) ? profile.allowedTools.join(",") : profile.allowedTools)
     : "Bash,Read,Write,Edit,Glob,Grep";
-  const permissionMode = profile?.permissionMode || "bypassPermissions";
+  // With a profile present the default is the SAFE mode — bypassPermissions stays the
+  // default only for the profile-less legacy write path (sharp-review SR-010).
+  const permissionMode = profile ? (profile.permissionMode || "default") : "bypassPermissions";
 
   return {
     id: `write-${idFragment()}`,
@@ -72,13 +74,17 @@ function openWriteSession({ provider, model, cwd, profile = null, _spawn = spawn
 export async function openProviderSession(opts = {}) {
   const { provider, write } = opts;
   if (!provider) throw new Error("openProviderSession: provider is required");
-  // Resolve a profile NAME here, once, so every backend below receives the object.
-  // A remote spawn forwards the resolved object — the peer enforces it at ITS spawn point.
-  const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig());
   if (opts.node) {
+    // A remote spawn forwards the profile NAME — the peer resolves it against its OWN
+    // config (enforcement lives there; sharp-review SR-001). Inline objects stay local.
+    if (opts.profile != null && typeof opts.profile !== "string") {
+      throw new Error("openProviderSession: a remote spawn takes a profile NAME registered on the peer, not an object");
+    }
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile });
+    return openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible });
   }
+  // Local: resolve a NAME once so every backend below receives the object.
+  const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig());
   if (provider === "codex") {
     return openCodexSession({ model: opts.model, write, cwd: opts.cwd, _client: opts._client });
   }
@@ -133,11 +139,17 @@ export async function closeSession(id) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (already closed?)`);
   let exitCode = null;
-  try { exitCode = await entry.handle.close(); }
-  finally {
+  try {
+    exitCode = await entry.handle.close();
+  } catch (e) {
+    // A close that THROWS is not a close — the child may live on. Journal the failure
+    // and keep the record open for reconcile (sharp-review SR-016).
     sessions.delete(id);
-    recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns, usage: entry.handle.usage ?? null });
+    recordEvent({ event: "close_failed", id, error: String(e?.message ?? e), turns: entry.turns });
+    throw e;
   }
+  sessions.delete(id);
+  recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns, usage: entry.handle.usage ?? null });
   return { id, exitCode: exitCode ?? null, turns: entry.turns };
 }
 
@@ -164,7 +176,8 @@ export async function pingSession(id) {
   if (typeof h.ping === 'function') return { id, provider: entry.provider, ...(await h.ping()) };
   return {
     id, provider: entry.provider, turns: entry.turns,
-    alive: h.alive ?? true, pid: h.pid ?? null, lastActivity: h.lastActivity ?? null,
+    // null = this backend does not observe liveness; never claim true by default (SR-005).
+    alive: h.alive ?? null, pid: h.pid ?? null, lastActivity: h.lastActivity ?? null,
   };
 }
 

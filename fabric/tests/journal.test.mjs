@@ -50,3 +50,32 @@ test('registry writes spawn/close events to the journal', async () => {
   assert.ok(events.includes('close'), `journal must record close, got: ${events}`);
   assert.equal(lines.find((l) => l.event === 'spawn').pid, 77);
 });
+
+// SR-003: a REMOTE session's pid belongs to the peer's process table — reconcile must
+// not consult the local one (PID reuse makes pidAlive:true an invitation to kill an
+// unrelated local process).
+test('reconcile never pid-checks remote sessions', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fj4-'));
+  process.env.FABRIC_JOURNAL_DIR = dir;
+  const { recordEvent, reconcile } = await import('../engine/journal.mjs?t=4');
+  recordEvent({ event: 'spawn', id: 'r1', pid: 300, provider: 'deepseek', node: 'WS2' });
+  const orphans = reconcile({ _pidAlive: () => { throw new Error('must not be called for remote'); } });
+  assert.equal(orphans.length, 1);
+  assert.equal(orphans[0].pidAlive, null, 'remote liveness is unknown here, never claimed');
+});
+
+// SR-016: a close that THROWS must not be journaled as a close — the child may live on.
+test('a failed close journals close_failed and stays open in reconcile', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fj5-'));
+  process.env.FABRIC_JOURNAL_DIR = dir;
+  const { readJournal, reconcile } = await import('../engine/journal.mjs?t=5');
+  const { createSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const fakeOpen = async () => ({ id: 'n1', pid: 88, send: async () => ({ text: 'x', turn: 1 }), close: async () => { throw new Error('close hung'); } });
+  const desc = await createSession({ provider: 'deepseek' }, fakeOpen);
+  await assert.rejects(closeSession(desc.id), /close hung/);
+  const events = readJournal().map((r) => r.event);
+  assert.ok(events.includes('close_failed'), `got: ${events}`);
+  assert.ok(!events.includes('close'), 'must not record a successful close');
+  assert.equal(reconcile({ _pidAlive: () => true }).length, 1, 'still an orphan candidate');
+});

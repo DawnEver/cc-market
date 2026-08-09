@@ -25,6 +25,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
+import { resolveProfile } from "./profile.mjs";
 import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "./node-tls.mjs";
 
 export const AUTH_ERROR = -32001;
@@ -47,7 +48,7 @@ function pluginVersion() {
   } catch { return "unknown"; }
 }
 
-export function createNodeServer({ token, name = null, projects = {}, tags = [], deps = {} } = {}) {
+export function createNodeServer({ token, name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, deps = {} } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
   const _createSession = deps.createSession || createSession;
   const _sendToSession = deps.sendToSession || sendToSession;
@@ -75,9 +76,19 @@ export function createNodeServer({ token, name = null, projects = {}, tags = [],
           cwd = projects[params.project];
           if (!cwd) throw new RpcError(-32602, `node/spawn: unknown project alias "${params.project}" on this node. Available: ${Object.keys(projects).join(", ") || "(none)"}`);
         }
+        // ENFORCEMENT, not obedience (sharp-review SR-001): a remote profile is a NAME
+        // resolved against THIS server's config. An inline object from the wire would let
+        // any token-holder write their own policy.
+        if (params.profile != null && typeof params.profile !== "string") {
+          throw new RpcError(-32602, "node/spawn: profile must be a profile NAME registered on this node, not an object");
+        }
+        let profile = null;
+        try { profile = resolveProfile(params.profile ?? defaultProfile, { profiles }); }
+        catch (e) { throw new RpcError(-32602, `node/spawn: ${e.message}`); }
         const desc = await _createSession({
           provider: params.provider, model: params.model, write: !!params.write,
-          cwd: cwd || process.cwd(), observe: false, profile: params.profile ?? null,
+          cwd: cwd || process.cwd(), observe: false, profile,
+          visible: !!params.visible,
         });
         owned.add(desc.id);
         return desc;
