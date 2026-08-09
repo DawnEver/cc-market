@@ -451,3 +451,22 @@ test("connection loss rejects pendings with code CONNECTION_LOST", async () => {
     await assert.rejects(p, (e) => e.code === "CONNECTION_LOST" && /connection lost/.test(e.message));
   } finally { await server.close(); }
 });
+
+// ── G1: node/status must report capacity facts a scheduler can admit on —
+// {name, sessions} alone left the layer above blind.
+test("node/status reports version/uptime/cpu/memory capacity facts", async () => {
+  const { server, port } = await startServer({ tags: ["femm"] });
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const st = await conn.request("node/status", {});
+    assert.equal(st.name, "testnode");
+    assert.ok(typeof st.version === "string" && st.version.length > 0, "version");
+    assert.ok(typeof st.uptime_s === "number" && st.uptime_s >= 0, "uptime_s");
+    assert.ok(Number.isInteger(st.cpu) && st.cpu > 0, "cpu count");
+    assert.ok(typeof st.mem_available_mb === "number" && st.mem_available_mb > 0, "mem_available_mb");
+    assert.ok(typeof st.mem_total_mb === "number" && st.mem_total_mb >= st.mem_available_mb, "mem_total_mb");
+    assert.deepEqual(st.tags, ["femm"]);
+    assert.ok(Array.isArray(st.sessions));
+    conn.close();
+  } finally { await server.close(); }
+});

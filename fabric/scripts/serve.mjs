@@ -31,8 +31,25 @@ if (portFlag !== -1) {
 }
 const name = serve.name || hostname();
 const projects = serve.projects || {};
+const tags = serve.tags || [];
 
-const server = createNodeServer({ token, name, projects });
+// --status: report the resolved config and whether a node is already serving this port,
+// then exit. Read-only; the probe is the same node/status a peer would issue.
+if (args.includes("--status")) {
+  const { connectNode } = await import("../engine/node-client.mjs");
+  process.stdout.write(`name: ${name}\nport: ${port}\nprojects: ${Object.keys(projects).join(", ") || "(none)"}\ntags: ${tags.join(", ") || "(none)"}\n`);
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
+    const st = await conn.request("node/status", {});
+    conn.close();
+    process.stdout.write(`serving: yes (version ${st.version}, up ${st.uptime_s}s, ${st.sessions.length} session(s), ${st.mem_available_mb} MB free)\n`);
+  } catch {
+    process.stdout.write("serving: no (nothing answered on this port)\n");
+  }
+  process.exit(0);
+}
+
+const server = createNodeServer({ token, name, projects, tags });
 const bound = await server.listen(port, serve.host || "0.0.0.0");
 const aliases = Object.keys(projects).join(", ") || "(none — peers can only spawn in this cwd)";
 process.stdout.write(`fabric node "${name}" listening on port ${bound.port}; projects: ${aliases}\n`);

@@ -7,9 +7,10 @@
 // server's config) with this machine's credentials. No file transfer, no shared paths.
 //
 // Methods (every request must carry the shared token in params.token):
-//   node/status  → { name, sessions }
-//   node/spawn   { provider, model?, write?, project? } → { id, provider, nativeId }
+//   node/status  → { name, version, uptime_s, cpu, mem_available_mb, mem_total_mb, tags, sessions }
+//   node/spawn   { provider, model?, write?, project? } → { id, provider, nativeId, pid }
 //   node/send    { id, prompt } → { text, turn }
+//   node/ping    { id } → { id, provider, alive, pid, turns, lastActivity }
 //   node/close   { id } → { id, exitCode, turns }
 //
 // Sessions are OWNED by the connection that spawned them: node/send and node/close only
@@ -18,7 +19,11 @@
 
 import tls from "node:tls";
 import crypto from "node:crypto";
+import os from "node:os";
 import process from "node:process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { createSession, sendToSession, closeSession, listSessions, pingSession } from "./session.mjs";
 import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken } from "./node-tls.mjs";
 
@@ -33,19 +38,36 @@ class RpcError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-export function createNodeServer({ token, name = null, projects = {}, deps = {} } = {}) {
+// Plugin version, best-effort: a peer scheduling against this node deserves to know
+// which fabric it is talking to.
+function pluginVersion() {
+  try {
+    const p = join(dirname(fileURLToPath(import.meta.url)), "..", ".claude-plugin", "plugin.json");
+    return JSON.parse(readFileSync(p, "utf8")).version ?? "unknown";
+  } catch { return "unknown"; }
+}
+
+export function createNodeServer({ token, name = null, projects = {}, tags = [], deps = {} } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
   const _createSession = deps.createSession || createSession;
   const _sendToSession = deps.sendToSession || sendToSession;
   const _closeSession = deps.closeSession || closeSession;
   const _listSessions = deps.listSessions || listSessions;
   const _pingSession = deps.pingSession || pingSession;
+  const startedAt = Date.now();
 
   // -32601 unknown method, -32602 missing/invalid params, -32000 runtime failure.
   async function dispatch(method, params, owned) {
     switch (method) {
       case "node/status":
-        return { name, sessions: _listSessions() };
+        // Capacity facts (G1): what a scheduler needs to ADMIT, reported not decided.
+        return {
+          name, version: pluginVersion(), uptime_s: Math.round((Date.now() - startedAt) / 1000),
+          cpu: os.cpus().length,
+          mem_available_mb: Math.round(os.freemem() / 1048576),
+          mem_total_mb: Math.round(os.totalmem() / 1048576),
+          tags, sessions: _listSessions(),
+        };
       case "node/spawn": {
         if (!params.provider) throw new RpcError(-32602, "node/spawn: provider is required");
         let cwd;
