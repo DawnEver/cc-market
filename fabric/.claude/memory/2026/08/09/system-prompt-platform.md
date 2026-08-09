@@ -62,3 +62,13 @@ added to PROFILE_OWNED_FLAGS. codex has NO equivalent (fixed tool set).
   official. Styles switchable (coding/academic/post + extensible via any
   output-styles dir). Background/subagent/team sections user-reviewing —
   untouched. Iteration memory lives HERE (cc-market/fabric), not cc-lab.
+
+## 2026-08-09 follow-up (commits da99840 + ae21c84)
+- fabric auto-injects --system-prompt-file: `fabric.systemPromptFile` config
+  default (both openSession + spawnChild paths); profile.systemPromptFile
+  overrides; flag is profile-owned. User default → claude-base.md. With
+  toolsPreset = complete cost chain.
+- codex 3-layer injection VERIFIED (markers): L1 model_instructions_file ✓
+  L2 ~/.codex/AGENTS.md (GLOBAL symlink) ✓ L3 project CLAUDE.md fallback ✓.
+  Path gotcha: model_instructions_file must be FORWARD slashes (backslashes
+  silently ignored via -c override).
