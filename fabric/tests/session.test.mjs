@@ -2,6 +2,8 @@
 // engine/codex/session.mjs (persistent codex thread), both exercised with fakes — no real
 // claude/codex, no network.
 
+// Isolate the session journal: registry events must never pollute the user's real ~/.fabric.
+process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'fj-test-'));
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {

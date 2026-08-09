@@ -19,6 +19,7 @@ import { openRemoteSession } from "./node-client.mjs";
 import { resolveNode } from "./node-config.mjs";
 import { buildChildEnv, resolveClaudeExe } from "./spawn-child.mjs";
 import { spawn } from "../shared/spawn.mjs";
+import { recordEvent } from "./journal.mjs";
 
 // ── Write-capable stateless session (non-codex) ─────────────────────
 // Spawns a fresh `claude -p` with tools per turn; accumulates history in memory. Each
@@ -96,6 +97,7 @@ export async function createSession(opts, _open = openProviderSession) {
   const handle = await _open(opts);
   const id = `sess-${idFragment()}`;
   sessions.set(id, { handle, provider: opts.provider, node: opts.node ?? null, createdAt: Date.now(), turns: 0 });
+  recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, provider: opts.provider, node: opts.node ?? null });
   return { id, provider: opts.provider, nativeId: handle.id ?? null, pid: handle.pid ?? null };
 }
 
@@ -103,7 +105,18 @@ export async function sendToSession(id, text) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
   if (!text || !String(text).trim()) throw new Error("session_send: prompt must be non-empty");
-  const res = await entry.handle.send(text);
+  let res;
+  try {
+    res = await entry.handle.send(text);
+  } catch (e) {
+    // A lost remote connection means the handle is gone for good — journal the loss so
+    // reconcile() does not report it as an orphan forever.
+    if (e?.code === "CONNECTION_LOST") {
+      sessions.delete(id);
+      recordEvent({ event: "loss", id, reason: e.message });
+    }
+    throw e;
+  }
   entry.turns = res.turn ?? entry.turns + 1;
   return res;
 }
@@ -113,7 +126,10 @@ export async function closeSession(id) {
   if (!entry) throw new Error(`No such session: ${id} (already closed?)`);
   let exitCode = null;
   try { exitCode = await entry.handle.close(); }
-  finally { sessions.delete(id); }
+  finally {
+    sessions.delete(id);
+    recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns });
+  }
   return { id, exitCode: exitCode ?? null, turns: entry.turns };
 }
 

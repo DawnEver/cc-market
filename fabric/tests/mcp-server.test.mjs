@@ -3,6 +3,8 @@
 // network: `call` dispatch is validated via schema + routing + <command> parsing + injected
 // fakes; sessions via injected registry deps.
 
+// Isolate the session journal: registry events must never pollute the user's real ~/.fabric.
+process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'fj-test-'));
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
