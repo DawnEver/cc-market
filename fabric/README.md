@@ -229,7 +229,11 @@ handshake itself.
    `--resume <session_id>` so the conversation restores from the CLI's session store —
    or **kill** (provably-alive pids only), or **clear record** (tombstone a dead one).
    Remote orphans must be decided on their owning peer. The journal is append-only and
-   keeps the lineage either way.
+   keeps the lineage either way. **The journal is bounded, no timer needed**: the live
+   file rotates past ~1 MiB (each process's hot file never grows unbounded), and every
+   serve start folds the history — settled sessions (spawn with a matching close/loss)
+   are dropped, leaving O(open sessions) of records. Folding only happens at boot, so
+   it never races a live writer.
 
 ## Auth note
 

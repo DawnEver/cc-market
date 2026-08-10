@@ -166,3 +166,24 @@ test('compactJournal drops settled sessions and folds other processes files into
   assert.deepEqual([...new Set(ids)].sort(), ['hung', 'live', 'orphan']);
   assert.deepEqual(reconcile({ _pidAlive: () => true }).map((o) => o.id).sort(), ['hung', 'live', 'orphan']);
 });
+
+// 2026-08-10: the hot path is bounded too — the live file ROTATES past a size threshold
+// (renamed away, fresh file starts), and no event is lost across the rotation.
+test('recordEvent rotates the live file past the size bound without losing events', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fj-rot-'));
+  process.env.FABRIC_JOURNAL_DIR = dir;
+  process.env.FABRIC_JOURNAL_MAX_BYTES = '200'; // tiny threshold for the test
+  const { recordEvent, readJournal } = await import('../engine/journal.mjs?t=rot');
+
+  for (let i = 0; i < 12; i++) recordEvent({ event: 'spawn', id: `r${i}`, pid: i });
+
+  const files = readdirSync(dir).sort();
+  const rotated = files.filter((f) => /rot-1\.jsonl$/.test(f));
+  assert.equal(rotated.length, 1, 'the oversized live file was rotated away once');
+  assert.ok(readFileSync(join(dir, rotated[0]), 'utf8').length >= 200, 'the rotated chunk carries the overflow');
+
+  const ids = readJournal().map((r) => r.id);
+  assert.deepEqual(ids, Array.from({ length: 12 }, (_, i) => `r${i}`), 'no event lost across the rotation');
+
+  delete process.env.FABRIC_JOURNAL_MAX_BYTES;
+});

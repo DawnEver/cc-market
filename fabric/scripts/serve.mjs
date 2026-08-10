@@ -125,7 +125,18 @@ if (wantConsole) {
   }
 }
 
-// ── 3. Crash-recovery reminder (2026-08-10) ──
+// ── 3. Journal housekeeping + crash-recovery reminder (2026-08-10) ──
+// Fold the history first: every OTHER file's writer is dead by now (boot time is the
+// only safe moment — folding must not race a live writer), so settled sessions drop
+// and history collapses to O(open sessions) + the fresh live file.
+try {
+  const { compactJournal } = await import("../engine/journal.mjs");
+  const folded = compactJournal();
+  if (folded.files > 0) {
+    process.stdout.write(`fabric serve: journal folded (${folded.files} file(s); kept ${folded.kept} open-session event(s), dropped ${folded.dropped} settled)\n`);
+  }
+} catch { /* folding is best-effort — the journal stays readable either way */ }
+
 // A previous serve may have died leaving session children running (or conversations
 // resumable). The journal knows; the OPERATOR decides — this is the reminder the
 // design's "kill-or-adopt is the layer above's decision" promised.

@@ -25,7 +25,7 @@
 // Writes still never throw at the caller — a journal failure must not take a live
 // session down with it.
 
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, existsSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, existsSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import process from "node:process";
@@ -52,11 +52,30 @@ export function journalWriteFailures() {
   return writeFailures;
 }
 
+// Auto-bounding (2026-08-10): the live file rotates once it passes MAX_LIVE_FILE_BYTES
+// (rename, start fresh) so a long-lived process cannot grow one file forever. The
+// rotated chunk waits for the next serve/console start to be folded by compactJournal()
+// (folding must not race a live writer, so it only happens at boot). History therefore
+// stays bounded: hot file ≤ ~1 MiB, everything else folded at restart to O(open sessions).
+const MAX_LIVE_FILE_BYTES = Number(process.env.FABRIC_JOURNAL_MAX_BYTES) || 1024 * 1024;
+let rotSeq = 0;
+
+function rotateIfOversized() {
+  const dir = journalDir();
+  const p = join(dir, LIVE_FILE);
+  try {
+    if (statSync(p).size < MAX_LIVE_FILE_BYTES) return;
+    // Own-pid rename is atomic and safe: only this process ever writes this file.
+    renameSync(p, join(dir, `journal-${process.pid}-rot-${++rotSeq}.jsonl`));
+  } catch { /* best-effort: an unreadable/absent file is not worth failing an append over */ }
+}
+
 export function recordEvent(ev) {
   try {
     const dir = journalDir();
     if (!ensuredDirs.has(dir)) { mkdirSync(dir, { recursive: true }); ensuredDirs.add(dir); }
     appendFileSync(join(dir, LIVE_FILE), `${JSON.stringify({ ts: Date.now(), ...ev })}\n`);
+    rotateIfOversized();
   } catch (e) {
     writeFailures++;
     if (!warnedOnce) {
