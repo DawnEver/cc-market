@@ -23,6 +23,8 @@ function fixture() {
 // opts.compact = 'boundary' also emits compact_boundary BEFORE the result when the user
 // message is "/compact" (the real CLI's native manual-compact sequence, probed live);
 // opts.compact = 'none' omits it (the "refused" case: fresh session / blocking hook).
+// Goal mode (opts.goalMet = 'marker'|'never'): when a message carries the goal marker
+// instruction, reply with the marker (met) or a plain "still working" (never met).
 function makeFakeClaude(sink, opts = {}) {
   return () => {
     const child = new EventEmitter();
@@ -39,20 +41,51 @@ function makeFakeClaude(sink, opts = {}) {
           if (!l.trim()) continue;
           const msg = JSON.parse(l);
           const said = typeof msg.message.content === 'string' ? msg.message.content : '';
-          queueMicrotask(() => {
+          const reply = () => {
             if (opts.compact === 'boundary' && said === '/compact') {
               child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 30000, post_tokens: 1000 } }) + '\n');
             }
-            child.stdout.emit('data', JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `echo:${said}` }] } }) + '\n');
+            let text = `echo:${said}`;
+            if (said.includes('<<GOAL_COMPLETE>>')) {
+              text = opts.goalMet === 'never' ? 'still working on it' : 'work finished <<GOAL_COMPLETE>>';
+            }
+            child.stdout.emit('data', JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text }] } }) + '\n');
             child.stdout.emit('data', JSON.stringify({ type: 'result', subtype: 'success' }) + '\n');
-          });
+          };
+          if (opts.replyDelayMs) setTimeout(reply, opts.replyDelayMs);
+          else queueMicrotask(reply);
         }
       },
       end: () => { queueMicrotask(() => child.emit('close', 0)); },
     };
+    // The real CLI announces its own session id on the init event; the parser records
+    // it for crash-recovery resume. Emit it once, like the real init sequence.
+    queueMicrotask(() => child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'init', session_id: 'cli-sess-123' }) + '\n'));
     return child;
   };
 }
+
+// Capture spawn args for arg-shape assertions (resume).
+function captureSpawn(rec) {
+  return (bin, args, opts) => { rec.args = args; return makeFakeClaude(rec.sink)(bin, args, opts); };
+}
+
+test('openSession captures the CLI session id (crash-recovery resume) and forwards --resume', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-sessid-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink), _bin: 'fake' });
+  await s.send('hi'); // init arrives during the first turn
+  assert.equal(s.sessionId, 'cli-sess-123');
+
+  // A resume spawn carries --resume <id> so the CLI restores the conversation.
+  const rec = { sink: { writes: [] } };
+  const rs = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: captureSpawn(rec), _bin: 'fake', resume: 'cli-sess-123' });
+  await rs.send('hi');
+  const i = rec.args.indexOf('--resume');
+  assert.ok(i >= 0, '--resume must be present on a resumed spawn');
+  assert.equal(rec.args[i + 1], 'cli-sess-123');
+  await s.close(); await rs.close();
+});
 
 test('openSession send() resolves each turn with assistant text', async () => {
   const sink = { writes: [] };
@@ -168,6 +201,76 @@ test('openSession compact() reports confirmed:false when the CLI refuses (no bou
   const res = await s.compact();
   assert.equal(res.compacted, true);
   assert.equal(res.confirmed, false, 'a result with no boundary is a refused compact, honestly reported');
+  await s.close();
+});
+
+// ── Goal mode (2026-08-10): fabric-side marker loop. The CLI's native /goal is
+// unreachable in fabric's child architecture (refuses under the hook-free policy;
+// hangs when hooks are enabled on an isolated config dir) — so setGoal stores the
+// condition locally and goalRun iterates until the <<GOAL_COMPLETE>> marker appears
+// (or the caps hit). One interaction replaces many: no per-round input needed.
+test('openSession setGoal stores the condition locally — no CLI message is sent', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-goal-set-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink), _bin: 'fake' });
+  const res = await s.setGoal('done when the tests pass');
+  assert.deepEqual(res, { condition: 'done when the tests pass', active: true });
+  assert.equal(s.goalActive, true);
+  assert.equal(sink.writes.length, 0, 'setting a goal must not touch the wire');
+  await s.close();
+});
+
+test('openSession goal run: marker in the reply → met on the first attempt', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-goal-run-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { goalMet: 'marker' }), _bin: 'fake' });
+  await s.setGoal('fix the failing test');
+  const res = await s.send('go', 'user', { maxTurns: 5 });
+  assert.deepEqual(res, { text: 'work finished <<GOAL_COMPLETE>>', turn: 1, turns: 1, state: 'met' });
+  // The trigger carried the marker protocol on the wire.
+  assert.match(sink.writes[0], /<<GOAL_COMPLETE>>/);
+  assert.equal(s.turns, 1);
+  await s.close();
+});
+
+test('openSession goal run caps at maxTurns with state capped when the marker never appears', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-goal-cap-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { goalMet: 'never' }), _bin: 'fake' });
+  await s.setGoal('never met');
+  const res = await s.send('go', 'user', { maxTurns: 2 });
+  assert.equal(res.state, 'capped');
+  assert.equal(res.turns, 2);
+  assert.equal(res.text, 'still working on it', 'the last attempt before the cap');
+  // The continuation also carried the marker instruction.
+  assert.match(sink.writes[1], /<<GOAL_COMPLETE>>/);
+  await s.close();
+});
+
+test('openSession goal run times out honestly and does not kill the loop state', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-goal-timeout-'));
+  // Slow replies so the attempts outlast the wall-clock cap.
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { goalMet: 'never', replyDelayMs: 25 }), _bin: 'fake' });
+  await s.setGoal('long task');
+  const res = await s.send('go', 'user', { maxTurns: 50, timeoutMs: 60 });
+  assert.equal(res.state, 'timeout');
+  assert.equal(s.alive, true, 'a timeout must not kill the child — the work may be worth keeping');
+  await s.close();
+});
+
+test('openSession goal run without a goal rejects; interjecting mid-run is refused', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-goal-guard-'));
+  // Slow replies (replyDelayMs) keep the run in flight while we try to interject.
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { goalMet: 'never', replyDelayMs: 40 }), _bin: 'fake' });
+  await assert.rejects(s.goalRun('x'), /no goal set/);
+  await s.setGoal('never met');
+  const runP = s.send('run', 'user', { maxTurns: 50, timeoutMs: 4000 });
+  await new Promise((r) => setTimeout(r, 20)); // the first attempt is in flight
+  await assert.rejects(s.send('interject'), /goal run is in flight/);
+  const res = await runP;
+  assert.equal(res.state, 'capped');
   await s.close();
 });
 

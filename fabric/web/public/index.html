@@ -52,6 +52,10 @@
 
   <section id="chat">
     <div id="msgs"><div id="chatEmpty">Pick a session (any machine) to chat. Shared sessions attach automatically.</div></div>
+    <div id="goalrow">
+      <input id="goal" placeholder="goal condition, e.g. done when all tests pass (native /goal — the session works until met)" onkeydown="if(event.key==='Enter')setGoal()">
+      <button onclick="setGoal()" title="Set the goal; the next Send runs the autonomous loop to its final outcome">set goal</button>
+    </div>
     <div id="composer">
       <input id="prompt" placeholder="message… (Enter to send)" onkeydown="if(event.key==='Enter')send()">
       <button class="primary" onclick="send()">Send</button>

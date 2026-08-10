@@ -85,6 +85,7 @@ transport — framed needed for Codex MCP startup). Tools:
 | `session_send` | `id`, `prompt` | `sendToSession()` → one turn, context retained |
 | `session_close` | `id` | `closeSession()` → tears down the child |
 | `session_compact` | `id` | `compactSession()` → native context compaction in place (codex `thread/compact/start`; claude/API via the CLI's `/compact` user message + `compact_boundary`); `COMPACT_UNSUPPORTED` for backends without one |
+| `session_goal` | `id`, `condition`, `prompt?`, `maxTurns?`, `timeoutMs?` | `setSessionGoal()`/`goalRunSession()` → FABRIC-SIDE goal loop: with a goal active, a send iterates a completion-marker protocol (`<<GOAL_COMPLETE>>`) until the marker appears or the caps hit; returns the final outcome (`state: met\|capped\|timeout`); caps mandatory (the loop never self-terminates while unmet); claude/API children only (`GOAL_UNSUPPORTED` otherwise). The CLI's native `/goal` is deliberately NOT used — it requires hooks enabled, incompatible with the hook-free child policy (verified: refuses under disableAllHooks, hangs the CLI at startup with hooks on an isolated config dir) |
 | `list_sessions` | (none) | `listSessions()` |
 | `list_nodes` | (none) | Configured peer fabric nodes from the `fabric` config block |
 | `list_providers` | (none) | `listModels()` |
@@ -128,7 +129,7 @@ credentials; only text comes back.
 
 - **Server** (`engine/node-server.mjs`, CLI `scripts/serve.*` — which also starts the
   management console in the same process; `--no-console` for the node alone): exposes
-  `node/spawn|send|compact|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
+  `node/spawn|send|compact|goal|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
   (`engine/node-tls.mjs` — PSK derived from a token; an unaccepted token fails the
   handshake, all traffic encrypted, no certificates). Every request also carries the token;
   the server refuses to start without one. Sessions are owned by the connection that

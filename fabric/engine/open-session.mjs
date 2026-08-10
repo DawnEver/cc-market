@@ -82,7 +82,7 @@ function extractText(assistantMsg) {
 export async function openSession(opts) {
   const {
     provider, model, observe = false, runDir, cwd, configPath, extraArgs = [], profile = null,
-    visible = false, interactive = false, effort = null, ownsRunDir,
+    visible = false, interactive = false, effort = null, ownsRunDir, resume = null,
     _spawn = hiddenSpawn, _bin, _viewerSpawn = hiddenSpawn, _pollMs = 400,
   } = opts;
   // Only a directory fabric itself minted is ours to delete; a caller's runDir is not.
@@ -123,7 +123,10 @@ export async function openSession(opts) {
     // --verbose is REQUIRED by the CLI for --print + stream-json output (exit 1 without);
     // the parser ignores the extra system events it adds.
     '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
-    ...(model ? ['--model', model] : []), ...hookFreeArgs(extraArgs),
+    ...(model ? ['--model', model] : []),
+    // Recovery (2026-08-10): resume restores a conversation from the CLI's session
+    // store after serve crashed — the new child continues the old session's context.
+    ...(resume ? ['--resume', resume] : []), ...hookFreeArgs(extraArgs),
     // Profile flags come LAST and profile-owned flags are stripped from extraArgs —
     // otherwise "last flag wins" lets a caller override the policy (sharp-review SR-017).
     ...(profile ? stripProfileOwnedFlags(extraArgs) : extraArgs), ...profileArgs(profile),
@@ -219,9 +222,25 @@ while ($true) {
 
   let turnCount = 0;
   let compactBoundaryAt = 0; // compact_boundary system events observed (native compaction)
+  let sessionId = null;      // the CLI's own session id (init event) — enables --resume recovery
   let pending = null;        // { resolve, reject, text }
   let acc = '';              // assistant text accumulator for the in-flight turn
   let closed = false;
+  // Goal mode (2026-08-10). The CLI's NATIVE /goal loop turned out unreachable in
+  // fabric's child architecture — probed three ways: /goal refuses under the
+  // hook-free policy (disableAllHooks), and enabling hooks on an isolated config dir
+  // hangs the CLI at startup (real-dir children would fire the USER's hooks, which
+  // the policy forbids). So the goal loop is FABRIC-SIDE: setGoal stores the
+  // condition; goalRun sends the trigger with a completion-marker protocol
+  // ("end your final reply with exactly <<GOAL_COMPLETE>>") and re-sends a
+  // continuation until the marker appears, capped by maxTurns/timeout. Provider-
+  // independent, works under the hook-free policy, honestly reported.
+  let goalActive = false;
+  let goalCondition = null;
+  let goalRunning = false;   // a goal run in flight owns the conversation
+  const DEFAULT_GOAL_MAX_TURNS = 20;
+  const DEFAULT_GOAL_TIMEOUT_MS = 30 * 60 * 1000;
+  const GOAL_MARKER = '<<GOAL_COMPLETE>>';
   let exitCode = null;
   let chain = Promise.resolve(); // serializes send() calls
   let buf = '';
@@ -268,7 +287,10 @@ while ($true) {
       buf = buf.slice(nl + 1);
       if (!line) continue;
       let ev; try { ev = JSON.parse(line); } catch { continue; }
-      if (ev.type === 'assistant') acc += extractText(ev.message);
+      // The CLI's own session id arrives on the init event — journaled so a crashed
+      // serve can RESUME the conversation later (recovery: --resume <session_id>).
+      if (ev.type === 'system' && ev.subtype === 'init') sessionId = ev.session_id ?? sessionId;
+      else if (ev.type === 'assistant') acc += extractText(ev.message);
       else if (ev.type === 'system' && ev.subtype === 'compact_boundary') compactBoundaryAt++;
       else if (ev.type === 'result') {
         turnCount++;
@@ -310,7 +332,7 @@ while ($true) {
    *   would let a late result answer the wrong caller while the serialized chain stays wedged
    *   (SR-052). Callers get code 'TURN_TIMEOUT'; later sends fail fast with "session is closed".
    */
-  function send(text, _label = 'user', { timeoutMs } = {}) {
+  function sendRaw(text, _label = 'user', { timeoutMs } = {}) {
     // Serialize: each send waits for the previous turn's result — orchestrator and
     // human turns share this one chain.
     const run = () => new Promise((resolve, reject) => {
@@ -339,14 +361,80 @@ while ($true) {
     return chain;
   }
 
+  /**
+   * Set (or replace) the session's goal. Local state only — the goal loop is
+   * fabric-side (see the header note on why the CLI's native /goal is unreachable).
+   * From then on EVERY send is a goal run: the trigger is sent with the completion-
+   * marker protocol and fabric iterates until the marker appears (or the caps).
+   */
+  async function setGoal(condition) {
+    const c = String(condition ?? '').trim();
+    if (!c) throw new Error('setGoal: a condition is required');
+    goalCondition = c;
+    goalActive = true;
+    return { condition: c, active: true };
+  }
+
+  /**
+   * Run the goal loop to completion (marker protocol). Each attempt sends the prompt
+   * plus an instruction to work autonomously toward the condition and end the final
+   * reply with exactly `<<GOAL_COMPLETE>>`. Marker present → met. Otherwise a
+   * continuation is sent, up to maxTurns; timeoutMs caps the wall clock. 'timeout'
+   * leaves the loop in place (the caller may re-run or close); state is reported
+   * honestly either way.
+   */
+  function goalRun(text, opts = {}) {
+    const maxTurns = opts.maxTurns ?? DEFAULT_GOAL_MAX_TURNS;
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_GOAL_TIMEOUT_MS;
+    return new Promise((resolve, reject) => {
+      if (!goalActive || !goalCondition) return reject(new Error('goalRun: no goal set — call setGoal(condition) first'));
+      if (goalRunning) return reject(new Error('goalRun: a goal run is already in flight'));
+      if (closed) return reject(new Error('openSession: session is closed'));
+      goalRunning = true;
+      const results = [];
+      let hard = null;
+      const finish = (state) => {
+        clearTimeout(hard); goalRunning = false;
+        const last = [...results].reverse().find((t) => t.trim()) ?? '';
+        resolve({ text: last, turn: turnCount, turns: results.length, state });
+      };
+      hard = setTimeout(() => finish('timeout'), timeoutMs);
+      hard.unref?.();
+      const instruct = (body) =>
+        `${body}\n\nWork autonomously toward the goal: ${goalCondition}. Do not pause to ask for confirmation. When the goal is complete, end your final reply with exactly the marker ${GOAL_MARKER}.`;
+      const attempt = (i) => {
+        if (closed) { clearTimeout(hard); goalRunning = false; return reject(new Error('openSession: session is closed')); }
+        sendRaw(i === 0 ? instruct(text) : `Continue working toward the goal: ${goalCondition}. End your final reply with exactly the marker ${GOAL_MARKER}.`, 'goal').then(
+          (r) => {
+            results.push(r.text);
+            if (r.text.includes(GOAL_MARKER)) return finish('met');
+            if (results.length >= maxTurns) return finish('capped');
+            attempt(results.length);
+          },
+          (e) => { clearTimeout(hard); goalRunning = false; reject(e); },
+        );
+      };
+      attempt(0);
+    });
+  }
+
+  function send(text, _label = 'user', opts) {
+    // With a goal active every user message IS a goal run — the loop outcome is the
+    // result. Mid-run interjections are refused: the loop owns the conversation.
+    if (goalRunning) return Promise.reject(new Error('openSession: a goal run is in flight; wait for it or close the session'));
+    if (goalActive) return goalRun(text, opts);
+    return sendRaw(text, _label, opts);
+  }
+
   // Native headless compaction: `/compact` sent as a user message IS the CLI's manual
   // compact — the CLI expands the slash command from a stream-json user message and
   // emits `compact_boundary` (trigger: "manual") before the result event (probed live
   // 2026-08-10: 30.8k → 1.2k tokens). A result WITHOUT a boundary means the compact
   // was refused (fresh session, blocking hook) — reported honestly as confirmed:false.
+  // Compaction always uses the raw send — never a goal run, even with a goal active.
   async function compact({ timeoutMs = 120_000 } = {}) {
     const before = compactBoundaryAt;
-    const r = await send('/compact', 'user', { timeoutMs });
+    const r = await sendRaw('/compact', 'user', { timeoutMs });
     return { compacted: true, confirmed: compactBoundaryAt > before, text: r.text };
   }
 
@@ -375,6 +463,8 @@ while ($true) {
   return {
     runDir, jsonlPath: proxy?.jsonlPath ?? null,
     get turns() { return turnCount; },
+    // The CLI's own session id (init event) — journaled for crash-recovery resume.
+    get sessionId() { return sessionId; },
     // Liveness facts (G3): reported, never inferred — the layer above decides what to do.
     pid: child.pid ?? null,
     get alive() { return !closed; },
@@ -382,12 +472,14 @@ while ($true) {
     stderrTail: errTail, // already secret-scrubbed at the source
     // Native compaction: the CLI compacts on a `/compact` user message (compact_boundary).
     get compactable() { return true; },
+    // Native goal mode: /goal sets the condition; the CLI then auto-runs the loop.
+    get goalActive() { return goalActive; },
     get usage() {
       return {
         ...usage,
         total_input_tokens: usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens,
       };
     },
-    send, compact, close,
+    send, setGoal, goalRun, compact, close,
   };
 }

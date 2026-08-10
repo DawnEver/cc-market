@@ -9,7 +9,7 @@
 // the durable trail stays in the journal, as everywhere else.
 
 import { readFileSync, existsSync } from "node:fs";
-import { createSession, sendToSession, closeSession, compactSession, listSessions, pingSession } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, pingSession } from "../engine/session.mjs";
 import { reconcile, recordEvent } from "../engine/journal.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { connectNode } from "../engine/node-client.mjs";
@@ -78,12 +78,15 @@ export function createWebApi(deps = {}) {
   const _send = deps.sendToSession || sendToSession;
   const _close = deps.closeSession || closeSession;
   const _compact = deps.compactSession || compactSession;
+  const _setGoal = deps.setSessionGoal || setSessionGoal;
+  const _goalRun = deps.goalRunSession || goalRunSession;
   const _list = deps.listSessions || listSessions;
   const _ping = deps.pingSession || pingSession;
   const _nodes = deps.pingNodes || pingNodes;
   const _reconcile = deps.reconcile || reconcile;
   const _catalogue = deps.catalogue || liveCatalogue;
   const _attach = deps.attachSession || attachSession;
+  const _kill = deps.killPid || ((pid) => process.kill(pid));
 
   const logs = new Map(); // sessionId → [{role, text, ts}]
   const log = (id, role, text) => {
@@ -93,6 +96,7 @@ export function createWebApi(deps = {}) {
 
   async function handle(method, path, body) {
     try {
+      let m, om; // route captures — declared here so every branch may use them
       if (method === "GET" && path === "/api/nodes") return { status: 200, body: await _nodes() };
       if (method === "GET" && path.startsWith("/api/catalogue")) {
         return { status: 200, body: _catalogue({ force: path.includes("force=1") }) };
@@ -130,6 +134,30 @@ export function createWebApi(deps = {}) {
         (deps.recordEvent || recordEvent)({ event: "loss", id: body.id, reason: "cleared from console" });
         return { status: 200, body: { id: body.id, cleared: true } };
       }
+      if (method === "POST" && (om = path.match(/^\/api\/orphans\/([^/]+)\/kill$/))) {
+        // Crash recovery: the operator decides a surviving session is NOT to continue —
+        // kill the pid when it is provably alive, then tombstone the record either way.
+        const rec = _reconcile().find((o) => o.id === om[1]);
+        if (!rec) return { status: 404, body: { error: `no orphan record ${om[1]}` } };
+        let killed = false;
+        if (rec.pid && rec.pidAlive === true) { try { _kill(rec.pid); killed = true; } catch { /* already gone */ } }
+        (deps.recordEvent || recordEvent)({ event: "loss", id: rec.id, reason: killed ? "killed from console" : "record cleared from console (pid not provably alive)" });
+        return { status: 200, body: { id: rec.id, killed } };
+      }
+      if (method === "POST" && (om = path.match(/^\/api\/orphans\/([^/]+)\/resume$/))) {
+        // Crash recovery: CONTINUE a surviving session — spawn a new child with the
+        // CLI's own session id (--resume), so the conversation restores from the CLI's
+        // session store. Local claude/API children only; a remote orphan is owned by
+        // its peer and must be decided there.
+        const rec = _reconcile().find((o) => o.id === om[1]);
+        if (!rec) return { status: 404, body: { error: `no orphan record ${om[1]}` } };
+        if (rec.node) return { status: 400, body: { error: `orphan ${om[1]} is remote — the peer owns it; resume it there` } };
+        if (!rec.sessionId) return { status: 400, body: { error: `orphan ${om[1]} has no resumable session id (not a claude/API child)` } };
+        const desc = await _create({ provider: rec.provider, resume: rec.sessionId, cwd: rec.cwd ?? process.cwd(), write: false });
+        (deps.recordEvent || recordEvent)({ event: "loss", id: rec.id, reason: `resumed into ${desc.id} (${rec.sessionId})` });
+        logs.set(desc.id, []);
+        return { status: 200, body: { ...desc, resumedFrom: rec.id } };
+      }
 
       if (method === "POST" && path === "/api/sessions") {
         if (!body?.provider) return { status: 400, body: { error: "provider is required" } };
@@ -146,7 +174,6 @@ export function createWebApi(deps = {}) {
         return { status: 200, body: desc };
       }
 
-      let m;
       if (method === "POST" && (m = path.match(/^\/api\/sessions\/([^/]+)\/send$/))) {
         if (!body?.prompt?.trim()) return { status: 400, body: { error: "prompt is required" } };
         const id = m[1];
@@ -164,6 +191,21 @@ export function createWebApi(deps = {}) {
         // session id keeps chatting. COMPACT_UNSUPPORTED surfaces as a 500 with the code.
         const res = await _compact(m[1]);
         log(m[1], "system", `[compacted in place${res.confirmed ? "" : " (unconfirmed)"}]`);
+        return { status: 200, body: res };
+      }
+      if (method === "POST" && (m = path.match(/^\/api\/sessions\/([^/]+)\/goal$/))) {
+        // Native goal: set the /goal condition (instant); with prompt, run the
+        // autonomous loop to its final outcome (the CLI iterates until met).
+        const id = m[1];
+        if (body?.prompt != null) {
+          const res = await _goalRun(id, { prompt: String(body.prompt), maxTurns: body.maxTurns, timeoutMs: body.timeoutMs });
+          log(id, "system", `[goal run: ${res.state}${res.turns != null ? `, ${res.turns} turn(s)` : ""}]`);
+          log(id, "assistant", res.text);
+          return { status: 200, body: res };
+        }
+        if (!body?.condition) return { status: 400, body: { error: "condition (or prompt) is required" } };
+        const res = await _setGoal(id, String(body.condition));
+        log(id, "system", `[goal set: ${body.condition}]`);
         return { status: 200, body: res };
       }
       if (method === "GET" && (m = path.match(/^\/api\/sessions\/([^/]+)\/ping$/))) {

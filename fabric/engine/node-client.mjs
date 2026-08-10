@@ -236,6 +236,9 @@ function remoteHandle({ id, pid = null, lease }) {
     send: (text) => conn.request("node/send", { id, prompt: text }),
     // Compact runs on the peer (node/compact), same ownership gate as send/close.
     compact: () => conn.request("node/compact", { id }),
+    // Native goal: set and/or run — the autonomous loop runs on the PEER and the
+    // drained final result comes back (node/goal).
+    goal: (opts) => conn.request("node/goal", { id, ...opts }),
     ping: async () => absorbFacts(handle, await conn.request("node/ping", { id })),
     async close() {
       try {

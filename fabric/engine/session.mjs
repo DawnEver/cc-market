@@ -87,6 +87,17 @@ export async function openProviderSession(opts = {}) {
   return tagKind(await openSession({ ...opts, profile: effectiveProfile, runDir }), "child");
 }
 
+/**
+ * Resume an orphaned session's conversation (crash recovery): spawn a NEW child with
+ * `--resume <sessionId>` so the CLI restores the conversation from its session store.
+ * Local claude/API children only (sessionId known, no node); remote orphans have no
+ * local resume path — the peer owns the child.
+ */
+export async function resumeSession(sessionId, opts = {}, _open = openProviderSession) {
+  if (!sessionId) throw new Error("resumeSession: a sessionId is required (only claude/API children record one)");
+  return createSession({ ...opts, resume: sessionId }, _open);
+}
+
 // ── In-process registry (held by the long-lived MCP server) ──────────
 
 const sessions = new Map();
@@ -112,8 +123,8 @@ export async function createSession(opts, _open = openProviderSession) {
   const handle = await _open(opts);
   const id = `sess-${idFragment()}`;
   sessions.set(id, { handle, provider: opts.provider, node: opts.node ?? null, cwd: opts.cwd ?? null, createdAt: Date.now(), turns: 0 });
-  recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, provider: opts.provider, node: opts.node ?? null, owner: owner() });
-  return { id, provider: opts.provider, nativeId: handle.id ?? null, pid: handle.pid ?? null };
+  recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, sessionId: handle.sessionId ?? null, provider: opts.provider, node: opts.node ?? null, owner: owner() });
+  return { id, provider: opts.provider, nativeId: handle.id ?? null, pid: handle.pid ?? null, sessionId: handle.sessionId ?? null };
 }
 
 // Per-id send chains. open-session and codex serialize internally, but a remote handle
@@ -173,6 +184,45 @@ export async function closeSession(id) {
 }
 
 /**
+ * Set (or replace) a session's native goal (claude/API: the CLI's `/goal <condition>`
+ * — the session then auto-continues turns until the condition is met). Instant; the
+ * next send runs the loop and returns its final outcome.
+ */
+export async function setSessionGoal(id, condition) {
+  const entry = sessions.get(id);
+  if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  if (typeof entry.handle.setGoal !== "function") {
+    const err = new Error(
+      `session ${id} (provider ${entry.provider}) has no native goal: only claude/API children expose the CLI's /goal loop.`,
+    );
+    err.code = "GOAL_UNSUPPORTED";
+    throw err;
+  }
+  const res = await entry.handle.setGoal(condition);
+  recordEvent({ event: "goal_set", id, provider: entry.provider, condition: res.condition, owner: owner() });
+  return { id, provider: entry.provider, ...res };
+}
+
+/**
+ * Run a goal session's loop to completion (drained to the final result). `prompt`
+ * triggers the loop; the CLI iterates autonomously until the goal is met, capped by
+ * maxTurns/timeout. Only valid when a goal is active (setSessionGoal first).
+ */
+export async function goalRunSession(id, { prompt, maxTurns, timeoutMs }) {
+  const entry = sessions.get(id);
+  if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  if (typeof entry.handle.goalRun !== "function") {
+    const err = new Error(`session ${id} (provider ${entry.provider}) has no native goal loop (claude/API only).`);
+    err.code = "GOAL_UNSUPPORTED";
+    throw err;
+  }
+  const res = await entry.handle.goalRun(prompt, { maxTurns, timeoutMs });
+  entry.turns = res.turn ?? entry.turns + 1;
+  recordEvent({ event: "goal_run", id, provider: entry.provider, turns: res.turns, state: res.state, owner: owner() });
+  return { id, provider: entry.provider, ...res };
+}
+
+/**
  * Compact a session's context in place (native where the backend has one — codex's
  * thread/compact/start; claude's --autocompact window is set at spawn). The handle
  * stays the same id; turns keep counting.
@@ -223,8 +273,10 @@ export function listSessions() {
     alive: observedAlive(e.handle),
     lastActivity: e.handle.lastActivity ?? null,
     usage: e.handle.usage ?? null,
-    // Capacity fact: whether this backend can compact its own context. null = unknown.
+    // Capacity facts: whether this backend can compact its own context / run a native
+    // goal loop. null = unknown.
     compactable: e.handle.compactable ?? null,
+    goal: e.handle.goalActive ?? null,
     node: e.node, cwd: e.cwd,
   }));
 }
@@ -239,7 +291,7 @@ export async function pingSession(id) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
   const h = entry.handle;
-  const base = { id, provider: entry.provider, kind: h.kind ?? null, compactable: h.compactable ?? null };
+  const base = { id, provider: entry.provider, kind: h.kind ?? null, compactable: h.compactable ?? null, goal: h.goalActive ?? null };
   if (typeof h.ping === "function") {
     try {
       return { ...base, ...(await h.ping()) };

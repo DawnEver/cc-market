@@ -125,6 +125,29 @@ if (wantConsole) {
   }
 }
 
+// ── 3. Crash-recovery reminder (2026-08-10) ──
+// A previous serve may have died leaving session children running (or conversations
+// resumable). The journal knows; the OPERATOR decides — this is the reminder the
+// design's "kill-or-adopt is the layer above's decision" promised.
+try {
+  const { reconcile } = await import("../engine/journal.mjs");
+  const orphans = reconcile().filter((o) => o.pidAlive !== false);
+  if (orphans.length) {
+    process.stdout.write("\n⚠ " + orphans.length + " session(s) survived a previous serve run — decide what to do:\n");
+    for (const o of orphans) {
+      process.stdout.write(
+        `   ${o.id}  ${o.provider ?? "?"}  pid ${o.pid ?? "—"}  ` +
+        `${o.pidAlive === null ? "alive UNKNOWN (remote)" : "alive"}${o.sessionId ? "  resumable" : ""}  ` +
+        `spawned ${new Date(o.ts).toLocaleString()}\n`,
+      );
+    }
+    process.stdout.write(
+      "   → Management console: continue (resume the conversation) or kill each session.\n" +
+      "   → `serve --status` also lists them; the journal keeps the records either way.\n\n",
+    );
+  }
+} catch { /* journal unreadable: no recovery report — records stay on disk regardless */ }
+
 process.stdout.write(`fabric serve: close this terminal to stop ${wantConsole ? "both" : "the node"}.\n`);
 
 // server.close() reaps every session child (they are windowsHide — invisible orphans

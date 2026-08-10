@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import {
-  createSession, sendToSession, closeSession, compactSession, listSessions, getSessionProvider, _resetRegistry,
+  createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, _resetRegistry,
 } from '../engine/session.mjs';
 import { openCodexSession } from '../engine/codex/session.mjs';
 
@@ -91,6 +91,32 @@ test('registry: compactSession is an honest NO for backends without native compa
   const { id } = await createSession({ provider: 'claude' }, async () => makeFakeHandle());
   await assert.rejects(compactSession(id), (e) => e.code === 'COMPACT_UNSUPPORTED');
   await assert.rejects(compactSession('nope'), /No such session/);
+});
+
+test('registry: setSessionGoal + goalRunSession journal and report goalActive', async () => {
+  _resetRegistry();
+  const handle = makeFakeHandle();
+  handle.goalActive = false;
+  handle.setGoal = async (condition) => { handle.goalActive = true; return { condition, active: true, text: 'ok' }; };
+  handle.goalRun = async (prompt, opts) => ({ text: 'final', turn: 9, turns: 4, state: 'met' });
+  const { id } = await createSession({ provider: 'deepseek' }, async () => handle);
+
+  const g = await setSessionGoal(id, 'done when tests pass');
+  assert.deepEqual(g, { id, provider: 'deepseek', condition: 'done when tests pass', active: true, text: 'ok' });
+  assert.equal(listSessions()[0].goal, true, 'goal fact on the list');
+
+  const r = await goalRunSession(id, { prompt: 'go', maxTurns: 5 });
+  assert.deepEqual(r, { id, provider: 'deepseek', text: 'final', turn: 9, turns: 4, state: 'met' });
+  assert.equal(listSessions()[0].turns, 9);
+
+  await assert.rejects(setSessionGoal('nope', 'x'), /No such session/);
+});
+
+test('registry: goal is an honest NO for backends without it (GOAL_UNSUPPORTED)', async () => {
+  _resetRegistry();
+  const { id } = await createSession({ provider: 'codex' }, async () => makeFakeHandle());
+  await assert.rejects(setSessionGoal(id, 'x'), (e) => e.code === 'GOAL_UNSUPPORTED');
+  await assert.rejects(goalRunSession(id, { prompt: 'x' }), (e) => e.code === 'GOAL_UNSUPPORTED');
 });
 
 // ── Fake codex app-server client for openCodexSession ────────────────

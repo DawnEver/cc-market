@@ -46,7 +46,7 @@ import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, compactSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -151,6 +151,21 @@ export const TOOLS = [
       type: "object",
       properties: { id: { type: "string", description: "Session id" } },
       required: ["id"],
+    },
+  },
+  {
+    name: "session_goal",
+    description: "Set a native goal on a claude/API session (/goal <condition>): the CLI then auto-continues turns until the condition is met. With prompt, runs the loop NOW and returns the final outcome (drained, capped by maxTurns/timeout, state met|capped|timeout). Fails with GOAL_UNSUPPORTED for backends without one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Session id" },
+        condition: { type: "string", description: "The goal condition, e.g. 'finished when all tests pass'" },
+        prompt: { type: "string", description: "Optional trigger prompt to start the autonomous run (otherwise just sets the goal; the next session_send runs it)" },
+        maxTurns: { type: "number", description: "Cap on autonomous loop iterations (default 20)" },
+        timeoutMs: { type: "number", description: "Wall-clock cap for the run (default 30 min)" },
+      },
+      required: ["id", "condition"],
     },
   },
   {
@@ -653,6 +668,8 @@ export async function handleToolCall(name, args = {}, deps = {}) {
   const _sendToSession = deps.sendToSession || sendToSession;
   const _closeSession = deps.closeSession || closeSession;
   const _compactSession = deps.compactSession || compactSession;
+  const _setSessionGoal = deps.setSessionGoal || setSessionGoal;
+  const _goalRunSession = deps.goalRunSession || goalRunSession;
   const _listSessions = deps.listSessions || listSessions;
   const _createTeam = deps.createTeam || createTeam;
   const _sendToTeamWorker = deps.sendToTeamWorker || sendToTeamWorker;
@@ -675,6 +692,15 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "session_compact": {
       if (!args.id) throw new Error("session_compact: id is required");
       return textResult(JSON.stringify(await _compactSession(args.id)));
+    }
+    case "session_goal": {
+      if (!args.id || !args.condition) throw new Error("session_goal: id and condition are required");
+      if (args.prompt != null) {
+        return textResult(JSON.stringify(await _goalRunSession(args.id, {
+          prompt: String(args.prompt), maxTurns: args.maxTurns, timeoutMs: args.timeoutMs,
+        })));
+      }
+      return textResult(JSON.stringify(await _setSessionGoal(args.id, String(args.condition))));
     }
     case "session_send": {
       if (!args.id || !args.prompt) throw new Error("session_send: id and prompt are required");

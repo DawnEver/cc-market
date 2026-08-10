@@ -49,6 +49,14 @@ function fakeSessionDeps() {
       if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
       return { id, provider: sessions.get(id).provider, compacted: true, confirmed: true };
     },
+    setSessionGoal: async (id, condition) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: sessions.get(id).provider, condition, active: true };
+    },
+    goalRunSession: async (id, opts) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: sessions.get(id).provider, text: `goal:${opts.prompt}`, turns: 3, state: 'met' };
+    },
     listSessions: () => [...sessions.entries()].map(([id, s]) => ({ id, provider: s.provider, turns: s.turns })),
   };
 }
@@ -611,6 +619,44 @@ test("node/compact acts on owned sessions, same ownership gate as send/close", a
     c2.close();
     await c1.request("node/close", { id: desc.id });
     c1.close();
+  } finally { await server.close(); }
+});
+
+test("node/goal sets the condition; with prompt it runs the loop on the peer", async () => {
+  const { server, port } = await startServer();
+  try {
+    const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await c1.request("node/spawn", { provider: "deepseek" });
+
+    const set = await c1.request("node/goal", { id: desc.id, condition: "done when tests pass" });
+    assert.equal(set.condition, "done when tests pass");
+    assert.equal(set.active, true);
+
+    const run = await c1.request("node/goal", { id: desc.id, prompt: "go", maxTurns: 5 });
+    assert.equal(run.state, "met");
+    assert.equal(run.text, "goal:go");
+
+    // Ownership gate: a foreign connection may not set/run goals on a private session.
+    const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await assert.rejects(c2.request("node/goal", { id: desc.id, condition: "x" }), /not owned by this connection/);
+    c2.close();
+    await c1.request("node/close", { id: desc.id });
+    c1.close();
+  } finally { await server.close(); }
+});
+
+test("node/goal on a SHARED session works from a second connection (the attach convention)", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await c1.request("node/spawn", { provider: "deepseek", shared: true });
+    const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const r = await c2.request("node/goal", { id: desc.id, condition: "any token-holder may set it" });
+    assert.equal(r.active, true);
+    await c2.request("node/close", { id: desc.id });
+    c1.close(); c2.close();
   } finally { await server.close(); }
 });
 

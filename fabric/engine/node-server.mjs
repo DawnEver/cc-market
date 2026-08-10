@@ -13,12 +13,15 @@
 //   node/send    { id, prompt } → { text, turn }
 //   node/ping    { id } → { id, provider, alive, pid, turns, lastActivity }
 //   node/compact { id } → { id, compacted, confirmed }
+//   node/goal    { id, condition, prompt?, maxTurns?, timeoutMs? } → { id, ... }
+//                 (set the native /goal; with prompt, run the autonomous loop on the
+//                  peer and return the drained final result)
 //   node/close   { id } → { id, exitCode, turns, usage? }
 //
-// Sessions are OWNED by the connection that spawned them: node/send, node/compact and
-// node/close only accept ids owned by that connection, and when a socket drops its
-// sessions are closed (best-effort) so a dead peer can't leak children. node/status
-// still lists all sessions.
+// Sessions are OWNED by the connection that spawned them: node/send, node/compact,
+// node/goal and node/close only accept ids owned by that connection, and when a socket
+// drops its sessions are closed (best-effort) so a dead peer can't leak children.
+// node/status still lists all sessions.
 //
 // TRUST DOMAIN (SR-013): a node is ONE trust domain — holding an accepted token confers
 // full VISIBILITY of the box. node/status and node/ping are both read-only and both
@@ -33,7 +36,7 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createSession, sendToSession, closeSession, listSessions, pingSession, compactSession } from "./session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, pingSession, compactSession, setSessionGoal, goalRunSession } from "./session.mjs";
 import { resolveProfile } from "./profile.mjs";
 import {
   PSK_IDENTITY, PSK_IDENTITY_PREFIX, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken,
@@ -80,6 +83,8 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   const _listSessions = deps.listSessions || listSessions;
   const _pingSession = deps.pingSession || pingSession;
   const _compactSession = deps.compactSession || compactSession;
+  const _setSessionGoal = deps.setSessionGoal || setSessionGoal;
+  const _goalRunSession = deps.goalRunSession || goalRunSession;
   const kill = _kill || ((pid) => process.kill(pid));
   const closeGraceMs = _closeGraceMs;
   const startedAt = Date.now();
@@ -170,6 +175,17 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         // Acting on a session — same ownership gate as send/close.
         if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/compact: session "${params.id}" is not owned by this connection (spawn it shared to allow cross-connection driving)`);
         return _compactSession(params.id);
+      }
+      case "node/goal": {
+        if (!params.id) throw new RpcError(-32602, "node/goal: id is required");
+        if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/goal: session "${params.id}" is not owned by this connection (spawn it shared to allow cross-connection driving)`);
+        // condition alone sets the goal (instant); prompt runs the loop to its final
+        // result — the drain happens HERE, where the child lives.
+        if (params.prompt != null) {
+          return _goalRunSession(params.id, { prompt: String(params.prompt), maxTurns: params.maxTurns, timeoutMs: params.timeoutMs });
+        }
+        if (params.condition == null) throw new RpcError(-32602, "node/goal: condition (or prompt) is required");
+        return _setSessionGoal(params.id, String(params.condition));
       }
       case "node/close":
         if (!params.id) throw new RpcError(-32602, "node/close: id is required");

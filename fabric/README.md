@@ -205,6 +205,31 @@ handshake itself.
    tokens). The same session id keeps answering after compaction. `list_sessions` reports
    `compactable` per session, and a backend with no native compact answers
    `COMPACT_UNSUPPORTED` rather than pretending.
+7. **Give a session a goal and let it work autonomously** — `session_goal {id,
+   condition, prompt?}` (MCP; console: goal box above the composer; peer: `node/goal`).
+   One interaction replaces many: with a goal active, a send is a GOAL RUN — fabric
+   sends the trigger with a completion-marker protocol ("work autonomously toward the
+   goal; when done, end your final reply with exactly `<<GOAL_COMPLETE>>`"), and
+   iterates until the marker appears (or the caps hit), returning the final outcome.
+   Probed live 2026-08-10: `state: 'met'`, one turn, the condition satisfied. Why not
+   the CLI's native `/goal <condition>`: it requires hooks enabled, and fabric's child
+   architecture is hook-free by policy — verified that under `disableAllHooks` /goal
+   refuses, and enabling hooks on an isolated config dir hangs the CLI at startup.
+   Safety caps: `maxTurns` (default 20) and `timeoutMs` (default 30 min) — the loop
+   does not self-terminate while unmet, so caps are mandatory; the result reports
+   `state: 'met' | 'capped' | 'timeout'` honestly ('timeout' leaves the session alive
+   and the loop in place). claude/API children only (`GOAL_UNSUPPORTED` otherwise);
+   `list_sessions` reports the active goal. Mid-run interjections are refused — the
+   loop owns the conversation while it runs.
+8. **Crash recovery: decide what happens to sessions that survive a serve restart.**
+   The journal records every spawn (incl. the CLI's own session id), so a killed serve
+   leaves its story behind: `serve` prints a reminder at startup listing survivors
+   (`alive` / `alive UNKNOWN (remote)` / `resumable`), and the console's orphans panel
+   offers the decision per session: **continue (resume)** — spawns a new child with
+   `--resume <session_id>` so the conversation restores from the CLI's session store —
+   or **kill** (provably-alive pids only), or **clear record** (tombstone a dead one).
+   Remote orphans must be decided on their owning peer. The journal is append-only and
+   keeps the lineage either way.
 
 ## Auth note
 

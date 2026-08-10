@@ -26,12 +26,29 @@ function fakeDeps() {
       if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
       return { id, provider: 'codex', compacted: true, confirmed: true };
     },
+    setSessionGoal: async (id, condition) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: 'deepseek', condition, active: true };
+    },
+    goalRunSession: async (id, opts) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: 'deepseek', text: `goal:${opts.prompt}`, turns: 3, state: 'met' };
+    },
     listSessions: () => [...sessions.entries()].map(([id, s]) => ({ id, provider: s.provider, turns: s.turns, alive: true, pid: 1 })),
     pingSession: async (id) => ({ id, alive: sessions.has(id), pid: 1 }),
     pingNodes: async () => [{ name: 'G', alive: true, cpu: 32 }],
-    reconcile: () => [{ id: 'orphan-1', pidAlive: null }],
+    reconcile: () => [
+      { id: 'orphan-1', pidAlive: null },
+      { id: 'orphan-2', pidAlive: true, pid: 777, provider: 'deepseek', sessionId: 'cli-sess-9', ts: Date.now() },
+      { id: 'orphan-3', pidAlive: true, pid: 888, provider: 'codex', node: 'WS1', ts: Date.now() },
+      { id: 'orphan-4', pidAlive: true, pid: 999, provider: 'deepseek', ts: Date.now() },
+    ],
+    killPid: (pid) => { killedPids.push(pid); },
+    recordEvent: (ev) => journaled.push(ev),
   };
 }
+const killedPids = [];
+const journaled = [];
 
 test('spawn → chat → log → close through the API', async () => {
   const api = createWebApi(fakeDeps());
@@ -45,6 +62,58 @@ test('spawn → chat → log → close through the API', async () => {
   assert.deepEqual(log.body.messages.map((m) => m.role), ['user', 'assistant']);
   const close = await api.handle('POST', `/api/sessions/${id}/close`, {});
   assert.equal(close.status, 200);
+});
+
+test('goal endpoint sets the condition; with prompt runs the loop and logs the outcome', async () => {
+  const api = createWebApi(fakeDeps());
+  const spawn = await api.handle('POST', '/api/sessions', { provider: 'deepseek' });
+  const id = spawn.body.id;
+
+  const set = await api.handle('POST', `/api/sessions/${id}/goal`, { condition: 'done when tests pass' });
+  assert.equal(set.status, 200);
+  assert.equal(set.body.active, true);
+  let log = await api.handle('GET', `/api/sessions/${id}/log`, null);
+  assert.match(log.body.messages.at(-1).text, /\[goal set: done when tests pass\]/);
+
+  const run = await api.handle('POST', `/api/sessions/${id}/goal`, { prompt: 'go', maxTurns: 5 });
+  assert.equal(run.status, 200);
+  assert.equal(run.body.state, 'met');
+  assert.equal(run.body.text, 'goal:go');
+  log = await api.handle('GET', `/api/sessions/${id}/log`, null);
+  assert.match(log.body.messages.at(-2).text, /\[goal run: met, 3 turn/);
+  assert.equal(log.body.messages.at(-1).text, 'goal:go');
+
+  assert.equal((await api.handle('POST', `/api/sessions/${id}/goal`, {})).status, 400, 'needs condition or prompt');
+});
+
+test('orphan kill: kills a provably-alive pid and tombstones the record', async () => {
+  const api = createWebApi(fakeDeps());
+  const res = await api.handle('POST', '/api/orphans/orphan-2/kill', {});
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { id: 'orphan-2', killed: true });
+  assert.deepEqual(killedPids, [777]);
+  assert.equal(journaled.at(-1).reason, 'killed from console');
+  // Unknown orphan → 404.
+  assert.equal((await api.handle('POST', '/api/orphans/ghost/kill', {})).status, 404);
+});
+
+test('orphan resume: spawns a resumed child (--resume) and links the lineage', async () => {
+  const api = createWebApi(fakeDeps());
+  const res = await api.handle('POST', '/api/orphans/orphan-2/resume', {});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.resumedFrom, 'orphan-2');
+  assert.equal(res.body.provider, 'deepseek');
+  assert.equal(journaled.at(-1).reason, 'resumed into ' + res.body.id + ' (cli-sess-9)');
+});
+
+test('orphan resume: honest NO for remote orphans and non-resumable records', async () => {
+  const api = createWebApi(fakeDeps());
+  const remote = await api.handle('POST', '/api/orphans/orphan-3/resume', {});
+  assert.equal(remote.status, 400);
+  assert.match(remote.body.error, /remote/);
+  const noId = await api.handle('POST', '/api/orphans/orphan-4/resume', {});
+  assert.equal(noId.status, 400);
+  assert.match(noId.body.error, /no resumable session id/);
 });
 
 test('compact endpoint compacts in place and logs a system line', async () => {

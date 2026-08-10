@@ -75,7 +75,7 @@ describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
       ["call", "codex_status", "fan_out", "list_nodes", "list_providers", "list_sessions",
-       "resolve_model", "session_close", "session_compact", "session_send", "spawn_session",
+       "resolve_model", "session_close", "session_compact", "session_goal", "session_send", "spawn_session",
        "team_close", "team_send", "team_spawn", "team_status", "team_synthesize"]);
   });
 
@@ -257,6 +257,16 @@ describe("session tools", () => {
     const res = await handleToolCall("session_compact", { id: "sess-1" }, { compactSession: fakeCompact });
     assert.deepEqual(JSON.parse(text(res)), { id: "sess-1", provider: "codex", compacted: true, confirmed: true });
     await assert.rejects(() => handleToolCall("session_compact", {}), /id is required/);
+  });
+
+  test("session_goal sets the condition, or runs the loop when prompt is given", async () => {
+    const fakeSet = async (id, condition) => ({ id, provider: "deepseek", condition, active: true });
+    const fakeRun = async (id, opts) => ({ id, provider: "deepseek", text: `ran:${opts.prompt}`, turns: 3, state: "met" });
+    const set = await handleToolCall("session_goal", { id: "sess-1", condition: "done when tests pass" }, { setSessionGoal: fakeSet });
+    assert.equal(JSON.parse(text(set)).active, true);
+    const run = await handleToolCall("session_goal", { id: "sess-1", condition: "c", prompt: "go", maxTurns: 4 }, { goalRunSession: fakeRun });
+    assert.equal(JSON.parse(text(run)).text, "ran:go");
+    await assert.rejects(() => handleToolCall("session_goal", { id: "x" }), /condition/);
   });
 
   test("session_send routes to registry, returns reply; requires id+prompt", async () => {

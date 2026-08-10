@@ -113,12 +113,27 @@ async function refreshOrphans() {
     $('#orphanCount').textContent = o.length;
     $('#orphans').innerHTML = o.map((x) => `<div class="card">
       <div class="row"><b>${x.id}</b>
+        ${!x.node && x.sessionId ? `<button onclick="resumeOrphan('${x.id}')">continue (resume)</button>` : ''}
+        ${x.pidAlive !== false ? `<button onclick="killOrphan('${x.id}')">kill</button>` : ''}
         <button onclick="clearOrphan('${x.id}')">clear record</button></div>
-      <span class="dim">pid ${x.pid ?? '—'} · alive ${x.pidAlive === null ? 'unknown (remote)' : x.pidAlive}${x.node ? ' · ' + x.node : ''} · ${new Date(x.ts).toLocaleString()}</span></div>`).join('');
+      <span class="dim">pid ${x.pid ?? '—'} · alive ${x.pidAlive === null ? 'unknown (remote)' : x.pidAlive}${x.node ? ' · ' + x.node : ''}${x.sessionId ? ' · resumable' : ''} · ${new Date(x.ts).toLocaleString()}</span></div>`).join('');
   } catch { /* empty journal */ }
 }
 async function clearOrphan(id) {
   try { await api('POST', '/api/reconcile/clear', { id }); refreshOrphans(); } catch (e) { alert(e.message); }
+}
+// Crash recovery: CONTINUE a surviving session (new child, --resume restores the CLI
+// conversation) or KILL it. The operator decides; the journal keeps the lineage either way.
+async function resumeOrphan(id) {
+  try {
+    const desc = await api('POST', `/api/orphans/${id}/resume`, {});
+    selected = desc.id;
+    refreshFleet(); refreshChat(); refreshOrphans();
+  } catch (e) { alert('resume failed: ' + e.message); }
+}
+async function killOrphan(id) {
+  try { await api('POST', `/api/orphans/${id}/kill`, {}); refreshOrphans(); refreshFleet(); }
+  catch (e) { alert('kill failed: ' + e.message); }
 }
 
 // ── chat: console-owned directly; shared foreign sessions attach on first click ──
@@ -181,6 +196,20 @@ async function closeSess(id) {
   try { await api('POST', `/api/sessions/${id}/close`, {}); } catch {}
   if (selected === id) { selected = null; $('#msgs').innerHTML = '<div id="chatEmpty">Session closed.</div>'; }
   refreshFleet();
+}
+
+// Native goal: set the /goal condition; the next Send then runs the autonomous loop
+// (the CLI keeps working until the condition is met) and returns the final outcome.
+async function setGoal() {
+  const id = selected;
+  if (!id) { alert('pick a session first'); return; }
+  const condition = $('#goal').value.trim();
+  if (!condition) { alert('goal condition required'); return; }
+  try {
+    await api('POST', `/api/sessions/${id}/goal`, { condition });
+    $('#goal').value = '';
+    refreshChat(); refreshFleet();
+  } catch (e) { alert('set goal failed: ' + e.message); }
 }
 
 // In-place native compaction (codex thread/compact/start) — the same session keeps
