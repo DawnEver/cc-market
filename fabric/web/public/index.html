@@ -55,6 +55,8 @@
     <div id="composer">
       <input id="prompt" placeholder="message… (Enter to send)" onkeydown="if(event.key==='Enter')send()">
       <button class="primary" onclick="send()">Send</button>
+      <button id="compactBtn" onclick="compactSess(selected)" title="Compact this session's context in place (codex native; same id continues)">compact</button>
+      <button id="closeBtn" onclick="closeSess(selected)" title="Close this session">close</button>
     </div>
   </section>
 </main>

@@ -22,6 +22,10 @@ function fakeDeps() {
       return { text: `echo:${text}`, turn: s.turns };
     },
     closeSession: async (id) => { sessions.delete(id); return { id, exitCode: 0 }; },
+    compactSession: async (id) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: 'codex', compacted: true, confirmed: true };
+    },
     listSessions: () => [...sessions.entries()].map(([id, s]) => ({ id, provider: s.provider, turns: s.turns, alive: true, pid: 1 })),
     pingSession: async (id) => ({ id, alive: sessions.has(id), pid: 1 }),
     pingNodes: async () => [{ name: 'G', alive: true, cpu: 32 }],
@@ -41,6 +45,20 @@ test('spawn → chat → log → close through the API', async () => {
   assert.deepEqual(log.body.messages.map((m) => m.role), ['user', 'assistant']);
   const close = await api.handle('POST', `/api/sessions/${id}/close`, {});
   assert.equal(close.status, 200);
+});
+
+test('compact endpoint compacts in place and logs a system line', async () => {
+  const api = createWebApi(fakeDeps());
+  const spawn = await api.handle('POST', '/api/sessions', { provider: 'codex' });
+  const id = spawn.body.id;
+  const res = await api.handle('POST', `/api/sessions/${id}/compact`, {});
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { id, provider: 'codex', compacted: true, confirmed: true });
+  const log = await api.handle('GET', `/api/sessions/${id}/log`, null);
+  assert.match(log.body.messages.at(-1).text, /\[compacted in place\]/);
+  // An unsupported/unknown session surfaces as a 500 (the code names the cause).
+  const missing = await api.handle('POST', '/api/sessions/sess-missing/compact', {});
+  assert.equal(missing.status, 500);
 });
 
 test('nodes, sessions, reconcile endpoints answer; unknown route 404s; errors carry status 500', async () => {

@@ -46,7 +46,7 @@ import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, compactSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -117,6 +117,7 @@ export const TOOLS = [
         visible: { type: "boolean", description: "Show a live transcript terminal on the machine running the session (default hidden)" },
         interactive: { type: "boolean", description: "Also open an input terminal there — a human can interject into the live session (implies visible)" },
         effort: { type: "string", description: "Thinking effort: low|medium|high|max or a MAX_THINKING_TOKENS number" },
+        shared: { type: "boolean", description: "Remote only: drivable by ANY token-holder (other machines' consoles can attach), never reaped when the spawner disconnects" },
       },
       required: ["provider"],
     },
@@ -137,6 +138,15 @@ export const TOOLS = [
   {
     name: "session_close",
     description: "Close a session and free its process.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Session id" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "session_compact",
+    description: "Compact a persistent session's context natively (codex: thread/compact/start). Same session id continues. Fails with COMPACT_UNSUPPORTED for backends without a native compact.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string", description: "Session id" } },
@@ -642,6 +652,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
   const _createSession = deps.createSession || createSession;
   const _sendToSession = deps.sendToSession || sendToSession;
   const _closeSession = deps.closeSession || closeSession;
+  const _compactSession = deps.compactSession || compactSession;
   const _listSessions = deps.listSessions || listSessions;
   const _createTeam = deps.createTeam || createTeam;
   const _sendToTeamWorker = deps.sendToTeamWorker || sendToTeamWorker;
@@ -657,9 +668,13 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       const desc = await _createSession({
         provider: args.provider, model: args.model, write: !!args.write,
         cwd: args.cwd || process.cwd(), observe: !!args.observe,
-        node: args.node, project: args.project, profile: args.profile, visible: !!args.visible, interactive: !!args.interactive, effort: args.effort,
+        node: args.node, project: args.project, profile: args.profile, visible: !!args.visible, interactive: !!args.interactive, effort: args.effort, shared: !!args.shared,
       });
       return textResult(JSON.stringify(desc));
+    }
+    case "session_compact": {
+      if (!args.id) throw new Error("session_compact: id is required");
+      return textResult(JSON.stringify(await _compactSession(args.id)));
     }
     case "session_send": {
       if (!args.id || !args.prompt) throw new Error("session_send: id and prompt are required");

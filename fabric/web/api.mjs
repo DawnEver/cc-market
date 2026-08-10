@@ -9,7 +9,7 @@
 // the durable trail stays in the journal, as everywhere else.
 
 import { readFileSync, existsSync } from "node:fs";
-import { createSession, sendToSession, closeSession, listSessions, pingSession } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, compactSession, listSessions, pingSession } from "../engine/session.mjs";
 import { reconcile, recordEvent } from "../engine/journal.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { connectNode } from "../engine/node-client.mjs";
@@ -77,6 +77,7 @@ export function createWebApi(deps = {}) {
   const _create = deps.createSession || createSession;
   const _send = deps.sendToSession || sendToSession;
   const _close = deps.closeSession || closeSession;
+  const _compact = deps.compactSession || compactSession;
   const _list = deps.listSessions || listSessions;
   const _ping = deps.pingSession || pingSession;
   const _nodes = deps.pingNodes || pingNodes;
@@ -156,6 +157,13 @@ export function createWebApi(deps = {}) {
       }
       if (method === "POST" && (m = path.match(/^\/api\/sessions\/([^/]+)\/close$/))) {
         const res = await _close(m[1]);
+        return { status: 200, body: res };
+      }
+      if (method === "POST" && (m = path.match(/^\/api\/sessions\/([^/]+)\/compact$/))) {
+        // In-place native compaction (codex thread/compact/start); the same console
+        // session id keeps chatting. COMPACT_UNSUPPORTED surfaces as a 500 with the code.
+        const res = await _compact(m[1]);
+        log(m[1], "system", `[compacted in place${res.confirmed ? "" : " (unconfirmed)"}]`);
         return { status: 200, body: res };
       }
       if (method === "GET" && (m = path.match(/^\/api\/sessions\/([^/]+)\/ping$/))) {

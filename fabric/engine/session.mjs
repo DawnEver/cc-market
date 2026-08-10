@@ -173,6 +173,27 @@ export async function closeSession(id) {
 }
 
 /**
+ * Compact a session's context in place (native where the backend has one — codex's
+ * thread/compact/start; claude's --autocompact window is set at spawn). The handle
+ * stays the same id; turns keep counting.
+ */
+export async function compactSession(id) {
+  const entry = sessions.get(id);
+  if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  if (typeof entry.handle.compact !== "function") {
+    const err = new Error(
+      `session ${id} (provider ${entry.provider}) has no native compact: this backend does not expose one. ` +
+      "codex (thread/compact/start) and claude/API (the CLI's /compact) both support it; others do not.",
+    );
+    err.code = "COMPACT_UNSUPPORTED";
+    throw err;
+  }
+  const res = await entry.handle.compact();
+  recordEvent({ event: "compact", id, provider: entry.provider, ...res, owner: owner() });
+  return { id, provider: entry.provider, ...res };
+}
+
+/**
  * Adopt an EXISTING remote session (v2): registers an attach handle so this console
  * can chat with a session another manager spawned as shared.
  */
@@ -202,6 +223,8 @@ export function listSessions() {
     alive: observedAlive(e.handle),
     lastActivity: e.handle.lastActivity ?? null,
     usage: e.handle.usage ?? null,
+    // Capacity fact: whether this backend can compact its own context. null = unknown.
+    compactable: e.handle.compactable ?? null,
     node: e.node, cwd: e.cwd,
   }));
 }
@@ -216,7 +239,7 @@ export async function pingSession(id) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
   const h = entry.handle;
-  const base = { id, provider: entry.provider, kind: h.kind ?? null };
+  const base = { id, provider: entry.provider, kind: h.kind ?? null, compactable: h.compactable ?? null };
   if (typeof h.ping === "function") {
     try {
       return { ...base, ...(await h.ping()) };

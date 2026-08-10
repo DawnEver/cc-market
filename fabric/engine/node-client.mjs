@@ -218,6 +218,7 @@ function absorbFacts(handle, facts) {
   if ("lastActivity" in facts) handle.lastActivity = facts.lastActivity;
   if ("turns" in facts) handle.turns = facts.turns;
   if ("usage" in facts) handle.usage = facts.usage;
+  if ("compactable" in facts) handle.compactable = facts.compactable;
   return facts;
 }
 
@@ -233,6 +234,8 @@ function remoteHandle({ id, pid = null, lease }) {
     lastActivity: null,
     usage: null,
     send: (text) => conn.request("node/send", { id, prompt: text }),
+    // Compact runs on the peer (node/compact), same ownership gate as send/close.
+    compact: () => conn.request("node/compact", { id }),
     ping: async () => absorbFacts(handle, await conn.request("node/ping", { id })),
     async close() {
       try {

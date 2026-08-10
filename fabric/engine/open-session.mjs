@@ -218,6 +218,7 @@ while ($true) {
   }
 
   let turnCount = 0;
+  let compactBoundaryAt = 0; // compact_boundary system events observed (native compaction)
   let pending = null;        // { resolve, reject, text }
   let acc = '';              // assistant text accumulator for the in-flight turn
   let closed = false;
@@ -268,6 +269,7 @@ while ($true) {
       if (!line) continue;
       let ev; try { ev = JSON.parse(line); } catch { continue; }
       if (ev.type === 'assistant') acc += extractText(ev.message);
+      else if (ev.type === 'system' && ev.subtype === 'compact_boundary') compactBoundaryAt++;
       else if (ev.type === 'result') {
         turnCount++;
         if (ev.usage) {
@@ -337,6 +339,17 @@ while ($true) {
     return chain;
   }
 
+  // Native headless compaction: `/compact` sent as a user message IS the CLI's manual
+  // compact — the CLI expands the slash command from a stream-json user message and
+  // emits `compact_boundary` (trigger: "manual") before the result event (probed live
+  // 2026-08-10: 30.8k → 1.2k tokens). A result WITHOUT a boundary means the compact
+  // was refused (fresh session, blocking hook) — reported honestly as confirmed:false.
+  async function compact({ timeoutMs = 120_000 } = {}) {
+    const before = compactBoundaryAt;
+    const r = await send('/compact', 'user', { timeoutMs });
+    return { compacted: true, confirmed: compactBoundaryAt > before, text: r.text };
+  }
+
   async function close() {
     if (inboxTimer) { clearInterval(inboxTimer); inboxTimer = null; }
     if (!closed) {
@@ -367,12 +380,14 @@ while ($true) {
     get alive() { return !closed; },
     get lastActivity() { return lastActivity; },
     stderrTail: errTail, // already secret-scrubbed at the source
+    // Native compaction: the CLI compacts on a `/compact` user message (compact_boundary).
+    get compactable() { return true; },
     get usage() {
       return {
         ...usage,
         total_input_tokens: usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens,
       };
     },
-    send, close,
+    send, compact, close,
   };
 }

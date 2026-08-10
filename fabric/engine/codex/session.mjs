@@ -17,7 +17,7 @@ import { extractItemText } from "./task.mjs";
  *   close()    → Promise<number|null>
  */
 export async function openCodexSession(opts = {}) {
-  const { model, write = false, cwd, _client } = opts;
+  const { model, write = false, cwd, _client, compactConfirmTimeoutMs = 300_000 } = opts;
   const client = _client || new CodexAppServerClient({ timeout: 600000 });
   if (!_client) await client.start();
 
@@ -57,6 +57,37 @@ export async function openCodexSession(opts = {}) {
     return chain;
   }
 
+  // Native context compaction: the app-server compacts the thread (summarizes the
+  // conversation and trims it) — `thread/compact/start` is the protocol's manual
+  // compaction, same operation the CLI's /compact runs. Compaction runs as its own
+  // async turn, so after the request is accepted we await a completion signal
+  // (context_compacted notification, or a compaction/context_compaction item landing)
+  // with a deadline. A signal never observed is reported honestly: confirmed:false.
+  function compact() {
+    const run = () => new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, v) => { if (settled) return; settled = true; cleanup(); fn(v); };
+      let timer = null;
+      const cleanup = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+        client.removeNotificationHandler("context_compacted", onCompacted);
+        client.removeNotificationHandler("item/completed", onItem);
+      };
+      const onCompacted = () => finish(resolve, { compacted: true, confirmed: true });
+      const onItem = (p) => {
+        const t = p?.item?.type;
+        if (t === "compaction" || t === "context_compaction") onCompacted();
+      };
+      client.onNotification("context_compacted", onCompacted);
+      client.onNotification("item/completed", onItem);
+      timer = setTimeout(() => finish(resolve, { compacted: true, confirmed: false }), compactConfirmTimeoutMs);
+      timer.unref?.();
+      client.send("thread/compact/start", { threadId }).catch((e) => { finish(reject, e); });
+    });
+    chain = chain.then(run, run);
+    return chain;
+  }
+
   async function close() {
     await client.stop();
     return 0;
@@ -66,7 +97,10 @@ export async function openCodexSession(opts = {}) {
     provider: "codex",
     get id() { return threadId; },
     get turns() { return turnCount; },
+    // Native compaction — the app-server protocol has thread/compact/start.
+    get compactable() { return true; },
     send,
+    compact,
     close,
   };
 }

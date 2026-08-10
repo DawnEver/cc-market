@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import {
-  createSession, sendToSession, closeSession, listSessions, getSessionProvider, _resetRegistry,
+  createSession, sendToSession, closeSession, compactSession, listSessions, getSessionProvider, _resetRegistry,
 } from '../engine/session.mjs';
 import { openCodexSession } from '../engine/codex/session.mjs';
 
@@ -73,14 +73,36 @@ test('registry: getSessionProvider returns provider for known id, null for unkno
   assert.equal(getSessionProvider('nonexistent'), null);
 });
 
+test('registry: compactSession calls handle.compact and reports compactable as a fact', async () => {
+  _resetRegistry();
+  const handle = makeFakeHandle();
+  handle.compactable = true;
+  handle.compact = async () => ({ compacted: true, confirmed: true });
+  const { id } = await createSession({ provider: 'codex' }, async () => handle);
+  assert.equal(listSessions()[0].compactable, true); // capacity fact on the list
+  const res = await compactSession(id);
+  assert.deepEqual(res, { id, provider: 'codex', compacted: true, confirmed: true });
+  // The handle stays the same id — compaction is in place, not a restart.
+  assert.equal(listSessions().length, 1);
+});
+
+test('registry: compactSession is an honest NO for backends without native compact', async () => {
+  _resetRegistry();
+  const { id } = await createSession({ provider: 'claude' }, async () => makeFakeHandle());
+  await assert.rejects(compactSession(id), (e) => e.code === 'COMPACT_UNSUPPORTED');
+  await assert.rejects(compactSession('nope'), /No such session/);
+});
+
 // ── Fake codex app-server client for openCodexSession ────────────────
-function makeFakeCodexClient() {
+function makeFakeCodexClient(opts = {}) {
   const handlers = new Map();
   const emit = (m, p) => (handlers.get(m) || []).forEach((h) => h(p));
   return {
     sends: [],
     stopped: false,
     onNotification(m, h) { (handlers.get(m) || handlers.set(m, []).get(m)).push(h); },
+    removeNotificationHandler(m, h) { handlers.get(m)?.splice((handlers.get(m) || []).indexOf(h), 1); },
+    emit,
     async send(method, params) {
       this.sends.push({ method, params });
       if (method === 'thread/start') { emit('thread/started', { thread: { id: 'thread-1' } }); return { thread: { id: 'thread-1' } }; }
@@ -94,6 +116,13 @@ function makeFakeCodexClient() {
           emit('turn/completed', { usage: { input_tokens: 1, output_tokens: 2 } });
         });
         return { id: 'turn' };
+      }
+      if (method === 'thread/compact/start') {
+        if (opts.compactReject) return Promise.reject(new Error('compact rejected'));
+        if (opts.compactConfirm !== false) {
+          queueMicrotask(() => emit('context_compacted', { threadId: params.threadId, turnId: 'turn-c' }));
+        }
+        return { id: 'compact' };
       }
       return {};
     },
@@ -133,6 +162,66 @@ test('openCodexSession: write:true enables tools', async () => {
   await s.send('act');
   const turn = client.sends.find((x) => x.method === 'turn/start');
   assert.equal(turn.params.tools, undefined); // tools enabled (not disabled)
+  await s.close();
+});
+
+// ── Compact: native codex thread/compact/start ──────────────────────
+test('codex compact: thread/compact/start on the same thread, awaits confirmation', async () => {
+  const client = makeFakeCodexClient();
+  const s = await openCodexSession({ _client: client });
+  assert.equal(s.compactable, true);
+  await s.send('hello'); // one turn first, so compaction has context
+
+  const res = await s.compact();
+  assert.deepEqual(res, { compacted: true, confirmed: true });
+
+  const compactSends = client.sends.filter((x) => x.method === 'thread/compact/start');
+  assert.equal(compactSends.length, 1);
+  assert.equal(compactSends[0].params.threadId, 'thread-1'); // same thread, not a new one
+
+  // The thread still answers after compaction, same id.
+  const t = await s.send('after compact');
+  assert.equal(t.text, 'codex:after compact');
+  assert.equal(s.id, 'thread-1');
+  await s.close();
+});
+
+test('codex compact: item/completed with a compaction item also confirms', async () => {
+  const client = makeFakeCodexClient({ compactConfirm: false });
+  const s = await openCodexSession({ _client: client, compactConfirmTimeoutMs: 5000 });
+  const p = s.compact();
+  // Confirmation via the item path (modern signal; context_compacted is deprecated).
+  queueMicrotask(() => client.emit('item/completed', { item: { type: 'context_compaction' } }));
+  assert.deepEqual(await p, { compacted: true, confirmed: true });
+  await s.close();
+});
+
+test('codex compact: no confirmation before the deadline reports confirmed:false, honestly', async () => {
+  const client = makeFakeCodexClient({ compactConfirm: false });
+  const s = await openCodexSession({ _client: client, compactConfirmTimeoutMs: 25 });
+  const res = await s.compact();
+  assert.deepEqual(res, { compacted: true, confirmed: false });
+  // A late confirmation must not re-fire anything (handlers cleaned up).
+  await s.close();
+});
+
+test('codex compact: app-server rejection propagates', async () => {
+  const client = makeFakeCodexClient({ compactReject: true });
+  const s = await openCodexSession({ _client: client });
+  await assert.rejects(s.compact(), /compact rejected/);
+  await s.close();
+});
+
+test('codex compact: serializes with sends — a compact can not land mid-turn', async () => {
+  const client = makeFakeCodexClient();
+  const s = await openCodexSession({ _client: client });
+  // Fire a send and a compact back-to-back; the order of arrival on the wire must
+  // match the call order (turn/start before thread/compact/start).
+  const sendP = s.send('first');
+  const compactP = s.compact();
+  await Promise.all([sendP, compactP]);
+  const methods = client.sends.map((x) => x.method);
+  assert.deepEqual(methods, ['thread/start', 'turn/start', 'thread/compact/start']);
   await s.close();
 });
 

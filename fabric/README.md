@@ -185,6 +185,27 @@ handshake itself.
    `team_spawn` workers accept `node`/`project` too, so a team can mix local and remote
    workers. `list_nodes` shows the configured peers.
 
+5. **Cross-machine driving — the shared+attach convention.** A session is OWNED by the
+   connection that spawned it: only that connection can `session_send`/`session_close` it,
+   and its disconnect reaps the session. To make a remote session drivable from ANY
+   machine (the "operate another workstation's session from G" case), spawn it
+   `shared: true` — shared sessions accept any accepted token-holder's send/close/compact
+   and survive the spawner's disconnect. On the management console, shared sessions on a
+   peer show a chat button; clicking it attaches and drives the session from there
+   (`POST /api/attach` — the console chat view holds the transcript locally after that).
+   Non-shared foreign sessions are visible but read-only, with the reason stated on the
+   card. Convention: **if a session may need to be driven from another machine, spawn it
+   shared from the start** — shared-ness cannot be added later.
+6. **Compact a long session in place** — `session_compact {id}` (MCP), `node/compact`
+   (peer protocol, same ownership gate as send/close), or the compact button on the
+   console's chat view. Both major backends compact NATIVELY: codex via
+   `thread/compact/start` (the app-server summarizes and trims the thread), claude/API
+   via the CLI's own manual compaction (a `/compact` user message; the session emits
+   `compact_boundary` with `trigger: "manual"` — probed live 2026-08-10: 30.8k → 1.2k
+   tokens). The same session id keeps answering after compaction. `list_sessions` reports
+   `compactable` per session, and a backend with no native compact answers
+   `COMPACT_UNSUPPORTED` rather than pretending.
+
 ## Auth note
 
 Static-key providers get the token injected in the header style matching the env var that

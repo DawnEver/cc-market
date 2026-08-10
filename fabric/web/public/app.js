@@ -177,9 +177,21 @@ async function send() {
 }
 
 async function closeSess(id) {
+  if (!id) return;
   try { await api('POST', `/api/sessions/${id}/close`, {}); } catch {}
   if (selected === id) { selected = null; $('#msgs').innerHTML = '<div id="chatEmpty">Session closed.</div>'; }
   refreshFleet();
+}
+
+// In-place native compaction (codex thread/compact/start) — the same session keeps
+// chatting. The console shows the result; an unsupported backend errors honestly.
+async function compactSess(id) {
+  if (!id) return;
+  try {
+    const r = await api('POST', `/api/sessions/${id}/compact`, {});
+    alert(r.confirmed ? 'Session compacted in place.' : 'Compact requested; completion not confirmed.');
+  } catch (e) { alert('compact failed: ' + e.message); }
+  refreshChat(); refreshFleet();
 }
 
 loadCatalogue(false);

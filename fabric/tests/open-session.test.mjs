@@ -20,7 +20,10 @@ function fixture() {
 
 // Fake claude: reads stream-json user lines on stdin; for each, emits an assistant text
 // event echoing the input, then a result. Proves the send↔result turn loop + parsing.
-function makeFakeClaude(sink) {
+// opts.compact = 'boundary' also emits compact_boundary BEFORE the result when the user
+// message is "/compact" (the real CLI's native manual-compact sequence, probed live);
+// opts.compact = 'none' omits it (the "refused" case: fresh session / blocking hook).
+function makeFakeClaude(sink, opts = {}) {
   return () => {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
@@ -37,6 +40,9 @@ function makeFakeClaude(sink) {
           const msg = JSON.parse(l);
           const said = typeof msg.message.content === 'string' ? msg.message.content : '';
           queueMicrotask(() => {
+            if (opts.compact === 'boundary' && said === '/compact') {
+              child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 30000, post_tokens: 1000 } }) + '\n');
+            }
             child.stdout.emit('data', JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `echo:${said}` }] } }) + '\n');
             child.stdout.emit('data', JSON.stringify({ type: 'result', subtype: 'success' }) + '\n');
           });
@@ -130,6 +136,39 @@ test('openSession exposes pid/alive/lastActivity facts', async () => {
   assert.ok(s.lastActivity >= before, 'send must bump lastActivity');
   await s.close();
   assert.equal(s.alive, false);
+});
+
+// ── Native compaction (2026-08-10): the CLI compacts on a "/compact" user message and
+// emits compact_boundary (trigger: "manual") before the result. Probed live: 30.8k → 1.2k.
+test('openSession compact() sends /compact and confirms on compact_boundary', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-compact-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { compact: 'boundary' }), _bin: 'fake' });
+  assert.equal(s.compactable, true);
+
+  await s.send('hello'); // a conversation first, so there is context to compact
+  const res = await s.compact();
+
+  assert.deepEqual(res, { compacted: true, confirmed: true, text: 'echo:/compact' });
+  // The compact went through the SAME serialized user-line channel as any turn.
+  assert.match(sink.writes[1], /"content":"\/compact"/);
+
+  // Same session id continues to answer after compaction.
+  const t = await s.send('still here');
+  assert.equal(t.text, 'echo:still here');
+  assert.equal(s.turns, 3);
+  await s.close();
+});
+
+test('openSession compact() reports confirmed:false when the CLI refuses (no boundary)', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-compact-noboundary-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { compact: 'none' }), _bin: 'fake' });
+  await s.send('x');
+  const res = await s.compact();
+  assert.equal(res.compacted, true);
+  assert.equal(res.confirmed, false, 'a result with no boundary is a refused compact, honestly reported');
+  await s.close();
 });
 
 test('mid-turn child death rejects with the stderr tail', async () => {

@@ -81,9 +81,10 @@ transport — framed needed for Codex MCP startup). Tools:
 | Tool | Input | Routes to |
 |---|---|---|
 | `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
-| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?`, `profile?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. With `node`, the session runs on that peer machine (see § LAN node fabric) |
+| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?`, `profile?`, `shared?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. With `node`, the session runs on that peer machine (see § LAN node fabric). `shared:true` (remote only) makes it drivable by any token-holder and exempt from spawner-disconnect reap — the cross-machine attach convention |
 | `session_send` | `id`, `prompt` | `sendToSession()` → one turn, context retained |
 | `session_close` | `id` | `closeSession()` → tears down the child |
+| `session_compact` | `id` | `compactSession()` → native context compaction in place (codex `thread/compact/start`; claude/API via the CLI's `/compact` user message + `compact_boundary`); `COMPACT_UNSUPPORTED` for backends without one |
 | `list_sessions` | (none) | `listSessions()` |
 | `list_nodes` | (none) | Configured peer fabric nodes from the `fabric` config block |
 | `list_providers` | (none) | `listModels()` |
@@ -127,7 +128,7 @@ credentials; only text comes back.
 
 - **Server** (`engine/node-server.mjs`, CLI `scripts/serve.*` — which also starts the
   management console in the same process; `--no-console` for the node alone): exposes
-  `node/spawn|send|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
+  `node/spawn|send|compact|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
   (`engine/node-tls.mjs` — PSK derived from a token; an unaccepted token fails the
   handshake, all traffic encrypted, no certificates). Every request also carries the token;
   the server refuses to start without one. Sessions are owned by the connection that

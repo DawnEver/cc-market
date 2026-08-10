@@ -75,7 +75,7 @@ describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
       ["call", "codex_status", "fan_out", "list_nodes", "list_providers", "list_sessions",
-       "resolve_model", "session_close", "session_send", "spawn_session",
+       "resolve_model", "session_close", "session_compact", "session_send", "spawn_session",
        "team_close", "team_send", "team_spawn", "team_status", "team_synthesize"]);
   });
 
@@ -240,6 +240,23 @@ describe("session tools", () => {
     assert.equal(seen.write, true);
     assert.deepEqual(JSON.parse(text(res)), { id: "sess-1", provider: "codex", nativeId: "thread-1" });
     await assert.rejects(() => handleToolCall("spawn_session", {}), /provider is required/);
+  });
+
+  test("spawn_session forwards shared (the cross-machine attach convention)", async () => {
+    let seen = null;
+    const fakeCreate = async (opts) => { seen = opts; return { id: "sess-1", provider: "codex" }; };
+    await handleToolCall("spawn_session", { provider: "codex", node: "WS1", shared: true }, { createSession: fakeCreate });
+    assert.equal(seen.node, "WS1");
+    assert.equal(seen.shared, true, "shared must reach the session opener");
+    await handleToolCall("spawn_session", { provider: "codex" }, { createSession: fakeCreate });
+    assert.equal(seen.shared, false, "default: private, not shared");
+  });
+
+  test("session_compact routes to compactSession; requires id", async () => {
+    const fakeCompact = async (id) => ({ id, provider: "codex", compacted: true, confirmed: true });
+    const res = await handleToolCall("session_compact", { id: "sess-1" }, { compactSession: fakeCompact });
+    assert.deepEqual(JSON.parse(text(res)), { id: "sess-1", provider: "codex", compacted: true, confirmed: true });
+    await assert.rejects(() => handleToolCall("session_compact", {}), /id is required/);
   });
 
   test("session_send routes to registry, returns reply; requires id+prompt", async () => {

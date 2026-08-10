@@ -45,6 +45,10 @@ function fakeSessionDeps() {
       if (!sessions.delete(id)) throw new Error(`No such session: ${id}`);
       return { id, exitCode: 0 };
     },
+    compactSession: async (id) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: sessions.get(id).provider, compacted: true, confirmed: true };
+    },
     listSessions: () => [...sessions.entries()].map(([id, s]) => ({ id, provider: s.provider, turns: s.turns })),
   };
 }
@@ -590,6 +594,47 @@ test("a shared session is drivable by a second connection and survives the spawn
     assert.equal(deps.listSessions().length, 1, "spawner disconnect must not reap a shared session");
     await c2.request("node/close", { id: desc.id });
     c2.close();
+  } finally { await server.close(); }
+});
+
+test("node/compact acts on owned sessions, same ownership gate as send/close", async () => {
+  const { server, port } = await startServer();
+  try {
+    const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await c1.request("node/spawn", { provider: "codex" });
+    const r = await c1.request("node/compact", { id: desc.id });
+    assert.deepEqual(r, { id: desc.id, provider: "codex", compacted: true, confirmed: true });
+
+    // A foreign connection may not compact a non-shared session.
+    const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await assert.rejects(c2.request("node/compact", { id: desc.id }), /not owned by this connection/);
+    c2.close();
+    await c1.request("node/close", { id: desc.id });
+    c1.close();
+  } finally { await server.close(); }
+});
+
+test("node/compact on a SHARED session works from a second connection (the attach convention)", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await c1.request("node/spawn", { provider: "codex", shared: true });
+    const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const r = await c2.request("node/compact", { id: desc.id });
+    assert.equal(r.confirmed, true, "any token-holder may compact a shared session");
+    await c2.request("node/close", { id: desc.id });
+    c1.close(); c2.close();
+  } finally { await server.close(); }
+});
+
+test("node/compact on an unknown id is rejected by the ownership gate (foreign id), same as send/close", async () => {
+  const { server, port } = await startServer();
+  try {
+    const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await assert.rejects(c1.request("node/compact", { id: "sess-ghost" }), /not owned by this connection/);
+    c1.close();
   } finally { await server.close(); }
 });
 
