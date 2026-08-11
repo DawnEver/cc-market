@@ -15,6 +15,12 @@
 // separate namespace from element keys so they never collide.
 
 export function h(tag, attrs = {}, ...children) {
+  // Fail loud on the classic foot-gun: a NESTED {attrs:{…}} bag. h's second parameter
+  // IS the attribute bag — nested, the object stringified to attrs="[object Object]",
+  // the intended id never landed, and the view rendered EMPTY with no error (console
+  // v4, found via headless DOM dump). Throw at creation, not at patch time.
+  if (attrs && typeof attrs.attrs === "object" && attrs.attrs !== null)
+    throw new Error('h(): pass attributes flat — the second argument IS the attrs bag (no nested {attrs:{…}})');
   // tag may carry classes: "div.card click" → <div class="card click">.
   const dot = tag.indexOf(".");
   const cls = dot === -1 ? "" : tag.slice(dot + 1).split(".").join(" ");

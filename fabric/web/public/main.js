@@ -193,9 +193,9 @@ async function loadCatalogue(force) {
 // ══ FLEET view: needs-attention first, then every machine as a compact grid card ══
 const fleetSkeleton = () => h('section.fleetView', { key: 'fleet' }, [
   h('h2', { key: 'a' }, [t('Needs attention')]),
-  h('div', { key: 'b', attrs: { id: 'attention' } }, []),
+  h('div', { key: 'b', id: 'attention' }, []),
   h('h2', { key: 'c' }, [t('Machines')]),
-  h('div', { key: 'd', attrs: { id: 'machineGrid' } }, []),
+  h('div', { key: 'd', id: 'machineGrid' }, []),
 ]);
 
 function renderFleetView() {
@@ -235,7 +235,7 @@ function gridCard(m) {
     ]);
   }
   const n = sessionsOf(m).length;
-  const stats = [`cpu ${m.cpu_busy_pct ?? '?'}%`, `mem ${fmtMem(m.mem_available_mb)} free`, `up ${fmtUptime(m.uptime_s)}`, `${n} sess`].join(' · ');
+  const stats = [`cpu ${m.cpu_busy_pct ?? '?'}%`, `mem ${fmtMem(m.mem_available_mb)} free`, `up ${fmtUptime(m.uptime_s)}`, `${n} sess`];
   return h('div.mcard click' + (warns.length ? ' warn' : ''), {
     key: m.name, 'data-action': 'pick-machine', 'data-name': m.name,
     title: `v${m.version ?? '?'} · ${m.cpu ?? '?'} cores · ${fmtMem(m.mem_total_mb)} total${m.tags?.length ? ' · ' + m.tags.join(', ') : ''}`,
@@ -244,17 +244,18 @@ function gridCard(m) {
       h('b', {}, [t(m.name)]),
       h('span', {}, [...(m.self ? [h('span.badge self', {}, [t('this machine')])] : []), h('span.ok', {}, [t('●')])]),
     ]),
-    h('span.dim', {}, [t(stats)]),
+    // One nowrap span per stat, wrapping only BETWEEN stats — never "0\nsess".
+    h('div.dim statsline', {}, stats.map((s) => h('span', { key: s }, [t(s)]))),
     ...(warns.length ? [h('div.warnBadges', {}, warns.map((w) => h('span.badge warn', { key: w }, [t(w)])))] : []),
   ]);
 }
 
 // ══ SESSIONS view: full-width browse — collapsible machine groups, dense session rows ══
 const sessionsSkeleton = () => h('section.sessionsView', { key: 'sessions' }, [
-  h('div', { key: 'chips', attrs: { id: 'chips' } }, []),
-  h('details', { key: 'spawn', attrs: { id: 'spawnDrawer' } }, [
+  h('div', { key: 'chips', id: 'chips' }, []),
+  h('details', { key: 'spawn', id: 'spawnDrawer' }, [
     h('summary', { key: 's' }, [t('+ New session')]),
-    h('form.card', { key: 'f', attrs: { id: 'spawnForm', onsubmit: 'return false' } }, [
+    h('form.card', { key: 'f', id: 'spawnForm', onsubmit: 'return false' }, [
       h('div.inline', { key: 'r1' }, [
         h('div', {}, [h('label', {}, [t('machine')]), h('select', { id: 'machineSel', name: 'machine' }, [])]),
         h('div', {}, [h('label', {}, [t('project')]), h('select', { id: 'projectSel', name: 'project' }, [])]),
@@ -267,7 +268,7 @@ const sessionsSkeleton = () => h('section.sessionsView', { key: 'sessions' }, [
         h('div', {}, [h('label', {}, [t('effort')]), h('select', { id: 'effortSel', name: 'effort' }, [])]),
         h('div', {}, []),
       ]),
-      h('div.dim', { key: 'pi', attrs: { id: 'providerIdent' } }, []),
+      h('div.dim', { key: 'pi', id: 'providerIdent' }, []),
       h('details', { key: 'more' }, [
         h('summary', {}, [t('more (profile · flags)')]),
         h('label', {}, [t('profile')]),
@@ -278,11 +279,11 @@ const sessionsSkeleton = () => h('section.sessionsView', { key: 'sessions' }, [
           h('label', {}, [h('input', { type: 'checkbox', name: 'interactive', style: 'width:auto' }, []), t(' interactive')]),
         ]),
       ]),
-      h('button.primary', { key: 'sb', attrs: { id: 'spawnBtn', type: 'button', 'data-action': 'spawn' } }, [t('Spawn session')]),
-      h('div', { key: 'cl', attrs: { id: 'catLine' } }, []),
+      h('button.primary', { key: 'sb', id: 'spawnBtn', type: 'button', 'data-action': 'spawn' }, [t('Spawn session')]),
+      h('div', { key: 'cl', id: 'catLine' }, []),
     ]),
   ]),
-  h('div', { key: 'tree', attrs: { id: 'sessTree' } }, []),
+  h('div', { key: 'tree', id: 'sessTree' }, []),
 ]);
 
 function renderSessionsView() {
@@ -483,14 +484,14 @@ async function spawn() {
 // ══ CHAT view: full-width focus. Breadcrumb + facts on top; the fleet health dot in
 // the header keeps ambient awareness without panels ══
 const chatSkeleton = () => h('section.chatView', { key: 'chat' }, [
-  h('div', { key: 'top', attrs: { id: 'chatTop' } }, []),
-  h('div', { key: 'mode', attrs: { id: 'chatMode' } }, []),
-  h('div', { key: 'msgs', attrs: { id: 'msgs' } }, []),
-  h('div', { key: 'gr', attrs: { id: 'goalrow' } }, [
+  h('div', { key: 'top', id: 'chatTop' }, []),
+  h('div', { key: 'mode', id: 'chatMode' }, []),
+  h('div', { key: 'msgs', id: 'msgs' }, []),
+  h('div', { key: 'gr', id: 'goalrow' }, [
     h('input', { id: 'goal', placeholder: 'goal condition, e.g. done when all tests pass (the session works until met)' }, []),
     h('button', { id: 'goalBtn', 'data-action': 'goal', title: 'Set the goal; the next Send runs the autonomous loop to its final outcome' }, [t('set goal')]),
   ]),
-  h('div', { key: 'cp', attrs: { id: 'composer' } }, [
+  h('div', { key: 'cp', id: 'composer' }, [
     h('input', { id: 'prompt', placeholder: 'message… (Enter to send)', autocomplete: 'off' }, []),
     h('button.primary', { id: 'sendBtn', 'data-action': 'send' }, [t('Send')]),
     h('button', { id: 'compactBtn', 'data-action': 'compact', title: "Compact this session's context in place (codex native; same id continues)" }, [t('compact')]),

@@ -72,3 +72,29 @@ No websockets (polling fine at this scale), no multi-chat tabs, no collapse-all 
 for machine groups (YAGNI until a real fleet complains), no auth (loopback stands).
 Peers on old code still report without `context_tokens`/`maxSessions` — the attention
 model degrades silently (no ctx items, no capacity badges), same honesty rule as v3.
+
+## Visual verification loop (same session, after the first commit)
+
+Unit tests + curl smoke were NOT enough: the first live render showed an EMPTY Fleet
+view. Root cause: skeletons passed `h('div', { key, attrs: { id } })` — h's second
+parameter IS the attrs bag, so the object stringified to `attrs="[object Object]"` and
+the ids never landed; `$('#attention')` was null and the renderers early-returned.
+Found via Edge headless `--dump-dom` (the bogus attribute was literally visible in the
+serialized DOM — the generic setAttr fallback turned a silent drop into a visible one).
+Fix + permanent guard: `h()` now THROWS on a nested attrs bag (web-render.test).
+
+Working loop for UI verification on this box (no puppeteer needed):
+
+- Edge headless one-shot: `msedge --headless --disable-gpu --window-size=1600,900
+  --virtual-time-budget=9000 --screenshot=out.png URL` (screenshot must be a WINDOWS
+  absolute path; Git-Bash /tmp is not writable by Edge).
+- Interactive funnel E2E: `--remote-debugging-port` + Node's built-in WebSocket (CDP):
+  Runtime.evaluate to click, Page.captureScreenshot per stage. Verified fleet →
+  machine card → sessions (filter chip) → session row → attach-on-click → chat with
+  live transcript → back button (filters kept).
+- Scale mock: static HTML against the live `/style.css` with 24 machines / ~100 dense
+  session rows — grid and row density validated without a fake fleet.
+
+Caught & fixed this way: the attrs foot-gun (above), machine-card stats wrapping
+mid-item ("0\nsess" → one nowrap span per stat). First dogfood: G flagged itself
+"mem 0% free" (94 MB of 32 GB) — the attention model works.

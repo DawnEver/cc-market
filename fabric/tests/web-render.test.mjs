@@ -84,6 +84,14 @@ test('class merges from the tag DSL plus the attr; a change updates className', 
   assert.equal(root.childNodes[0].className, 'card click');
 });
 
+test('h() rejects a nested attrs bag — the empty-view foot-gun (v4 live bug)', () => {
+  assert.throws(() => h('div', { attrs: { id: 'attention' } }, []), /flat/);
+  // flat attributes are the correct form and carry id through to the element
+  const root = document.createElement('div');
+  mount(root, h('div', { id: 'attention' }, [t('x')]));
+  assert.equal(root.childNodes[0].attributes.id, 'attention');
+});
+
 test('generic attributes (name, type, style) are set, synced and removed', () => {
   const root = document.createElement('div');
   mount(root, h('input', { name: 'provider', type: 'text', placeholder: 'p' }, []));

@@ -43,6 +43,8 @@ h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(-
 .mcard.click:hover { border-color:var(--accent); }
 .mcard.warn { border-color:var(--human); }
 .mcard.dead { border-color:var(--bad); cursor:pointer; opacity:.85; }
+.statsline { display:flex; flex-wrap:wrap; gap:2px 10px; }
+.statsline span { white-space:nowrap; }
 .warnBadges { margin-top:4px; display:flex; gap:4px; flex-wrap:wrap; }
 
 /* ── shared bits ── */
