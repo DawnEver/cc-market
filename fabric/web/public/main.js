@@ -31,6 +31,7 @@ const api = async (method, path, body) => {
   return j;
 };
 const fmtCost = (c) => c == null ? '' : (c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
+const fmtTokens = (n) => n == null ? '' : (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n));
 const notLast = (s) => !(s.lastActivity) ? '' : ` · ${fmtAgo(s.lastActivity)}`;
 
 // ── toasts: errors are system facts, shown in a status strip — never a modal ──
@@ -133,13 +134,17 @@ function sessCard(s, machine) {
   const consoleId = s.chattable ? s.id : attached.get(key);
   const sel = selected && (selected.type === 'console' ? selected.id === consoleId : selected.type === 'observe' && selected.remoteId === s.nativeId && selected.node === machine.name);
   const ident = [s.provider, s.model, s.effort].filter(Boolean).join(' · ');
+  // Context = cumulative input tokens (input + cache creation + cache read) — the
+  // closest honest measure of context pressure fabric records. turns always shown.
+  const ctx = s.usage?.total_input_tokens ?? s.usage?.input_tokens ?? null;
   // Honest "why no project": an attached handle records no location at all; a session
   // with a real cwd outside every registered alias shows where it actually runs.
   const loc = !s.project
     ? (s.provider === 'attached' ? ' · attached handle'
       : (s.cwd ? ' · cwd ' + s.cwd.split(/[\\/]/).filter(Boolean).pop() : ''))
     : '';
-  const facts = [ident, s.pid ? `pid ${s.pid}` : '', s.turns ? `turns ${s.turns}` : '', loc].filter(Boolean).join(' · ');
+  const facts = [ident, `turns ${s.turns ?? 0}`, ctx != null ? `ctx ${fmtTokens(ctx)}` : '',
+                 s.pid ? `pid ${s.pid}` : '', loc].filter(Boolean).join(' · ');
   const cost = s.usage?.cost_usd ? ' · ' + fmtCost(s.usage.cost_usd) : '';
   return h('div.card click' + (sel ? ' sel' : ''), {
     key: 's:' + key,
