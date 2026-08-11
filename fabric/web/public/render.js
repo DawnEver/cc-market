@@ -32,9 +32,11 @@ function effectiveClass(v) {
 function setAttr(el, k, v) {
   if (k === "value") el.value = v;
   else if (k === "disabled") { if (v) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
-  else if (k.startsWith("data-")) el.setAttribute(k, v);
-  else if (k === "title" || k === "placeholder" || k === "selected" || k === "id") el.setAttribute(k, v);
   else if (k === "class") el.className = v;
+  // Generic fallback: name, type, style, for, data-*, title, placeholder, id, … Forms
+  // are built as vnodes (the view skeletons), so attribute setting must not be a
+  // whitelist — values land via setAttribute, never as markup.
+  else el.setAttribute(k, v);
 }
 
 function createElement(v) {

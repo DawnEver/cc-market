@@ -84,6 +84,17 @@ test('class merges from the tag DSL plus the attr; a change updates className', 
   assert.equal(root.childNodes[0].className, 'card click');
 });
 
+test('generic attributes (name, type, style) are set, synced and removed', () => {
+  const root = document.createElement('div');
+  mount(root, h('input', { name: 'provider', type: 'text', placeholder: 'p' }, []));
+  const el = root.childNodes[0];
+  assert.equal(el.attributes.name, 'provider');
+  assert.equal(el.attributes.type, 'text');
+  patch(root, h('input', { name: 'model' }, []));
+  assert.equal(el.attributes.name, 'model');
+  assert.equal(el.attributes.type, undefined, 'absent attrs are removed');
+});
+
 test('full replace of a container root (e.g. chatEmpty → messages) does not crash', () => {
   const root = document.createElement('div');
   mount(root, h('div.chatEmpty', {}, [t('pick a session')]));

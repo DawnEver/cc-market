@@ -71,9 +71,19 @@ fabric/
 │   │                        /api/nodes/:node/sessions/:id/view (foreign observe)
 │   └── public/              index.html + ES modules (state.js · render.js · main.js)
 │                           + style.css, all re-read per request. state.js = PURE
-│                           derivations (tested); render.js = keyed vnode patch (no
+│                           derivations (tested), incl. the attention model
+│                           (attentionItems/machineWarnings/compareMachines/fleetHealth
+│                           with exported thresholds); render.js = keyed vnode patch (no
 │                           innerHTML, events via one delegated data-action dispatcher);
-│                           main.js = polling + orchestration. No build step.
+│                           main.js = polling + hash-routed views. No build step.
+│                           UI = three full-width views following the operator funnel:
+│                           FLEET (needs-attention list + machine grid) → SESSIONS
+│                           (collapsible machine groups, dense session rows, spawn
+│                           drawer) → CHAT (full-width focus, breadcrumb top bar; the
+│                           header health dot keeps ambient awareness). View skeletons
+│                           mount once per entry; polls patch sub-containers only, so
+│                           form controls/scroll survive. Scales to dozens of machines
+│                           / ~100 sessions (attention-first sort, grid, column rows).
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
 ├── commands/                L2: continue.md · models.md · handoff.md
 ├── agents/takeover.md       L2: handoff subagent (context-gather → one call)

@@ -122,3 +122,89 @@ export function contextStatus(session) {
     compacted: session?.compacted ?? 0,
   };
 }
+
+// ── attention: the Fleet view's needs-attention list, derived from facts the fleet
+// probe already carries (dead peers, load, capacity, ctx occupancy, orphans, dead
+// sessions). Nothing here invents state; thresholds are exported so the UI badges and
+// the tests share one source.
+
+export const CTX_WARN_PCT = 85;      // session context occupancy worth acting on
+export const CPU_WARN_PCT = 90;      // machine CPU busy worth acting on
+export const MEM_WARN_FREE_PCT = 10; // free memory below this share of total
+
+/**
+ * One machine's warning facts — badges on its Fleet card, inputs to attentionItems.
+ * A dead machine reports 'DEAD' and nothing else (probe facts are absent for it).
+ */
+export function machineWarnings(m) {
+  if (!m?.alive) return ["DEAD"];
+  const w = [];
+  if (m.cpu_busy_pct != null && m.cpu_busy_pct >= CPU_WARN_PCT) w.push(`cpu ${m.cpu_busy_pct}%`);
+  if (m.mem_total_mb && m.mem_available_mb != null) {
+    const freePct = Math.round((m.mem_available_mb / m.mem_total_mb) * 100);
+    if (freePct <= MEM_WARN_FREE_PCT) w.push(`mem ${freePct}% free`);
+  }
+  const count = m.sessions_count ?? sessionsOf(m).filter((s) => s.alive !== false).length;
+  if (m.maxSessions != null && count >= m.maxSessions) w.push(`capacity ${count}/${m.maxSessions}`);
+  return w;
+}
+
+/**
+ * The Fleet view's needs-attention list, worst severity first (then machine, then text,
+ * so the order is stable across polls). Item: { severity:'bad'|'warn', kind, machine,
+ * text, session?, orphans? } — kind: machine-dead | machine-load | session-dead | ctx |
+ * orphans. The UI maps kind (+ session drivability) to a jump target.
+ */
+export function attentionItems(fleet, orphans = [], selfName = null) {
+  const items = [];
+  for (const m of fleet) {
+    if (!m.alive) {
+      items.push({ severity: "bad", kind: "machine-dead", machine: m.name,
+        text: `${m.name} DEAD — ${m.error || "unreachable"}` });
+      continue;
+    }
+    for (const w of machineWarnings(m))
+      items.push({ severity: "warn", kind: "machine-load", machine: m.name, text: `${m.name} ${w}` });
+    for (const s of sessionsOf(m)) {
+      if (s.alive === false) {
+        items.push({ severity: "warn", kind: "session-dead", machine: m.name, session: s,
+          text: `${m.name} · ${s.id} process died` });
+        continue;
+      }
+      const { pct } = contextStatus(s);
+      if (pct != null && pct >= CTX_WARN_PCT)
+        items.push({ severity: "warn", kind: "ctx", machine: m.name, session: s,
+          text: `${m.name} · ${s.id} ctx ${pct}% — compact soon` });
+    }
+  }
+  // Orphans group per machine: a machine may carry several unaccounted records.
+  const byMachine = new Map();
+  for (const o of orphans) {
+    const mn = o.node ?? selfName ?? "this machine";
+    if (!byMachine.has(mn)) byMachine.set(mn, []);
+    byMachine.get(mn).push(o);
+  }
+  for (const [mn, list] of byMachine) {
+    const resumable = list.filter((o) => o.sessionId && o.pidAlive).length;
+    items.push({ severity: "warn", kind: "orphans", machine: mn, orphans: list,
+      text: `${mn} · ${list.length} unaccounted session(s)${resumable ? ` (${resumable} resumable)` : ""}` });
+  }
+  const sev = (i) => (i.severity === "bad" ? 0 : 1);
+  return items.sort((a, b) => sev(a) - sev(b) || a.machine.localeCompare(b.machine) || a.text.localeCompare(b.text));
+}
+
+/** Fleet-card ordering: dead first, then warned, then healthy; this machine leads its tier. */
+export function compareMachines(a, b) {
+  const rank = (m) => (!m.alive ? 0 : machineWarnings(m).length ? 1 : 2);
+  const r = rank(a) - rank(b);
+  if (r) return r;
+  if (!!a.self !== !!b.self) return a.self ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+/** Header health dot: the worst severity anywhere in the fleet. */
+export function fleetHealth(items) {
+  if (items.some((i) => i.severity === "bad")) return "bad";
+  if (items.length) return "warn";
+  return "ok";
+}

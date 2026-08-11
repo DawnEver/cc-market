@@ -2,7 +2,7 @@
 // fetch: these are the only functions with "logic" in the console, so they get tests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTranscript, viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus } from '../web/public/state.js';
+import { parseTranscript, viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth } from '../web/public/state.js';
 
 test('parseTranscript: turns tee output into messages, trimming blanks', () => {
   const content = '\n[user]\nhello there\n\n[assistant · turn 1]\nHi! How can I help?\nSecond line.\n\n[user]\nmore\n';
@@ -104,4 +104,65 @@ test('contextStatus: no % when the window is unknown — tokens only, never fabr
   assert.equal(contextStatus({ model: 'kimi-for-coding', context_limit: null, usage: { context_tokens: 50_000 } }).pct, null);
   assert.equal(contextStatus({ usage: {} }).pct, null);
   assert.equal(contextStatus({}).pct, null);
+});
+
+// ── attention derivations: the Fleet view's needs-attention list ──
+
+test('machineWarnings: dead reports DEAD only; healthy reports nothing', () => {
+  assert.deepEqual(machineWarnings({ alive: false }), ['DEAD']);
+  assert.deepEqual(machineWarnings({ alive: true, cpu_busy_pct: 12, mem_total_mb: 1000, mem_available_mb: 500, console_sessions: [], sessions: [] }), []);
+});
+
+test('machineWarnings: cpu/mem/capacity thresholds', () => {
+  const hot = machineWarnings({ alive: true, cpu_busy_pct: 96, mem_total_mb: 1000, mem_available_mb: 80, maxSessions: 64, sessions_count: 64, console_sessions: [], sessions: [] });
+  assert.deepEqual(hot, ['cpu 96%', 'mem 8% free', 'capacity 64/64']);
+  // just below every threshold → quiet
+  assert.deepEqual(machineWarnings({ alive: true, cpu_busy_pct: 89, mem_total_mb: 1000, mem_available_mb: 110, maxSessions: 64, sessions_count: 63, console_sessions: [], sessions: [] }), []);
+});
+
+test('attentionItems: dead machine is bad; ctx/dead-session/orphans warn; worst first', () => {
+  const fleet = [
+    { name: 'G', alive: true, console_sessions: [
+        { id: 'a3f9', chattable: true, context_limit: 1000, usage: { context_tokens: 920 } },
+        { id: 'dead1', chattable: true, alive: false }], sessions: [] },
+    { name: 'WS2', alive: false, error: 'REQUEST_TIMEOUT: peer stuck', console_sessions: [], sessions: [] },
+    { name: 'WS1', alive: true, console_sessions: [], sessions: [{ id: 'ok1' }] },
+  ];
+  const orphans = [{ id: 'orph1', node: 'WS1', pidAlive: true, sessionId: 'x', ts: 1 }];
+  const items = attentionItems(fleet, orphans, 'G');
+  assert.deepEqual(items.map((i) => i.kind).sort(), ['ctx', 'machine-dead', 'orphans', 'session-dead']);
+  assert.equal(items[0].kind, 'machine-dead', 'bad sorts before warn');
+  assert.equal(items[0].severity, 'bad');
+  const ctx = items.find((i) => i.kind === 'ctx');
+  assert.equal(ctx.machine, 'G');
+  assert.equal(ctx.session.id, 'a3f9', 'ctx items carry the session so the UI can jump to chat');
+  assert.match(ctx.text, /ctx 92%/);
+  const orph = items.find((i) => i.kind === 'orphans');
+  assert.equal(orph.machine, 'WS1');
+  assert.match(orph.text, /1 unaccounted session\(s\) \(1 resumable\)/);
+});
+
+test('attentionItems: local orphans resolve to the self machine name', () => {
+  const items = attentionItems([], [{ id: 'o1', node: null, pidAlive: false, ts: 1 }], 'G');
+  assert.equal(items[0].machine, 'G');
+});
+
+test('attentionItems: a healthy fleet has an empty list', () => {
+  const fleet = [{ name: 'G', alive: true, cpu_busy_pct: 5, console_sessions: [{ id: 's', usage: {} }], sessions: [] }];
+  assert.deepEqual(attentionItems(fleet, []), []);
+});
+
+test('fleetHealth: the worst severity anywhere wins', () => {
+  assert.equal(fleetHealth([]), 'ok');
+  assert.equal(fleetHealth([{ severity: 'warn' }]), 'warn');
+  assert.equal(fleetHealth([{ severity: 'warn' }, { severity: 'bad' }]), 'bad');
+});
+
+test('compareMachines: dead < warned < healthy; self leads within a tier', () => {
+  const dead = { name: 'B', alive: false };
+  const warned = { name: 'C', alive: true, cpu_busy_pct: 99, console_sessions: [], sessions: [] };
+  const self = { name: 'Z', alive: true, self: true, console_sessions: [], sessions: [] };
+  const plain = { name: 'A', alive: true, console_sessions: [], sessions: [] };
+  const sorted = [plain, self, warned, dead].sort(compareMachines);
+  assert.deepEqual(sorted.map((m) => m.name), ['B', 'C', 'Z', 'A']);
 });

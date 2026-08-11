@@ -8,66 +8,19 @@
 <body>
 <header>
   <h1>fabric console</h1>
+  <span id="healthDot" title="fleet health"></span>
   <span id="headerStats">…</span>
-  <span id="asOf"></span>
-  <span class="dim" id="catAge"></span>
-  <button id="reprobe">⟳ re-probe</button>
+  <nav id="tabs">
+    <button class="tab" data-action="goto" data-view="fleet">Fleet <span id="tabAttn" class="tabBadge"></span></button>
+    <button class="tab" data-action="goto" data-view="sessions">Sessions</button>
+    <button class="tab" data-action="goto" data-view="chat">Chat</button>
+  </nav>
+  <span id="asOf" class="dim"></span>
 </header>
-<main>
-  <section>
-    <details class="fold" open>
-      <summary>Machines <span class="dim">(click = filter)</span></summary>
-      <div id="machines" class="dim">probing…</div>
-    </details>
-  </section>
-
-  <section>
-    <details id="spawnDrawer">
-      <summary>+ New session</summary>
-      <form id="spawnForm" class="card" onsubmit="return false">
-        <div class="inline">
-          <div><label>provider</label><select name="provider" id="providerSel"></select></div>
-          <div><label>model</label><select name="model" id="modelSel"></select></div>
-        </div>
-        <div class="inline">
-          <div><label>effort</label><select name="effort" id="effortSel"></select></div>
-          <div><label>project</label><select name="project" id="projectSel"></select></div>
-        </div>
-        <div class="dim" id="spawnWhere"></div>
-        <div class="dim" id="providerIdent"></div>
-        <details><summary>more (profile · flags)</summary>
-          <label>profile</label><input name="profile" placeholder="named profile on the target node">
-          <div class="inline">
-            <label><input type="checkbox" name="write" style="width:auto"> write</label>
-            <label><input type="checkbox" name="visible" style="width:auto"> visible</label>
-            <label><input type="checkbox" name="interactive" style="width:auto"> interactive</label>
-          </div>
-        </details>
-        <button class="primary" id="spawnBtn" type="button">Spawn session</button>
-      </form>
-    </details>
-
-    <details class="fold" open>
-      <summary>Projects → Sessions <span class="dim">(click = filter)</span></summary>
-      <div id="tree" class="dim">—</div>
-    </details>
-  </section>
-
-  <section id="chat">
-    <div id="chatMode"></div>
-    <div id="msgs"><div class="chatEmpty">Pick a session (any machine) to chat. Shared sessions attach automatically; foreign ones are viewable read-only.</div></div>
-    <div id="goalrow">
-      <input id="goal" placeholder="goal condition, e.g. done when all tests pass (the session works until met)">
-      <button id="goalBtn" title="Set the goal; the next Send runs the autonomous loop to its final outcome">set goal</button>
-    </div>
-    <div id="composer">
-      <input id="prompt" placeholder="message… (Enter to send)" autocomplete="off">
-      <button class="primary" id="sendBtn">Send</button>
-      <button id="compactBtn" title="Compact this session's context in place (codex native; same id continues)">compact</button>
-      <button id="closeBtn" title="Close this session">close</button>
-    </div>
-  </section>
-</main>
+<!-- One view at a time: the operator's workflow is a funnel (fleet → sessions → chat),
+     so each stage gets the full width. View skeletons are built by main.js; polls patch
+     sub-containers only, so form controls and scroll positions survive. -->
+<main id="view"></main>
 <div id="toasts"></div>
 <script type="module" src="/main.js"></script>
 </body>

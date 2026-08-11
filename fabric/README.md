@@ -169,7 +169,11 @@ handshake itself.
 2. On each peer machine, bring fabric up in a terminal you keep open. **`scripts\serve.cmd`
    / `scripts/serve.ps1` / `scripts/serve.sh` is THE start command** — it runs the LAN node
    server AND the management console in one process (both idempotent: an already-running
-   instance is detected and skipped). Console: http://127.0.0.1:7678. Flags: `--port N`,
+   instance is detected and skipped). Console: http://127.0.0.1:7678 — three views that
+   follow the operator's funnel: **Fleet** (a needs-attention list — dead peers, hot
+   machines/sessions, orphans — plus a grid of every machine), **Sessions** (browse by
+   machine → project, dense one-line rows, spawn drawer), **Chat** (full-width focus
+   with a breadcrumb bar; the header health dot keeps fleet awareness). Flags: `--port N`,
    `--console-port N`, `--no-console` (node only), `--status` (report and exit).
    Session-bound on purpose — never run as a background service; closing the terminal stops both AND reaps every session child it spawned (graceful close, then hard kill) — session children are hidden windows, so nothing may outlive the serve invisibly.
 3. **Open the firewall for inbound 7677** — once per machine. Windows blocks inbound Node by
@@ -197,9 +201,9 @@ handshake itself.
    and its disconnect reaps the session. To make a remote session drivable from ANY
    machine (the "operate another workstation's session from G" case), spawn it
    `shared: true` — shared sessions accept any accepted token-holder's send/close/compact
-   and survive the spawner's disconnect. On the management console, shared sessions on a
-   peer show a chat button; clicking it attaches and drives the session from there
-   (`POST /api/attach`). The console's chat renders the session's own TRANSCRIPT
+   and survive the spawner's disconnect. On the management console, clicking a shared
+   session's row opens its chat: the console attaches on demand and drives the session
+   from there (`POST /api/attach`). The console's chat renders the session's own TRANSCRIPT
    (`/view` — claude/API always record one; codex honestly reports `content:null` and the
    console falls back to its local log, labelled). Non-shared foreign sessions are
    readable read-only (`/view` is visibility, not acting) with the reason stated on the
