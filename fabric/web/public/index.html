@@ -17,10 +17,15 @@
   </nav>
   <span id="asOf" class="dim"></span>
 </header>
-<!-- One view at a time: the operator's workflow is a funnel (fleet → sessions → chat),
-     so each stage gets the full width. View skeletons are built by main.js; polls patch
-     sub-containers only, so form controls and scroll positions survive. -->
-<main id="view"></main>
+<!-- The conveyor: machines → sessions → chat. The focused stage holds 80% of the
+     width; the stage above it stays as a 20% context rail (fleet keeps a sessions
+     preview instead). The split bar drags; each stage remembers its own ratio.
+     Pane skeletons mount once per stage entry; polls patch sub-containers only. -->
+<main id="split">
+  <div id="paneL"></div>
+  <div id="splitBar" title="drag to resize — each stage remembers its ratio"></div>
+  <div id="paneR"></div>
+</main>
 <div id="toasts"></div>
 <script type="module" src="/main.js"></script>
 </body>

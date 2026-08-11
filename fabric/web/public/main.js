@@ -1,12 +1,13 @@
-// web/public/main.js — the console's orchestration: polling, hash-routed views, the one
-// delegated click dispatcher, toasts (never alert()), and the transcript-as-truth chat.
-// Rendering is declarative via render.js; all derivation lives in state.js. No state is
-// invented here — the DOM is a projection of fabric facts (fleet, catalogue, views).
+// web/public/main.js — the console's orchestration: polling, the stage conveyor, the
+// one delegated click dispatcher, toasts (never alert()), and the transcript-as-truth
+// chat. Rendering is declarative via render.js; all derivation lives in state.js. No
+// state is invented here — the DOM is a projection of fabric facts.
 //
-// Views follow the operator's funnel: FLEET (is anything wrong?) → SESSIONS (browse by
-// machine/project) → CHAT (work with one session, full width). Each stage gets the whole
-// screen because attention narrows monotonically; the header health dot keeps ambient
-// awareness while chatting. Filters (selMachine/selProject) survive view switches.
+// The UX is a CONVEYOR, not three separate views: machines → sessions → chat. The
+// focused stage holds ~80% of the width; the stage above stays as a compact context
+// rail (~20%): fleet keeps a sessions PREVIEW rail on the right, sessions keeps a
+// machines rail on the left, chat keeps the sessions rail for one-click switching.
+// The split bar drags; each stage remembers its own ratio (localStorage).
 //
 // Scope, honestly stated: sessions this console spawned or attached are drivable;
 // a foreign peer session (owned by another connection, not shared) is read-only —
@@ -23,7 +24,7 @@ let selMachine = null, selProject = null;
 // selected = { type:'console', id } | { type:'observe', node, remoteId }
 let selected = null;
 let sending = false, fleetAt = 0, attn = [];
-let view = 'fleet';
+let stage = null; // null until the first setStage — the boot mount must not no-op
 const collapsed = new Set(); // machine groups the operator collapsed in Sessions view
 // Poll guards: skip a tick if the previous refresh is still in flight, so a slow peer
 // (or a blocked probe) never stacks overlapping requests that make the UI feel stuck.
@@ -52,23 +53,23 @@ const toast = (msg, bad = true) => {
 };
 
 // ── one delegated dispatcher for every click, change and Enter — handlers are stable
-// across patches (patch never touches listeners; skeletons re-mount per view entry) ──
+// across patches (patch never touches listeners; skeletons re-mount per stage entry) ──
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
   const a = el.dataset.action, d = el.dataset;
   if (a === 'goto') {
     if (d.machine != null) { selMachine = d.machine; selProject = null; }
-    setView(d.view);
+    setStage(d.view);
   }
   else if (a === 'pick-machine') {
-    if (view === 'fleet') { selMachine = d.name; selProject = null; setView('sessions'); }
-    else { selMachine = selMachine === d.name ? null : d.name; selProject = null; renderSessionsView(); }
+    if (stage === 'fleet') { selMachine = d.name; selProject = null; setStage('sessions'); }
+    else { selMachine = selMachine === d.name ? null : d.name; selProject = null; renderSessionsView(); renderRail(); }
   }
   else if (a === 'pick-project') { selProject = selProject === d.project ? null : d.project; renderSessionsView(); }
   else if (a === 'clear-filter') {
     if (d.kind === 'machine') { selMachine = null; selProject = null; } else selProject = null;
-    renderSessionsView();
+    renderSessionsView(); renderRail();
   }
   else if (a === 'toggle-collapse') {
     e.stopPropagation();
@@ -97,32 +98,80 @@ document.addEventListener('keydown', (e) => {
   else if (e.target.id === 'goal') setGoal();
 });
 
-// ── view routing: hash is the place memory, so refresh and the browser Back button
-// land where the operator left off ──
-const VIEWS = ['fleet', 'sessions', 'chat'];
-function setView(v, { pushHash = true } = {}) {
-  if (!VIEWS.includes(v)) v = 'fleet';
-  view = v;
-  if (pushHash && location.hash !== '#/' + v) location.hash = '#/' + v;
-  document.querySelectorAll('#tabs .tab').forEach((b) => b.classList.toggle('sel', b.dataset.view === v));
-  renderView();
+// ══ the conveyor: stage → { left pane, right pane, default ratio } ══
+// ratio = LEFT pane width %, clamped [10,90]; each stage persists its own.
+const STAGES = {
+  fleet:    { left: 'fleet',         right: 'sessions-rail', def: 80 },
+  sessions: { left: 'machines-rail', right: 'sessions',      def: 20 },
+  chat:     { left: 'sessions-rail', right: 'chat',          def: 20 },
+};
+const ratioKey = (s) => 'fabric.split.' + s;
+
+function applyRatio() {
+  const stored = +localStorage.getItem(ratioKey(stage));
+  const pct = Number.isFinite(stored) && stored >= 10 && stored <= 90 ? stored : STAGES[stage].def;
+  $('#paneL').style.width = pct + '%';
+}
+
+// Drag the boundary: pointer capture keeps the drag alive outside the bar; the ratio
+// persists on release, per stage.
+(function wireSplitter() {
+  const bar = $('#splitBar');
+  let drag = null;
+  bar.addEventListener('pointerdown', (e) => {
+    drag = { x: e.clientX, w: $('#paneL').getBoundingClientRect().width,
+             total: $('#split').getBoundingClientRect().width };
+    bar.setPointerCapture(e.pointerId);
+    document.body.classList.add('dragging');
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const pct = Math.min(90, Math.max(10, ((drag.w + e.clientX - drag.x) / drag.total) * 100));
+    $('#paneL').style.width = pct + '%';
+  });
+  bar.addEventListener('pointerup', () => {
+    if (!drag) return;
+    drag = null;
+    document.body.classList.remove('dragging');
+    localStorage.setItem(ratioKey(stage), parseFloat($('#paneL').style.width));
+  });
+})();
+
+function setStage(name, { pushHash = true } = {}) {
+  if (!STAGES[name]) name = 'fleet';
+  const changed = name !== stage;
+  stage = name;
+  if (pushHash && location.hash !== '#/' + name) location.hash = '#/' + name;
+  document.querySelectorAll('#tabs .tab').forEach((b) => b.classList.toggle('sel', b.dataset.view === name));
+  if (changed) mountStage();
+  renderStage();
 }
 window.addEventListener('hashchange', () => {
   const v = location.hash.replace(/^#\//, '');
-  if (v !== view) setView(v, { pushHash: false });
+  if (v !== stage) setStage(v, { pushHash: false });
 });
 
-// A view's skeleton mounts ONCE per entry; polls then patch sub-containers by id, so
-// an open dropdown, a half-typed prompt and the scroll position all survive.
-function mountView(vnode) { const el = $('#view'); el._v = null; patch(el, vnode); }
-function renderView() {
-  if (view === 'fleet') { mountView(fleetSkeleton()); renderFleetView(); }
-  else if (view === 'sessions') {
-    mountView(sessionsSkeleton());
-    fillCatalogueUI(); fillSpawnMachines(); renderSessionsView();
-  } else {
-    mountView(chatSkeleton());
-    renderChatTop(); renderChat(); updateComposer();
+// Pane skeletons mount ONCE per stage entry; polls then patch sub-containers by id,
+// so an open dropdown, a half-typed prompt and the scroll position all survive.
+function mountPane(el, vnode) { el._v = null; patch(el, vnode); }
+function mountStage() {
+  const s = STAGES[stage];
+  applyRatio();
+  const [l, r] = [$('#paneL'), $('#paneR')];
+  l.className = 'pane ' + s.left; r.className = 'pane ' + s.right;
+  mountPane(l, SKELETONS[s.left]());
+  mountPane(r, SKELETONS[s.right]());
+  if (s.left === 'sessions' || s.right === 'sessions') { fillCatalogueUI(); fillSpawnMachines(); }
+  if (s.left === 'chat' || s.right === 'chat') updateComposer();
+}
+
+function renderStage() {
+  const s = STAGES[stage];
+  for (const type of [s.left, s.right]) {
+    if (type === 'fleet') renderFleetView();
+    else if (type === 'sessions') renderSessionsView();
+    else if (type === 'chat') { renderChatTop(); renderChat(); }
+    else renderRail();
   }
 }
 
@@ -150,8 +199,8 @@ function fillModels() {
     ? `${p.name}${p.version ? ' ' + p.version : ''} — ${p.identity}${p.available ? '' : ' (UNAVAILABLE)'}`
     : '';
 }
-// (Re)fill the spawn form's catalogue-driven selects. Safe to call on every view entry:
-// it only touches the DOM when the selects exist (Sessions view).
+// (Re)fill the spawn form's catalogue-driven selects. Safe to call on every stage
+// entry: it only touches the DOM when the selects exist (Sessions pane).
 function fillCatalogueUI() {
   if (!$('#providerSel')) return;
   $('#providerSel').innerHTML = catalogue.providers.map((p) =>
@@ -190,15 +239,73 @@ async function loadCatalogue(force) {
   finally { if (b) { b.disabled = false; b.classList.remove('spin'); } }
 }
 
-// ══ FLEET view: needs-attention first, then every machine as a compact grid card.
-// The h2 labels render inside the patched regions so they carry live counts ══
-const fleetSkeleton = () => h('section.fleetView', { key: 'fleet' }, [
-  h('div', { key: 'b', id: 'attention' }, []),
-  h('div', { key: 'd', id: 'machineGrid' }, []),
-]);
+// ══ skeleton registry (one per pane type; ids never co-exist across the two panes) ══
+const SKELETONS = {
+  // FLEET pane: needs-attention first, then every machine as a compact grid card.
+  // The h2 labels render inside the patched regions so they carry live counts.
+  fleet: () => h('section.fleetView', { key: 'fleet' }, [
+    h('div', { key: 'b', id: 'attention' }, []),
+    h('div', { key: 'd', id: 'machineGrid' }, []),
+  ]),
+  // SESSIONS pane: full-width browse — collapsible machine groups, dense session rows.
+  sessions: () => h('section.sessionsView', { key: 'sessions' }, [
+    h('div', { key: 'chips', id: 'chips' }, []),
+    h('details', { key: 'spawn', id: 'spawnDrawer' }, [
+      h('summary', { key: 's' }, [t('+ New session')]),
+      h('form.card', { key: 'f', id: 'spawnForm', onsubmit: 'return false' }, [
+        h('div.inline', { key: 'r1' }, [
+          h('div', {}, [h('label', {}, [t('machine')]), h('select', { id: 'machineSel', name: 'machine' }, [])]),
+          h('div', {}, [h('label', {}, [t('project')]), h('select', { id: 'projectSel', name: 'project' }, [])]),
+        ]),
+        h('div.inline', { key: 'r2' }, [
+          h('div', {}, [h('label', {}, [t('provider')]), h('select', { id: 'providerSel', name: 'provider' }, [])]),
+          h('div', {}, [h('label', {}, [t('model')]), h('select', { id: 'modelSel', name: 'model' }, [])]),
+        ]),
+        h('div.inline', { key: 'r3' }, [
+          h('div', {}, [h('label', {}, [t('effort')]), h('select', { id: 'effortSel', name: 'effort' }, [])]),
+          h('div', {}, []),
+        ]),
+        h('div.dim', { key: 'pi', id: 'providerIdent' }, []),
+        h('details', { key: 'more' }, [
+          h('summary', {}, [t('more (profile · flags)')]),
+          h('label', {}, [t('profile')]),
+          h('input', { name: 'profile', placeholder: 'named profile on the target node' }, []),
+          h('div.inline', {}, [
+            h('label', {}, [h('input', { type: 'checkbox', name: 'write', style: 'width:auto' }, []), t(' write')]),
+            h('label', {}, [h('input', { type: 'checkbox', name: 'visible', style: 'width:auto' }, []), t(' visible')]),
+            h('label', {}, [h('input', { type: 'checkbox', name: 'interactive', style: 'width:auto' }, []), t(' interactive')]),
+          ]),
+        ]),
+        h('button.primary', { key: 'sb', id: 'spawnBtn', type: 'button', 'data-action': 'spawn' }, [t('Spawn session')]),
+        h('div', { key: 'cl', id: 'catLine' }, []),
+      ]),
+    ]),
+    h('div', { key: 'tree', id: 'sessTree' }, []),
+  ]),
+  // CHAT pane: full-width focus, breadcrumb + live facts on top.
+  chat: () => h('section.chatView', { key: 'chat' }, [
+    h('div', { key: 'top', id: 'chatTop' }, []),
+    h('div', { key: 'mode', id: 'chatMode' }, []),
+    h('div', { key: 'msgs', id: 'msgs' }, []),
+    h('div', { key: 'gr', id: 'goalrow' }, [
+      h('input', { id: 'goal', placeholder: 'goal condition, e.g. done when all tests pass (the session works until met)' }, []),
+      h('button', { id: 'goalBtn', 'data-action': 'goal', title: 'Set the goal; the next Send runs the autonomous loop to its final outcome' }, [t('set goal')]),
+    ]),
+    h('div', { key: 'cp', id: 'composer' }, [
+      h('input', { id: 'prompt', placeholder: 'message… (Enter to send)', autocomplete: 'off' }, []),
+      h('button.primary', { id: 'sendBtn', 'data-action': 'send' }, [t('Send')]),
+      h('button', { id: 'compactBtn', 'data-action': 'compact', title: "Compact this session's context in place (codex native; same id continues)" }, [t('compact')]),
+      h('button', { id: 'closeBtn', 'data-action': 'close-chat', title: 'Close this session' }, [t('close')]),
+    ]),
+  ]),
+  // A rail is the compact projection of the neighbouring stage — one at a time.
+  'machines-rail': () => h('section.railView', { key: 'mr' }, [h('div', { key: 'b', id: 'railBody' }, [])]),
+  'sessions-rail': () => h('section.railView', { key: 'sr' }, [h('div', { key: 'b', id: 'railBody' }, [])]),
+};
 
+// ══ FLEET content ══
 function renderFleetView() {
-  if (view !== 'fleet' || !$('#attention')) return;
+  if (!$('#attention')) return;
   patch($('#attention'), h('div', {}, [
     h('h2', { key: 'h' }, [t('Needs attention '), h('span.n', {}, [t(fleetAt ? String(attn.length) : '')])]),
     attnList(),
@@ -219,7 +326,7 @@ function attnList() {
   ])));
 }
 function attnButtons(i) {
-  // ctx → jump straight into the chat; everything else → the Sessions view, filtered.
+  // ctx → jump straight into the chat; everything else → the Sessions stage, filtered.
   // The id/chattable derivation mirrors sessRow exactly (a shared-but-unattached
   // session must go through openSession's attach path, never pose as a console id).
   if (i.kind === 'ctx' && i.session) {
@@ -255,55 +362,20 @@ function gridCard(m) {
   ]);
 }
 
-// ══ SESSIONS view: full-width browse — collapsible machine groups, dense session rows ══
-const sessionsSkeleton = () => h('section.sessionsView', { key: 'sessions' }, [
-  h('div', { key: 'chips', id: 'chips' }, []),
-  h('details', { key: 'spawn', id: 'spawnDrawer' }, [
-    h('summary', { key: 's' }, [t('+ New session')]),
-    h('form.card', { key: 'f', id: 'spawnForm', onsubmit: 'return false' }, [
-      h('div.inline', { key: 'r1' }, [
-        h('div', {}, [h('label', {}, [t('machine')]), h('select', { id: 'machineSel', name: 'machine' }, [])]),
-        h('div', {}, [h('label', {}, [t('project')]), h('select', { id: 'projectSel', name: 'project' }, [])]),
-      ]),
-      h('div.inline', { key: 'r2' }, [
-        h('div', {}, [h('label', {}, [t('provider')]), h('select', { id: 'providerSel', name: 'provider' }, [])]),
-        h('div', {}, [h('label', {}, [t('model')]), h('select', { id: 'modelSel', name: 'model' }, [])]),
-      ]),
-      h('div.inline', { key: 'r3' }, [
-        h('div', {}, [h('label', {}, [t('effort')]), h('select', { id: 'effortSel', name: 'effort' }, [])]),
-        h('div', {}, []),
-      ]),
-      h('div.dim', { key: 'pi', id: 'providerIdent' }, []),
-      h('details', { key: 'more' }, [
-        h('summary', {}, [t('more (profile · flags)')]),
-        h('label', {}, [t('profile')]),
-        h('input', { name: 'profile', placeholder: 'named profile on the target node' }, []),
-        h('div.inline', {}, [
-          h('label', {}, [h('input', { type: 'checkbox', name: 'write', style: 'width:auto' }, []), t(' write')]),
-          h('label', {}, [h('input', { type: 'checkbox', name: 'visible', style: 'width:auto' }, []), t(' visible')]),
-          h('label', {}, [h('input', { type: 'checkbox', name: 'interactive', style: 'width:auto' }, []), t(' interactive')]),
-        ]),
-      ]),
-      h('button.primary', { key: 'sb', id: 'spawnBtn', type: 'button', 'data-action': 'spawn' }, [t('Spawn session')]),
-      h('div', { key: 'cl', id: 'catLine' }, []),
-    ]),
-  ]),
-  h('div', { key: 'tree', id: 'sessTree' }, []),
-]);
-
+// ══ SESSIONS content ══
 function renderSessionsView() {
-  if (view !== 'sessions' || !$('#sessTree')) return;
+  if (!$('#sessTree')) return;
   patch($('#chips'), chipsVnode());
   renderSessionsTree();
 }
 
 function chipsVnode() {
-  const parts = [];
+  const parts = [h('button', { key: 'back', 'data-action': 'goto', 'data-view': 'fleet', title: 'back to the fleet dashboard' }, [t('← Fleet')])];
   if (selMachine) parts.push(h('span.chip', { key: 'm' }, [
     t('machine: ' + selMachine + ' '), h('button', { 'data-action': 'clear-filter', 'data-kind': 'machine' }, [t('×')])]));
   if (selProject) parts.push(h('span.chip', { key: 'p' }, [
     t('project: ' + selProject + ' '), h('button', { 'data-action': 'clear-filter', 'data-kind': 'project' }, [t('×')])]));
-  if (!parts.length) parts.push(h('span.chipsHint', { key: 'hint' },
+  if (parts.length === 1) parts.push(h('span.chipsHint', { key: 'hint' },
     [t('click a machine or project to filter — click again to clear')]));
   const shown = fleet.filter((m) => !selMachine || m.name === selMachine);
   // Same cross-machine dedup as the header: the two numbers are computed identically.
@@ -445,6 +517,68 @@ function orphansBlock(machine, list) {
   ])];
 }
 
+// ══ RAILS: the compact projection of the neighbouring stage. Read-lean: no actions
+// except the one the rail is FOR (machines → filter, sessions → open) ══
+function renderRail() {
+  const el = $('#railBody');
+  if (!el) return;
+  const type = STAGES[stage].left.endsWith('rail') ? STAGES[stage].left : STAGES[stage].right;
+  if (type === 'machines-rail') patch(el, machinesRail());
+  else patch(el, sessionsRail());
+}
+
+function machinesRail() {
+  const rows = [...fleet].sort(compareMachines).map((m) => {
+    const warns = machineWarnings(m);
+    const n = m.alive ? sessionsOf(m).length : 0;
+    return h('div.rrow' + (selMachine === m.name ? ' sel' : ''), {
+      key: m.name, 'data-action': 'pick-machine', 'data-name': m.name,
+      title: m.alive ? `${n} session(s) — click to filter` : (m.error || 'dead'),
+    }, [
+      h('span', { class: m.alive ? (warns.length ? 'warn' : 'ok') : 'bad' }, [t('●')]),
+      h('span.rid' + (m.alive ? '' : ' dead'), {}, [t(m.name)]),
+      ...(warns.length && m.alive ? [h('span.badge warn', {}, [t(String(warns.length))])] : []),
+      h('span.dim rn', {}, [t(String(n))]),
+    ]);
+  });
+  return h('div', {}, [
+    h('div.railHead', { key: 'h' }, [t('Machines '), h('span.n', {}, [t(fleetAt ? String(fleet.length) : '')])]),
+    ...rows,
+  ]);
+}
+
+function sessionsRail() {
+  const groups = [];
+  for (const m of fleet) {
+    if (!m.alive) continue;
+    const sess = sessionsOf(m);
+    if (!sess.length) continue;
+    groups.push(h('div.rhead', { key: 'h:' + m.name }, [t(m.name), h('span.dim rn', {}, [t(String(sess.length))])]));
+    for (const s of sess) {
+      const key = sessionKey(m.name, s);
+      const mine = s.chattable || attached.has(key);
+      const consoleId = s.chattable ? s.id : attached.get(key);
+      const sel = selected && (selected.type === 'console' ? selected.id === consoleId : selected.type === 'observe' && selected.remoteId === s.nativeId && selected.node === m.name);
+      const { pct } = contextStatus(s);
+      groups.push(h('div.rrow' + (sel ? ' sel' : ''), {
+        key: 's:' + key,
+        'data-action': 'open', 'data-node': m.name,
+        'data-id': mine ? s.id : (s.nativeId ?? s.id),
+        'data-chattable': mine ? '1' : '0',
+        title: [s.id, [s.provider, s.model].filter(Boolean).join(' '), s.project ? 'project ' + s.project : ''].filter(Boolean).join(' — '),
+      }, [
+        h('span', { class: s.alive === false ? 'bad' : 'ok' }, [t('●')]),
+        h('span.rid', {}, [t(s.id)]),
+        h('span.dim rn', {}, [t(pct != null ? pct + '%' : (s.turns ?? 0) + 't')]),
+      ]));
+    }
+  }
+  return h('div', {}, [
+    h('div.railHead', { key: 'h' }, [t('Sessions '), h('span.n', {}, [t(fleetAt ? String(uniqueSessions(fleet).length) : '')])]),
+    ...(groups.length ? groups : [h('div.dim padEmpty', { key: 'e' }, [t('no sessions running')])]),
+  ]);
+}
+
 // ── spawn: the form names its machine + project explicitly (scale: no pre-filter
 // needed). Selects refill on poll only when their option set actually changed, so an
 // open dropdown is never yanked ──
@@ -485,28 +619,12 @@ async function spawn() {
       write: f.get('write') === 'on', visible: f.get('visible') === 'on', interactive: f.get('interactive') === 'on',
     });
     selected = { type: 'console', id: desc.id };
-    setView('chat');
+    setStage('chat');
     refreshFleet();
   } catch (e) { toast('spawn failed: ' + e.message); }
 }
 
-// ══ CHAT view: full-width focus. Breadcrumb + facts on top; the fleet health dot in
-// the header keeps ambient awareness without panels ══
-const chatSkeleton = () => h('section.chatView', { key: 'chat' }, [
-  h('div', { key: 'top', id: 'chatTop' }, []),
-  h('div', { key: 'mode', id: 'chatMode' }, []),
-  h('div', { key: 'msgs', id: 'msgs' }, []),
-  h('div', { key: 'gr', id: 'goalrow' }, [
-    h('input', { id: 'goal', placeholder: 'goal condition, e.g. done when all tests pass (the session works until met)' }, []),
-    h('button', { id: 'goalBtn', 'data-action': 'goal', title: 'Set the goal; the next Send runs the autonomous loop to its final outcome' }, [t('set goal')]),
-  ]),
-  h('div', { key: 'cp', id: 'composer' }, [
-    h('input', { id: 'prompt', placeholder: 'message… (Enter to send)', autocomplete: 'off' }, []),
-    h('button.primary', { id: 'sendBtn', 'data-action': 'send' }, [t('Send')]),
-    h('button', { id: 'compactBtn', 'data-action': 'compact', title: "Compact this session's context in place (codex native; same id continues)" }, [t('compact')]),
-    h('button', { id: 'closeBtn', 'data-action': 'close-chat', title: 'Close this session' }, [t('close')]),
-  ]),
-]);
+// ══ CHAT content. Ambient fleet awareness stays in the header health dot ══
 
 // The session the chat is showing, looked up in the current fleet facts (for the top
 // bar's live facts). Null when it vanished (closed, or the peer went dark).
@@ -560,15 +678,19 @@ function renderChatTop() {
 
 // ── chat: transcript-as-truth; observe mode for foreign sessions ──
 function openSession(machine, remoteId, isMine) {
+  const toChat = () => {
+    if (stage !== 'chat') setStage('chat');
+    else { renderChatTop(); renderChat(); updateComposer(); renderRail(); }
+  };
   if (isMine) {
     selected = { type: 'console', id: remoteId };
-    setView('chat');
+    toChat();
     return;
   }
   const key = machine + ':' + remoteId;
   if (attached.has(key)) {
     selected = { type: 'console', id: attached.get(key) };
-    setView('chat');
+    toChat();
     return;
   }
   // Try to ATTACH (works for shared sessions → drivable); a foreign non-shared session
@@ -576,15 +698,15 @@ function openSession(machine, remoteId, isMine) {
   api('POST', '/api/attach', { node: machine, remoteId }).then((desc) => {
     attached.set(key, desc.id);
     selected = { type: 'console', id: desc.id };
-    setView('chat');
+    toChat();
   }).catch(() => {
     selected = { type: 'observe', node: machine, remoteId };
-    setView('chat');
+    toChat();
   });
 }
 
 async function refreshChat() {
-  if (!selected || chatBusy || view !== 'chat') return;
+  if (!selected || chatBusy || stage !== 'chat') return;
   chatBusy = true;
   try {
     let viewData, log = { messages: [] };
@@ -655,7 +777,7 @@ async function closeSess(id) {
   try { await api('POST', `/api/sessions/${id}/close`, {}); } catch {}
   if (selected && selected.type === 'console' && selected.id === id) {
     selected = null;
-    if (view === 'chat') { renderChatTop(); renderChat(); updateComposer(); }
+    if (stage === 'chat') { renderChatTop(); renderChat(); updateComposer(); }
   }
   refreshFleet();
 }
@@ -685,7 +807,7 @@ async function resumeOrphan(id) {
   try {
     const desc = await api('POST', `/api/orphans/${id}/resume`, {});
     selected = { type: 'console', id: desc.id };
-    setView('chat');
+    setStage('chat');
     refreshFleet();
   } catch (e) { toast('resume failed: ' + e.message); }
 }
@@ -698,7 +820,7 @@ async function clearOrphan(id) {
   catch (e) { toast('clear failed: ' + e.message); }
 }
 
-// ── fleet poll: the one clock that drives the header and the active view ──
+// ── fleet poll: the one clock that drives the header and the visible panes ──
 async function refreshFleet() {
   if (fleetBusy) return; // a slow peer must not stack overlapping polls
   fleetBusy = true;
@@ -707,16 +829,15 @@ async function refreshFleet() {
     orphans = await api('GET', '/api/reconcile');
     attn = attentionItems(fleet, orphans, selfName());
     renderHeader();
-    if (view === 'fleet') renderFleetView();
-    else if (view === 'sessions') { fillSpawnMachines(); renderSessionsView(); }
-    else if (view === 'chat') renderChatTop();
+    if ($('#machineSel')) fillSpawnMachines();
+    renderStage();
   } catch (e) { toast('fleet: ' + e.message); }
   finally { fleetBusy = false; }
 }
 
-// ── wiring: boot on the hash's view, then poll ──
+// ── wiring: boot on the hash's stage, then poll ──
 const initial = location.hash.replace(/^#\//, '');
-setView(VIEWS.includes(initial) ? initial : 'fleet', { pushHash: false });
+setStage(STAGES[initial] ? initial : 'fleet', { pushHash: false });
 loadCatalogue(false);
 refreshFleet();
 setInterval(refreshFleet, 6000);

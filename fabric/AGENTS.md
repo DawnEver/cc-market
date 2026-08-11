@@ -76,14 +76,17 @@ fabric/
 │                           with exported thresholds); render.js = keyed vnode patch (no
 │                           innerHTML, events via one delegated data-action dispatcher);
 │                           main.js = polling + hash-routed views. No build step.
-│                           UI = three full-width views following the operator funnel:
-│                           FLEET (needs-attention list + machine grid) → SESSIONS
-│                           (collapsible machine groups, dense session rows, spawn
-│                           drawer) → CHAT (full-width focus, breadcrumb top bar; the
-│                           header health dot keeps ambient awareness). View skeletons
-│                           mount once per entry; polls patch sub-containers only, so
-│                           form controls/scroll survive. Scales to dozens of machines
-│                           / ~100 sessions (attention-first sort, grid, column rows).
+│                           UI = a CONVEYOR (machines → sessions → chat): the focused
+│                           stage holds ~80% width, the stage above stays as a compact
+│                           rail (~20%) — fleet keeps a sessions preview, sessions a
+│                           machines rail, chat the sessions rail for one-click switch;
+│                           the split bar drags, each stage remembers its ratio
+│                           (localStorage). PAPER theme (user-picked from a rendered
+│                           4-candidate gallery); palette flows through CSS variables.
+│                           Skeletons mount once per stage entry; polls patch sub-
+│                           containers only (form controls/scroll survive). Scales to
+│                           dozens of machines / ~100 sessions (attention-first sort,
+│                           machine grid, column-aligned rows, rails scroll).
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
 ├── commands/                L2: continue.md · models.md · handoff.md
 ├── agents/takeover.md       L2: handoff subagent (context-gather → one call)

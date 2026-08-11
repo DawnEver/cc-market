@@ -66,6 +66,22 @@ user: design for **dozens of machines / ~100 sessions**, not the current 3/<10.
   shared-but-unattached session must go through openSession's attach path (peer id is
   never a console id).
 
+## Layout v4.2: the conveyor replaces hard views (user pivot, same session)
+
+The three hash-routed full-width views lasted one review round: the user asked for a
+CONVEYOR instead — the focused stage keeps ~80% width while the stage above stays
+visible as a compact ~20% rail: fleet = [Fleet 80 | sessions-rail 20], sessions =
+[machines-rail 20 | Sessions 80], chat = [sessions-rail 20 | Chat 80]. The split bar
+drags (pointer capture, 10–90% clamp); each stage persists its own ratio in
+localStorage. Rails are read-lean with ONE action each (machines → filter, sessions →
+open); all v4 content renderers carried over unchanged — only the orchestration layer
+(stage/pane/skeleton registry) is new. Boot gotcha found by screenshot: `stage` must
+init to null, not 'fleet' — the first setStage otherwise no-ops the mount and the
+default stage renders EMPTY (the exact failure mode the first screenshot showed).
+CDP verification: rail-click → attach → chat; drag persists across reload; back chain
+keeps filters. Hash routes unchanged (#/fleet|sessions|chat), header tabs stay as
+stage shortcuts.
+
 ## Theme: PAPER (user-picked from a rendered 4-candidate gallery)
 
 Style round (same session): the structural system is theme-agnostic — mono data font
