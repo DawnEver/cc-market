@@ -46,35 +46,47 @@ content verbatim.
 7. **Progressive structure, no enumerative scaffolding.** Organize paragraphs as one
    continuous line of reasoning that advances step by step toward the gap and the
    proposed solution. Do not use "total-part" scaffolding such as "X can be grouped into
-   N strands. The first strand is ... The second strand is ...". Thread each paragraph
-   into the next; a heading followed by a list of categories is a symptom of this
-   anti-pattern. In an introduction, the whole section should read as a single narrative
-   line, not as an annotated survey.
+   N strands. The first strand is ... The second strand is ..." for unordered categories.
+   Use numbered steps only when their order is part of the method or procedure. Thread
+   each paragraph into the next; a heading followed by a list of categories is a symptom
+   of this anti-pattern. In an introduction, the whole section should read as a single
+   narrative line, not as an annotated survey.
 8. **Background serves the argument.** Introduce background only where the main line
    needs it, and only in the detail the argument requires. In an introduction, do not
    expand technology overviews (e.g. process comparisons between related technologies)
    unless they are used later in the paper.
-9. **Cohesion at sentence level.** Every sentence must hook onto its predecessor:
+9. **Cross-reference without restatement.** When a definition, result, constraint, or
+   derivation has already been established, cite its section, equation, figure, or table
+   and state only the conclusion needed by the current argument. Do not repeat the earlier
+   setup, formula, or proof unless the current section introduces a new qualification or
+   changes its scope. A cross-reference should advance the reasoning rather than restart it.
+10. **Cohesion at sentence level.** Every sentence must hook onto its predecessor:
    repeat its key concept (anaphora: "these goals", "their", "both effects") or advance
    it with a causal link ("hence", "therefore", "and thus"). Never place adjacent
    sentences that merely list unrelated attributes. When a technology offers several
    properties, turn the list into a mechanism chain: "X raises A, which lowers B and
    hence improves C" — one step per sentence, each step caused by the previous one.
-10. **Semantic line breaks.** In the source, start a new line after each sentence (at the
+11. **Semantic line breaks.** In the source, start a new line after each sentence (at the
    period) and after the commas that separate clauses in long sentences — roughly one
    sentence or clause per source line. This keeps diffs clean; source line breaks do not
    affect the rendered output.
-11. **Display-equation spacing.** After a display equation, the next source line belongs
+12. **Display-equation spacing.** After a display equation, the next source line belongs
    to the same paragraph unless separated by a blank line. Keep a "where $x$ is ..." or
    "with ..." continuation attached, with no blank line; insert a blank line only when
    the following text opens a new topic. The vertical spacing of the equation itself is
    unaffected; the rule concerns paragraph boundaries only.
+13. **Archive substantive deletions.** Before removing manuscript prose, equations,
+    figures, or tables, preserve the deleted source in the project's designated archive
+    with its origin and deletion date. Archiving keeps superseded reasoning available
+    for later comparison without leaving it in the compiled manuscript.
 
 ## Self-check before finishing a section
 
 - Every sentence is short enough to read aloud in one breath.
 - No showy adjectives or abstract-noun piles survive.
 - No inert attribute lists; every sentence states a reason, a goal, or a consequence.
+- No cross-reference restates an earlier definition, formula, proof, or setup; it carries
+  forward only the conclusion needed by the current argument.
 - No sentence bundles a parenthetical definition with its consequence; definitions get
   their own sentence.
 - Trends and goals use the progressive voice ("pursuing", "aiming at"), never
@@ -88,3 +100,4 @@ content verbatim.
 - Each sentence starts on its own source line.
 - After every display equation: no blank line before a where-style continuation, a blank
   line before a new-topic paragraph.
+- Substantive deleted material has been copied to the project archive.
