@@ -23,8 +23,10 @@ export function h(tag, attrs = {}, ...children) {
 export function t(text) { return { tag: null, text: String(text ?? "") }; }
 
 function effectiveClass(v) {
-  const fromAttr = v.attrs.class ?? "";
-  return [v.classes, fromAttr].filter(Boolean).join(" ");
+  // Defensive against a non-vnode / text vnode reaching here (attrs undefined): the
+  // old bug was a caller passing attrs as the vnode — v?.attrs?.class never crashes.
+  const fromAttr = v?.attrs?.class ?? "";
+  return [v?.classes, fromAttr].filter(Boolean).join(" ");
 }
 
 function setAttr(el, k, v) {
@@ -65,7 +67,7 @@ function reconcileElement(el, oldV, newV) {
     if (oldV.text !== newV.text) el.nodeValue = newV.text;
     return;
   }
-  syncAttrs(el, oldV.attrs, newV.attrs);
+  syncAttrs(el, oldV, newV);
   const oldKids = oldV.children || [];
   const newKids = newV.children || [];
   // Map old children by key. DOM nodes must come from childNodes, NOT children: a text
@@ -91,12 +93,17 @@ function reconcileElement(el, oldV, newV) {
   kept.forEach((dom, i) => { if (el.childNodes[i] !== dom) el.insertBefore(dom, el.childNodes[i]); });
 }
 
+// root is a CONTAINER: the vnode's element is its single child (childNodes[0]), not
+// root itself. mount replaces that child; patch reconciles it in place. This keeps the
+// DOM element the vnode maps to consistent across patch cycles (the old code reconciled
+// the container element against a vnode that mounted as its CHILD — attribute/class
+// updates landed on the wrong element).
 export function mount(root, v) {
-  root._v = v;
   root.replaceChildren(createElement(v));
+  root._v = v;
 }
 export function patch(root, v) {
-  if (!root._v) { mount(root, v); return; }
-  reconcileElement(root, root._v, v);
+  if (!root._v) return mount(root, v);
+  reconcileElement(root.childNodes[0], root._v, v);
   root._v = v;
 }
