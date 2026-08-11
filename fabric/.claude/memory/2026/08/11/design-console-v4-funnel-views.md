@@ -66,6 +66,24 @@ user: design for **dozens of machines / ~100 sessions**, not the current 3/<10.
   shared-but-unattached session must go through openSession's attach path (peer id is
   never a console id).
 
+## Theme: PAPER (user-picked from a rendered 4-candidate gallery)
+
+Style round (same session): the structural system is theme-agnostic — mono data font
+(ids/turns/cost/ctx), warn/human semantics split, ctx display tiers (≥85 amber, ≥95
+red), transitions + focus rings, pulsing bad health dot, h2 live counts, all-clear
+positive style, auto-FIT machine grid (small fleets stretch, full grids identical).
+Palette goes through CSS variables, so the four rendered candidates (Console Dark /
+Paper / Solar warm-paper / Mission deep-indigo) were a variable swap each; the gallery
+(screenshot per candidate on one composite page) is how the user picked — render
+options, don't describe them. **User picked Paper** (light neutral): the "黑乎乎" dark
+was explicitly rejected. A second theme later = one variable block, no restyle.
+
+Known honesty wrinkle: attaching the SAME native session twice (attach → reload →
+attach again) creates two console handles; header/chips count unique CONVERSATIONS
+(`uniqueSessions`) while the tree shows HANDLES — a 2-handles-1-conversation fleet
+reads "1 session(s)" with 2 rows. Convention: counts are conversations, rows are
+resources. Closing the stale handle cleans it.
+
 ## Deferred / NOT done
 
 No websockets (polling fine at this scale), no multi-chat tabs, no collapse-all button

@@ -148,6 +148,7 @@ export function contextStatus(session) {
 // the tests share one source.
 
 export const CTX_WARN_PCT = 85;      // session context occupancy worth acting on
+export const CTX_CRIT_PCT = 95;      // display tier: red fill — the window is effectively full
 export const CPU_WARN_PCT = 90;      // machine CPU busy worth acting on
 export const MEM_WARN_FREE_PCT = 10; // free memory below this share of total
 

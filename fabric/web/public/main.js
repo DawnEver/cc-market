@@ -14,7 +14,7 @@
 // composer disabled and the reason shown, instead of an unexplained disabled button.
 
 import { h, t, patch } from "./render.js";
-import { viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth, CTX_WARN_PCT } from "./state.js";
+import { viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth, uniqueSessions, CTX_WARN_PCT, CTX_CRIT_PCT } from "./state.js";
 import { fmtUptime, fmtMem, fmtAgo } from "/lib/format.mjs";
 
 const $ = (s) => document.querySelector(s);
@@ -190,23 +190,28 @@ async function loadCatalogue(force) {
   finally { if (b) { b.disabled = false; b.classList.remove('spin'); } }
 }
 
-// ══ FLEET view: needs-attention first, then every machine as a compact grid card ══
+// ══ FLEET view: needs-attention first, then every machine as a compact grid card.
+// The h2 labels render inside the patched regions so they carry live counts ══
 const fleetSkeleton = () => h('section.fleetView', { key: 'fleet' }, [
-  h('h2', { key: 'a' }, [t('Needs attention')]),
   h('div', { key: 'b', id: 'attention' }, []),
-  h('h2', { key: 'c' }, [t('Machines')]),
   h('div', { key: 'd', id: 'machineGrid' }, []),
 ]);
 
 function renderFleetView() {
   if (view !== 'fleet' || !$('#attention')) return;
-  patch($('#attention'), attnList());
-  patch($('#machineGrid'), h('div.grid', {}, [...fleet].sort(compareMachines).map(gridCard)));
+  patch($('#attention'), h('div', {}, [
+    h('h2', { key: 'h' }, [t('Needs attention '), h('span.n', {}, [t(fleetAt ? String(attn.length) : '')])]),
+    attnList(),
+  ]));
+  patch($('#machineGrid'), h('div', {}, [
+    h('h2', { key: 'h' }, [t('Machines '), h('span.n', {}, [t(fleetAt ? String(fleet.length) : '')])]),
+    h('div.grid', { key: 'g' }, [...fleet].sort(compareMachines).map(gridCard)),
+  ]));
 }
 
 function attnList() {
   if (!fleetAt) return h('div.attnEmpty', {}, [t('probing the fleet…')]);
-  if (!attn.length) return h('div.attnEmpty', {}, [t('All clear — no machine, session, or orphan needs attention.')]);
+  if (!attn.length) return h('div.attnEmpty ok', {}, [t('All clear — no machine, session, or orphan needs attention.')]);
   return h('div', {}, attn.map((i, ix) => h('div.attnRow ' + i.severity, { key: ix }, [
     h('span.attnIcon', {}, [t(i.severity === 'bad' ? '●' : '⚠')]),
     h('span.attnText', {}, [t(i.text)]),
@@ -298,8 +303,11 @@ function chipsVnode() {
     t('machine: ' + selMachine + ' '), h('button', { 'data-action': 'clear-filter', 'data-kind': 'machine' }, [t('×')])]));
   if (selProject) parts.push(h('span.chip', { key: 'p' }, [
     t('project: ' + selProject + ' '), h('button', { 'data-action': 'clear-filter', 'data-kind': 'project' }, [t('×')])]));
+  if (!parts.length) parts.push(h('span.chipsHint', { key: 'hint' },
+    [t('click a machine or project to filter — click again to clear')]));
   const shown = fleet.filter((m) => !selMachine || m.name === selMachine);
-  const nSess = shown.reduce((n, m) => n + sessionsOf(m).filter((s) => !selProject || s.project === selProject).length, 0);
+  // Same cross-machine dedup as the header: the two numbers are computed identically.
+  const nSess = uniqueSessions(shown).filter(({ session: s }) => !selProject || s.project === selProject).length;
   parts.push(h('span.dim chipsSummary', { key: 'sum' }, [t(`${shown.length} machine(s) · ${nSess} session(s) shown`)]));
   return h('div.chipsRow', {}, parts);
 }
@@ -385,16 +393,17 @@ function sessRow(s, machine) {
   // Context occupancy: a bar + percentage when the model's window is known, else raw
   // tokens. After a native compact the % drops. ↻N marks how many compacts happened.
   const { used, limit, pct, compacted } = contextStatus(s);
+  const ctxTier = pct == null ? '' : pct >= CTX_CRIT_PCT ? 'crit' : pct >= CTX_WARN_PCT ? 'hot' : '';
   const ctxCell = pct != null
     ? h('span.ctxbar', { title: `context ${fmtTokens(used)} / ${fmtTokens(limit)}${compacted ? ` · compacted ×${compacted}` : ''}` }, [
-        h('span.track', {}, [h('span.fill' + (pct >= CTX_WARN_PCT ? ' hot' : ''), { style: `width:${pct}%` }, [])]),
-        h('span.ctxpct', {}, [t(pct + '%' + (compacted ? ' ↻' + compacted : ''))]),
+        h('span.track', {}, [h('span.fill' + (ctxTier ? ' ' + ctxTier : ''), { style: `width:${pct}%` }, [])]),
+        h('span.ctxpct' + (ctxTier ? ' ' + ctxTier : ''), {}, [t(pct + '%' + (compacted ? ' ↻' + compacted : ''))]),
       ])
     : h('span.dim', {}, [t(used != null ? fmtTokens(used) : '')]);
-  // Honest "why no project": an attached handle on an OLD peer records no location.
-  const loc = !s.project
-    ? (s.provider === 'attached' && !s.cwd ? 'attached handle' : (s.cwd ? 'cwd ' + s.cwd.split(/[\\/]/).filter(Boolean).pop() : ''))
-    : '';
+  // Honest "why no project": a cwd-bearing session runs outside every registered
+  // project alias. (An attached handle needs no suffix — its provider already says so.)
+  const loc = !s.project && s.provider !== 'attached' && s.cwd
+    ? 'cwd ' + s.cwd.split(/[\\/]/).filter(Boolean).pop() : '';
   return h('div.srow' + (sel ? ' sel' : ''), {
     key: 's:' + key,
     'data-action': 'open', 'data-node': machine.name,
@@ -544,8 +553,8 @@ function renderChatTop() {
   patch(el, h('div.chatTopRow', {}, [
     back,
     h('b', { key: 'id' }, [t([m.name, s.project, s.id].filter(Boolean).join(' / '))]),
-    h('span.dim', { key: 'f' }, [t(facts)]),
-    h('span', { key: 'd', class: s.alive === false ? 'bad' : 'ok' }, [t('●')]),
+    h('span.dim facts', { key: 'f' }, [t(facts)]),
+    h('span', { key: 'd', class: 'end ' + (s.alive === false ? 'bad' : 'ok') }, [t('●')]),
   ]));
 }
 
