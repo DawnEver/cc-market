@@ -100,6 +100,13 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   const kill = _kill || ((pid) => process.kill(pid));
   const closeGraceMs = _closeGraceMs;
   const startedAt = Date.now();
+  // In-flight spawn admissions. The ceiling check reads _listSessions() BEFORE
+  // _createSession registers the new session, so two concurrent spawns both saw a free
+  // slot and both spawned — a team_spawn fan-out overshot the operator's ceiling.
+  // Counting in-flight admissions in the check, and incrementing SYNCHRONOUSLY before
+  // the first await, makes admission atomic (single-threaded: nothing can interleave
+  // between the check and the increment).
+  let admissions = 0;
   // SHARED sessions (v2): drivable by ANY token-holder, and never reaped on the
   // spawner's disconnect -- their lifecycle belongs to the journal/watchdog.
   const shared = new Set();
@@ -157,7 +164,7 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         // dynamic admission (who gets the next slot, by load) stays in swarm. This only
         // refuses past an invariant the operator wrote in serve.maxSessions, so a
         // token-holder cannot fork-bomb the box between two of swarm's observations.
-        const current = _listSessions().length;
+        const current = _listSessions().length + admissions;
         if (current >= maxSessions) {
           throw new RpcError("CAPACITY_CEILING",
             `node/spawn: this node is at its declared ceiling of ${maxSessions} session(s) (${current} running). Raise serve.maxSessions or close sessions first.`,
@@ -177,13 +184,20 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         let profile = null;
         try { profile = resolveProfile(params.profile ?? defaultProfile, { profiles }); }
         catch (e) { throw new RpcError(-32602, `node/spawn: ${e.message}`); }
-        const desc = await _createSession({
-          provider, model, write: !!params.write,
-          cwd: cwd || process.cwd(), observe: false, profile,
-          visible: !!params.visible, interactive: !!params.interactive, effort,
-        });
-        if (params.shared) shared.add(desc.id); else owned.add(desc.id);
-        return { ...desc, shared: !!params.shared };
+        // All validation above is synchronous, so the slot claimed here can never be
+        // claimed twice; the finally releases it whether the spawn settles or fails.
+        admissions++;
+        try {
+          const desc = await _createSession({
+            provider, model, write: !!params.write,
+            cwd: cwd || process.cwd(), observe: false, profile,
+            visible: !!params.visible, interactive: !!params.interactive, effort,
+          });
+          if (params.shared) shared.add(desc.id); else owned.add(desc.id);
+          return { ...desc, shared: !!params.shared };
+        } finally {
+          admissions--;
+        }
       }
       case "node/send":
         if (!params.id || !params.prompt) throw new RpcError(-32602, "node/send: id and prompt are required");

@@ -656,6 +656,134 @@ test('resolveSessionDefaults with no configured default returns nulls', () => {
   assert.deepEqual(resolveSessionDefaults({}, {}), { provider: null, model: null, effort: null });
 });
 
+// ── Concurrency hardening: attach idempotency + the unified per-session op chain ──
+
+// Attaching the SAME remote session twice must return the existing registry entry, not
+// stack a second record for one remote session (the console double-counts/double-warns).
+// node is passed as an OBJECT {host,port,token} — the object path skips the resolveNode
+// config lookup, so no config file is needed.
+test('attachSession is idempotent: re-attaching the same remote returns the existing entry', async () => {
+  const { listSessions, attachSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const node = { host: '10.0.0.9', port: 7677, token: 't' };
+  const fakeAttach = async () => ({
+    id: 'remote-9',
+    view: async () => ({ model: null, turns: 0 }),
+    send: async () => ({ text: 'x', turn: 1 }), close: async () => 0,
+  });
+  const a = await attachSession({ node, remoteId: 'remote-9' }, fakeAttach);
+  assert.equal(a.existing, undefined, 'the first attach is a fresh registration');
+  const b = await attachSession({ node, remoteId: 'remote-9' }, fakeAttach);
+  assert.equal(b.id, a.id, 'the second attach must return the existing entry');
+  assert.equal(b.existing, true);
+  assert.equal(b.nativeId, 'remote-9');
+  assert.equal(listSessions().length, 1, 'one remote session, one registry entry');
+});
+
+// Two SIMULTANEOUS attaches race the dedupe scan (both find nothing) — an in-flight
+// attach of the same target must be shared so the handle factory runs exactly once.
+test('concurrent attachSession calls for the same remote share one handle', async () => {
+  const { listSessions, attachSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const node = { host: '10.0.0.9', port: 7677, token: 't' };
+  let attachCalls = 0;
+  const fakeAttach = async () => {
+    attachCalls++;
+    await new Promise((r) => setTimeout(r, 20)); // make the overlap real
+    return { id: 'remote-9', view: async () => ({ model: null, turns: 0 }), send: async () => ({ text: 'x', turn: 1 }), close: async () => 0 };
+  };
+  const [a, b] = await Promise.all([
+    attachSession({ node, remoteId: 'remote-9' }, fakeAttach),
+    attachSession({ node, remoteId: 'remote-9' }, fakeAttach),
+  ]);
+  assert.equal(a.id, b.id);
+  assert.equal(attachCalls, 1, 'two concurrent attaches must share one handle');
+  assert.equal(listSessions().length, 1);
+});
+
+// A close is GRACEFUL toward in-flight ops: it queues on the per-id chain, so an
+// in-flight send completes before the handle is torn down.
+test('closeSession waits for an in-flight send (graceful), then closes', async () => {
+  const { createSession, sendToSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const order = [];
+  let releaseSend;
+  const handle = {
+    id: 'n',
+    async send() {
+      order.push('send:start');
+      await new Promise((r) => { releaseSend = () => { order.push('send:end'); r(); }; });
+      return { text: 'ok', turn: 1 };
+    },
+    async close() { order.push('close'); return 0; },
+  };
+  const { id } = await createSession({ provider: 'claude' }, async () => handle);
+  const sendP = sendToSession(id, 'a');
+  const closeP = closeSession(id);
+  // Let the send actually start (and the close queue behind it) before releasing.
+  await new Promise((r) => setTimeout(r, 20));
+  releaseSend();
+  await sendP;
+  const closeRes = await closeP;
+  assert.equal(closeRes.turns, 1, 'the completed send still counts its turn');
+  assert.deepEqual(order, ['send:start', 'send:end', 'close'], 'close must run after the in-flight send completes');
+});
+
+// The mirror image: an op that arrives AFTER a close started must reject fast, never
+// queue behind the close and fire against a torn-down child.
+test('an op after closeSession started rejects immediately (never queues behind the close)', async () => {
+  const { createSession, sendToSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  let releaseClose;
+  const handle = {
+    id: 'n',
+    async send() { return { text: 'ok', turn: 1 }; },
+    async close() { await new Promise((r) => { releaseClose = r; }); return 0; },
+  };
+  const { id } = await createSession({ provider: 'claude' }, async () => handle);
+  const closeP = closeSession(id);
+  await assert.rejects(sendToSession(id, 'late'), /closing/i);
+  releaseClose();
+  await closeP;
+});
+
+// A goal run owns the child until it settles: send/compact/setGoal reject FAST (no
+// queueing behind up to 30 minutes of loop), and closeSession is the kill switch —
+// it resolves PROMPTLY instead of queueing behind the run.
+test('a goal run in flight rejects other ops fast; closeSession is the kill switch', async () => {
+  const { createSession, sendToSession, compactSession, setSessionGoal, goalRunSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const order = [];
+  let releaseGoalRun;
+  const handle = {
+    id: 'n', goalActive: true, compactable: true,
+    async send() { return { text: 'ok', turn: 1 }; },
+    async compact() { return { compacted: true, confirmed: true }; },
+    async setGoal(condition) { return { condition, active: true }; },
+    async goalRun() {
+      order.push('goal:start');
+      await new Promise((r) => { releaseGoalRun = r; });
+      order.push('goal:end');
+      return { text: 'final', turn: 3, turns: 3, state: 'met' };
+    },
+    async close() { order.push('close'); return 0; },
+  };
+  const { id } = await createSession({ provider: 'deepseek' }, async () => handle);
+  const runP = goalRunSession(id, { prompt: 'go', maxTurns: 5 });
+  // These awaits flush microtasks, so the goal run has started before the asserts.
+  await assert.rejects(sendToSession(id, 'hi'), /goal run in flight/i);
+  await assert.rejects(compactSession(id), /goal run in flight/i);
+  await assert.rejects(setSessionGoal(id, 'new goal'), /goal run in flight/i);
+  await assert.rejects(goalRunSession(id, { prompt: 'again' }), /goal run in flight/i);
+  assert.deepEqual(order, ['goal:start']);
+  // The kill switch must NOT queue behind the run — it resolves while the run is blocked.
+  await closeSession(id);
+  assert.deepEqual(order, ['goal:start', 'close'], 'close must interrupt the run, not wait for it');
+  releaseGoalRun(); // let the aborted run settle so nothing dangles
+  await runP;
+  assert.deepEqual(order, ['goal:start', 'close', 'goal:end']);
+});
+
 // ── SR-045: a spawn record names the process that HOLDS the handle, so the layer
 // above can route close/ping to the right daemon instead of guessing.
 test('spawn events carry the owning process (pid + kind)', async () => {

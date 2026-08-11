@@ -210,8 +210,9 @@ handshake itself.
    card and the composer disabled — click any foreign session to OBSERVE it.
    Convention: **if a session may need to be driven from another machine, spawn it
    shared from the start** — shared-ness cannot be added later. `attach_session {node,
-   remoteId}` adopts a shared remote session from MCP so you can send to / close it;
-   `session_view` shows a session's content — `{id}` for a local/owned one (forwards to
+   remoteId}` adopts a shared remote session from MCP so you can send to / close it —
+   attach is **idempotent**: re-attaching the same `(node, remoteId)` returns the
+   existing handle (`existing: true`), never a duplicate. `session_view` shows a session's content — `{id}` for a local/owned one (forwards to
    its node), or `{node, remoteId}` to inspect a peer session directly (viewing is
    read-only visibility, never owner-gated).
 6. **Compact a long session in place** — `session_compact {id}` (MCP), `node/compact`
@@ -238,7 +239,9 @@ handshake itself.
    `state: 'met' | 'capped' | 'timeout'` honestly ('timeout' leaves the session alive
    and the loop in place). claude/API children only (`GOAL_UNSUPPORTED` otherwise);
    `list_sessions` reports the active goal. Mid-run interjections are refused — the
-   loop owns the conversation while it runs.
+   loop owns the conversation while it runs. This is enforced UNIFORMLY at the registry
+   (every mutating per-session op serializes through one per-id chain and gates on
+   `closing`/`goalRunning`); `session_close` is the kill switch that always interrupts.
 8. **Crash recovery: decide what happens to sessions that survive a serve restart.**
    The journal records every spawn (incl. the CLI's own session id), so a killed serve
    leaves its story behind: `serve` prints a reminder at startup listing survivors

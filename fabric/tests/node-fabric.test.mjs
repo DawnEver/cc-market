@@ -1018,6 +1018,40 @@ test("maxSessions defaults to 64 when the operator declares nothing", async () =
   } finally { await server.close(); }
 });
 
+// The ceiling check reads the registry BEFORE _createSession registers, so two
+// concurrent spawns both saw a free slot and both spawned — a team_spawn fan-out
+// overshot the declared ceiling. In-flight admissions must count toward the check.
+test("node/spawn admission is atomic: concurrent spawns cannot overshoot the ceiling", async () => {
+  const deps = fakeSessionDeps();
+  const origCreate = deps.createSession;
+  let release;
+  const blocked = new Promise((r) => { release = r; });
+  let calls = 0;
+  deps.createSession = async (opts) => {
+    calls++;
+    await blocked; // hold the first spawn mid-flight so the second races the ceiling check
+    return origCreate(opts);
+  };
+  const server = createNodeServer({ token: TOKEN, name: "testnode", cpuSampleMs: 0, deps, maxSessions: 1 });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    // Wrap at creation: the loser's rejection lands within milliseconds, and an
+    // allSettled attached only after release() would leave it unhandled in between.
+    const settle = (p) => p.then((value) => ({ status: "fulfilled", value }), (reason) => ({ status: "rejected", reason }));
+    const p1 = settle(conn.request("node/spawn", { provider: "a" }));
+    const p2 = settle(conn.request("node/spawn", { provider: "b" }));
+    for (let i = 0; i < 100 && calls < 1; i++) await new Promise((r) => setTimeout(r, 10));
+    release();
+    const results = await Promise.all([p1, p2]);
+    const ok = results.filter((r) => r.status === "fulfilled");
+    const ceiling = results.filter((r) => r.status === "rejected" && r.reason.code === "CAPACITY_CEILING");
+    assert.equal(ok.length, 1, "exactly one spawn may succeed");
+    assert.equal(ceiling.length, 1, "the loser must hit CAPACITY_CEILING, not squeeze past it");
+    conn.close();
+  } finally { await server.close(); }
+});
+
 // ── SR-011: a close that reports no cost leaves the journal with no cost facts to record.
 
 test("node/close returns the session usage and the handle exposes it after close", async () => {

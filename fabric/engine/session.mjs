@@ -159,31 +159,46 @@ export async function createSession(opts, _open = openProviderSession) {
     provider: opts.provider ?? resolved.provider, model: resolved.model, effort: resolved.effort,
     project: opts.project ?? null, node: opts.node ?? null, cwd: opts.cwd ?? null,
     createdAt: Date.now(), turns: 0,
+    closing: false, goalRunning: false,
   });
   recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, sessionId: handle.sessionId ?? null, provider: opts.provider ?? resolved.provider, model: resolved.model, effort: resolved.effort, node: opts.node ?? null, owner: owner() });
   return { id, provider: opts.provider ?? resolved.provider, model: resolved.model, effort: resolved.effort, nativeId: handle.id ?? null, pid: handle.pid ?? null, sessionId: handle.sessionId ?? null };
 }
 
-// Per-id send chains. open-session and codex serialize internally, but a remote handle
-// does not — and the peer's child has a SINGLE pending slot, so two concurrent
-// session_send calls to one id lose a turn. Serializing here makes the guarantee
-// uniform across backends instead of a property of three out of four (SR-040).
-const sendChains = new Map();
+// Per-id op chains: the ONE serialization point for every mutating per-session op
+// (send/compact/setGoal/goalRun/close). open-session and codex serialize internally, but
+// a remote handle does not — and the peer's child has a SINGLE pending slot, so two
+// concurrent ops to one id lose a turn. Serializing here makes the guarantee uniform
+// across backends instead of a property of three out of four (SR-040).
+const opChains = new Map();
 
 function serializePerId(id, task) {
-  const prev = sendChains.get(id) ?? Promise.resolve();
+  const prev = opChains.get(id) ?? Promise.resolve();
   const result = prev.then(task, task);
-  // The chain itself must never reject: a failed turn blocks nobody (it is the CALLER's
-  // rejection), and the next send starts from a settled link.
+  // The chain itself must never reject: a failed op blocks nobody (it is the CALLER's
+  // rejection), and the next op starts from a settled link.
   const link = result.then(() => {}, () => {});
-  sendChains.set(id, link);
-  link.then(() => { if (sendChains.get(id) === link) sendChains.delete(id); });
+  opChains.set(id, link);
+  link.then(() => { if (opChains.get(id) === link) opChains.delete(id); });
   return result;
+}
+
+// Session-state gates for mutating ops, checked SYNCHRONOUSLY before queueing on the
+// chain — a check inside the chain task would accept the op and only fail it when its
+// turn came, which is exactly the queue-behind-a-close ordering these flags exist to
+// prevent. `closing` (set by closeSession) rejects every new op: it would otherwise run
+// against a torn-down child. `goalRunning` (set by goalRunSession for the whole run)
+// rejects every new op except the close kill-switch: a goal loop owns the child until it
+// settles, and queueing behind it means waiting out up to the run's full timeout.
+function rejectIfBusy(entry, id) {
+  if (entry.closing) throw new Error(`session ${id} is closing — no new operations are accepted`);
+  if (entry.goalRunning) throw new Error(`session ${id} has a goal run in flight — only session_close may interrupt it`);
 }
 
 export async function sendToSession(id, text) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  rejectIfBusy(entry, id);
   if (!text || !String(text).trim()) throw new Error("session_send: prompt must be non-empty");
   const res = await serializePerId(id, async () => {
     try {
@@ -205,19 +220,31 @@ export async function sendToSession(id, text) {
 export async function closeSession(id) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (already closed?)`);
-  let exitCode = null;
-  try {
-    exitCode = await entry.handle.close();
-  } catch (e) {
-    // A close that THROWS is not a close — the child may live on. Journal the failure
-    // and keep the record open for reconcile (sharp-review SR-016).
+  if (entry.closing) throw new Error(`session ${id} is already closing`);
+  // Set SYNCHRONOUSLY so an op arriving while the close waits on the chain rejects fast
+  // (rejectIfBusy) instead of queueing behind the close.
+  entry.closing = true;
+  const doClose = async () => {
+    let exitCode = null;
+    try {
+      exitCode = await entry.handle.close();
+    } catch (e) {
+      // A close that THROWS is not a close — the child may live on. Journal the failure
+      // and keep the record open for reconcile (sharp-review SR-016).
+      sessions.delete(id);
+      recordEvent({ event: "close_failed", id, error: String(e?.message ?? e), turns: entry.turns });
+      throw e;
+    }
     sessions.delete(id);
-    recordEvent({ event: "close_failed", id, error: String(e?.message ?? e), turns: entry.turns });
-    throw e;
-  }
-  sessions.delete(id);
-  recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns, usage: entry.handle.usage ?? null });
-  return { id, exitCode: exitCode ?? null, turns: entry.turns };
+    recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns, usage: entry.handle.usage ?? null });
+    return { id, exitCode: exitCode ?? null, turns: entry.turns };
+  };
+  // Kill switch: during a goal run the close runs IMMEDIATELY — open-session's goal loop
+  // checks `closed` at each turn boundary and aborts. Queueing behind the run would block
+  // the close for up to the run's whole timeout.
+  if (entry.goalRunning) return doClose();
+  // Graceful: the close queues behind in-flight ops — an in-flight send completes first.
+  return serializePerId(id, doClose);
 }
 
 /**
@@ -228,6 +255,7 @@ export async function closeSession(id) {
 export async function setSessionGoal(id, condition) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  rejectIfBusy(entry, id);
   if (typeof entry.handle.setGoal !== "function") {
     const err = new Error(
       `session ${id} (provider ${entry.provider}) has no native goal: only claude/API children expose the CLI's /goal loop.`,
@@ -235,7 +263,7 @@ export async function setSessionGoal(id, condition) {
     err.code = "GOAL_UNSUPPORTED";
     throw err;
   }
-  const res = await entry.handle.setGoal(condition);
+  const res = await serializePerId(id, () => entry.handle.setGoal(condition));
   recordEvent({ event: "goal_set", id, provider: entry.provider, condition: res.condition, owner: owner() });
   return { id, provider: entry.provider, ...res };
 }
@@ -248,15 +276,24 @@ export async function setSessionGoal(id, condition) {
 export async function goalRunSession(id, { prompt, maxTurns, timeoutMs }) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  rejectIfBusy(entry, id);
   if (typeof entry.handle.goalRun !== "function") {
     const err = new Error(`session ${id} (provider ${entry.provider}) has no native goal loop (claude/API only).`);
     err.code = "GOAL_UNSUPPORTED";
     throw err;
   }
-  const res = await entry.handle.goalRun(prompt, { maxTurns, timeoutMs });
-  entry.turns = res.turn ?? entry.turns + 1;
-  recordEvent({ event: "goal_run", id, provider: entry.provider, turns: res.turns, state: res.state, owner: owner() });
-  return { id, provider: entry.provider, ...res };
+  // Set SYNCHRONOUSLY (before the first await) so every other op rejects fast for the
+  // whole run — the handle's own double-goalRun/send-during-goalRun guards stay as
+  // backstop; this gate is what makes the refusal uniform across backends.
+  entry.goalRunning = true;
+  try {
+    const res = await serializePerId(id, () => entry.handle.goalRun(prompt, { maxTurns, timeoutMs }));
+    entry.turns = res.turn ?? entry.turns + 1;
+    recordEvent({ event: "goal_run", id, provider: entry.provider, turns: res.turns, state: res.state, owner: owner() });
+    return { id, provider: entry.provider, ...res };
+  } finally {
+    entry.goalRunning = false;
+  }
 }
 
 /**
@@ -267,6 +304,7 @@ export async function goalRunSession(id, { prompt, maxTurns, timeoutMs }) {
 export async function compactSession(id) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  rejectIfBusy(entry, id);
   if (typeof entry.handle.compact !== "function") {
     const err = new Error(
       `session ${id} (provider ${entry.provider}) has no native compact: this backend does not expose one. ` +
@@ -275,7 +313,7 @@ export async function compactSession(id) {
     err.code = "COMPACT_UNSUPPORTED";
     throw err;
   }
-  const res = await entry.handle.compact();
+  const res = await serializePerId(id, () => entry.handle.compact());
   recordEvent({ event: "compact", id, provider: entry.provider, ...res, owner: owner() });
   return { id, provider: entry.provider, ...res };
 }
@@ -283,31 +321,59 @@ export async function compactSession(id) {
 /**
  * Adopt an EXISTING remote session (v2): registers an attach handle so this console
  * can chat with a session another manager spawned as shared.
+ *
+ * Idempotent: re-attaching the SAME (node, remoteId) returns the existing registry
+ * entry (`existing: true`) instead of stacking a second record for one remote session
+ * — the console double-counts/double-warns on duplicates. Two SIMULTANEOUS attaches
+ * race the registry scan (both find nothing), so in-flight attaches are shared through
+ * attachInflight and the handle factory runs exactly once.
  */
+const attachInflight = new Map(); // `${nodeName}:${remoteId}` → Promise<descriptor>
+
 export async function attachSession({ node, remoteId }, _attach = null) {
   const n = typeof node === "object" ? node : resolveNode(node);
+  // The SAME normalization the registration line uses — the dedupe key must equal what
+  // lands on the entry, or a name and its inline-object spelling dedupe wrong.
+  const nodeName = typeof node === "string" ? node : (n.host ?? null);
+  for (const [existingId, e] of sessions) {
+    if (e.provider === "attached" && e.node === nodeName && e.handle.id === remoteId) {
+      return { id: existingId, provider: "attached", nativeId: remoteId,
+               pid: e.handle.pid ?? null, model: e.model ?? null, effort: e.effort ?? null,
+               project: e.project ?? null, existing: true };
+    }
+  }
+  const key = `${nodeName}:${remoteId}`;
+  const inflight = attachInflight.get(key);
+  if (inflight) return inflight;
   const doAttach = _attach || attachRemoteSession;
-  const handle = await doAttach({ ...n, id: remoteId });
-  // Learn the remote session's IDENTITY from the peer (node/view carries model/effort/
-  // project/cwd/turns/usage now) so an attached handle shows full facts and lands under
-  // its real project — not a bare "attached, no project". A peer on older code returns
-  // none of it; those stay null (honest), and the record is a pure handle again.
-  let ident = {};
-  try {
-    const v = await handle.view({ tailChars: 0 });
-    if (v && typeof v === "object") ident = v;
-  } catch { /* peer unreachable / old code */ }
-  const id = `sess-${idFragment()}`;
-  sessions.set(id, {
-    handle, provider: "attached",
-    model: ident.model ?? null, effort: ident.effort ?? null,
-    project: ident.project ?? null, cwd: ident.cwd ?? null,
-    usage: ident.usage ?? null, compacted: ident.compacted ?? null,
-    node: typeof node === "string" ? node : (n.host ?? null),
-    createdAt: Date.now(), turns: ident.turns ?? 0,
-  });
-  return { id, provider: "attached", nativeId: remoteId, pid: ident.pid ?? null,
-           model: ident.model ?? null, effort: ident.effort ?? null, project: ident.project ?? null };
+  const p = (async () => {
+    const handle = await doAttach({ ...n, id: remoteId });
+    // Learn the remote session's IDENTITY from the peer (node/view carries model/effort/
+    // project/cwd/turns/usage now) so an attached handle shows full facts and lands under
+    // its real project — not a bare "attached, no project". A peer on older code returns
+    // none of it; those stay null (honest), and the record is a pure handle again.
+    let ident = {};
+    try {
+      const v = await handle.view({ tailChars: 0 });
+      if (v && typeof v === "object") ident = v;
+    } catch { /* peer unreachable / old code */ }
+    const id = `sess-${idFragment()}`;
+    sessions.set(id, {
+      handle, provider: "attached",
+      model: ident.model ?? null, effort: ident.effort ?? null,
+      project: ident.project ?? null, cwd: ident.cwd ?? null,
+      usage: ident.usage ?? null, compacted: ident.compacted ?? null,
+      node: nodeName,
+      createdAt: Date.now(), turns: ident.turns ?? 0,
+      closing: false, goalRunning: false,
+    });
+    return { id, provider: "attached", nativeId: remoteId, pid: ident.pid ?? null,
+             model: ident.model ?? null, effort: ident.effort ?? null, project: ident.project ?? null };
+  })();
+  attachInflight.set(key, p);
+  // Cleared in finally AFTER the entry registered, so a later attach always finds either
+  // the registry record or this promise — never neither.
+  try { return await p; } finally { attachInflight.delete(key); }
 }
 
 /**
@@ -491,4 +557,4 @@ export async function closeTeam(teamId) {
 }
 
 // Test hook: drop all registry state without touching live handles.
-export function _resetRegistry() { sessions.clear(); teams.clear(); sendChains.clear(); seq = 0; }
+export function _resetRegistry() { sessions.clear(); teams.clear(); opChains.clear(); attachInflight.clear(); seq = 0; }

@@ -3,6 +3,36 @@
 Always-injected dev-only constraints for working on the fabric plugin. Runtime behavior is
 documented in `README.md` / the MCP tool schemas — don't restate it here.
 
+## Per-session ops: ONE serialization point (engine/session.mjs)
+
+Every mutating per-session registry op MUST go through `serializePerId` and MUST check
+`rejectIfBusy(entry, id)` synchronously before queueing (send/compact/setGoal/goalRun/
+close do both). `rejectIfBusy` gates on two flags: `closing` (set by closeSession —
+rejects every new op) and `goalRunning` (set by goalRunSession — rejects every op
+except the close kill-switch). The check must be SYNCHRONOUS, not inside the chain
+task: checking at execution time accepts the op and fails it when its turn comes —
+exactly the queue-behind-a-close ordering the flags prevent. When adding a new
+per-session op, follow the same two lines or concurrent callers will interleave into
+one child (the peer's child has a SINGLE pending slot). closeSession during a goal run
+skips the chain on purpose (kill switch; open-session's loop sees `closed` at the next
+turn boundary) — do not "fix" it back into the queue, that blocks a close for up to
+the run's full timeout.
+
+## Attach is idempotent — keep it that way
+
+`attachSession` returns the existing registry entry for an already-attached
+`(node, remoteId)` (`existing: true`) and shares in-flight attaches via
+`attachInflight`. A duplicate handle is a double-count/double-warn bug in every
+consumer (console, MCP list). Any new attach path must reuse `attachSession`, never
+register a remote handle directly.
+
+## Spawn admission is atomic (engine/node-server.mjs)
+
+The `maxSessions` ceiling check counts `_listSessions().length + admissions`, and
+`admissions` increments SYNCHRONOUSLY before the first `await` of a spawn (released in
+`finally`). The check and the increment must stay in the same synchronous stretch —
+an await between them re-opens the check-then-act race a team_spawn fan-out exploits.
+
 ## Observe proxy: request/response asymmetry
 
 The proxy **buffers** the request body (it must parse and remap the model id before
