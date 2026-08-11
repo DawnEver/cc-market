@@ -152,6 +152,23 @@ test('attentionItems: a healthy fleet has an empty list', () => {
   assert.deepEqual(attentionItems(fleet, []), []);
 });
 
+test('uniqueSessions: an attached session counts once across machines (live v4 bug)', () => {
+  // The console's attached handle on G and the peer's native session on WS2 are ONE
+  // conversation — header counts and attention items must not double it.
+  const fleet = [
+    { name: 'G', alive: true, console_sessions: [
+      { id: 'sess-9-local', nativeId: 'sess-1-msp4md48', provider: 'attached', chattable: true, alive: false, usage: { cost_usd: 1 } }], sessions: [] },
+    { name: 'WS2', alive: true, console_sessions: [], sessions: [
+      { id: 'sess-1-msp4md48', alive: false, usage: { cost_usd: 1 } }] },
+  ];
+  const agg = aggregateFleet(fleet);
+  assert.equal(agg.sessions, 1, 'counted once');
+  assert.equal(agg.cost, 1, 'cost counted once');
+  const dead = attentionItems(fleet, []).filter((i) => i.kind === 'session-dead');
+  assert.equal(dead.length, 1, 'warns once');
+  assert.equal(dead[0].machine, 'G', 'the drivable copy (first in fleet order) wins');
+});
+
 test('fleetHealth: the worst severity anywhere wins', () => {
   assert.equal(fleetHealth([]), 'ok');
   assert.equal(fleetHealth([{ severity: 'warn' }]), 'warn');

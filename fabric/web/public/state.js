@@ -58,6 +58,27 @@ export function viewMessages(view, consoleLog = []) {
 }
 
 /**
+ * Cross-machine session dedup. An ATTACHED session lives twice in the fleet: as a
+ * console-owned handle on this machine (drivable) AND as the peer's own native session
+ * — but it is ONE conversation. (sessionsOf dedups only WITHIN a machine.) Keyed by
+ * nativeId ?? id; the first occurrence wins, and fleet order puts this machine (with
+ * the drivable handle) first, so counts and warnings prefer the drivable copy.
+ */
+export function uniqueSessions(fleet) {
+  const seen = new Set();
+  const out = [];
+  for (const m of fleet) {
+    for (const s of sessionsOf(m)) {
+      const k = s.nativeId ?? s.id;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ machine: m, session: s });
+    }
+  }
+  return out;
+}
+
+/**
  * Header aggregate: how many machines are up, total sessions, cumulative spend across
  * listed sessions. Cost is cumulative across the shown sessions (the data fabric has),
  * not a daily bucket — the label must say "spend", never "$ today".
@@ -65,9 +86,7 @@ export function viewMessages(view, consoleLog = []) {
 export function aggregateFleet(fleet) {
   const alive = fleet.filter((m) => m.alive);
   let sessions = 0, cost = 0;
-  for (const m of fleet) {
-    for (const s of sessionsOf(m)) { sessions++; cost += s.usage?.cost_usd ?? 0; }
-  }
+  for (const { session: s } of uniqueSessions(fleet)) { sessions++; cost += s.usage?.cost_usd ?? 0; }
   return { alive: alive.length, total: fleet.length, sessions, cost };
 }
 
@@ -165,17 +184,20 @@ export function attentionItems(fleet, orphans = [], selfName = null) {
     }
     for (const w of machineWarnings(m))
       items.push({ severity: "warn", kind: "machine-load", machine: m.name, text: `${m.name} ${w}` });
-    for (const s of sessionsOf(m)) {
-      if (s.alive === false) {
-        items.push({ severity: "warn", kind: "session-dead", machine: m.name, session: s,
-          text: `${m.name} · ${s.id} process died` });
-        continue;
-      }
-      const { pct } = contextStatus(s);
-      if (pct != null && pct >= CTX_WARN_PCT)
-        items.push({ severity: "warn", kind: "ctx", machine: m.name, session: s,
-          text: `${m.name} · ${s.id} ctx ${pct}% — compact soon` });
+  }
+  // Per-session items go through uniqueSessions: an attached session appears on TWO
+  // machines (the console's handle + the peer's native entry) but warns ONCE.
+  for (const { machine: m, session: s } of uniqueSessions(fleet)) {
+    if (!m.alive) continue; // an unreachable peer's sessions warn via machine-dead above
+    if (s.alive === false) {
+      items.push({ severity: "warn", kind: "session-dead", machine: m.name, session: s,
+        text: `${m.name} · ${s.id} process died` });
+      continue;
     }
+    const { pct } = contextStatus(s);
+    if (pct != null && pct >= CTX_WARN_PCT)
+      items.push({ severity: "warn", kind: "ctx", machine: m.name, session: s,
+        text: `${m.name} · ${s.id} ctx ${pct}% — compact soon` });
   }
   // Orphans group per machine: a machine may carry several unaccounted records.
   const byMachine = new Map();

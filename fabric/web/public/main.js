@@ -37,7 +37,7 @@ const api = async (method, path, body) => {
   if (!r.ok) throw new Error(j.error || r.status);
   return j;
 };
-const fmtCost = (c) => c == null ? '' : (c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
+const fmtCost = (c) => c == null ? '' : (c === 0 ? '$0' : c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
 const fmtTokens = (n) => n == null ? '' : (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n));
 const selfName = () => fleet.find((m) => m.self)?.name ?? null;
 

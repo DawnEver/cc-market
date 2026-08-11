@@ -96,5 +96,10 @@ Working loop for UI verification on this box (no puppeteer needed):
   session rows — grid and row density validated without a fake fleet.
 
 Caught & fixed this way: the attrs foot-gun (above), machine-card stats wrapping
-mid-item ("0\nsess" → one nowrap span per stat). First dogfood: G flagged itself
-"mem 0% free" (94 MB of 32 GB) — the attention model works.
+mid-item ("0\nsess" → one nowrap span per stat), and **cross-machine session
+duplication** — an ATTACHED session appears on two machines (the console's drivable
+handle + the peer's native entry), so it double-counted in the header and warned twice
+in the attention list. New `uniqueSessions(fleet)` (keyed `nativeId ?? id`, first copy
+wins — fleet order puts the drivable handle first) backs both `aggregateFleet` and the
+per-session attention loop. First dogfood: G flagged itself "mem 0% free" (94 MB of
+32 GB) — the attention model works.
