@@ -37,7 +37,7 @@ async function probe([name, n]) {
     // `light`: this report prints counts, never per-session usage.
     const st = await conn.request("node/status", { detail: "light" }, { timeoutMs: REQUEST_TIMEOUT_MS });
     return `${name} ALIVE v${st.version} up=${fmtUptime(st.uptime_s)} cpu=${st.cpu_busy_pct ?? "?"}% (${st.cpu} cores) `
-      + `mem=${fmtMem(st.mem_available_mb)}/${fmtMem(st.mem_total_mb)} `
+      + `mem ${fmtMem(st.mem_available_mb)} free / ${fmtMem(st.mem_total_mb)} total `
       + `sessions=${st.sessions_count ?? st.sessions.length}/${st.maxSessions ?? "?"}`
       + `${st.tags?.length ? ` tags=${st.tags.join(",")}` : ""}\n`;
   } finally { conn?.close(); }

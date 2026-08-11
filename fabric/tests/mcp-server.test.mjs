@@ -331,7 +331,7 @@ describe("session tools", () => {
     assert.match(out, /\[this machine\] ALIVE v/);
     assert.match(out, /cpu 19\.2% \(32 cores\)/);
     assert.match(out, /up 1d 1h 1m/);   // uptime rendered as days/hours/minutes
-    assert.match(out, /8\.0GB\/32\.0GB/); // memory free/total, GB
+    assert.match(out, /8\.0G free \/ 32\.0G total/); // memory free/total, labeled
     assert.match(out, /WS1 ALIVE v0\.1\.9/);
     assert.match(out, /sess-b1 deepseek project=repo shared alive turns=11/);
     assert.match(out, /WS2 DEAD: connect ECONNREFUSED/);

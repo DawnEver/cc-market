@@ -849,7 +849,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
         s.pid ? `pid=${s.pid}` : null,
         s.lastActivity ? `last=${fmtAgo(s.lastActivity)}` : null,
       ].filter(Boolean).join(" ");
-      const memStr = (av, tot) => (tot ? `${fmtMem(av)}/${fmtMem(tot)}` : `${fmtMem(av)} free`);
+      const memStr = (av, tot) => (tot ? `${fmtMem(av)} free / ${fmtMem(tot)} total` : `${fmtMem(av)} free`);
       const machineLine = (m, name) => `${name} · up ${fmtUptime(m.uptime_s ?? 0)} · cpu ${m.cpu_busy_pct ?? "?"}% (${m.cpu ?? "?"} cores) · mem ${memStr(m.mem_available_mb, m.mem_total_mb)}`;
 
       const local = await _localStatus();

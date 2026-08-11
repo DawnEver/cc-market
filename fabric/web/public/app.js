@@ -11,7 +11,7 @@ const fmtUptime = (s) => {
   if (d) p.push(d + 'd'); if (h) p.push(h + 'h'); if (m) p.push(m + 'm'); if (!p.length) p.push(sec + 's');
   return p.join(' ');
 };
-const fmtMem = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + 'GB' : Math.round(mb) + 'MB';
+const fmtMem = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + 'G' : Math.round(mb) + 'M';
 
 const api = async (method, path, body) => {
   const r = await fetch(path, { method, headers: { 'content-type': 'application/json' },
@@ -72,7 +72,7 @@ async function refreshFleet() {
     <div class="card click ${selMachine === m.name ? 'sel' : ''}" onclick="pickMachine('${m.name}')">
       <div class="row"><b>${m.name}</b>
         <span>${m.self ? '<span class="badge self">this machine</span>' : ''} <span class="ok">●</span></span></div>
-      <span class="dim">v${esc(m.version)} · cpu ${m.cpu_busy_pct ?? '?'}% (${m.cpu} cores) · mem ${fmtMem(m.mem_available_mb)}/${fmtMem(m.mem_total_mb)} · up ${fmtUptime(m.uptime_s)}
+      <span class="dim">v${esc(m.version)} · cpu ${m.cpu_busy_pct ?? '?'}% (${m.cpu} cores) · mem ${fmtMem(m.mem_available_mb)} free / ${fmtMem(m.mem_total_mb)} total · up ${fmtUptime(m.uptime_s)}
       · ${(m.sessions?.length ?? 0) + (m.console_sessions?.length ?? 0)} sess${m.tags?.length ? ' · ' + m.tags.join(',') : ''}</span>
     </div>` : `
     <div class="card"><div class="row"><b>${m.name}</b><span class="bad">●</span></div>

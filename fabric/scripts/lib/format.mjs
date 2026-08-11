@@ -14,10 +14,10 @@ export function fmtUptime(s) {
   return parts.join(" ");
 }
 
-/** 2048 → "2.0GB", 512 → "512MB". */
+/** 2048 → "2.0G", 512 → "512M". */
 export function fmtMem(mb) {
   if (!Number.isFinite(mb)) return "?";
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)}GB` : `${Math.round(mb)}MB`;
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${Math.round(mb)}M`;
 }
 
 /** Epoch-ms → "2m ago" / "3h ago" / "just now". */

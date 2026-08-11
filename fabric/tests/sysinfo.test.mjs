@@ -48,12 +48,12 @@ test("fmtUptime renders days/hours/minutes, dropping leading zero units", () => 
   assert.equal(fmtUptime(undefined), "0s");
 });
 
-test("fmtMem renders MB under 1GB, GB above", () => {
-  assert.equal(fmtMem(512), "512MB");
-  assert.equal(fmtMem(1023), "1023MB");
-  assert.equal(fmtMem(1024), "1.0GB");
-  assert.equal(fmtMem(2048), "2.0GB");
-  assert.equal(fmtMem(32600), "31.8GB");
+test("fmtMem renders M under 1G, G above", () => {
+  assert.equal(fmtMem(512), "512M");
+  assert.equal(fmtMem(1023), "1023M");
+  assert.equal(fmtMem(1024), "1.0G");
+  assert.equal(fmtMem(2048), "2.0G");
+  assert.equal(fmtMem(32600), "31.8G");
   assert.equal(fmtMem(undefined), "?");
 });
 
