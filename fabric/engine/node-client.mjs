@@ -218,6 +218,7 @@ function absorbFacts(handle, facts) {
   if ("lastActivity" in facts) handle.lastActivity = facts.lastActivity;
   if ("turns" in facts) handle.turns = facts.turns;
   if ("usage" in facts) handle.usage = facts.usage;
+  if ("compacted" in facts) handle.compacted = facts.compacted;
   if ("compactable" in facts) handle.compactable = facts.compactable;
   return facts;
 }

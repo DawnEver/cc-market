@@ -462,12 +462,13 @@ function sessRow(s, machine) {
   const consoleId = s.chattable ? s.id : attached.get(key);
   const sel = selected && (selected.type === 'console' ? selected.id === consoleId : selected.type === 'observe' && selected.remoteId === s.nativeId && selected.node === machine.name);
   const ident = [s.provider, s.model, s.effort].filter(Boolean).join(' · ');
-  // Context occupancy: a bar + percentage when the model's window is known, else raw
-  // tokens. After a native compact the % drops. ↻N marks how many compacts happened.
+  // Context fill, ESTIMATED (fresh input + cached content; cache re-reads are excluded —
+  // the CLI sums them over the turn's tool sub-requests, which would show a bogus 100% on
+  // every agentic turn). After a native compact the % drops. ↻N marks how many compacts.
   const { used, limit, pct, compacted } = contextStatus(s);
   const ctxTier = pct == null ? '' : pct >= CTX_CRIT_PCT ? 'crit' : pct >= CTX_WARN_PCT ? 'hot' : '';
   const ctxCell = pct != null
-    ? h('span.ctxbar', { title: `context ${fmtTokens(used)} / ${fmtTokens(limit)}${compacted ? ` · compacted ×${compacted}` : ''}` }, [
+    ? h('span.ctxbar', { title: `context ~${fmtTokens(used)} / ${fmtTokens(limit)} (est.)${compacted ? ` · compacted ×${compacted}` : ''}` }, [
         h('span.track', {}, [h('span.fill' + (ctxTier ? ' ' + ctxTier : ''), { style: `width:${pct}%` }, [])]),
         h('span.ctxpct' + (ctxTier ? ' ' + ctxTier : ''), {}, [t(pct + '%' + (compacted ? ' ↻' + compacted : ''))]),
       ])
@@ -484,7 +485,7 @@ function sessRow(s, machine) {
     // id, used to attach (shared) or observe (non-shared).
     'data-id': mine ? s.id : (s.nativeId ?? s.id),
     'data-chattable': mine ? '1' : '0',
-    title: [s.cwd, drive ? '' : 'owned by another connection — view only'].filter(Boolean).join(' — '),
+    title: [s.cwd, s.provider === 'attached' ? `attached → ${s.nativeId} on the peer` : '', drive ? '' : 'owned by another connection — view only'].filter(Boolean).join(' — '),
   }, [
     h('span.c dot', {}, [h('span', { class: s.alive === false ? 'bad' : 'ok' }, [t('●')])]),
     h('span.c id', {}, [t(s.id), ...(s.shared ? [h('span.badge shared', {}, [t('shared')])] : [])]),

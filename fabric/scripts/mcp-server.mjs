@@ -840,25 +840,56 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "list_sessions":
       return textResult(JSON.stringify(_listSessions()));
     case "list_nodes": {
-      const sessionLine = (s) => [
-        s.id, s.provider ?? "?",
-        s.project ? `project=${s.project}` : null,
-        s.shared ? "shared" : null,
-        s.alive === false ? "dead" : "alive",
-        s.turns != null ? `turns=${s.turns}` : null,
-        s.pid ? `pid=${s.pid}` : null,
-        s.lastActivity ? `last=${fmtAgo(s.lastActivity)}` : null,
-      ].filter(Boolean).join(" ");
       const memStr = (av, tot) => (tot ? `${fmtMem(av)} free / ${fmtMem(tot)} total` : `${fmtMem(av)} free`);
       const machineLine = (m, name) => `${name} · up ${fmtUptime(m.uptime_s ?? 0)} · cpu ${m.cpu_busy_pct ?? "?"}% (${m.cpu ?? "?"} cores) · mem ${memStr(m.mem_available_mb, m.mem_total_mb)}`;
+      // Three-state liveness: `alive: null` means "not yet observed" (a remote/attached
+      // handle before its first ping) — that is NOT dead. Only a reported false is dead.
+      const aliveLabel = (s) => (s.alive === false ? "dead" : s.alive === true ? "alive" : "unknown");
 
       const local = await _localStatus();
       const localSessions = _listSessions();
       const probed = await _pingNodes({ detail: "full" });
+
+      // Cross-machine dedupe: an attached session is a handle on a PEER's native session
+      // — ONE conversation that otherwise appears TWICE (the attach row + the native row,
+      // which reads as "duplicate same-name sessions" on the fleet view). Show each
+      // conversation once: prefer the native copy and annotate it with which machines hold
+      // a drivable attach; keep an attach row only when its native copy is not rendered
+      // (peer down / unknown).
+      const fleet = [
+        { name: "[this machine]", sessions: localSessions },
+        ...probed.filter((m) => m.alive).map((m) => ({ name: m.name, sessions: m.sessions ?? [] })),
+      ];
+      const nativeByKey = new Map();   // nativeId → the machine rendering the native copy
+      const attachedByKey = new Map(); // nativeId → machines holding an attach handle to it
+      for (const m of fleet) for (const s of m.sessions) {
+        const k = s.nativeId ?? s.id;
+        if (!k) continue;
+        if (s.provider === "attached") {
+          attachedByKey.set(k, [...(attachedByKey.get(k) ?? []), m.name]);
+        } else if (!nativeByKey.has(k)) {
+          nativeByKey.set(k, m.name);
+        }
+      }
+      const attachDedup = (s) => s.provider !== "attached" || !nativeByKey.has(s.nativeId);
+      const sessionLine = (s) => [
+        s.id, s.provider ?? "?",
+        s.provider === "attached" ? `native=${s.nativeId}` : null,
+        s.provider !== "attached" && s.nativeId && attachedByKey.has(s.nativeId)
+          ? `[attached@${attachedByKey.get(s.nativeId).join(",")}]` : null,
+        s.project ? `project=${s.project}` : null,
+        s.shared ? "shared" : null,
+        aliveLabel(s),
+        s.turns != null ? `turns=${s.turns}` : null,
+        s.pid ? `pid=${s.pid}` : null,
+        s.lastActivity ? `last=${fmtAgo(s.lastActivity)}` : null,
+      ].filter(Boolean).join(" ");
+
       const lines = [];
       lines.push(`[this machine] ${machineLine(local, `ALIVE v${SERVER_VERSION}`)}`);
-      lines.push(...(localSessions.length
-        ? localSessions.map((s) => `    ${sessionLine(s)}`)
+      const localShown = localSessions.filter(attachDedup);
+      lines.push(...(localShown.length
+        ? localShown.map((s) => `    ${sessionLine(s)}`)
         : ["    (no sessions on this machine)"]));
       if (!probed.length) {
         lines.push('No fabric nodes configured. Add a "fabric" block (token + nodes) to claude_env_settings.json; run `node scripts/serve.mjs` on each peer machine.');
@@ -866,7 +897,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
       for (const m of probed) {
         if (m.alive) {
           lines.push(`${m.name} ${machineLine(m, `ALIVE v${m.version ?? "?"}`)}${m.tags?.length ? ` · tags=${m.tags.join(",")}` : ""}`);
-          const ss = m.sessions ?? [];
+          const ss = (m.sessions ?? []).filter(attachDedup);
           lines.push(...(ss.length ? ss.map((s) => `    ${sessionLine(s)}`) : ["    (no sessions)"]));
         } else {
           lines.push(`${m.name} DEAD: ${m.error ?? "unreachable"}`);

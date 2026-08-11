@@ -125,11 +125,14 @@ export function sessionKey(machineName, session) {
 }
 
 /**
- * A session's context-window occupancy. used = the LATEST turn's full-prompt tokens
- * (usage.context_tokens; falls back to the cumulative total for peers on older code);
- * limit = the model's window (context_limit, resolved server-side from the id). pct is
- * null when either is unknown — a percentage would be fabricated. After a native compact
- * the next turn's context_tokens drop, so the percentage falls with the window.
+ * A session's context-window fill, ESTIMATED. used = usage.context_tokens, which the
+ * engine derives as fresh input + content written to cache, EXCLUDING cache-read tokens
+ * (the CLI's result usage sums re-reads over the turn's tool sub-requests and would
+ * over-count Nx — see engine/open-session.mjs). Falls back to the cumulative total for
+ * peers on older code. limit = the model's window (context_limit, resolved server-side
+ * from the id). pct is null when either is unknown — a percentage would be fabricated.
+ * After a native compact the next turn's context_tokens drop, so the % falls with the
+ * window.
  */
 export function contextStatus(session) {
   const used = session?.usage?.context_tokens ?? session?.usage?.total_input_tokens ?? null;

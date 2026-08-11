@@ -336,6 +336,32 @@ describe("session tools", () => {
     assert.match(out, /sess-b1 deepseek project=repo shared alive turns=11/);
     assert.match(out, /WS2 DEAD: connect ECONNREFUSED/);
   });
+
+  test("list_nodes dedupes an attached session to its native copy and annotates it (SR-056)", async () => {
+    const res = await handleToolCall("list_nodes", {}, {
+      localStatus: async () => ({ hostname: "G", uptime_s: 10, cpu: 8, cpu_busy_pct: 5, mem_available_mb: 8000, mem_total_mb: 16000 }),
+      pingNodes: async () => [
+        { name: "WS1", alive: true, version: "0.1.9", uptime_s: 100, cpu: 8, cpu_busy_pct: 10, mem_available_mb: 8000, mem_total_mb: 16000, sessions: [
+          { id: "sess-4-msp7rsdw", provider: "claude", alive: true, turns: 3, nativeId: "sess-4-msp7rsdw" },
+          { id: "sess-2-msp7rk89", provider: "claude", alive: false, turns: 1, nativeId: "sess-2-msp7rk89" },
+          { id: "sess-5-orphan", provider: "claude", alive: null, turns: 0, nativeId: "sess-5-orphan" },
+        ] },
+      ],
+      // G holds attach handles onto two of the three WS1 sessions — ONE conversation each.
+      listSessions: () => [
+        { id: "sess-1-msp7u3fs", provider: "attached", alive: true, turns: 3, nativeId: "sess-4-msp7rsdw" },
+        { id: "sess-2-msp7utf3", provider: "attached", alive: true, turns: 1, nativeId: "sess-2-msp7rk89" },
+      ],
+    });
+    const out = text(res);
+    // attach rows are hidden (their native copy renders) → no duplicate "same-name" rows
+    assert.doesNotMatch(out, /sess-1-msp7u3fs/, 'attach row hidden — its native copy is shown instead');
+    assert.doesNotMatch(out, /sess-2-msp7utf3/);
+    // the native copies carry who holds a drivable attach, and liveness is three-state
+    assert.match(out, /sess-4-msp7rsdw claude \[attached@\[this machine\]\] alive turns=3/);
+    assert.match(out, /sess-2-msp7rk89 claude \[attached@\[this machine\]\] dead turns=1/);
+    assert.match(out, /sess-5-orphan claude unknown/, 'un-pinged liveness renders unknown, not alive/dead');
+  });
 });
 
 // ── team tools (injected fakes) ──────────────────────────────────────

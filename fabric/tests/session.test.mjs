@@ -438,6 +438,51 @@ test('attachSession pulls the remote identity; a peer on old code degrades to nu
   await closeSession(b.id);
 });
 
+// SR-056: a remote/attached handle DEFINES alive:null until first ping. observedAlive
+// must not map that to false ("dead") — null = not-yet-observed, distinct from dead.
+test('an un-pinged attached handle reports alive:null, not dead', async () => {
+  const { listSessions, attachSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const attach = async () => ({ id: 'r1', send: async () => ({ text: 'x', turn: 1 }), close: async () => 0 });
+  const a = await attachSession({ node: 'WS1', remoteId: 'r1' }, attach);
+  const row = listSessions().find((s) => s.id === a.id);
+  assert.equal(row.alive, null, 'never pinged → unknown, NOT dead');
+  await closeSession(a.id);
+});
+
+// SR-056: attached sessions refresh turns/usage/alive from the peer on a cadence, so a
+// handle adopted at attach time tracks the peer's running process instead of freezing.
+test('attached sessions refresh turns/usage/alive from the peer on a cadence', async () => {
+  process.env.FABRIC_ATTACH_REFRESH_MS = '20';
+  const { listSessions, attachSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  let pings = 0;
+  // The fake must mimic the real remoteHandle.ping(): absorbFacts writes the fresh
+  // liveness onto the handle itself (listSessions reads observedAlive(handle)).
+  const attach = async () => {
+    const handle = { id: 'r1', view: async () => ({ turns: 0 }), send: async () => ({ text: 'x', turn: 1 }), close: async () => 0 };
+    handle.ping = async () => {
+      pings++;
+      handle.alive = true;
+      handle.usage = { cost_usd: 0.5, context_tokens: 120 };
+      handle.compacted = 2;
+      handle.turns = pings;
+      return { id: 'r1', turns: pings, usage: handle.usage, compacted: 2, alive: true, lastActivity: 1 };
+    };
+    return handle;
+  };
+  const a = await attachSession({ node: 'WS1', remoteId: 'r1' }, attach);
+  assert.equal(listSessions().find((s) => s.id === a.id).turns, 0, 'attach-time snapshot first');
+  await new Promise((r) => setTimeout(r, 70)); // let a few 20ms ticks land
+  const row = listSessions().find((s) => s.id === a.id);
+  assert.ok(row.turns > 0, `turns refreshed from the peer (got ${row.turns})`);
+  assert.equal(row.compacted, 2);
+  assert.equal(row.alive, true, 'alive now observed, not the pre-ping null');
+  assert.equal(row.usage.cost_usd, 0.5, 'usage refreshed from the peer');
+  delete process.env.FABRIC_ATTACH_REFRESH_MS;
+  await closeSession(a.id);
+});
+
 // ── SR-040: sends to ONE id are serialized in the registry, so two concurrent
 // session_send calls can never interleave on a backend that does not serialize itself.
 test('sendToSession serializes per id: concurrent sends run in order, never overlapped', async () => {

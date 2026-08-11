@@ -260,10 +260,10 @@ while ($true) {
     cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
     cost_usd: 0, partial: false,
   };
-  // The LATEST turn's full-prompt tokens (input + cache creation + cache read) — the
-  // current context-window occupancy. Each turn re-sends the whole context, so this is
-  // the window used right now; a native compact drops it on the next turn (that is the
-  // "compact freed the window" signal the console shows as a percentage drop).
+  // Current context-window fill, ESTIMATED — see the result handler for why the naive
+  // "input + cache read" sum is a lie on tool-heavy turns. Reset per turn so a native
+  // compact (compact_boundary) drops it on the next result (the "compact freed the
+  // window" signal the console shows as a percentage drop).
   let contextTokens = 0;
 
   // Last stderr BYTES — the only clue when the child dies. Kept as Buffers: coercing each
@@ -311,8 +311,16 @@ while ($true) {
           usage.output_tokens += ev.usage.output_tokens ?? 0;
           usage.cache_creation_input_tokens += ev.usage.cache_creation_input_tokens ?? 0;
           usage.cache_read_input_tokens += ev.usage.cache_read_input_tokens ?? 0;
-          contextTokens = (ev.usage.input_tokens ?? 0) + (ev.usage.cache_creation_input_tokens ?? 0)
-                        + (ev.usage.cache_read_input_tokens ?? 0);
+          // Window fill is a PER-REQUEST quantity, but the CLI's result usage is summed
+          // over the turn's internal API sub-requests (every tool call re-reads the whole
+          // cached prefix). input+cache_read therefore over-counts Nx on agentic turns —
+          // live 2026-08-11: 932k "occupancy" reported for a 200k-window session that was
+          // ~46% full (cache_read 1.25M cumulative across 3 turns of ~10 sub-requests).
+          // cache_read IS the re-read term, so exclude it: fresh non-cached input (this
+          // turn) + distinct content ever written to cache is a fair fill estimate that
+          // works whether the provider caches (creation ≈ cached content) or not
+          // (creation 0, input = whole prompt, correct either way).
+          contextTokens = (ev.usage.input_tokens ?? 0) + usage.cache_creation_input_tokens;
         } else {
           usage.partial = true; // a turn we cannot account for — say so, do not imply zero
         }
@@ -516,6 +524,9 @@ while ($true) {
     get usage() {
       return {
         ...usage,
+        // Cumulative API consumption (cost side): every token billed, including the
+        // repeated cache reads. context_tokens is the WINDOW-FILL estimate (fresh input
+        // + cached content), deliberately excluding cache_read — see the result handler.
         total_input_tokens: usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens,
         context_tokens: contextTokens,
       };

@@ -336,10 +336,32 @@ test('openSession accumulates usage/cost facts across turns', async () => {
     input_tokens: 200, output_tokens: 40,
     cache_creation_input_tokens: 600, cache_read_input_tokens: 2000,
     total_input_tokens: 2800, cost_usd: 0.02, partial: false,
-    // context_tokens = the LATEST turn's full-prompt tokens (not cumulative): each turn
-    // re-sends the whole context, so this is the current window occupancy.
-    context_tokens: 1400,
+    // context_tokens = estimated WINDOW FILL (not cumulative): fresh input (this turn)
+    // + distinct content written to cache (cumulative). cache_read — the re-read term
+    // the CLI sums over a turn's tool sub-requests — is deliberately EXCLUDED, else a
+    // tool-heavy turn reports N× the real fill (SR-055: 932k in a 200k window).
+    // Turn 2 → input 100 + cache_creation 600 = 700.
+    context_tokens: 700,
   });
+  await s.close();
+});
+
+// SR-055: the CLI's result usage sums cache-read over the turn's internal API
+// sub-requests, so input+cache_read would report N× the real fill on an agentic turn
+// (live 2026-08-11: 932k "occupancy" in a 200k window). cache_read must NOT move the
+// occupancy estimate — it is the re-read term.
+test('a tool-heavy turn (huge cache_read) does not inflate context_tokens', async () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'os-tools-'));
+  const fake = resultFake({
+    usage: { input_tokens: 50, output_tokens: 30, cache_creation_input_tokens: 100, cache_read_input_tokens: 500_000 },
+  });
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: fake, _bin: 'fake' });
+  await s.send('run ten tools');
+  // occupancy = fresh input 50 + cumulative cache_creation 100 = 150. The 500k of
+  // re-reads are excluded, so a 200k window reads ~0%, never the old fabricated 100%.
+  assert.equal(s.usage.context_tokens, 150);
+  // the cumulative consumption (cost side) still counts the reads — that IS what got billed
+  assert.equal(s.usage.total_input_tokens, 500_150);
   await s.close();
 });
 

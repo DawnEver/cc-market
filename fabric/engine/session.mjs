@@ -130,6 +130,15 @@ export async function resumeSession(sessionId, opts = {}, _open = openProviderSe
 const sessions = new Map();
 let seq = 0;
 
+// Attached sessions refresh their peer's facts on this cadence (see attachSession). 8s:
+// just slower than the console's ~6s node/status poll, so the registry entry never goes
+// a full poll stale while the timer itself never fires twice per poll.
+const ATTACH_REFRESH_MS = 8000;
+
+function clearRefreshTimer(entry) {
+  if (entry?._refreshTimer) { clearInterval(entry._refreshTimer); entry._refreshTimer = null; }
+}
+
 // Which process holds these handles. The journal is the only join point between the
 // several fabric processes on one box, so a spawn record has to name the owner or the
 // layer above cannot route a close/ping to the daemon that can serve it (SR-045).
@@ -207,6 +216,7 @@ export async function sendToSession(id, text) {
       // A lost remote connection means the handle is gone for good — journal the loss so
       // reconcile() does not report it as an orphan forever.
       if (e?.code === "CONNECTION_LOST") {
+        clearRefreshTimer(entry);
         sessions.delete(id);
         recordEvent({ event: "loss", id, reason: e.message, owner: owner() });
       }
@@ -231,10 +241,12 @@ export async function closeSession(id) {
     } catch (e) {
       // A close that THROWS is not a close — the child may live on. Journal the failure
       // and keep the record open for reconcile (sharp-review SR-016).
+      clearRefreshTimer(entry);
       sessions.delete(id);
       recordEvent({ event: "close_failed", id, error: String(e?.message ?? e), turns: entry.turns });
       throw e;
     }
+    clearRefreshTimer(entry);
     sessions.delete(id);
     recordEvent({ event: "close", id, exitCode: exitCode ?? null, turns: entry.turns, usage: entry.handle.usage ?? null });
     return { id, exitCode: exitCode ?? null, turns: entry.turns };
@@ -358,7 +370,7 @@ export async function attachSession({ node, remoteId }, _attach = null) {
       if (v && typeof v === "object") ident = v;
     } catch { /* peer unreachable / old code */ }
     const id = `sess-${idFragment()}`;
-    sessions.set(id, {
+    const entry = {
       handle, provider: "attached",
       model: ident.model ?? null, effort: ident.effort ?? null,
       project: ident.project ?? null, cwd: ident.cwd ?? null,
@@ -366,7 +378,33 @@ export async function attachSession({ node, remoteId }, _attach = null) {
       node: nodeName,
       createdAt: Date.now(), turns: ident.turns ?? 0,
       closing: false, goalRunning: false,
-    });
+    };
+    sessions.set(id, entry);
+    // Live refresh (SR-056): an attached session is a handle onto a PEER's running
+    // process, so turns/usage/alive are a moving target. The console polls node/status
+    // every ~6s; a background ping — cheap (pooled conn), unref'd (never holds the
+    // process), staggered from the console poll — keeps the registry entry within one
+    // tick of the peer. An attached session then shows the SAME live facts a local one
+    // does (the "unified experience"); without it the entry froze at attach-time
+    // identity (turns=2 while the peer ran turn 3, alive=null rendered as dead).
+    // Read at call time (not module load) so a test can shrink it via env before attach.
+    const intervalMs = Number(process.env.FABRIC_ATTACH_REFRESH_MS) || ATTACH_REFRESH_MS;
+    entry._refreshTimer = setInterval(() => {
+      const cur = sessions.get(id);
+      if (!cur || cur.closing || cur !== entry) return;
+      entry.handle.ping().then((f) => {
+        const live = sessions.get(id);
+        if (!live || live.closing || live !== entry) return;
+        if (f) {
+          if (typeof f.turns === "number") live.turns = f.turns;
+          if (f.usage) live.usage = f.usage;
+          if (f.compacted != null) live.compacted = f.compacted;
+          // alive/lastActivity/pid/usage also land on the handle itself via absorbFacts
+          // (node-client), so listSessions' observedAlive(handle) stays current too.
+        }
+      }).catch(() => { /* peer unreachable — keep the last observed facts; next tick retries */ });
+    }, intervalMs);
+    entry._refreshTimer.unref?.();
     return { id, provider: "attached", nativeId: remoteId, pid: ident.pid ?? null,
              model: ident.model ?? null, effort: ident.effort ?? null, project: ident.project ?? null };
   })();
@@ -382,7 +420,11 @@ export async function attachSession({ node, remoteId }, _attach = null) {
  * optimistic default that made three of four backends claim life they never checked.
  */
 function observedAlive(handle) {
-  return "alive" in handle ? !!handle.alive : null;
+  // A remote/attached handle DEFINES alive:null until the peer has been pinged
+  // (node-client.mjs remoteHandle). `!!handle.alive` would map that null to FALSE —
+  // an un-pinged peer session rendered as dead. Null = "not yet observed", not dead.
+  const a = handle?.alive;
+  return typeof a === "boolean" ? a : null;
 }
 
 export function listSessions() {
@@ -423,7 +465,15 @@ export async function pingSession(id) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
   const h = entry.handle;
-  const base = { id, provider: entry.provider, kind: h.kind ?? null, compactable: h.compactable ?? null, goal: h.goalActive ?? null };
+  // Usage/compacted/context_limit ride the ping so an attach can refresh a peer's facts
+  // from node/ping alone (no content tail): the attach's periodic refresh consumes these.
+  const base = {
+    id, provider: entry.provider, kind: h.kind ?? null, compactable: h.compactable ?? null,
+    goal: h.goalActive ?? null,
+    usage: entry.usage ?? h.usage ?? null,
+    compacted: entry.compacted ?? h.compacted ?? null,
+    context_limit: contextLimitFor(entry.model ?? null),
+  };
   if (typeof h.ping === "function") {
     try {
       return { ...base, ...(await h.ping()) };
@@ -557,4 +607,7 @@ export async function closeTeam(teamId) {
 }
 
 // Test hook: drop all registry state without touching live handles.
-export function _resetRegistry() { sessions.clear(); teams.clear(); opChains.clear(); attachInflight.clear(); seq = 0; }
+export function _resetRegistry() {
+  for (const e of sessions.values()) clearRefreshTimer(e);
+  sessions.clear(); teams.clear(); opChains.clear(); attachInflight.clear(); seq = 0;
+}
