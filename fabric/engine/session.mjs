@@ -144,13 +144,23 @@ function idFragment() {
 /**
  * Create a session and register it. Returns a lightweight descriptor (never the live handle
  * — the handle stays inside the registry so callers reference it only by id).
+ *
+ * The registry records the session's IDENTITY — provider/model/effort with sessionDefaults
+ * already resolved — so listSessions / node/status name what the session actually RUNS,
+ * not what a spawn form happened to spell (an omitted model means the default's model).
  */
 export async function createSession(opts, _open = openProviderSession) {
   const handle = await _open(opts);
   const id = `sess-${idFragment()}`;
-  sessions.set(id, { handle, provider: opts.provider, node: opts.node ?? null, cwd: opts.cwd ?? null, createdAt: Date.now(), turns: 0 });
-  recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, sessionId: handle.sessionId ?? null, provider: opts.provider, node: opts.node ?? null, owner: owner() });
-  return { id, provider: opts.provider, nativeId: handle.id ?? null, pid: handle.pid ?? null, sessionId: handle.sessionId ?? null };
+  const resolved = resolveSessionDefaults(opts);
+  sessions.set(id, {
+    handle,
+    provider: opts.provider ?? resolved.provider, model: resolved.model, effort: resolved.effort,
+    project: opts.project ?? null, node: opts.node ?? null, cwd: opts.cwd ?? null,
+    createdAt: Date.now(), turns: 0,
+  });
+  recordEvent({ event: "spawn", id, pid: handle.pid ?? null, nativeId: handle.id ?? null, sessionId: handle.sessionId ?? null, provider: opts.provider ?? resolved.provider, model: resolved.model, effort: resolved.effort, node: opts.node ?? null, owner: owner() });
+  return { id, provider: opts.provider ?? resolved.provider, model: resolved.model, effort: resolved.effort, nativeId: handle.id ?? null, pid: handle.pid ?? null, sessionId: handle.sessionId ?? null };
 }
 
 // Per-id send chains. open-session and codex serialize internally, but a remote handle
@@ -278,7 +288,8 @@ export async function attachSession({ node, remoteId }, _attach = null) {
   const doAttach = _attach || attachRemoteSession;
   const handle = await doAttach({ ...n, id: remoteId });
   const id = `sess-${idFragment()}`;
-  sessions.set(id, { handle, provider: "attached", node: typeof node === "string" ? node : (n.host ?? null), cwd: null, createdAt: Date.now(), turns: 0 });
+  // model/effort/project unknown for a foreign-spawned session — nulls, not guesses.
+  sessions.set(id, { handle, provider: "attached", model: null, effort: null, project: null, node: typeof node === "string" ? node : (n.host ?? null), cwd: null, createdAt: Date.now(), turns: 0 });
   return { id, provider: "attached", nativeId: remoteId, pid: null };
 }
 
@@ -294,6 +305,12 @@ function observedAlive(handle) {
 export function listSessions() {
   return [...sessions.entries()].map(([id, e]) => ({
     id, provider: e.provider, kind: e.handle.kind ?? null, turns: e.turns, createdAt: e.createdAt,
+    // The handle's own id: for a remote session that IS the peer's id — how the console
+    // dedups its spawned sessions against the peer's own node/status list.
+    nativeId: e.handle.id ?? null,
+    // Identity facts: the resolved model/effort the session runs (null = unknown,
+    // e.g. an attached foreign session) — never a re-spelled default.
+    model: e.model ?? null, effort: e.effort ?? null, project: e.project ?? null,
     // Liveness facts (G3) — read from the handle, null when a backend has none.
     pid: e.handle.pid ?? null,
     alive: observedAlive(e.handle),

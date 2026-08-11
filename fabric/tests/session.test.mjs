@@ -73,6 +73,25 @@ test('registry: getSessionProvider returns provider for known id, null for unkno
   assert.equal(getSessionProvider('nonexistent'), null);
 });
 
+// ── Identity facts: the registry records the RESOLVED model/effort (sessionDefaults
+// applied), so listSessions names what the session runs — never an omitted field.
+test('registry records resolved model/effort/project identity', async () => {
+  _resetRegistry();
+  const cfg = { sessionDefaults: { provider: 'deepseek', model: 'deepseek-v4-flash[1m]', effort: 'max' } };
+  // Defaults apply when the spawn omits them (same provider as the default bundle).
+  const d = await createSession({ provider: 'deepseek', project: 'motronics', _fabricConfig: cfg }, async () => makeFakeHandle());
+  assert.equal(d.model, 'deepseek-v4-flash[1m]');
+  assert.equal(d.effort, 'max');
+  const [row] = listSessions();
+  assert.equal(row.model, 'deepseek-v4-flash[1m]');
+  assert.equal(row.effort, 'max');
+  assert.equal(row.project, 'motronics');
+  // A different provider opts out of the default bundle — nulls, not a wrong-shaped model.
+  const c = await createSession({ provider: 'claude', _fabricConfig: cfg }, async () => makeFakeHandle());
+  assert.equal(c.model, null);
+  assert.equal(listSessions().find((s) => s.id === c.id).effort, null);
+});
+
 test('registry: compactSession calls handle.compact and reports compactable as a fact', async () => {
   _resetRegistry();
   const handle = makeFakeHandle();
@@ -98,7 +117,7 @@ test('registry: setSessionGoal + goalRunSession journal and report goalActive', 
   const handle = makeFakeHandle();
   handle.goalActive = false;
   handle.setGoal = async (condition) => { handle.goalActive = true; return { condition, active: true, text: 'ok' }; };
-  handle.goalRun = async (prompt, opts) => ({ text: 'final', turn: 9, turns: 4, state: 'met' });
+  handle.goalRun = async () => ({ text: 'final', turn: 9, turns: 4, state: 'met' });
   const { id } = await createSession({ provider: 'deepseek' }, async () => handle);
 
   const g = await setSessionGoal(id, 'done when tests pass');
@@ -374,6 +393,9 @@ test('registry records cwd; attachSession registers a remote handle', async () =
   const fakeOpen = async (opts) => ({ id: 'n1', pid: 1, send: async () => ({ text: 'x', turn: 1 }), close: async () => 0, cwd: opts.cwd });
   const d = await createSession({ provider: 'deepseek', cwd: '/proj/x' }, fakeOpen);
   assert.equal(listSessions()[0].cwd, '/proj/x');
+  // nativeId = the handle's own id — a remote session's id IS the peer's id, so the
+  // console can dedup its spawned sessions against the peer's node/status list.
+  assert.equal(listSessions()[0].nativeId, 'n1');
   await closeSession(d.id);
   const fakeAttach = async () => ({ id: 'remote-9', send: async (t) => ({ text: `r:${t}`, turn: 1 }), close: async () => 0 });
   const a = await attachSession({ node: 'WS1', remoteId: 'remote-9' }, fakeAttach);

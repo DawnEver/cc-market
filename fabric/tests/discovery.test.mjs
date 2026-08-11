@@ -39,3 +39,25 @@ describe("checkCodexStatus", () => {
     assert.equal(result.installed, false);
   });
 });
+
+describe("checkCodexStatusAsync (the console's non-blocking twin)", () => {
+  test("nonexistent binary reports installed=false, never rejects", async () => {
+    const { checkCodexStatusAsync } = await import("../engine/codex/discovery.mjs");
+    const r = await checkCodexStatusAsync("/nonexistent/codex/bin");
+    assert.equal(r.installed, false);
+    assert.ok(r.error);
+  });
+
+  test("honors TAKEOVER_CODEX_BINARY override", async () => {
+    const { findCodexBinaryAsync } = await import("../engine/codex/discovery.mjs");
+    const orig = process.env.TAKEOVER_CODEX_BINARY;
+    process.env.TAKEOVER_CODEX_BINARY = process.execPath;
+    try {
+      const bin = await findCodexBinaryAsync();
+      assert.equal(bin, process.execPath);
+    } finally {
+      if (orig) process.env.TAKEOVER_CODEX_BINARY = orig;
+      else delete process.env.TAKEOVER_CODEX_BINARY;
+    }
+  });
+});

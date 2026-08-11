@@ -1,59 +1,24 @@
-// engine/web-api.mjs — the local management console's JSON API, as a PURE handler:
+// web/api.mjs — the local management console's JSON API, as a PURE handler:
 // (method, path, body) → { status, body }. HTTP wiring and the HTML shell live in
-// scripts/web.mjs; this module is what the tests exercise.
+// web/server.mjs; this module is what the tests exercise.
 //
-// Scope, honestly stated: the console CHATS with sessions this process spawned (local
-// or remote via node) — a peer session owned by another connection is observable
-// through node/status but not drivable (node/send is owner-restricted, by design).
-// The console holds a per-session message log so the UI can render a conversation;
-// the durable trail stays in the journal, as everywhere else.
+// Scope, honestly stated: the console CHATS with sessions this process spawned or
+// attached (local or remote via node) and VIEWS any session in the fleet — a peer
+// session is readable through node/view (visibility is not owner-gated) but drivable
+// only when owned/shared (node/send is owner-restricted, by design). The console holds
+// a per-session message log only as the pending/console-local complement to the
+// session's own transcript, which is the conversation's truth; the durable trail stays
+// in the journal, as everywhere else.
 
-import { readFileSync, existsSync } from "node:fs";
-import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, pingSession } from "../engine/session.mjs";
+import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, pingSession, viewSession, viewRemoteSession } from "../engine/session.mjs";
 import { reconcile, recordEvent } from "../engine/journal.mjs";
-import { loadFabricConfig } from "../engine/node-config.mjs";
-import { getConfigPath } from "../engine/providers.mjs";
-import { liveCatalogue } from "../engine/catalogue.mjs";
 import { loadServeConfig } from "../engine/node-config.mjs";
+import { liveCatalogue } from "../engine/catalogue.mjs";
 import { attachSession } from "../engine/session.mjs";
 // The fleet probe lives in the engine (shared with the MCP list_nodes tool); re-exported
 // for backward compat with any importer of web/api.mjs.
 export { pingNodes } from "../engine/node-probe.mjs";
 import { pingNodes } from "../engine/node-probe.mjs";
-
-/**
- * Structured provider/model/node catalogue for UI dropdowns. Models are the tier
- * ALIASES the config maps (haiku/sonnet/opus/fable); an empty list means "the
- * provider picks its default" (codex). Nodes come from fabric.nodes; "" = local.
- */
-export function catalogue({ _config = loadFabricConfig, _configPath = getConfigPath } = {}) {
-  const providers = [
-    { name: "claude", models: ["haiku", "sonnet", "opus"] },
-    { name: "codex", models: [] },
-  ];
-  try {
-    const p = _configPath();
-    if (existsSync(p)) {
-      const cfg = JSON.parse(readFileSync(p, "utf8"));
-      for (const k of Object.keys(cfg)) {
-        if (!k.startsWith("env:")) continue;
-        const env = cfg[k];
-        if (!env.ANTHROPIC_BASE_URL && !env.ANTHROPIC_FOUNDRY_BASE_URL) continue;
-        const models = [];
-        if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL) models.push("haiku");
-        if (env.ANTHROPIC_DEFAULT_SONNET_MODEL) models.push("sonnet");
-        if (env.ANTHROPIC_DEFAULT_OPUS_MODEL) models.push("opus");
-        if (env.ANTHROPIC_DEFAULT_FABLE_MODEL) models.push("fable");
-        providers.push({ name: k.slice(4), models });
-      }
-    }
-  } catch { /* config unreadable: builtin providers only */ }
-  let nodes = [];
-  try { nodes = Object.keys(_config().nodes || {}); } catch { /* no fabric block */ }
-  let defaults = null;
-  try { defaults = _config().sessionDefaults || null; } catch { /* no fabric block */ }
-  return { providers, nodes, efforts: ["low", "medium", "high", "max"], defaults };
-}
 
 export function createWebApi(deps = {}) {
   const _create = deps.createSession || createSession;
@@ -64,6 +29,8 @@ export function createWebApi(deps = {}) {
   const _goalRun = deps.goalRunSession || goalRunSession;
   const _list = deps.listSessions || listSessions;
   const _ping = deps.pingSession || pingSession;
+  const _view = deps.viewSession || viewSession;
+  const _viewRemote = deps.viewRemoteSession || viewRemoteSession;
   const _nodes = deps.pingNodes || pingNodes;
   const _reconcile = deps.reconcile || reconcile;
   const _catalogue = deps.catalogue || liveCatalogue;
@@ -79,9 +46,9 @@ export function createWebApi(deps = {}) {
   async function handle(method, path, body) {
     try {
       let m, om; // route captures — declared here so every branch may use them
-      if (method === "GET" && path === "/api/nodes") return { status: 200, body: await _nodes() };
       if (method === "GET" && path.startsWith("/api/catalogue")) {
-        return { status: 200, body: _catalogue({ force: path.includes("force=1") }) };
+        // liveCatalogue is async now (probes never block the event loop) — await it.
+        return { status: 200, body: await _catalogue({ force: path.includes("force=1") }) };
       }
       if (method === "GET" && path === "/api/fleet") {
         // Machines = configured nodes, with THIS machine identified (serve name match),
@@ -192,6 +159,23 @@ export function createWebApi(deps = {}) {
       }
       if (method === "GET" && (m = path.match(/^\/api\/sessions\/([^/]+)\/ping$/))) {
         return { status: 200, body: await _ping(m[1]) };
+      }
+      // How much of a session's transcript the console renders (chat + observe). Big
+      // enough for a long conversation; the viewer reads the tail, the truth is the
+      // full transcript on disk.
+      const VIEW_TAIL = 20000;
+      if (method === "GET" && (m = path.match(/^\/api\/sessions\/([^/]+)\/view$/))) {
+        // The session's own transcript tail (claude/API always records one; codex
+        // reports content:null honestly) + liveness facts. The console's chat renders
+        // THIS, not its own memory log — the transcript is the conversation's truth.
+        const r = await _view(m[1], { tailChars: VIEW_TAIL });
+        return { status: 200, body: r };
+      }
+      if (method === "GET" && (om = path.match(/^\/api\/nodes\/([^/]+)\/sessions\/([^/]+)\/view$/))) {
+        // Observe a PEER session that is not in this console's registry (read-only —
+        // node/view is visibility, not acting; owner gates only send/close).
+        const r = await _viewRemote({ node: om[1], remoteId: om[2] }, { tailChars: VIEW_TAIL });
+        return { status: 200, body: r };
       }
       if (method === "GET" && (m = path.match(/^\/api\/sessions\/([^/]+)\/log$/))) {
         return { status: 200, body: { id: m[1], messages: logs.get(m[1]) ?? [] } };

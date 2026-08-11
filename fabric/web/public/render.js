@@ -1,0 +1,97 @@
+// web/public/render.js — a tiny keyed DOM builder: h()/t() make vnodes, mount/patch
+// diff them into a container by key. No innerHTML anywhere — text is set via
+// textContent, so user/session text can never be injected as markup (the old console
+// interpolated some fields into innerHTML; selection, scroll and a mid-click card are
+// preserved because the container is patched, not replaced).
+//
+// Events are NOT attached per-node: elements carry data-action attributes and one
+// delegated listener in main.js dispatches them. That keeps handlers stable across
+// patches (patch() never touches listeners) and the diff purely structural.
+//
+// vnode shapes:
+//   { tag, attrs, children: [] }   element; children are vnodes
+//   { tag: null, text: "..." }      text leaf
+// Keys: an element's attrs.key (default: its index). Text leaves key by index only —
+// separate namespace from element keys so they never collide.
+
+export function h(tag, attrs = {}, ...children) {
+  // tag may carry classes: "div.card click" → <div class="card click">.
+  const dot = tag.indexOf(".");
+  const cls = dot === -1 ? "" : tag.slice(dot + 1).split(".").join(" ");
+  return { tag: dot === -1 ? tag : tag.slice(0, dot), classes: cls, attrs, children: children.flat(Infinity) };
+}
+export function t(text) { return { tag: null, text: String(text ?? "") }; }
+
+function effectiveClass(v) {
+  const fromAttr = v.attrs.class ?? "";
+  return [v.classes, fromAttr].filter(Boolean).join(" ");
+}
+
+function setAttr(el, k, v) {
+  if (k === "value") el.value = v;
+  else if (k === "disabled") { if (v) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
+  else if (k.startsWith("data-")) el.setAttribute(k, v);
+  else if (k === "title" || k === "placeholder" || k === "selected" || k === "id") el.setAttribute(k, v);
+  else if (k === "class") el.className = v;
+}
+
+function createElement(v) {
+  if (v.tag == null) return document.createTextNode(v.text);
+  const el = document.createElement(v.tag);
+  el.className = effectiveClass(v);
+  for (const [k, val] of Object.entries(v.attrs)) if (k !== "key" && k !== "class") setAttr(el, k, val);
+  for (const c of v.children) el.appendChild(createElement(c));
+  return el;
+}
+
+function syncAttrs(el, oldV, newV) {
+  if (el.className !== effectiveClass(newV)) el.className = effectiveClass(newV);
+  const oldA = oldV.attrs, newA = newV.attrs;
+  for (const [k, v] of Object.entries(newA || {})) {
+    if (k === "key" || k === "class") continue;
+    if (oldA?.[k] !== v) setAttr(el, k, v);
+  }
+  for (const k of Object.keys(oldA || {})) {
+    if (k === "key" || k === "class" || k in (newA || {})) continue;
+    if (k === "disabled") el.removeAttribute("disabled");
+    else el.removeAttribute(k);
+  }
+}
+
+function childKey(v, i) { return v.tag == null ? `__${i}` : (v.key ?? `k${i}`); }
+
+function reconcileElement(el, oldV, newV) {
+  if (oldV.tag == null) {
+    if (oldV.text !== newV.text) el.nodeValue = newV.text;
+    return;
+  }
+  syncAttrs(el, oldV.attrs, newV.attrs);
+  const oldKids = oldV.children || [];
+  const newKids = newV.children || [];
+  const oldByKey = new Map(oldKids.map((c, i) => [childKey(c, i), { v: c, el: el.children[i] }]));
+  const used = new Set();
+  const kept = [];
+  for (let i = 0; i < newKids.length; i++) {
+    const nk = newKids[i];
+    const key = childKey(nk, i);
+    const match = oldByKey.get(key);
+    let dom;
+    if (match) { dom = match.el; reconcileElement(dom, match.v, nk); }
+    else dom = createElement(nk);
+    kept.push(dom);
+    used.add(key);
+  }
+  for (const [key, { el: dom }] of oldByKey) if (!used.has(key)) dom.remove();
+  // Reorder so kept children sit in newKids order.
+  kept.forEach((dom, i) => { if (el.children[i] !== dom) el.insertBefore(dom, el.children[i]); });
+}
+
+export function mount(root, v) {
+  root._v = v;
+  root.replaceChildren(createElement(v));
+}
+export function patch(root, v) {
+  if (!root._v) { mount(root, v); return; }
+  reconcileElement(root, root._v, v);
+  root._v = v;
+}

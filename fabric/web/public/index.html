@@ -8,9 +8,10 @@
 <body>
 <header>
   <h1>fabric console</h1>
-  <span class="dim" id="fleetSummary">…</span>
+  <span id="headerStats">…</span>
+  <span id="asOf"></span>
   <span class="dim" id="catAge"></span>
-  <button onclick="loadCatalogue(true)">⟳ re-probe</button>
+  <button id="reprobe">⟳ re-probe</button>
 </header>
 <main>
   <section>
@@ -19,51 +20,51 @@
   </section>
 
   <section>
-    <h2>Spawn <span class="dim" id="spawnWhere"></span></h2>
-    <form id="spawnForm" class="card" onsubmit="return false">
-      <div class="inline">
-        <div><label>provider</label><select name="provider" id="providerSel" onchange="fillModels()"></select></div>
-        <div><label>model</label><select name="model" id="modelSel"></select></div>
-      </div>
-      <div class="inline">
-        <div><label>effort</label><select name="effort" id="effortSel"></select></div>
-        <div><label>project</label><select name="project" id="projectSel"></select></div>
-      </div>
-      <div class="dim" id="providerIdent"></div>
-      <details><summary>more (profile · flags)</summary>
-        <label>profile</label><input name="profile" placeholder="named profile on the target node">
+    <details id="spawnDrawer">
+      <summary>+ New session</summary>
+      <form id="spawnForm" class="card" onsubmit="return false">
         <div class="inline">
-          <label><input type="checkbox" name="write" style="width:auto"> write</label>
-          <label><input type="checkbox" name="visible" style="width:auto"> visible</label>
-          <label><input type="checkbox" name="interactive" style="width:auto"> interactive</label>
+          <div><label>provider</label><select name="provider" id="providerSel"></select></div>
+          <div><label>model</label><select name="model" id="modelSel"></select></div>
         </div>
-      </details>
-      <button class="primary" onclick="spawn()">Spawn session</button>
-    </form>
-    <h2>Projects → Sessions</h2>
+        <div class="inline">
+          <div><label>effort</label><select name="effort" id="effortSel"></select></div>
+          <div><label>project</label><select name="project" id="projectSel"></select></div>
+        </div>
+        <div class="dim" id="spawnWhere"></div>
+        <div class="dim" id="providerIdent"></div>
+        <details><summary>more (profile · flags)</summary>
+          <label>profile</label><input name="profile" placeholder="named profile on the target node">
+          <div class="inline">
+            <label><input type="checkbox" name="write" style="width:auto"> write</label>
+            <label><input type="checkbox" name="visible" style="width:auto"> visible</label>
+            <label><input type="checkbox" name="interactive" style="width:auto"> interactive</label>
+          </div>
+        </details>
+        <button class="primary" id="spawnBtn" type="button">Spawn session</button>
+      </form>
+    </details>
+
+    <h2>Projects → Sessions <span class="dim">(click = filter)</span></h2>
     <div id="tree" class="dim">—</div>
-    <div id="orphanWrap" style="display:none">
-      <details>
-        <summary>&#9888; unaccounted sessions (<span id="orphanCount">0</span>) — spawned but never closed; a crashed manager may have left the child running</summary>
-        <div id="orphans"></div>
-      </details>
-    </div>
   </section>
 
   <section id="chat">
-    <div id="msgs"><div id="chatEmpty">Pick a session (any machine) to chat. Shared sessions attach automatically.</div></div>
+    <div id="chatMode"></div>
+    <div id="msgs"><div class="chatEmpty">Pick a session (any machine) to chat. Shared sessions attach automatically; foreign ones are viewable read-only.</div></div>
     <div id="goalrow">
-      <input id="goal" placeholder="goal condition, e.g. done when all tests pass (native /goal — the session works until met)" onkeydown="if(event.key==='Enter')setGoal()">
-      <button onclick="setGoal()" title="Set the goal; the next Send runs the autonomous loop to its final outcome">set goal</button>
+      <input id="goal" placeholder="goal condition, e.g. done when all tests pass (the session works until met)">
+      <button id="goalBtn" title="Set the goal; the next Send runs the autonomous loop to its final outcome">set goal</button>
     </div>
     <div id="composer">
-      <input id="prompt" placeholder="message… (Enter to send)" onkeydown="if(event.key==='Enter')send()">
-      <button class="primary" onclick="send()">Send</button>
-      <button id="compactBtn" onclick="compactSess(selected)" title="Compact this session's context in place (codex native; same id continues)">compact</button>
-      <button id="closeBtn" onclick="closeSess(selected)" title="Close this session">close</button>
+      <input id="prompt" placeholder="message… (Enter to send)" autocomplete="off">
+      <button class="primary" id="sendBtn">Send</button>
+      <button id="compactBtn" title="Compact this session's context in place (codex native; same id continues)">compact</button>
+      <button id="closeBtn" title="Close this session">close</button>
     </div>
   </section>
 </main>
-<script src="/app.js"></script>
+<div id="toasts"></div>
+<script type="module" src="/main.js"></script>
 </body>
 </html>

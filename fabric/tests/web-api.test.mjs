@@ -36,6 +36,12 @@ function fakeDeps() {
     },
     listSessions: () => [...sessions.entries()].map(([id, s]) => ({ id, provider: s.provider, turns: s.turns, alive: true, pid: 1 })),
     pingSession: async (id) => ({ id, alive: sessions.has(id), pid: 1 }),
+    viewSession: async (id, { tailChars }) => {
+      if (!sessions.has(id)) throw new Error(`No such session: ${id}`);
+      return { id, provider: 'deepseek', content: `[transcript of ${id}] ${tailChars}`, alive: true, turns: 1, lastActivity: 1000 };
+    },
+    viewRemoteSession: async ({ node, remoteId }, { tailChars }) =>
+      ({ id: remoteId, node, provider: 'claude', content: `[remote transcript] ${tailChars}`, alive: true }),
     pingNodes: async () => [{ name: 'G', alive: true, cpu: 32 }],
     reconcile: () => [
       { id: 'orphan-1', pidAlive: null },
@@ -116,6 +122,23 @@ test('orphan resume: honest NO for remote orphans and non-resumable records', as
   assert.match(noId.body.error, /no resumable session id/);
 });
 
+test('view: transcript tail for an owned session; observe route for a peer session', async () => {
+  const api = createWebApi(fakeDeps());
+  const spawn = await api.handle('POST', '/api/sessions', { provider: 'deepseek' });
+  const id = spawn.body.id;
+  const view = await api.handle('GET', `/api/sessions/${id}/view`, null);
+  assert.equal(view.status, 200);
+  assert.match(view.body.content, /^\[transcript of sess-/);
+  assert.equal(view.body.alive, true);
+  // An unknown session surfaces the honest error (500 names the cause).
+  assert.equal((await api.handle('GET', '/api/sessions/sess-missing/view', null)).status, 500);
+  // Foreign/peer observe: viewRemoteSession is routed by node + remote id.
+  const remote = await api.handle('GET', '/api/nodes/WS1/sessions/remote-77/view', null);
+  assert.equal(remote.status, 200);
+  assert.equal(remote.body.node, 'WS1');
+  assert.match(remote.body.content, /^\[remote transcript\]/);
+});
+
 test('compact endpoint compacts in place and logs a system line', async () => {
   const api = createWebApi(fakeDeps());
   const spawn = await api.handle('POST', '/api/sessions', { provider: 'codex' });
@@ -132,7 +155,9 @@ test('compact endpoint compacts in place and logs a system line', async () => {
 
 test('nodes, sessions, reconcile endpoints answer; unknown route 404s; errors carry status 500', async () => {
   const api = createWebApi(fakeDeps());
-  assert.equal((await api.handle('GET', '/api/nodes', null)).body[0].name, 'G');
+  const fleet = await api.handle('GET', '/api/fleet', null);
+  assert.equal(fleet.status, 200);
+  assert.equal(fleet.body[0].name, 'G', 'fleet names its machines');
   assert.ok(Array.isArray((await api.handle('GET', '/api/sessions', null)).body));
   assert.equal((await api.handle('GET', '/api/reconcile', null)).body[0].id, 'orphan-1');
   assert.equal((await api.handle('GET', '/api/nope', null)).status, 404);
@@ -157,11 +182,12 @@ test('catalogue lists builtin + configured providers, nodes and efforts', async 
   assert.deepEqual(r.body.nodes, ['G']);
 });
 
-test('liveCatalogue probes identity and caches with TTL', async () => {
+test('liveCatalogue probes identity, caches with TTL, coalesces concurrent probes', async () => {
   const { liveCatalogue, _resetCatalogueCache } = await import('../engine/catalogue.mjs');
   _resetCatalogueCache();
   let t = 1000;
-  const cat = liveCatalogue({ _now: () => t, _config: () => ({ nodes: { G: {} } }) });
+  // probes are async now (never block the event loop) — the catalogue resolves.
+  const cat = await liveCatalogue({ _now: () => t, _config: () => ({ nodes: { G: {} } }) });
   assert.equal(cat.probed_at, 1000);
   const claude = cat.providers.find((p) => p.name === 'claude');
   assert.ok('identity' in claude && 'available' in claude && 'version' in claude);
@@ -170,8 +196,8 @@ test('liveCatalogue probes identity and caches with TTL', async () => {
   assert.deepEqual(cat.nodes, ['G']);
   assert.equal(cat.efforts.find((e) => e.name === 'high').tokens, 16384);
   t = 2000;
-  assert.equal(liveCatalogue({ _now: () => t, _config: () => ({ nodes: {} }) }).probed_at, 1000, 'cached');
-  assert.equal(liveCatalogue({ force: true, _now: () => t, _config: () => ({ nodes: {} }) }).probed_at, 2000, 'force re-probes');
+  assert.equal((await liveCatalogue({ _now: () => t, _config: () => ({ nodes: {} }) })).probed_at, 1000, 'cached');
+  assert.equal((await liveCatalogue({ force: true, _now: () => t, _config: () => ({ nodes: {} }) })).probed_at, 2000, 'force re-probes');
 });
 
 test('clearing an orphan journals a loss event', async () => {

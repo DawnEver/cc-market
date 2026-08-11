@@ -63,9 +63,17 @@ fabric/
 │   │                        (fleet display: fmtUptime/fmtMem/fmtAgo)
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
 ├── web/                     Management console — a small structured web project:
-│   ├── server.mjs           HTTP shell: static + API wiring, startConsole() export
-│   ├── api.mjs              Pure JSON API handler (tested)
-│   └── public/              index.html · app.js · style.css (re-read per request)
+│   ├── server.mjs           HTTP shell: extension-whitelisted static + API wiring,
+│   │                        startConsole() export; /lib/ maps to scripts/lib for the
+│   │                        display formatters (one formatting source, no re-spelling)
+│   ├── api.mjs              Pure JSON API handler (tested) — incl. /view routes:
+│   │                        /api/sessions/:id/view (transcript-as-truth chat) and
+│   │                        /api/nodes/:node/sessions/:id/view (foreign observe)
+│   └── public/              index.html + ES modules (state.js · render.js · main.js)
+│                           + style.css, all re-read per request. state.js = PURE
+│                           derivations (tested); render.js = keyed vnode patch (no
+│                           innerHTML, events via one delegated data-action dispatcher);
+│                           main.js = polling + orchestration. No build step.
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
 ├── commands/                L2: continue.md · models.md · handoff.md
 ├── agents/takeover.md       L2: handoff subagent (context-gather → one call)

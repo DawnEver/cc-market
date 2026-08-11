@@ -199,9 +199,12 @@ handshake itself.
    `shared: true` — shared sessions accept any accepted token-holder's send/close/compact
    and survive the spawner's disconnect. On the management console, shared sessions on a
    peer show a chat button; clicking it attaches and drives the session from there
-   (`POST /api/attach` — the console chat view holds the transcript locally after that).
-   Non-shared foreign sessions are visible but read-only, with the reason stated on the
-   card. Convention: **if a session may need to be driven from another machine, spawn it
+   (`POST /api/attach`). The console's chat renders the session's own TRANSCRIPT
+   (`/view` — claude/API always record one; codex honestly reports `content:null` and the
+   console falls back to its local log, labelled). Non-shared foreign sessions are
+   readable read-only (`/view` is visibility, not acting) with the reason stated on the
+   card and the composer disabled — click any foreign session to OBSERVE it.
+   Convention: **if a session may need to be driven from another machine, spawn it
    shared from the start** — shared-ness cannot be added later. `attach_session {node,
    remoteId}` adopts a shared remote session from MCP so you can send to / close it;
    `session_view` shows a session's content — `{id}` for a local/owned one (forwards to
