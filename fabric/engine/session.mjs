@@ -22,6 +22,7 @@ import { openRemoteSession, attachRemoteSession, connectNode } from "./node-clie
 import { resolveNode, loadFabricConfig } from "./node-config.mjs";
 import { resolveProfile } from "./profile.mjs";
 import { recordEvent } from "./journal.mjs";
+import { contextLimitFor } from "./context.mjs";
 
 // The write capability a profile-less write session gets. A profile REPLACES this list,
 // exactly as it does on the read-only path — one key, one meaning across backends.
@@ -287,10 +288,26 @@ export async function attachSession({ node, remoteId }, _attach = null) {
   const n = typeof node === "object" ? node : resolveNode(node);
   const doAttach = _attach || attachRemoteSession;
   const handle = await doAttach({ ...n, id: remoteId });
+  // Learn the remote session's IDENTITY from the peer (node/view carries model/effort/
+  // project/cwd/turns/usage now) so an attached handle shows full facts and lands under
+  // its real project — not a bare "attached, no project". A peer on older code returns
+  // none of it; those stay null (honest), and the record is a pure handle again.
+  let ident = {};
+  try {
+    const v = await handle.view({ tailChars: 0 });
+    if (v && typeof v === "object") ident = v;
+  } catch { /* peer unreachable / old code */ }
   const id = `sess-${idFragment()}`;
-  // model/effort/project unknown for a foreign-spawned session — nulls, not guesses.
-  sessions.set(id, { handle, provider: "attached", model: null, effort: null, project: null, node: typeof node === "string" ? node : (n.host ?? null), cwd: null, createdAt: Date.now(), turns: 0 });
-  return { id, provider: "attached", nativeId: remoteId, pid: null };
+  sessions.set(id, {
+    handle, provider: "attached",
+    model: ident.model ?? null, effort: ident.effort ?? null,
+    project: ident.project ?? null, cwd: ident.cwd ?? null,
+    usage: ident.usage ?? null, compacted: ident.compacted ?? null,
+    node: typeof node === "string" ? node : (n.host ?? null),
+    createdAt: Date.now(), turns: ident.turns ?? 0,
+  });
+  return { id, provider: "attached", nativeId: remoteId, pid: ident.pid ?? null,
+           model: ident.model ?? null, effort: ident.effort ?? null, project: ident.project ?? null };
 }
 
 /**
@@ -315,7 +332,13 @@ export function listSessions() {
     pid: e.handle.pid ?? null,
     alive: observedAlive(e.handle),
     lastActivity: e.handle.lastActivity ?? null,
-    usage: e.handle.usage ?? null,
+    // Usage/compacted prefer the registry entry (an attached handle captures its peer's
+    // facts at attach time and the remote handle itself exposes none) over the handle.
+    usage: e.usage ?? e.handle.usage ?? null,
+    // Context-window facts: the model's window limit (from the id) + compaction count.
+    // The occupancy % is derived frontend-side from usage.context_tokens / this.
+    context_limit: contextLimitFor(e.model ?? null),
+    compacted: e.compacted ?? e.handle.compacted ?? null,
     // Capacity facts: whether this backend can compact its own context / run a native
     // goal loop. null = unknown.
     compactable: e.handle.compactable ?? null,
@@ -363,7 +386,15 @@ export async function viewSession(id, { tailChars = 8000 } = {}) {
   const entry = sessions.get(id);
   if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
   const h = entry.handle;
-  const base = { id, provider: entry.provider, kind: h.kind ?? null, node: entry.node ?? null };
+  // Identity facts ride the view so a peer's node/view (and an attach) can learn a
+  // session's model/effort/project/cwd/usage without a second round trip.
+  const base = {
+    id, provider: entry.provider, kind: h.kind ?? null, node: entry.node ?? null,
+    model: entry.model ?? null, effort: entry.effort ?? null,
+    project: entry.project ?? null, cwd: entry.cwd ?? null,
+    turns: entry.turns, usage: h.usage ?? null,
+    compacted: h.compacted ?? null, context_limit: contextLimitFor(entry.model ?? null),
+  };
   if (typeof h.view === "function") {
     return { ...base, ...(await h.view({ tailChars })) };
   }

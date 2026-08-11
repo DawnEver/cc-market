@@ -104,3 +104,21 @@ export function canDrive(session, attachedKeys) {
 export function sessionKey(machineName, session) {
   return `${machineName}:${session.nativeId ?? session.id}`;
 }
+
+/**
+ * A session's context-window occupancy. used = the LATEST turn's full-prompt tokens
+ * (usage.context_tokens; falls back to the cumulative total for peers on older code);
+ * limit = the model's window (context_limit, resolved server-side from the id). pct is
+ * null when either is unknown — a percentage would be fabricated. After a native compact
+ * the next turn's context_tokens drop, so the percentage falls with the window.
+ */
+export function contextStatus(session) {
+  const used = session?.usage?.context_tokens ?? session?.usage?.total_input_tokens ?? null;
+  const limit = session?.context_limit ?? null;
+  return {
+    used,
+    limit,
+    pct: (used != null && limit) ? Math.min(100, Math.round((used / limit) * 100)) : null,
+    compacted: session?.compacted ?? 0,
+  };
+}

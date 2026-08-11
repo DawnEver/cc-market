@@ -2,7 +2,7 @@
 // fetch: these are the only functions with "logic" in the console, so they get tests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTranscript, viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey } from '../web/public/state.js';
+import { parseTranscript, viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus } from '../web/public/state.js';
 
 test('parseTranscript: turns tee output into messages, trimming blanks', () => {
   const content = '\n[user]\nhello there\n\n[assistant · turn 1]\nHi! How can I help?\nSecond line.\n\n[user]\nmore\n';
@@ -88,4 +88,20 @@ test('canDrive: mine, attached, or shared → true; foreign non-shared → false
 test('sessionKey: machine + remote/console id is stable', () => {
   assert.equal(sessionKey('G', { nativeId: 'n1' }), 'G:n1');
   assert.equal(sessionKey('G', { id: 'sess-1' }), 'G:sess-1');
+});
+
+test('contextStatus: percentage from latest-turn context vs the model window', () => {
+  const cs = contextStatus({ model: 'deepseek-v4-flash[1m]', context_limit: 1_000_000,
+    usage: { context_tokens: 250_000 }, compacted: 2 });
+  assert.deepEqual(cs, { used: 250_000, limit: 1_000_000, pct: 25, compacted: 2 });
+  // after a compact the latest-turn context drops → percentage drops with it
+  const post = contextStatus({ model: 'deepseek-v4-flash[1m]', context_limit: 1_000_000,
+    usage: { context_tokens: 30_000 }, compacted: 3 });
+  assert.equal(post.pct, 3);
+});
+
+test('contextStatus: no % when the window is unknown — tokens only, never fabricated', () => {
+  assert.equal(contextStatus({ model: 'kimi-for-coding', context_limit: null, usage: { context_tokens: 50_000 } }).pct, null);
+  assert.equal(contextStatus({ usage: {} }).pct, null);
+  assert.equal(contextStatus({}).pct, null);
 });

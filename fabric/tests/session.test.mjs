@@ -404,6 +404,40 @@ test('registry records cwd; attachSession registers a remote handle', async () =
   await closeSession(a.id);
 });
 
+// v3: attach learns the remote session's IDENTITY from the peer (node/view carries
+// model/effort/project/cwd/turns/usage now), so an attached handle shows full facts and
+// groups under its real project — not a bare "attached, no project".
+test('attachSession pulls the remote identity; a peer on old code degrades to nulls', async () => {
+  const { listSessions, attachSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
+  _resetRegistry();
+  const richAttach = async () => ({
+    id: 'peer-sess-1',
+    view: async () => ({ model: 'deepseek-v4-flash[1m]', effort: 'max', project: 'motronics-studio',
+      cwd: 'D:/motronics-studio', turns: 12, pid: 42, usage: { context_tokens: 100 }, compacted: 1 }),
+    send: async () => ({ text: 'x', turn: 1 }), close: async () => 0,
+  });
+  const a = await attachSession({ node: 'WS1', remoteId: 'peer-sess-1' }, richAttach);
+  const row = listSessions().find((s) => s.id === a.id);
+  assert.equal(row.model, 'deepseek-v4-flash[1m]');
+  assert.equal(row.effort, 'max');
+  assert.equal(row.project, 'motronics-studio', 'groups under the real project');
+  assert.equal(row.cwd, 'D:/motronics-studio');
+  assert.equal(row.turns, 12);
+  assert.equal(row.compacted, 1);
+  assert.equal(row.context_limit, 1_000_000, 'window limit resolved from the model id');
+  assert.equal(row.usage.context_tokens, 100);
+  await closeSession(a.id);
+
+  // A handle with no view() (older peer) → identity stays null, never fabricated.
+  const blindAttach = async () => ({ id: 'peer-sess-2', send: async () => ({ text: 'x', turn: 1 }), close: async () => 0 });
+  const b = await attachSession({ node: 'WS1', remoteId: 'peer-sess-2' }, blindAttach);
+  const brow = listSessions().find((s) => s.id === b.id);
+  assert.equal(brow.model, null);
+  assert.equal(brow.project, null);
+  assert.equal(brow.turns, 0);
+  await closeSession(b.id);
+});
+
 // ── SR-040: sends to ONE id are serialized in the registry, so two concurrent
 // session_send calls can never interleave on a backend that does not serialize itself.
 test('sendToSession serializes per id: concurrent sends run in order, never overlapped', async () => {

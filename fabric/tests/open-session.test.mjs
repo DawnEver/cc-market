@@ -336,6 +336,9 @@ test('openSession accumulates usage/cost facts across turns', async () => {
     input_tokens: 200, output_tokens: 40,
     cache_creation_input_tokens: 600, cache_read_input_tokens: 2000,
     total_input_tokens: 2800, cost_usd: 0.02, partial: false,
+    // context_tokens = the LATEST turn's full-prompt tokens (not cumulative): each turn
+    // re-sends the whole context, so this is the current window occupancy.
+    context_tokens: 1400,
   });
   await s.close();
 });

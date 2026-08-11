@@ -9,7 +9,7 @@
 // composer disabled and the reason shown, instead of an unexplained disabled button.
 
 import { h, t, patch } from "./render.js";
-import { viewMessages, aggregateFleet, sessionsOf, canDrive, sessionKey } from "./state.js";
+import { viewMessages, aggregateFleet, sessionsOf, canDrive, sessionKey, contextStatus } from "./state.js";
 import { fmtUptime, fmtMem, fmtAgo } from "/lib/format.mjs";
 
 const $ = (s) => document.querySelector(s);
@@ -124,7 +124,10 @@ function machineCard(m) {
   ]);
 }
 
-function pickMachine(n) { selMachine = selMachine === n ? null : n; selProject = null; renderFleet(); updateSpawnWhere(); }
+// Re-render the Machines pane (the blue selection box moves with the click — the pane
+// must be re-rendered on pick, not only on the 6s poll).
+function renderMachines() { patch($('#machines'), h('div', {}, fleet.map(machineCard))); }
+function pickMachine(n) { selMachine = selMachine === n ? null : n; selProject = null; renderMachines(); renderFleet(); updateSpawnWhere(); }
 function pickProject(p) { selProject = selProject === p ? null : p; renderFleet(); updateSpawnWhere(); }
 
 function sessCard(s, machine) {
@@ -134,21 +137,25 @@ function sessCard(s, machine) {
   const consoleId = s.chattable ? s.id : attached.get(key);
   const sel = selected && (selected.type === 'console' ? selected.id === consoleId : selected.type === 'observe' && selected.remoteId === s.nativeId && selected.node === machine.name);
   const ident = [s.provider, s.model, s.effort].filter(Boolean).join(' · ');
-  // Context = cumulative input tokens (input + cache creation + cache read) — the
-  // closest honest measure of context pressure fabric records. turns always shown.
-  const ctx = s.usage?.total_input_tokens ?? s.usage?.input_tokens ?? null;
-  // Honest "why no project": an attached handle records no location at all; a session
-  // with a real cwd outside every registered alias shows where it actually runs.
+  // Context occupancy: percentage when the model's window is known, else raw tokens.
+  // After a native compact the % drops (context_tokens is the latest turn). ↻N marks
+  // how many times the session was compacted.
+  const { used: ctxUsed, limit: ctxLimit, pct, compacted } = contextStatus(s);
+  const ctxStr = pct != null ? `ctx ${pct}%` : (ctxUsed != null ? `ctx ${fmtTokens(ctxUsed)}` : '');
+  // Honest "why no project": an attached handle on an OLD peer records no location;
+  // otherwise the peer's project/cwd rides the attach and the session groups properly.
   const loc = !s.project
-    ? (s.provider === 'attached' ? ' · attached handle'
+    ? (s.provider === 'attached' && !s.cwd ? ' · attached handle'
       : (s.cwd ? ' · cwd ' + s.cwd.split(/[\\/]/).filter(Boolean).pop() : ''))
     : '';
-  const facts = [ident, `turns ${s.turns ?? 0}`, ctx != null ? `ctx ${fmtTokens(ctx)}` : '',
+  const facts = [ident, `turns ${s.turns ?? 0}`, ctxStr, compacted ? '↻' + compacted : '',
                  s.pid ? `pid ${s.pid}` : '', loc].filter(Boolean).join(' · ');
   const cost = s.usage?.cost_usd ? ' · ' + fmtCost(s.usage.cost_usd) : '';
+  const title = [s.cwd, (ctxUsed != null && ctxLimit) ? `context ${fmtTokens(ctxUsed)} / ${fmtTokens(ctxLimit)}` : '']
+    .filter(Boolean).join(' — ');
   return h('div.card click' + (sel ? ' sel' : ''), {
     key: 's:' + key,
-    ...(s.cwd ? { title: s.cwd } : {}), // full path on hover; basename in the line above
+    ...(title ? { title } : {}), // full cwd + context on hover; basename in the line above
     'data-action': 'open', 'data-node': machine.name,
     // Mine → the console session id (drives /api/sessions/:id). Foreign → the peer's
     // id, used to attach (shared) or observe (non-shared).
@@ -237,7 +244,7 @@ async function refreshFleet() {
   try {
     fleet = await api('GET', '/api/fleet'); fleetAt = Date.now();
     orphans = await api('GET', '/api/reconcile');
-    patch($('#machines'), h('div', {}, fleet.map(machineCard)));
+    renderMachines();
     renderFleet();
     renderHeader();
     updateSpawnWhere();

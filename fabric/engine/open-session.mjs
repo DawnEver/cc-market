@@ -260,6 +260,11 @@ while ($true) {
     cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
     cost_usd: 0, partial: false,
   };
+  // The LATEST turn's full-prompt tokens (input + cache creation + cache read) — the
+  // current context-window occupancy. Each turn re-sends the whole context, so this is
+  // the window used right now; a native compact drops it on the next turn (that is the
+  // "compact freed the window" signal the console shows as a percentage drop).
+  let contextTokens = 0;
 
   // Last stderr BYTES — the only clue when the child dies. Kept as Buffers: coercing each
   // chunk to a string decoded at an arbitrary boundary, tearing multibyte UTF-8, and made
@@ -306,6 +311,8 @@ while ($true) {
           usage.output_tokens += ev.usage.output_tokens ?? 0;
           usage.cache_creation_input_tokens += ev.usage.cache_creation_input_tokens ?? 0;
           usage.cache_read_input_tokens += ev.usage.cache_read_input_tokens ?? 0;
+          contextTokens = (ev.usage.input_tokens ?? 0) + (ev.usage.cache_creation_input_tokens ?? 0)
+                        + (ev.usage.cache_read_input_tokens ?? 0);
         } else {
           usage.partial = true; // a turn we cannot account for — say so, do not imply zero
         }
@@ -510,8 +517,12 @@ while ($true) {
       return {
         ...usage,
         total_input_tokens: usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens,
+        context_tokens: contextTokens,
       };
     },
+    // Native compaction count (compact_boundary events observed) — the "↻N" the console
+    // shows so a session's context pressure is read alongside how many times it was cut.
+    get compacted() { return compactBoundaryAt; },
     send, setGoal, goalRun, compact, close,
   };
 }
