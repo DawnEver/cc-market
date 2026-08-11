@@ -6,10 +6,10 @@
 process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'fj-test-'));
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { spawnSync, spawn } from "node:child_process";
 import tls from "node:tls";
 import net from "node:net";
@@ -17,7 +17,7 @@ import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken, identityForTo
 
 import { createNodeServer, AUTH_ERROR } from "../engine/node-server.mjs";
 import { connectNode, openRemoteSession, attachRemoteSession, poolStats, _setPoolHeartbeatMs } from "../engine/node-client.mjs";
-import { loadFabricConfig, resolveNode, loadServeConfig } from "../engine/node-config.mjs";
+import { loadFabricConfig, resolveNode, loadServeConfig, resolveSystemPromptFile } from "../engine/node-config.mjs";
 import { openProviderSession, createTeam, sendToTeamWorker, closeTeam, _resetRegistry } from "../engine/session.mjs";
 
 const TOKEN = "test-secret";
@@ -431,6 +431,35 @@ test("loadFabricConfig caches by mtime and invalidates when the file changes", (
     stamp(new Date());
     assert.equal(loadFabricConfig(cfgPath).token, "two");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// A RELATIVE systemPromptFile resolves against the config file's directory (the synced
+// repo root) — the shared config works across machines with different usernames instead
+// of baking one box's absolute path into every box (linxu vs ezxmb14, WS1 repro 2026-08-11).
+test("loadFabricConfig resolves a relative systemPromptFile to the config's real dir", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fabric-sysprompt-"));
+  const promptDir = join(dir, "system-prompt");
+  try {
+    mkdirSync(promptDir, { recursive: true });
+    writeFileSync(join(promptDir, "claude-base.md"), "BASE");
+    const cfgPath = join(dir, "claude_env_settings.json");
+    writeFileSync(cfgPath, JSON.stringify({ fabric: { systemPromptFile: "system-prompt/claude-base.md" } }));
+    utimesSync(cfgPath, new Date(), new Date()); // fresh mtime → cache sees a new file
+    const fab = loadFabricConfig(cfgPath);
+    assert.equal(fab.systemPromptFile, join(dir, "system-prompt", "claude-base.md"));
+    assert.equal(existsSync(fab.systemPromptFile), true, "resolved path must exist");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The `~`-prefixed convention is the primary one (setup links ~/.claude/system-prompt
+// into the synced repo); an absolute path is kept for explicit overrides.
+test("resolveSystemPromptFile expands ~ to home and keeps absolute paths", () => {
+  const cfg = "C:/x/claude_env_settings.json";
+  assert.equal(
+    resolveSystemPromptFile("~/.claude/system-prompt/claude-base.md", cfg),
+    join(homedir(), ".claude", "system-prompt", "claude-base.md"));
+  assert.equal(resolveSystemPromptFile("C:/abs/prompt.md", cfg), "C:/abs/prompt.md");
+  assert.equal(resolveSystemPromptFile(null, cfg), null);
 });
 
 // --- serve.mjs --port validation (SR-002) ---

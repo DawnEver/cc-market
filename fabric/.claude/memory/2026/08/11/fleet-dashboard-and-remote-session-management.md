@@ -36,21 +36,39 @@ ride a claude session). Resolved in `resolveSessionDefaults` (openProviderSessio
 `call`), and peer-side in `node/spawn` (serve.mjs passes it). Live config set to
 `{deepseek, deepseek-v4-flash[1m], max}`; web console spawn form preselects it.
 
-## Live finding: WS1 could NOT spawn — missing system-prompt file
+## Live finding: WS1 could NOT spawn — hardcoded OneDrive path in shared config
 
 WS2 spawned+sent+closed cleanly (`WS2-OK`). WS1's child exited 1 at startup:
 `System prompt file not found: C:\Users\linxu\OneDrive - The University of Nottingham\Sync\claude\system-prompt\claude-base.md`.
-The synced `fabric.systemPromptFile` absolute path doesn't exist on WS1 (G has it; WS1's
-OneDrive repo isn't at that path). The CLI exits 1 on a nonexistent `--system-prompt-file`,
-bricking EVERY session on an unsynced peer. FIX: both CLI injection sites
-(`open-session.mjs`, `spawn-child.mjs`) now skip a missing file with a stderr warning (the
-API path in anthropic-http.mjs already skipped it). Sessions on such a peer fall back to
-the stock prompt instead of refusing to start.
+The synced `fabric.systemPromptFile` had baked in G's absolute OneDrive path. WS1's user is
+**ezxmb14** (not linxu) — the file DID exist on WS1 at `C:\Users\ezxmb14\...\claude-base.md`,
+but the config pointed at the linxu path. The CLI exits 1 on a nonexistent
+`--system-prompt-file`, bricking EVERY session on a peer with a different username.
+`codex_config.toml` had the SAME hardcoded linxu path for `model_instructions_file`.
 
-**Operational:** WS1 stays broken until (a) its serve restarts with the new code, or
-(b) the system-prompt file is synced to WS1. `node/view` is currently UNSUPPORTED on both
-peers (they run pre-change code) — the whole feature set lands on the fleet via the normal
-plugin update cycle (commit → push → pre-push bumps version → autoUpdate → restart serve).
+## First-principles redesign (2026-08-11): symlink-based platform prompts
+
+**Convention: shared configs never carry a machine-specific (OneDrive) path.** setup.js now
+links `~/.claude/system-prompt` and `~/.codex/system-prompt` → `<repo>/system-prompt` (dir
+junctions), so prompt files are referenced by their symlink path:
+- `fabric.systemPromptFile = "~/.claude/system-prompt/claude-base.md"` — resolved by
+  `resolveSystemPromptFile` in node-config.mjs (expands `~` → home; the junction does the
+  rest). Resolved value contains NO OneDrive.
+- `codex_config.toml model_instructions_file = "~/.codex/system-prompt/codex-base.md"` —
+  codex expands `~`/`./` against `~/.codex/` (verified: `~/` officially supported).
+- `resolveSystemPromptFile` keeps an absolute-path passthrough (explicit override) and a
+  relative→repo-root fallback (works before setup runs).
+- Both CLI injection sites (`open-session.mjs`, `spawn-child.mjs`) also SKIP a missing file
+  with a stderr warning (the API path already did), so a machine without the file/symlink
+  still spawns (stock prompt) instead of exiting 1.
+
+**Version honesty:** `pluginVersion()` is now MEMOIZED at first read — node/status reports
+the version of the CODE actually running, not a plugin.json auto-updated on disk after
+start (WS2's banner said v0.1.14 while status reported v0.1.19, observed live).
+
+**Operational:** WS1/WS2 each need `npm run setup` (creates the system-prompt junctions)
++ a serve restart with the new code. `node/view` is UNSUPPORTED on both peers until their
+serves run the new version — the feature set lands via the normal plugin update cycle.
 
 ## Design notes
 

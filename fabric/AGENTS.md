@@ -173,14 +173,18 @@ credentials; only text comes back.
   so a team can mix local and remote workers transparently.
 - **Config** (`engine/node-config.mjs`): the `fabric` block of `claude_env_settings.json` —
   `token`/`tokens` (accepted set), `nodes` (peers; `host` may be IP or DNS name, `token`
-  per peer), `serve` (port/name/`maxSessions`/`projects` alias map). Cached by mtime AND a
-  2s TTL, because mtime alone has 1-second granularity on Windows and a same-second edit
-  would otherwise stay invisible to a long-lived daemon forever. Riding the synced
-  env-settings file means the node roster and tokens propagate to every machine
-  automatically; since `serve` is therefore shared,
-  `serve.byHost` carries per-machine overrides (matched against `os.hostname()`
-  case-insensitively, FQDN or short name; `projects` merge per-alias) — resolved by
-  `loadServeConfig()`, used by `scripts/serve.mjs`.
+  per peer), `serve` (port/name/`maxSessions`/`projects` alias map), `sessionDefaults`
+  (provider/model/effort bundle), `systemPromptFile` (claude/API platform prompt — a
+  `~/.claude/system-prompt/...` path resolved via the per-machine symlink setup.js links
+  into the synced repo; **never a machine-specific OneDrive path**). Codex's platform
+  prompt comes from `codex_config.toml` `model_instructions_file =
+  "~/.codex/system-prompt/codex-base.md"` (codex expands `~` against `~/.codex/`). Cached
+  by mtime AND a 2s TTL, because mtime alone has 1-second granularity on Windows and a
+  same-second edit would otherwise stay invisible to a long-lived daemon forever. Riding
+  the synced env-settings file means the node roster and tokens propagate to every machine
+  automatically; since `serve` is therefore shared, `serve.byHost` carries per-machine
+  overrides (matched against `os.hostname()` case-insensitively, FQDN or short name;
+  `projects` merge per-alias) — resolved by `loadServeConfig()`, used by `scripts/serve.mjs`.
 
 ## Testing
 

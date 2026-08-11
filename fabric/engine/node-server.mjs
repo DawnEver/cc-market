@@ -57,13 +57,19 @@ class RpcError extends Error {
   constructor(code, message, data = undefined) { super(message); this.code = code; this.data = data; }
 }
 
-// Plugin version, best-effort: a peer scheduling against this node deserves to know
-// which fabric it is talking to.
+// Plugin version, best-effort: a peer scheduling against this node deserves to know which
+// fabric it is talking to. MEMOIZED at first read (server start): node/status must report
+// the version of the CODE actually running, not the plugin.json that may have been updated
+// on disk since — an autoUpdate under a long-lived serve made the status lie (WS2's banner
+// said v0.1.14 while node/status reported v0.1.19, observed 2026-08-11).
+let _pluginVersion;
 export function pluginVersion() {
+  if (_pluginVersion !== undefined) return _pluginVersion;
   try {
     const p = join(dirname(fileURLToPath(import.meta.url)), "..", ".claude-plugin", "plugin.json");
-    return JSON.parse(readFileSync(p, "utf8")).version ?? "unknown";
-  } catch { return "unknown"; }
+    _pluginVersion = JSON.parse(readFileSync(p, "utf8")).version ?? "unknown";
+  } catch { _pluginVersion = "unknown"; }
+  return _pluginVersion;
 }
 
 /**
