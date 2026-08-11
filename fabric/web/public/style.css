@@ -12,6 +12,14 @@
   main { flex:1; display:grid; grid-template-columns: 280px 360px 1fr; min-height:0; }
   section { border-right:1px solid var(--border); overflow-y:auto; padding:10px; }
   h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:6px 0; }
+  /* Collapsible section headers (Machines · Projects → Sessions): the summary is the
+     header; clicking collapses the pane. Open/closed indicator via ::before. */
+  details.fold summary { list-style:none; cursor:pointer; user-select:none;
+    font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim);
+    margin:6px 0; padding:2px 0; }
+  details.fold summary::-webkit-details-marker { display:none; }
+  details.fold summary::before { content:"▾ "; color:var(--accent); }
+  details.fold:not([open]) summary::before { content:"▸ "; }
   .card { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-bottom:8px; }
   .card.click { cursor:pointer; }
   .card.sel { border-color:var(--accent); }

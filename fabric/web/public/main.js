@@ -133,10 +133,17 @@ function sessCard(s, machine) {
   const consoleId = s.chattable ? s.id : attached.get(key);
   const sel = selected && (selected.type === 'console' ? selected.id === consoleId : selected.type === 'observe' && selected.remoteId === s.nativeId && selected.node === machine.name);
   const ident = [s.provider, s.model, s.effort].filter(Boolean).join(' · ');
-  const facts = [ident, s.pid ? `pid ${s.pid}` : '', s.turns ? `turns ${s.turns}` : ''].filter(Boolean).join(' · ');
+  // Honest "why no project": an attached handle records no location at all; a session
+  // with a real cwd outside every registered alias shows where it actually runs.
+  const loc = !s.project
+    ? (s.provider === 'attached' ? ' · attached handle'
+      : (s.cwd ? ' · cwd ' + s.cwd.split(/[\\/]/).filter(Boolean).pop() : ''))
+    : '';
+  const facts = [ident, s.pid ? `pid ${s.pid}` : '', s.turns ? `turns ${s.turns}` : '', loc].filter(Boolean).join(' · ');
   const cost = s.usage?.cost_usd ? ' · ' + fmtCost(s.usage.cost_usd) : '';
   return h('div.card click' + (sel ? ' sel' : ''), {
     key: 's:' + key,
+    ...(s.cwd ? { title: s.cwd } : {}), // full path on hover; basename in the line above
     'data-action': 'open', 'data-node': machine.name,
     // Mine → the console session id (drives /api/sessions/:id). Foreign → the peer's
     // id, used to attach (shared) or observe (non-shared).
@@ -201,8 +208,14 @@ function renderFleet() {
         ...byProj(p).map((s) => sessCard(s, m)),
       ]));
     if (!selProject && noProj.length) {
+      // Name the reason: attached handles have no recorded location; cwd-bearing
+      // sessions run outside every registered project alias (their card shows the cwd).
+      const allAttached = noProj.every((s) => s.provider === 'attached');
       projHtml.push(h('div', { key: 'proj:' + m.name + ':(none)' }, [
-        h('div.proj', {}, [h('span', {}, [t('📁 (no project)')]), h('span.dim', {}, [t(noProj.length)])]),
+        h('div.proj', {}, [
+          h('span', {}, [t(allAttached ? '📁 attached — no project recorded' : '📁 (no project)')]),
+          h('span.dim', {}, [t(noProj.length)]),
+        ]),
         ...noProj.map((s) => sessCard(s, m)),
       ]));
     }
