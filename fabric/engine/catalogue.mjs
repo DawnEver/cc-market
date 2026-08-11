@@ -71,12 +71,14 @@ let _cache = null;
 export function liveCatalogue({ ttlMs = 15 * 60 * 1000, force = false, _configPath = getConfigPath, _config = loadFabricConfig, _now = Date.now } = {}) {
   if (!force && _cache && _now() - _cache.probed_at < ttlMs) return _cache;
   let nodes = [];
-  try { nodes = Object.keys(_config().nodes || {}); } catch { /* no fabric block */ }
+  let defaults = null;
+  try { nodes = Object.keys(_config().nodes || {}); defaults = _config().sessionDefaults || null; } catch { /* no fabric block */ }
   _cache = {
     probed_at: _now(),
     providers: [probeClaude(), probeCodex(), ...probeApiProviders(_configPath())],
     nodes,
     efforts: Object.entries(EFFORT_LEVELS).map(([name, tokens]) => ({ name, tokens })),
+    defaults,
   };
   return _cache;
 }

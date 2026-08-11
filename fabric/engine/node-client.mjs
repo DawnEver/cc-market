@@ -240,6 +240,9 @@ function remoteHandle({ id, pid = null, lease }) {
     // drained final result comes back (node/goal).
     goal: (opts) => conn.request("node/goal", { id, ...opts }),
     ping: async () => absorbFacts(handle, await conn.request("node/ping", { id })),
+    // Content view forwards to the peer's node/view — a nested remote (session on C
+    // managed via B) keeps working because the peer forwards in turn.
+    view: (opts) => conn.request("node/view", { id, ...opts }),
     async close() {
       try {
         // node/close reports the real cost facts (SR-011); the registry journals

@@ -45,6 +45,8 @@ fabric/
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
 │   ├── node-{server,client,config}.mjs  LAN node fabric: TCP JSON-RPC peer server, remote
 │   │                        session client, `fabric` config block (see § LAN node fabric)
+│   ├── node-probe.mjs       Fleet probe: concurrent pingNodes for list_nodes / web console
+│   ├── sysinfo.mjs          Cross-platform CPU busy % + localStatus (Windows-safe)
 │   ├── codex/               app-server client · task · session · discovery
 │   └── tests/               engine unit suites (node:test)
 ├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
@@ -57,7 +59,8 @@ fabric/
 │   │                        purpose (never a background service; user directive 2026-08-09).
 │   │                        --port N · --console-port N · --no-console · --status
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
-│   │                        wrapper), callers (codex/API adapters), trace, errors
+│   │                        wrapper), callers (codex/API adapters), trace, errors, format
+│   │                        (fleet display: fmtUptime/fmtMem/fmtAgo)
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
 ├── web/                     Management console — a small structured web project:
 │   ├── server.mjs           HTTP shell: static + API wiring, startConsole() export
@@ -81,13 +84,15 @@ transport — framed needed for Codex MCP startup). Tools:
 | Tool | Input | Routes to |
 |---|---|---|
 | `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
-| `spawn_session` | `provider`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?`, `profile?`, `shared?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. With `node`, the session runs on that peer machine (see § LAN node fabric). `shared:true` (remote only) makes it drivable by any token-holder and exempt from spawner-disconnect reap — the cross-machine attach convention |
+| `spawn_session` | `provider?`, `model?`, `write?`, `cwd?`, `observe?`, `node?`, `project?`, `profile?`, `shared?`, `effort?` | `createSession()` → registers a live handle, returns `{id, provider, nativeId}`. Omitted provider/model/effort fall back to `fabric.sessionDefaults` (a provider+model+effort bundle; overriding the provider opts out of the default's model/effort). With `node`, the session runs on that peer machine (see § LAN node fabric). `shared:true` (remote only) makes it drivable by any token-holder and exempt from spawner-disconnect reap — the cross-machine attach convention |
+| `session_view` | `id?`, `node?`, `remoteId?`, `tailChars?` | `viewSession()` / `viewRemoteSession()` → transcript tail + liveness facts (alive, pid, turns, lastActivity). `id` for a local/owned session (remote handles forward to their node); `node`+`remoteId` inspects a peer session directly (read-only, not owner-gated). codex reports `content:null` honestly (no local transcript) |
+| `attach_session` | `node`, `remoteId` | `attachSession()` → adopt a shared remote session so this console can `session_send`/`session_close` it; returns a local id |
 | `session_send` | `id`, `prompt` | `sendToSession()` → one turn, context retained |
 | `session_close` | `id` | `closeSession()` → tears down the child |
 | `session_compact` | `id` | `compactSession()` → native context compaction in place (codex `thread/compact/start`; claude/API via the CLI's `/compact` user message + `compact_boundary`); `COMPACT_UNSUPPORTED` for backends without one |
 | `session_goal` | `id`, `condition`, `prompt?`, `maxTurns?`, `timeoutMs?` | `setSessionGoal()`/`goalRunSession()` → FABRIC-SIDE goal loop: with a goal active, a send iterates a completion-marker protocol (`<<GOAL_COMPLETE>>`) until the marker appears or the caps hit; returns the final outcome (`state: met\|capped\|timeout`); caps mandatory (the loop never self-terminates while unmet); claude/API children only (`GOAL_UNSUPPORTED` otherwise). The CLI's native `/goal` is deliberately NOT used — it requires hooks enabled, incompatible with the hook-free child policy (verified: refuses under disableAllHooks, hangs the CLI at startup with hooks on an isolated config dir) |
 | `list_sessions` | (none) | `listSessions()` |
-| `list_nodes` | (none) | Configured peer fabric nodes from the `fabric` config block |
+| `list_nodes` | (none) | Live fleet dashboard: this machine + every configured peer, probed concurrently (per-node deadlines) with ALIVE/DEAD, version, uptime (d/h/m), CPU busy %, mem free/total, tags, and each node's sessions (the "processes" you can manage) |
 | `list_providers` | (none) | `listModels()` |
 | `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native: no remapping) |
 | `codex_status` | `codexPath?` | `checkCodexStatus()` |
@@ -129,7 +134,7 @@ credentials; only text comes back.
 
 - **Server** (`engine/node-server.mjs`, CLI `scripts/serve.*` — which also starts the
   management console in the same process; `--no-console` for the node alone): exposes
-  `node/spawn|send|compact|goal|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
+  `node/spawn|send|view|compact|goal|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
   (`engine/node-tls.mjs` — PSK derived from a token; an unaccepted token fails the
   handshake, all traffic encrypted, no certificates). Every request also carries the token;
   the server refuses to start without one. Sessions are owned by the connection that
@@ -137,7 +142,10 @@ credentials; only text comes back.
   `serve.maxSessions` (default 64) is a **static operator-declared ceiling**: `node/spawn`
   past it fails with `CAPACITY_CEILING`, and `node/status` reports the ceiling and the
   count. Dynamic admission — who gets the next slot, by load — stays in swarm; this only
-  refuses past an invariant the operator wrote down.
+  refuses past an invariant the operator wrote down. `node/status` also reports
+  `hostname`, `cpu` (cores), **`cpu_busy_pct`** (cross-platform sample via
+  `engine/sysinfo.mjs` — `os.loadavg` is [0,0,0] on Windows), mem free/total, uptime;
+  `node/spawn` defaults omitted provider/model/effort to the node's `sessionDefaults`.
 - **Tokens are per-node, and that is the norm.** A node accepts a **SET**: `fabric.token`
   (primary) plus `fabric.tokens`, while a peer picks its own with `nodes.<name>.token`.
   Issue one token per peer — revoking that peer is then deleting one entry on the node,
@@ -145,12 +153,13 @@ credentials; only text comes back.
   says WHICH token it holds: `fabric-node:<sha256(token)[:12]>` (a hash — the identity
   travels in the clear and must never be the credential). The bare legacy identity
   `fabric-node` is still accepted and maps to the primary token, so an older peer connects.
-- **A node is ONE trust domain.** `node/status` and `node/ping` are read-only and NOT
-  owner-filtered: an accepted token confers full visibility of the box. Ownership gates
-  only the calls that ACT on a session. Do not issue a token to a peer that should not see
-  the machine's sessions. `node/status` takes `detail: 'light'|'full'` — light (the
-  default) is counts plus per-session liveness, full adds usage/turns/pid for a console
-  that renders cost.
+- **A node is ONE trust domain.** `node/status`, `node/ping` and `node/view` are read-only
+  and NOT owner-filtered: an accepted token confers full visibility of the box. Ownership
+  gates only the calls that ACT on a session (send/close/compact/goal). Do not issue a
+  token to a peer that should not see the machine's sessions. `node/status` takes
+  `detail: 'light'|'full'` — light (the default) is counts plus per-session liveness,
+  full adds usage/turns/pid for a console that renders cost. `node/view {id, tailChars?}`
+  returns a session's transcript tail + liveness facts (see `viewSession`/`viewRemoteSession`).
 - **Client** (`engine/node-client.mjs`): `openRemoteSession()` returns the same
   `{id, send, close}` handle as any local provider session. Sessions on the same peer share
   **one pooled connection** (keyed `host:port:token`, refcounted, closed at 0), multiplexed

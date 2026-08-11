@@ -13,6 +13,7 @@
 
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { connectNode } from "../engine/node-client.mjs";
+import { fmtUptime, fmtMem } from "./lib/format.mjs";
 
 const CONNECT_TIMEOUT_MS = Number(process.env.FABRIC_PING_TIMEOUT_MS) || 4000;
 const REQUEST_TIMEOUT_MS = CONNECT_TIMEOUT_MS;
@@ -35,7 +36,8 @@ async function probe([name, n]) {
     });
     // `light`: this report prints counts, never per-session usage.
     const st = await conn.request("node/status", { detail: "light" }, { timeoutMs: REQUEST_TIMEOUT_MS });
-    return `${name} ALIVE v${st.version} up=${st.uptime_s}s cpu=${st.cpu} free=${st.mem_available_mb}MB `
+    return `${name} ALIVE v${st.version} up=${fmtUptime(st.uptime_s)} cpu=${st.cpu_busy_pct ?? "?"}% (${st.cpu} cores) `
+      + `mem=${fmtMem(st.mem_available_mb)}/${fmtMem(st.mem_total_mb)} `
       + `sessions=${st.sessions_count ?? st.sessions.length}/${st.maxSessions ?? "?"}`
       + `${st.tags?.length ? ` tags=${st.tags.join(",")}` : ""}\n`;
   } finally { conn?.close(); }

@@ -74,8 +74,8 @@ function runServer(input) {
 describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
-      ["call", "codex_status", "fan_out", "list_nodes", "list_providers", "list_sessions",
-       "resolve_model", "session_close", "session_compact", "session_goal", "session_send", "spawn_session",
+      ["attach_session", "call", "codex_status", "fan_out", "list_nodes", "list_providers", "list_sessions",
+       "resolve_model", "session_close", "session_compact", "session_goal", "session_send", "session_view", "spawn_session",
        "team_close", "team_send", "team_spawn", "team_status", "team_synthesize"]);
   });
 
@@ -126,8 +126,17 @@ describe("call primitive", () => {
     await assert.rejects(() => handleCall({ provider: "claude" }), /prompt must be non-empty/);
   });
 
-  test("throws when provider missing", async () => {
-    await assert.rejects(() => handleCall({ prompt: "hi" }), /provider is required/);
+  test("throws when provider missing and no sessionDefaults are configured", async () => {
+    // Fixture WITHOUT a fabric block → no default provider → the required-error fires.
+    await withConfigFixture({ ...DEEPSEEK_FIXTURE }, () =>
+      assert.rejects(() => handleCall({ prompt: "hi" }), /provider is required/));
+  });
+
+  test("call falls back to fabric.sessionDefaults for provider/model", async () => {
+    await withConfigFixture({ ...DEEPSEEK_FIXTURE, fabric: { sessionDefaults: { provider: "deepseek", model: "deepseek-v4-flash" } } }, () =>
+      // The default provider is applied, so the call gets PAST the provider check and
+      // fails on the fixture's dead base URL — anything but "provider is required".
+      assert.rejects(() => handleCall({ prompt: "hi" }), (e) => !/provider is required/.test(String(e.message))));
   });
 
   test("rejects image modes for non-codex providers", async () => {
@@ -232,14 +241,17 @@ describe("introspection tools", () => {
 // ── persistent session tools (injected registry) ─────────────────────
 
 describe("session tools", () => {
-  test("spawn_session creates + returns descriptor; requires provider", async () => {
+  test("spawn_session creates + returns descriptor; provider may be omitted (defaults resolve downstream)", async () => {
     let seen = null;
-    const fakeCreate = async (opts) => { seen = opts; return { id: "sess-1", provider: opts.provider, nativeId: "thread-1" }; };
+    const fakeCreate = async (opts) => { seen = opts; return { id: "sess-1", provider: opts.provider || "deepseek", nativeId: "thread-1" }; };
     const res = await handleToolCall("spawn_session", { provider: "codex", write: true, cwd: "/repo" }, { createSession: fakeCreate });
     assert.equal(seen.provider, "codex");
     assert.equal(seen.write, true);
     assert.deepEqual(JSON.parse(text(res)), { id: "sess-1", provider: "codex", nativeId: "thread-1" });
-    await assert.rejects(() => handleToolCall("spawn_session", {}), /provider is required/);
+    // Provider omitted → passed through as undefined; the session opener applies
+    // sessionDefaults (the fake reports the resolved provider).
+    const res2 = await handleToolCall("spawn_session", {}, { createSession: fakeCreate });
+    assert.equal(JSON.parse(text(res2)).provider, "deepseek");
   });
 
   test("spawn_session forwards shared (the cross-machine attach convention)", async () => {
@@ -281,6 +293,48 @@ describe("session tools", () => {
     assert.equal(JSON.parse(text(res)).exitCode, 0);
     const listed = await handleToolCall("list_sessions", {}, { listSessions: () => [{ id: "sess-1", provider: "codex", turns: 2, createdAt: 0 }] });
     assert.equal(JSON.parse(text(listed))[0].id, "sess-1");
+  });
+
+  test("session_view by registry id routes to viewSession; requires id or node+remoteId", async () => {
+    const fakeView = async (id, o) => ({ id, provider: "deepseek", kind: "child", content: `tail:${id}`, alive: true, turns: 1 });
+    const res = await handleToolCall("session_view", { id: "sess-1", tailChars: 500 }, { viewSession: fakeView });
+    assert.match(JSON.parse(text(res)).content, /tail:sess-1/);
+    await assert.rejects(() => handleToolCall("session_view", {}, {}), /id \(or node \+ remoteId\)/);
+  });
+
+  test("session_view by node+remoteId probes the peer directly (no attach needed)", async () => {
+    const fakeRemote = async (n, o) => ({ id: n.remoteId, provider: "deepseek", content: `remote:${n.node}`, alive: true });
+    const res = await handleToolCall("session_view", { node: "WS1", remoteId: "sess-b1" }, { viewRemoteSession: fakeRemote });
+    const parsed = JSON.parse(text(res));
+    assert.equal(parsed.id, "sess-b1");
+    assert.equal(parsed.content, "remote:WS1");
+  });
+
+  test("attach_session adopts a shared remote session for driving", async () => {
+    const fakeAttach = async (n) => ({ id: "sess-attached", provider: "attached", nativeId: n.remoteId, pid: null });
+    const res = await handleToolCall("attach_session", { node: "WS1", remoteId: "sess-b1" }, { attachSession: fakeAttach });
+    assert.equal(JSON.parse(text(res)).id, "sess-attached");
+    await assert.rejects(() => handleToolCall("attach_session", { node: "WS1" }, {}), /node and remoteId are required/);
+  });
+
+  test("list_nodes renders the fleet dashboard (this machine + probed nodes + sessions)", async () => {
+    const res = await handleToolCall("list_nodes", {}, {
+      localStatus: async () => ({ hostname: "G", uptime_s: 90061, cpu: 32, cpu_busy_pct: 19.2, mem_available_mb: 6800, mem_total_mb: 32488 }),
+      pingNodes: async () => [
+        { name: "WS1", alive: true, version: "0.1.9", uptime_s: 3661, cpu: 24, cpu_busy_pct: 12.5, mem_available_mb: 8192, mem_total_mb: 32768, tags: ["femm"], sessions: [{ id: "sess-b1", provider: "deepseek", project: "repo", shared: true, alive: true, turns: 11 }] },
+        { name: "WS2", alive: false, error: "connect ECONNREFUSED 192.168.1.5:7677" },
+      ],
+      listSessions: () => [{ id: "sess-a1", provider: "codex", alive: true, turns: 5 }],
+    });
+    const out = text(res);
+    assert.match(out, /2\/3 machines alive/);
+    assert.match(out, /\[this machine\] ALIVE v/);
+    assert.match(out, /cpu 19\.2% \(32 cores\)/);
+    assert.match(out, /up 1d 1h 1m/);   // uptime rendered as days/hours/minutes
+    assert.match(out, /8\.0GB\/32\.0GB/); // memory free/total, GB
+    assert.match(out, /WS1 ALIVE v0\.1\.9/);
+    assert.match(out, /sess-b1 deepseek project=repo shared alive turns=11/);
+    assert.match(out, /WS2 DEAD: connect ECONNREFUSED/);
   });
 });
 

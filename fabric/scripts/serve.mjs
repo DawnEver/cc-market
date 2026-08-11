@@ -81,6 +81,8 @@ const fabricCfg = loadFabricConfig();
 const server = createNodeServer({
   token, tokens: serve.tokens || [], name, projects, tags,
   profiles: fabricCfg.profiles || {}, defaultProfile: serve.defaultProfile ?? null,
+  // A peer may omit provider/model/effort on node/spawn and inherit this node's default.
+  sessionDefaults: fabricCfg.sessionDefaults || null,
   ...(serve.maxSessions != null ? { maxSessions: serve.maxSessions } : {}),
 });
 

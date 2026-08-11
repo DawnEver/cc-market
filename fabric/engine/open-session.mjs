@@ -8,7 +8,7 @@
 // JSON, not TTY text to scrape — the clean path from the harness-as-fabric design.
 // Composes with observe via the same buildChildEnv switch as spawnChild.
 
-import { mkdirSync, appendFileSync, writeFileSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
+import { mkdirSync, appendFileSync, writeFileSync, readFileSync, readdirSync, statSync, rmSync, existsSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildChildEnv, hookFreeArgs, resolveClaudeExe, effortEnv } from './spawn-child.mjs';
@@ -130,9 +130,16 @@ export async function openSession(opts) {
     // Profile flags come LAST and profile-owned flags are stripped from extraArgs —
     // otherwise "last flag wins" lets a caller override the policy (sharp-review SR-017).
     ...(profile ? stripProfileOwnedFlags(extraArgs) : extraArgs), ...profileArgs(profile),
-    // Platform default (last, so an explicit profile flag still wins by position).
-    ...(sysFile && !profile?.systemPromptFile ? ['--system-prompt-file', sysFile] : []),
+    // Platform default (last, so an explicit profile flag still wins by position). A MISSING
+    // file is skipped with a warning — a prompt file is a policy layer, never a reason to
+    // refuse the session (a machine that has not synced it must still be able to spawn).
+    // Reproduced live 2026-08-11: fabric.systemPromptFile was absent on WS1, and the CLI
+    // exited 1 at startup for every session there.
+    ...(sysFile && !profile?.systemPromptFile && existsSync(sysFile) ? ['--system-prompt-file', sysFile] : []),
   ];
+  if (sysFile && !profile?.systemPromptFile && !existsSync(sysFile)) {
+    process.stderr.write(`fabric: system prompt file not found (skipping --system-prompt-file): ${sysFile}\n`);
+  }
 
   const child = _spawn(bin, args, { cwd: cwd || runDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -305,7 +312,7 @@ while ($true) {
         usage.cost_usd += ev.total_cost_usd ?? 0;
         const p = pending; pending = null;
         const text = acc; acc = '';
-        if (showUi) tee(`\n[assistant · turn ${turnCount}]\n${text}\n`);
+        tee(`\n[assistant · turn ${turnCount}]\n${text}\n`);
         if (p) p.resolve({ text, turn: turnCount });
       }
     }
@@ -354,7 +361,10 @@ while ($true) {
         timer.unref?.();
       }
       lastActivity = Date.now();
-      if (showUi) tee(`\n[${_label}]\n${text}\n`);
+      // The transcript is ALWAYS recorded (not just for visible/interactive sessions):
+      // session_view / node/view read it, so every session is inspectable from anywhere
+      // in the fleet. The viewer WINDOW below stays opt-in via showUi.
+      tee(`\n[${_label}]\n${text}\n`);
       child.stdin.write(userLine(text));
     });
     chain = chain.then(run, run);
@@ -460,6 +470,27 @@ while ($true) {
     return exitCode;
   }
 
+  /**
+   * Content view: the tail of the always-recorded transcript + liveness facts. Read by
+   * session_view / node/view so a session is inspectable from anywhere in the fleet.
+   * content is "" until the first turn completes (no transcript rows yet), never an error.
+   */
+  function view({ tailChars = 8000 } = {}) {
+    let content = "";
+    try {
+      content = readFileSync(transcriptPath, "utf8").slice(-tailChars);
+    } catch { /* transcript not written yet */ }
+    return {
+      content,
+      pid: child.pid ?? null,
+      alive: !closed,
+      turns: turnCount,
+      lastActivity,
+      sessionId,
+      stderrTail: errTail(),
+    };
+  }
+
   return {
     runDir, jsonlPath: proxy?.jsonlPath ?? null,
     get turns() { return turnCount; },
@@ -470,6 +501,7 @@ while ($true) {
     get alive() { return !closed; },
     get lastActivity() { return lastActivity; },
     stderrTail: errTail, // already secret-scrubbed at the source
+    view,
     // Native compaction: the CLI compacts on a `/compact` user message (compact_boundary).
     get compactable() { return true; },
     // Native goal mode: /goal sets the condition; the CLI then auto-runs the loop.

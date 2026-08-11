@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import process from "node:process";
 import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
-import { openRemoteSession, attachRemoteSession } from "./node-client.mjs";
+import { openRemoteSession, attachRemoteSession, connectNode } from "./node-client.mjs";
 import { resolveNode, loadFabricConfig } from "./node-config.mjs";
 import { resolveProfile } from "./profile.mjs";
 import { recordEvent } from "./journal.mjs";
@@ -35,27 +35,53 @@ function tagKind(handle, kind) {
 }
 
 /**
+ * Resolve the provider/model/effort for a spawn: an explicit caller opt wins, otherwise
+ * `fabric.sessionDefaults` in the config (a device's default session). Used by the session
+ * opener and (for provider/model) by the one-shot call path in the MCP server.
+ *
+ * The default is a BUNDLE (provider+model+effort): a caller who overrides the provider has
+ * left the default session, so the default's model/effort no longer apply — they would be
+ * the wrong shape for a different provider (a deepseek model id on a claude session).
+ */
+export function resolveSessionDefaults(opts = {}, cfg = null) {
+  const c = cfg ?? opts._fabricConfig ?? loadFabricConfig(opts.configPath);
+  const sd = c.sessionDefaults || {};
+  const onDefaultProvider = !opts.provider || (sd.provider != null && opts.provider === sd.provider);
+  return {
+    provider: opts.provider ?? sd.provider ?? null,
+    model: onDefaultProvider ? (opts.model ?? sd.model ?? null) : (opts.model ?? null),
+    effort: onDefaultProvider ? (opts.effort ?? sd.effort ?? null) : (opts.effort ?? null),
+  };
+}
+
+/**
  * Open a persistent session for any provider, returning a uniform handle.
- * @param {object} opts  provider (required), model?, write?, cwd?, observe?, runDir?,
- *                       configPath?, profile?,
+ * @param {object} opts  provider (defaults to fabric.sessionDefaults.provider), model?,
+ *                       write?, cwd?, observe?, runDir?, configPath?, profile?, effort?,
  *                       node? (peer node name or {host,port,token} — runs the session on
  *                       that machine; `project` is the REMOTE node's project alias)
  */
 export async function openProviderSession(opts = {}) {
-  const { provider, write } = opts;
-  if (!provider) throw new Error("openProviderSession: provider is required");
+  const cfg = opts._fabricConfig ?? loadFabricConfig(opts.configPath);
+  const { provider, model, effort } = resolveSessionDefaults(opts, cfg);
+  const write = !!opts.write;
+  if (!provider) {
+    throw new Error("openProviderSession: provider is required (pass one, or set fabric.sessionDefaults.provider in claude_env_settings.json)");
+  }
   if (opts.node) {
     // A remote spawn forwards the profile NAME — the peer resolves it against its OWN
     // config (enforcement lives there; sharp-review SR-001). Inline objects stay local.
+    // provider/model/effort are resolved HERE (this machine's defaults) and forwarded
+    // explicitly, so an older peer that cannot resolve defaults itself still obeys them.
     if (opts.profile != null && typeof opts.profile !== "string") {
       throw new Error("openProviderSession: a remote spawn takes a profile NAME registered on the peer, not an object");
     }
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return tagKind(await openRemoteSession({ ...node, provider, model: opts.model, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: opts.effort ?? null, shared: !!opts.shared }), "remote");
+    return tagKind(await openRemoteSession({ ...node, provider, model: model ?? null, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: effort ?? null, shared: !!opts.shared }), "remote");
   }
   // Local: resolve a NAME once, against the SAME config file the provider env comes
   // from (SR-022), so credentials and policy can never be read from two different files.
-  const profile = resolveProfile(opts.profile, opts._fabricConfig ?? loadFabricConfig(opts.configPath));
+  const profile = resolveProfile(opts.profile, cfg);
   if (provider === "codex") {
     // The codex app-server takes no tool/permission policy, so a profile here would be
     // silently discarded — the guard-scope lie. Refuse loudly instead (SR-018/026/042).
@@ -68,7 +94,7 @@ export async function openProviderSession(opts = {}) {
       err.code = "PROFILE_UNSUPPORTED";
       throw err;
     }
-    return tagKind(await openCodexSession({ model: opts.model, write, cwd: opts.cwd, _client: opts._client }), "codex");
+    return tagKind(await openCodexSession({ model, write, cwd: opts.cwd, _client: opts._client }), "codex");
   }
   // Every claude/API session — read-only or write — is the SAME persistent stream-json
   // child. Write capability is a profile, not a different backend: the retired stateless
@@ -84,7 +110,7 @@ export async function openProviderSession(opts = {}) {
       }
     : profile;
   const runDir = opts.runDir || join(tmpdir(), `fabric-session-${idFragment()}`);
-  return tagKind(await openSession({ ...opts, profile: effectiveProfile, runDir }), "child");
+  return tagKind(await openSession({ ...opts, model, effort, profile: effectiveProfile, runDir }), "child");
 }
 
 /**
@@ -308,6 +334,39 @@ export async function pingSession(id) {
 export function getSessionProvider(id) {
   const entry = sessions.get(id);
   return entry ? entry.provider : null;
+}
+
+/**
+ * View a session's content (transcript tail) + liveness facts, local or remote. A remote
+ * handle forwards to the peer's node/view; a local claude/API child reads its own
+ * always-recorded transcript. A backend with no content viewer (codex) reports
+ * content:null with the reason, honestly — never a fabricated answer.
+ */
+export async function viewSession(id, { tailChars = 8000 } = {}) {
+  const entry = sessions.get(id);
+  if (!entry) throw new Error(`No such session: ${id} (may have been closed)`);
+  const h = entry.handle;
+  const base = { id, provider: entry.provider, kind: h.kind ?? null, node: entry.node ?? null };
+  if (typeof h.view === "function") {
+    return { ...base, ...(await h.view({ tailChars })) };
+  }
+  return { ...base, content: null, reason: `${entry.provider}/${h.kind ?? "?"} exposes no content viewer — use session_send to continue it` };
+}
+
+/**
+ * View a session on a peer WITHOUT it being in the local registry — list_nodes shows these
+ * ids, and a peer session is viewable read-only by any token-holder (node/view is
+ * visibility, not acting). Mirrors attachSession's {node, remoteId} shape. Returns the
+ * peer's node/view result verbatim.
+ */
+export async function viewRemoteSession({ node, remoteId }, { tailChars = 8000 } = {}, _connect = null) {
+  if (!node || !remoteId) throw new Error("viewRemoteSession: node and remoteId are required");
+  const n = typeof node === "object" ? node : resolveNode(node);
+  const doConnect = _connect || connectNode;
+  const conn = await doConnect({ host: n.host, port: n.port, token: n.token, connectTimeoutMs: 5000 });
+  try {
+    return await conn.request("node/view", { id: remoteId, tailChars }, { timeoutMs: 30000 });
+  } finally { conn.close(); }
 }
 
 // ── Team registry: fleet-of-workers abstraction ──────────────────────

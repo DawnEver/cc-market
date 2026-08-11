@@ -12,11 +12,14 @@ import { readFileSync, existsSync } from "node:fs";
 import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, pingSession } from "../engine/session.mjs";
 import { reconcile, recordEvent } from "../engine/journal.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
-import { connectNode } from "../engine/node-client.mjs";
 import { getConfigPath } from "../engine/providers.mjs";
 import { liveCatalogue } from "../engine/catalogue.mjs";
 import { loadServeConfig } from "../engine/node-config.mjs";
 import { attachSession } from "../engine/session.mjs";
+// The fleet probe lives in the engine (shared with the MCP list_nodes tool); re-exported
+// for backward compat with any importer of web/api.mjs.
+export { pingNodes } from "../engine/node-probe.mjs";
+import { pingNodes } from "../engine/node-probe.mjs";
 
 /**
  * Structured provider/model/node catalogue for UI dropdowns. Models are the tier
@@ -47,30 +50,9 @@ export function catalogue({ _config = loadFabricConfig, _configPath = getConfigP
   } catch { /* config unreadable: builtin providers only */ }
   let nodes = [];
   try { nodes = Object.keys(_config().nodes || {}); } catch { /* no fabric block */ }
-  return { providers, nodes, efforts: ["low", "medium", "high", "max"] };
-}
-
-/**
- * Probe every configured node for its status facts (the ping.mjs logic, reusable).
- * @param detail 'light' (counts + per-session liveness) or 'full' (adds usage/turns/pid).
- *   Ask for what the VIEW renders: the console polls this every few seconds across every
- *   node, so a usage object per session is paid for on every tick (SR-029/046).
- * Nodes are probed concurrently, each with its own deadline: one wedged peer must not
- * hold the whole fleet view (SR-043).
- */
-export async function pingNodes({ _connect = connectNode, _config = loadFabricConfig, detail = "light" } = {}) {
-  const fc = _config();
-  const probe = async ([name, n]) => {
-    let conn = null;
-    try {
-      conn = await _connect({ host: n.host, port: n.port, token: n.token || fc.token, connectTimeoutMs: 3000 });
-      const st = await conn.request("node/status", { detail }, { timeoutMs: 10000 });
-      return { name, alive: true, ...st };
-    } catch (e) {
-      return { name, alive: false, error: `${e.code ? `${e.code}: ` : ""}${String(e.message).slice(0, 300)}` };
-    } finally { conn?.close(); }
-  };
-  return Promise.all(Object.entries(fc.nodes || {}).map(probe));
+  let defaults = null;
+  try { defaults = _config().sessionDefaults || null; } catch { /* no fabric block */ }
+  return { providers, nodes, efforts: ["low", "medium", "high", "max"], defaults };
 }
 
 export function createWebApi(deps = {}) {

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import {
-  createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, _resetRegistry,
+  createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, _resetRegistry, viewSession, resolveSessionDefaults,
 } from '../engine/session.mjs';
 import { openCodexSession } from '../engine/codex/session.mjs';
 
@@ -549,6 +549,55 @@ test('teams are journaled on create and close', async () => {
   assert.equal(created.team, teamId);
   assert.equal(created.workers.length, 1);
   assert.ok(rows.some((r) => r.event === 'team_close' && r.team === teamId));
+});
+
+// ── viewSession: content tail + liveness facts for a local/remote handle; an honest
+// content:null for a backend with no viewer (codex), never a fabricated answer.
+test('viewSession returns handle content + facts when the handle exposes view()', async () => {
+  _resetRegistry();
+  const handle = makeFakeHandle();
+  handle.kind = 'child';
+  handle.pid = 777;
+  handle.view = async ({ tailChars }) => ({ content: 'tail'.slice(-tailChars), alive: true, pid: 777, turns: 0, lastActivity: 1, sessionId: 'cli-x', stderrTail: '' });
+  const { id } = await createSession({ provider: 'deepseek' }, async () => handle);
+  const v = await viewSession(id, { tailChars: 4 });
+  assert.equal(v.content, 'tail');
+  assert.equal(v.alive, true);
+  assert.equal(v.pid, 777);
+  assert.equal(v.kind, 'child');
+});
+
+test('viewSession is an honest NO for a backend without a content viewer', async () => {
+  _resetRegistry();
+  const handle = makeFakeHandle(); // no view() — like a codex thread
+  handle.kind = 'codex';
+  const { id } = await createSession({ provider: 'codex' }, async () => handle);
+  const v = await viewSession(id);
+  assert.equal(v.content, null);
+  assert.match(v.reason, /no content viewer/);
+});
+
+test('viewSession on an unknown id rejects', async () => {
+  await assert.rejects(() => viewSession('nope'), /No such session/);
+});
+
+// ── resolveSessionDefaults: fabric.sessionDefaults is a BUNDLE (provider+model+effort).
+// Overriding the provider leaves the default session, so its model/effort no longer apply.
+test('resolveSessionDefaults fills provider/model/effort from the config default', () => {
+  const cfg = { sessionDefaults: { provider: 'deepseek', model: 'deepseek-v4-flash[1m]', effort: 'max' } };
+  assert.deepEqual(resolveSessionDefaults({}, cfg), { provider: 'deepseek', model: 'deepseek-v4-flash[1m]', effort: 'max' });
+});
+
+test('resolveSessionDefaults: explicit opts win; a foreign provider drops default model/effort', () => {
+  const cfg = { sessionDefaults: { provider: 'deepseek', model: 'deepseek-v4-flash[1m]', effort: 'max' } };
+  assert.deepEqual(resolveSessionDefaults({ provider: 'codex' }, cfg), { provider: 'codex', model: null, effort: null });
+  assert.deepEqual(resolveSessionDefaults({ provider: 'deepseek', effort: 'low' }, cfg), { provider: 'deepseek', model: 'deepseek-v4-flash[1m]', effort: 'low' });
+  // Same default provider, explicit model → explicit wins.
+  assert.deepEqual(resolveSessionDefaults({ model: 'deepseek-v4-pro[1m]' }, cfg), { provider: 'deepseek', model: 'deepseek-v4-pro[1m]', effort: 'max' });
+});
+
+test('resolveSessionDefaults with no configured default returns nulls', () => {
+  assert.deepEqual(resolveSessionDefaults({}, {}), { provider: null, model: null, effort: null });
 });
 
 // ── SR-045: a spawn record names the process that HOLDS the handle, so the layer

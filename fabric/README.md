@@ -116,9 +116,11 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 - `list_providers` — dump the provider registry + model aliases.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
 - `codex_status` — codex CLI install / version / auth check.
-- `spawn_session` / `session_send` / `session_close` / `list_sessions` — **persistent
-  multi-turn** sessions over MCP. `spawn_session` returns an id; each `session_send` is one
-  turn with context retained from earlier turns; `session_close` frees the child. Works for
+- `spawn_session` / `session_send` / `session_view` / `session_close` / `list_sessions` —
+  **persistent multi-turn** sessions over MCP. `spawn_session` returns an id (provider/
+  model/effort may be omitted — they fall back to `fabric.sessionDefaults`); each
+  `session_send` is one turn with context retained from earlier turns; `session_view`
+  shows a session's transcript tail + liveness; `session_close` frees the child. Works for
   codex (app-server thread), claude, and API providers alike. Example:
 
   ```json
@@ -147,6 +149,7 @@ handshake itself.
    ```json
    "fabric": {
      "token": "a-shared-secret",
+     "sessionDefaults": { "provider": "deepseek", "model": "deepseek-v4-flash[1m]", "effort": "max" },
      "nodes": { "desktop": { "host": "my-desktop.example.corp", "port": 7677 } },
      "serve": {
        "port": 7677,
@@ -156,9 +159,11 @@ handshake itself.
    }
    ```
 
-   `host` may be an IP or DNS name. Because the file is synced to every machine, `serve`
-   is shared — `serve.byHost` holds per-machine overrides keyed by hostname
-   (case-insensitive, FQDN or short name); `projects` maps merge, override winning
+   `sessionDefaults` is the device's **default session** — a provider/model/effort bundle
+   used whenever `spawn_session`/`call` omit them (an explicit provider opts out of the
+   default's model/effort). `host` may be an IP or DNS name. Because the file is synced to
+   every machine, `serve` is shared — `serve.byHost` holds per-machine overrides keyed by
+   hostname (case-insensitive, FQDN or short name); `projects` maps merge, override winning
    per alias.
 
 2. On each peer machine, bring fabric up in a terminal you keep open. **`scripts\serve.cmd`
@@ -183,7 +188,9 @@ handshake itself.
    ```
 
    `team_spawn` workers accept `node`/`project` too, so a team can mix local and remote
-   workers. `list_nodes` shows the configured peers.
+   workers. `list_nodes` is a **live fleet dashboard**: this machine + every peer, each
+   with `ALIVE`/`DEAD`, version, uptime (days/hours/minutes), CPU busy %, memory
+   free/total, and the sessions running there — the "processes" you can manage.
 
 5. **Cross-machine driving — the shared+attach convention.** A session is OWNED by the
    connection that spawned it: only that connection can `session_send`/`session_close` it,
@@ -195,7 +202,11 @@ handshake itself.
    (`POST /api/attach` — the console chat view holds the transcript locally after that).
    Non-shared foreign sessions are visible but read-only, with the reason stated on the
    card. Convention: **if a session may need to be driven from another machine, spawn it
-   shared from the start** — shared-ness cannot be added later.
+   shared from the start** — shared-ness cannot be added later. `attach_session {node,
+   remoteId}` adopts a shared remote session from MCP so you can send to / close it;
+   `session_view` shows a session's content — `{id}` for a local/owned one (forwards to
+   its node), or `{node, remoteId}` to inspect a peer session directly (viewing is
+   read-only visibility, never owner-gated).
 6. **Compact a long session in place** — `session_compact {id}` (MCP), `node/compact`
    (peer protocol, same ownership gate as send/close), or the compact button on the
    console's chat view. Both major backends compact NATIVELY: codex via

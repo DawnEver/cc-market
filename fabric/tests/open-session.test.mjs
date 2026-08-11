@@ -422,6 +422,46 @@ test('close() removes a fabric-created tmp runDir but never a caller-supplied on
   assert.equal(existsSync(theirs), true, 'a caller-supplied dir is not ours to delete');
 });
 
+// ── always-recorded transcript + view(): a session is inspectable from anywhere in the
+// fleet even when spawned invisible — visible/interactive opt into WINDOWS, not recording.
+test('the transcript is recorded for an invisible session and view() returns its tail', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-transcript-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink), _bin: 'fake' });
+  const r = await s.send('ping');
+  assert.equal(r.text, 'echo:ping');
+  const transcriptPath = join(runDir, 'transcript.log');
+  assert.equal(existsSync(transcriptPath), true, 'transcript written even without visible/interactive');
+  const raw = readFileSync(transcriptPath, 'utf8');
+  assert.match(raw, /\[user\]\nping/);
+  assert.match(raw, /echo:ping/);
+  const v = await s.view({ tailChars: 1000 });
+  assert.match(v.content, /echo:ping/);
+  assert.equal(v.alive, true);
+  assert.equal(v.turns, 1);
+  assert.ok('pid' in v, 'view reports pid (null for a fake child)');
+  await s.close();
+});
+
+// ── a MISSING fabric.systemPromptFile must be skipped, never fatal. The CLI exits 1 on a
+// nonexistent --system-prompt-file, which bricked EVERY session on a peer that had not
+// synced the file (reproduced live on WS1, 2026-08-11).
+test('a missing fabric.systemPromptFile is skipped, not passed to the child', async () => {
+  const rec = { sink: { writes: [] }, args: null };
+  const cfgPath = join(mkdtempSync(join(tmpdir(), 'os-sysflag-')), 'reg.json');
+  writeFileSync(cfgPath, JSON.stringify({
+    'env:deepseek': { ANTHROPIC_BASE_URL: 'https://x/anthropic', ANTHROPIC_API_KEY: 'k', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash' },
+    fabric: { systemPromptFile: join(mkdtempSync(join(tmpdir(), 'os-noprompt-')), 'does-not-exist.md') },
+  }));
+  clearConfigCache();
+  const runDir = mkdtempSync(join(tmpdir(), 'os-sysflag-run-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: cfgPath, _spawn: captureSpawn(rec), _bin: 'fake' });
+  await s.send('hi');
+  assert.equal(rec.args.includes('--system-prompt-file'), false, 'a missing prompt file must not reach the child');
+  await s.close();
+});
+
 // ── SR-052: `closed` is only set on close/error. A child killed out of band still has a
 // writable stdin pipe, so the turn hangs — and the serialized chain bricks every later
 // caller. An abandoned turn leaves the conversation state unknowable, so the session dies.

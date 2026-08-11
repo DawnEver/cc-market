@@ -7,9 +7,11 @@
 // server's config) with this machine's credentials. No file transfer, no shared paths.
 //
 // Methods (every request must carry an ACCEPTED token in params.token):
-//   node/status  { detail?: 'light'|'full' } → { name, version, uptime_s, cpu, mem_*, tags,
-//                  maxSessions, sessions_count, sessions }
-//   node/spawn   { provider, model?, write?, project? } → { id, provider, nativeId, pid }
+//   node/status  { detail?: 'light'|'full' } → { name, version, uptime_s, cpu, cpu_busy_pct,
+//                  mem_*, tags, maxSessions, sessions_count, sessions }
+//   node/view    { id, tailChars? } → { content, alive, pid, turns, lastActivity }  (content tail)
+//   node/spawn   { provider?, model?, write?, project? } → { id, provider, nativeId, pid }
+//                 (provider/model/effort default to this node's sessionDefaults)
 //   node/send    { id, prompt } → { text, turn }
 //   node/ping    { id } → { id, provider, alive, pid, turns, lastActivity }
 //   node/compact { id } → { id, compacted, confirmed }
@@ -24,8 +26,8 @@
 // node/status still lists all sessions.
 //
 // TRUST DOMAIN (SR-013): a node is ONE trust domain — holding an accepted token confers
-// full VISIBILITY of the box. node/status and node/ping are both read-only and both
-// unrestricted by owner, deliberately and consistently; ownership gates only the calls
+// full VISIBILITY of the box. node/status, node/ping and node/view are all read-only and
+// all unrestricted by owner, deliberately and consistently; ownership gates only the calls
 // that ACT on a session (node/send, node/close). Anyone who should not see this box's
 // sessions should not hold one of its tokens.
 
@@ -36,7 +38,8 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createSession, sendToSession, closeSession, listSessions, pingSession, compactSession, setSessionGoal, goalRunSession } from "./session.mjs";
+import { createSession, sendToSession, closeSession, listSessions, pingSession, compactSession, setSessionGoal, goalRunSession, viewSession } from "./session.mjs";
+import { sampleCpuBusyPct } from "./sysinfo.mjs";
 import { resolveProfile } from "./profile.mjs";
 import {
   PSK_IDENTITY, PSK_IDENTITY_PREFIX, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken,
@@ -68,8 +71,10 @@ export function pluginVersion() {
  *   token         primary token (the one the legacy bare PSK identity maps to)
  *   tokens        additional ACCEPTED tokens — revoking a peer is deleting one entry
  *   maxSessions   static operator-declared ceiling on concurrent sessions
+ *   sessionDefaults  {provider?, model?, effort?} — defaults a node/spawn that omits them
+ *   cpuSampleMs   CPU-busy% sample window; <=0 skips the sample (cpu_busy_pct: null)
  */
-export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, maxSessions = DEFAULT_MAX_SESSIONS, deps = {}, _kill = null, _closeGraceMs = 3000 } = {}) {
+export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, sessionDefaults = null, maxSessions = DEFAULT_MAX_SESSIONS, cpuSampleMs = 120, deps = {}, _kill = null, _closeGraceMs = 3000 } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
   // The accepted SET (SR-033/051): one shared fleet-wide PSK could only be revoked by
   // re-keying every machine. `token` stays primary — it is what an older peer's bare
@@ -85,6 +90,7 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   const _compactSession = deps.compactSession || compactSession;
   const _setSessionGoal = deps.setSessionGoal || setSessionGoal;
   const _goalRunSession = deps.goalRunSession || goalRunSession;
+  const _viewSession = deps.viewSession || viewSession;
   const kill = _kill || ((pid) => process.kill(pid));
   const closeGraceMs = _closeGraceMs;
   const startedAt = Date.now();
@@ -103,8 +109,12 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         }
         const live = _listSessions();
         return {
-          name, version: pluginVersion(), uptime_s: Math.round((Date.now() - startedAt) / 1000),
+          name, hostname: os.hostname(), version: pluginVersion(),
+          uptime_s: Math.round((Date.now() - startedAt) / 1000),
           cpu: os.cpus().length,
+          // Cross-platform CPU busy % over a short window — os.loadavg() is [0,0,0] on
+          // Windows, so this samples os.cpus() cumulative times (engine/sysinfo.mjs).
+          cpu_busy_pct: await sampleCpuBusyPct(cpuSampleMs),
           mem_available_mb: Math.round(os.freemem() / 1048576),
           mem_total_mb: Math.round(os.totalmem() / 1048576),
           tags,
@@ -127,7 +137,16 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         };
       }
       case "node/spawn": {
-        if (!params.provider) throw new RpcError(-32602, "node/spawn: provider is required");
+        // Defaults resolve HERE, against this node's own config — the same convention as
+        // profiles (the peer enforces policy; a caller may omit and inherit the node's
+        // default session). The default is a BUNDLE: overriding the provider leaves the
+        // default session, so its model/effort no longer apply (a deepseek model id would
+        // be wrong on a claude session). An explicit param always wins.
+        const provider = params.provider ?? sessionDefaults?.provider ?? null;
+        const onDefaultProvider = !params.provider || (sessionDefaults?.provider != null && params.provider === sessionDefaults.provider);
+        const model = params.model ?? (onDefaultProvider ? sessionDefaults?.model : null) ?? null;
+        const effort = params.effort ?? (onDefaultProvider ? sessionDefaults?.effort : null) ?? null;
+        if (!provider) throw new RpcError(-32602, "node/spawn: provider is required (and this node has no sessionDefaults.provider)");
         // A STATIC operator-declared ceiling (SR-025/041), not a scheduling decision:
         // dynamic admission (who gets the next slot, by load) stays in swarm. This only
         // refuses past an invariant the operator wrote in serve.maxSessions, so a
@@ -153,9 +172,9 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         try { profile = resolveProfile(params.profile ?? defaultProfile, { profiles }); }
         catch (e) { throw new RpcError(-32602, `node/spawn: ${e.message}`); }
         const desc = await _createSession({
-          provider: params.provider, model: params.model, write: !!params.write,
+          provider, model, write: !!params.write,
           cwd: cwd || process.cwd(), observe: false, profile,
-          visible: !!params.visible, interactive: !!params.interactive, effort: params.effort ?? null,
+          visible: !!params.visible, interactive: !!params.interactive, effort,
         });
         if (params.shared) shared.add(desc.id); else owned.add(desc.id);
         return { ...desc, shared: !!params.shared };
@@ -170,6 +189,12 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         // accepted token confers full visibility, and only acting on a session is gated.
         if (!params.id) throw new RpcError(-32602, "node/ping: id is required");
         return _pingSession(params.id);
+      case "node/view":
+        // Read-only content view (transcript tail + liveness facts), likewise unrestricted
+        // by owner — viewing is visibility, not acting. A peer can see what a session on
+        // this box is doing; it cannot send to it or close it unless it owns/spawns shared.
+        if (!params.id) throw new RpcError(-32602, "node/view: id is required");
+        return _viewSession(params.id, { tailChars: params.tailChars });
       case "node/compact": {
         if (!params.id) throw new RpcError(-32602, "node/compact: id is required");
         // Acting on a session — same ownership gate as send/close.

@@ -138,10 +138,15 @@ test('profileArgs maps systemPromptFile to --system-prompt-file', () => {
 test('openSession injects fabric.systemPromptFile default + profile override wins', async () => {
   const { openSession } = await import('../engine/open-session.mjs');
   const { clearConfigCache } = await import('../engine/providers.mjs');
+  // The default prompt file must EXIST to be passed (a missing one is skipped — the CLI
+  // exits 1 on a nonexistent --system-prompt-file, bricking spawns on an unsynced peer).
+  const promptDir = mkdtempSync(join(tmpdir(), 'sysf-prompt-'));
+  const defaultPrompt = join(promptDir, 'claude-base.md');
+  writeFileSync(defaultPrompt, 'platform prompt');
   const cfgPath = join(mkdtempSync(join(tmpdir(), 'sysf-')), 'reg.json');
   writeFileSync(cfgPath, JSON.stringify({
     'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' },
-    fabric: { systemPromptFile: 'C:/default/claude-base.md' },
+    fabric: { systemPromptFile: defaultPrompt },
   }));
   clearConfigCache();
   let seen = null;
@@ -156,7 +161,7 @@ test('openSession injects fabric.systemPromptFile default + profile override win
   // default from config
   const s1 = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'sysf1-')), configPath: cfgPath, _spawn: fake, _bin: 'fake' });
   await s1.close();
-  assert.ok(seen.includes('--system-prompt-file') && seen[seen.indexOf('--system-prompt-file') + 1] === 'C:/default/claude-base.md');
+  assert.ok(seen.includes('--system-prompt-file') && seen[seen.indexOf('--system-prompt-file') + 1] === defaultPrompt);
   // profile overrides
   const s2 = await openSession({ provider: 'deepseek', runDir: mkdtempSync(join(tmpdir(), 'sysf2-')), configPath: cfgPath, _spawn: fake, _bin: 'fake', profile: { systemPromptFile: 'C:/profile/base.md' } });
   await s2.close();

@@ -58,6 +58,11 @@ function fakeSessionDeps() {
       return { id, provider: sessions.get(id).provider, text: `goal:${opts.prompt}`, turns: 3, state: 'met' };
     },
     listSessions: () => [...sessions.entries()].map(([id, s]) => ({ id, provider: s.provider, turns: s.turns })),
+    viewSession: async (id) => {
+      const s = sessions.get(id);
+      if (!s) throw new Error(`No such session: ${id}`);
+      return { id, provider: s.provider, content: `transcript:${id}`, alive: true, turns: s.turns };
+    },
   };
 }
 
@@ -77,7 +82,9 @@ function tlsRaw(port, token = TOKEN) {
 
 async function startServer(extra = {}) {
   const deps = fakeSessionDeps();
-  const server = createNodeServer({ token: TOKEN, name: "testnode", deps, ...extra });
+  // cpuSampleMs:0 skips the ~120ms CPU sample on status calls (most tests don't need it);
+  // a test that asserts a real cpu_busy_pct passes its own cpuSampleMs via `extra`.
+  const server = createNodeServer({ token: TOKEN, name: "testnode", cpuSampleMs: 0, deps, ...extra });
   const { port } = await server.listen(0, "127.0.0.1");
   return { server, deps, port };
 }
@@ -113,6 +120,13 @@ test("status / spawn / send / close roundtrip", async () => {
     const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
     const status = await conn.request("node/status", {});
     assert.equal(status.name, "testnode");
+    // Capacity facts (G1): cores, CPU busy %, memory free/total, uptime, hostname.
+    assert.equal(typeof status.hostname, "string");
+    assert.ok(Number.isInteger(status.cpu) && status.cpu > 0);
+    assert.equal(status.cpu_busy_pct, null, "cpuSampleMs:0 opts out of the CPU sample");
+    assert.ok(status.mem_available_mb > 0 && status.mem_total_mb > 0);
+    assert.ok(Number.isInteger(status.uptime_s) && status.uptime_s >= 0);
+    assert.equal(typeof status.version, "string");
     assert.deepEqual(status.sessions, []);
 
     const desc = await conn.request("node/spawn", { provider: "deepseek" });
@@ -563,6 +577,77 @@ test("node/status reports version/uptime/cpu/memory capacity facts", async () =>
   } finally { await server.close(); }
 });
 
+// CPU busy % needs a real sample window — a node whose server opted out (cpuSampleMs:0)
+// reports null, one configured to sample reports a number in [0,100].
+test("node/status reports cpu_busy_pct over a real sample window", async () => {
+  const { server, port } = await startServer({ cpuSampleMs: 40 });
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const st = await conn.request("node/status", {});
+    assert.equal(typeof st.cpu_busy_pct, "number", "cpu_busy_pct with a real window");
+    assert.ok(st.cpu_busy_pct >= 0 && st.cpu_busy_pct <= 100);
+    conn.close();
+  } finally { await server.close(); }
+});
+
+// ── node/view: content tail + liveness facts. Read-only, like node/status/node/ping.
+test("node/view returns a session's content and liveness facts; unknown id errors", async () => {
+  const { server, port } = await startServer();
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", { provider: "deepseek" });
+    const v = await conn.request("node/view", { id: desc.id });
+    assert.equal(v.id, desc.id);
+    assert.equal(v.content, `transcript:${desc.id}`);
+    assert.equal(v.alive, true);
+    await assert.rejects(() => conn.request("node/view", { id: "nope" }), /No such session/);
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("node/view is read-only: a foreign connection (not the owner) can view but not act", async () => {
+  const { server, port } = await startServer();
+  try {
+    const owner = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await owner.request("node/spawn", { provider: "deepseek" });
+    const foreign = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const v = await foreign.request("node/view", { id: desc.id });
+    assert.equal(v.id, desc.id, "viewing is visibility, not ownership");
+    await assert.rejects(() => foreign.request("node/send", { id: desc.id, prompt: "hi" }), /not owned/);
+    owner.close(); foreign.close();
+  } finally { await server.close(); }
+});
+
+// ── sessionDefaults: node/spawn falls back to the node's default session when the
+// caller omits provider/model/effort; overriding the provider leaves the default bundle
+// (a deepseek model id must never ride a claude session).
+test("node/spawn falls back to sessionDefaults; an explicit provider opts out of model/effort", async () => {
+  const deps = fakeSessionDeps();
+  const server = createNodeServer({
+    token: TOKEN, name: "testnode", deps,
+    sessionDefaults: { provider: "deepseek", model: "deepseek-v4-flash[1m]", effort: "max" },
+  });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", {});
+    assert.equal(desc.provider, "deepseek");
+    assert.equal(deps.opened[0].model, "deepseek-v4-flash[1m]");
+    assert.equal(deps.opened[0].effort, "max");
+    // Same default provider, explicit model → explicit wins.
+    const desc2 = await conn.request("node/spawn", { provider: "deepseek", effort: "low" });
+    assert.equal(desc2.provider, "deepseek");
+    assert.equal(deps.opened[1].model, "deepseek-v4-flash[1m]");
+    assert.equal(deps.opened[1].effort, "low");
+    // Different provider → the default model/effort no longer apply.
+    const desc3 = await conn.request("node/spawn", { provider: "codex" });
+    assert.equal(desc3.provider, "codex");
+    assert.equal(deps.opened[2].model, null, "a foreign provider must not inherit the default model");
+    assert.equal(deps.opened[2].effort, null);
+    conn.close();
+  } finally { await server.close(); }
+});
+
 // SR-001: the peer must ENFORCE its own profiles — a client-supplied inline object is
 // obedience, not enforcement. Names resolve against the SERVER's config; objects → -32602.
 test("node/spawn rejects inline profile objects and resolves names server-side", async () => {
@@ -993,9 +1078,11 @@ test("a per-request token from outside the accepted set is refused after a good 
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: "primary-token" } })}\n`);
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "node/status", params: { token: "never-issued" } })}\n`);
     for (let i = 0; i < 100 && received.split("\n").filter(Boolean).length < 2; i++) await new Promise((r) => setTimeout(r, 10));
-    const [r1, r2] = received.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-    assert.equal(r1.result.name, "n", "any accepted token authorizes a request");
-    assert.equal(r2.error.code, AUTH_ERROR);
+    // Match replies by JSON-RPC id — dispatch is non-awaiting, so two concurrent
+    // requests may be answered in either order (a status now carries a ~120ms CPU sample).
+    const byId = Object.fromEntries(received.split("\n").filter(Boolean).map((l) => { const o = JSON.parse(l); return [o.id, o]; }));
+    assert.equal(byId[1].result.name, "n", "any accepted token authorizes a request");
+    assert.equal(byId[2].error.code, AUTH_ERROR);
     sock.destroy();
   } finally { await server.close(); }
 });

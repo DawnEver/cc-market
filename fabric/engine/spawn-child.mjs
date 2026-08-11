@@ -246,7 +246,13 @@ export async function spawnChild(opts) {
     // resolves to a built dist file (auto-built when stale) from the platform dir.
     const cfgSysFile = loadFabricConfig(configPath).systemPromptFile ?? null;
     const sysFile = systemPromptFile ?? (style && cfgSysFile ? resolveStyleFile(style, cfgSysFile) : null) ?? cfgSysFile;
-    const sysArgs = sysFile ? ['--system-prompt-file', sysFile] : [];
+    // A MISSING file is skipped with a warning (a policy layer, never a reason to refuse
+    // the call) — same rule as the persistent-session path; the CLI exits 1 on a
+    // nonexistent --system-prompt-file, which bricked every session on an unsynced peer.
+    if (sysFile && !fs.existsSync(sysFile)) {
+      process.stderr.write(`fabric: system prompt file not found (skipping --system-prompt-file): ${sysFile}\n`);
+    }
+    const sysArgs = sysFile && fs.existsSync(sysFile) ? ['--system-prompt-file', sysFile] : [];
     // Both modes emit stream-json on stdout so usage parsing + onText streaming are
     // universal; argv mode just keeps the prompt on the command line. --verbose is
     // REQUIRED by the CLI for --print + stream-json (exit 1 without — the same

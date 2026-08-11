@@ -46,7 +46,10 @@ import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/node-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind } from "../engine/session.mjs";
+import { pingNodes } from "../engine/node-probe.mjs";
+import { localStatus } from "../engine/sysinfo.mjs";
+import { fmtUptime, fmtMem, fmtAgo } from "./lib/format.mjs";
+import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind, viewSession, attachSession, viewRemoteSession, resolveSessionDefaults } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -102,11 +105,11 @@ export const TOOLS = [
   },
   {
     name: "spawn_session",
-    description: "Open a persistent multi-turn session. Drive with session_send, close with session_close.",
+    description: "Open a persistent multi-turn session. Drive with session_send, close with session_close. Omitted provider/model/effort fall back to fabric.sessionDefaults (e.g. deepseek + deepseek-v4-flash[1m] + max).",
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: "codex|claude|deepseek|…" },
+        provider: { type: "string", description: "codex|claude|deepseek|… (defaults to fabric.sessionDefaults.provider)" },
         model: { type: "string", description: "Model override" },
         write: { type: "boolean", description: "Allow file writes" },
         cwd: { type: "string", description: "Working dir" },
@@ -119,7 +122,31 @@ export const TOOLS = [
         effort: { type: "string", description: "Thinking effort: low|medium|high|max or a MAX_THINKING_TOKENS number" },
         shared: { type: "boolean", description: "Remote only: drivable by ANY token-holder (other machines' consoles can attach), never reaped when the spawner disconnects" },
       },
-      required: ["provider"],
+    },
+  },
+  {
+    name: "session_view",
+    description: "View a session's content — the tail of its conversation transcript plus liveness facts (alive, pid, turns, lastActivity). Pass `id` for a session in the local registry (forwards to the node it runs on), or `node` + `remoteId` to view a peer session directly. A codex session reports content:null honestly (no local transcript).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Session id in the local registry" },
+        node: { type: "string", description: "Peer node name (with remoteId) — view that session directly, no attach needed" },
+        remoteId: { type: "string", description: "Session id as shown by list_nodes on that node (with node)" },
+        tailChars: { type: "number", description: "Max chars of transcript tail to return (default 8000)" },
+      },
+    },
+  },
+  {
+    name: "attach_session",
+    description: "Adopt an EXISTING remote session (spawned `shared:true` on a peer) so this console can send to and close it. Returns a local session id for session_send/session_close. A peer session that was NOT spawned shared is viewable but not drivable (by design).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        node: { type: "string", description: "Peer node name" },
+        remoteId: { type: "string", description: "Session id on that node (as shown by list_nodes)" },
+      },
+      required: ["node", "remoteId"],
     },
   },
   {
@@ -243,7 +270,7 @@ export const TOOLS = [
   },
   {
     name: "list_nodes",
-    description: "List configured peer fabric nodes (LAN machines reachable for remote sessions).",
+    description: "Fleet dashboard: this machine plus every configured peer fabric node, with ALIVE/DEAD, version, uptime (d/h/m), CPU busy %, memory free/total, and each node's sessions (the processes you can manage — id, provider, project, shared, alive, turns). Probing is concurrent with per-node deadlines.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -512,7 +539,14 @@ export async function handleCall(args, deps = {}) {
   userPrompt = parsed.cleanPrompt;
   if (parsed.flags.write && write === undefined) write = true;
 
-  if (!provider) throw new ConfigError("provider is required — pass it directly or include --provider <name> in a <command> block in prompt");
+  // A provider omitted everywhere falls back to fabric.sessionDefaults (same default the
+  // session opener uses) — an explicit <command> flag still wins above.
+  if (!provider) {
+    const sd = loadFabricConfig().sessionDefaults || {};
+    provider = sd.provider || null;
+    if (!model) model = sd.model || null;
+  }
+  if (!provider) throw new ConfigError("provider is required — pass it directly, include --provider <name> in a <command> block, or set fabric.sessionDefaults.provider in claude_env_settings.json");
   if (!userPrompt || !userPrompt.trim()) throw new ConfigError("prompt must be non-empty");
 
   // observe is a debug modifier: capture raw traffic via the harness engine (non-codex only).
@@ -671,6 +705,11 @@ export async function handleToolCall(name, args = {}, deps = {}) {
   const _setSessionGoal = deps.setSessionGoal || setSessionGoal;
   const _goalRunSession = deps.goalRunSession || goalRunSession;
   const _listSessions = deps.listSessions || listSessions;
+  const _viewSession = deps.viewSession || viewSession;
+  const _viewRemote = deps.viewRemoteSession || viewRemoteSession;
+  const _attachSession = deps.attachSession || attachSession;
+  const _pingNodes = deps.pingNodes || pingNodes;
+  const _localStatus = deps.localStatus || localStatus;
   const _createTeam = deps.createTeam || createTeam;
   const _sendToTeamWorker = deps.sendToTeamWorker || sendToTeamWorker;
   const _getTeamStatus = deps.getTeamStatus || getTeamStatus;
@@ -681,7 +720,7 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "fan_out":
       return await handleFanOut(args, deps);
     case "spawn_session": {
-      if (!args.provider) throw new Error("spawn_session: provider is required");
+      // provider/model/effort may be omitted — the session opener resolves fabric.sessionDefaults.
       const desc = await _createSession({
         provider: args.provider, model: args.model, write: !!args.write,
         cwd: args.cwd || process.cwd(), observe: !!args.observe,
@@ -728,6 +767,19 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "session_close": {
       if (!args.id) throw new Error("session_close: id is required");
       return textResult(JSON.stringify(await _closeSession(args.id)));
+    }
+    case "session_view": {
+      // `node` + `remoteId` views a peer session directly (no attach needed — read-only);
+      // `id` views a session in the local registry (forwards to the node it runs on).
+      if (args.node && args.remoteId) {
+        return textResult(JSON.stringify(await _viewRemote({ node: args.node, remoteId: args.remoteId }, { tailChars: args.tailChars })));
+      }
+      if (!args.id) throw new Error("session_view: id (or node + remoteId) is required");
+      return textResult(JSON.stringify(await _viewSession(args.id, { tailChars: args.tailChars })));
+    }
+    case "attach_session": {
+      if (!args.node || !args.remoteId) throw new Error("attach_session: node and remoteId are required");
+      return textResult(JSON.stringify(await _attachSession({ node: args.node, remoteId: args.remoteId })));
     }
     case "team_spawn": {
       if (!args.workers || !args.workers.length) throw new Error("team_spawn: workers array is required");
@@ -788,9 +840,40 @@ export async function handleToolCall(name, args = {}, deps = {}) {
     case "list_sessions":
       return textResult(JSON.stringify(_listSessions()));
     case "list_nodes": {
-      const nodes = Object.entries(loadFabricConfig().nodes || {});
-      if (!nodes.length) return textResult('No fabric nodes configured. Add a "fabric" block (token + nodes) to claude_env_settings.json; run `node scripts/serve.mjs` on each peer machine.');
-      return textResult(nodes.map(([n, c]) => `${n} → ${c.host}:${c.port}`).join("\n"));
+      const sessionLine = (s) => [
+        s.id, s.provider ?? "?",
+        s.project ? `project=${s.project}` : null,
+        s.shared ? "shared" : null,
+        s.alive === false ? "dead" : "alive",
+        s.turns != null ? `turns=${s.turns}` : null,
+        s.pid ? `pid=${s.pid}` : null,
+        s.lastActivity ? `last=${fmtAgo(s.lastActivity)}` : null,
+      ].filter(Boolean).join(" ");
+      const memStr = (av, tot) => (tot ? `${fmtMem(av)}/${fmtMem(tot)}` : `${fmtMem(av)} free`);
+      const machineLine = (m, name) => `${name} · up ${fmtUptime(m.uptime_s ?? 0)} · cpu ${m.cpu_busy_pct ?? "?"}% (${m.cpu ?? "?"} cores) · mem ${memStr(m.mem_available_mb, m.mem_total_mb)}`;
+
+      const local = await _localStatus();
+      const localSessions = _listSessions();
+      const probed = await _pingNodes({ detail: "full" });
+      const lines = [];
+      lines.push(`[this machine] ${machineLine(local, `ALIVE v${SERVER_VERSION}`)}`);
+      lines.push(...(localSessions.length
+        ? localSessions.map((s) => `    ${sessionLine(s)}`)
+        : ["    (no sessions on this machine)"]));
+      if (!probed.length) {
+        lines.push('No fabric nodes configured. Add a "fabric" block (token + nodes) to claude_env_settings.json; run `node scripts/serve.mjs` on each peer machine.');
+      }
+      for (const m of probed) {
+        if (m.alive) {
+          lines.push(`${m.name} ${machineLine(m, `ALIVE v${m.version ?? "?"}`)}${m.tags?.length ? ` · tags=${m.tags.join(",")}` : ""}`);
+          const ss = m.sessions ?? [];
+          lines.push(...(ss.length ? ss.map((s) => `    ${sessionLine(s)}`) : ["    (no sessions)"]));
+        } else {
+          lines.push(`${m.name} DEAD: ${m.error ?? "unreachable"}`);
+        }
+      }
+      const aliveCount = 1 + probed.filter((m) => m.alive).length;
+      return textResult(`fabric fleet: ${aliveCount}/${probed.length + 1} machines alive\n` + lines.join("\n"));
     }
     case "list_providers":
       return textResult(listModels());

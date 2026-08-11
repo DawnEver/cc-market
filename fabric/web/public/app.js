@@ -1,7 +1,17 @@
 const $ = (s) => document.querySelector(s);
-let fleet = [], catalogue = { providers: [], nodes: [], efforts: [] };
+let fleet = [], catalogue = { providers: [], nodes: [], efforts: [], defaults: null };
 let selMachine = null, selProject = null, selected = null, sending = false;
 const attached = new Map(); // remote `${node}:${id}` → console session id
+
+// Fleet display formatting (mirrors scripts/lib/format.mjs — browser cannot import it).
+const fmtUptime = (s) => {
+  s = Math.max(0, Math.floor(+s || 0));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p = [];
+  if (d) p.push(d + 'd'); if (h) p.push(h + 'h'); if (m) p.push(m + 'm'); if (!p.length) p.push(sec + 's');
+  return p.join(' ');
+};
+const fmtMem = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + 'GB' : Math.round(mb) + 'MB';
 
 const api = async (method, path, body) => {
   const r = await fetch(path, { method, headers: { 'content-type': 'application/json' },
@@ -30,11 +40,25 @@ async function loadCatalogue(force) {
       `<option value="${p.name}" ${p.available ? '' : 'disabled'}>${p.name}${p.available ? '' : ' (unavailable)'}</option>`).join('');
     const firstOk = catalogue.providers.find((p) => p.available && p.name === 'deepseek') || catalogue.providers.find((p) => p.available);
     if (firstOk) $('#providerSel').value = firstOk.name;
+    // fabric.sessionDefaults preselects the spawn form (e.g. deepseek + v4-flash + max) —
+    // the operator's stated default session, honored by both this console and the MCP tools.
+    const d = catalogue.defaults || {};
+    if (d.provider) {
+      const dp = catalogue.providers.find((p) => p.name === d.provider && p.available);
+      if (dp) $('#providerSel').value = d.provider;
+    }
     fillModels();
-    const withHaiku = catalogue.providers.find((p) => p.name === $('#providerSel').value)?.models.some((m) => m.alias === 'haiku');
-    if (withHaiku) $('#modelSel').value = 'haiku';
+    if (d.model) {
+      const dp = catalogue.providers.find((p) => p.name === $('#providerSel').value);
+      const dm = dp?.models?.find((mm) => mm.actual === d.model);
+      if (dm) $('#modelSel').value = dm.alias;
+    } else {
+      const withHaiku = catalogue.providers.find((p) => p.name === $('#providerSel').value)?.models.some((m) => m.alias === 'haiku');
+      if (withHaiku) $('#modelSel').value = 'haiku';
+    }
+    const defaultEffort = d.effort || 'medium';
     $('#effortSel').innerHTML =
-      catalogue.efforts.map((e) => `<option value="${e.name}" ${e.name === 'medium' ? 'selected' : ''}>${e.name} (${e.tokens} tk)</option>`).join('');
+      catalogue.efforts.map((e) => `<option value="${e.name}" ${e.name === defaultEffort ? 'selected' : ''}>${e.name} (${e.tokens} tk)</option>`).join('');
   } catch (e) { console.error('catalogue', e); }
 }
 
@@ -48,7 +72,7 @@ async function refreshFleet() {
     <div class="card click ${selMachine === m.name ? 'sel' : ''}" onclick="pickMachine('${m.name}')">
       <div class="row"><b>${m.name}</b>
         <span>${m.self ? '<span class="badge self">this machine</span>' : ''} <span class="ok">●</span></span></div>
-      <span class="dim">v${esc(m.version)} · cpu ${m.cpu} · free ${m.mem_available_mb} MB · up ${m.uptime_s}s
+      <span class="dim">v${esc(m.version)} · cpu ${m.cpu_busy_pct ?? '?'}% (${m.cpu} cores) · mem ${fmtMem(m.mem_available_mb)}/${fmtMem(m.mem_total_mb)} · up ${fmtUptime(m.uptime_s)}
       · ${(m.sessions?.length ?? 0) + (m.console_sessions?.length ?? 0)} sess${m.tags?.length ? ' · ' + m.tags.join(',') : ''}</span>
     </div>` : `
     <div class="card"><div class="row"><b>${m.name}</b><span class="bad">●</span></div>
