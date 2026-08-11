@@ -473,8 +473,9 @@ function sessRow(s, machine) {
       ])
     : h('span.dim', {}, [t(used != null ? fmtTokens(used) : '')]);
   // Honest "why no project": a cwd-bearing session runs outside every registered
-  // project alias. (An attached handle needs no suffix — its provider already says so.)
-  const loc = !s.project && s.provider !== 'attached' && s.cwd
+  // project alias — name the cwd basename. (An attached handle whose peer filled the
+  // project from cwd at attach time groups under its alias and never reaches this.)
+  const loc = !s.project && s.cwd
     ? 'cwd ' + s.cwd.split(/[\\/]/).filter(Boolean).pop() : '';
   return h('div.srow' + (sel ? ' sel' : ''), {
     key: 's:' + key,

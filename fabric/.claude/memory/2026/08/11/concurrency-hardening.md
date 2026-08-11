@@ -39,6 +39,14 @@ server, teams) inherits the guarantee. 6 new tests; suite 414, 0 fail.
   the chain task accepts-then-fails — the ordering bug the flags exist to prevent.
 - New attach path ⇒ reuse `attachSession`, never register a remote handle directly.
 - node/spawn: check and `admissions++` in the same synchronous stretch.
+- node/status and node/view share ONE `projectForCwd` — same-session fix: an attached
+  handle learned `project:null` from the raw registry view while node/status grouped
+  the same session under its alias (reverse-mapped from cwd), so the console showed
+  "attached — no project recorded" next to a correctly-grouped native entry. The view
+  now reverse-maps too, and attach lands under its project. Test gotcha: deps are
+  captured at createNodeServer construction — overriding a dep between requests does
+  NOT take effect; answer per-id instead. Peers need a serve restart for this (engine
+  code), same rule as every engine change.
 
 ## Method note
 

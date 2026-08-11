@@ -107,6 +107,12 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   // the first await, makes admission atomic (single-threaded: nothing can interleave
   // between the check and the increment).
   let admissions = 0;
+  // cwd → the alias whose root contains it; a session outside every alias reports null
+  // rather than a guess. ONE mapping used by node/status AND node/view: attachSession
+  // learns a session's project from the view, so the two must agree or an attached
+  // session shows "no project" while the status list groups it under its alias.
+  const projectForCwd = (cwd) => Object.entries(projects).find(([, root]) =>
+    cwd && String(cwd).replaceAll("\\", "/").startsWith(String(root).replaceAll("\\", "/")))?.[0] ?? null;
   // SHARED sessions (v2): drivable by ANY token-holder, and never reaped on the
   // spawner's disconnect -- their lifecycle belongs to the journal/watchdog.
   const shared = new Set();
@@ -138,10 +144,7 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
           // so `light` is the default and usage objects are opt-in (SR-029/046). The cost
           // is O(sessions) either way; light just makes each row small.
           sessions: live.map((sess) => {
-            // cwd -> the alias whose root contains it; a session outside every alias
-            // reports project null rather than a guess.
-            const project = Object.entries(projects).find(([, root]) =>
-              sess.cwd && String(sess.cwd).replaceAll("\\", "/").startsWith(String(root).replaceAll("\\", "/")))?.[0] ?? null;
+            const project = projectForCwd(sess.cwd);
             const common = { id: sess.id, provider: sess.provider, shared: shared.has(sess.id), project };
             return detail === "full"
               ? { ...sess, ...common }
@@ -214,7 +217,12 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         // by owner — viewing is visibility, not acting. A peer can see what a session on
         // this box is doing; it cannot send to it or close it unless it owns/spawns shared.
         if (!params.id) throw new RpcError(-32602, "node/view: id is required");
-        return _viewSession(params.id, { tailChars: params.tailChars });
+        // Attach learns identity from the view — fill project from cwd the SAME way
+        // node/status does, or an attached session shows "no project" while the status
+        // list groups the same session under its alias.
+        const v = await _viewSession(params.id, { tailChars: params.tailChars });
+        if (v && typeof v === "object" && v.project == null && v.cwd) v.project = projectForCwd(v.cwd);
+        return v;
       case "node/compact": {
         if (!params.id) throw new RpcError(-32602, "node/compact: id is required");
         // Acting on a session — same ownership gate as send/close.

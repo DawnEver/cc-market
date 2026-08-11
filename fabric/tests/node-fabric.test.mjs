@@ -1021,6 +1021,29 @@ test("maxSessions defaults to 64 when the operator declares nothing", async () =
 // The ceiling check reads the registry BEFORE _createSession registers, so two
 // concurrent spawns both saw a free slot and both spawned — a team_spawn fan-out
 // overshot the declared ceiling. In-flight admissions must count toward the check.
+test("node/view fills project from cwd exactly as node/status does (attach learns it)", async () => {
+  const deps = fakeSessionDeps();
+  // Registry project is null but cwd sits inside an alias root: node/status groups
+  // this session under the alias, so the view MUST agree — attachSession learns the
+  // project from the view, and a mismatch shows "no project recorded" for a session
+  // the status list places under its project.
+  // deps are captured at createNodeServer construction, so one override answers per id
+  // (reassigning deps.viewSession between requests would NOT take effect).
+  deps.viewSession = async (id) => ({ id, provider: "claude", content: "", alive: true, project: null,
+    cwd: id === "sess-a" ? "D:\\code\\myapp\\sub" : "C:/elsewhere" });
+  const server = createNodeServer({ token: TOKEN, name: "testnode", cpuSampleMs: 0, deps,
+    projects: { myapp: "D:/code/myapp" } });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const v = await conn.request("node/view", { id: "sess-a", tailChars: 0 });
+    assert.equal(v.project, "myapp", "cwd inside the alias root reverse-maps (backslash-normalized)");
+    const v2 = await conn.request("node/view", { id: "sess-b", tailChars: 0 });
+    assert.equal(v2.project ?? null, null, "cwd outside every alias honestly stays null");
+    conn.close();
+  } finally { await server.close(); }
+});
+
 test("node/spawn admission is atomic: concurrent spawns cannot overshoot the ceiling", async () => {
   const deps = fakeSessionDeps();
   const origCreate = deps.createSession;
