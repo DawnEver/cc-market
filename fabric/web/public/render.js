@@ -68,7 +68,12 @@ function reconcileElement(el, oldV, newV) {
   syncAttrs(el, oldV.attrs, newV.attrs);
   const oldKids = oldV.children || [];
   const newKids = newV.children || [];
-  const oldByKey = new Map(oldKids.map((c, i) => [childKey(c, i), { v: c, el: el.children[i] }]));
+  // Map old children by key. DOM nodes must come from childNodes, NOT children: a text
+  // leaf renders as a text node, which children (element nodes only) never includes —
+  // indexing children here produced undefined for every vnode whose child was text
+  // (e.g. a span.dim wrapping t(...)), and the reconcile then crashed on undefined.el.
+  // createElement appends in vnode order, so childNodes[i] aligns with oldKids[i].
+  const oldByKey = new Map(oldKids.map((c, i) => [childKey(c, i), { v: c, el: el.childNodes[i] }]));
   const used = new Set();
   const kept = [];
   for (let i = 0; i < newKids.length; i++) {
@@ -82,8 +87,8 @@ function reconcileElement(el, oldV, newV) {
     used.add(key);
   }
   for (const [key, { el: dom }] of oldByKey) if (!used.has(key)) dom.remove();
-  // Reorder so kept children sit in newKids order.
-  kept.forEach((dom, i) => { if (el.children[i] !== dom) el.insertBefore(dom, el.children[i]); });
+  // Reorder so kept children sit in newKids order (childNodes again — text included).
+  kept.forEach((dom, i) => { if (el.childNodes[i] !== dom) el.insertBefore(dom, el.childNodes[i]); });
 }
 
 export function mount(root, v) {
