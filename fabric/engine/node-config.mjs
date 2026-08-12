@@ -26,7 +26,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { getConfigPath } from "./providers.mjs";
+import { getConfigPath, readRegistry } from "./providers.mjs";
 
 const _fabricCache = new Map(); // configPath → { mtimeMs, readAt, fabric }
 // mtimeMs has 1-second granularity on Windows, so an edit landing in the same second as
@@ -66,13 +66,17 @@ export function resolveSystemPromptFile(promptFile, configPath) {
 export function loadFabricConfig(configPath = getConfigPath(), { ttlMs = CONFIG_CACHE_TTL_MS } = {}) {
   try {
     const { mtimeMs } = fs.statSync(configPath);
+    // readRegistry merges the machine-local secrets overlay (claude_env_settings.local.json,
+    // next to the config); track ITS mtime too so a local edit invalidates this cache.
+    const localPath = path.join(path.dirname(configPath), "claude_env_settings.local.json");
+    const localMtime = fs.existsSync(localPath) ? fs.statSync(localPath).mtimeMs : -1;
     const hit = _fabricCache.get(configPath);
-    if (hit && hit.mtimeMs === mtimeMs && Date.now() - hit.readAt < ttlMs) return hit.fabric;
-    const fabric = JSON.parse(fs.readFileSync(configPath, "utf8")).fabric || {};
+    if (hit && hit.mtimeMs === mtimeMs && hit.localMtime === localMtime && Date.now() - hit.readAt < ttlMs) return hit.fabric;
+    const fabric = readRegistry(configPath).fabric || {};
     // Resolve BEFORE caching so every consumer (open-session, spawn-child, the MCP API
     // path, catalogue) reads the machine-correct absolute path from the shared config.
     if (fabric.systemPromptFile) fabric.systemPromptFile = resolveSystemPromptFile(fabric.systemPromptFile, configPath);
-    _fabricCache.set(configPath, { mtimeMs, readAt: Date.now(), fabric });
+    _fabricCache.set(configPath, { mtimeMs, localMtime, readAt: Date.now(), fabric });
     return fabric;
   } catch {
     return {};

@@ -84,7 +84,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Layers
 
-- **L0 provider routing** — `engine/providers.mjs` (fabric-owned, canonical). Reads `~/.claude/claude_env_settings.json`, normalizes vanilla/Foundry,
+- **L0 provider routing** — `engine/providers.mjs` (fabric-owned, canonical). Reads `~/.claude/claude_env_settings.json` plus the machine-local `claude_env_settings.local.json` overlay (deep-merged by `readRegistry`, override wins — the synced file carries base URLs/models, never keys), normalizes vanilla/Foundry,
   resolves model aliases.
 - **L1 engines** — `engine/spawn-child.mjs` (the claude child engine: exe resolution,
   provider env, optional config isolation, stream-json/images), `engine/anthropic-http.mjs`
@@ -144,7 +144,9 @@ encrypted and mutually authenticated with zero certificates — a wrong token fa
 handshake itself.
 
 1. Configure the `fabric` block in `~/.claude/claude_env_settings.json` (synced to all
-   machines):
+   machines). For per-machine secrets — a machine's own `fabric.token`, or its API keys —
+   put the override in `~/.claude/claude_env_settings.local.json` (machine-local, deep-merged
+   over the shared file; `loadFabricConfig` and `readRegistry` both apply it):
 
    ```json
    "fabric": {

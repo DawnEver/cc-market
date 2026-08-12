@@ -197,12 +197,17 @@ credentials; only text comes back.
   per peer), `serve` (port/name/`maxSessions`/`projects` alias map), `sessionDefaults`
   (provider/model/effort bundle), `systemPromptFile` (claude/API platform prompt — a
   `~/.claude/system-prompt/...` path resolved via the per-machine symlink setup.js links
-  into the synced repo; **never a machine-specific OneDrive path**). Codex's platform
+  into the synced repo; **never a machine-specific OneDrive path**). Secrets never ride the
+  synced file: `readRegistry` (providers.mjs) and `loadFabricConfig` both deep-merge the
+  machine-local `~/.claude/claude_env_settings.local.json` over the shared registry
+  (override wins), so a machine can supply its own API keys and its own `fabric.token`/
+  `tokens`. Codex's platform
   prompt comes from `codex_config.toml` `model_instructions_file =
   "~/.codex/system-prompt/codex-base.md"` (codex expands `~` against `~/.codex/`). Cached
-  by mtime AND a 2s TTL, because mtime alone has 1-second granularity on Windows and a
+  by mtime (of both the shared file AND the local overlay) AND a 2s TTL, because mtime
+  alone has 1-second granularity on Windows and a
   same-second edit would otherwise stay invisible to a long-lived daemon forever. Riding
-  the synced env-settings file means the node roster and tokens propagate to every machine
+  the synced env-settings file means the node roster propagates to every machine
   automatically; since `serve` is therefore shared, `serve.byHost` carries per-machine
   overrides (matched against `os.hostname()` case-insensitively, FQDN or short name;
   `projects` merge per-alias) — resolved by `loadServeConfig()`, used by `scripts/serve.mjs`.

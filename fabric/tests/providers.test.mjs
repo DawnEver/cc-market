@@ -115,6 +115,30 @@ test('unknown provider lists available ones', () => {
   assert.throws(() => loadProviderConfig('nope', fixture(REG)), /Available|not found/);
 });
 
+test('machine-local secrets overlay: local file deep-merges over the shared registry', () => {
+  // The config file syncs via OneDrive, so it carries NO key; the local file next to it
+  // (~/.claude/claude_env_settings.local.json) supplies each machine's own. readRegistry
+  // merges local over shared, and both loadProviderConfig and loadProviderEnv see it.
+  const dir = mkdtempSync(join(tmpdir(), 'providers-local-'));
+  const p = join(dir, 'claude_env_settings.json');
+  writeFileSync(p, JSON.stringify({
+    'env:deepseek': {
+      ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+      ANTHROPIC_MODEL: 'deepseek-v4-flash[1m]',
+    },
+  }));
+  writeFileSync(join(dir, 'claude_env_settings.local.json'), JSON.stringify({
+    'env:deepseek': { ANTHROPIC_API_KEY: 'sk-machine-local' },
+  }));
+  clearConfigCache();
+  const cfg = loadProviderConfig('deepseek', p);
+  assert.equal(cfg.token, 'sk-machine-local');
+  assert.equal(cfg.baseUrl, 'https://api.deepseek.com/anthropic'); // shared non-secret preserved
+  const env = loadProviderEnv('deepseek', p);
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-machine-local');
+  assert.equal(env.ANTHROPIC_MODEL, 'deepseek-v4-flash[1m]');
+});
+
 test('tokenStyle records which env var supplied the token', () => {
   // ANTHROPIC_AUTH_TOKEN → Bearer header; ANTHROPIC_API_KEY → x-api-key; Foundry → x-api-key.
   assert.equal(loadProviderConfig('vanilla', fixture(REG)).tokenStyle, 'bearer');

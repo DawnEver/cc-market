@@ -414,6 +414,25 @@ test("an oversized line without a newline gets the socket destroyed", async () =
 
 // --- config caching (SR-004) ---
 
+test("loadFabricConfig deep-merges the machine-local secrets overlay", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fabric-local-"));
+  const cfgPath = join(dir, "claude_env_settings.json");
+  try {
+    writeFileSync(cfgPath, JSON.stringify({
+      fabric: { token: "shared", nodes: { desktop: { host: "10.0.0.2", port: 7677 } } },
+    }));
+    // Shared file carries no secret; local file next to it overrides fabric.token.
+    writeFileSync(join(dir, "claude_env_settings.local.json"), JSON.stringify({
+      fabric: { token: "machine-local", nodes: { desktop: { token: "desk-local" } } },
+    }));
+    utimesSync(cfgPath, new Date(), new Date()); // fresh mtime → cache sees the new file
+    const fab = loadFabricConfig(cfgPath);
+    assert.equal(fab.token, "machine-local"); // local wins
+    assert.equal(fab.nodes.desktop.host, "10.0.0.2"); // shared non-secret preserved
+    assert.equal(fab.nodes.desktop.token, "desk-local"); // nested merge recurses
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("loadFabricConfig caches by mtime and invalidates when the file changes", () => {
   const dir = mkdtempSync(join(tmpdir(), "fabric-cfgcache-"));
   const cfgPath = join(dir, "claude_env_settings.json");

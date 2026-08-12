@@ -31,12 +31,37 @@ export const PROVIDER_ENV_KEYS = [
   'ANTHROPIC_DEFAULT_FABLE_MODEL_SUPPORTED_CAPABILITIES',
 ];
 
-/** Read the raw registry, or throw a helpful error if absent. */
-function readRegistry(configPath) {
+// Override-wins deep merge for the machine-local secrets overlay: plain objects recurse
+// key-by-key; scalars/arrays are replaced wholesale by the override. The local file mirrors
+// the registry shape, so this preserves shared base URLs / model pins while swapping keys.
+function deepMerge(base, override) {
+  const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  const out = { ...base };
+  for (const [key, value] of Object.entries(override || {})) {
+    out[key] = isPlain(value) && isPlain(base?.[key]) ? deepMerge(base[key], value) : value;
+  }
+  return out;
+}
+
+/**
+ * Read the raw registry, or throw a helpful error if absent.
+ *
+ * Secrets are machine-local: the config file rides the OneDrive-synced repo, so it must
+ * NOT carry API keys. Each machine keeps its own in `claude_env_settings.local.json` next
+ * to it (`~/.claude/...` — a REAL per-machine dir; setup.js only junctions specific
+ * children into the repo, so this file never syncs). It is deep-merged over the shared
+ * file here, so every loadProviderEnv/loadProviderConfig consumer sees the merged result.
+ */
+export function readRegistry(configPath) {
   if (!fs.existsSync(configPath)) {
     throw new Error(`Config file not found: ${configPath}\nCreate it with your provider settings.`);
   }
-  return JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const shared = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const localPath = path.join(path.dirname(configPath), "claude_env_settings.local.json");
+  if (fs.existsSync(localPath)) {
+    return deepMerge(shared, JSON.parse(fs.readFileSync(localPath, "utf8")));
+  }
+  return shared;
 }
 
 /**
