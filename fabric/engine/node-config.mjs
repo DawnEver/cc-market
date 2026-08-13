@@ -5,7 +5,10 @@
 //   "fabric": {
 //     "token": "shared-secret",                       // PRIMARY token this machine accepts
 //     "tokens": ["peer-b-secret"],                    // additional ACCEPTED tokens
-//     "nodes": { "desktop": { "host": "10.0.0.2", "port": 7677, "token": "peer-b-secret" } },
+//     "nodes": { "desktop": { "host": "10.0.0.2", "port": 7677, "token": "peer-b-secret",
+//                            "fingerprint": "ed25519:..." } },   // P3 pin: the peer must PROVE
+//                                                                 // this identity (fails closed);
+//                                                                 // absent → TOFU on first sight
 //     "serve": {
 //       "port": 7677,                                 // defaults for every machine
 //       "maxSessions": 64,                            // static ceiling on concurrent sessions
