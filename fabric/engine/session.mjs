@@ -19,7 +19,7 @@ import process from "node:process";
 import { openSession } from "./open-session.mjs";
 import { openCodexSession } from "./codex/session.mjs";
 import { openRemoteSession, attachRemoteSession, connectNode } from "./node-client.mjs";
-import { resolveNode, loadFabricConfig } from "./node-config.mjs";
+import { resolveNode, loadFabricConfig, loadServeConfig } from "./node-config.mjs";
 import { resolveProfile } from "./profile.mjs";
 import { recordEvent } from "./journal.mjs";
 import { contextLimitFor } from "./context.mjs";
@@ -78,7 +78,19 @@ export async function openProviderSession(opts = {}) {
       throw new Error("openProviderSession: a remote spawn takes a profile NAME registered on the peer, not an object");
     }
     const node = typeof opts.node === "object" ? opts.node : resolveNode(opts.node);
-    return tagKind(await openRemoteSession({ ...node, provider, model: model ?? null, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: effort ?? null, shared: !!opts.shared }), "remote");
+    // P1/P2: a NAMED node gets a mesh route fallback — when this box cannot dial the
+    // target (its subnet filters us), the LOCAL daemon may hold an edge to it (it can
+    // dial out, or the target dialed in). An inline {host,port} spec has no name to
+    // forward to, so it stays direct-only.
+    let route = null;
+    if (typeof opts.node === "string") {
+      const serve = loadServeConfig(opts.configPath);
+      const localToken = serve.token ?? cfg.token;
+      if (localToken) {
+        route = { target: opts.node, local: { host: "127.0.0.1", port: serve.port ?? 7677, token: localToken } };
+      }
+    }
+    return tagKind(await openRemoteSession({ ...node, provider, model: model ?? null, write, project: opts.project, profile: opts.profile ?? null, visible: !!opts.visible, interactive: !!opts.interactive, effort: effort ?? null, shared: !!opts.shared, route }), "remote");
   }
   // Local: resolve a NAME once, against the SAME config file the provider env comes
   // from (SR-022), so credentials and policy can never be read from two different files.

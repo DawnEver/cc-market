@@ -75,7 +75,13 @@ function tlsRaw(port, token = TOKEN) {
       ciphers: PSK_CIPHERS, minVersion: PSK_TLS_VERSION, maxVersion: PSK_TLS_VERSION,
       checkServerIdentity: () => undefined,
     });
-    sock.once("secureConnect", () => resolve(sock));
+    sock.once("secureConnect", () => {
+      // The server sends a node/hello notification (mesh identity handshake). A raw
+      // client that never reads stays paused, and a PAUSED TLS socket can hold a close
+      // pending forever — drain by default; tests that care attach their own handler.
+      if (sock.listenerCount("data") === 0) sock.on("data", () => {});
+      resolve(sock);
+    });
     sock.once("error", reject);
   });
 }
@@ -108,8 +114,11 @@ test("request-level bad token still gets AUTH_ERROR (defense in depth)", async (
     let received = "";
     sock.on("data", (c) => { received += c; });
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: "bad" } })}\n`);
-    for (let i = 0; i < 100 && !received.includes("\n"); i++) await new Promise((r) => setTimeout(r, 10));
-    assert.equal(JSON.parse(received.split("\n")[0]).error.code, AUTH_ERROR);
+    // The server may also emit a node/hello notification (mesh identity handshake) —
+    // only REPLY lines (with an id) are answers to this request.
+    for (let i = 0; i < 100 && !received.split("\n").some((l) => l.includes('"id":1')); i++) await new Promise((r) => setTimeout(r, 10));
+    const reply = received.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((o) => o.id === 1);
+    assert.equal(reply.error.code, AUTH_ERROR);
     sock.destroy();
   } finally { await server.close(); }
 });
@@ -386,11 +395,13 @@ test("requests without an id are notifications and never get a response", async 
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", method: "node/status", params: { token: "bad" } })}\n`);
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", method: "node/status", params: { token: TOKEN } })}\n`);
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: TOKEN } })}\n`);
-    for (let i = 0; i < 50 && !received.includes("\n"); i++) await new Promise((r) => setTimeout(r, 10));
+    for (let i = 0; i < 50 && !received.split("\n").some((l) => l.includes('"id":1')); i++) await new Promise((r) => setTimeout(r, 10));
     await new Promise((r) => setTimeout(r, 50)); // grace period for any spurious replies
-    const lines = received.split("\n").filter(Boolean);
+    // node/hello lines are server notifications (mesh handshake), not replies: only
+    // lines carrying an id answer a request.
+    const lines = received.split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((o) => o.id !== undefined);
     assert.equal(lines.length, 1);
-    assert.equal(JSON.parse(lines[0]).id, 1);
+    assert.equal(lines[0].id, 1);
     sock.destroy();
   } finally { await server.close(); }
 });
@@ -1182,9 +1193,10 @@ test("a per-request token from outside the accepted set is refused after a good 
     sock.on("data", (c) => { received += c; });
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node/status", params: { token: "primary-token" } })}\n`);
     sock.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "node/status", params: { token: "never-issued" } })}\n`);
-    for (let i = 0; i < 100 && received.split("\n").filter(Boolean).length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    for (let i = 0; i < 100 && !(received.includes('"id":1') && received.includes('"id":2')); i++) await new Promise((r) => setTimeout(r, 10));
     // Match replies by JSON-RPC id — dispatch is non-awaiting, so two concurrent
-    // requests may be answered in either order (a status now carries a ~120ms CPU sample).
+    // requests may be answered in either order (a status now carries a ~120ms CPU
+    // sample). node/hello notification lines carry no id and are ignored by the map.
     const byId = Object.fromEntries(received.split("\n").filter(Boolean).map((l) => { const o = JSON.parse(l); return [o.id, o]; }));
     assert.equal(byId[1].result.name, "n", "any accepted token authorizes a request");
     assert.equal(byId[2].error.code, AUTH_ERROR);

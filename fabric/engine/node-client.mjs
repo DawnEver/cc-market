@@ -11,8 +11,10 @@
 
 import tls from "node:tls";
 import {
-  PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken, identityForToken, MAX_LINE_BYTES,
+  PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken, identityForToken,
 } from "./node-tls.mjs";
+import { attachEdge } from "./node-edge.mjs";
+import { loadOrCreateIdentity, trustPeer } from "./node-identity.mjs";
 
 // A request deadline is what separates "the peer is gone" (CONNECTION_LOST) from "the peer
 // accepted and went silent" (REQUEST_TIMEOUT). Without it a wedged peer holds the caller —
@@ -27,11 +29,17 @@ const KEEPALIVE_DELAY_MS = 15_000;
 
 /**
  * Connect to a peer node over TLS-PSK. Resolves to
- * `{ request(method, params, {timeoutMs}), close(), onClose(fn) }`.
+ * `{ request(method, params, {timeoutMs}), close(), onClose(fn), peer, peerReady }`.
  * Callers wanting a SHARED socket should go through the pool (openRemoteSession); this
  * opens a dedicated one.
+ *
+ * The socket is a SYMMETRIC edge (node-edge.mjs): the peer may send requests back over it.
+ * `identity` (this machine's Ed25519 identity) is presented via the hello handshake when
+ * given; `pinnedFingerprint` fails the edge closed if the peer cannot prove it (P3).
+ * `onRequest` handles requests the PEER sends us (the mesh keeper passes one; ordinary
+ * callers serve nothing).
  */
-export function connectNode({ host, port, token, connectTimeoutMs = 5000, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS }) {
+export function connectNode({ host, port, token, connectTimeoutMs = 5000, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, identity = null, pinnedFingerprint = null, trustPeer: trustPeerFn, onRequest = undefined }) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({
       host, port,
@@ -50,90 +58,55 @@ export function connectNode({ host, port, token, connectTimeoutMs = 5000, reques
     socket.once("secureConnect", () => {
       clearTimeout(timer);
       socket.setKeepAlive(true, KEEPALIVE_DELAY_MS);
-      const pending = new Map(); // id → {resolve, reject, timer}
-      const closeHandlers = new Set();
-      let seq = 0;
-      let buf = "";
-
       socket.removeAllListeners("error");
-      // Structured loss (G5): a dropped peer rejects with code CONNECTION_LOST so the
-      // layer above can requeue by code, not by parsing prose.
-      // Why this connection died, remembered: a request issued after the fact must report
-      // the CAUSE (a flooding peer) and not just the symptom (the socket is gone).
-      let deathError = null;
-      const lostError = (why) => deathError ?? Object.assign(
-        new Error(`node connection lost (${host}:${port}): ${why}`),
-        { code: "CONNECTION_LOST", host, port },
-      );
-      const failAll = (err) => {
-        for (const p of pending.values()) { clearTimeout(p.timer); p.reject(err); }
-        pending.clear();
+      const edge = attachEdge({
+        socket, label: `${host}:${port}`, identity,
+        pinnedFingerprint,
+        trustPeer: trustPeerFn ?? ((n, fp) => trustPeer(n, fp, pinnedFingerprint)),
+        requestTimeoutMs,
+        ...(onRequest ? { onRequest } : {}),
+      });
+      const conn = {
+        request: (method, params = {}, opts) => edge.request(method, { ...params, token }, opts),
+        onClose: (fn) => edge.onClose(fn),
+        get destroyed() { return edge.destroyed; },
+        close: () => edge.close(),
+        // P3 surface: who is on the other end (null until the hello handshake settles).
+        get peer() { return edge.peer; },
+        get legacy() { return edge.legacy; },
+        peerReady: edge.peerReady,
       };
-      const fail = (why) => failAll(lostError(why));
-      socket.on("error", (e) => { fail(e.message); socket.destroy(); });
-      socket.on("close", () => {
-        fail("closed");
-        for (const fn of closeHandlers) { try { fn(); } catch { /* observer only */ } }
-        closeHandlers.clear();
-      });
-      socket.on("data", (chunk) => {
-        buf += chunk;
-        // Mirror the server's line cap (SR-030): an unbounded buffer is the same DoS in
-        // this direction, and a peer that never sends a newline is not a peer we can talk to.
-        if (buf.length > MAX_LINE_BYTES) {
-          deathError = Object.assign(
-            new Error(`node response exceeded ${MAX_LINE_BYTES} bytes without a newline (${host}:${port})`),
-            { code: "RESPONSE_TOO_LARGE", host, port },
-          );
-          failAll(deathError);
-          buf = "";
-          socket.destroy();
-          return;
-        }
-        let nl;
-        while ((nl = buf.indexOf("\n")) !== -1) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line) continue;
-          let rpc;
-          try { rpc = JSON.parse(line); } catch { continue; }
-          const p = pending.get(rpc.id);
-          if (!p) continue; // no pending entry: a reply to a request that already timed out
-          clearTimeout(p.timer);
-          pending.delete(rpc.id);
-          if (rpc.error) {
-            const err = new Error(rpc.error.message || "node error");
-            err.code = rpc.error.code;
-            if (rpc.error.data !== undefined) err.data = rpc.error.data;
-            p.reject(err);
-          } else p.resolve(rpc.result);
-        }
-      });
-
-      resolve({
-        request(method, params = {}, { timeoutMs = requestTimeoutMs } = {}) {
-          return new Promise((res, rej) => {
-            if (socket.destroyed) return rej(lostError("closed"));
-            const id = ++seq;
-            // Deleting the pending entry IS the drop of any late reply: the data handler
-            // finds no entry for that id and moves on.
-            const timer = setTimeout(() => {
-              pending.delete(id);
-              rej(Object.assign(
-                new Error(`node request ${method} timed out after ${timeoutMs}ms (${host}:${port})`),
-                { code: "REQUEST_TIMEOUT", host, port, method },
-              ));
-            }, timeoutMs);
-            pending.set(id, { resolve: res, reject: rej, timer });
-            socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params: { ...params, token } })}\n`);
-          });
-        },
-        onClose(fn) { if (socket.destroyed) fn(); else closeHandlers.add(fn); },
-        get destroyed() { return socket.destroyed; },
-        close() { socket.destroy(); },
-      });
+      // A PIN changes the contract: the caller asked for one specific machine, so the
+      // connection is only ESTABLISHED once the peer has proved it — an unprovable or
+      // legacy peer rejects here rather than serving one unauthenticated request first.
+      if (pinnedFingerprint) {
+        edge.peerReady.then((r) => {
+          if (r.verified) resolve(conn);
+          else {
+            edge.close();
+            // No provable identity at all (legacy or silent) = IDENTITY_REQUIRED; a
+            // proof that failed or mismatched the pin = IDENTITY_UNTRUSTED.
+            const code = (r.legacy || r.error) ? "IDENTITY_REQUIRED" : "IDENTITY_UNTRUSTED";
+            reject(Object.assign(new Error(r.error ?? "peer identity could not be verified"), { code }));
+          }
+        });
+      } else {
+        resolve(conn);
+      }
     });
   });
+}
+
+/**
+ * The identity this process presents on outbound edges, loaded lazily and cached: any
+ * fabric process (serve, an MCP server) speaks FOR this machine, so all of them share
+ * the machine key in journalDir(). Optional for a caller — a null identity connects as
+ * an anonymous legacy client exactly as before.
+ */
+let _identity = null;
+export function localIdentity() {
+  if (!_identity) _identity = loadOrCreateIdentity();
+  return _identity;
 }
 
 // ── Connection pool: one socket per host:port:token, refcounted ──────
@@ -146,6 +119,41 @@ export function connectNode({ host, port, token, connectTimeoutMs = 5000, reques
 const pool = new Map(); // key → {host, port, fingerprint, refs, conn, promise, timer}
 const keyOf = (host, port, token) => `${host}:${port}:${token}`;
 let heartbeatMs = null; // null → HEARTBEAT_INTERVAL_MS; test hook below overrides it
+
+// Connectivity failures that justify trying the mesh route (P1): the target's subnet
+// filters us — but the LOCAL daemon may hold an edge to it (it can dial out, or the
+// target dialed in). Auth/handshake failures are NOT routable: they fail the same way
+// through any path.
+const ROUTABLE = new Set(["CONNECT_TIMEOUT", "ECONNREFUSED", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
+
+/**
+ * Reach a node THROUGH the local daemon's mesh (P1 reversal + P2 relay): connect to
+ * 127.0.0.1:<serve port> and relay every request as node/forward {target}. The returned
+ * object walks and talks like a direct connection.
+ */
+async function connectViaLocalMesh({ target, local }) {
+  const conn = await connectNode({ host: local.host, port: local.port, token: local.token, connectTimeoutMs: 3000 });
+  // Fail fast if the local daemon is pre-mesh (no node/forward) or holds no route: a
+  // cheap forward probe turns "it looked connected" into a verdict before a spawn rides it.
+  try {
+    await conn.request("node/forward", { target, method: "node/status", params: { detail: "light" } }, { timeoutMs: 10000 });
+  } catch (e) {
+    conn.close();
+    throw Object.assign(
+      new Error(`no route to "${target}": direct dial failed AND the local mesh (${local.host}:${local.port}) cannot reach it either (${e.code ?? ""} ${e.message})`.trim()),
+      { code: "ROUTE_UNAVAILABLE", target });
+  }
+  return {
+    request: (method, params = {}, opts) => conn.request("node/forward", { target, method, params }, opts),
+    onClose: (fn) => conn.onClose(fn),
+    get destroyed() { return conn.destroyed; },
+    close: () => conn.close(),
+    get peer() { return conn.peer; },
+    get legacy() { return conn.legacy; },
+    peerReady: conn.peerReady,
+    via: target,
+  };
+}
 
 /** Test hook: shorten (or restore, with null) the pool heartbeat interval. */
 export function _setPoolHeartbeatMs(ms) { heartbeatMs = ms; }
@@ -177,19 +185,26 @@ function startHeartbeat(key, entry) {
   entry.timer.unref?.();
 }
 
-/** Acquire the shared connection to a peer, incrementing its refcount. */
-async function acquire({ host, port, token }) {
-  const key = keyOf(host, port, token);
+/** Acquire the shared connection to a peer, incrementing its refcount.
+ *  `route` (optional): {target, local:{host,port,token}} — if the direct dial fails with
+ *  a connectivity error, fall back to relaying through the LOCAL daemon's mesh edge. */
+async function acquire({ host, port, token, route = null }) {
+  const key = route ? `via:${route.local.host}:${route.local.port}→${route.target}:${token}` : keyOf(host, port, token);
   let entry = pool.get(key);
   if (entry && entry.conn?.destroyed) { evict(key, entry); entry = undefined; }
   if (!entry) {
     entry = { host, port, fingerprint: identityForToken(token).split(":")[1], refs: 0, conn: null, timer: null };
-    entry.promise = connectNode({ host, port, token }).then((conn) => {
-      entry.conn = conn;
-      conn.onClose(() => evict(key, entry));
-      startHeartbeat(key, entry);
-      return conn;
-    }, (e) => { evict(key, entry); throw e; });
+    entry.promise = connectNode({ host, port, token, identity: localIdentity() })
+      .catch(async (e) => {
+        if (!route || !ROUTABLE.has(e.code)) throw e;
+        return connectViaLocalMesh(route);
+      })
+      .then((conn) => {
+        entry.conn = conn;
+        conn.onClose(() => evict(key, entry));
+        startHeartbeat(key, entry);
+        return conn;
+      }, (e) => { evict(key, entry); throw e; });
     pool.set(key, entry);
   }
   entry.refs++;
@@ -261,11 +276,13 @@ function remoteHandle({ id, pid = null, lease }) {
 /**
  * Open a session on a remote node, returning the uniform provider-session handle.
  * @param {object} opts  host, port, token, provider (required), model?, write?, project?
+ *   route? — {target, local:{host,port,token}}: on a connectivity failure, relay through
+ *   the LOCAL daemon's mesh (P1/P2). The handle behaves identically either way.
  */
 export async function openRemoteSession(opts) {
-  const { host, port, token, provider, model, write, project, profile, visible, interactive, effort, shared } = opts;
+  const { host, port, token, provider, model, write, project, profile, visible, interactive, effort, shared, route = null } = opts;
   if (!provider) throw new Error("openRemoteSession: provider is required");
-  const lease = await acquire({ host, port, token });
+  const lease = await acquire({ host, port, token, route });
   try {
     const desc = await lease.conn.request("node/spawn", {
       provider, model, write: !!write, project, profile: profile ?? null,
@@ -282,7 +299,7 @@ export async function openRemoteSession(opts) {
  * Attach to an EXISTING session on a peer (shared, or owned by a dead connection whose
  * record survived). Same uniform handle; close() closes the REMOTE session.
  */
-export async function attachRemoteSession({ host, port, token, id }) {
-  const lease = await acquire({ host, port, token });
+export async function attachRemoteSession({ host, port, token, id, route = null }) {
+  const lease = await acquire({ host, port, token, route });
   return remoteHandle({ id, lease });
 }

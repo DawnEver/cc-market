@@ -43,8 +43,10 @@ import { sampleCpuBusyPct } from "./sysinfo.mjs";
 import { resolveProfile } from "./profile.mjs";
 import {
   PSK_IDENTITY, PSK_IDENTITY_PREFIX, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken,
-  tokenFingerprint, MAX_LINE_BYTES, MAX_REPLY_BYTES,
+  tokenFingerprint,
 } from "./node-tls.mjs";
+import { attachEdge } from "./node-edge.mjs";
+import { loadOrCreateIdentity, trustPeer } from "./node-identity.mjs";
 
 export const AUTH_ERROR = -32001;
 export const DEFAULT_MAX_SESSIONS = 64;
@@ -80,8 +82,11 @@ export function pluginVersion() {
  *   sessionDefaults  {provider?, model?, effort?} — defaults a node/spawn that omits them
  *   cpuSampleMs   CPU-busy% sample window; <=0 skips the sample (cpu_busy_pct: null)
  */
-export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, sessionDefaults = null, maxSessions = DEFAULT_MAX_SESSIONS, cpuSampleMs = 120, deps = {}, _kill = null, _closeGraceMs = 3000 } = {}) {
+export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, sessionDefaults = null, maxSessions = DEFAULT_MAX_SESSIONS, cpuSampleMs = 120, deps = {}, _kill = null, _closeGraceMs = 3000, identity = undefined, getMesh = () => null, onEdge = null, peerPins = () => ({}) } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
+  // P3: every node serves its Ed25519 identity in the hello handshake (undefined → load
+  // or create the machine key; an explicit null opts out, serving as a legacy node).
+  const nodeIdentity = identity === undefined ? loadOrCreateIdentity() : identity;
   // The accepted SET (SR-033/051): one shared fleet-wide PSK could only be revoked by
   // re-keying every machine. `token` stays primary — it is what an older peer's bare
   // `fabric-node` identity resolves to.
@@ -116,6 +121,10 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   // SHARED sessions (v2): drivable by ANY token-holder, and never reaped on the
   // spawner's disconnect -- their lifecycle belongs to the journal/watchdog.
   const shared = new Set();
+  // Sessions spawned over the mesh's OUTBOUND edges (a peer dialed us... no — WE dialed
+  // and the peer asks back). One ownership set for all mesh-served requests; server
+  // close reaps them with everything else.
+  const meshOwned = new Set();
 
   // -32601 unknown method, -32602 missing/invalid params, -32000 runtime failure.
   async function dispatch(method, params, owned) {
@@ -140,6 +149,10 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
           projects: Object.keys(projects),
           maxSessions,
           sessions_count: live.length,
+          // P3: this node's provable identity (fingerprint only — the key never leaves).
+          // P2: the mesh edges this daemon currently holds, when a mesh runs here.
+          identity: nodeIdentity ? { fingerprint: nodeIdentity.fingerprint } : null,
+          mesh: getMesh()?.status() ?? null,
           // A console polling every 6s across N nodes re-serializes this list each time,
           // so `light` is the default and usage objects are opt-in (SR-029/046). The cost
           // is O(sessions) either way; light just makes each row small.
@@ -244,6 +257,16 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         if (!params.id) throw new RpcError(-32602, "node/close: id is required");
         if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/close: session "${params.id}" is not owned by this connection`);
         return _closeSession(params.id).then((r) => { owned.delete(params.id); shared.delete(params.id); return r; });
+      case "node/forward": {
+        // P1/P2 relay: pass one request to a node this daemon holds (or can open) a mesh
+        // edge to. The mesh dials on demand; auth at the target is the edge's own token.
+        const mesh = getMesh();
+        if (!mesh) throw new RpcError("ROUTE_UNAVAILABLE", "node/forward: this node runs no mesh (pre-mesh fabric) — it cannot relay");
+        if (typeof params.target !== "string" || typeof params.method !== "string") {
+          throw new RpcError(-32602, "node/forward: target (node name) and method are required");
+        }
+        return mesh.forward(params.target, params.method, params.params ?? {}, { timeoutMs: params.timeoutMs });
+      }
       default:
         throw new RpcError(-32601, `Method not found: ${method}`);
     }
@@ -277,61 +300,23 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
       process.stderr.write(`fabric node: socket error: ${e.message}\n`);
       socket.destroy();
     });
-    // The mirror of MAX_LINE_BYTES (SR-036): a reply is unbounded in exactly the way a
-    // request line is not allowed to be. Refusing it NAMES the size, so the caller can
-    // tell "the node would not send this" from "the node had nothing to say".
-    const reply = (rpc) => {
-      try {
-        let line = JSON.stringify(rpc);
-        if (line.length > MAX_REPLY_BYTES) {
-          line = JSON.stringify({
-            jsonrpc: "2.0", id: rpc.id,
-            error: {
-              code: "RESULT_TOO_LARGE",
-              message: `node reply for request ${rpc.id} was ${line.length} bytes, over the ${MAX_REPLY_BYTES}-byte cap; the result was not sent`,
-              data: { bytes: line.length, maxBytes: MAX_REPLY_BYTES },
-            },
-          });
-        }
-        socket.write(`${line}\n`);
-      } catch { /* socket gone */ }
-    };
-
-    let buf = "";
-    socket.on("data", (chunk) => {
-      buf += chunk;
-      if (buf.length > MAX_LINE_BYTES) {
-        process.stderr.write(`fabric node: line buffer exceeded ${MAX_LINE_BYTES} bytes; dropping connection\n`);
-        socket.destroy();
-        return;
-      }
-      let nl;
-      while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line) continue;
-        let req;
-        try { req = JSON.parse(line); } catch { continue; } // garbage on the wire: ignore
-        const { id, method, params = {} } = req;
-        const notification = id === undefined; // JSON-RPC notification: never gets a response
+    // Every accepted socket is a SYMMETRIC edge (node-edge.mjs): after the hello
+    // handshake the peer can also answer OUR requests — the basis of the mesh (P1/P2).
+    // Auth is unchanged: the TLS-PSK handshake rejects unknown tokens, and every request
+    // re-checks params.token against the accepted set before dispatch.
+    const edge = attachEdge({
+      socket,
+      label: `${socket.remoteAddress ?? "?"}:${socket.remotePort ?? "?"} inbound`,
+      identity: nodeIdentity ? { ...nodeIdentity, name } : null,
+      trustPeer: (peerName, fp) => trustPeer(peerName, fp, peerPins()[peerName] ?? null),
+      onRequest: async (method, params) => {
         if (params.token === undefined || !tokenAccepted(params.token)) {
-          if (!notification) reply({ jsonrpc: "2.0", id, error: { code: AUTH_ERROR, message: "unauthorized: bad or missing token" } });
-          continue;
+          throw new RpcError(AUTH_ERROR, "unauthorized: bad or missing token");
         }
-        // Dispatch WITHOUT awaiting so long turns don't block other requests on this socket.
-        dispatch(method, params, owned).then(
-          (result) => { if (!notification) reply({ jsonrpc: "2.0", id, result }); },
-          (e) => {
-            if (notification) return;
-            const error = { code: e.code ?? -32000, message: e instanceof Error ? e.message : String(e) };
-            // `data` carries the machine-readable half (the ceiling and the current count,
-            // the byte size) — a caller must not have to parse the prose to act on it.
-            if (e?.data !== undefined) error.data = e.data;
-            reply({ jsonrpc: "2.0", id, error });
-          },
-        );
-      }
+        return dispatch(method, params, owned);
+      },
     });
+    onEdge?.(edge);
   });
 
   // A failed handshake (wrong PSK, non-TLS client) must not crash the server.
@@ -341,6 +326,18 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
     `fabric node: TLS handshake failed from ${sock?.remoteAddress ?? "?"}:${sock?.remotePort ?? "?"}: ${e.message}\n`));
 
   return {
+    /**
+     * Serve one authenticated request OUTSIDE any inbound socket — the mesh's outbound
+     * edges receive requests too (reversal: the peer asks us back over the socket it
+     * dialed). Sessions spawned this way are owned by the mesh edge set, reaped on
+     * server close like everything else.
+     */
+    async serveRequest(method, params = {}) {
+      if (params.token === undefined || !tokenAccepted(params.token)) {
+        throw new RpcError(AUTH_ERROR, "unauthorized: bad or missing token");
+      }
+      return dispatch(method, params, meshOwned);
+    },
     listen(port = 0, host = "0.0.0.0") {
       return new Promise((resolve, reject) => {
         server.once("error", reject);

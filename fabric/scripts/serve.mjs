@@ -78,11 +78,27 @@ if (args.includes("--status")) {
 
 // ── 1. LAN node server (idempotent) ──
 const fabricCfg = loadFabricConfig();
+const { loadOrCreateIdentity } = await import("../engine/node-identity.mjs");
+const { createMesh } = await import("../engine/node-mesh.mjs");
+// P3: ONE identity per machine, loaded before the server starts so every inbound edge
+// can prove it. The fingerprint is the node's public name; the key never leaves the box.
+const identity = loadOrCreateIdentity();
+// P1/P2: the mesh keeper maintains one symmetric edge per configured peer. It is wired
+// into the server by closure (getMesh/onEdge) because the server must exist first.
+let mesh = null;
 const server = createNodeServer({
   token, tokens: serve.tokens || [], name, projects, tags,
   profiles: fabricCfg.profiles || {}, defaultProfile: serve.defaultProfile ?? null,
   // A peer may omit provider/model/effort on node/spawn and inherit this node's default.
   sessionDefaults: fabricCfg.sessionDefaults || null,
+  identity,
+  getMesh: () => mesh,
+  onEdge: (edge) => mesh?.adoptInbound(edge),
+  // Config-pinned fingerprints (fabric.nodes.<name>.fingerprint) gate inbound hellos;
+  // unpinned peers fall back to TOFU inside trustPeer.
+  peerPins: () => Object.fromEntries(
+    Object.entries(loadFabricConfig().nodes || {})
+      .filter(([, n]) => n.fingerprint).map(([n, spec]) => [n, spec.fingerprint])),
   ...(serve.maxSessions != null ? { maxSessions: serve.maxSessions } : {}),
 });
 
@@ -110,6 +126,27 @@ if (bound) {
   // Version on the banner: the operator's one-glance check that a restart actually
   // loaded the new code (peers see the same figure via node/status and ping.mjs).
   process.stdout.write(`fabric node "${name}" v${pluginVersion()} listening on port ${bound.port}; projects: ${aliases}\n`);
+  process.stdout.write(`fabric identity: ${identity.fingerprint} (pin this in fabric.nodes."${name}".fingerprint on every peer)\n`);
+
+  // ── 1b. Mesh keeper (P1/P2): hold one symmetric edge to every configured peer. Dial
+  // direction is decided by who CAN connect; a peer that can only be reached BY us ends
+  // up as our outbound edge, and its consoles reach us back over the same socket.
+  mesh = createMesh({
+    name, identity,
+    // Requests arriving on our OUTBOUND edges (the peer asking back over the socket we
+    // dialed) are served by the same auth+dispatch as inbound sockets.
+    onRequest: (m, p) => server.serveRequest(m, p),
+    nodes: () => {
+      const cfg = loadFabricConfig();
+      const out = {};
+      for (const [n, spec] of Object.entries(cfg.nodes || {})) {
+        if (n === name) continue;
+        out[n] = { host: spec.host, port: spec.port, token: spec.token || cfg.token, fingerprint: spec.fingerprint ?? null };
+      }
+      return out;
+    },
+  });
+  mesh.start();
 }
 
 // ── 2. Management console (idempotent, --no-console to skip) ──
@@ -167,5 +204,5 @@ process.stdout.write(`fabric serve: close this terminal to stop ${wantConsole ? 
 // otherwise). SIGHUP is what Windows delivers when the terminal window is closed with X
 // (CTRL_CLOSE_EVENT, ~5s budget — the 3s close grace fits inside it).
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-  process.on(sig, async () => { await server.close(); process.exit(0); });
+  process.on(sig, async () => { mesh?.stop(); await server.close(); process.exit(0); });
 }
