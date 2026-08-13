@@ -19,6 +19,9 @@
 //                 (set the native /goal; with prompt, run the autonomous loop on the
 //                  peer and return the drained final result)
 //   node/close   { id } → { id, exitCode, turns, usage? }
+//   node/shutdown {} → { shuttingDown, name, version, sessions }
+//                 (serve takeover: a token-holder asks this node to end its lifecycle so
+//                  a NEWER serve can bind the port; the reply precedes the shutdown)
 //
 // Sessions are OWNED by the connection that spawned them: node/send, node/compact,
 // node/goal and node/close only accept ids owned by that connection, and when a socket
@@ -82,7 +85,7 @@ export function pluginVersion() {
  *   sessionDefaults  {provider?, model?, effort?} — defaults a node/spawn that omits them
  *   cpuSampleMs   CPU-busy% sample window; <=0 skips the sample (cpu_busy_pct: null)
  */
-export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, sessionDefaults = null, maxSessions = DEFAULT_MAX_SESSIONS, cpuSampleMs = 120, deps = {}, _kill = null, _closeGraceMs = 3000, identity = undefined, getMesh = () => null, onEdge = null, peerPins = () => ({}) } = {}) {
+export function createNodeServer({ token, tokens = [], name = null, projects = {}, tags = [], profiles = {}, defaultProfile = null, sessionDefaults = null, maxSessions = DEFAULT_MAX_SESSIONS, cpuSampleMs = 120, deps = {}, _kill = null, _closeGraceMs = 3000, identity = undefined, getMesh = () => null, onEdge = null, peerPins = () => ({}), onShutdownRequest = null } = {}) {
   if (!token) throw new Error("createNodeServer: a token is required (set fabric.token in claude_env_settings.json)");
   // P3: every node serves its Ed25519 identity in the hello handshake (undefined → load
   // or create the machine key; an explicit null opts out, serving as a legacy node).
@@ -257,6 +260,18 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
         if (!params.id) throw new RpcError(-32602, "node/close: id is required");
         if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/close: session "${params.id}" is not owned by this connection`);
         return _closeSession(params.id).then((r) => { owned.delete(params.id); shared.delete(params.id); return r; });
+      case "node/shutdown": {
+        // Takeover half of a serve restart: a token-holder may ask this node to shut
+        // down so a NEWER serve can bind the port. The reply goes out FIRST, the
+        // shutdown is scheduled after — killing the socket before replying would read
+        // as CONNECTION_LOST to a caller that needs to hear "yes, I am going away".
+        // Refusing when no handler is wired is honest: not every embedding owns a
+        // lifecycle to end.
+        if (!onShutdownRequest) throw new RpcError(-32601, "node/shutdown: this embedding has no lifecycle to end");
+        const sessions = _listSessions().length;
+        setTimeout(() => { try { onShutdownRequest(); } catch { /* dying anyway */ } }, 250).unref?.();
+        return { shuttingDown: true, name, version: pluginVersion(), sessions };
+      }
       case "node/forward": {
         // P1/P2 relay: pass one request to a node this daemon holds (or can open) a mesh
         // edge to. The mesh dials on demand; auth at the target is the edge's own token.

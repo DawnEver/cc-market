@@ -1248,7 +1248,73 @@ test("serve --status says no only for a refused connection, unknown for anything
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ── serve takeover: a residual port-holder used to make every restart a flash-exit.
+// node/shutdown lets a NEWER serve ask the holder to go away, token-authed.
+
+test("node/shutdown replies first, then triggers the shutdown handler", async () => {
+  const deps = fakeSessionDeps();
+  let shutdownFired = false;
+  const server = createNodeServer({
+    token: TOKEN, name: "old-serve", cpuSampleMs: 0, deps,
+    onShutdownRequest: () => { shutdownFired = true; },
+  });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await conn.request("node/spawn", { provider: "x" });
+    const bye = await conn.request("node/shutdown", {});
+    assert.equal(bye.shuttingDown, true, "the reply must arrive BEFORE the shutdown");
+    assert.equal(bye.sessions, 1, "the caller learns what the close will reap");
+    assert.equal(bye.name, "old-serve");
+    assert.ok(typeof bye.version === "string");
+    for (let i = 0; i < 50 && !shutdownFired; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(shutdownFired, "the handler fires after the reply");
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("node/shutdown without a wired handler refuses honestly (-32601)", async () => {
+  const { server, port } = await startServer();
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    await assert.rejects(() => conn.request("node/shutdown", {}), (e) => e.code === -32601);
+    // The server survives: the refusal did not end anything.
+    assert.equal((await conn.request("node/status", {})).name, "testnode");
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("takeover: after node/shutdown the port frees and a new server binds it", async () => {
+  const deps = fakeSessionDeps();
+  const old = createNodeServer({
+    token: TOKEN, name: "old", cpuSampleMs: 0, deps,
+    onShutdownRequest: async () => { await old.close(); },
+  });
+  const { port } = await old.listen(0, "127.0.0.1");
+  const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+  await conn.request("node/shutdown", {});
+  conn.close();
+  // The old close is async after the reply; poll for the port like serve.mjs does.
+  const fresh = createNodeServer({ token: TOKEN, name: "new", cpuSampleMs: 0, deps: fakeSessionDeps() });
+  let bound = null;
+  for (let i = 0; i < 80 && !bound; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    bound = await fresh.listen(port, "127.0.0.1").catch((e) => e.code === "EADDRINUSE" ? null : Promise.reject(e));
+  }
+  assert.ok(bound, "the new server must bind the freed port");
+  try {
+    const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    assert.equal((await c2.request("node/status", {})).name, "new");
+    c2.close();
+  } finally { await fresh.close(); }
+});
+
 // ── serve shutdown must not orphan session children ──────────────────────────
+// A session child is windowsHide by design: when serve dies, nothing visible
+// remains to remind the operator it exists. close() therefore reaps EVERY
+// session this process spawned — graceful close first, hard pid-kill for one
+// that hangs past its grace.
+
 // A session child is windowsHide by design: when serve dies, nothing visible
 // remains to remind the operator it exists. close() therefore reaps EVERY
 // session this process spawned — graceful close first, hard pid-kill for one

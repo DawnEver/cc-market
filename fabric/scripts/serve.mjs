@@ -99,26 +99,67 @@ const server = createNodeServer({
   peerPins: () => Object.fromEntries(
     Object.entries(loadFabricConfig().nodes || {})
       .filter(([, n]) => n.fingerprint).map(([n, spec]) => [n, spec.fingerprint])),
+  // A newer serve taking over asks THIS node to go away (node/shutdown): the same
+  // shutdown path as closing the terminal — mesh stops, sessions reaped, then exit.
+  onShutdownRequest: async () => { mesh?.stop(); await server.close(); process.exit(0); },
   ...(serve.maxSessions != null ? { maxSessions: serve.maxSessions } : {}),
 });
 
 // Idempotent start: a second serve on the same port detects the live one and exits 0
 // (previously a bare EADDRINUSE crash). Lifecycle stays session-bound: the server dies
 // with this terminal, and ONLY a fabric node answering our token counts as "already up".
+//
+// TAKEOVER (2026-08-13): a residual holder of the port used to make EVERY later serve
+// click a flash-exit — "already serving, skipped" in a window that closed faster than it
+// could be read, and no path to upgrade serve without hunting the old terminal. Now:
+// same version → skip as before; a DIFFERENT version (or --force) → ask the holder to
+// shut down (node/shutdown, token-authed), wait for the port to free, and bind it.
 let bound = null;
+const force = args.includes("--force");
 try {
   bound = await server.listen(port, serve.host || "0.0.0.0");
 } catch (e) {
   if (e.code !== "EADDRINUSE") throw e;
+  const { connectNode } = await import("../engine/node-client.mjs");
+  // Probe the holder. Only a fabric node answering our token counts as "already up";
+  // anything else is a squatter we cannot reason about.
+  let st = null;
   try {
-    const { connectNode } = await import("../engine/node-client.mjs");
-    const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
-    const st = await conn.request("node/status", {}, { timeoutMs: 5000 });
-    conn.close();
-    process.stdout.write(`fabric node "${st.name}" already serving on port ${port} (v${st.version}, up ${st.uptime_s}s) — skipped\n`);
-  } catch {
-    process.stderr.write(`fabric serve: port ${port} is taken by something that is NOT a fabric node with this token\n`);
+    const probe = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
+    try { st = await probe.request("node/status", {}, { timeoutMs: 5000 }); }
+    finally { probe.close(); }
+  } catch (e2) {
+    process.stderr.write(`fabric serve: port ${port} is taken by something that is NOT a fabric node with this token (${e2.code ?? "no code"}: ${e2.message})\n`);
     process.exit(1);
+  }
+  if (st.version === pluginVersion() && !force) {
+    process.stdout.write(`fabric node "${st.name}" already serving on port ${port} (v${st.version}, up ${st.uptime_s}s) — skipped\n`);
+  } else {
+    // The holder runs DIFFERENT code than this checkout (the normal case after an
+    // upgrade) — or the operator said --force. Take the port over.
+    const why = force && st.version === pluginVersion()
+      ? "--force given"
+      : `running v${st.version} ≠ this checkout v${pluginVersion()}`;
+    process.stdout.write(`fabric serve: port ${port} is held by node "${st.name}" (${why}); asking it to shut down…\n`);
+    const conn = await connectNode({ host: "127.0.0.1", port, token, connectTimeoutMs: 2000 });
+    try {
+      const bye = await conn.request("node/shutdown", {}, { timeoutMs: 5000 });
+      process.stdout.write(`fabric serve: previous node accepted shutdown (${bye.sessions} session(s) were reaped on its close)\n`);
+    } catch (e3) {
+      // A pre-takeover holder (no node/shutdown) cannot be asked — name the remedy.
+      process.stderr.write(`fabric serve: the running node predates takeover support (${e3.code ?? ""} ${e3.message}). Close its terminal (or kill the process) once, and every later upgrade takes over cleanly.\n`);
+      process.exit(1);
+    } finally { conn.close(); }
+    // Wait for the port to actually free: the old process exits after its close grace.
+    const deadline = Date.now() + 20_000;
+    while (!bound && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250));
+      bound = await server.listen(port, serve.host || "0.0.0.0").catch((e4) => e4.code === "EADDRINUSE" ? null : Promise.reject(e4));
+    }
+    if (!bound) {
+      process.stderr.write(`fabric serve: port ${port} did not free within 20s of the old node accepting shutdown\n`);
+      process.exit(1);
+    }
   }
 }
 if (bound) {
