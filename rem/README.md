@@ -25,6 +25,22 @@ Then register the hooks in `~/.claude/settings.json`:
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.js\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/memo.js\" list --hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/memo.js\" list --hook",
+            "timeout": 5
           }
         ]
       }
@@ -73,6 +89,8 @@ After installation, `/rem` is available as a slash command. It triggers automati
 ## How It Works
 
 Three-tier memory system (rules / long-term / short-term) and promotion rules → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
+
+Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading — the SessionStart/PostCompact `list --hook` surfaces what is still valid right after a compaction dropped the excerpts. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
 
 ## Skills
 

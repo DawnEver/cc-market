@@ -7,6 +7,8 @@ Memory management plugin for Claude Code sessions. Three-tier system: rules (alw
 ```
 SessionStart → prune-memory.js --evict-stale
             → inject-rules.js (Codex-only: feed host .claude/rules into context)
+            → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)
+PostCompact → memo.js list --hook (same listing at the moment context is actually lost)
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
@@ -45,13 +47,22 @@ no location config, user disambiguates multiple roots. `doc-freshness.js` detect
 (commits / churn / age); `/refresh-docs` incrementally rewrites and re-anchors via `--set-anchor`.
 Stale docs surface in `/todo` as virtual `DOC-` rows. See `skills/refresh-docs/SKILL.md`.
 
+Memos (`scripts/memo.js`) cache an expensive fact — a file slice or a command's stdout — together with
+the git blob hashes of the sources it depends on, so re-reading it costs one call and can say STALE
+(naming the source that moved) instead of silently serving a drifted note. Store: `<scope>/.claude/memo/`
+(gitignored by migrate; per-worktree by construction). CLI: `save <name> (--file f [--lines a,b] |
+--cmd "..." --from paths...)` / `get <name> [--refresh]` / `list`. A `--cmd` memo without `--from` is
+REFUSED — a memo with guessed sources would report FRESH on a stale value. SessionStart and PostCompact
+run `list --hook` (never exits non-zero); PostCompact is the moment a compaction has dropped the
+excerpts the saved facts were paid for.
+
 ## File Structure
 
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js
 ├── scripts/        lib.mjs, stamp-memory.js, remember.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
-│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, task-engine.js, task-lib.mjs, scope-validate.mjs
+│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, task-engine.js, task-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── tests/          *.test.mjs (see Testing section below)
 ├── .claude/rules/  invariants only
@@ -85,7 +96,7 @@ node --test cc-market/rem/tests/*.test.mjs
 
 Pre-commit hook runs rem tests when rem files are staged. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`, `recall.test.mjs`, `remember.test.mjs`, `crystallize.test.mjs`, `prune-memory.test.mjs`.
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`, `recall.test.mjs`, `remember.test.mjs`, `memo.test.mjs`, `crystallize.test.mjs`, `prune-memory.test.mjs`.
 
 ## Standard
 

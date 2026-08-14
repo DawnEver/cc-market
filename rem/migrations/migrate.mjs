@@ -230,8 +230,8 @@ function migrateVolatileFrontmatter(projectRoot) {
 // Consequence: rem alone does NOT repair a broken structure block (e.g. a dir-only
 // `!**/.claude/memory/` that leaves nested files ignored). That fix lives in the root
 // `migrate` skill's CLAUDE_GITIGNORE_TEMPLATE — run `migrate` to apply it. A project
-// that only installs rem just gets its two generated artifacts ignored.
-const REM_GENERATED_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json'];
+// that only installs rem just gets its generated artifacts ignored.
+const REM_GENERATED_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
 
 function ensureGitignore(projectRoot) {
   const gitignorePath = join(projectRoot, '.gitignore');

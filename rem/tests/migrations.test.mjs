@@ -90,7 +90,7 @@ describe('rem migrate()', () => {
 
   // rem owns ONLY ignores for the artifacts it generates — the broader .claude
   // structure template is the root migrate skill's concern.
-  const REM_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json'];
+  const REM_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
 
   test('ensures rem generated-artifact ignores when .gitignore does not exist', async () => {
     const { changed, summary } = await migrate(projectRoot);
@@ -115,9 +115,10 @@ describe('rem migrate()', () => {
     assert.ok(content.includes('node_modules/'));            // unrelated entry kept
     assert.ok(content.includes('**/.claude/**'));            // host's structure rules untouched
     assert.ok(content.includes('**/.claude/rules/MEMORY.md')); // the missing rem ignore added
-    // rem never strips others — _meta.json kept, MEMORY.md appended after it.
+    // rem never strips others — _meta.json kept, missing entries appended after it
+    // in REM_GENERATED_IGNORES order.
     const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
-    assert.equal(lines[lines.length - 1], '**/.claude/rules/MEMORY.md');
+    assert.deepEqual(lines.slice(-2), ['**/.claude/rules/MEMORY.md', '**/.claude/memo/']);
   });
 
   test('gitignore step is idempotent — no-op when rem ignores already present', async () => {
