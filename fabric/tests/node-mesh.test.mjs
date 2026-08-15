@@ -212,7 +212,9 @@ test("reversal end-to-end: forward rides an inbound edge the target dialed itsel
     // Now ws1 forwards a request to g over that inbound edge — spawn + echo roundtrip.
     const desc = await meshWs1.forward("g", "node/spawn", { provider: "deepseek" });
     assert.ok(desc.id);
-    const r = await meshWs1.forward("g", "node/send", { id: desc.id, prompt: "over the reversed edge" });
+    const ack = await meshWs1.forward("g", "node/send", { id: desc.id, prompt: "over the reversed edge" });
+    assert.equal(ack.accepted, true, "node/send acks on delivery over the mesh");
+    const r = await meshWs1.forward("g", "node/turn", { id: desc.id, seq: ack.seq });
     assert.equal(r.text, "echo:over the reversed edge");
     await meshWs1.forward("g", "node/close", { id: desc.id });
 

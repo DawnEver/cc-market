@@ -12,7 +12,10 @@
 //   node/view    { id, tailChars? } → { content, alive, pid, turns, lastActivity }  (content tail)
 //   node/spawn   { provider?, model?, write?, project? } → { id, provider, nativeId, pid }
 //                 (provider/model/effort default to this node's sessionDefaults)
-//   node/send    { id, prompt } → { text, turn }
+//   node/send    { id, prompt } → { accepted, seq }   (acks after DELIVERY — the turn runs
+//                 asynchronously and its outcome is fetched via node/turn; a long turn no
+//                 longer trips the 120s request deadline)
+//   node/turn    { id, seq } → { id, seq, state:'pending'|'done'|'error'|'idle', text?, turn?, error?, code? }
 //   node/ping    { id } → { id, provider, alive, pid, turns, lastActivity }
 //   node/compact { id } → { id, compacted, confirmed }
 //   node/goal    { id, condition, prompt?, maxTurns?, timeoutMs? } → { id, ... }
@@ -128,6 +131,14 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
   // and the peer asks back). One ownership set for all mesh-served requests; server
   // close reaps them with everything else.
   const meshOwned = new Set();
+  // Async turn delivery (node/send acks after DELIVERY, not completion — a remote turn
+  // may legitimately take minutes, far past the 120s request deadline that used to make
+  // it look like a failure). turnSeq counts issued sends per session; turnResults holds
+  // each send's outcome keyed by `${id}:${seq}` so concurrent drivers of a shared session
+  // each read back their own turn. Only one turn is pending per session at a time
+  // (session.mjs serializePerId), so a result never accumulates for long once consumed.
+  const turnSeq = new Map();
+  const turnResults = new Map();
 
   // -32601 unknown method, -32602 missing/invalid params, -32000 runtime failure.
   async function dispatch(method, params, owned) {
@@ -221,7 +232,36 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
       case "node/send":
         if (!params.id || !params.prompt) throw new RpcError(-32602, "node/send: id and prompt are required");
         if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/send: session "${params.id}" is not owned by this connection (spawn it shared to allow cross-connection driving)`);
-        return _sendToSession(params.id, params.prompt);
+        // ACK after delivery, not after completion: fire the turn without awaiting and
+        // return a seq the caller polls via node/turn. The turn result settles into
+        // turnResults in the background; a stale turn's settle never clobbers a newer one
+        // (the pending-state guard below).
+        {
+          const id = params.id;
+          const seq = (turnSeq.get(id) ?? 0) + 1;
+          turnSeq.set(id, seq);
+          const key = `${id}:${seq}`;
+          turnResults.set(key, { state: "pending" });
+          _sendToSession(id, String(params.prompt)).then(
+            (r) => { const cur = turnResults.get(key); if (cur?.state === "pending") turnResults.set(key, { state: "done", text: r.text, turn: r.turn }); },
+            (e) => { const cur = turnResults.get(key); if (cur?.state === "pending") turnResults.set(key, { state: "error", error: e instanceof Error ? e.message : String(e), code: e?.code }); },
+          );
+          return { accepted: true, seq };
+        }
+      case "node/turn":
+        // Read the outcome of a previously-acked send. Same ownership gate as send/close:
+        // the result belongs to the driver that sent it. Returns state:'pending' while the
+        // turn runs, 'done'/'error' once settled (and CONSUMES the result on that read), or
+        // 'idle' when no such send exists / was already consumed.
+        if (!params.id || params.seq == null) throw new RpcError(-32602, "node/turn: id and seq are required");
+        if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/turn: session "${params.id}" is not owned by this connection`);
+        {
+          const key = `${params.id}:${params.seq}`;
+          const rec = turnResults.get(key);
+          if (!rec) return { id: params.id, seq: params.seq, state: "idle" };
+          if (rec.state !== "pending") turnResults.delete(key); // consume on read
+          return { id: params.id, seq: params.seq, ...rec };
+        }
       case "node/ping":
         // Read-only liveness (G3), unrestricted by owner — the SAME rule as node/status,
         // stated in both places on purpose (SR-013). The node is one trust domain: an
@@ -259,6 +299,10 @@ export function createNodeServer({ token, tokens = [], name = null, projects = {
       case "node/close":
         if (!params.id) throw new RpcError(-32602, "node/close: id is required");
         if (!owned.has(params.id) && !shared.has(params.id)) throw new RpcError(-32602, `node/close: session "${params.id}" is not owned by this connection`);
+        // A closed session can never answer a poll again — drop its send-seq and any
+        // unconsumed turn results so node/turn goes idle instead of leaking.
+        turnSeq.delete(params.id);
+        for (const k of [...turnResults.keys()]) { if (k.startsWith(`${params.id}:`)) turnResults.delete(k); }
         return _closeSession(params.id).then((r) => { owned.delete(params.id); shared.delete(params.id); return r; });
       case "node/shutdown": {
         // Takeover half of a serve restart: a token-holder may ask this node to shut

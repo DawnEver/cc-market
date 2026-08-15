@@ -16,7 +16,7 @@ import net from "node:net";
 import { PSK_IDENTITY, PSK_CIPHERS, PSK_TLS_VERSION, pskFromToken, identityForToken, MAX_LINE_BYTES } from "../engine/node-tls.mjs";
 
 import { createNodeServer, AUTH_ERROR } from "../engine/node-server.mjs";
-import { connectNode, openRemoteSession, attachRemoteSession, poolStats, _setPoolHeartbeatMs } from "../engine/node-client.mjs";
+import { connectNode, openRemoteSession, attachRemoteSession, poolStats, _setPoolHeartbeatMs, _setSendTurnTimeoutMs, _setTurnPollIntervalMs } from "../engine/node-client.mjs";
 import { loadFabricConfig, resolveNode, loadServeConfig, resolveSystemPromptFile } from "../engine/node-config.mjs";
 import { openProviderSession, createTeam, sendToTeamWorker, closeTeam, _resetRegistry } from "../engine/session.mjs";
 
@@ -142,9 +142,13 @@ test("status / spawn / send / close roundtrip", async () => {
     assert.ok(desc.id);
     assert.equal(desc.provider, "deepseek");
 
-    const r1 = await conn.request("node/send", { id: desc.id, prompt: "hello" });
-    assert.equal(r1.text, "echo:hello");
-    assert.equal(r1.turn, 1);
+    const ack1 = await conn.request("node/send", { id: desc.id, prompt: "hello" });
+    assert.equal(ack1.accepted, true, "node/send acks on delivery, not completion");
+    assert.equal(ack1.seq, 1);
+    const t1 = await conn.request("node/turn", { id: desc.id, seq: ack1.seq });
+    assert.equal(t1.state, "done");
+    assert.equal(t1.text, "echo:hello");
+    assert.equal(t1.turn, 1);
 
     const closed = await conn.request("node/close", { id: desc.id });
     assert.equal(closed.exitCode, 0);
@@ -163,9 +167,102 @@ test("concurrent sends multiplex on one connection", async () => {
       conn.request("node/send", { id: a.id, prompt: "one" }),
       conn.request("node/send", { id: b.id, prompt: "two" }),
     ]);
-    assert.equal(ra.text, "echo:one");
-    assert.equal(rb.text, "echo:two");
+    assert.equal(ra.accepted, true);
+    assert.equal(rb.accepted, true);
+    const [ta, tb] = await Promise.all([
+      conn.request("node/turn", { id: a.id, seq: ra.seq }),
+      conn.request("node/turn", { id: b.id, seq: rb.seq }),
+    ]);
+    assert.equal(ta.text, "echo:one");
+    assert.equal(tb.text, "echo:two");
     conn.close();
+  } finally { await server.close(); }
+});
+
+// ── async ack + poll: node/send acks on DELIVERY; node/turn carries the outcome ──
+
+test("node/send acks fast while the turn is still running; node/turn reports pending then done", async () => {
+  const deps = fakeSessionDeps();
+  let release;
+  deps.sendToSession = () => new Promise((r) => { release = () => r({ text: "slow", turn: 1 }); });
+  const server = createNodeServer({ token: TOKEN, name: "slow", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await conn.request("node/spawn", { provider: "x" });
+    // A 500ms ack window must NOT trip even though the turn never resolves until release():
+    // the ack is about DELIVERY, not completion.
+    const started = Date.now();
+    const ack = await conn.request("node/send", { id: desc.id, prompt: "go" }, { timeoutMs: 500 });
+    assert.ok(Date.now() - started < 500, "the ack must return fast, not wait the turn");
+    assert.equal(ack.accepted, true);
+    assert.equal((await conn.request("node/turn", { id: desc.id, seq: ack.seq })).state, "pending");
+    release();
+    let t;
+    for (let i = 0; i < 50; i++) {
+      t = await conn.request("node/turn", { id: desc.id, seq: ack.seq });
+      if (t.state === "done") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.equal(t.state, "done");
+    assert.equal(t.text, "slow");
+    assert.equal(t.turn, 1);
+    conn.close();
+  } finally { await server.close(); }
+});
+
+test("openRemoteSession send() returns the result of a slow remote turn (async send)", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = (_id, text) => new Promise((r) => setTimeout(() => r({ text: `echo:${text}`, turn: 1 }), 60));
+  const server = createNodeServer({ token: TOKEN, name: "slow", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const handle = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "x" });
+    const r = await handle.send("hi"); // internally ack + poll; the {text,turn} contract is unchanged
+    assert.equal(r.text, "echo:hi");
+    assert.equal(r.turn, 1);
+    await handle.close();
+  } finally { await server.close(); }
+});
+
+test("client send() surfaces a provider error as TURN_ERROR", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = async () => { throw new Error("boom"); };
+  const server = createNodeServer({ token: TOKEN, name: "err", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  try {
+    const handle = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "x" });
+    await assert.rejects(() => handle.send("hi"), (e) => e.code === "TURN_ERROR" && /boom/.test(e.message));
+    await handle.close();
+  } finally { await server.close(); }
+});
+
+test("a wedged session surfaces as TURN_TIMEOUT at the client send(), not a forever hang", async () => {
+  const deps = fakeSessionDeps();
+  deps.sendToSession = () => new Promise(() => {}); // accepted, the turn never completes
+  const server = createNodeServer({ token: TOKEN, name: "wedged", deps });
+  const { port } = await server.listen(0, "127.0.0.1");
+  _setSendTurnTimeoutMs(100);
+  _setTurnPollIntervalMs(5);
+  try {
+    const handle = await openRemoteSession({ host: "127.0.0.1", port, token: TOKEN, provider: "x" });
+    await assert.rejects(() => handle.send("hi"), (e) => e.code === "TURN_TIMEOUT");
+    await handle.close();
+  } finally { await server.close(); _setSendTurnTimeoutMs(null); _setTurnPollIntervalMs(null); }
+});
+
+test("node/turn reports idle for an unknown/consumed send, and is owner-gated", async () => {
+  const { server, port } = await startServer();
+  try {
+    const owner = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const foreign = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
+    const desc = await owner.request("node/spawn", { provider: "x" });
+    assert.equal((await owner.request("node/turn", { id: desc.id, seq: 999 })).state, "idle", "unknown seq is idle");
+    const ack = await owner.request("node/send", { id: desc.id, prompt: "hi" });
+    assert.equal((await owner.request("node/turn", { id: desc.id, seq: ack.seq })).state, "done");
+    assert.equal((await owner.request("node/turn", { id: desc.id, seq: ack.seq })).state, "idle", "the result is consumed on read");
+    await assert.rejects(() => foreign.request("node/turn", { id: desc.id, seq: ack.seq }), /not owned/);
+    owner.close(); foreign.close();
   } finally { await server.close(); }
 });
 
@@ -195,14 +292,16 @@ test("openRemoteSession returns a uniform {id, send, close} handle", async () =>
 });
 
 test("pending requests reject when the connection drops", async () => {
-  // A send that never resolves keeps a request pending; killing the server must reject it.
+  // A goal run that never resolves keeps a request pending; killing the server must reject
+  // it. node/send no longer produces a long-lived pending (it acks on delivery), so this
+  // property is exercised through node/goal, which still synchronously awaits its run.
   const deps = fakeSessionDeps();
-  deps.sendToSession = () => new Promise(() => {});
+  deps.goalRunSession = () => new Promise(() => {});
   const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
   const { port } = await server.listen(0, "127.0.0.1");
   const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
   const desc = await conn.request("node/spawn", { provider: "x" });
-  const hanging = conn.request("node/send", { id: desc.id, prompt: "never answered" });
+  const hanging = conn.request("node/goal", { id: desc.id, prompt: "never answered", maxTurns: 5 });
   await server.close(); // destroys the socket mid-request
   await assert.rejects(() => hanging, /connection/i);
 });
@@ -343,7 +442,9 @@ test("node/send and node/close reject session ids not owned by the connection", 
     // status still lists everyone's sessions; the owner can still drive its own.
     const status = await other.request("node/status", {});
     assert.equal(status.sessions.length, 1);
-    assert.equal((await owner.request("node/send", { id: desc.id, prompt: "hi" })).text, "echo:hi");
+    const ack = await owner.request("node/send", { id: desc.id, prompt: "hi" });
+    const own = await owner.request("node/turn", { id: desc.id, seq: ack.seq });
+    assert.equal(own.text, "echo:hi");
     await owner.request("node/close", { id: desc.id });
     owner.close(); other.close();
   } finally { await server.close(); }
@@ -377,8 +478,12 @@ test("dispatch errors carry proper JSON-RPC codes", async () => {
     await assert.rejects(() => conn.request("node/send", { id: "s" }), (e) => e.code === -32602);
     await assert.rejects(() => conn.request("node/spawn", { provider: "x", project: "nope" }), (e) => e.code === -32602);
     const desc = await conn.request("node/spawn", { provider: "x" });
-    await assert.rejects(() => conn.request("node/send", { id: desc.id, prompt: "p" }),
-      (e) => e.code === -32000 && /provider exploded/.test(e.message)); // runtime failure stays -32000
+    // A send that throws at the provider surfaces as state:'error' on node/turn — node/send
+    // itself already acked on delivery, so the runtime failure cannot come back there.
+    const ack = await conn.request("node/send", { id: desc.id, prompt: "p" });
+    const t = await conn.request("node/turn", { id: desc.id, seq: ack.seq });
+    assert.equal(t.state, "error");
+    assert.match(t.error, /provider exploded/);
     conn.close();
   } finally { await server.close(); }
 });
@@ -605,13 +710,13 @@ test("node/ping returns session facts; remote handle exposes ping()", async () =
 
 test("connection loss rejects pendings with code CONNECTION_LOST", async () => {
   const deps = fakeSessionDeps();
-  deps.sendToSession = () => new Promise(() => {});
+  deps.goalRunSession = () => new Promise(() => {});
   const server = createNodeServer({ token: TOKEN, name: "testnode", deps });
   const { port } = await server.listen(0, "127.0.0.1");
   try {
     const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
     const desc = await conn.request("node/spawn", { provider: "deepseek" });
-    const p = conn.request("node/send", { id: desc.id, prompt: "hang" });
+    const p = conn.request("node/goal", { id: desc.id, prompt: "hang", maxTurns: 5 });
     await server.close(); // drops the socket mid-request
     await assert.rejects(p, (e) => e.code === "CONNECTION_LOST" && /connection lost/.test(e.message));
   } finally { await server.close(); }
@@ -739,7 +844,8 @@ test("a shared session is drivable by a second connection and survives the spawn
     const c1 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
     const desc = await c1.request("node/spawn", { provider: "deepseek", shared: true });
     const c2 = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
-    const r = await c2.request("node/send", { id: desc.id, prompt: "hi" });
+    const ack = await c2.request("node/send", { id: desc.id, prompt: "hi" });
+    const r = await c2.request("node/turn", { id: desc.id, seq: ack.seq });
     assert.equal(r.text, "echo:hi", "second connection must drive a shared session");
     c1.close();
     await new Promise((res) => setTimeout(res, 100));
@@ -846,8 +952,11 @@ test("node/status carries the project list and maps session cwd to a project ali
 // a peer that drops. Without a per-request deadline the caller waits forever.
 
 test("a request to an accept-then-silent peer rejects with REQUEST_TIMEOUT, not CONNECTION_LOST", async () => {
+  // node/send acks on delivery, so it can never "accept and go silent" — that property now
+  // lives on the synchronous methods (node/goal awaits its run). A wedged SESSION surfaces
+  // as TURN_TIMEOUT at the client send(), tested separately.
   const deps = fakeSessionDeps();
-  deps.sendToSession = () => new Promise(() => {}); // accepted, never answered
+  deps.goalRunSession = () => new Promise(() => {}); // accepted, never answered
   const server = createNodeServer({ token: TOKEN, name: "silent", deps });
   const { port } = await server.listen(0, "127.0.0.1");
   try {
@@ -855,7 +964,7 @@ test("a request to an accept-then-silent peer rejects with REQUEST_TIMEOUT, not 
     const desc = await conn.request("node/spawn", { provider: "x" });
     const started = Date.now();
     await assert.rejects(
-      () => conn.request("node/send", { id: desc.id, prompt: "hi" }, { timeoutMs: 200 }),
+      () => conn.request("node/goal", { id: desc.id, prompt: "hi", maxTurns: 5 }, { timeoutMs: 200 }),
       (e) => e.code === "REQUEST_TIMEOUT" && /timed out/i.test(e.message),
     );
     assert.ok(Date.now() - started < 3000, "must reject at its own deadline, not hang");
@@ -868,13 +977,13 @@ test("a request to an accept-then-silent peer rejects with REQUEST_TIMEOUT, not 
 test("a late reply to a timed-out request is dropped, not delivered", async () => {
   const deps = fakeSessionDeps();
   let release;
-  deps.sendToSession = () => new Promise((r) => { release = () => r({ text: "late", turn: 9 }); });
+  deps.goalRunSession = () => new Promise((r) => { release = () => r({ text: "late", state: "met", turns: 9 }); });
   const server = createNodeServer({ token: TOKEN, name: "late", deps });
   const { port } = await server.listen(0, "127.0.0.1");
   try {
     const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
     const desc = await conn.request("node/spawn", { provider: "x" });
-    await assert.rejects(() => conn.request("node/send", { id: desc.id, prompt: "hi" }, { timeoutMs: 100 }),
+    await assert.rejects(() => conn.request("node/goal", { id: desc.id, prompt: "hi", maxTurns: 5 }, { timeoutMs: 100 }),
       (e) => e.code === "REQUEST_TIMEOUT");
     release();
     await new Promise((r) => setTimeout(r, 100));
@@ -885,9 +994,13 @@ test("a late reply to a timed-out request is dropped, not delivered", async () =
 });
 
 test("node/spawn gets a longer default deadline than an ordinary request", async () => {
-  const { DEFAULT_REQUEST_TIMEOUT_MS, SPAWN_REQUEST_TIMEOUT_MS } = await import("../engine/node-client.mjs");
+  const { DEFAULT_REQUEST_TIMEOUT_MS, SPAWN_REQUEST_TIMEOUT_MS, SEND_ACK_TIMEOUT_MS, SEND_TURN_TIMEOUT_MS } = await import("../engine/node-client.mjs");
   assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 120000);
   assert.ok(SPAWN_REQUEST_TIMEOUT_MS > DEFAULT_REQUEST_TIMEOUT_MS, "a spawn may legitimately take longer");
+  // Async-send windows: the ack is short (delivery is near-instant), the TURN bound is long
+  // so a legitimate minutes-long remote turn no longer trips the old 120s request deadline.
+  assert.ok(SEND_ACK_TIMEOUT_MS < DEFAULT_REQUEST_TIMEOUT_MS, "delivery ack should return fast");
+  assert.ok(SEND_TURN_TIMEOUT_MS > SPAWN_REQUEST_TIMEOUT_MS, "a turn may take far longer than a spawn");
 });
 
 // ── SR-030: the client read buffer was unbounded while the server capped its own.
@@ -1012,8 +1125,11 @@ test("a reply larger than the cap is replaced by a structured RESULT_TOO_LARGE e
   try {
     const conn = await connectNode({ host: "127.0.0.1", port, token: TOKEN });
     const desc = await conn.request("node/spawn", { provider: "x" });
+    const ack = await conn.request("node/send", { id: desc.id, prompt: "p" });
+    // The oversized TEXT comes back on node/turn (node/send only acked), and the edge's
+    // reply cap replaces it with a structured RESULT_TOO_LARGE — same guarantee, later hop.
     await assert.rejects(
-      () => conn.request("node/send", { id: desc.id, prompt: "p" }, { timeoutMs: 15000 }),
+      () => conn.request("node/turn", { id: desc.id, seq: ack.seq }, { timeoutMs: 15000 }),
       (e) => e.code === "RESULT_TOO_LARGE" && /\d{6,}/.test(e.message),
     );
     assert.equal((await conn.request("node/status", {})).name, "big", "the connection survives");

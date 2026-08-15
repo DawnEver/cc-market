@@ -155,7 +155,7 @@ credentials; only text comes back.
 
 - **Server** (`engine/node-server.mjs`, CLI `scripts/serve.*` — which also starts the
   management console in the same process; `--no-console` for the node alone): exposes
-  `node/spawn|send|view|compact|goal|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
+  `node/spawn|send|turn|view|compact|goal|close|status|ping` over newline-delimited JSON-RPC 2.0 on **TLS-PSK**
   (`engine/node-tls.mjs` — PSK derived from a token; an unaccepted token fails the
   handshake, all traffic encrypted, no certificates). Every request also carries the token;
   the server refuses to start without one. Sessions are owned by the connection that
@@ -187,7 +187,14 @@ credentials; only text comes back.
   by JSON-RPC id. Every request carries a deadline — `REQUEST_TIMEOUT` (120s; 180s for a
   spawn), deliberately distinct from `CONNECTION_LOST` so a caller can tell peer-stuck from
   peer-gone — and a 30s heartbeat reaps a half-open peer before the next send hangs on it.
-  `poolStats()` reports the live connections without printing any token.
+  `poolStats()` reports the live connections without printing any token. A remote `send()`
+  is **asynchronous ack + poll**: `node/send` acks on DELIVERY (fast, `SEND_ACK_TIMEOUT_MS`),
+  then the client polls `node/turn {id, seq}` until the turn settles — bounded by a long
+  turn window (`SEND_TURN_TIMEOUT_MS`, default 30 min) while each poll RPC waits only
+  `TURN_POLL_REQUEST_TIMEOUT_MS`. A legitimately long remote turn (minutes) therefore no
+  longer trips the 120s request deadline; a wedged session is caught by `TURN_TIMEOUT`, a
+  dead peer by `CONNECTION_LOST`. The `{text, turn}` handle contract is unchanged, so
+  `sendToSession` and everything above it reads the result exactly as before.
 - **Routing** (`engine/session.mjs`): `openProviderSession({node, project, ...})` — `node`
   is a configured node name (or inline `{host, port, token}`); everything above the opener
   (session registry, teams, MCP tools) is agnostic. Team workers take `node`/`project` too,

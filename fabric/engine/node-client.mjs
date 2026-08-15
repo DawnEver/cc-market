@@ -24,6 +24,15 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 export const SPAWN_REQUEST_TIMEOUT_MS = 180_000;
 export const HEARTBEAT_INTERVAL_MS = 30_000;
 export const HEARTBEAT_TIMEOUT_MS = 10_000;
+// Async turn delivery (node/send acks after delivery, not completion). The ACK window is
+// short — delivery is near-instant. The TURN deadline is the real bound on a legitimately
+// long remote turn (the old 120s REQUEST_TIMEOUT made a >2min turn look like a failure);
+// each poll RPC waits only TURN_POLL_REQUEST_TIMEOUT_MS while the turn runs in the
+// background, so no single request holds an edge pending slot for the whole turn.
+export const SEND_ACK_TIMEOUT_MS = 30_000;
+export const SEND_TURN_TIMEOUT_MS = 30 * 60_000;
+export const TURN_POLL_REQUEST_TIMEOUT_MS = 30_000;
+export const TURN_POLL_INTERVAL_MS = 2000;
 // TCP-level keepalive catches a peer whose machine vanished without a FIN.
 const KEEPALIVE_DELAY_MS = 15_000;
 
@@ -119,6 +128,12 @@ export function localIdentity() {
 const pool = new Map(); // key → {host, port, fingerprint, refs, conn, promise, timer}
 const keyOf = (host, port, token) => `${host}:${port}:${token}`;
 let heartbeatMs = null; // null → HEARTBEAT_INTERVAL_MS; test hook below overrides it
+// Test/env hooks for the async-send turn window: null → the exported constants. Env lets a
+// daemon tune the wall-clock bound without code; the setters let a test shrink it fast.
+let sendTurnTimeoutMs = null;
+let turnPollIntervalMs = null;
+const turnTimeout = () => sendTurnTimeoutMs ?? (Number(process.env.FABRIC_SEND_TURN_TIMEOUT_MS) || SEND_TURN_TIMEOUT_MS);
+const pollInterval = () => turnPollIntervalMs ?? (Number(process.env.FABRIC_TURN_POLL_MS) || TURN_POLL_INTERVAL_MS);
 
 // Connectivity failures that justify trying the mesh route (P1): the target's subnet
 // filters us — but the LOCAL daemon may hold an edge to it (it can dial out, or the
@@ -157,6 +172,12 @@ async function connectViaLocalMesh({ target, local }) {
 
 /** Test hook: shorten (or restore, with null) the pool heartbeat interval. */
 export function _setPoolHeartbeatMs(ms) { heartbeatMs = ms; }
+
+/** Test hook: bound (or restore, with null) the async-send turn window. */
+export function _setSendTurnTimeoutMs(ms) { sendTurnTimeoutMs = ms; }
+
+/** Test hook: shorten (or restore, with null) the node/turn poll cadence. */
+export function _setTurnPollIntervalMs(ms) { turnPollIntervalMs = ms; }
 
 /** Observability: one row per pooled connection. Never carries the token itself. */
 export function poolStats() {
@@ -249,7 +270,32 @@ function remoteHandle({ id, pid = null, lease }) {
     alive: null,
     lastActivity: null,
     usage: null,
-    send: (text) => conn.request("node/send", { id, prompt: text }),
+    // Async send: node/send acks on DELIVERY (fast), then we poll node/turn until the turn
+    // settles — bounded by a long TURN deadline while each poll RPC waits only a short
+    // window. A legitimately long turn (minutes) no longer trips the old 120s request
+    // deadline; a wedged session is still caught by the turn deadline (TURN_TIMEOUT) and a
+    // dead peer by CONNECTION_LOST on any poll. The {text, turn} contract is unchanged, so
+    // sendToSession and everything above it read the result exactly as before.
+    send: async (text) => {
+      const ack = await conn.request("node/send", { id, prompt: text }, { timeoutMs: SEND_ACK_TIMEOUT_MS });
+      const seq = ack?.seq;
+      const deadline = Date.now() + turnTimeout();
+      for (;;) {
+        const t = await conn.request("node/turn", { id, seq }, { timeoutMs: TURN_POLL_REQUEST_TIMEOUT_MS });
+        if (t.state === "done") return { text: t.text, turn: t.turn };
+        if (t.state === "error") {
+          const err = new Error(t.error);
+          err.code = t.code ?? "TURN_ERROR";
+          throw err;
+        }
+        if (t.state === "idle") break; // consumed or never started — the result is unrecoverable
+        if (Date.now() >= deadline) break;
+        await new Promise((r) => setTimeout(r, pollInterval()));
+      }
+      const err = new Error(`node turn ${seq} on session ${id} did not complete within ${turnTimeout()}ms`);
+      err.code = "TURN_TIMEOUT";
+      throw err;
+    },
     // Compact runs on the peer (node/compact), same ownership gate as send/close.
     compact: () => conn.request("node/compact", { id }),
     // Native goal: set and/or run — the autonomous loop runs on the PEER and the
