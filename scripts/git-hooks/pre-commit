@@ -10,6 +10,31 @@ cd "$repo_root"
 # Top-level dirs touched in the staged change set.
 changed_dirs="$(git diff --cached --name-only | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u)"
 
+# Runtime self-containment lint: runtime-delivered markdown (skills/*/SKILL.md,
+# skills/*/reference/*.md, commands/*, prompts/*, agents/*) must NOT defer to the plugin's
+# own dev-only docs. AGENTS.md and .claude/rules are injected only in the DEV repo — when a
+# skill actually runs, only its SKILL.md + the reference files it reads are loaded. A
+# "→ AGENTS.md § X" / "see AGENTS.md § X" deferral therefore means the execution knowledge
+# never reaches the runtime agent (the evolve round-protocol circularity was exactly this).
+# Host-project artifacts (.claude/rules/, a project AGENTS.md) ARE injected at runtime and
+# are fine; this regex only flags deferrals to a bare AGENTS/CLAUDE doc.
+runtime_re='(AGENTS|CLAUDE)\.md[[:space:]]*§|→[[:space:]]*(AGENTS|CLAUDE)'
+runtime_re_file='/(skills/[^/]+/(SKILL\.md|reference/.*\.md)|commands/.*\.md|prompts/.*\.md|agents/.*\.md)$'
+runtime_violations=""
+while IFS= read -r f; do
+  printf '%s\n' "$f" | grep -qE "$runtime_re_file" || continue
+  hit="$(grep -nE "$runtime_re" "$f" || true)"
+  if [ -n "$hit" ]; then
+    runtime_violations="$runtime_violations
+$(printf '%s' "$hit" | sed "s#^#$f: #")"
+  fi
+done < <(git diff --cached --name-only || true)
+if [ -n "$runtime_violations" ]; then
+  echo "pre-commit: runtime file defers to dev-only plugin docs (AGENTS.md/CLAUDE.md are not injected at runtime):"
+  printf '%s\n' "$runtime_violations"
+  exit 1
+fi
+
 node_tests=()       # plugin dirs whose *.test.mjs run via node --test
 run_python=0        # watch python tests
 run_bundle=0        # tests/bundle-integrity.test.mjs

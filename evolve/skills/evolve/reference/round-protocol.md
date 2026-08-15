@@ -3,9 +3,13 @@
 The full ordered protocol for one round. Execute the steps in order. Never abort the whole
 round because a single subagent failed — filter out null results and continue.
 
-**Host-adaptivity context** → AGENTS.md § Host adaptivity for the one touch point (step 2
-fan-out is host-aware — `Agent` vs `spawn_agent`). All other steps are host-agnostic. On
-Codex, set the task guard at round start so the Stop hook doesn't fire mid-round.
+**Host-adaptivity context** — exactly ONE touch point is host-aware: the step-2 fan-out
+spawns one fix subagent per group — `Agent` on Claude, `spawn_agent` on Codex (spawning fix
+subagents is evolve's own orchestration primitive, so this host-awareness is irreducible).
+Step-1 critique is **not** host-aware: run the `sharp-review` skill and read OPEN findings
+from its backlog via `seedFromSharpReview`. Helpers, gates, TDD, and commits are host-agnostic.
+On Codex, set the task guard at round start (no `background_tasks` field) so the Stop hook
+doesn't fire mid-round.
 
 ## Helper module — `scripts/evolve.mjs`
 
