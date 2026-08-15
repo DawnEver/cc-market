@@ -5,7 +5,16 @@ fans out fix subagents over disjoint file sets, reviews the un-fixed and judges 
 hard calls to the human, keeps the test suite green, and commits — then loops. Skill-only
 plugin: invoked via `/evolve`, no hook.
 
-## Architecture
+## Orientation
+
+Progressive disclosure — this file is the entry point; load `docs/architecture.md` for the
+deep detail when a task reaches into that area.
+
+- **File structure** map (every module, what it owns) → `docs/architecture.md` § File Structure.
+- **`scripts/evolve.mjs` helper** (state/grouping/termination mechanics, purity rules) →
+  `docs/architecture.md` § Helper — `scripts/evolve.mjs`.
+
+## Architecture — the round loop
 
 ```
 /evolve [--until --path --min-severity --dry-run --seed --commit]
@@ -35,32 +44,6 @@ OPEN findings from its backlog (`seedFromSharpReview`). Helpers, gates, TDD, com
 host-agnostic. Detail → `reference/round-protocol.md` § Host adaptivity. (On Codex, set
 the task guard at round start — no `background_tasks` field — so the Stop hook doesn't
 fire mid-round.)
-
-## File Structure
-
-```
-evolve/
-├── .claude-plugin/plugin.json       Plugin manifest
-├── .claude/rules/invariants.md      Dev-only constraints
-├── skills/evolve/
-│   ├── SKILL.md                     /evolve entry: usage, setup, per-round overview, cleanup
-│   └── reference/
-│       ├── round-protocol.md        Full ordered per-round protocol + failure handling
-│       ├── termination.md           clean/resolved/ask + safety caps
-│       └── state-schema.md          evolveState JSON schema (debug-only; delegate to evolve.mjs)
-├── scripts/evolve.mjs               State/grouping/termination helper (importable + CLI)
-├── tests/evolve.test.mjs            node:test (13 tests)
-├── CLAUDE.md / AGENTS.md / README.md
-```
-
-## Helper — `scripts/evolve.mjs`
-
-Dependency-free Node ESM (importable + CLI). Centralizes the error-prone mechanics so the
-loop never hand-edits JSON: `loadState`/`saveState` (atomic, rem state file, Windows-retry),
-`initState`, `recordRound`, `groupFindings` (connected components), `prioritize`,
-`checkTermination`, `confirmedByQuorum` (a unit helper; quorum is done upstream by
-sharp-review's merge, not called in the live flow). Pure logic functions take timestamps as
-params (no internal clock) for deterministic tests.
 
 ## Testing
 

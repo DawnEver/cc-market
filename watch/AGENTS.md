@@ -27,67 +27,29 @@ alert-hook.js (Claude Code hook)
   │  Notification + Stop events → fail streak detection → email
 ```
 
-## File Structure
+## Orientation
 
-```
-core/                    # Engine
-  config.py               #   Config loader, defaults, deep merge, env override
-  state.py                #   State persistence, anomaly tracking
-  alert.py                #   Email (SMTP + Resend) and webhook dispatch
-  log.py                  #   JSONL structured logging, ring-buffer rotation
-  loop.py                 #   Main supervision loop — check, remedy, escalate
-  actions.py              #   Action executor, condition evaluator, serializer
-  report.py               #   Report enrichment, summary, history, escalation
-  daemon_helpers.py       #   Daemon liveness check, auto-restart, escalation
-components/              # Pluggable health checks — flat Python modules
-  base.py                #   Component, CheckResult, Anomaly, RemedyStep, Action
-  registry.py            #   Discovery: built-in + YAML + project custom
-  http_health.py         #   HTTP endpoint check
-  process_monitor.py     #   Process check (psutil)
-  shell_probe.py         #   Shell command probe
-  git_version.py         #   Multi-repo version tracking + worktree deploy
-  disk_usage.py          #   Disk usage check
-  watchd_heartbeat.py    #   Daemon heartbeat freshness check
-  log_scanner.py         #   Cross-platform log tail scanner for error patterns
-  progress_tracker.py    #   JSON progress file monitor with stall detection
-watchd/
-  daemon.py              # Config-driven poller (reuses Component.check() directly)
-scripts/                 # CLI entry points
-  watch.py               #   One-shot /watch:check
-  send_alert.py          #   Email dispatch
-  bootstrap.py           #   uv venv lifecycle
-hooks/                   # Claude Code hooks (JS required by CC)
-  hooks.json             #   Event registration
-  alert-hook.js          #   Stop + Notification handler
-skills/watch/SKILL.md    # AI decision tree
+Progressive disclosure — this file is the entry point; load `docs/architecture.md` for the
+deep detail when a task reaches into that area.
+
+- **File structure** map (every module) → `docs/architecture.md` § File Structure.
+- **Component interface** (the `Component` ABC; `CheckResult`/`Anomaly`/`RemedyStep`/
+  `Action` model; the daemon reuses `check()` via the same registry) →
+  `docs/architecture.md` § Component Interface.
+- **Per-project layout** (`watchd:` config schema, the `trigger.json`/`trigger-watch.py`
+  escalation mechanism) → `skills/watch/reference/project-layout.md` and
+  `skills/watch/reference/trigger-watch.md`.
+
+## Testing
+
+```shell
+python -m unittest discover watch/tests/
 ```
 
-## Project Layout (per-project `.claude/watch/`)
+Pre-commit hook runs the Python suite when `watch/` files are staged (skipped if `python`
+is absent).
 
-Full file map, `watchd:` config schema, and the `trigger.json`/`trigger-watch.py` escalation
-mechanism → `skills/watch/reference/project-layout.md` and
-`skills/watch/reference/trigger-watch.md`.
-
-## Component Interface
-
-```python
-class Component(ABC):
-    name: str
-    description: str
-
-    def check(self, comp_cfg, global_cfg, state) -> CheckResult:
-        """Run health check. Returns metrics + anomalies."""
-
-    def remedies(self) -> dict[str, list[RemedyStep]]:
-        """anomaly_type → ordered remedy chain."""
-
-    def actions(self) -> dict[str, Action]:
-        """Actions this component provides."""
-```
-
-The daemon reuses `check()` directly via the same registry — no duplicate check logic.
-
-## Conventions
+## Standard
 
 - Use `${CLAUDE_PLUGIN_ROOT}` for intra-plugin paths.
 - Use `${CLAUDE_PROJECT_DIR}` for project paths.

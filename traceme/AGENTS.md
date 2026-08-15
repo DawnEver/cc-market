@@ -21,21 +21,17 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
                 → fold in fabric traces → push encrypted daily snapshot (throttled)
 ```
 
-## File Map
+## Orientation
 
-| File | Role |
-|------|------|
-| `hooks/traceme-hook.js` | SessionStart pulls; Stop/SessionEnd scans transcripts + pushes |
-| `hooks/hooks.json` | Registers SessionStart, Stop, SessionEnd |
-| `scripts/scan.mjs` | Incremental transcript scanner: per-file (size:mtime) cursor, message-id dedup, derives session/model/tool/skill facts |
-| `scripts/db.mjs` | SQLite wrapper: schema, `replaceSession`, derived queries |
-| `scripts/ingest.mjs` | Fabric provider NDJSON trace scanner (only non-transcript source) |
-| `scripts/report.mjs` | Markdown report generator: per-project stats, model/tool usage |
-| `scripts/commands/dashboard.mjs` | `dashboard` command: interactive HTML dashboard — embeds a 90-day flat fact table + per-device synced facts, renders/filters client-side with ECharts (CDN) incl. all-devices vs. single-device view; `buildDashboardHtml` exported for tests |
-| `scripts/traceme-cli.mjs` | CLI: report, stats, sync, export, rescan, insights, dashboard |
-| `scripts/lib.mjs` | Shared: git helpers, paths, constants |
-| `skills/traceme/SKILL.md` | `/traceme` slash command |
-| `tests/` | Node built-in test runner — see `node --test traceme/tests/*.test.mjs` |
+Progressive disclosure — this file is the entry point; load `docs/architecture.md` for the
+deep detail when a task reaches into that area.
+
+- **File map** (every hook, script, module, tests) → `docs/architecture.md` § File Map.
+- **Billable-token math, schema, `session_categories` unit-split, `active_min`** →
+  `skills/traceme/reference/data-model.md`.
+- **Multi-device encrypted sync architecture, snapshot data model, merge readers** →
+  `skills/traceme/reference/sync.md`.
+- **Dashboard full filter list** → `skills/traceme/reference/dashboard.md`.
 
 ## Data Flow
 
@@ -49,28 +45,26 @@ Stop/SessionEnd → scanAll(): incremental sweep of all transcripts → replace 
    `origin/main`, merges in memory; falls back to local SQLite queries when no synced data
    exists or `--local` is passed.
 
-Billable-token math, schema, `session_categories` unit-split, and `active_min` →
-`skills/traceme/reference/data-model.md`.
-
-Multi-device encrypted sync architecture, snapshot data model, merge readers →
-`skills/traceme/reference/sync.md`.
-
-Dashboard full filter list → `skills/traceme/reference/dashboard.md`.
-
 ## Invariants
 
 - Hooks never block — always exit 0. Errors logged to `~/.claude/traceme/error.log`
 - DB at `~/.claude/traceme/traceme.db` — outside git repo, local only, fully rebuildable from transcripts via `rescan`
 - Zero npm dependencies — uses Node 24 `node:sqlite` built-in
-- Prompt text is **never** stored or read — the scanner only counts prompts; it never persists their content (structural guarantee, not a convention)
+- Prompt text is **never** stored or read — the scanner only counts prompts; it never persists its content (structural guarantee, not a convention)
 - Sync repo contains ONLY `.enc` files — no plaintext ever touches GitHub
 - Scan is idempotent: a session is fully recomputed and replaced on each pass; aggregates are query-time only
 - Project grouping identity is `repo_origin` (normalized git remote), not basename. Remote-less repos share `''` and merge. Dashboard suffixes remote tail when one basename maps to >1 remote.
 
-## Tests
+## Testing
 
 ```bash
 node --test cc-market/traceme/tests/*.test.mjs
 ```
 
 Coverage by suite: DB derived queries incl. billable basis, category unit-split, flat fact tables + `categorizeTool`; transcript scan incl. dedup/cursor/idempotence + category bucketing; report incl. merged-vs-local; crypto; sync dump/import/merged + `readDeviceFacts` + `mergeSkillFacts`/`mergeModelFacts`; dashboard HTML builder — CDN/ECharts, fact-table payload, interactive controls incl. device dimension, data-honesty labels, JSON escaping; pricing model matching incl. dot/dash canonicalization + aliases. Run via pre-commit hook for exact counts.
+
+## Standard
+
+- After changes, update README.md and this file if architecture/docs shift.
+- Always add tests for new logic. Export functions for testability where needed.
+- Version bumping is automatic — the repo-level `pre-push` hook bumps this plugin's `plugin.json` whenever `traceme/` changed in the push.
