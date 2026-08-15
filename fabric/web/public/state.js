@@ -145,6 +145,17 @@ export function contextStatus(session) {
   };
 }
 
+/**
+ * Is the session WORKING right now — a reply streaming, or a goal loop running?
+ * Uses the backend's `working` liveness fact (true while a turn/loop is in flight),
+ * reported honestly as false when the backend says it isn't, and false when the
+ * signal is unknown rather than inventing a "busy" for a peer that reports none.
+ * The console's own in-flight `send()` is folded in by the caller (`sending`).
+ */
+export function workingOf(session) {
+  return session?.working === true;
+}
+
 // ── attention: the Fleet view's needs-attention list, derived from facts the fleet
 // probe already carries (dead peers, load, capacity, ctx occupancy, orphans, dead
 // sessions). Nothing here invents state; thresholds are exported so the UI badges and

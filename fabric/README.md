@@ -244,6 +244,10 @@ handshake itself.
    loop owns the conversation while it runs. This is enforced UNIFORMLY at the registry
    (every mutating per-session op serializes through one per-id chain and gates on
    `closing`/`goalRunning`); `session_close` is the kill switch that always interrupts.
+   `list_sessions` reports a `working` liveness fact — true while a session has a turn
+   streaming **or** a goal loop in flight. The console surfaces it as a pulsing amber dot
+   on the session row and a `working… / idle` readout in the chat header, so "is it still
+   outputting / still working" is answered at a glance across the fleet.
 8. **Crash recovery: decide what happens to sessions that survive a serve restart.**
    The journal records every spawn (incl. the CLI's own session id), so a killed serve
    leaves its story behind: `serve` prints a reminder at startup listing survivors

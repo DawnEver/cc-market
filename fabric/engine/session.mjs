@@ -463,6 +463,9 @@ export function listSessions() {
     // goal loop. null = unknown.
     compactable: e.handle.compactable ?? null,
     goal: e.handle.goalActive ?? null,
+    // The "is it still working" liveness fact: true while the handle has a turn or goal
+    // loop in flight. null = the backend reports no such signal.
+    working: e.handle.working ?? null,
     node: e.node, cwd: e.cwd,
   }));
 }
@@ -482,6 +485,7 @@ export async function pingSession(id) {
   const base = {
     id, provider: entry.provider, kind: h.kind ?? null, compactable: h.compactable ?? null,
     goal: h.goalActive ?? null,
+    working: h.working ?? null,
     usage: entry.usage ?? h.usage ?? null,
     compacted: entry.compacted ?? h.compacted ?? null,
     context_limit: contextLimitFor(entry.model ?? null),

@@ -25,6 +25,10 @@ header .dim { font-size:12px; }
 .dot.ok { color:var(--ok); } .dot.warn { color:var(--warn); } .dot.bad { color:var(--bad); }
 /* A bad fleet pulses — ambient alarm readable from the corner of the eye. */
 .dot.bad { animation:pulse 2s ease-in-out infinite; }
+/* A WORKING session pulses amber — the at-a-glance "still outputting / still working"
+   signal, distinct from the idle/alive/dead dots. Bare class like .ok/.bad so it
+   matches the statusDot span (rows + rail) and the chat-top end dot alike. */
+.working { color:var(--warn); animation:pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.25; } }
 #tabs { display:flex; gap:2px; margin-left:14px; }
 .tab { background:transparent; border:1px solid transparent; border-radius:6px; padding:3px 12px;

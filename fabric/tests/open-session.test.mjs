@@ -171,6 +171,22 @@ test('openSession exposes pid/alive/lastActivity facts', async () => {
   assert.equal(s.alive, false);
 });
 
+// ── the "is it still outputting" signal: working must be true while a turn is in
+// flight and false once it resolves (the reply is delayed so the turn stays pending).
+test('openSession reports working=true while a turn streams, false after', async () => {
+  const sink = { writes: [] };
+  const runDir = mkdtempSync(join(tmpdir(), 'os-work-'));
+  const s = await openSession({ provider: 'deepseek', runDir, configPath: fixture(), _spawn: makeFakeClaude(sink, { replyDelayMs: 30 }), _bin: 'fake' });
+  assert.equal(s.working, false, 'idle before any turn');
+  const p = s.send('hi');        // do not await — the turn is now queued
+  await Promise.resolve();       // let the serialized chain set `pending`
+  assert.equal(s.working, true, 'working while the turn is pending/streaming');
+  const r = await p;
+  assert.equal(r.text, 'echo:hi');
+  assert.equal(s.working, false, 'idle once the turn resolves');
+  await s.close();
+});
+
 // ── Native compaction (2026-08-10): the CLI compacts on a "/compact" user message and
 // emits compact_boundary (trigger: "manual") before the result. Probed live: 30.8k → 1.2k.
 test('openSession compact() sends /compact and confirms on compact_boundary', async () => {

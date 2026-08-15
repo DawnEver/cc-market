@@ -99,6 +99,9 @@ export async function openCodexSession(opts = {}) {
     get turns() { return turnCount; },
     // Native compaction — the app-server protocol has thread/compact/start.
     get compactable() { return true; },
+    // Liveness fact for the console: `current` is the in-flight turn — non-null while a
+    // turn is being generated. The "is it still outputting" signal for codex sessions.
+    get working() { return current !== null; },
     send,
     compact,
     close,

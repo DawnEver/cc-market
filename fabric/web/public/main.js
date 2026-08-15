@@ -15,7 +15,7 @@
 // composer disabled and the reason shown, instead of an unexplained disabled button.
 
 import { h, t, patch } from "./render.js";
-import { viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth, uniqueSessions, CTX_WARN_PCT, CTX_CRIT_PCT } from "./state.js";
+import { viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth, uniqueSessions, workingOf, CTX_WARN_PCT, CTX_CRIT_PCT } from "./state.js";
 import { fmtUptime, fmtMem, fmtAgo } from "/lib/format.mjs";
 
 const $ = (s) => document.querySelector(s);
@@ -454,6 +454,15 @@ function machineGroup(m, mOrphans) {
   return h('div.mgroup', { key: 'g:' + m.name }, [head, ...body]);
 }
 
+// The per-session status dot: pulsing amber while the session is WORKING (a turn is
+// streaming or a goal loop is in flight), otherwise the alive/dead dot. The pulse is
+// the at-a-glance "is it still outputting / still working" answer.
+function statusDot(s) {
+  const w = workingOf(s);
+  const cls = w ? 'working' : (s.alive === false ? 'bad' : 'ok');
+  return h('span', { class: cls, title: w ? 'working — a turn is streaming or a goal loop is running' : (s.alive === false ? 'ended' : 'idle') }, [t('●')]);
+}
+
 // A session as ONE dense row — facts sit in columns so a hundred of them stay scannable.
 function sessRow(s, machine) {
   const key = sessionKey(machine.name, s);
@@ -487,7 +496,7 @@ function sessRow(s, machine) {
     'data-chattable': mine ? '1' : '0',
     title: [s.cwd, s.provider === 'attached' ? `attached → ${s.nativeId} on the peer` : '', drive ? '' : 'owned by another connection — view only'].filter(Boolean).join(' — '),
   }, [
-    h('span.c dot', {}, [h('span', { class: s.alive === false ? 'bad' : 'ok' }, [t('●')])]),
+    h('span.c dot', {}, [statusDot(s)]),
     h('span.c id', {}, [t(s.id), ...(s.shared ? [h('span.badge shared', {}, [t('shared')])] : [])]),
     h('span.c ident', {}, [t(ident + (loc ? ' · ' + loc : ''))]),
     h('span.c turns', {}, [t(String(s.turns ?? 0))]),
@@ -569,7 +578,7 @@ function sessionsRail() {
         'data-chattable': mine ? '1' : '0',
         title: [s.id, [s.provider, s.model].filter(Boolean).join(' '), s.project ? 'project ' + s.project : ''].filter(Boolean).join(' — '),
       }, [
-        h('span', { class: s.alive === false ? 'bad' : 'ok' }, [t('●')]),
+        statusDot(s),
         h('span.rid', {}, [t(s.id)]),
         h('span.dim rn', {}, [t(pct != null ? pct + '%' : (s.turns ?? 0) + 't')]),
       ]));
@@ -662,8 +671,12 @@ function renderChatTop() {
   }
   const { machine: m, session: s } = found;
   const { used, pct, compacted } = contextStatus(s);
+  // The focused answer to "is it still working": a turn streaming or a goal loop in
+  // flight (the console's own in-flight send counts too — same window, backend fact).
+  const busy = workingOf(s) || sending;
   const facts = [
     [s.provider, s.model, s.effort].filter(Boolean).join(' · '),
+    busy ? 'working…' : (s.alive === false ? 'ended' : 'idle'),
     pct != null ? `ctx ${pct}%` : (used != null ? `ctx ${fmtTokens(used)}` : ''),
     compacted ? `↻${compacted}` : '',
     `turns ${s.turns ?? 0}`,
@@ -674,7 +687,7 @@ function renderChatTop() {
     back,
     h('b', { key: 'id' }, [t([m.name, s.project, s.id].filter(Boolean).join(' / '))]),
     h('span.dim facts', { key: 'f' }, [t(facts)]),
-    h('span', { key: 'd', class: 'end ' + (s.alive === false ? 'bad' : 'ok') }, [t('●')]),
+    h('span', { key: 'd', class: 'end ' + (busy ? 'working' : (s.alive === false ? 'bad' : 'ok')) }, [t('●')]),
   ]));
 }
 

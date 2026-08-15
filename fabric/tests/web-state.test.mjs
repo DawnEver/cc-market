@@ -2,7 +2,7 @@
 // fetch: these are the only functions with "logic" in the console, so they get tests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTranscript, viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth } from '../web/public/state.js';
+import { parseTranscript, viewMessages, aggregateFleet, sessionsOf, projectsOf, canDrive, sessionKey, contextStatus, machineWarnings, attentionItems, compareMachines, fleetHealth, workingOf } from '../web/public/state.js';
 
 test('parseTranscript: turns tee output into messages, trimming blanks', () => {
   const content = '\n[user]\nhello there\n\n[assistant · turn 1]\nHi! How can I help?\nSecond line.\n\n[user]\nmore\n';
@@ -104,6 +104,15 @@ test('contextStatus: no % when the window is unknown — tokens only, never fabr
   assert.equal(contextStatus({ model: 'kimi-for-coding', context_limit: null, usage: { context_tokens: 50_000 } }).pct, null);
   assert.equal(contextStatus({ usage: {} }).pct, null);
   assert.equal(contextStatus({}).pct, null);
+});
+
+test('workingOf: only a true backend working fact means working — unknown/null is idle', () => {
+  assert.equal(workingOf({ working: true }), true);
+  assert.equal(workingOf({ working: false }), false);
+  // A backend that reports no working signal is NOT guessed as busy.
+  assert.equal(workingOf({}), false);
+  assert.equal(workingOf({ working: null }), false);
+  assert.equal(workingOf(undefined), false);
 });
 
 // ── attention derivations: the Fleet view's needs-attention list ──

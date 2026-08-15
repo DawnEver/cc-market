@@ -521,6 +521,11 @@ while ($true) {
     get compactable() { return true; },
     // Native goal mode: /goal sets the condition; the CLI then auto-runs the loop.
     get goalActive() { return goalActive; },
+    // Liveness fact for the console: a turn (streaming a reply) or a goal loop is in
+    // flight RIGHT NOW. `pending` is the in-flight send slot; `goalRunning` covers the
+    // fabric-side goal loop's owns-the-conversation window. This is the honest
+    // "is it still outputting / still working" signal.
+    get working() { return pending !== null || goalRunning; },
     get usage() {
       return {
         ...usage,

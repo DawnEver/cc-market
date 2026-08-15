@@ -153,13 +153,15 @@ function makeFakeCodexClient(opts = {}) {
       if (method === 'thread/start') { emit('thread/started', { thread: { id: 'thread-1' } }); return { thread: { id: 'thread-1' } }; }
       if (method === 'turn/start') {
         const said = params.input?.[0]?.text || '';
-        queueMicrotask(() => {
+        const reply = () => {
           // The real app-server echoes the input as a userMessage item BEFORE the answer;
           // extractItemText must skip it so the reply is just the agentMessage.
           emit('item/completed', { item: { type: 'userMessage', content: [{ type: 'text', text: said }] } });
           emit('item/completed', { item: { type: 'agentMessage', text: `codex:${said}` } });
           emit('turn/completed', { usage: { input_tokens: 1, output_tokens: 2 } });
-        });
+        };
+        if (opts.turnDelayMs) setTimeout(reply, opts.turnDelayMs);
+        else queueMicrotask(reply);
         return { id: 'turn' };
       }
       if (method === 'thread/compact/start') {
@@ -199,6 +201,18 @@ test('openCodexSession: multi-turn on one thread, serialized, retains id', async
 
   await s.close();
   assert.ok(client.stopped);
+});
+
+test('openCodexSession reports working=true while a turn is in flight, false after', async () => {
+  const client = makeFakeCodexClient({ turnDelayMs: 30 });
+  const s = await openCodexSession({ _client: client });
+  assert.equal(s.working, false, 'idle before any turn');
+  const p = s.send('hi');          // do not await — the turn is now queued
+  await Promise.resolve();         // let the serialized chain set `current`
+  assert.equal(s.working, true, 'working while the turn is generating');
+  assert.equal((await p).text, 'codex:hi');
+  assert.equal(s.working, false, 'idle once the turn resolves');
+  await s.close();
 });
 
 test('openCodexSession: write:true enables tools', async () => {
@@ -348,9 +362,9 @@ test('openWriteSession is gone — no compat alias survives', async () => {
 test('listSessions surfaces pid/alive/lastActivity; pingSession answers facts', async () => {
   const { createSession, listSessions, pingSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
   _resetRegistry();
-  let alive = true;
+  let alive = true, working = true;
   const fakeOpen = async () => ({
-    id: 'native-1', pid: 999, get alive() { return alive; }, lastActivity: 123,
+    id: 'native-1', pid: 999, get alive() { return alive; }, get working() { return working; }, lastActivity: 123,
     send: async () => ({ text: 'ok', turn: 1 }), close: async () => { alive = false; return 0; },
   });
   const desc = await createSession({ provider: 'deepseek' }, fakeOpen);
@@ -358,9 +372,12 @@ test('listSessions surfaces pid/alive/lastActivity; pingSession answers facts', 
   const [row] = listSessions();
   assert.equal(row.pid, 999);
   assert.equal(row.alive, true);
+  assert.equal(row.working, true, 'working fact flows onto the list descriptor');
   assert.equal(row.lastActivity, 123);
   const ping = await pingSession(desc.id);
-  assert.deepEqual({ alive: ping.alive, pid: ping.pid }, { alive: true, pid: 999 });
+  assert.deepEqual({ alive: ping.alive, pid: ping.pid, working: ping.working }, { alive: true, pid: 999, working: true });
+  working = false;
+  assert.equal(listSessions()[0].working, false, 'working tracks the handle, not a snapshot');
   await closeSession(desc.id);
   await assert.rejects(pingSession(desc.id), /No such session/);
 });
