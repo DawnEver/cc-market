@@ -13,7 +13,7 @@
 // the machine-local overlay (~/.claude/claude_env_settings.local.json) and projected into
 // the named env var when spawning a child.
 //
-// See the root repo's `.claude/rules/rem/providers.md` for the full schema; this module
+// See the root repo's `docs/providers.md` for the full schema; this module
 // just reads it. The `fabric/migrations/migrate.mjs` one-shot converts pre-2026-08-25
 // `env:<name>` local files to the new shape on first load.
 
