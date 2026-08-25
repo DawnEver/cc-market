@@ -13,7 +13,7 @@ import { clearConfigCache } from '../engine/providers.mjs';
 
 function fixture() {
   const p = join(mkdtempSync(join(tmpdir(), 'opensess-')), 'reg.json');
-  writeFileSync(p, JSON.stringify({ 'env:deepseek': { CLAUDE_CODE_USE_FOUNDRY: '1', ANTHROPIC_FOUNDRY_BASE_URL: 'https://x/anthropic', ANTHROPIC_FOUNDRY_API_KEY: 'k', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash' } }));
+  writeFileSync(p, JSON.stringify({ providers: { deepseek: { url: 'https://x', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'k', claudeExtras: { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash' } } } }));
   clearConfigCache();
   return p;
 }
@@ -399,10 +399,10 @@ test('the stderr tail redacts secret env values before it reaches an Error', asy
   const runDir = mkdtempSync(join(tmpdir(), 'os-scrub-'));
   const secret = 'sk-live-DEADBEEF0123456789';
   const cfg = join(mkdtempSync(join(tmpdir(), 'opensess-scrub-')), 'reg.json');
-  writeFileSync(cfg, JSON.stringify({ 'env:deepseek': {
-    CLAUDE_CODE_USE_FOUNDRY: '1', ANTHROPIC_FOUNDRY_BASE_URL: 'https://x/anthropic',
-    ANTHROPIC_FOUNDRY_API_KEY: secret, ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash',
-  } }));
+  writeFileSync(cfg, JSON.stringify({ providers: { deepseek: {
+    url: 'https://x', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
+    apiKey: secret, claudeExtras: { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash' },
+  } } }));
   clearConfigCache();
   const fake = () => {
     const child = new EventEmitter();
@@ -492,7 +492,7 @@ test('a missing fabric.systemPromptFile is skipped, not passed to the child', as
   const rec = { sink: { writes: [] }, args: null };
   const cfgPath = join(mkdtempSync(join(tmpdir(), 'os-sysflag-')), 'reg.json');
   writeFileSync(cfgPath, JSON.stringify({
-    'env:deepseek': { ANTHROPIC_BASE_URL: 'https://x/anthropic', ANTHROPIC_API_KEY: 'k', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash' },
+    providers: { deepseek: { url: 'https://x', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'k', claudeExtras: { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ds-flash' } } },
     fabric: { systemPromptFile: join(mkdtempSync(join(tmpdir(), 'os-noprompt-')), 'does-not-exist.md') },
   }));
   clearConfigCache();

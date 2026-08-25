@@ -42,13 +42,23 @@ function startFakeUpstream() {
 function fixtureFor(port, { basePath = '', env = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'obsproxy-'));
   const cfgPath = join(dir, 'reg.json');
+  // `env` lets a test override the auth token source: when `claudeApiKeyEnv` is
+  // 'ANTHROPIC_AUTH_TOKEN', the proxy should send `Authorization: Bearer`;
+  // 'ANTHROPIC_API_KEY' → `x-api-key`.
+  const apiKeyEnv = env.ANTHROPIC_AUTH_TOKEN != null ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
+  const apiKey = env.ANTHROPIC_AUTH_TOKEN ?? env.ANTHROPIC_API_KEY ?? 'sk-fake-key';
   writeFileSync(cfgPath, JSON.stringify({
-    'env:fake': {
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}${basePath}`,
-      ANTHROPIC_API_KEY: 'sk-fake-key',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'fake-flash',
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'fake-pro',
-      ...env,
+    providers: {
+      fake: {
+        url: `http://127.0.0.1:${port}${basePath}`,
+        claudePath: '',
+        claudeApiKeyEnv: apiKeyEnv,
+        apiKey,
+        claudeExtras: {
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'fake-flash',
+          ANTHROPIC_DEFAULT_OPUS_MODEL: 'fake-pro',
+        },
+      },
     },
   }));
   clearConfigCache();

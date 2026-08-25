@@ -38,7 +38,7 @@ test('openSession applies profile: env subtracted, flags appended', async () => 
   const { openSession } = await import('../engine/open-session.mjs');
   const { clearConfigCache } = await import('../engine/providers.mjs');
   const cfgPath = join(mkdtempSync(join(tmpdir(), 'prof-')), 'reg.json');
-  writeFileSync(cfgPath, JSON.stringify({ 'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k', SECRET_TOKEN: 'x' } }));
+  writeFileSync(cfgPath, JSON.stringify({ providers: { deepseek: { url: 'https://api.deepseek.com', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'k' } } }));
   clearConfigCache();
   let seen = null;
   const fake = (bin, args, opts) => {
@@ -66,7 +66,7 @@ test('profile flags beat extraArgs (last-flag-wins order + strip)', async () => 
   const { openSession } = await import('../engine/open-session.mjs');
   const { clearConfigCache } = await import('../engine/providers.mjs');
   const cfgPath = join(mkdtempSync(join(tmpdir(), 'prof2-')), 'reg.json');
-  writeFileSync(cfgPath, JSON.stringify({ 'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' } }));
+  writeFileSync(cfgPath, JSON.stringify({ providers: { deepseek: { url: 'https://api.deepseek.com', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'k' } } }));
   clearConfigCache();
   let seen = null;
   const fake = (bin, args) => {
@@ -145,7 +145,7 @@ test('openSession injects fabric.systemPromptFile default + profile override win
   writeFileSync(defaultPrompt, 'platform prompt');
   const cfgPath = join(mkdtempSync(join(tmpdir(), 'sysf-')), 'reg.json');
   writeFileSync(cfgPath, JSON.stringify({
-    'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' },
+    providers: { deepseek: { url: 'https://api.deepseek.com', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'k' } },
     fabric: { systemPromptFile: defaultPrompt },
   }));
   clearConfigCache();
@@ -176,7 +176,7 @@ test('profile style resolves to built dist file (auto-build when missing)', asyn
   const dir = mkdtempSync(join(tmpdir(), 'style-'));
   const cfgPath = join(dir, 'reg.json');
   writeFileSync(cfgPath, JSON.stringify({
-    'env:deepseek': { ANTHROPIC_FOUNDRY_API_KEY: 'k' },
+    providers: { deepseek: { url: 'https://api.deepseek.com', claudePath: '/anthropic', claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'k' } },
     fabric: { systemPromptFile: join(dir, 'platform', 'claude-base.md') },
   }));
   clearConfigCache();

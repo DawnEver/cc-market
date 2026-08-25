@@ -410,7 +410,7 @@ test("loadFabricConfig + resolveNode read the fabric block", () => {
   const dir = mkdtempSync(join(tmpdir(), "fabric-nodecfg-"));
   const cfgPath = join(dir, "claude_env_settings.json");
   writeFileSync(cfgPath, JSON.stringify({
-    "env:deepseek": {},
+    providers: { deepseek: {} },
     fabric: {
       token: "shared",
       nodes: { desktop: { host: "10.0.0.2", port: 7677 }, mac: { host: "10.0.0.3", port: 7677, token: "own" } },

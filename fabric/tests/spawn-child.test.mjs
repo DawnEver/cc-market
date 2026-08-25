@@ -12,12 +12,17 @@ import { buildChildEnv, spawnChild, resolveClaudeExe, clearClaudeExeCache } from
 import { clearConfigCache } from '../engine/providers.mjs';
 
 const REG = {
-  'env:deepseek': {
-    CLAUDE_CODE_USE_FOUNDRY: '1',
-    ANTHROPIC_FOUNDRY_BASE_URL: 'https://api.deepseek.com/anthropic',
-    ANTHROPIC_FOUNDRY_API_KEY: 'sk-real',
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
-    ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1m]',
+  providers: {
+    deepseek: {
+      url: 'https://api.deepseek.com',
+      claudePath: '/anthropic',
+      claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
+      apiKey: 'sk-real',
+      claudeExtras: {
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1m]',
+      },
+    },
   },
 };
 function fixture(reg = REG) {
@@ -27,19 +32,23 @@ function fixture(reg = REG) {
   return p;
 }
 
-test('buildChildEnv normal mode keeps Foundry (direct-connect)', () => {
+test('buildChildEnv normal mode projects url+claudePath into ANTHROPIC_BASE_URL, apiKey into the named env', () => {
   const env = buildChildEnv({ provider: 'deepseek', observe: false, configPath: fixture() });
-  assert.equal(env.CLAUDE_CODE_USE_FOUNDRY, '1');
-  assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, 'https://api.deepseek.com/anthropic');
-  assert.equal(env.ANTHROPIC_BASE_URL, undefined);
+  assert.equal(env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic');
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-real');
+  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'deepseek-v4-flash');
+  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'deepseek-v4-pro[1m]');
 });
 
-test('buildChildEnv observe mode strips Foundry, points at proxy', () => {
+test('buildChildEnv observe mode strips real key, points at proxy', () => {
   const env = buildChildEnv({ provider: 'deepseek', observe: true, proxyUrl: 'http://127.0.0.1:9', configPath: fixture() });
   assert.equal(env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:9');
-  assert.equal(env.CLAUDE_CODE_USE_FOUNDRY, undefined, 'Foundry stripped');
-  assert.equal(env.ANTHROPIC_FOUNDRY_API_KEY, undefined, 'real key never reaches child');
+  assert.equal(env.ANTHROPIC_API_KEY, undefined, 'real API_KEY never reaches child');
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'fabric-observe-placeholder');
+  // Model extras are stripped (the proxy has its own resolveUpstream binding the
+  // tier→upstream mapping from the merged config) so they cannot leak past the proxy.
+  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, undefined, 'tier aliases stripped in observe mode');
+  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, undefined, 'tier aliases stripped in observe mode');
 });
 
 test('buildChildEnv observe mode requires proxyUrl', () => {
@@ -79,7 +88,8 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   assert.equal(sink.env.ANTHROPIC_MODEL, 'deepseek-v4-flash');
   assert.ok(!sink.args.includes('--model'));
   assert.ok(sink.env.CLAUDE_CONFIG_DIR.includes('config'), 'isolated config dir set');
-  assert.equal(sink.env.CLAUDE_CODE_USE_FOUNDRY, '1', 'normal mode = Foundry direct');
+  assert.equal(sink.env.ANTHROPIC_API_KEY, 'sk-real', 'normal mode = direct API-key auth');
+  assert.equal(sink.env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic', 'normal mode = direct-connect base URL');
 });
 
 test('spawnChild native claude without runDir: no isolation, --model passthrough', async () => {
@@ -335,7 +345,7 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
   const upstream = http.createServer((_, r) => r.end()).listen(0, '127.0.0.1');
   await new Promise((r) => upstream.once('listening', r));
   const port = upstream.address().port;
-  const cfg = fixture({ 'env:deepseek': { ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`, ANTHROPIC_AUTH_TOKEN: 'sk-real', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash' } });
+  const cfg = fixture({ providers: { deepseek: { url: `http://127.0.0.1:${port}`, claudePath: '', claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN', apiKey: 'sk-real', claudeExtras: { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash' } } } });
   const sink = {};
   const runDir = mkdtempSync(join(tmpdir(), 'sc-obs-'));
   try {

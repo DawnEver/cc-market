@@ -51,10 +51,14 @@ describe("loadProviderConfig", () => {
 
   test("returns API config for deepseek provider", () => {
     const p = makeTempSettings({
-      "env:deepseek": {
-        ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic",
-        ANTHROPIC_AUTH_TOKEN: "tok",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash",
+      providers: {
+        deepseek: {
+          url: "https://api.deepseek.com",
+          claudePath: "/anthropic",
+          claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
+          apiKey: "tok",
+          claudeExtras: { ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash" },
+        },
       },
     });
     try {
@@ -70,9 +74,13 @@ describe("loadProviderConfig", () => {
 
   test("accepts ANTHROPIC_API_KEY as the token (direct Anthropic-compatible providers)", () => {
     const p = makeTempSettings({
-      "env:kimi": {
-        ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
-        ANTHROPIC_API_KEY: "sk-key",
+      providers: {
+        kimi: {
+          url: "https://api.moonshot.cn",
+          claudePath: "/anthropic",
+          claudeApiKeyEnv: "ANTHROPIC_API_KEY",
+          apiKey: "sk-key",
+        },
       },
     });
     try {
@@ -96,19 +104,19 @@ describe("loadProviderConfig", () => {
     }
   });
 
-  test("throws when ANTHROPIC_BASE_URL is missing", () => {
-    const p = makeTempSettings({ "env:x": { ANTHROPIC_AUTH_TOKEN: "tok" } });
+  test("throws when url/claudePath is missing", () => {
+    const p = makeTempSettings({ providers: { x: { claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "tok" } } });
     try {
-      assert.throws(() => loadProviderConfig("x", p), /missing ANTHROPIC_BASE_URL/);
+      assert.throws(() => loadProviderConfig("x", p), /missing url\/claudePath/);
     } finally {
       fs.unlinkSync(p);
     }
   });
 
-  test("throws when ANTHROPIC_AUTH_TOKEN is missing", () => {
-    const p = makeTempSettings({ "env:x": { ANTHROPIC_BASE_URL: "https://x.com" } });
+  test("throws when apiKey is missing from local overlay", () => {
+    const p = makeTempSettings({ providers: { x: { url: "https://x.com", claudePath: "", claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN" } } });
     try {
-      assert.throws(() => loadProviderConfig("x", p), /missing ANTHROPIC_AUTH_TOKEN/);
+      assert.throws(() => loadProviderConfig("x", p), /missing apiKey/);
     } finally {
       fs.unlinkSync(p);
     }
@@ -501,11 +509,13 @@ describe("loadProviderEnv", () => {
     process.env.ANTHROPIC_BASE_URL = 'https://original.example.com';
     process.env.ANTHROPIC_AUTH_TOKEN = 'orig-token';
 
-    const tmp = makeTempSettings({ "env:test": {
-      ANTHROPIC_BASE_URL: "https://test.example.com",
-      ANTHROPIC_AUTH_TOKEN: "sk-test",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "test-sonnet",
-    }});
+    const tmp = makeTempSettings({ providers: { test: {
+      url: "https://test.example.com",
+      claudePath: "",
+      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
+      apiKey: "sk-test",
+      claudeExtras: { ANTHROPIC_DEFAULT_SONNET_MODEL: "test-sonnet" },
+    }}});
 
     try {
       const env = loadProviderEnv("test", tmp);
@@ -530,7 +540,7 @@ describe("loadProviderEnv", () => {
   });
 
   test("throws for unknown provider", () => {
-    const tmp = makeTempSettings({ "env:known": { ANTHROPIC_BASE_URL: "u", ANTHROPIC_AUTH_TOKEN: "t" }});
+    const tmp = makeTempSettings({ providers: { known: { url: "u", claudePath: "", claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "t" } } });
     try {
       assert.throws(
         () => loadProviderEnv("unknown", tmp),
@@ -546,8 +556,10 @@ describe("loadProviderEnv", () => {
 
 describe("PROVIDER_ENV_KEYS", () => {
   test("includes all cc.js provider keys", () => {
-    const required = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_USE_FOUNDRY',
-      'ANTHROPIC_FOUNDRY_BASE_URL', 'ANTHROPIC_FOUNDRY_API_KEY'];
+    // The current set (Foundry keys were removed when the project migrated off
+    // Foundry mode — see providers.md § Direct Anthropic-compatible providers).
+    const required = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY',
+      'ANTHROPIC_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL'];
     for (const key of required) {
       assert.ok(PROVIDER_ENV_KEYS.includes(key), `Missing key: ${key}`);
     }
@@ -603,10 +615,12 @@ describe("resolveClaudeExe", () => {
 describe("loadProviderConfig caching", () => {
   test("returns cached result on second call within TTL", () => {
     clearConfigCache();
-    const tmp = makeTempSettings({ "env:cachetest": {
-      ANTHROPIC_BASE_URL: "https://cache.example.com",
-      ANTHROPIC_AUTH_TOKEN: "sk-cache",
-    }});
+    const tmp = makeTempSettings({ providers: { cachetest: {
+      url: "https://cache.example.com",
+      claudePath: "",
+      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
+      apiKey: "sk-cache",
+    }}});
     try {
       const r1 = loadProviderConfig("cachetest", tmp);
       const r2 = loadProviderConfig("cachetest", tmp);
@@ -620,18 +634,21 @@ describe("loadProviderConfig caching", () => {
 
   test("clearConfigCache forces re-read", () => {
     clearConfigCache();
-    const tmp = makeTempSettings({ "env:cachetest2": {
-      ANTHROPIC_BASE_URL: "https://first.example.com",
-      ANTHROPIC_AUTH_TOKEN: "sk-first",
-    }});
+    const tmp = makeTempSettings({ providers: { cachetest2: {
+      url: "https://first.example.com",
+      claudePath: "",
+      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
+      apiKey: "sk-first",
+    }}});
     try {
       const r1 = loadProviderConfig("cachetest2", tmp);
       assert.equal(r1.baseUrl, "https://first.example.com");
       clearConfigCache();
       // Modify config file and re-read
-      fs.writeFileSync(tmp, JSON.stringify({ "env:cachetest2": {
-        ANTHROPIC_BASE_URL: "https://second.example.com", ANTHROPIC_AUTH_TOKEN: "sk-second"
-      }}));
+      fs.writeFileSync(tmp, JSON.stringify({ providers: { cachetest2: {
+        url: "https://second.example.com", claudePath: "",
+        claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "sk-second"
+      }}}));
       const r2 = loadProviderConfig("cachetest2", tmp);
       assert.equal(r2.baseUrl, "https://second.example.com");
     } finally {

@@ -67,15 +67,15 @@ function probeApiProviders(configPath) {
   try {
     if (!existsSync(configPath)) return out;
     const cfg = JSON.parse(readFileSync(configPath, "utf8"));
-    for (const k of Object.keys(cfg)) {
-      if (!k.startsWith("env:")) continue;
-      const env = cfg[k];
-      const baseUrl = env.ANTHROPIC_FOUNDRY_BASE_URL || env.ANTHROPIC_BASE_URL;
-      if (!baseUrl) continue;
+    for (const [name, profile] of Object.entries(cfg.providers || {})) {
+      if (!profile || typeof profile !== 'object') continue;
+      if (!profile.url) continue;
+      const baseUrl = profile.url + (profile.claudePath ?? '');
+      const extras = profile.claudeExtras || {};
       out.push({
-        name: k.slice(4), kind: "api", version: null,
+        name, kind: "api", version: null,
         identity: baseUrl, available: true,
-        models: ALIAS_VARS.filter(([, v]) => env[v]).map(([alias, v]) => ({ alias, actual: env[v] })),
+        models: ALIAS_VARS.filter(([, v]) => extras[v]).map(([alias, v]) => ({ alias, actual: extras[v] })),
       });
     }
   } catch { /* config unreadable */ }

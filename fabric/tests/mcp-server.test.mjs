@@ -40,10 +40,16 @@ function withConfigFixture(obj, fn) {
 }
 
 const DEEPSEEK_FIXTURE = {
-  "env:deepseek": {
-    ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
-    ANTHROPIC_AUTH_TOKEN: "sk-fake",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash",
+  providers: {
+    deepseek: {
+      url: "http://127.0.0.1:1",
+      claudePath: "",
+      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
+      apiKey: "sk-fake",
+      claudeExtras: {
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash",
+      },
+    },
   },
 };
 

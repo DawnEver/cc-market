@@ -1,5 +1,6 @@
 // Unit tests for engine/providers.mjs — provider routing (no network).
-// Uses a temp registry file to exercise vanilla + Foundry blocks and model remapping.
+// Uses a temp registry file to exercise the `providers.<name>` shape (single
+// source of truth, shared with the root repo's cc-launcher/codex-launcher).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,28 +21,41 @@ function fixture(obj) {
 }
 
 const REG = {
-  'env:deepseek': {
-    CLAUDE_CODE_USE_FOUNDRY: '1',
-    ANTHROPIC_FOUNDRY_BASE_URL: 'https://api.deepseek.com/anthropic',
-    ANTHROPIC_FOUNDRY_API_KEY: 'sk-test',
-    ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1m]',
-    ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1m]',
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
-  },
-  'env:vanilla': {
-    ANTHROPIC_BASE_URL: 'https://example.test/v1/',
-    ANTHROPIC_AUTH_TOKEN: 'tok-abc',
-    ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-model',
-  },
-  'env:kimi': {
-    ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
-    ANTHROPIC_API_KEY: 'sk-kimi-test',
-    ANTHROPIC_DEFAULT_SONNET_MODEL: 'k3-256k',
-    ANTHROPIC_DEFAULT_FABLE_MODEL: 'k3[1m]',
+  providers: {
+    deepseek: {
+      url: 'https://api.deepseek.com',
+      claudePath: '/anthropic',
+      claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
+      apiKey: 'sk-test',
+      claudeExtras: {
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1m]',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1m]',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
+      },
+    },
+    vanilla: {
+      url: 'https://example.test',
+      claudePath: '/v1/',
+      claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN',
+      apiKey: 'tok-abc',
+      claudeExtras: {
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-model',
+      },
+    },
+    kimi: {
+      url: 'https://api.kimi.com',
+      claudePath: '/coding/',
+      claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
+      apiKey: 'sk-kimi-test',
+      claudeExtras: {
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'k3-256k',
+        ANTHROPIC_DEFAULT_FABLE_MODEL: 'k3[1m]',
+      },
+    },
   },
 };
 
-test('loadProviderConfig collapses Foundry into normalized shape', () => {
+test('loadProviderConfig composes url+claudePath into the canonical baseUrl', () => {
   const cfg = loadProviderConfig('deepseek', fixture(REG));
   assert.equal(cfg.native, false);
   assert.equal(cfg.baseUrl, 'https://api.deepseek.com/anthropic');
@@ -81,10 +95,11 @@ test('resolveUpstream trims trailing slash and binds a remapper', () => {
   assert.equal(up.resolveModel('claude-opus-4-8'), 'big-model');
 });
 
-test('loadProviderEnv strips provider keys then overlays block', () => {
+test('loadProviderEnv projects url+claudePath into ANTHROPIC_BASE_URL, apiKey into the named env', () => {
   const env = loadProviderEnv('deepseek', fixture(REG));
-  assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, 'https://api.deepseek.com/anthropic');
-  assert.equal(env.CLAUDE_CODE_USE_FOUNDRY, '1');
+  assert.equal(env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic');
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-test');
+  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'deepseek-v4-flash');
 });
 
 test('native claude env strips parent ANTHROPIC_* model pins (fable leak regression)', () => {
@@ -122,13 +137,18 @@ test('machine-local secrets overlay: local file deep-merges over the shared regi
   const dir = mkdtempSync(join(tmpdir(), 'providers-local-'));
   const p = join(dir, 'claude_env_settings.json');
   writeFileSync(p, JSON.stringify({
-    'env:deepseek': {
-      ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
-      ANTHROPIC_MODEL: 'deepseek-v4-flash[1m]',
+    providers: {
+      deepseek: {
+        url: 'https://api.deepseek.com',
+        claudePath: '/anthropic',
+        claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
+        claudeModel: 'deepseek-v4-flash[1m]',
+        // apiKey is NOT in the shared file — it comes from the local overlay
+      },
     },
   }));
   writeFileSync(join(dir, 'claude_env_settings.local.json'), JSON.stringify({
-    'env:deepseek': { ANTHROPIC_API_KEY: 'sk-machine-local' },
+    providers: { deepseek: { apiKey: 'sk-machine-local' } },
   }));
   clearConfigCache();
   const cfg = loadProviderConfig('deepseek', p);
@@ -139,12 +159,33 @@ test('machine-local secrets overlay: local file deep-merges over the shared regi
   assert.equal(env.ANTHROPIC_MODEL, 'deepseek-v4-flash[1m]');
 });
 
-test('tokenStyle records which env var supplied the token', () => {
-  // ANTHROPIC_AUTH_TOKEN → Bearer header; ANTHROPIC_API_KEY → x-api-key; Foundry → x-api-key.
+test('tokenStyle records which env var supplies the key', () => {
+  // ANTHROPIC_AUTH_TOKEN → Bearer header; ANTHROPIC_API_KEY → x-api-key.
   assert.equal(loadProviderConfig('vanilla', fixture(REG)).tokenStyle, 'bearer');
   assert.equal(loadProviderConfig('kimi', fixture(REG)).tokenStyle, 'x-api-key');
   assert.equal(loadProviderConfig('deepseek', fixture(REG)).tokenStyle, 'x-api-key');
   assert.equal(resolveUpstream('vanilla', fixture(REG)).tokenStyle, 'bearer');
+});
+
+test('loadProviderConfig returns a clear error when apiKey is missing from local overlay', () => {
+  // Shared has the provider block but no apiKey (it's per-machine); the local file
+  // exists but doesn't add the apiKey. Should error rather than silently launching
+  // with no credentials.
+  const dir = mkdtempSync(join(tmpdir(), 'providers-nokey-'));
+  const p = join(dir, 'claude_env_settings.json');
+  writeFileSync(p, JSON.stringify({
+    providers: {
+      deepseek: {
+        url: 'https://api.deepseek.com',
+        claudePath: '/anthropic',
+        claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
+        claudeModel: 'deepseek-v4-flash[1m]',
+      },
+    },
+  }));
+  writeFileSync(join(dir, 'claude_env_settings.local.json'), JSON.stringify({ providers: {} }));
+  clearConfigCache();
+  assert.throws(() => loadProviderConfig('deepseek', p), /missing apiKey/);
 });
 
 test('anthropicEndpoint builds the /v1/messages URL Claude Code itself hits', () => {
