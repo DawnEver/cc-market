@@ -22,14 +22,23 @@ change needs one, that is a signal the seam was cut in the wrong place.
 ## Environment
 
 **Keep the build environment off OneDrive.** This plugin lives inside cc-market,
-which syncs. Before working on it:
+which syncs. Left alone, `.venv` and the pytest/ruff caches are copied
+file-by-file by the sync client on every dependency change.
 
-```
-setx UV_PROJECT_ENVIRONMENT "C:\Users\<you>\Documents\PEMC\cc-academia-data\venv"
+Point uv at local disk — **per shell, not globally**:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = "$HOME/Documents/PEMC/cc-academia-data/venv"
 ```
 
-Otherwise `.venv` and the pytest/ruff caches are copied file-by-file by the sync
-client on every dependency change.
+```bash
+export UV_PROJECT_ENVIRONMENT="$HOME/Documents/PEMC/cc-academia-data/venv"
+```
+
+Do **not** `setx` it. The variable names a path, not a policy, so a machine-wide
+value would make every uv project on the machine share this one environment.
+`.claude/settings.json` sets it for agent sessions in this directory, which is
+the scope that actually matches.
 
 The accumulating SQLite database defaults to local disk for a harder reason: a
 sync client corrupts database files. `ACADEMIA_DB` may be moved, but never onto a

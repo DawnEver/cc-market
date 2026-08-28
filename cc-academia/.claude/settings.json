@@ -3,5 +3,8 @@
     "deny": [
       "Read(**/reviewer-discovery/**/0-raw.pdf)"
     ]
+  },
+  "env": {
+    "UV_PROJECT_ENVIRONMENT": "${HOME}/Documents/PEMC/cc-academia-data/venv"
   }
 }
