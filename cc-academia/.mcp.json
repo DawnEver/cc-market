@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "zotero": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--link-mode", "copy",
+        "--no-project",
+        "--with", "zotero-mcp-server[semantic,pdf]==0.6.3",
+        "--with-editable", "${CLAUDE_PLUGIN_ROOT}",
+        "academia-zotero-mcp"
+      ]
+    }
+  }
+}
