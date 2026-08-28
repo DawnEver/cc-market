@@ -13,7 +13,7 @@ Email rules, in order of trust:
 3. an official lab or group page
 4. an ORCID record where the researcher chose to publish their address
 
-There is no fifth rule. ``firstname.lastname@university.edu`` is never generated:
+There is no fifth rule. ``firstname.lastname@example.edu`` is never generated:
 a guessed address either bounces or reaches the wrong person, and an editor
 cannot tell which. When nothing is found the answer is ``not_found``.
 """
