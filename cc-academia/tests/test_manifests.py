@@ -28,6 +28,11 @@ MARKETPLACES = {
 }
 
 
+def _authoritative_version() -> str:
+    """cc-market's pre-push hook bumps plugin.json, so that file leads."""
+    return json.loads((PLUGIN_MANIFESTS["claude"]).read_text(encoding="utf-8"))["version"]
+
+
 def _pyproject_version() -> str:
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     return data["project"]["version"]
@@ -38,8 +43,19 @@ def _load(path: Path) -> dict:
 
 
 @pytest.mark.parametrize("host", sorted(PLUGIN_MANIFESTS))
-def test_plugin_version_matches_pyproject(host: str) -> None:
-    assert _load(PLUGIN_MANIFESTS[host])["version"] == _pyproject_version()
+def test_both_host_manifests_carry_the_same_version(host: str) -> None:
+    assert _load(PLUGIN_MANIFESTS[host])["version"] == _authoritative_version()
+
+
+def test_pyproject_follows_the_plugin_manifest() -> None:
+    """pyproject exists so a wheel build is not wrong; it never leads."""
+    assert _pyproject_version() == _authoritative_version()
+
+
+def test_the_runtime_reports_the_manifest_version() -> None:
+    from academia import __version__
+
+    assert __version__ == _authoritative_version()
 
 
 @pytest.mark.parametrize("host", sorted(PLUGIN_MANIFESTS))
@@ -48,7 +64,7 @@ def test_plugin_name_is_stable(host: str) -> None:
 
 
 def test_version_is_semver() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+", _pyproject_version())
+    assert re.fullmatch(r"\d+\.\d+\.\d+", _authoritative_version())
 
 
 def test_both_hosts_describe_the_same_plugin() -> None:

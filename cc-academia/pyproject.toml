@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cc-academia"
-version = "0.1.0"
+version = "0.1.2"
 description = "Academic research toolchain: literature review, manuscript review, reviewer discovery"
 requires-python = ">=3.12"
 license = { text = "MIT" }

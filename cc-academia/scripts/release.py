@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Propagate the pyproject version into both host manifests.
+"""Keep the version consistent across the manifests and pyproject.
 
-One plugin, two hosts. This is the only writer; `tests/test_manifests.py` is the
-guard, and it also checks that the surrounding cc-market marketplaces list the
-plugin exactly once.
+`.claude-plugin/plugin.json` is the source of truth, because cc-market's pre-push
+hook bumps the patch version of every changed plugin. This script propagates that
+version to the Codex manifest and to pyproject.toml, which exists only so a wheel
+build is not wrong. `tests/test_manifests.py` is the guard.
 
 Usage:
     python scripts/release.py            # sync manifests to pyproject version
@@ -20,15 +21,18 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-#: cc-academia ships inside the cc-market marketplace, so only its own two host
-#: manifests carry a version. The marketplace entries reference it by path.
-MANIFESTS = (
-    Path(".claude-plugin/plugin.json"),
-    Path(".codex-plugin/plugin.json"),
-)
+#: Written from the authoritative version. The marketplace entries reference the
+#: plugin by path and carry no version of their own.
+MANIFESTS = (Path(".codex-plugin/plugin.json"),)
 
 
 def read_version() -> str:
+    """The authoritative version: whatever the Claude plugin manifest says."""
+    manifest = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    return str(manifest["version"])
+
+
+def read_pyproject_version() -> str:
     return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 
@@ -50,7 +54,12 @@ def main(argv: list[str]) -> int:
             raise SystemExit("error: --check takes no version argument")
         if not re.fullmatch(r"\d+\.\d+\.\d+", positional[0]):
             raise SystemExit(f"error: not a semver version: {positional[0]}")
-        write_version(positional[0])
+        path = ROOT / ".claude-plugin/plugin.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest["version"] = positional[0]
+        path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
 
     version = read_version()
     drifted: list[str] = []
@@ -64,6 +73,11 @@ def main(argv: list[str]) -> int:
         if not check_only:
             data["version"] = version
             path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    if read_pyproject_version() != version:
+        drifted.append("pyproject.toml")
+        if not check_only:
+            write_version(version)
 
     if check_only:
         if drifted:
