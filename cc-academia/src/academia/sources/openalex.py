@@ -157,6 +157,7 @@ def to_person(record: dict[str, Any]) -> Person:
                 year_from=years[0] if years else None,
                 year_to=years[-1] if years else None,
                 is_current=_short_id(institution.get("id")) in last_known,
+                kind=as_text(institution.get("type")),
                 source=SOURCE,
                 source_url=as_text(record.get("id")),
             )

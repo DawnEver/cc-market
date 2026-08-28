@@ -266,6 +266,11 @@ def run_enrich(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
     rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
+    # Default is everyone. Affiliations feed the conflict rules and the
+    # geography check, and the final ranking is not known until after those,
+    # so capping here would silently leave top candidates without an
+    # institution. --limit exists for when the user knowingly wants a
+    # cheaper partial pass.
     subset = rows[: args.limit] if args.limit else rows
 
     enriched: list[dict] = []
@@ -466,6 +471,11 @@ def run_report(args: argparse.Namespace) -> int:
                     conn, state.run_id, candidate.person.person_id, candidate.score, candidate.components
                 )
 
+        unknown = [
+            row.candidate.person.display_name
+            for row in rows
+            if row.institution == "unknown" and not row.candidate.blocked
+        ]
         written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy.sources)
 
     state.mark("report")
@@ -476,12 +486,19 @@ def run_report(args: argparse.Namespace) -> int:
         "csv": str(written["csv"]),
         "dossiers": str(written["dossiers"]),
         "candidates": len(rows),
+        "without_affiliation": unknown,
     }
     if args.json:
         log.emit(payload)
     else:
         log.info(f"shortlist: {written['shortlist']}")
         log.info(f"dossiers : {written['dossiers']}")
+        if unknown:
+            log.warn(
+                f"{len(unknown)} shortlisted candidate(s) have no institution recorded: "
+                + ", ".join(unknown[:5])
+            )
+            log.warn("run `rev-disc enrich` without --limit, then re-run coi and report")
     return EXIT_OK
 
 

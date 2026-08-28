@@ -141,6 +141,7 @@ def enrich_from_openalex(
             year_from=affiliation.year_from,
             year_to=affiliation.year_to,
             is_current=affiliation.is_current,
+            kind=affiliation.kind,
             source="openalex",
             source_url=affiliation.source_url,
         )

@@ -425,10 +425,11 @@ def load_person(conn: sqlite3.Connection, person_id: str) -> Person | None:
             is_current=bool(r["is_current"]),
             source=r["source"],
             source_url=r["source_url"] or "",
+            kind=r["type"] or "",
         )
         for r in conn.execute(
             """
-            SELECT a.*, i.name, i.country_code FROM affiliations a
+            SELECT a.*, i.name, i.country_code, i.type FROM affiliations a
             JOIN institutions i ON i.inst_id = a.inst_id
             WHERE a.person_id = ?
             ORDER BY coalesce(a.year_from, 0) DESC
@@ -655,10 +656,11 @@ def store_institution_for(
     is_current: bool = False,
     source: str = "openalex",
     source_url: str = "",
+    kind: str = "",
 ) -> str:
     """Convenience wrapper: create the institution then link the person to it."""
     institution = Institution.build(
-        name=name, ror_id=ror_id, country_code=country_code
+        name=name, ror_id=ror_id, country_code=country_code, type=kind
     )
     upsert_institution(conn, institution)
     record_affiliation(

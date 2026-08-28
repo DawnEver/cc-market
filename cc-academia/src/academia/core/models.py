@@ -76,6 +76,22 @@ class Institution:
         return cls(inst_id=stable_id("inst", key), name=name, ror_id=ror_id, **kwargs)
 
 
+#: Institution kinds ranked by how likely they are to be where someone actually
+#: works. OpenAlex marks several institutions "current" for a prolific author,
+#: and a funder or a provincial education department is not an employer.
+EMPLOYER_PRIORITY = {
+    "education": 0,
+    "facility": 1,
+    "healthcare": 2,
+    "company": 3,
+    "nonprofit": 4,
+    "government": 5,
+    "funder": 6,
+    "archive": 7,
+    "other": 8,
+}
+
+
 @dataclass(slots=True)
 class Affiliation:
     inst_id: str
@@ -88,6 +104,11 @@ class Affiliation:
     is_current: bool = False
     source: str = ""
     source_url: str = ""
+    kind: str = ""
+
+    @property
+    def employer_rank(self) -> int:
+        return EMPLOYER_PRIORITY.get(self.kind, EMPLOYER_PRIORITY["other"])
 
 
 @dataclass(slots=True)
@@ -212,13 +233,24 @@ class Person:
 
     @property
     def current_affiliation(self) -> Affiliation | None:
+        """Where this person most plausibly works now.
+
+        Among the affiliations marked current, prefer a university over a funder
+        or a government body; then, between two universities, the one held
+        longest. OpenAlex marks several as current for a prolific author, and
+        the primary employer is the long-running one, not whichever a recent
+        collaboration added.
+        """
         current = [a for a in self.affiliations if a.is_current]
         if current:
-            return current[0]
+            return min(
+                current,
+                key=lambda a: (a.employer_rank, -(a.year_to or 0), a.year_from or 9999),
+            )
         dated = [a for a in self.affiliations if a.year_to or a.year_from]
         if not dated:
             return self.affiliations[0] if self.affiliations else None
-        return max(dated, key=lambda a: (a.year_to or a.year_from or 0))
+        return max(dated, key=lambda a: (a.year_to or a.year_from or 0, -a.employer_rank))
 
     @property
     def country_code(self) -> str:

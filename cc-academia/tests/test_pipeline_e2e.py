@@ -172,3 +172,27 @@ def test_an_unknown_journal_stops_the_run(stub_sources):
 
 def test_missing_workspace_is_a_usage_error(stub_sources):
     assert run("profile", "--slug", "never-created") == 2
+
+
+def test_candidates_are_written_in_evidence_order(tmp_path, stub_sources):
+    """Everything downstream slices this list with --limit.
+
+    Unordered, `enrich --limit 40` on a 200-candidate pool could miss every
+    top-ranked person — which is exactly what a live run showed.
+    """
+    run("init", "--slug", "tie-demo", "--title", "Torque ripple suppression in PMSM drives",
+        "--abstract", "Torque ripple suppression for PMSM traction drives.",
+        "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026")
+    run("profile", "--slug", "tie-demo")
+    run("search", "--slug", "tie-demo")
+    run("candidates", "--slug", "tie-demo")
+
+    path = tmp_path / "workspaces" / "reviewer-discovery" / "tie-demo" / "3-candidates" / "candidates.jsonl"
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) >= 2
+
+    def strength(row):
+        return sum(e["similarity"] * e["position_weight"] for e in row["evidence"])
+
+    scores = [strength(r) for r in rows]
+    assert scores == sorted(scores, reverse=True)

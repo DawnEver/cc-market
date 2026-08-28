@@ -218,6 +218,11 @@ def build_candidates(
             continue
         evidence.sort(key=lambda e: -e.similarity)
         candidates.append(Candidate(person=person, evidence=evidence[:10]))
+
+    # Ordered by evidence strength, because every downstream `--limit` slices
+    # this list. Unordered, enriching 40 of 200 candidates could miss all of the
+    # strongest ones.
+    candidates.sort(key=lambda c: -sum(e.similarity * e.position_weight for e in c.evidence))
     return candidates
 
 

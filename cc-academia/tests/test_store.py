@@ -234,3 +234,54 @@ def test_invitation_history_survives_across_manuscripts(conn):
     repo.record_invitation(conn, person_id, "ms2", responded=True, accepted=True)
     history = repo.invitation_history(conn, person_id)
     assert len(history) == 2
+
+
+def test_current_employer_prefers_a_university_over_a_funder(conn):
+    """OpenAlex marks several institutions current for a prolific author.
+
+    A live run put "Education Department of Fujian Province" in the column an
+    editor reads as employer, ahead of the university the person works at.
+    """
+
+    person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
+    for name, kind, country in (
+        ("Education Department of Fujian Province", "government", "CN"),
+        ("Jiangsu University", "education", "CN"),
+    ):
+        repo.store_institution_for(
+            conn, person_id, name=name, country_code=country,
+            year_from=2020, year_to=2026, is_current=True, kind=kind,
+        )
+
+    person = repo.load_person(conn, person_id)
+    assert person.current_affiliation.institution == "Jiangsu University"
+
+
+def test_current_employer_falls_back_to_the_most_recent_when_none_is_flagged(conn):
+
+    person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
+    repo.store_institution_for(
+        conn, person_id, name="Old University", country_code="GB",
+        year_from=2005, year_to=2010, is_current=False, kind="education",
+    )
+    repo.store_institution_for(
+        conn, person_id, name="New University", country_code="GB",
+        year_from=2015, year_to=2024, is_current=False, kind="education",
+    )
+    person = repo.load_person(conn, person_id)
+    assert person.current_affiliation.institution == "New University"
+
+
+def test_between_two_current_universities_the_longer_tenure_wins(conn):
+    """The primary employer is the long-running one, not the newest addition."""
+    person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
+    repo.store_institution_for(
+        conn, person_id, name="Recent Collaboration University", country_code="CN",
+        year_from=2023, year_to=2026, is_current=True, kind="education",
+    )
+    repo.store_institution_for(
+        conn, person_id, name="Home University", country_code="CN",
+        year_from=2005, year_to=2026, is_current=True, kind="education",
+    )
+    person = repo.load_person(conn, person_id)
+    assert person.current_affiliation.institution == "Home University"

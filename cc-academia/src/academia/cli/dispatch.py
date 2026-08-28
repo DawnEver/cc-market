@@ -122,7 +122,13 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
 
     enrich = sub.add_parser("enrich", help="Affiliation, career history and public email.")
     enrich.add_argument("--slug", required=True)
-    enrich.add_argument("--limit", type=int, default=40, help="Candidates to enrich; 0 for all.")
+    enrich.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Cap the number enriched (0 = all, the default). Affiliations feed "
+        "the conflict rules, so a cap can leave top candidates unscreened.",
+    )
     _add_common(enrich)
 
     coi = sub.add_parser("coi", help="Run the conflict rules. No model is involved.")
