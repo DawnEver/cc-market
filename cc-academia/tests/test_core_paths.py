@@ -42,19 +42,74 @@ def test_database_never_defaults_under_the_data_root(monkeypatch):
     assert paths.data_root() not in paths.database_path().parents
 
 
-def test_each_workflow_keeps_its_existing_directory_name(tmp_path, monkeypatch):
-    """These directories predate the plugin and hold real research data.
-
-    literature-review uses `workspaces/`, the review workflows use `ongoing/`.
-    Renaming them to satisfy a uniform scheme would move hundreds of megabytes of
-    manuscripts for the tool's convenience.
-    """
+def test_every_workflow_uses_the_same_two_directories(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.ENV_DATA_ROOT, str(tmp_path))
-    assert paths.workspaces_root("literature-review") == tmp_path / "literature-review" / "workspaces"
-    assert paths.workspaces_root("manuscript-review") == tmp_path / "manuscript-review" / "ongoing"
-    assert paths.workspaces_root("reviewer-discovery") == tmp_path / "reviewer-discovery" / "ongoing"
+    for workflow in paths.WORKFLOWS:
+        assert paths.workspaces_root(workflow) == tmp_path / workflow / "ongoing"
+        assert paths.archive_root(workflow) == tmp_path / workflow / "archived"
 
 
-def test_an_unmapped_workflow_falls_back_to_its_own_name(tmp_path, monkeypatch):
+def test_a_legacy_directory_is_reported_so_it_can_be_renamed(tmp_path, monkeypatch):
+    """An empty new directory looks exactly like having done no work."""
     monkeypatch.setenv(paths.ENV_DATA_ROOT, str(tmp_path))
-    assert paths.workspaces_root("something-new") == tmp_path / "something-new"
+    assert paths.legacy_workspaces_root("literature-review") is None
+
+    (tmp_path / "literature-review" / "workspaces").mkdir(parents=True)
+    legacy = paths.legacy_workspaces_root("literature-review")
+    assert legacy == tmp_path / "literature-review" / "workspaces"
+    assert paths.legacy_workspaces_root("manuscript-review") is None
+
+
+def test_data_root_is_discovered_by_walking_up(tmp_path, monkeypatch):
+    """No absolute path belongs in a settings file that syncs across machines."""
+    monkeypatch.delenv(paths.ENV_DATA_ROOT, raising=False)
+    root = tmp_path / "agents"
+    (root / "literature-review" / "ongoing").mkdir(parents=True)
+    nested = root / "literature-review" / "ongoing" / "some-topic" / "search"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    assert paths.data_root() == root.resolve()
+
+
+def test_an_explicit_setting_beats_discovery(tmp_path, monkeypatch):
+    root = tmp_path / "agents"
+    (root / "manuscript-review" / "ongoing").mkdir(parents=True)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv(paths.ENV_DATA_ROOT, str(tmp_path / "elsewhere"))
+    assert paths.data_root() == tmp_path / "elsewhere"
+
+
+def test_a_fresh_install_falls_back_to_the_home_directory(tmp_path, monkeypatch):
+    monkeypatch.delenv(paths.ENV_DATA_ROOT, raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert paths.data_root().name == paths.DEFAULT_DATA_DIRNAME
+
+
+def test_a_bare_directory_name_is_not_enough_to_be_a_root(tmp_path, monkeypatch):
+    """A stray `literature-review` folder in AppData once matched. It must not."""
+    monkeypatch.delenv(paths.ENV_DATA_ROOT, raising=False)
+    decoy = tmp_path / "decoy"
+    (decoy / "literature-review").mkdir(parents=True)
+    monkeypatch.chdir(decoy)
+    assert paths.find_data_root() is None
+
+
+def test_a_fresh_clone_is_still_discoverable(tmp_path, monkeypatch):
+    """`ongoing/` is gitignored, so it does not exist until the first run."""
+    monkeypatch.delenv(paths.ENV_DATA_ROOT, raising=False)
+    root = tmp_path / "agents"
+    project = root / "reviewer-discovery"
+    project.mkdir(parents=True)
+    (project / "AGENTS.md").write_text("data only", encoding="utf-8")
+    monkeypatch.chdir(project)
+    assert paths.find_data_root() == root.resolve()
+
+
+def test_discovery_finds_the_root_from_a_sibling_project(tmp_path, monkeypatch):
+    """Working in reviewer-discovery must find the same root as literature-review."""
+    monkeypatch.delenv(paths.ENV_DATA_ROOT, raising=False)
+    root = tmp_path / "agents"
+    (root / "literature-review" / "ongoing").mkdir(parents=True)
+    (root / "reviewer-discovery").mkdir(parents=True)
+    monkeypatch.chdir(root / "reviewer-discovery")
+    assert paths.data_root() == root.resolve()

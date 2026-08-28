@@ -13,7 +13,7 @@ from datetime import UTC
 from pathlib import Path
 
 from academia import __version__
-from academia.core.paths import workspaces_root
+from academia.core.paths import legacy_workspaces_root, workspaces_root
 from academia.litreview.acquire.options import (
     COMPLETION_MODES,
     DEFAULT_BROWSER_CHANNEL,
@@ -54,11 +54,19 @@ Post-acquisition (choose what you need):
 def _topic_dir(slug: str) -> Path:
     """Resolve a topic slug to its workspace directory."""
     d = workspaces_root("literature-review") / slug
-    if not d.exists():
-        print(f"error: workspace not found: {d}", file=sys.stderr)
-        print("Run: lit-review init <topic>", file=sys.stderr)
+    if d.exists():
+        return d
+
+    legacy = legacy_workspaces_root("literature-review")
+    if legacy is not None and (legacy / slug).exists():
+        print(f"error: this topic is still under the old layout: {legacy / slug}", file=sys.stderr)
+        print("Every workflow now uses ongoing/ and archived/. Rename it:", file=sys.stderr)
+        print(f'  mv "{legacy}" "{legacy.parent / "ongoing"}"', file=sys.stderr)
         raise SystemExit(2)
-    return d
+
+    print(f"error: workspace not found: {d}", file=sys.stderr)
+    print("Run: lit-review init <topic>", file=sys.stderr)
+    raise SystemExit(2)
 
 
 # ---------------------------------------------------------------------------

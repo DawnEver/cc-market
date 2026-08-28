@@ -73,33 +73,88 @@ def lens_file(lens_id: str) -> Path | None:
     return None
 
 
+#: Every workflow uses the same two directories: work in progress, and work
+#: finished. The repository already followed this for ai-post, reply-email and
+#: manuscript-review; literature-review was the one outlier.
+ONGOING = "ongoing"
+ARCHIVED = "archived"
+
+WORKFLOWS = ("literature-review", "manuscript-review", "reviewer-discovery")
+
+DEFAULT_DATA_DIRNAME = "cc-academia-workspaces"
+
+#: Files that mark a real project rather than a directory that happens to share
+#: the name. Committed, so they survive a fresh clone where `ongoing/` does not.
+PROJECT_MARKERS = ("AGENTS.md", "README.md")
+
+#: Legacy name, kept only so the CLI can say what to rename rather than looking
+#: at an empty directory and reporting no work.
+LEGACY_DIRS = {"literature-review": "workspaces"}
+
+
+def find_data_root(start: Path | None = None) -> Path | None:
+    """Walk up from ``start`` for a directory holding the workflow projects.
+
+    Discovery rather than configuration: the alternative is an absolute path in a
+    settings file, and these settings are committed to a repository that syncs
+    across machines and platforms, where an absolute path is correct on exactly
+    one of them.
+
+    A bare directory name is too weak a marker — a stray ``literature-review``
+    folder left in ``AppData/Local`` by an earlier run was enough to match one.
+    ``ongoing/`` is too strict on its own, because it is gitignored and therefore
+    absent from a fresh clone. So either counts: a committed project file, or the
+    working directory itself.
+    """
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        for workflow in WORKFLOWS:
+            base = candidate / workflow
+            if not base.is_dir():
+                continue
+            if any((base / marker).exists() for marker in PROJECT_MARKERS):
+                return candidate
+            if (base / ONGOING).is_dir() or (base / LEGACY_DIRS.get(workflow, ONGOING)).is_dir():
+                return candidate
+    return None
+
+
 def data_root() -> Path:
-    """Where workspaces live. Documents (PDFs, reports) — sync-friendly."""
-    return _env_path(ENV_DATA_ROOT) or (Path.home() / "cc-academia-workspaces")
+    """Where research data lives.
 
-
-#: Where each workflow keeps its workspaces, relative to the data root.
-#:
-#: Not a uniform ``<data-root>/<workflow>/``: these directories predate the
-#: plugin and hold real research data, and the names carry meaning to the person
-#: browsing them. Renaming 650MB of manuscripts to satisfy a scheme would be the
-#: tool imposing on the work rather than fitting it.
-WORKFLOW_DIRS = {
-    "literature-review": Path("literature-review") / "workspaces",
-    "manuscript-review": Path("manuscript-review") / "ongoing",
-    "reviewer-discovery": Path("reviewer-discovery") / "ongoing",
-}
+    Explicit setting first, then discovery from the working directory, then a
+    home-directory default for a fresh install with no research tree yet.
+    """
+    explicit = _env_path(ENV_DATA_ROOT)
+    if explicit is not None:
+        return explicit
+    discovered = find_data_root()
+    if discovered is not None:
+        return discovered
+    return Path.home() / DEFAULT_DATA_DIRNAME
 
 
 def workspaces_root(workflow: str) -> Path:
-    """Workspace directory for a workflow.
+    """Where this workflow keeps work in progress."""
+    return data_root() / workflow / ONGOING
 
-    Replaces the old ``find_root()``, which walked up the tree hunting for a
-    project marker. Shipped as a plugin there is no such tree, so the location is
-    a user setting rather than a property of the checkout.
+
+def archive_root(workflow: str) -> Path:
+    """Where this workflow keeps finished work."""
+    return data_root() / workflow / ARCHIVED
+
+
+def legacy_workspaces_root(workflow: str) -> Path | None:
+    """A pre-unification directory that still holds data, if one exists.
+
+    Returned so a command can name the rename instead of silently reporting an
+    empty workspace, which looks identical to having done no work.
     """
-    relative = WORKFLOW_DIRS.get(workflow, Path(workflow))
-    return data_root() / relative
+    legacy = LEGACY_DIRS.get(workflow)
+    if legacy is None:
+        return None
+    path = data_root() / workflow / legacy
+    return path if path.is_dir() else None
 
 
 def database_path() -> Path:
