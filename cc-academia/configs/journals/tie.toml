@@ -1,0 +1,6 @@
+# IEEE Transactions on Industrial Electronics.
+# Only the keys that differ from configs/coi.toml need to appear here.
+journal = "IEEE Transactions on Industrial Electronics"
+
+[seniority]
+min_academic_age = 5

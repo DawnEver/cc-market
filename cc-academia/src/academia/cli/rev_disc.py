@@ -1,0 +1,513 @@
+"""``rev-disc`` — reviewer discovery for an associate editor.
+
+Six stages, each resumable, each writing a numbered directory:
+
+    init -> profile -> search -> candidates -> enrich -> coi -> report
+
+Everything deterministic happens here; a model is only ever asked to phrase a
+research summary, never to decide who is conflicted or who is qualified.
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+from academia.core import log
+from academia.core.errors import EXIT_OK, UsageError
+from academia.core.models import stable_id
+from academia.reviewer import coi as coi_module
+from academia.reviewer import discover, geo, rank, report
+from academia.reviewer import enrich as enrich_module
+from academia.reviewer.policy import load_policy
+from academia.reviewer.profile import (
+    Profile,
+    Sanitized,
+    build_profile,
+    ingest_pdf,
+    load_sanitized,
+    write_sanitized,
+)
+from academia.reviewer.workspace import open_workspace, slugify
+from academia.store import db
+from academia.store import repository as repo
+
+
+def _now_year() -> int:
+    return datetime.now().year
+
+
+def _sources(names: list[str] | None):
+    from academia.sources.ieee import IeeeXplore
+    from academia.sources.openalex import OpenAlex
+
+    registry = {"openalex": OpenAlex, "ieee": IeeeXplore}
+    chosen = names or ["openalex", "ieee"]
+    unknown = [n for n in chosen if n not in registry]
+    if unknown:
+        raise UsageError(f"unknown source(s): {', '.join(unknown)}")
+    return [registry[name]() for name in chosen]
+
+
+# --------------------------------------------------------------------- init
+
+
+def run_init(args: argparse.Namespace) -> int:
+    """Create the workspace and produce the sanitized record.
+
+    This is the only command permitted to read the raw PDF. Everything
+    downstream reads ``1-manuscript/sanitized.json``, which is what keeps the
+    manuscript body out of any model context regardless of host.
+    """
+    if args.pdf:
+        pdf = Path(args.pdf).expanduser().resolve()
+        if not pdf.exists():
+            raise UsageError(f"file not found: {pdf}")
+        slug = slugify(args.slug or pdf.stem)
+    else:
+        if not args.title:
+            raise UsageError("provide a PDF path, or --title with --abstract")
+        pdf = None
+        slug = slugify(args.slug or args.title)
+
+    workspace = open_workspace(slug, create=True)
+
+    if pdf is not None:
+        if workspace.raw_pdf.resolve() != pdf:
+            shutil.copy2(pdf, workspace.raw_pdf)
+        sanitized = ingest_pdf(workspace.raw_pdf)
+    else:
+        sanitized = Sanitized(
+            title=args.title,
+            abstract=args.abstract or "",
+            keywords=[k.strip() for k in (args.keywords or "").split(",") if k.strip()],
+            journal=args.journal or "",
+            year=args.year or _now_year(),
+        )
+
+    if args.journal:
+        sanitized.journal = args.journal
+
+    write_sanitized(workspace, sanitized)
+    state = workspace.load_state()
+    state.slug = slug
+    state.journal = args.journal or sanitized.journal
+    state.ms_id = stable_id("ms", sanitized.title_hash)
+    state.mark("init")
+    workspace.save_state(state)
+
+    payload = {
+        "slug": slug,
+        "workspace": str(workspace.root),
+        "ms_id": state.ms_id,
+        "sanitized": str(workspace.sanitized_path),
+        "next": "rev-disc profile --slug " + slug,
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"workspace ready: {workspace.root}")
+        log.info(f"  sanitized record: {workspace.sanitized_path}")
+        log.info(f"  next: {payload['next']}")
+    return EXIT_OK
+
+
+# ------------------------------------------------------------------ profile
+
+
+def run_profile(args: argparse.Namespace) -> int:
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    sanitized = load_sanitized(workspace)
+
+    profile = build_profile(sanitized, manuscript_id=state.ms_id, journal=state.journal)
+    workspace.write_json(workspace.profile_path, profile.to_dict())
+
+    with db.session() as conn:
+        repo.create_manuscript(
+            conn,
+            ms_id=profile.manuscript_id,
+            journal=profile.journal,
+            title_hash=profile.title_hash,
+            origin_countries=profile.origin_countries,
+        )
+        for author in sanitized.authors:
+            repo.add_manuscript_author(
+                conn,
+                profile.manuscript_id,
+                name=author.name,
+                affiliation=author.affiliation,
+                country=author.country,
+            )
+
+    state.mark("profile")
+    workspace.save_state(state)
+
+    payload = {
+        "manuscript_id": profile.manuscript_id,
+        "topics": profile.primary_topics,
+        "methods": profile.methods,
+        "queries": [q.expression for q in profile.queries],
+        "origin_countries": profile.origin_countries,
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"topics : {', '.join(profile.primary_topics) or 'none extracted'}")
+        log.info(f"methods: {', '.join(profile.methods) or 'none detected'}")
+        log.info(f"origin : {', '.join(profile.origin_countries) or 'unknown'}")
+        log.info(f"{len(profile.queries)} queries written to {workspace.profile_path}")
+    return EXIT_OK
+
+
+def _load_profile(workspace) -> Profile:
+    return Profile.from_dict(workspace.read_json(workspace.profile_path))
+
+
+# ------------------------------------------------------------------- search
+
+
+def run_search(args: argparse.Namespace) -> int:
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    profile = _load_profile(workspace)
+
+    outcome = discover.run_search(
+        _sources(args.source),
+        profile,
+        max_pages=args.pages,
+        per_page=args.per_page,
+        year_from=args.year_from,
+    )
+
+    with db.session() as conn:
+        stored = discover.store_papers(conn, outcome.papers)
+
+    workspace.write_jsonl(
+        workspace.search_dir / "papers.jsonl",
+        [
+            {
+                "paper_id": p.paper_id,
+                "title": p.title,
+                "year": p.year,
+                "doi": p.doi,
+                "source": p.source,
+                "authors": [a.name for a in p.authors],
+            }
+            for p in outcome.papers
+        ],
+    )
+    workspace.write_json(
+        workspace.search_dir / "summary.json",
+        {"per_query": outcome.per_query, "failures": outcome.failures, "stored": stored},
+    )
+
+    state.mark("search")
+    workspace.save_state(state)
+
+    payload = {"papers": stored, "per_query": outcome.per_query, "failures": outcome.failures}
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"{stored} unique papers stored")
+        for key, count in sorted(outcome.per_query.items()):
+            log.detail(f"  {key}: {count}")
+        for key, reason in outcome.failures.items():
+            log.warn(f"  {key}: {reason}")
+    return EXIT_OK
+
+
+# --------------------------------------------------------------- candidates
+
+
+def run_candidates(args: argparse.Namespace) -> int:
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    profile = _load_profile(workspace)
+
+    with db.session() as conn:
+        scores = discover.relevance(conn, profile, now_year=_now_year(), limit=args.pool)
+        candidates = discover.build_candidates(
+            conn, scores, top_papers=args.top_papers, min_evidence=args.min_evidence
+        )
+        rows = [
+            {
+                "person_id": c.person.person_id,
+                "name": c.person.display_name,
+                "orcid": c.person.orcid,
+                "confidence": c.person.confidence,
+                "resolution_method": c.person.resolution_method,
+                "evidence": [e.as_dict() for e in c.evidence],
+            }
+            for c in candidates
+        ]
+
+    workspace.write_jsonl(workspace.candidate_dir / "candidates.jsonl", rows)
+    state.mark("candidates")
+    workspace.save_state(state)
+
+    payload = {"candidates": len(rows), "papers_considered": len(scores)}
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"{len(rows)} candidates from {len(scores)} scored papers")
+        low = [r for r in rows if r["confidence"] < 0.6]
+        if low:
+            log.warn(f"{len(low)} candidates resolved by name only — confirm before inviting")
+    return EXIT_OK
+
+
+# ------------------------------------------------------------------ enrich
+
+
+def run_enrich(args: argparse.Namespace) -> int:
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
+    subset = rows[: args.limit] if args.limit else rows
+
+    enriched: list[dict] = []
+    with db.session() as conn:
+        for row in subset:
+            person = repo.load_person(conn, row["person_id"])
+            if person is None:
+                continue
+            person = enrich_module.enrich(conn, person)
+            finding = enrich_module.find_email(conn, person)
+            enriched.append(
+                {
+                    "person_id": person.person_id,
+                    "name": person.display_name,
+                    "country": person.country_code,
+                    "institution": (
+                        person.current_affiliation.institution if person.current_affiliation else ""
+                    ),
+                    "education_entries": len(person.education),
+                    "email": finding.as_dict(),
+                }
+            )
+
+    workspace.write_jsonl(workspace.audit_dir / "enrichment.jsonl", enriched)
+    state.mark("enrich")
+    workspace.save_state(state)
+
+    with_email = sum(1 for e in enriched if e["email"]["email"])
+    with_education = sum(1 for e in enriched if e["education_entries"])
+    payload = {
+        "enriched": len(enriched),
+        "with_email": with_email,
+        "with_education": with_education,
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"enriched {len(enriched)} candidates")
+        log.info(f"  public email found : {with_email}")
+        log.info(f"  education recorded : {with_education} (ORCID fills this for a minority)")
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------- coi
+
+
+def _context(conn, profile: Profile) -> coi_module.ManuscriptContext:
+    author_rows = repo.manuscript_authors(conn, profile.manuscript_id)
+    return coi_module.ManuscriptContext(
+        ms_id=profile.manuscript_id,
+        author_names=[r["name"] for r in author_rows] or profile.author_names,
+        author_person_ids=[r["person_id"] for r in author_rows if r["person_id"]],
+        author_institutions=[r["affiliation"] for r in author_rows if r["affiliation"]]
+        or profile.author_institutions,
+        author_countries=profile.origin_countries,
+        referenced_paper_ids=[],
+        year=profile.year or _now_year(),
+    )
+
+
+def run_coi(args: argparse.Namespace) -> int:
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    profile = _load_profile(workspace)
+    policy = load_policy(
+        state.journal or profile.journal,
+        exclusion_list=[n.strip() for n in (args.exclude or "").split(",") if n.strip()],
+    )
+    rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
+
+    run_id = state.run_id or stable_id("run", profile.manuscript_id, policy.fingerprint())
+    verdicts: list[dict] = []
+
+    with db.session() as conn:
+        repo.create_run(
+            conn, run_id=run_id, ms_id=profile.manuscript_id, config_hash=policy.fingerprint()
+        )
+        context = _context(conn, profile)
+        manuscript_people = [
+            p
+            for p in (repo.load_person(conn, pid) for pid in context.author_person_ids)
+            if p is not None
+        ]
+        for row in rows:
+            person = repo.load_person(conn, row["person_id"])
+            if person is None:
+                continue
+            verdict = coi_module.evaluate(
+                conn, person, context, policy, manuscript_people=manuscript_people
+            )
+            coi_module.persist(conn, run_id, verdict)
+            verdicts.append(
+                {
+                    "person_id": person.person_id,
+                    "name": person.display_name,
+                    "status": verdict.status,
+                    "findings": [
+                        {"rule": f.rule, "status": f.status, "evidence": f.evidence}
+                        for f in verdict.findings
+                    ],
+                }
+            )
+
+    workspace.write_jsonl(workspace.audit_dir / "coi.jsonl", verdicts)
+    state.run_id = run_id
+    state.mark("coi")
+    workspace.save_state(state)
+
+    counts = {status: sum(1 for v in verdicts if v["status"] == status) for status in ("CLEAR", "REVIEW", "BLOCK")}
+    payload = {"run_id": run_id, "policy": policy.sources, "counts": counts}
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"policy: {', '.join(Path(p).name for p in policy.sources)}")
+        log.info(f"  clear  : {counts['CLEAR']} (no detected conflict)")
+        log.info(f"  review : {counts['REVIEW']}")
+        log.info(f"  blocked: {counts['BLOCK']}")
+    return EXIT_OK
+
+
+# ------------------------------------------------------------------ report
+
+
+def run_report(args: argparse.Namespace) -> int:
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    profile = _load_profile(workspace)
+    policy = load_policy(state.journal or profile.journal)
+
+    candidate_rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
+    coi_rows = {
+        row["person_id"]: row
+        for row in workspace.read_jsonl(workspace.audit_dir / "coi.jsonl")
+    }
+    try:
+        email_rows = {
+            row["person_id"]: row for row in workspace.read_jsonl(workspace.audit_dir / "enrichment.jsonl")
+        }
+    except UsageError:
+        email_rows = {}
+
+    with db.session() as conn:
+        candidates: list[rank.Candidate] = []
+        for row in candidate_rows:
+            person = repo.load_person(conn, row["person_id"])
+            if person is None:
+                continue
+            candidate = rank.Candidate(person=person)
+            candidate.evidence = [
+                rank.Evidence(
+                    paper_id=e["paper_id"],
+                    title=e["title"],
+                    year=e["year"],
+                    position=e["position"],
+                    position_weight=e["position_weight"],
+                    similarity=e["similarity"],
+                )
+                for e in row["evidence"]
+            ]
+            candidate.person.topics = discover.topics_for(conn, candidate)
+
+            verdict_row = coi_rows.get(person.person_id)
+            if verdict_row:
+                verdict = coi_module.Verdict(person_id=person.person_id)
+                for finding in verdict_row["findings"]:
+                    verdict.add(
+                        coi_module.Finding(finding["rule"], finding["status"], finding["evidence"])
+                    )
+                candidate.verdict = verdict
+
+            candidate.geo = geo.assess(person, profile.origin_countries, policy)
+            candidates.append(
+                rank.score_candidate(
+                    conn,
+                    candidate,
+                    profile_topics=profile.primary_topics,
+                    profile_methods=profile.methods,
+                    policy=policy,
+                    now_year=_now_year(),
+                )
+            )
+
+        ordered = rank.rank(candidates)[: args.top] if args.top else rank.rank(candidates)
+        emails = {
+            pid: enrich_module.EmailFinding(
+                email=(row["email"] or {}).get("email") or "",
+                source=(row["email"] or {}).get("source") or enrich_module.NOT_FOUND,
+                source_url=(row["email"] or {}).get("source_url") or "",
+                confidence=(row["email"] or {}).get("confidence") or 0.0,
+            )
+            for pid, row in email_rows.items()
+        }
+        rows = report.build_rows(ordered, emails)
+
+        for candidate in ordered:
+            if not candidate.blocked:
+                repo.record_score(
+                    conn, state.run_id, candidate.person.person_id, candidate.score, candidate.components
+                )
+
+        written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy.sources)
+
+    state.mark("report")
+    workspace.save_state(state)
+
+    payload = {
+        "shortlist": str(written["shortlist"]),
+        "csv": str(written["csv"]),
+        "dossiers": str(written["dossiers"]),
+        "candidates": len(rows),
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"shortlist: {written['shortlist']}")
+        log.info(f"dossiers : {written['dossiers']}")
+    return EXIT_OK
+
+
+# ------------------------------------------------------------------ status
+
+
+def run_status(args: argparse.Namespace) -> int:
+    from academia.reviewer.workspace import list_workspaces
+
+    if not args.slug:
+        slugs = list_workspaces()
+        if args.json:
+            log.emit({"workspaces": slugs})
+        else:
+            for slug in slugs:
+                log.info(f"  {slug}")
+            if not slugs:
+                log.info("no workspaces yet")
+        return EXIT_OK
+
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    if args.json:
+        log.emit({**state.to_dict(), "next_stage": state.next_stage()})
+    else:
+        for stage, status in state.stages.items():
+            log.info(f"  {stage:<12} {status}")
+        log.info(f"next: rev-disc {state.next_stage()} --slug {state.slug}")
+    return EXIT_OK

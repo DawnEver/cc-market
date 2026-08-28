@@ -1,0 +1,272 @@
+{
+  "id": "https://openalex.org/A5069564024",
+  "orcid": "https://orcid.org/0000-0001-8290-369X",
+  "display_name": "Rakib Islam",
+  "display_name_alternatives": [
+    "Md R. Islam",
+    "Mohammed Rakib Islam",
+    "R. Islam",
+    "Rakib Islam",
+    "Rakibul Islam"
+  ],
+  "affiliations": [
+    {
+      "institution": {
+        "id": "https://openalex.org/I110152177",
+        "ror": "https://ror.org/02kyckx55",
+        "display_name": "University of Akron",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+          "https://openalex.org/I110152177"
+        ]
+      },
+      "years": [
+        2009,
+        2007
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I114312114",
+        "ror": "https://ror.org/02gn3zg65",
+        "display_name": "Colorado State University Pueblo",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+          "https://openalex.org/I114312114"
+        ]
+      },
+      "years": [
+        2020
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I126452172",
+        "ror": "https://ror.org/02967gp58",
+        "display_name": "Aptiv (United States)",
+        "country_code": "US",
+        "type": "company",
+        "lineage": [
+          "https://openalex.org/I126452172",
+          "https://openalex.org/I4210107152"
+        ]
+      },
+      "years": [
+        2009
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I129902397",
+        "ror": "https://ror.org/01e6qks80",
+        "display_name": "Dalhousie University",
+        "country_code": "CA",
+        "type": "education",
+        "lineage": [
+          "https://openalex.org/I129902397"
+        ]
+      },
+      "years": [
+        2005
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I4210146689",
+        "ror": "https://ror.org/04fkpdv59",
+        "display_name": "Nexteer Automotive (United States)",
+        "country_code": "US",
+        "type": "company",
+        "lineage": [
+          "https://openalex.org/I4210146689"
+        ]
+      },
+      "years": [
+        2022,
+        2018,
+        2017,
+        2016,
+        2015,
+        2014,
+        2013,
+        2012,
+        2011,
+        2010
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I4210166027",
+        "ror": "https://ror.org/05mq2av33",
+        "display_name": "Dura Biotech (United States)",
+        "country_code": "US",
+        "type": "company",
+        "lineage": [
+          "https://openalex.org/I4210166027"
+        ]
+      },
+      "years": [
+        2019
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I4210166944",
+        "ror": "https://ror.org/05hpbxg82",
+        "display_name": "Nexteer Automotive (Poland)",
+        "country_code": "PL",
+        "type": "company",
+        "lineage": [
+          "https://openalex.org/I4210146689",
+          "https://openalex.org/I4210166944"
+        ]
+      },
+      "years": [
+        2011
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I52357470",
+        "ror": "https://ror.org/00rs6vg23",
+        "display_name": "The Ohio State University",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+          "https://openalex.org/I52357470"
+        ]
+      },
+      "years": [
+        2015
+      ]
+    },
+    {
+      "institution": {
+        "id": "https://openalex.org/I919803642",
+        "ror": "https://ror.org/00atq5220",
+        "display_name": "American Axle & Manufacturing (United States)",
+        "country_code": "US",
+        "type": "company",
+        "lineage": [
+          "https://openalex.org/I919803642"
+        ]
+      },
+      "years": [
+        2022
+      ]
+    }
+  ],
+  "last_known_institutions": [
+    {
+      "id": "https://openalex.org/I4210146689",
+      "ror": "https://ror.org/04fkpdv59",
+      "display_name": "Nexteer Automotive (United States)",
+      "country_code": "US",
+      "type": "company",
+      "lineage": [
+        "https://openalex.org/I4210146689"
+      ]
+    },
+    {
+      "id": "https://openalex.org/I919803642",
+      "ror": "https://ror.org/00atq5220",
+      "display_name": "American Axle & Manufacturing (United States)",
+      "country_code": "US",
+      "type": "company",
+      "lineage": [
+        "https://openalex.org/I919803642"
+      ]
+    }
+  ],
+  "topics": [
+    {
+      "id": "https://openalex.org/T10278",
+      "display_name": "Electric Motor Design and Analysis",
+      "count": 35,
+      "subfield": {
+        "id": "https://openalex.org/subfields/2208",
+        "display_name": "Electrical and Electronic Engineering"
+      },
+      "field": {
+        "id": "https://openalex.org/fields/22",
+        "display_name": "Engineering"
+      },
+      "domain": {
+        "id": "https://openalex.org/domains/3",
+        "display_name": "Physical Sciences"
+      }
+    },
+    {
+      "id": "https://openalex.org/T11602",
+      "display_name": "Magnetic Bearings and Levitation Dynamics",
+      "count": 26,
+      "subfield": {
+        "id": "https://openalex.org/subfields/2207",
+        "display_name": "Control and Systems Engineering"
+      },
+      "field": {
+        "id": "https://openalex.org/fields/22",
+        "display_name": "Engineering"
+      },
+      "domain": {
+        "id": "https://openalex.org/domains/3",
+        "display_name": "Physical Sciences"
+      }
+    },
+    {
+      "id": "https://openalex.org/T11222",
+      "display_name": "Magnetic Properties and Applications",
+      "count": 25,
+      "subfield": {
+        "id": "https://openalex.org/subfields/2504",
+        "display_name": "Electronic, Optical and Magnetic Materials"
+      },
+      "field": {
+        "id": "https://openalex.org/fields/25",
+        "display_name": "Materials Science"
+      },
+      "domain": {
+        "id": "https://openalex.org/domains/3",
+        "display_name": "Physical Sciences"
+      }
+    },
+    {
+      "id": "https://openalex.org/T10504",
+      "display_name": "Sensorless Control of Electric Motors",
+      "count": 7,
+      "subfield": {
+        "id": "https://openalex.org/subfields/2208",
+        "display_name": "Electrical and Electronic Engineering"
+      },
+      "field": {
+        "id": "https://openalex.org/fields/22",
+        "display_name": "Engineering"
+      },
+      "domain": {
+        "id": "https://openalex.org/domains/3",
+        "display_name": "Physical Sciences"
+      }
+    },
+    {
+      "id": "https://openalex.org/T10264",
+      "display_name": "Asphalt Pavement Performance Evaluation",
+      "count": 4,
+      "subfield": {
+        "id": "https://openalex.org/subfields/2205",
+        "display_name": "Civil and Structural Engineering"
+      },
+      "field": {
+        "id": "https://openalex.org/fields/22",
+        "display_name": "Engineering"
+      },
+      "domain": {
+        "id": "https://openalex.org/domains/3",
+        "display_name": "Physical Sciences"
+      }
+    }
+  ],
+  "works_count": 40,
+  "cited_by_count": 1706
+}

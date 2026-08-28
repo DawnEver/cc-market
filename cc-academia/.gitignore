@@ -1,0 +1,26 @@
+# Build environment lives on local disk (see .env.template): UV_PROJECT_ENVIRONMENT.
+# These entries are a backstop for when it does not.
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Research data and the accumulating database never belong in the repo.
+cc-academia-data/
+*.db
+*.db-wal
+*.db-shm
+workspaces/
+ongoing/
+
+# Secrets and personal overrides.
+.env
+*.local.json
+*.local.yaml
+*.local.toml

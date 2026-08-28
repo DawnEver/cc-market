@@ -1,0 +1,2052 @@
+{
+  "meta": {
+    "count": 14982,
+    "db_response_time_ms": 213,
+    "page": 1,
+    "per_page": 3,
+    "groups_count": null,
+    "x_query": {
+      "oql": "works where full text has (permanent magnet synchronous motor torque ripple)",
+      "oqo": {
+        "get_rows": "works",
+        "filter_rows": [
+          {
+            "column_id": "fulltext.search",
+            "value": "permanent magnet synchronous motor torque ripple",
+            "operator": "has"
+          }
+        ]
+      },
+      "url": "/works?filter=fulltext.search:permanent magnet synchronous motor torque ripple&per_page=3"
+    },
+    "cost_usd": 0.001
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W2108231310",
+      "doi": "https://doi.org/10.1109/tia.2008.2009653",
+      "display_name": "Permanent-Magnet Synchronous Motor Magnet Designs With Skewing for Torque Ripple and Cogging Torque Reduction",
+      "publication_year": 2009,
+      "type": "article",
+      "cited_by_count": 401,
+      "primary_location": {
+        "id": "doi:10.1109/tia.2008.2009653",
+        "is_oa": false,
+        "landing_page_url": "https://doi.org/10.1109/tia.2008.2009653",
+        "pdf_url": null,
+        "source": {
+          "id": "https://openalex.org/S192268925",
+          "display_name": "IEEE Transactions on Industry Applications",
+          "issn_l": "0093-9994",
+          "issn": [
+            "0093-9994",
+            "1939-9367"
+          ],
+          "is_oa": false,
+          "is_in_doaj": false,
+          "is_core": true,
+          "host_organization": "https://openalex.org/P4310319808",
+          "host_organization_name": "Institute of Electrical and Electronics Engineers",
+          "host_organization_lineage": [
+            "https://openalex.org/P4310319808"
+          ],
+          "host_organization_lineage_names": [
+            "Institute of Electrical and Electronics Engineers"
+          ],
+          "type": "journal"
+        },
+        "license": null,
+        "license_id": null,
+        "version": "publishedVersion",
+        "is_accepted": true,
+        "is_published": true,
+        "raw_source_name": "IEEE Transactions on Industry Applications",
+        "raw_type": "journal-article"
+      },
+      "best_oa_location": null,
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {
+            "id": "https://openalex.org/A5069564024",
+            "display_name": "Rakib Islam",
+            "orcid": "https://orcid.org/0000-0001-8290-369X"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I110152177",
+              "display_name": "University of Akron",
+              "ror": "https://ror.org/02kyckx55",
+              "country_code": "US",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I110152177"
+              ]
+            },
+            {
+              "id": "https://openalex.org/I126452172",
+              "display_name": "Aptiv (United States)",
+              "ror": "https://ror.org/02967gp58",
+              "country_code": "US",
+              "type": "company",
+              "lineage": [
+                "https://openalex.org/I126452172",
+                "https://openalex.org/I4210107152"
+              ]
+            }
+          ],
+          "countries": [
+            "US"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Rakib Islam",
+          "raw_affiliation_strings": [
+            "Delphi Automotive Systems Corporation, Saginaw, MI, USA",
+            "Department of Electrical and Computer Engineering, University of Akron, Akron, OH, USA"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Delphi Automotive Systems Corporation, Saginaw, MI, USA",
+              "institution_ids": [
+                "https://openalex.org/I126452172"
+              ]
+            },
+            {
+              "raw_affiliation_string": "Department of Electrical and Computer Engineering, University of Akron, Akron, OH, USA",
+              "institution_ids": [
+                "https://openalex.org/I110152177"
+              ]
+            }
+          ]
+        },
+        {
+          "author_position": "middle",
+          "author": {
+            "id": "https://openalex.org/A5027386627",
+            "display_name": "Iqbal Husain",
+            "orcid": "https://orcid.org/0000-0003-0089-4326"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I110152177",
+              "display_name": "University of Akron",
+              "ror": "https://ror.org/02kyckx55",
+              "country_code": "US",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I110152177"
+              ]
+            }
+          ],
+          "countries": [
+            "US"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Iqbal Husain",
+          "raw_affiliation_strings": [
+            "Department of Electrical and Computer Engineering, University of Akron, Akron, OH, USA"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Department of Electrical and Computer Engineering, University of Akron, Akron, OH, USA",
+              "institution_ids": [
+                "https://openalex.org/I110152177"
+              ]
+            }
+          ]
+        },
+        {
+          "author_position": "middle",
+          "author": {
+            "id": "https://openalex.org/A5078272218",
+            "display_name": "Abbas A. Fardoun",
+            "orcid": "https://orcid.org/0000-0001-9892-0777"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I201726411",
+              "display_name": "United Arab Emirates University",
+              "ror": "https://ror.org/01km6p862",
+              "country_code": "AE",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I201726411"
+              ]
+            }
+          ],
+          "countries": [
+            "AE"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Abbas Fardoun",
+          "raw_affiliation_strings": [
+            "Department of Electrical Engineering, United Arab Emirates University, Al-Ain, UAE"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Department of Electrical Engineering, United Arab Emirates University, Al-Ain, UAE",
+              "institution_ids": [
+                "https://openalex.org/I201726411"
+              ]
+            }
+          ]
+        },
+        {
+          "author_position": "last",
+          "author": {
+            "id": "https://openalex.org/A5063546434",
+            "display_name": "Kevin McLaughlin",
+            "orcid": "https://orcid.org/0000-0002-3092-5325"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I887702905",
+              "display_name": "TRW Automotive (United States)",
+              "ror": "https://ror.org/01jzgmh92",
+              "country_code": "US",
+              "type": "company",
+              "lineage": [
+                "https://openalex.org/I887702905"
+              ]
+            }
+          ],
+          "countries": [
+            "US"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Kevin McLaughlin",
+          "raw_affiliation_strings": [
+            "Electric Steering Department, TRW Automotive, Washington, MI, USA"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Electric Steering Department, TRW Automotive, Washington, MI, USA",
+              "institution_ids": [
+                "https://openalex.org/I887702905"
+              ]
+            }
+          ]
+        }
+      ],
+      "corresponding_author_ids": [],
+      "keywords": [
+        {
+          "id": "https://openalex.org/keywords/cogging-torque",
+          "display_name": "Cogging torque",
+          "score": 0.9580560922622681
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-ripple",
+          "display_name": "Torque ripple",
+          "score": 0.8416417837142944
+        },
+        {
+          "id": "https://openalex.org/keywords/direct-torque-control",
+          "display_name": "Direct torque control",
+          "score": 0.6259035468101501
+        },
+        {
+          "id": "https://openalex.org/keywords/magnet",
+          "display_name": "Magnet",
+          "score": 0.6218560338020325
+        },
+        {
+          "id": "https://openalex.org/keywords/control-theory",
+          "display_name": "Control theory (sociology)",
+          "score": 0.6162359714508057
+        },
+        {
+          "id": "https://openalex.org/keywords/torque",
+          "display_name": "Torque",
+          "score": 0.6037739515304565
+        },
+        {
+          "id": "https://openalex.org/keywords/rotor",
+          "display_name": "Rotor (electric)",
+          "score": 0.565734326839447
+        },
+        {
+          "id": "https://openalex.org/keywords/stall-torque",
+          "display_name": "Stall torque",
+          "score": 0.546142041683197
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-motor",
+          "display_name": "Torque motor",
+          "score": 0.4708292782306671
+        },
+        {
+          "id": "https://openalex.org/keywords/synchronous-motor",
+          "display_name": "Synchronous motor",
+          "score": 0.42108774185180664
+        },
+        {
+          "id": "https://openalex.org/keywords/waveform",
+          "display_name": "Waveform",
+          "score": 0.41768431663513184
+        },
+        {
+          "id": "https://openalex.org/keywords/computer-science",
+          "display_name": "Computer science",
+          "score": 0.4075818657875061
+        },
+        {
+          "id": "https://openalex.org/keywords/physics",
+          "display_name": "Physics",
+          "score": 0.35257354378700256
+        },
+        {
+          "id": "https://openalex.org/keywords/engineering",
+          "display_name": "Engineering",
+          "score": 0.33146584033966064
+        },
+        {
+          "id": "https://openalex.org/keywords/electrical-engineering",
+          "display_name": "Electrical engineering",
+          "score": 0.28446438908576965
+        },
+        {
+          "id": "https://openalex.org/keywords/induction-motor",
+          "display_name": "Induction motor",
+          "score": 0.16312476992607117
+        },
+        {
+          "id": "https://openalex.org/keywords/voltage",
+          "display_name": "Voltage",
+          "score": 0.13348138332366943
+        },
+        {
+          "id": "https://openalex.org/keywords/artificial-intelligence",
+          "display_name": "Artificial intelligence",
+          "score": 0.04315882921218872
+        }
+      ],
+      "topics": [
+        {
+          "id": "https://openalex.org/T10278",
+          "display_name": "Electric Motor Design and Analysis",
+          "score": 1.0,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        },
+        {
+          "id": "https://openalex.org/T11222",
+          "display_name": "Magnetic Properties and Applications",
+          "score": 0.9987000226974487,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2504",
+            "display_name": "Electronic, Optical and Magnetic Materials"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/25",
+            "display_name": "Materials Science"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        },
+        {
+          "id": "https://openalex.org/T11602",
+          "display_name": "Magnetic Bearings and Levitation Dynamics",
+          "score": 0.9973999857902527,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2207",
+            "display_name": "Control and Systems Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        }
+      ],
+      "referenced_works": [
+        "https://openalex.org/W4520115",
+        "https://openalex.org/W1509774072",
+        "https://openalex.org/W1559396368",
+        "https://openalex.org/W1780768078",
+        "https://openalex.org/W2031767704"
+      ],
+      "abstract_inverted_index": {
+        "This": [
+          0
+        ],
+        "paper": [
+          1
+        ],
+        "examines": [
+          2
+        ],
+        "the": [
+          3,
+          28,
+          51,
+          59,
+          90
+        ],
+        "torque": [
+          4,
+          8,
+          34,
+          60,
+          76
+        ],
+        "ripple": [
+          5,
+          61
+        ],
+        "and": [
+          6,
+          24,
+          30,
+          46,
+          72,
+          94
+        ],
+        "cogging": [
+          7,
+          79
+        ],
+        "variation": [
+          9
+        ],
+        "in": [
+          10,
+          36
+        ],
+        "surface-mounted": [
+          11
+        ],
+        "permanent-magnet": [
+          12
+        ],
+        "synchronous": [
+          13
+        ],
+        "motors": [
+          14
+        ],
+        "(PMSMs)": [
+          15
+        ],
+        "with": [
+          16,
+          53
+        ],
+        "skewed": [
+          17
+        ],
+        "rotor.": [
+          18
+        ],
+        "The": [
+          19,
+          74
+        ],
+        "effect": [
+          20
+        ],
+        "of": [
+          21,
+          33
+        ],
+        "slot/pole": [
+          22
+        ],
+        "combinations": [
+          23
+        ],
+        "magnet": [
+          25,
+          70
+        ],
+        "shapes": [
+          26
+        ],
+        "on": [
+          27
+        ],
+        "magnitude": [
+          29
+        ],
+        "harmonic": [
+          31
+        ],
+        "content": [
+          32
+        ],
+        "waveforms": [
+          35
+        ],
+        "a": [
+          37
+        ],
+        "PMSM": [
+          38,
+          87
+        ],
+        "drive": [
+          39
+        ],
+        "has": [
+          40
+        ],
+        "been": [
+          41,
+          82
+        ],
+        "studied.": [
+          42
+        ],
+        "Finite": [
+          43
+        ],
+        "element": [
+          44
+        ],
+        "analysis": [
+          45
+        ],
+        "experimental": [
+          47
+        ],
+        "results": [
+          48
+        ],
+        "show": [
+          49
+        ],
+        "that": [
+          50
+        ],
+        "skewing": [
+          52
+        ],
+        "steps": [
+          54
+        ],
+        "does": [
+          55
+        ],
+        "not": [
+          56
+        ],
+        "necessarily": [
+          57
+        ],
+        "reduce": [
+          58
+        ],
+        "but": [
+          62
+        ],
+        "may": [
+          63
+        ],
+        "cause": [
+          64
+        ],
+        "it": [
+          65
+        ],
+        "to": [
+          66
+        ],
+        "increase": [
+          67
+        ],
+        "for": [
+          68,
+          84
+        ],
+        "certain": [
+          69
+        ],
+        "designs": [
+          71
+        ],
+        "configurations.": [
+          73
+        ],
+        "electromagnetic": [
+          75
+        ],
+        "waveforms,": [
+          77
+        ],
+        "including": [
+          78
+        ],
+        "torque,": [
+          80
+        ],
+        "have": [
+          81
+        ],
+        "analyzed": [
+          83
+        ],
+        "four": [
+          85
+        ],
+        "different": [
+          86
+        ],
+        "configurations": [
+          88
+        ],
+        "having": [
+          89
+        ],
+        "same": [
+          91
+        ],
+        "envelop": [
+          92
+        ],
+        "dimensions": [
+          93
+        ],
+        "output": [
+          95
+        ],
+        "requirements.": [
+          96
+        ]
+      }
+    },
+    {
+      "id": "https://openalex.org/W2014585456",
+      "doi": "https://doi.org/10.1109/tpel.2010.2059047",
+      "display_name": "Direct Torque Control of Permanent Magnet Synchronous Motor With Reduced Torque Ripple and Commutation Frequency",
+      "publication_year": 2010,
+      "type": "article",
+      "cited_by_count": 388,
+      "primary_location": {
+        "id": "doi:10.1109/tpel.2010.2059047",
+        "is_oa": false,
+        "landing_page_url": "https://doi.org/10.1109/tpel.2010.2059047",
+        "pdf_url": null,
+        "source": {
+          "id": "https://openalex.org/S29875816",
+          "display_name": "IEEE Transactions on Power Electronics",
+          "issn_l": "0885-8993",
+          "issn": [
+            "0885-8993",
+            "1941-0107"
+          ],
+          "is_oa": false,
+          "is_in_doaj": false,
+          "is_core": true,
+          "host_organization": "https://openalex.org/P4310319808",
+          "host_organization_name": "Institute of Electrical and Electronics Engineers",
+          "host_organization_lineage": [
+            "https://openalex.org/P4310319808"
+          ],
+          "host_organization_lineage_names": [
+            "Institute of Electrical and Electronics Engineers"
+          ],
+          "type": "journal"
+        },
+        "license": null,
+        "license_id": null,
+        "version": "publishedVersion",
+        "is_accepted": true,
+        "is_published": true,
+        "raw_source_name": "IEEE Transactions on Power Electronics",
+        "raw_type": "journal-article"
+      },
+      "best_oa_location": null,
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {
+            "id": "https://openalex.org/A5014707193",
+            "display_name": "Yongchang Zhang",
+            "orcid": "https://orcid.org/0000-0001-8480-2948"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I114017466",
+              "display_name": "University of Technology Sydney",
+              "ror": "https://ror.org/03f0f6041",
+              "country_code": "AU",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I114017466"
+              ]
+            },
+            {
+              "id": "https://openalex.org/I129604602",
+              "display_name": "The University of Sydney",
+              "ror": "https://ror.org/0384j8v12",
+              "country_code": "AU",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I129604602"
+              ]
+            }
+          ],
+          "countries": [
+            "AU"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Yongchang Zhang",
+          "raw_affiliation_strings": [
+            "Faculty of Engineering and Information Technology, Sydney University of Technology, NSW, Australia",
+            "Fac. of Eng. & Inf. Technol., Univ. of Technol.-Sydney, Sydney, NSW, Australia"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Faculty of Engineering and Information Technology, Sydney University of Technology, NSW, Australia",
+              "institution_ids": [
+                "https://openalex.org/I114017466",
+                "https://openalex.org/I129604602"
+              ]
+            },
+            {
+              "raw_affiliation_string": "Fac. of Eng. & Inf. Technol., Univ. of Technol.-Sydney, Sydney, NSW, Australia",
+              "institution_ids": [
+                "https://openalex.org/I114017466"
+              ]
+            }
+          ]
+        },
+        {
+          "author_position": "last",
+          "author": {
+            "id": "https://openalex.org/A5100370161",
+            "display_name": "Jianguo Zhu",
+            "orcid": "https://orcid.org/0000-0002-9763-4047"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I114017466",
+              "display_name": "University of Technology Sydney",
+              "ror": "https://ror.org/03f0f6041",
+              "country_code": "AU",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I114017466"
+              ]
+            }
+          ],
+          "countries": [
+            "AU"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Jianguo Zhu",
+          "raw_affiliation_strings": [
+            "Faculty of Engineering and Information Technology, University of Technology-Sydney, NSW, Australia",
+            "Fac. of Eng. & Inf. Technol., Univ. of Technol.-Sydney, Sydney, NSW, Australia"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Faculty of Engineering and Information Technology, University of Technology-Sydney, NSW, Australia",
+              "institution_ids": [
+                "https://openalex.org/I114017466"
+              ]
+            },
+            {
+              "raw_affiliation_string": "Fac. of Eng. & Inf. Technol., Univ. of Technol.-Sydney, Sydney, NSW, Australia",
+              "institution_ids": [
+                "https://openalex.org/I114017466"
+              ]
+            }
+          ]
+        }
+      ],
+      "corresponding_author_ids": [],
+      "keywords": [
+        {
+          "id": "https://openalex.org/keywords/control-theory",
+          "display_name": "Control theory (sociology)",
+          "score": 0.8507373332977295
+        },
+        {
+          "id": "https://openalex.org/keywords/direct-torque-control",
+          "display_name": "Direct torque control",
+          "score": 0.7503427267074585
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-ripple",
+          "display_name": "Torque ripple",
+          "score": 0.7159708142280579
+        },
+        {
+          "id": "https://openalex.org/keywords/duty-cycle",
+          "display_name": "Duty cycle",
+          "score": 0.6418513059616089
+        },
+        {
+          "id": "https://openalex.org/keywords/torque",
+          "display_name": "Torque",
+          "score": 0.6023953557014465
+        },
+        {
+          "id": "https://openalex.org/keywords/commutation",
+          "display_name": "Commutation",
+          "score": 0.5882212519645691
+        },
+        {
+          "id": "https://openalex.org/keywords/stator",
+          "display_name": "Stator",
+          "score": 0.5631145238876343
+        },
+        {
+          "id": "https://openalex.org/keywords/robustness",
+          "display_name": "Robustness (evolution)",
+          "score": 0.5546542406082153
+        },
+        {
+          "id": "https://openalex.org/keywords/damping-torque",
+          "display_name": "Damping torque",
+          "score": 0.4923485517501831
+        },
+        {
+          "id": "https://openalex.org/keywords/computer-science",
+          "display_name": "Computer science",
+          "score": 0.47437864542007446
+        },
+        {
+          "id": "https://openalex.org/keywords/ripple",
+          "display_name": "Ripple",
+          "score": 0.46421292424201965
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-limiter",
+          "display_name": "Torque limiter",
+          "score": 0.4402889907360077
+        },
+        {
+          "id": "https://openalex.org/keywords/vector-control",
+          "display_name": "Vector control",
+          "score": 0.4378267824649811
+        },
+        {
+          "id": "https://openalex.org/keywords/engineering",
+          "display_name": "Engineering",
+          "score": 0.3890293836593628
+        },
+        {
+          "id": "https://openalex.org/keywords/voltage",
+          "display_name": "Voltage",
+          "score": 0.32519233226776123
+        },
+        {
+          "id": "https://openalex.org/keywords/induction-motor",
+          "display_name": "Induction motor",
+          "score": 0.26193392276763916
+        },
+        {
+          "id": "https://openalex.org/keywords/physics",
+          "display_name": "Physics",
+          "score": 0.13820600509643555
+        },
+        {
+          "id": "https://openalex.org/keywords/electrical-engineering",
+          "display_name": "Electrical engineering",
+          "score": 0.0693482756614685
+        }
+      ],
+      "topics": [
+        {
+          "id": "https://openalex.org/T10504",
+          "display_name": "Sensorless Control of Electric Motors",
+          "score": 0.9998999834060669,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        },
+        {
+          "id": "https://openalex.org/T10278",
+          "display_name": "Electric Motor Design and Analysis",
+          "score": 0.9997000098228455,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        },
+        {
+          "id": "https://openalex.org/T10228",
+          "display_name": "Multilevel Inverters and Converters",
+          "score": 0.9995999932289124,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        }
+      ],
+      "referenced_works": [
+        "https://openalex.org/W17907961",
+        "https://openalex.org/W1581515275",
+        "https://openalex.org/W1951168392",
+        "https://openalex.org/W2023831909",
+        "https://openalex.org/W2035589416"
+      ],
+      "abstract_inverted_index": {
+        "In": [
+          0
+        ],
+        "conventional": [
+          1,
+          155
+        ],
+        "direct": [
+          2
+        ],
+        "torque": [
+          3,
+          15,
+          28,
+          143
+        ],
+        "controlled": [
+          4
+        ],
+        "(DTC)": [
+          5
+        ],
+        "permanent": [
+          6
+        ],
+        "magnet": [
+          7
+        ],
+        "synchronous": [
+          8
+        ],
+        "motor": [
+          9
+        ],
+        "drive,": [
+          10
+        ],
+        "there": [
+          11
+        ],
+        "is": [
+          12,
+          80,
+          103,
+          127,
+          138
+        ],
+        "usually": [
+          13,
+          45
+        ],
+        "undesired": [
+          14
+        ],
+        "and": [
+          16,
+          29,
+          47,
+          63,
+          90,
+          125,
+          144,
+          152,
+          161
+        ],
+        "flux": [
+          17,
+          30,
+          133,
+          145
+        ],
+        "ripple.": [
+          18
+        ],
+        "The": [
+          19,
+          77,
+          135
+        ],
+        "existing": [
+          20,
+          84
+        ],
+        "literature": [
+          21
+        ],
+        "have": [
+          22
+        ],
+        "proposed": [
+          23,
+          136,
+          170
+        ],
+        "some": [
+          24
+        ],
+        "methods": [
+          25,
+          43,
+          60,
+          85
+        ],
+        "to": [
+          26,
+          72,
+          82,
+          129,
+          140
+        ],
+        "reduce": [
+          27,
+          141
+        ],
+        "ripple": [
+          31,
+          146
+        ],
+        "by": [
+          32
+        ],
+        "optimizing": [
+          33
+        ],
+        "the": [
+          34,
+          38,
+          54,
+          74,
+          83,
+          95,
+          98,
+          100,
+          112,
+          142,
+          150,
+          158,
+          166,
+          169
+        ],
+        "duty": [
+          35,
+          58,
+          75
+        ],
+        "ratio": [
+          36
+        ],
+        "of": [
+          37,
+          56,
+          88,
+          97,
+          114,
+          123,
+          154,
+          168
+        ],
+        "active": [
+          39
+        ],
+        "vector.": [
+          40
+        ],
+        "However,": [
+          41
+        ],
+        "these": [
+          42
+        ],
+        "are": [
+          44
+        ],
+        "complicated": [
+          46
+        ],
+        "parameter": [
+          48
+        ],
+        "dependent.": [
+          49
+        ],
+        "This": [
+          50
+        ],
+        "paper": [
+          51
+        ],
+        "first": [
+          52
+        ],
+        "compares": [
+          53
+        ],
+        "performances": [
+          55
+        ],
+        "three": [
+          57
+        ],
+        "determination": [
+          59
+        ],
+        "in": [
+          61,
+          86,
+          172
+        ],
+        "detail": [
+          62
+        ],
+        "then": [
+          64
+        ],
+        "proposes": [
+          65
+        ],
+        "a": [
+          66,
+          116
+        ],
+        "very": [
+          67
+        ],
+        "simple": [
+          68
+        ],
+        "but": [
+          69
+        ],
+        "effective": [
+          70
+        ],
+        "method": [
+          71,
+          79
+        ],
+        "obtain": [
+          73
+        ],
+        "ratio.": [
+          76
+        ],
+        "novel": [
+          78
+        ],
+        "superior": [
+          81
+        ],
+        "terms": [
+          87
+        ],
+        "simplicity": [
+          89,
+          151
+        ],
+        "robustness.": [
+          91
+        ],
+        "By": [
+          92
+        ],
+        "appropriately": [
+          93
+        ],
+        "arranging": [
+          94
+        ],
+        "sequence": [
+          96
+        ],
+        "vectors,": [
+          99
+        ],
+        "commutation": [
+          101
+        ],
+        "frequency": [
+          102
+        ],
+        "reduced": [
+          104
+        ],
+        "effectively": [
+          105
+        ],
+        "without": [
+          106
+        ],
+        "performance": [
+          107,
+          113
+        ],
+        "degradation.": [
+          108
+        ],
+        "To": [
+          109
+        ],
+        "further": [
+          110
+        ],
+        "improve": [
+          111
+        ],
+        "system,": [
+          115
+        ],
+        "low-pass": [
+          117
+        ],
+        "filter-based": [
+          118
+        ],
+        "voltage": [
+          119
+        ],
+        "model": [
+          120
+        ],
+        "with": [
+          121
+        ],
+        "compensations": [
+          122
+        ],
+        "amplitude": [
+          124
+        ],
+        "phase": [
+          126
+        ],
+        "employed": [
+          128
+        ],
+        "acquire": [
+          130
+        ],
+        "accurate": [
+          131
+        ],
+        "stator": [
+          132
+        ],
+        "estimation.": [
+          134
+        ],
+        "scheme": [
+          137
+        ],
+        "able": [
+          139
+        ],
+        "significantly": [
+          147
+        ],
+        "while": [
+          148
+        ],
+        "maintaining": [
+          149
+        ],
+        "robustness": [
+          153
+        ],
+        "DTC": [
+          156
+        ],
+        "at": [
+          157
+        ],
+        "most.": [
+          159
+        ],
+        "Simulations": [
+          160
+        ],
+        "presented": [
+          162
+        ],
+        "experimental": [
+          163
+        ],
+        "results": [
+          164
+        ],
+        "validate": [
+          165
+        ],
+        "effectiveness": [
+          167
+        ],
+        "schemes": [
+          171
+        ],
+        "this": [
+          173
+        ],
+        "paper.": [
+          174
+        ]
+      }
+    },
+    {
+      "id": "https://openalex.org/W2082476877",
+      "doi": "https://doi.org/10.1109/tie.2011.2157278",
+      "display_name": "Torque Ripple Reduction of the Torque Predictive Control Scheme for Permanent-Magnet Synchronous Motors",
+      "publication_year": 2011,
+      "type": "article",
+      "cited_by_count": 203,
+      "primary_location": {
+        "id": "doi:10.1109/tie.2011.2157278",
+        "is_oa": false,
+        "landing_page_url": "https://doi.org/10.1109/tie.2011.2157278",
+        "pdf_url": null,
+        "source": {
+          "id": "https://openalex.org/S58031724",
+          "display_name": "IEEE Transactions on Industrial Electronics",
+          "issn_l": "0278-0046",
+          "issn": [
+            "0278-0046",
+            "1557-9948"
+          ],
+          "is_oa": false,
+          "is_in_doaj": false,
+          "is_core": true,
+          "host_organization": "https://openalex.org/P4310319808",
+          "host_organization_name": "Institute of Electrical and Electronics Engineers",
+          "host_organization_lineage": [
+            "https://openalex.org/P4310319808"
+          ],
+          "host_organization_lineage_names": [
+            "Institute of Electrical and Electronics Engineers"
+          ],
+          "type": "journal"
+        },
+        "license": null,
+        "license_id": null,
+        "version": "publishedVersion",
+        "is_accepted": true,
+        "is_published": true,
+        "raw_source_name": "IEEE Transactions on Industrial Electronics",
+        "raw_type": "journal-article"
+      },
+      "best_oa_location": null,
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {
+            "id": "https://openalex.org/A5101968979",
+            "display_name": "Hao Zhu",
+            "orcid": "https://orcid.org/0000-0002-0770-1534"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I99065089",
+              "display_name": "Tsinghua University",
+              "ror": "https://ror.org/03cve4549",
+              "country_code": "CN",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I99065089"
+              ]
+            }
+          ],
+          "countries": [
+            "CN"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Hao Zhu",
+          "raw_affiliation_strings": [
+            "Department of Electrical Engineering, Tsinghua University, Beijing, China",
+            "Dept. of Electr. Eng., Tsinghua Univ., Beijing, China#TAB#"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Department of Electrical Engineering, Tsinghua University, Beijing, China",
+              "institution_ids": [
+                "https://openalex.org/I99065089"
+              ]
+            },
+            {
+              "raw_affiliation_string": "Dept. of Electr. Eng., Tsinghua Univ., Beijing, China#TAB#",
+              "institution_ids": [
+                "https://openalex.org/I99065089"
+              ]
+            }
+          ]
+        },
+        {
+          "author_position": "middle",
+          "author": {
+            "id": "https://openalex.org/A5047737162",
+            "display_name": "Xi Xiao",
+            "orcid": "https://orcid.org/0000-0002-6921-0669"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I99065089",
+              "display_name": "Tsinghua University",
+              "ror": "https://ror.org/03cve4549",
+              "country_code": "CN",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I99065089"
+              ]
+            }
+          ],
+          "countries": [
+            "CN"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Xi Xiao",
+          "raw_affiliation_strings": [
+            "Department of Electrical Engineering, Tsinghua University, Beijing, China",
+            "Dept. of Electr. Eng., Tsinghua Univ., Beijing, China#TAB#"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Department of Electrical Engineering, Tsinghua University, Beijing, China",
+              "institution_ids": [
+                "https://openalex.org/I99065089"
+              ]
+            },
+            {
+              "raw_affiliation_string": "Dept. of Electr. Eng., Tsinghua Univ., Beijing, China#TAB#",
+              "institution_ids": [
+                "https://openalex.org/I99065089"
+              ]
+            }
+          ]
+        },
+        {
+          "author_position": "last",
+          "author": {
+            "id": "https://openalex.org/A5014965312",
+            "display_name": "Yongdong Li",
+            "orcid": "https://orcid.org/0000-0001-8756-0438"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I99065089",
+              "display_name": "Tsinghua University",
+              "ror": "https://ror.org/03cve4549",
+              "country_code": "CN",
+              "type": "education",
+              "lineage": [
+                "https://openalex.org/I99065089"
+              ]
+            }
+          ],
+          "countries": [
+            "CN"
+          ],
+          "is_corresponding": false,
+          "raw_author_name": "Yongdong Li",
+          "raw_affiliation_strings": [
+            "Department of Electrical Engineering, Tsinghua University, Beijing, China",
+            "Dept. of Electr. Eng., Tsinghua Univ., Beijing, China#TAB#"
+          ],
+          "raw_orcid": null,
+          "affiliations": [
+            {
+              "raw_affiliation_string": "Department of Electrical Engineering, Tsinghua University, Beijing, China",
+              "institution_ids": [
+                "https://openalex.org/I99065089"
+              ]
+            },
+            {
+              "raw_affiliation_string": "Dept. of Electr. Eng., Tsinghua Univ., Beijing, China#TAB#",
+              "institution_ids": [
+                "https://openalex.org/I99065089"
+              ]
+            }
+          ]
+        }
+      ],
+      "corresponding_author_ids": [],
+      "keywords": [
+        {
+          "id": "https://openalex.org/keywords/direct-torque-control",
+          "display_name": "Direct torque control",
+          "score": 0.9083449244499207
+        },
+        {
+          "id": "https://openalex.org/keywords/control-theory",
+          "display_name": "Control theory (sociology)",
+          "score": 0.8115003108978271
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-ripple",
+          "display_name": "Torque ripple",
+          "score": 0.7984614372253418
+        },
+        {
+          "id": "https://openalex.org/keywords/stall-torque",
+          "display_name": "Stall torque",
+          "score": 0.7616136074066162
+        },
+        {
+          "id": "https://openalex.org/keywords/vector-control",
+          "display_name": "Vector control",
+          "score": 0.6413508653640747
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-motor",
+          "display_name": "Torque motor",
+          "score": 0.6031675934791565
+        },
+        {
+          "id": "https://openalex.org/keywords/torque-limiter",
+          "display_name": "Torque limiter",
+          "score": 0.5761435627937317
+        },
+        {
+          "id": "https://openalex.org/keywords/torque",
+          "display_name": "Torque",
+          "score": 0.5734878182411194
+        },
+        {
+          "id": "https://openalex.org/keywords/damping-torque",
+          "display_name": "Damping torque",
+          "score": 0.5679426789283752
+        },
+        {
+          "id": "https://openalex.org/keywords/stator",
+          "display_name": "Stator",
+          "score": 0.558867335319519
+        },
+        {
+          "id": "https://openalex.org/keywords/synchronous-motor",
+          "display_name": "Synchronous motor",
+          "score": 0.4434617757797241
+        },
+        {
+          "id": "https://openalex.org/keywords/harmonics",
+          "display_name": "Harmonics",
+          "score": 0.4384402334690094
+        },
+        {
+          "id": "https://openalex.org/keywords/computer-science",
+          "display_name": "Computer science",
+          "score": 0.3862209916114807
+        },
+        {
+          "id": "https://openalex.org/keywords/voltage",
+          "display_name": "Voltage",
+          "score": 0.3709721565246582
+        },
+        {
+          "id": "https://openalex.org/keywords/engineering",
+          "display_name": "Engineering",
+          "score": 0.35994619131088257
+        },
+        {
+          "id": "https://openalex.org/keywords/induction-motor",
+          "display_name": "Induction motor",
+          "score": 0.3374388813972473
+        },
+        {
+          "id": "https://openalex.org/keywords/physics",
+          "display_name": "Physics",
+          "score": 0.23403871059417725
+        },
+        {
+          "id": "https://openalex.org/keywords/electrical-engineering",
+          "display_name": "Electrical engineering",
+          "score": 0.11086159944534302
+        },
+        {
+          "id": "https://openalex.org/keywords/control",
+          "display_name": "Control (management)",
+          "score": 0.04079654812812805
+        }
+      ],
+      "topics": [
+        {
+          "id": "https://openalex.org/T10228",
+          "display_name": "Multilevel Inverters and Converters",
+          "score": 0.9997000098228455,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        },
+        {
+          "id": "https://openalex.org/T10278",
+          "display_name": "Electric Motor Design and Analysis",
+          "score": 0.9997000098228455,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        },
+        {
+          "id": "https://openalex.org/T10504",
+          "display_name": "Sensorless Control of Electric Motors",
+          "score": 0.9997000098228455,
+          "subfield": {
+            "id": "https://openalex.org/subfields/2208",
+            "display_name": "Electrical and Electronic Engineering"
+          },
+          "field": {
+            "id": "https://openalex.org/fields/22",
+            "display_name": "Engineering"
+          },
+          "domain": {
+            "id": "https://openalex.org/domains/3",
+            "display_name": "Physical Sciences"
+          }
+        }
+      ],
+      "referenced_works": [
+        "https://openalex.org/W1568442864",
+        "https://openalex.org/W1572007619",
+        "https://openalex.org/W1599926271",
+        "https://openalex.org/W2102358123",
+        "https://openalex.org/W2106077014"
+      ],
+      "abstract_inverted_index": {
+        "The": [
+          0,
+          132
+        ],
+        "direct": [
+          1
+        ],
+        "torque": [
+          2,
+          35,
+          68,
+          92,
+          114,
+          127,
+          149
+        ],
+        "control": [
+          3,
+          31,
+          94
+        ],
+        "(DTC)": [
+          4
+        ],
+        "technique": [
+          5
+        ],
+        "of": [
+          6,
+          65,
+          126
+        ],
+        "permanent-magnet": [
+          7
+        ],
+        "synchronous": [
+          8
+        ],
+        "motors": [
+          9
+        ],
+        "(PMSMs)": [
+          10
+        ],
+        "receives": [
+          11
+        ],
+        "increasing": [
+          12
+        ],
+        "attention": [
+          13
+        ],
+        "due": [
+          14
+        ],
+        "to": [
+          15,
+          71,
+          77,
+          112
+        ],
+        "its": [
+          16
+        ],
+        "advantages": [
+          17
+        ],
+        "in": [
+          18,
+          41,
+          58,
+          98
+        ],
+        "eliminating": [
+          19
+        ],
+        "the": [
+          20,
+          42,
+          59,
+          63,
+          72,
+          78,
+          82,
+          107,
+          117,
+          124,
+          160
+        ],
+        "current": [
+          21,
+          54,
+          154
+        ],
+        "controllers": [
+          22
+        ],
+        "and": [
+          23,
+          36,
+          53,
+          88,
+          116,
+          128,
+          137,
+          142,
+          151
+        ],
+        "quicker": [
+          24
+        ],
+        "dynamic": [
+          25
+        ],
+        "response,": [
+          26
+        ],
+        "compared": [
+          27
+        ],
+        "with": [
+          28
+        ],
+        "other": [
+          29
+        ],
+        "motor": [
+          30,
+          66
+        ],
+        "algorithms.": [
+          32
+        ],
+        "However,": [
+          33
+        ],
+        "high": [
+          34
+        ],
+        "stator": [
+          37,
+          51,
+          85,
+          153
+        ],
+        "flux": [
+          38,
+          129
+        ],
+        "ripples": [
+          39
+        ],
+        "remain": [
+          40
+        ],
+        "system": [
+          43
+        ],
+        "when": [
+          44
+        ],
+        "using": [
+          45,
+          159
+        ],
+        "DTC": [
+          46
+        ],
+        "technologies.": [
+          47
+        ],
+        "This": [
+          48
+        ],
+        "means": [
+          49
+        ],
+        "large": [
+          50
+        ],
+        "voltage": [
+          52,
+          109,
+          118
+        ],
+        "harmonic": [
+          55
+        ],
+        "contents": [
+          56
+        ],
+        "exist": [
+          57
+        ],
+        "PM": [
+          60
+        ],
+        "motors.": [
+          61
+        ],
+        "Since": [
+          62
+        ],
+        "variation": [
+          64
+        ],
+        "electromagnetic": [
+          67
+        ],
+        "is": [
+          69,
+          96,
+          110,
+          121,
+          135
+        ],
+        "related": [
+          70
+        ],
+        "voltages": [
+          73
+        ],
+        "that": [
+          74,
+          147
+        ],
+        "are": [
+          75,
+          156
+        ],
+        "applied": [
+          76
+        ],
+        "motor,": [
+          79
+        ],
+        "by": [
+          80,
+          123,
+          158
+        ],
+        "analyzing": [
+          81
+        ],
+        "relationships": [
+          83
+        ],
+        "between": [
+          84
+        ],
+        "flux,": [
+          86
+        ],
+        "torque,": [
+          87
+        ],
+        "voltages,": [
+          89
+        ],
+        "a": [
+          90
+        ],
+        "PMSM": [
+          91
+        ],
+        "predictive": [
+          93
+        ],
+        "scheme": [
+          95,
+          134
+        ],
+        "proposed": [
+          97,
+          133,
+          161
+        ],
+        "this": [
+          99
+        ],
+        "paper.": [
+          100
+        ],
+        "In": [
+          101
+        ],
+        "each": [
+          102
+        ],
+        "digital": [
+          103
+        ],
+        "signal": [
+          104
+        ],
+        "processor": [
+          105
+        ],
+        "cycle,": [
+          106
+        ],
+        "optimized": [
+          108
+        ],
+        "utilized": [
+          111
+        ],
+        "reduce": [
+          113
+        ],
+        "ripple,": [
+          115
+        ],
+        "vector": [
+          119
+        ],
+        "angle": [
+          120
+        ],
+        "determined": [
+          122
+        ],
+        "output": [
+          125
+        ],
+        "hysteresis": [
+          130
+        ],
+        "controllers.": [
+          131
+        ],
+        "simulated": [
+          136
+        ],
+        "experimentally": [
+          138
+        ],
+        "verified.": [
+          139
+        ],
+        "Both": [
+          140
+        ],
+        "simulation": [
+          141
+        ],
+        "experimental": [
+          143
+        ],
+        "results": [
+          144
+        ],
+        "have": [
+          145
+        ],
+        "shown": [
+          146
+        ],
+        "low": [
+          148
+        ],
+        "ripple": [
+          150
+        ],
+        "reduced": [
+          152
+        ],
+        "harmonics": [
+          155
+        ],
+        "achieved": [
+          157
+        ],
+        "scheme.": [
+          162
+        ]
+      }
+    }
+  ],
+  "group_by": []
+}

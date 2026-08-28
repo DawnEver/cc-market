@@ -1,0 +1,64 @@
+# Default conflict-of-interest policy.
+#
+# The engine that reads this file is purely deterministic: no model decides
+# whether a conflict exists. A journal may override any key by dropping a file
+# into configs/journals/, or a user may override the whole directory via
+# ACADEMIA_CONFIG_DIR.
+#
+# Wording is fixed everywhere: a clear result is reported as "no detected
+# conflict", never "no conflict". A bibliographic database cannot prove the
+# absence of a personal, financial or competitive relationship.
+
+[windows]
+# Co-authorship within this many years is disqualifying.
+coauthor_years = 5
+# Collaborations older than the window still raise a flag once they are dense.
+historic_collaboration_papers = 3
+# A shared doctoral institution matters when the two overlapped in time.
+shared_institution_overlap_years = 3
+
+[rules]
+# Hard exclusions. A BLOCK is not a penalty — the candidate is removed from
+# consideration and never re-enters through a high expertise score.
+block = [
+  "manuscript_author",
+  "exclusion_list",
+  "recent_coauthor",
+  "same_department",
+  "same_phd_institution_overlap",
+  "advisor_advisee",
+]
+
+# Flags for the editor to judge. These stay in the shortlist, marked.
+review = [
+  "same_institution",
+  "previous_institution_overlap",
+  "dense_historic_collaboration",
+  "heavily_cited_by_manuscript",
+]
+
+[thresholds]
+# References to a candidate's work above this count suggest closeness worth noting.
+heavily_cited_by_manuscript = 3
+# A single piece of evidence is enough to raise a rule.
+minimum_evidence = 1
+
+[geo]
+# Cross-region preference operates on the candidate's *current affiliation
+# country*, never on nationality or on any inference from a name.
+mode = "prefer_cross_region"   # or "hard_filter" or "off"
+bonus = 0.08
+
+[seniority]
+# Years since the doctorate. Unknown never excludes anybody — ORCID fills the
+# education section for roughly 30% of researchers in this field.
+min_academic_age = 3
+max_academic_age = 0           # 0 means no upper bound
+
+[scoring]
+topic = 0.40
+method = 0.20
+recent_expertise = 0.15
+publication_evidence = 0.10
+geographic = 0.10
+reviewer_history = 0.05

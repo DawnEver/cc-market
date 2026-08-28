@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cc-academia"
+version = "0.1.0"
+description = "Academic research toolchain: literature review, manuscript review, reviewer discovery"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Mingyang Bao" }]
+dependencies = [
+    # Round-tripping workspace TOML: tomllib reads but cannot write.
+    "rtoml>=0.11",
+]
+
+[project.optional-dependencies]
+ai = ["litellm>=1.77"]
+# Acquisition: HTTP first, a real browser only when a publisher demands one.
+acquire = ["requests>=2.32"]
+browser = ["playwright>=1.61", "requests>=2.32"]
+pdf = [
+    "paper-pdf-ingest @ git+https://github.com/DawnEver/paper_pdf_ingest.git",
+    "pymupdf>=1.24",
+]
+plot = ["matplotlib>=3.9"]
+zotero = ["pyzotero>=1.5"]
+embed = ["numpy>=2.0"]
+
+[project.scripts]
+academia = "academia.cli:main"
+lit-review = "academia.cli:lit_review_main"
+rev-disc = "academia.cli:rev_disc_main"
+academia-zotero-mcp = "academia.litreview.zotero.mcp_launcher:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/academia"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# The project writes prose in docstrings and renders reports for humans;
+# en dashes and minus signs there are intentional typography.
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "basic"

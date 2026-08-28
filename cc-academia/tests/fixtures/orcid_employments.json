@@ -1,0 +1,228 @@
+{
+  "last-modified-date": {
+    "value": 1779613180042
+  },
+  "affiliation-group": [
+    {
+      "last-modified-date": {
+        "value": 1772514699444
+      },
+      "external-ids": {
+        "external-id": []
+      },
+      "summaries": [
+        {
+          "employment-summary": {
+            "created-date": {
+              "value": 1772514699444
+            },
+            "last-modified-date": {
+              "value": 1772514699444
+            },
+            "source": {
+              "source-orcid": null,
+              "source-client-id": {
+                "uri": "https://orcid.org/client/APP-LL5BC8LIJTSL4916",
+                "path": "APP-LL5BC8LIJTSL4916",
+                "host": "orcid.org"
+              },
+              "source-name": {
+                "value": "Vrije Universiteit Brussel"
+              },
+              "assertion-origin-orcid": null,
+              "assertion-origin-client-id": null,
+              "assertion-origin-name": null
+            },
+            "put-code": 34915549,
+            "department-name": null,
+            "role-title": null,
+            "start-date": null,
+            "end-date": {
+              "year": {
+                "value": "2025"
+              },
+              "month": {
+                "value": "11"
+              },
+              "day": {
+                "value": "12"
+              }
+            },
+            "organization": {
+              "name": "Vrije Universiteit Brussel",
+              "address": {
+                "city": "Brussels",
+                "region": null,
+                "country": "BE"
+              },
+              "disambiguated-organization": {
+                "disambiguated-organization-identifier": "70493",
+                "disambiguation-source": "RINGGOLD"
+              }
+            },
+            "url": null,
+            "external-ids": null,
+            "display-index": "1",
+            "visibility": "public",
+            "path": "/0000-0001-7241-9028/employment/34915549"
+          }
+        }
+      ]
+    },
+    {
+      "last-modified-date": {
+        "value": 1779613180042
+      },
+      "external-ids": {
+        "external-id": []
+      },
+      "summaries": [
+        {
+          "employment-summary": {
+            "created-date": {
+              "value": 1637958853939
+            },
+            "last-modified-date": {
+              "value": 1779613180042
+            },
+            "source": {
+              "source-orcid": {
+                "uri": "https://orcid.org/0000-0001-7241-9028",
+                "path": "0000-0001-7241-9028",
+                "host": "orcid.org"
+              },
+              "source-client-id": null,
+              "source-name": {
+                "value": "Farzad Hosseinabadi"
+              },
+              "assertion-origin-orcid": null,
+              "assertion-origin-client-id": null,
+              "assertion-origin-name": null
+            },
+            "put-code": 16480232,
+            "department-name": null,
+            "role-title": null,
+            "start-date": {
+              "year": {
+                "value": "2021"
+              },
+              "month": {
+                "value": "09"
+              },
+              "day": {
+                "value": "15"
+              }
+            },
+            "end-date": {
+              "year": {
+                "value": "2025"
+              },
+              "month": {
+                "value": "11"
+              },
+              "day": {
+                "value": "07"
+              }
+            },
+            "organization": {
+              "name": "Flanders Make (Belgium)",
+              "address": {
+                "city": "Leuven",
+                "region": null,
+                "country": "BE"
+              },
+              "disambiguated-organization": {
+                "disambiguated-organization-identifier": "grid.434127.7",
+                "disambiguation-source": "GRID"
+              }
+            },
+            "url": {
+              "value": "https://www.flandersmake.be/en"
+            },
+            "external-ids": null,
+            "display-index": "0",
+            "visibility": "public",
+            "path": "/0000-0001-7241-9028/employment/16480232"
+          }
+        }
+      ]
+    },
+    {
+      "last-modified-date": {
+        "value": 1638103485958
+      },
+      "external-ids": {
+        "external-id": []
+      },
+      "summaries": [
+        {
+          "employment-summary": {
+            "created-date": {
+              "value": 1589991509838
+            },
+            "last-modified-date": {
+              "value": 1638103485958
+            },
+            "source": {
+              "source-orcid": {
+                "uri": "https://orcid.org/0000-0001-7241-9028",
+                "path": "0000-0001-7241-9028",
+                "host": "orcid.org"
+              },
+              "source-client-id": null,
+              "source-name": {
+                "value": "Farzad Hosseinabadi"
+              },
+              "assertion-origin-orcid": null,
+              "assertion-origin-client-id": null,
+              "assertion-origin-name": null
+            },
+            "put-code": 11209866,
+            "department-name": "Electrical and Computer Engineering",
+            "role-title": "Research Assistant",
+            "start-date": {
+              "year": {
+                "value": "2018"
+              },
+              "month": {
+                "value": "03"
+              },
+              "day": {
+                "value": "01"
+              }
+            },
+            "end-date": {
+              "year": {
+                "value": "2021"
+              },
+              "month": {
+                "value": "06"
+              },
+              "day": {
+                "value": "04"
+              }
+            },
+            "organization": {
+              "name": "Isfahan University of Technology",
+              "address": {
+                "city": "Isfahan",
+                "region": "Isfahan",
+                "country": "IR"
+              },
+              "disambiguated-organization": {
+                "disambiguated-organization-identifier": "48456",
+                "disambiguation-source": "RINGGOLD"
+              }
+            },
+            "url": null,
+            "external-ids": null,
+            "display-index": "1",
+            "visibility": "public",
+            "path": "/0000-0001-7241-9028/employment/11209866"
+          }
+        }
+      ]
+    }
+  ],
+  "path": "/0000-0001-7241-9028/employments"
+}

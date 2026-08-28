@@ -151,6 +151,26 @@
         "texcount"
       ],
       "category": "productivity"
+    },
+    {
+      "name": "cc-academia",
+      "source": "./cc-academia",
+      "displayName": "CC Academia",
+      "description": "Academic research toolchain -- systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
+      "author": {
+        "name": "Mingyang Bao"
+      },
+      "repository": "https://github.com/DawnEver/cc-market",
+      "license": "MIT",
+      "keywords": [
+        "literature-review",
+        "peer-review",
+        "reviewer-discovery",
+        "ieee",
+        "openalex",
+        "research"
+      ],
+      "category": "productivity"
     }
   ]
 }

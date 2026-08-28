@@ -1,0 +1,18 @@
+{
+  "name": "cc-academia",
+  "version": "0.1.0",
+  "description": "Academic research toolchain — systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "keywords": [
+    "literature-review",
+    "peer-review",
+    "reviewer-discovery",
+    "ieee",
+    "openalex",
+    "orcid",
+    "bibliography",
+    "research"
+  ]
+}
