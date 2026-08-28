@@ -1,0 +1,32 @@
+lens_id = ''
+name = ''
+description = ''
+
+[[research_fit_coordinates]]
+dimension = ''
+description = ''
+signals = []
+anti_signals = []
+
+[[contribution_type_classification]]
+type = ''
+description = ''
+typical_sections = []
+
+[[technical_checklist]]
+item = ''
+category = ''
+
+[[evidence_quality_ladder]]
+level = 1
+label = ''
+weight = 1.0
+
+[[red_flags]]
+flag = ''
+severity = 'warning'
+explanation = ''
+
+[[transfer_questions]]
+question = ''
+rationale = ''

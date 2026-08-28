@@ -1,0 +1,127 @@
+lens_id = 'crossing-constraints'
+name = 'Crossing-Constraint Encodings for Exact Path Enumeration'
+description = '''
+Appraisal lens for papers on constrained path/toolpath planning with geometric non-crossing or ordering constraints. Focus: how crossing, fragmentation, and ordering constraints are ENCODED (variables, clauses, propagators, pushdown into search), and whether the encoding supports exact complete enumeration rather than single-solution optimization. Reader context: WDG hairpin winding exact enumeration needs a sound weld-mode/orientation/crossing feasibility pushdown giving ~10^4x pruning.
+'''
+
+[[research_fit_coordinates]]
+dimension = 'Crossing constraint encoding'
+description = 'How geometric crossing / non-intersection between path segments is encoded and enforced'
+signals = [
+    'Crossing enforced by static pairwise exclusion clauses or variables computable before search',
+    'A propagator/pushdown that detects unavoidable future crossings from a partial path',
+    'Geometric preprocessing that removes crossing candidates from the search graph entirely',
+]
+anti_signals = [
+    'Crossing checked only on complete solutions (post-hoc filter)',
+    'Heuristic penalty on crossings rather than exact exclusion',
+]
+
+[[research_fit_coordinates]]
+dimension = 'Path fragmentation structure'
+description = 'How a Hamiltonian path is split into fragments/segments and what constraints couple fragments'
+signals = [
+    'Explicit fragment boundary variables with join constraints',
+    'Per-fragment ordering or orientation variables usable for symmetry breaking',
+    'Fragment-level resource quotas (length, direction changes)',
+]
+anti_signals = ['Monolithic single-path encoding with no decomposition']
+
+[[research_fit_coordinates]]
+dimension = 'Enumeration completeness'
+description = 'Whether the method enumerates ALL solutions exactly, and how duplicate/symmetric solutions are handled'
+signals = [
+    'All-solution enumeration with stated completeness guarantee',
+    'Explicit symmetry breaking with correctness argument',
+    'Solution counts reported and cross-validated',
+]
+anti_signals = [
+    'Optimization only; single best solution',
+    'No statement about completeness or duplicates',
+]
+
+[[contribution_type_classification]]
+type = 'New encoding'
+description = 'Novel constraint encoding or propagator for path/crossing structure'
+typical_sections = ['Model', 'Encoding', 'Constraints']
+
+[[contribution_type_classification]]
+type = 'Application study'
+description = 'Applies known SAT/CP techniques to a manufacturing/path-planning domain'
+typical_sections = ['Application', 'Case Study', 'Experiments']
+
+[[contribution_type_classification]]
+type = 'Solver technique'
+description = 'New search/propagation algorithm inside a solver'
+typical_sections = ['Algorithm', 'Propagation', 'Search']
+
+[[technical_checklist]]
+item = 'Exactly how is non-crossing between two path segments encoded? Give the variables and clauses/constraints verbatim.'
+category = 'Crossing'
+
+[[technical_checklist]]
+item = 'Is crossing decided per candidate edge pair statically (pre-search) or dynamically (depends on path order)?'
+category = 'Crossing'
+
+[[technical_checklist]]
+item = 'How is the Hamiltonian path fragmented? What variables mark fragment boundaries and how are fragments joined?'
+category = 'Fragmentation'
+
+[[technical_checklist]]
+item = 'What ordering/orientation variables exist per fragment, and what symmetry breaking is applied?'
+category = 'Symmetry'
+
+[[technical_checklist]]
+item = 'Does the solver enumerate all solutions or optimize? What instance sizes and runtimes are reported?'
+category = 'Scale'
+
+[[technical_checklist]]
+item = 'Which encoding details transfer to a directed equal-length multi-path cover with per-position index rules and a zero-crossing quota?'
+category = 'Transfer'
+
+[[evidence_quality_ladder]]
+level = 1
+label = 'Complete enumeration with verified counts on industrial instances'
+weight = 1.0
+
+[[evidence_quality_ladder]]
+level = 2
+label = 'Optimization on real manufacturing geometry with runtimes'
+weight = 0.7
+
+[[evidence_quality_ladder]]
+level = 3
+label = 'Synthetic benchmarks only'
+weight = 0.4
+
+[[evidence_quality_ladder]]
+level = 4
+label = 'Encoding described but not evaluated'
+weight = 0.2
+
+[[red_flags]]
+flag = 'Crossing handled only as objective penalty'
+severity = 'critical'
+explanation = 'Soft crossing penalties cannot serve as an exact pruning discriminator.'
+
+[[red_flags]]
+flag = 'No encoding detail (only "we model in SAT/CP")'
+severity = 'warning'
+explanation = 'Without variable/clause-level detail the encoding cannot be transferred.'
+
+[[red_flags]]
+flag = 'Completeness claimed without symmetry argument'
+severity = 'warning'
+explanation = 'Enumeration counts are meaningless if duplicates or missed solutions are unaddressed.'
+
+[[transfer_questions]]
+question = 'Can the crossing encoding be evaluated statically per edge pair so it becomes precomputed pairwise exclusions (pushdown-compatible)?'
+rationale = 'WDG needs crossing feasibility pushed into the search, not checked post-hoc.'
+
+[[transfer_questions]]
+question = 'Does the fragmentation scheme give orientation variables that a sound weld-mode/orientation pushdown could reuse?'
+rationale = 'The measured 72S gap needs ~10^4x pruning; orientation pushdown is the leading candidate.'
+
+[[transfer_questions]]
+question = 'Would the encoding survive exact all-solution enumeration at 10^4+ solutions, or is it tuned for first-solution/optimization?'
+rationale = 'WDG requires exhaustive enumeration with classification multiplicity.'

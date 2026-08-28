@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/reviewer-discovery/**/0-raw.pdf)"
+    ]
+  }
+}

@@ -1,0 +1,219 @@
+lens_id = 'power-electronics'
+name = 'Power Electronics'
+description = '''
+Appraisal lens for power electronics papers: DC-DC converters, resonant topologies, wide-bandgap devices, EMI modeling, and EV/charger applications. Focuses on hardware validation quality, efficiency claims, and thermal management.
+'''
+
+[[research_fit_coordinates]]
+dimension = 'Topology novelty'
+description = 'New converter topology or significant modification of existing topology'
+signals = [
+    'New switch arrangement or energy storage element configuration',
+    'Reconfiguration mechanism for variable operating conditions',
+    'Integration of multiple functions into single stage',
+]
+anti_signals = [
+    'Standard buck/boost/flyback without innovation',
+    'Minor component substitution without topology change',
+]
+
+[[research_fit_coordinates]]
+dimension = 'Control method'
+description = 'Novel modulation, control strategy, or closed-loop scheme'
+signals = [
+    'Adaptive control responding to operating point changes',
+    'Soft-switching control across wide load/input range',
+    'Digital control with novel implementation',
+]
+anti_signals = ['Standard PI control without adaptation or analysis']
+
+[[research_fit_coordinates]]
+dimension = 'Device application'
+description = 'Application of wide-bandgap devices (GaN, SiC) with quantified benefits'
+signals = [
+    'GaN/SiC used with quantified efficiency or density improvement',
+    'High-frequency operation enabled by WBG devices (>500 kHz)',
+]
+anti_signals = ['WBG device mentioned but not tested; simulation-only comparison']
+
+[[research_fit_coordinates]]
+dimension = 'Hardware validation'
+description = 'Quality and scale of experimental validation'
+signals = [
+    '>500W prototype with full efficiency/loss/thermal characterization',
+    'Dynamic performance tested (load step, startup, fault)',
+]
+anti_signals = [
+    '<100W prototype with only steady-state waveforms',
+    'No loss breakdown or thermal data',
+]
+
+[[contribution_type_classification]]
+type = 'New topology'
+description = 'Proposes a new converter topology or major topological variant'
+typical_sections = [
+    'Proposed Topology',
+    'Operation Principle',
+    'Steady-State Analysis',
+]
+
+[[contribution_type_classification]]
+type = 'Control method'
+description = 'Novel modulation, control strategy, or closed-loop scheme'
+typical_sections = [
+    'Control Strategy',
+    'Modulation Scheme',
+    'Closed-Loop Design',
+]
+
+[[contribution_type_classification]]
+type = 'Modeling & analysis'
+description = 'New analytical model, loss model, or design methodology'
+typical_sections = [
+    'Modeling',
+    'Analysis',
+    'Design Methodology',
+]
+
+[[contribution_type_classification]]
+type = 'Application study'
+description = 'Applies known topology/control to a new application domain'
+typical_sections = [
+    'System Design',
+    'Application Requirements',
+    'Experimental Results',
+]
+
+[[contribution_type_classification]]
+type = 'Survey / review'
+description = 'Literature survey or comparative review'
+typical_sections = [
+    'Classification',
+    'Comparison',
+    'Future Trends',
+]
+
+[[technical_checklist]]
+item = 'What is the rated power, input/output voltage range, and switching frequency?'
+category = 'Specifications'
+
+[[technical_checklist]]
+item = 'What topology is used? Is it isolated or non-isolated?'
+category = 'Topology'
+
+[[technical_checklist]]
+item = 'What semiconductor devices are used (Si, SiC, GaN)? What voltage/current ratings?'
+category = 'Devices'
+
+[[technical_checklist]]
+item = 'What soft-switching technique (ZVS, ZCS, ZVT)? Over what operating range?'
+category = 'Soft-Switching'
+
+[[technical_checklist]]
+item = 'What is the peak efficiency and at what operating point?'
+category = 'Efficiency'
+
+[[technical_checklist]]
+item = 'Is a full loss breakdown provided (conduction, switching, core, copper)?'
+category = 'Loss Analysis'
+
+[[technical_checklist]]
+item = 'What thermal management approach? Are thermal measurements included?'
+category = 'Thermal'
+
+[[technical_checklist]]
+item = 'What magnetic components? Core material, winding structure, integration?'
+category = 'Magnetics'
+
+[[technical_checklist]]
+item = 'What control implementation (DSP, FPGA, analog)? Is dynamic response characterized?'
+category = 'Control'
+
+[[technical_checklist]]
+item = 'What EMI/EMC considerations? Conducted/radiated emissions?'
+category = 'EMI'
+
+[[evidence_quality_ladder]]
+level = 1
+label = 'Application-scale prototype (>1 kW, real-world conditions)'
+weight = 1.0
+
+[[evidence_quality_ladder]]
+level = 2
+label = 'Mid-power prototype (500W–1kW, lab conditions)'
+weight = 0.85
+
+[[evidence_quality_ladder]]
+level = 3
+label = 'Low-power prototype (<500W, lab conditions)'
+weight = 0.6
+
+[[evidence_quality_ladder]]
+level = 4
+label = 'Controller-HIL or Power-HIL'
+weight = 0.5
+
+[[evidence_quality_ladder]]
+level = 5
+label = 'Simulation only (PLECS, SPICE, Simulink)'
+weight = 0.3
+
+[[evidence_quality_ladder]]
+level = 6
+label = 'No validation'
+weight = 0.0
+
+[[red_flags]]
+flag = 'No loss breakdown provided'
+severity = 'warning'
+explanation = 'Efficiency claims without loss breakdown cannot be verified or compared.'
+
+[[red_flags]]
+flag = 'Efficiency reported at single operating point only'
+severity = 'warning'
+explanation = 'Converter efficiency varies significantly with load and voltage. Single-point data is insufficient.'
+
+[[red_flags]]
+flag = 'No dynamic response characterization'
+severity = 'warning'
+explanation = 'Steady-state waveforms only; load step, startup, and transient behavior unknown.'
+
+[[red_flags]]
+flag = 'Prototype photo missing or clearly a stock image'
+severity = 'critical'
+explanation = 'Lack of real hardware photo suggests simulation-only or fabricated results.'
+
+[[red_flags]]
+flag = 'Switching frequency below 50 kHz for WBG device paper'
+severity = 'warning'
+explanation = 'WBG devices enable high-frequency operation; low frequency suggests device benefits not realized.'
+
+[[red_flags]]
+flag = 'No comparison with state-of-the-art in efficiency/density table'
+severity = 'warning'
+explanation = 'Without comparative benchmarks, the contribution cannot be assessed.'
+
+[[red_flags]]
+flag = 'ZVS claim without showing switching waveforms (Vds, Id, Vgs)'
+severity = 'critical'
+explanation = 'ZVS must be demonstrated with oscilloscope waveforms showing zero-voltage turn-on.'
+
+[[transfer_questions]]
+question = 'Can this topology/control be adapted to GaN or SiC devices?'
+rationale = 'WBG devices offer higher frequency and efficiency; many Si-based designs can benefit from WBG migration.'
+
+[[transfer_questions]]
+question = 'Does this approach scale to higher power levels (>10kW)?'
+rationale = 'Many techniques that work at 1kW fail at higher power due to parasitics, thermal, and EMI constraints.'
+
+[[transfer_questions]]
+question = 'Is the control method implementable on a low-cost DSP/MCU?'
+rationale = 'Complex control schemes requiring FPGA or high-end DSP may not be practical for cost-sensitive applications.'
+
+[[transfer_questions]]
+question = 'Would this work for bidirectional power flow?'
+rationale = 'EV and energy storage applications increasingly require bidirectional operation.'
+
+[[transfer_questions]]
+question = 'How does the efficiency compare after including gate drive and auxiliary power?'
+rationale = 'Gate drive loss and auxiliary power can be significant, especially at high frequency and light load.'
