@@ -98,7 +98,7 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert run("report", "--slug", "tie-demo", "--json") == 0
 
     payload = json.loads(capsys.readouterr().out)
-    shortlist = tmp_path / "workspaces" / "reviewer-discovery" / "tie-demo" / "5-shortlist" / "shortlist.md"
+    shortlist = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo" / "5-shortlist" / "shortlist.md"
     assert shortlist.exists()
 
     text = shortlist.read_text(encoding="utf-8")
@@ -120,7 +120,7 @@ def test_the_raw_pdf_is_never_required_and_body_text_never_stored(tmp_path, stub
 
 
 def test_a_manuscript_author_is_blocked_end_to_end(tmp_path, stub_sources, capsys):
-    workspace_root = tmp_path / "workspaces" / "reviewer-discovery" / "tie-demo"
+    workspace_root = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo"
     run(
         "init", "--slug", "tie-demo",
         "--title", "Torque ripple suppression in PMSM drives",
@@ -187,7 +187,7 @@ def test_candidates_are_written_in_evidence_order(tmp_path, stub_sources):
     run("search", "--slug", "tie-demo")
     run("candidates", "--slug", "tie-demo")
 
-    path = tmp_path / "workspaces" / "reviewer-discovery" / "tie-demo" / "3-candidates" / "candidates.jsonl"
+    path = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo" / "3-candidates" / "candidates.jsonl"
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(rows) >= 2
 

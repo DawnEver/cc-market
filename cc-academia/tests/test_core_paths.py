@@ -40,3 +40,21 @@ def test_database_never_defaults_under_the_data_root(monkeypatch):
     monkeypatch.delenv(paths.ENV_DB, raising=False)
     monkeypatch.setenv(paths.ENV_DATA_ROOT, "C:/Users/x/OneDrive/workspaces")
     assert paths.data_root() not in paths.database_path().parents
+
+
+def test_each_workflow_keeps_its_existing_directory_name(tmp_path, monkeypatch):
+    """These directories predate the plugin and hold real research data.
+
+    literature-review uses `workspaces/`, the review workflows use `ongoing/`.
+    Renaming them to satisfy a uniform scheme would move hundreds of megabytes of
+    manuscripts for the tool's convenience.
+    """
+    monkeypatch.setenv(paths.ENV_DATA_ROOT, str(tmp_path))
+    assert paths.workspaces_root("literature-review") == tmp_path / "literature-review" / "workspaces"
+    assert paths.workspaces_root("manuscript-review") == tmp_path / "manuscript-review" / "ongoing"
+    assert paths.workspaces_root("reviewer-discovery") == tmp_path / "reviewer-discovery" / "ongoing"
+
+
+def test_an_unmapped_workflow_falls_back_to_its_own_name(tmp_path, monkeypatch):
+    monkeypatch.setenv(paths.ENV_DATA_ROOT, str(tmp_path))
+    assert paths.workspaces_root("something-new") == tmp_path / "something-new"

@@ -78,14 +78,28 @@ def data_root() -> Path:
     return _env_path(ENV_DATA_ROOT) or (Path.home() / "cc-academia-workspaces")
 
 
+#: Where each workflow keeps its workspaces, relative to the data root.
+#:
+#: Not a uniform ``<data-root>/<workflow>/``: these directories predate the
+#: plugin and hold real research data, and the names carry meaning to the person
+#: browsing them. Renaming 650MB of manuscripts to satisfy a scheme would be the
+#: tool imposing on the work rather than fitting it.
+WORKFLOW_DIRS = {
+    "literature-review": Path("literature-review") / "workspaces",
+    "manuscript-review": Path("manuscript-review") / "ongoing",
+    "reviewer-discovery": Path("reviewer-discovery") / "ongoing",
+}
+
+
 def workspaces_root(workflow: str) -> Path:
-    """Workspace directory for a workflow, e.g. ``literature-review``.
+    """Workspace directory for a workflow.
 
     Replaces the old ``find_root()``, which walked up the tree hunting for a
-    project marker. Shipped as a plugin there is no such tree, and the workspace
-    location is a user setting rather than a property of the checkout.
+    project marker. Shipped as a plugin there is no such tree, so the location is
+    a user setting rather than a property of the checkout.
     """
-    return data_root() / workflow
+    relative = WORKFLOW_DIRS.get(workflow, Path(workflow))
+    return data_root() / relative
 
 
 def database_path() -> Path:

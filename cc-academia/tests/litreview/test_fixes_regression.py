@@ -253,7 +253,7 @@ def test_workspaces_root_follows_the_data_root_setting(tmp_path, monkeypatch):
     from academia.core.paths import workspaces_root
 
     monkeypatch.setenv("ACADEMIA_DATA_ROOT", str(tmp_path))
-    assert workspaces_root("literature-review") == tmp_path / "literature-review"
+    assert workspaces_root("literature-review") == tmp_path / "literature-review" / "workspaces"
 
 
 def test_workspaces_root_separates_workflows(tmp_path, monkeypatch):
