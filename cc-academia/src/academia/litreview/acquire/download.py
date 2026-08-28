@@ -12,19 +12,21 @@ from pathlib import Path
 from typing import Any
 
 from academia.litreview.acquire import oa_resolve, researchgate
+from academia.litreview.acquire.options import (  # noqa: F401 - re-exported
+    COMPLETION_MODES,
+    DEFAULT_BROWSER_CHANNEL,
+    DEFAULT_NETWORK_MODE,
+    IEEE_HOME,
+    SUPPORTED_BROWSER_CHANNELS,
+    SUPPORTED_NETWORK_MODES,
+)
 from academia.litreview.acquire.types import Blocked
 
 # ---------------------------------------------------------------------------
 # Playwright setup (inlined from deleted browser/login.py)
 # ---------------------------------------------------------------------------
 
-DEFAULT_BROWSER_CHANNEL = "chromium"
-DEFAULT_NETWORK_MODE = "direct"
-SUPPORTED_BROWSER_CHANNELS = {"chromium", "chrome"}
-SUPPORTED_NETWORK_MODES = {"direct", "system"}
-COMPLETION_MODES = {"browser-close", "stdin", "none"}
 PROFILE_MARKER = ".lit-review-profile"
-IEEE_HOME = "https://ieeexplore.ieee.org/"
 
 
 def _start_playwright():

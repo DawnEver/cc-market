@@ -4,7 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cc-academia"
-version = "0.1.2"
+# Not stated here. cc-market's pre-push hook bumps the plugin manifest on every
+# change, so a second copy would be one commit behind forever.
+dynamic = ["version"]
 description = "Academic research toolchain: literature review, manuscript review, reviewer discovery"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -35,6 +37,11 @@ academia-zotero-mcp = "academia.litreview.zotero.mcp_launcher:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.hatch.version]
+source = "regex"
+path = ".claude-plugin/plugin.json"
+pattern = '"version":\s*"(?P<version>[^"]+)"'
 
 [tool.hatch.metadata]
 allow-direct-references = true

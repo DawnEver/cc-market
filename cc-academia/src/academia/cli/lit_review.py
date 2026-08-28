@@ -14,13 +14,12 @@ from pathlib import Path
 
 from academia import __version__
 from academia.core.paths import workspaces_root
-from academia.litreview.acquire.download import (
+from academia.litreview.acquire.options import (
     COMPLETION_MODES,
     DEFAULT_BROWSER_CHANNEL,
     DEFAULT_NETWORK_MODE,
     SUPPORTED_BROWSER_CHANNELS,
     SUPPORTED_NETWORK_MODES,
-    open_login,
 )
 from academia.litreview.screen import import_agent_screening
 from academia.litreview.search import get_source, run_dedupe_rank, run_probe
@@ -629,6 +628,8 @@ def _handle_login(args: argparse.Namespace) -> int:
         import os
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
         profile = Path(base) / "literature-review" / "browser-profiles" / args.profile
+    from academia.litreview.acquire.download import open_login
+
     return open_login(
         profile, args.url,
         browser_channel=args.browser_channel,

@@ -3,8 +3,9 @@
 
 `.claude-plugin/plugin.json` is the source of truth, because cc-market's pre-push
 hook bumps the patch version of every changed plugin. This script propagates that
-version to the Codex manifest and to pyproject.toml, which exists only so a wheel
-build is not wrong. `tests/test_manifests.py` is the guard.
+version to the Codex manifest. pyproject derives its own version from the same
+file, so there is no third copy to keep in step. `tests/test_manifests.py` is the
+guard.
 
 Usage:
     python scripts/release.py            # sync manifests to pyproject version
@@ -32,17 +33,10 @@ def read_version() -> str:
     return str(manifest["version"])
 
 
-def read_pyproject_version() -> str:
-    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-
-
-def write_version(version: str) -> None:
-    path = ROOT / "pyproject.toml"
-    text = path.read_text(encoding="utf-8")
-    updated, count = re.subn(r'(?m)^version = "[^"]+"', f'version = "{version}"', text, count=1)
-    if count != 1:
-        raise SystemExit("error: could not locate the version field in pyproject.toml")
-    path.write_text(updated, encoding="utf-8")
+def pyproject_states_a_version() -> bool:
+    """pyproject must stay dynamic; a literal version would drift on every push."""
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return "version" in data["project"]
 
 
 def main(argv: list[str]) -> int:
@@ -74,10 +68,12 @@ def main(argv: list[str]) -> int:
             data["version"] = version
             path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    if read_pyproject_version() != version:
-        drifted.append("pyproject.toml")
-        if not check_only:
-            write_version(version)
+    if pyproject_states_a_version():
+        raise SystemExit(
+            "error: pyproject.toml states a literal version. It must stay "
+            'dynamic and derive from .claude-plugin/plugin.json, or the pre-push '
+            "hook will leave the two disagreeing."
+        )
 
     if check_only:
         if drifted:

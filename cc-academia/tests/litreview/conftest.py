@@ -1,10 +1,32 @@
-"""Shared test fixtures for literature-review v2."""
+"""Fixtures for the migrated literature-review suite.
+
+Acquisition needs the `acquire` extra (requests). Without it these modules cannot
+even be imported, so a bare `uv sync` would turn a missing optional dependency
+into a red build. Skip cleanly instead and say which extra is missing.
+"""
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
+
+#: These modules import the acquisition stack at module level, so they cannot be
+#: collected at all without it.
+_NEEDS_REQUESTS = (
+    "test_acquire_engine.py",
+    "test_acquire_net_plan.py",
+    "test_acquire_queue_manifest.py",
+    "test_download_workflow.py",
+    "test_http_fetch.py",
+    "test_researchgate.py",
+)
+
+collect_ignore: list[str] = (
+    [] if importlib.util.find_spec("requests") is not None else list(_NEEDS_REQUESTS)
+)
+
 
 
 @pytest.fixture

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from academia.litreview.acquire import ledger as ledger_mod
+from academia.litreview.acquire.options import HARD_LIMIT
 from academia.litreview.acquire.transport import Transport, default_transports
 from academia.litreview.acquire.types import (
     Attempt,
@@ -28,7 +29,6 @@ from academia.litreview.acquire.types import (
 from academia.litreview.acquire.verify import safe_filename, sha256_file, validate_pdf
 
 DEFAULT_LIMIT = 10
-HARD_LIMIT = 20
 
 
 def _now() -> str:

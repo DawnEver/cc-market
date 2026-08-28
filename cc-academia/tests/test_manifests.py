@@ -33,9 +33,8 @@ def _authoritative_version() -> str:
     return json.loads((PLUGIN_MANIFESTS["claude"]).read_text(encoding="utf-8"))["version"]
 
 
-def _pyproject_version() -> str:
-    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    return data["project"]["version"]
+def _pyproject() -> dict:
+    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 
 def _load(path: Path) -> dict:
@@ -47,9 +46,12 @@ def test_both_host_manifests_carry_the_same_version(host: str) -> None:
     assert _load(PLUGIN_MANIFESTS[host])["version"] == _authoritative_version()
 
 
-def test_pyproject_follows_the_plugin_manifest() -> None:
-    """pyproject exists so a wheel build is not wrong; it never leads."""
-    assert _pyproject_version() == _authoritative_version()
+def test_pyproject_derives_its_version_rather_than_stating_one() -> None:
+    """A literal version here would be one commit behind after every push."""
+    project = _pyproject()
+    assert "version" not in project["project"]
+    assert "version" in project["project"]["dynamic"]
+    assert project["tool"]["hatch"]["version"]["path"] == ".claude-plugin/plugin.json"
 
 
 def test_the_runtime_reports_the_manifest_version() -> None:

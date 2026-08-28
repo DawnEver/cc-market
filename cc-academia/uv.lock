@@ -194,7 +194,6 @@ wheels = [
 
 [[package]]
 name = "cc-academia"
-version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "rtoml" },
@@ -244,7 +243,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'browser'", specifier = ">=2.32" },
     { name = "rtoml", specifier = ">=0.11" },
 ]
-provides-extras = ["ai", "acquire", "browser", "pdf", "plot", "zotero", "embed"]
+provides-extras = ["acquire", "ai", "browser", "embed", "pdf", "plot", "zotero"]
 
 [package.metadata.requires-dev]
 dev = [
