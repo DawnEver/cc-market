@@ -46,6 +46,7 @@ class Probe:
     total_count: int
     sample_titles: list[str]
     failure_reason: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 class PaperSource(ABC):
@@ -94,6 +95,7 @@ class PaperSource(ABC):
             query_id=query_id,
             total_count=page.total_count,
             sample_titles=[p.title for p in page.papers[:5]],
+            raw=page.raw,
         )
 
     def search_pages(

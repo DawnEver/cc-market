@@ -6,11 +6,11 @@ import json
 
 import pytest
 
-from academia.litreview.acquire import ledger, oa_resolve
+from academia.litreview.acquire import oa_resolve
 from academia.litreview.acquire.download import AccessBlockedError, candidate_urls
 from academia.litreview.acquire.engine import acquire_pdfs
 from academia.litreview.acquire.transport import BrowserTransport, needs_browser
-from academia.litreview.acquire.types import Outcome, Source
+from academia.litreview.acquire.types import Outcome
 
 
 def _fetch_linked_pdf(page, target, base_url):
@@ -298,7 +298,7 @@ class _FakePage:
 def test_fetch_linked_pdf_recovers_pdf_the_selectors_miss(tmp_path):
     """The Bristol case: PDF is linked in HTML but no visible download button."""
     pdf_url = "https://repo.example/files/1/paper.pdf"
-    page = _FakePage(f'<a href="/files/1/paper.pdf">Accepted manuscript</a>', {pdf_url: PDF_BYTES})
+    page = _FakePage('<a href="/files/1/paper.pdf">Accepted manuscript</a>', {pdf_url: PDF_BYTES})
     target = tmp_path / "o.pdf"
 
     assert _fetch_linked_pdf(page, target, page.url) == pdf_url

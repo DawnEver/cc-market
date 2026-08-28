@@ -88,7 +88,7 @@ def test_probe_reports_a_failure_instead_of_raising():
 def test_from_dict_missing_required_field_raises_clear_error():
     from academia.litreview.models import Candidate
 
-    with pytest.raises(ValueError, match="Candidate.*candidate_id"):
+    with pytest.raises(ValueError, match=r"Candidate.*candidate_id"):
         Candidate.from_dict({"title": "T", "source_provider": "x"})
 
 

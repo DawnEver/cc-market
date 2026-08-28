@@ -139,7 +139,7 @@ def run_acquire(
     # --- Download ---
     print("=== Download PDFs ===")
     try:
-        from academia.litreview.acquire.download import HARD_LIMIT, acquire_pdfs
+        from academia.litreview.acquire.engine import HARD_LIMIT, acquire_pdfs
         rows = acquire_pdfs(
             queue_path, topic_dir,
             limit=limit if limit is not None else HARD_LIMIT,

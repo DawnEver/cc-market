@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
+from academia.litreview.brief import scope_sha256, validate_brief
 from academia.litreview.models import (
-    Approval,
     Candidate,
-    Concept,
     PaperCard,
     ResearchBrief,
     Workspace,
 )
-from academia.litreview.brief import scope_sha256, validate_brief
-from academia.litreview.schema import load_data, require_keys
+from academia.litreview.schema import require_keys
 
 
 def test_require_keys():

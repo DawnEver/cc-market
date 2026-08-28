@@ -251,7 +251,7 @@ def test_validate_pdf_accepts_a_real_pdf(tmp_path):
 
 def test_run_acquire_produces_a_manifest(workspace, monkeypatch):
     """End-to-end: a successful download must yield handoff/download_manifest.json."""
-    from academia.litreview.pipeline import orchestrator
+    from academia.litreview import workflow_acquire
 
     _write_screening(workspace, [_screening_row("a")])
 
@@ -266,10 +266,10 @@ def test_run_acquire_produces_a_manifest(workspace, monkeypatch):
         return [{"candidate_id": "a", "outcome": "downloaded"}]
 
     monkeypatch.setattr(
-        "academia.litreview.acquire.download.acquire_pdfs", fake_acquire_pdfs
+        "academia.litreview.acquire.engine.acquire_pdfs", fake_acquire_pdfs
     )
 
-    result = orchestrator.run_acquire(workspace, approved_by="tester")
+    result = workflow_acquire.run_acquire(workspace, approved_by="tester")
 
     assert result["manifest_path"] is not None
     assert (workspace / "handoff" / "download_manifest.json").exists()

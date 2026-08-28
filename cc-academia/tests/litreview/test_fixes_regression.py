@@ -21,7 +21,6 @@ from academia.core.errors import UsageError
 from academia.core.models import Author, Paper, position_label
 from academia.sources.base import PaperSource, SearchPage
 
-
 # ---------------------------------------------------------------------------
 # Fakes & fixtures
 # ---------------------------------------------------------------------------

@@ -164,11 +164,11 @@ def run_probe(
             continue
 
         # Write raw response
-        if result.raw_response:
+        if result.raw:
             raw_dir = probe_dir / "raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             (raw_dir / f"{qid}_page_001.json").write_text(
-                json.dumps(result.raw_response, indent=2, ensure_ascii=True),
+                json.dumps(result.raw, indent=2, ensure_ascii=True),
                 encoding="utf-8",
             )
 

@@ -20,7 +20,6 @@ from academia.litreview.models import (
     Workspace,
 )
 
-
 # ---------------------------------------------------------------------------
 # PaperCard — nested Evidence / ResearchUse must round-trip as objects
 # ---------------------------------------------------------------------------
@@ -60,7 +59,7 @@ def test_paper_card_from_dict_ignores_unknown_keys(card):
 
 def test_reloaded_card_renders_markdown_and_csv(tmp_path, card):
     """Regression: rendering a JSON-reloaded card must not crash on nested fields."""
-    from academia.litreview.export.render import cards_to_csv, paper_card_to_markdown
+    from academia.litreview.render import cards_to_csv, paper_card_to_markdown
 
     restored = PaperCard.from_dict(json.loads(json.dumps(card.to_dict())))
     md = paper_card_to_markdown(restored)
