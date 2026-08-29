@@ -27,6 +27,8 @@ TABLES = (
     "paper_embeddings",
     "persons",
     "person_names",
+    "person_topics",
+    "person_ranks",
     "authorships",
     "institutions",
     "affiliations",
@@ -61,8 +63,45 @@ def connect(path: Path | None = None, *, create: bool = True) -> sqlite3.Connect
     return connection
 
 
+#: Tables whose contents are re-derivable from the sources, keyed by a column
+#: that only the current definition has. ``CREATE TABLE IF NOT EXISTS`` cannot
+#: reshape a table that already exists, so a store written by an older build
+#: keeps the old columns and every insert fails. Dropping costs one re-fetch.
+_DERIVED_TABLES = {"person_topics": "source"}
+
+
+def _drop_outdated_derived_tables(connection: sqlite3.Connection) -> None:
+    for table, required_column in _DERIVED_TABLES.items():
+        columns = {
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        if columns and required_column not in columns:
+            connection.execute(f"DROP TABLE {table}")
+
+
+#: Columns added to tables that must never be dropped. ``papers`` is the
+#: accumulated corpus — the reason a second manuscript in the same field starts
+#: with most of the work done — and dropping it would cascade through
+#: authorships, terms and references. Added, not rebuilt.
+_ADDED_COLUMNS = {
+    "papers": (("pdf_url", "TEXT"), ("landing_page_url", "TEXT")),
+}
+
+
+def _add_missing_columns(connection: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if not existing:
+            continue  # A new store gets them from schema.sql.
+        for name, kind in columns:
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+
+
 def apply_schema(connection: sqlite3.Connection) -> None:
     """Idempotent: every statement is ``IF NOT EXISTS``."""
+    _drop_outdated_derived_tables(connection)
+    _add_missing_columns(connection)
     connection.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
     connection.execute(
         "INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?) "

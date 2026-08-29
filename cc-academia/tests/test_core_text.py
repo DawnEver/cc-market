@@ -98,3 +98,38 @@ def test_dedupe_keeps_distinct_papers_apart():
         {"source": "b", "doi": "10.1/y", "title": "Two"},
     ]
     assert len(text.dedupe_records(records)) == 2
+
+
+# ----------------------------------------------------- vocabulary overlap
+
+
+def test_word_overlap_matches_across_differing_phrasings():
+    """Exact-phrase overlap cannot connect two vocabularies for the same field.
+
+    OpenAlex labels a person with its own coarse taxonomy ("Electric Motor
+    Design and Analysis") while a manuscript supplies author keywords ("axial
+    flux permanent magnet machine"). Compared as whole strings the two never
+    intersect, which left the topic and method components — 60% of the ranking
+    weight — reading 0.00 for every candidate in a live run.
+    """
+    from academia.core.text import word_overlap
+
+    profile = ["axial flux permanent magnet machine", "electromagnetic noise"]
+    close = ["axial flux machine design", "acoustic noise of electromagnetic origin"]
+    far = ["smart grid energy management", "induction heating"]
+
+    assert word_overlap(close, profile) > word_overlap(far, profile)
+    assert word_overlap(far, profile) == 0.0
+
+
+def test_word_overlap_ignores_connective_words():
+    from academia.core.text import word_overlap
+
+    assert word_overlap(["design and analysis of the grid"], ["axial flux machine"]) == 0.0
+
+
+def test_word_overlap_is_zero_when_either_side_is_empty():
+    from academia.core.text import word_overlap
+
+    assert word_overlap([], ["axial flux"]) == 0.0
+    assert word_overlap(["axial flux"], []) == 0.0

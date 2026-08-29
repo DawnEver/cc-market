@@ -85,6 +85,22 @@ def term_overlap(left: Iterable[str], right: Iterable[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def word_overlap(left: Iterable[str], right: Iterable[str]) -> float:
+    """How much of ``right``'s vocabulary ``left`` covers, word by word.
+
+    Whole-phrase comparison cannot connect two vocabularies describing the same
+    field: OpenAlex labels people with its own coarse taxonomy while a
+    manuscript arrives with author keywords, and the two never share a string.
+    Coverage of ``right`` rather than Jaccard, because a prolific candidate's
+    long term list should not be penalised for covering more than one field.
+    """
+    a = {word for term in left for word in tokenize(term)}
+    b = {word for term in right for word in tokenize(term)}
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(b)
+
+
 def recency_score(year: int | None, now_year: int, window: int = 10) -> float:
     """Linear decay over ``window`` years; future dates clamp to 1.0."""
     if year is None:

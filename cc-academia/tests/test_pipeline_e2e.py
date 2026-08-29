@@ -196,3 +196,32 @@ def test_candidates_are_written_in_evidence_order(tmp_path, stub_sources):
 
     scores = [strength(r) for r in rows]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources):
+    """Rank prefixes change between runs; a leftover file reads as a real entry.
+
+    The dossier filename carries the rank, so re-running `report` after tuning
+    the profile wrote a second file for the same person under a new prefix and
+    left the old one beside it. An editor opening the directory cannot tell
+    which run a file came from.
+    """
+    from academia.reviewer import report as report_module
+    from academia.reviewer.profile import Profile
+    from academia.store import db
+
+    directory = tmp_path / "5-shortlist"
+    (directory / "dossiers").mkdir(parents=True)
+    stale = directory / "dossiers" / "07-person-old.md"
+    stale.write_text("from an earlier run", encoding="utf-8")
+
+    with db.session(tmp_path / "e.db") as conn:
+        report_module.write_all(
+            conn,
+            directory,
+            [],
+            Profile(manuscript_id="ms-1", title_hash="h", journal="tte", year=2026),
+            ["coi.toml"],
+        )
+
+    assert not stale.exists()

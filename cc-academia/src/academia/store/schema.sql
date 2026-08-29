@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS papers (
     source         TEXT NOT NULL,
     source_id      TEXT,
     url            TEXT,
+    pdf_url        TEXT,
+    landing_page_url TEXT,
     first_seen     TEXT NOT NULL,
     last_seen      TEXT NOT NULL
 );
@@ -94,12 +96,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_orcid ON persons(orcid) WHERE orci
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_openalex ON persons(openalex_id) WHERE openalex_id IS NOT NULL AND openalex_id <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_ieee ON persons(ieee_author_id) WHERE ieee_author_id IS NOT NULL AND ieee_author_id <> '';
 
+-- A rank read from a page, kept beside the career history rather than merged
+-- into it: a page states what someone is now, an employment record states what
+-- they were appointed as, and the report shows whichever is more senior.
+CREATE TABLE IF NOT EXISTS person_ranks (
+    person_id  TEXT PRIMARY KEY REFERENCES persons(person_id) ON DELETE CASCADE,
+    rank       TEXT NOT NULL,
+    source_url TEXT,
+    seen_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS person_names (
     person_id    TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
     name_variant TEXT NOT NULL,
     PRIMARY KEY (person_id, name_variant)
 );
 CREATE INDEX IF NOT EXISTS idx_person_names_variant ON person_names(name_variant);
+
+-- Research topics as the sources report them. Persisted rather than held on the
+-- in-memory Person because `coi` and `report` are separate commands that reload
+-- every candidate; without this the topic and method score components read
+-- empty and contribute nothing.
+CREATE TABLE IF NOT EXISTS person_topics (
+    person_id TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
+    term      TEXT NOT NULL,
+    source    TEXT NOT NULL,
+    seen_at   TEXT NOT NULL,
+    PRIMARY KEY (person_id, term, source)
+);
+CREATE INDEX IF NOT EXISTS idx_person_topics_term ON person_topics(term);
 
 -- idx is the 0-based position in the author list. OpenAlex only labels
 -- first/middle/last and its corresponding-author field is routinely empty, so the

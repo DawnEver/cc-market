@@ -17,7 +17,7 @@ from typing import Any
 
 from academia.core import log
 from academia.core.models import Paper
-from academia.core.text import dedupe_records, recency_score, term_overlap
+from academia.core.text import dedupe_records, recency_score, term_overlap, tokenize
 from academia.reviewer.profile import Profile
 from academia.reviewer.rank import Candidate, Evidence
 from academia.sources.base import PaperSource
@@ -104,18 +104,66 @@ def store_papers(conn: sqlite3.Connection, papers: list[Paper]) -> int:
 # --------------------------------------------------------------- relevance
 
 
+def _fts_phrase(text: str) -> str:
+    """Quote a phrase for an FTS5 MATCH expression.
+
+    FTS5 escapes a double quote inside a string by doubling it. Topic text comes
+    from the submission's own keyword line, so it is not ours to trust: an
+    unbalanced quote makes the whole expression invalid, and a crafted one can
+    widen the match to every stored paper — which would let a submitting author
+    steer which reviewers surface.
+    """
+    return '"' + text.replace('"', '""') + '"'
+
+
+def _match_expression(topics: list[str]) -> str:
+    """Build the FTS5 MATCH expression for a set of topics.
+
+    Phrases alone are too strict. A submission's own keywords are frequently
+    coined — "temporal-order migration" exists in exactly one paper — and
+    matching only phrases scored 46 of 476 stored papers on a live run, leaving
+    the ranking to decide between a handful of arbitrary survivors. Matching the
+    constituent words as well restores recall without costing precision: BM25
+    still ranks a paper carrying the whole phrase above one carrying a word of
+    it.
+
+    Tokenisation is shared with the scoring side, so retrieval and ranking agree
+    on what a topic's words are.
+    """
+    parts: list[str] = []
+    seen: set[str] = set()
+    for topic in topics:
+        words = tokenize(topic.replace("-", " "))
+        if not words:
+            # An all-stopword topic would contribute a phrase that matches
+            # nothing while making the expression look like it covers something.
+            continue
+        phrase = " ".join(words)
+        if phrase not in seen:
+            seen.add(phrase)
+            parts.append(_fts_phrase(phrase))
+        for word in words:
+            if word not in seen:
+                seen.add(word)
+                parts.append(_fts_phrase(word))
+    return " OR ".join(parts)
+
+
 def _bm25_scores(conn: sqlite3.Connection, profile: Profile, limit: int) -> dict[str, float]:
     """Rank stored papers against the profile using FTS5.
 
     ``bm25()`` returns lower values for better matches, so the scores are
     inverted and normalised into 0..1 for blending with the other components.
     """
-    terms = " OR ".join(f'"{t}"' for t in profile.primary_topics if t)
+    terms = _match_expression(profile.primary_topics)
     if not terms:
         return {}
     try:
         rows = repo.search_papers(conn, terms, limit=limit)
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as error:
+        # An empty pool reads to an editor as "no reviewers exist". Say what
+        # actually happened instead.
+        log.warn(f"the topic search expression was rejected by FTS5: {error}")
         return {}
     if not rows:
         return {}

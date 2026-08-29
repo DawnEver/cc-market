@@ -28,6 +28,8 @@ from academia.store import repository as repo
 COLUMNS = (
     "Rank",
     "Reviewer",
+    # "Rank" above is the shortlist position; this is the academic one.
+    "Position",
     "Institution",
     "Country",
     "Score",
@@ -42,6 +44,18 @@ class Row:
     rank: int
     candidate: Candidate
     email: EmailFinding
+
+    @property
+    def position(self) -> str:
+        """Academic rank, as stated by a source. Never inferred from output."""
+        from academia.reviewer.seniority import UNKNOWN, label
+
+        person = self.candidate.person
+        if person.rank != UNKNOWN:
+            return label(person.rank)
+        # A title nobody could classify still tells the editor more than
+        # "unknown", which should mean nobody stated anything at all.
+        return person.stated_title or label(UNKNOWN)
 
     @property
     def institution(self) -> str:
@@ -80,6 +94,7 @@ class Row:
         return [
             str(self.rank),
             self.candidate.person.display_name,
+            self.position,
             self.institution,
             self.country,
             self.score_text,
@@ -135,6 +150,9 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     out: list[str] = []
     out.append(f"# {person.display_name}")
     out.append("")
+    out.append(f"- Position: {row.position}")
+    if person.rank_source:
+        out.append(f"  - stated at {person.rank_source}")
     out.append(f"- Institution: {row.institution}")
     out.append(f"- Country: {row.country}")
     if person.orcid:
@@ -240,6 +258,10 @@ def write_all(
     directory.mkdir(parents=True, exist_ok=True)
     dossier_dir = directory / "dossiers"
     dossier_dir.mkdir(parents=True, exist_ok=True)
+    # Dossier filenames carry the rank, so a re-run after tuning the profile
+    # would otherwise leave last run's ranking sitting beside this one's.
+    for previous in dossier_dir.glob("[0-9][0-9]-person-*.md"):
+        previous.unlink()
 
     shortlist = directory / "shortlist.md"
     shortlist.write_text(render_markdown(rows, profile, policy_sources), encoding="utf-8")

@@ -6,6 +6,7 @@ import math
 
 import pytest
 
+from academia.core.errors import UsageError
 from academia.core.models import Affiliation, Author, Education, Person
 from academia.reviewer import coi, geo, rank
 from academia.reviewer.policy import Policy, load_policy
@@ -247,3 +248,76 @@ def test_score_components_are_all_reported(conn, policy):
         profile_methods=["finite element"], policy=policy, now_year=2026,
     )
     assert set(scored.components) == set(policy.weights)
+
+
+def test_take_keeps_blocked_candidates_past_the_cut():
+    """`--top 25` must not be what hides a blocked reviewer.
+
+    rank() sorts blocked candidates last precisely so an editor sees that an
+    obvious name was considered. Slicing the ordered list then threw them away
+    again, and the shortlist footer promised the opposite of what it rendered.
+    """
+    from academia.reviewer import rank as rank_module
+
+    clear = []
+    for i in range(30):
+        candidate = make_candidate(person_in("GB", person_id=f"p{i}"))
+        candidate.score = 1.0 - i / 100
+        clear.append(candidate)
+    blocked = make_candidate(person_in("GB", person_id="p-blocked"))
+    blocked.score = rank_module.BLOCKED_SCORE
+    blocked.verdict = coi.Verdict(person_id="p-blocked")
+    blocked.verdict.add(coi.Finding("manuscript_author", coi.BLOCK, {"matched_by": "name"}))
+
+    taken = rank_module.take(rank_module.rank([*clear, blocked]), 25)
+
+    assert len(taken) == 26
+    assert taken[-1].person.person_id == "p-blocked"
+
+
+def test_candidate_vocabulary_is_bounded_by_the_strongest_evidence(tmp_path):
+    """Breadth must not substitute for depth in the topic score.
+
+    The topic component asks how much of the manuscript's vocabulary a
+    candidate works on. Pooling terms from every evidence paper lets a prolific
+    generalist cover the profile by accumulation rather than by working on it,
+    and topic plus method carry 60% of the weight.
+    """
+    from academia.core.models import Paper
+    from academia.reviewer import rank as rank_module
+
+    conn = db.connect(tmp_path / "v.db")
+    try:
+        candidate = rank.Candidate(person=Person(person_id="p1", display_name="Broad Author"))
+        for index in range(10):
+            paper_id = f"paper-{index}"
+            repo.ingest_paper(
+                conn, Paper(paper_id=paper_id, source="openalex", title=f"Work {index}", year=2024)
+            )
+            conn.execute(
+                "INSERT INTO paper_terms (paper_id, term, kind, score) VALUES (?, ?, ?, ?)",
+                (paper_id, f"unrelated topic {index}", "keyword", 0.5),
+            )
+            candidate.evidence.append(
+                rank.Evidence(
+                    paper_id=paper_id,
+                    title=f"Work {index}",
+                    year=2024,
+                    position="first",
+                    position_weight=1.0,
+                    similarity=1.0 - index / 20,
+                )
+            )
+
+        vocabulary = rank_module._candidate_vocabulary(conn, candidate)
+        assert len([t for t in vocabulary if t.startswith("unrelated")]) == rank_module.VOCABULARY_EVIDENCE_DEPTH
+    finally:
+        conn.close()
+
+
+def test_take_rejects_a_negative_cap():
+    """`invitable[:-5]` silently drops the best candidates instead of the worst."""
+    from academia.reviewer import rank as rank_module
+
+    with pytest.raises(UsageError):
+        rank_module.take([], -5)

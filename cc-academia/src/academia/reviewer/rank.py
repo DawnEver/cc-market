@@ -18,8 +18,9 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from academia.core.errors import UsageError
 from academia.core.models import Person
-from academia.core.text import recency_score, term_overlap
+from academia.core.text import recency_score, word_overlap
 from academia.reviewer import coi as coi_module
 from academia.reviewer.geo import GeoAssessment
 from academia.reviewer.policy import Policy
@@ -69,8 +70,35 @@ class Candidate:
         return self.verdict.status if self.verdict else coi_module.CLEAR
 
 
+#: How many of a candidate's strongest papers contribute keywords to their
+#: vocabulary. Bounded because the topic score asks how much of the manuscript's
+#: vocabulary someone works on, and pooling every paper would let a prolific
+#: generalist cover it by accumulation rather than by working on it.
+VOCABULARY_EVIDENCE_DEPTH = 5
+
+
+def _candidate_vocabulary(conn: sqlite3.Connection, candidate: Candidate) -> list[str]:
+    """Every term that describes what this candidate works on.
+
+    OpenAlex assigns people a handful of labels from its own coarse taxonomy —
+    "Electric Motor Design and Analysis" covers most of this field at once. The
+    fine-grained signal lives on their papers, so the keywords of the very
+    papers that qualified them are folded in alongside — the strongest few,
+    which ``candidate.evidence`` already has sorted by similarity.
+    """
+    terms = list(candidate.person.topics)
+    for evidence in candidate.evidence[:VOCABULARY_EVIDENCE_DEPTH]:
+        terms.extend(
+            row["term"]
+            for row in conn.execute(
+                "SELECT term FROM paper_terms WHERE paper_id = ?", (evidence.paper_id,)
+            )
+        )
+    return terms
+
+
 def _topic_match(candidate_terms: list[str], profile_terms: list[str]) -> float:
-    return term_overlap(candidate_terms, profile_terms)
+    return word_overlap(candidate_terms, profile_terms)
 
 
 def _weighted_evidence(evidence: list[Evidence]) -> float:
@@ -123,6 +151,21 @@ def _seniority_note(person: Person, policy: Policy, now_year: int) -> str:
     return ""
 
 
+def _student_note(person: Person) -> str:
+    """Flag a candidate who is still in training.
+
+    The pool is harvested from authorship, so students are in it by
+    construction. They are surfaced rather than dropped: a late-stage doctoral
+    researcher may be exactly right on a narrow topic, but the editor has to be
+    told before an invitation goes out under a journal's name.
+    """
+    from academia.reviewer.seniority import is_student, label
+
+    if is_student(person.rank):
+        return f"{label(person.rank)} — confirm before inviting"
+    return ""
+
+
 def score_candidate(
     conn: sqlite3.Connection,
     candidate: Candidate,
@@ -148,9 +191,10 @@ def score_candidate(
     history, history_notes = _reviewer_history(conn, candidate.person)
     candidate.notes.extend(history_notes)
 
+    vocabulary = _candidate_vocabulary(conn, candidate)
     components = {
-        "topic": _topic_match(candidate.person.topics, profile_topics),
-        "method": _topic_match(candidate.person.topics, profile_methods),
+        "topic": _topic_match(vocabulary, profile_topics),
+        "method": _topic_match(vocabulary, profile_methods),
         "recent_expertise": _recent_expertise(candidate.evidence, now_year),
         "publication_evidence": _weighted_evidence(candidate.evidence),
         "geographic": 1.0 if (candidate.geo and candidate.geo.cross_region) else 0.0,
@@ -161,6 +205,8 @@ def score_candidate(
     candidate.score = sum(components[k] * weights.get(k, 0.0) for k in components)
 
     if (note := _seniority_note(candidate.person, policy, now_year)):
+        candidate.notes.append(note)
+    if (note := _student_note(candidate.person)):
         candidate.notes.append(note)
     if candidate.person.confidence < 0.6:
         candidate.notes.append(
@@ -186,3 +232,18 @@ def rank(candidates: list[Candidate]) -> list[Candidate]:
         )
 
     return sorted(candidates, key=key)
+
+
+def take(ordered: list[Candidate], top: int) -> list[Candidate]:
+    """Slice a ranked list to ``top``, keeping every blocked candidate.
+
+    Blocked candidates sort last, so a plain slice deletes exactly the names the
+    shortlist promises to show: the ones an editor would otherwise wonder why
+    they never saw. ``top`` bounds the invitable list, not the audit trail.
+    """
+    if top < 0:
+        raise UsageError(f"--top must not be negative (got {top})")
+    if not top:
+        return ordered
+    invitable = [c for c in ordered if not c.blocked]
+    return [*invitable[:top], *[c for c in ordered if c.blocked]]

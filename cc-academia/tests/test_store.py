@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from academia.core.models import Author, Paper, position_label, position_weight
@@ -285,3 +287,155 @@ def test_between_two_current_universities_the_longer_tenure_wins(conn):
     )
     person = repo.load_person(conn, person_id)
     assert person.current_affiliation.institution == "Home University"
+
+
+# ------------------------------------------------- relevance term fallback
+
+
+def test_relevance_matches_papers_that_share_words_but_not_the_whole_phrase(tmp_path):
+    """A coined multi-word topic must not shrink the candidate pool.
+
+    Author keywords arrive as phrases ("temporal-order migration") that appear
+    verbatim in one paper on earth — the submission's own. Matching only those
+    phrases left a live run scoring 46 of 476 stored papers, which makes every
+    later stage arbitrary. Words are matched alongside phrases; BM25 still
+    prefers the paper that has them together.
+    """
+    from academia.reviewer import discover
+    from academia.reviewer.profile import Profile
+
+    conn = db.connect(tmp_path / "r.db")
+    try:
+        repo.ingest_paper(
+            conn,
+            Paper(
+                paper_id="phrase",
+                source="openalex",
+                title="Electromagnetic force order analysis",
+                abstract="Order decomposition of electromagnetic force in machines.",
+                year=2024,
+            ),
+        )
+        repo.ingest_paper(
+            conn,
+            Paper(
+                paper_id="words",
+                source="openalex",
+                title="Acoustic noise of traction machines",
+                abstract="Noise measurements, with no force order analysis at all.",
+                year=2024,
+            ),
+        )
+        profile = Profile(
+            manuscript_id="ms-1",
+            title_hash="h",
+            journal="tte",
+            year=2026,
+            primary_topics=["electromagnetic force order", "temporal-order migration"],
+        )
+        scores = discover.relevance(conn, profile, now_year=2026, limit=50)
+        assert set(scores) == {"phrase", "words"}
+        assert scores["phrase"] > scores["words"]
+    finally:
+        conn.close()
+
+
+def test_person_topics_replace_rather_than_accumulate(conn):
+    """Re-enriching must not leave last run's topics attached.
+
+    An append-only write means a person whose OpenAlex labels change keeps the
+    old ones forever. Because the topic score rewards covering the manuscript's
+    vocabulary, accumulated stale terms inflate a candidate's score on every
+    later run, with nothing in the report to show why.
+    """
+    person_id = repo.upsert_person(conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097"))
+    repo.set_person_topics(conn, person_id, ["axial flux", "acoustic noise"], source="openalex")
+    repo.set_person_topics(conn, person_id, ["marine biology"], source="openalex")
+
+    assert repo.person_topics(conn, person_id) == ["marine biology"]
+
+
+def test_person_topics_from_one_source_do_not_clear_another(conn):
+    person_id = repo.upsert_person(conn, Author(name="Bo Second", idx=0, orcid="0000-0002-1825-0098"))
+    repo.set_person_topics(conn, person_id, ["axial flux"], source="openalex")
+    repo.set_person_topics(conn, person_id, ["vibration"], source="orcid")
+
+    assert repo.person_topics(conn, person_id) == ["axial flux", "vibration"]
+
+
+def test_person_topics_survive_a_reload(conn):
+    """Topics must outlive the enrich process that fetched them.
+
+    `coi` and `report` run as separate commands and reload every candidate from
+    the store. While topics lived only on the in-memory Person, both the topic
+    and method score components read empty and scored 0.00 for every candidate
+    in a live run — a third of the ranking weight, silently inert.
+    """
+    person_id = repo.upsert_person(conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097"))
+    repo.set_person_topics(conn, person_id, ["axial flux machine", "acoustic noise"], source="openalex")
+
+    reloaded = repo.load_person(conn, person_id)
+    assert reloaded is not None
+    assert reloaded.topics == ["acoustic noise", "axial flux machine"]
+
+
+# ------------------------------------------------- FTS5 match expression
+
+
+def test_match_expression_survives_hostile_topic_text(tmp_path):
+    """Topic text comes from the submission's own keyword line.
+
+    An unbalanced double quote makes an unterminated FTS5 phrase; _bm25_scores
+    catches the OperationalError and returns nothing, so a malformed keyword
+    silently empties the candidate pool. A crafted one could instead widen the
+    match to every stored paper and let a submitting author steer which
+    reviewers surface. The expression must stay valid and stay scoped whatever
+    the keyword line contains.
+    """
+    from academia.reviewer.discover import _match_expression
+
+    conn = db.connect(tmp_path / "hostile.db")
+    try:
+        repo.ingest_paper(
+            conn,
+            Paper(paper_id="p1", source="openalex", title="Axial flux machines", year=2024),
+        )
+        repo.ingest_paper(
+            conn,
+            Paper(paper_id="p2", source="openalex", title="Unrelated marine biology", year=2024),
+        )
+        expression = _match_expression(['3" pipe" OR machine OR "', "axial flux"])
+        assert '"' not in expression.replace('""', "").strip('"').replace('" OR "', "")
+        # Executes, and does not turn into a match-everything expression.
+        found = {row["paper_id"] for row in repo.search_papers(conn, expression, limit=10)}
+        assert found == {"p1"}
+    finally:
+        conn.close()
+
+
+def test_match_expression_skips_topics_with_no_searchable_words():
+    from academia.reviewer.discover import _match_expression
+
+    assert _match_expression(["a an the"]) == ""
+    assert _match_expression([""]) == ""
+
+
+def test_match_expression_does_not_repeat_a_single_word_topic():
+    from academia.reviewer.discover import _match_expression
+
+    assert _match_expression(["magnet"]) == '"magnet"'
+
+
+def test_bm25_reports_a_broken_expression_rather_than_returning_nothing(tmp_path, caplog):
+    """A silently empty pool reads to an editor as 'no reviewers exist'."""
+
+    conn = db.connect(tmp_path / "b.db")
+    try:
+        repo.ingest_paper(
+            conn,
+            Paper(paper_id="p1", source="openalex", title="Axial flux machines", year=2024),
+        )
+        with pytest.raises(sqlite3.OperationalError):
+            repo.search_papers(conn, 'unbalanced "', limit=10)
+    finally:
+        conn.close()

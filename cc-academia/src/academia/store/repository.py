@@ -33,9 +33,11 @@ def upsert_paper(conn: sqlite3.Connection, paper: Paper) -> str:
     conn.execute(
         """
         INSERT INTO papers (paper_id, doi, title, abstract, year, venue, venue_type,
-                            citation_count, source, source_id, url, first_seen, last_seen)
+                            citation_count, source, source_id, url, pdf_url,
+                            landing_page_url, first_seen, last_seen)
         VALUES (:paper_id, :doi, :title, :abstract, :year, :venue, :venue_type,
-                :citation_count, :source, :source_id, :url, :first_seen, :last_seen)
+                :citation_count, :source, :source_id, :url, :pdf_url,
+                :landing_page_url, :first_seen, :last_seen)
         ON CONFLICT(paper_id) DO UPDATE SET
             doi            = coalesce(nullif(excluded.doi, ''), papers.doi),
             abstract       = coalesce(nullif(excluded.abstract, ''), papers.abstract),
@@ -44,6 +46,9 @@ def upsert_paper(conn: sqlite3.Connection, paper: Paper) -> str:
             venue_type     = coalesce(nullif(excluded.venue_type, ''), papers.venue_type),
             citation_count = coalesce(excluded.citation_count, papers.citation_count),
             url            = coalesce(nullif(excluded.url, ''), papers.url),
+            pdf_url        = coalesce(nullif(excluded.pdf_url, ''), papers.pdf_url),
+            landing_page_url = coalesce(nullif(excluded.landing_page_url, ''),
+                                        papers.landing_page_url),
             last_seen      = excluded.last_seen
         """,
         row,
@@ -341,6 +346,9 @@ def record_affiliation(conn: sqlite3.Connection, person_id: str, aff: Affiliatio
             year_to    = coalesce(excluded.year_to, affiliations.year_to),
             is_current = max(affiliations.is_current, excluded.is_current),
             department = coalesce(nullif(excluded.department, ''), affiliations.department),
+            -- OpenAlex has no roles and writes first; ORCID has them and
+            -- arrives second, so without this every role was discarded.
+            role       = coalesce(nullif(excluded.role, ''), affiliations.role),
             source_url = coalesce(nullif(excluded.source_url, ''), affiliations.source_url)
         """,
         (
@@ -391,6 +399,51 @@ def record_education(conn: sqlite3.Connection, person_id: str, edu: Education) -
     )
 
 
+def set_person_topics(
+    conn: sqlite3.Connection, person_id: str, terms: list[str], *, source: str
+) -> None:
+    """Replace the topics ``source`` reports for a person.
+
+    Replacement rather than the store's usual append, because topics are a
+    snapshot of what a source currently says, not an accumulating record. Left
+    additive, a person whose labels change keeps the old ones forever, and the
+    topic score — which rewards covering the manuscript's vocabulary — quietly
+    inflates on every later run. Other sources' topics are untouched.
+    """
+    conn.execute(
+        "DELETE FROM person_topics WHERE person_id = ? AND source = ?", (person_id, source)
+    )
+    now = utcnow()
+    conn.executemany(
+        "INSERT INTO person_topics (person_id, term, source, seen_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(person_id, term, source) DO UPDATE SET seen_at = excluded.seen_at",
+        [(person_id, term, source, now) for term in terms if term],
+    )
+
+
+def person_topics(conn: sqlite3.Connection, person_id: str) -> list[str]:
+    """Distinct topic terms across every source, for scoring."""
+    return [
+        row["term"]
+        for row in conn.execute(
+            "SELECT DISTINCT term FROM person_topics WHERE person_id = ? ORDER BY term",
+            (person_id,),
+        )
+    ]
+
+
+def set_stated_rank(
+    conn: sqlite3.Connection, person_id: str, rank: str, *, source_url: str = ""
+) -> None:
+    """Record a rank read from a page, replacing any earlier reading."""
+    conn.execute(
+        "INSERT INTO person_ranks (person_id, rank, source_url, seen_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(person_id) DO UPDATE SET rank = excluded.rank, "
+        "source_url = excluded.source_url, seen_at = excluded.seen_at",
+        (person_id, rank, source_url or None, utcnow()),
+    )
+
+
 def load_person(conn: sqlite3.Connection, person_id: str) -> Person | None:
     """Rehydrate a full Person, including career history."""
     row = get_person(conn, person_id)
@@ -407,6 +460,13 @@ def load_person(conn: sqlite3.Connection, person_id: str) -> Person | None:
         confidence=row["confidence"],
         resolution_method=row["resolution_method"],
     )
+    person.topics = person_topics(conn, person_id)
+    rank_row = conn.execute(
+        "SELECT rank, source_url FROM person_ranks WHERE person_id = ?", (person_id,)
+    ).fetchone()
+    if rank_row is not None:
+        person.stated_rank = rank_row["rank"] or ""
+        person.rank_source = rank_row["source_url"] or ""
     person.names = [
         r["name_variant"]
         for r in conn.execute(
@@ -651,6 +711,7 @@ def store_institution_for(
     ror_id: str = "",
     country_code: str = "",
     department: str = "",
+    role: str = "",
     year_from: int | None = None,
     year_to: int | None = None,
     is_current: bool = False,
@@ -671,6 +732,7 @@ def store_institution_for(
             institution=name,
             country_code=country_code,
             department=department,
+            role=role,
             year_from=year_from,
             year_to=year_to,
             is_current=is_current,
