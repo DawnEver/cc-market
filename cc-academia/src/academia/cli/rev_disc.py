@@ -89,6 +89,9 @@ def run_init(args: argparse.Namespace) -> int:
 
     if args.journal:
         sanitized.journal = args.journal
+    # A PDF carries no submission year, and a year of 0 would widen the
+    # co-authorship window to everything ever published.
+    sanitized.year = args.year or sanitized.year or _now_year()
 
     write_sanitized(workspace, sanitized)
     state = workspace.load_state()
@@ -262,6 +265,22 @@ def run_candidates(args: argparse.Namespace) -> int:
 # ------------------------------------------------------------------ enrich
 
 
+def _homepage_overrides(values: list[str] | None) -> dict[str, list[str]]:
+    """Parse ``--homepage <person_id>=<url>`` pairs.
+
+    The escape hatch for the common case where a candidate has no ORCID URL but
+    the editor can see their staff page. Supplying it is always better than
+    letting the tool guess.
+    """
+    overrides: dict[str, list[str]] = {}
+    for value in values or []:
+        person_id, separator, url = value.partition("=")
+        if not separator or not url.strip():
+            raise UsageError(f"--homepage expects <person_id>=<url>, got {value!r}")
+        overrides.setdefault(person_id.strip(), []).append(url.strip())
+    return overrides
+
+
 def run_enrich(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
@@ -273,6 +292,21 @@ def run_enrich(args: argparse.Namespace) -> int:
     # cheaper partial pass.
     subset = rows[: args.limit] if args.limit else rows
 
+    # One fetcher for the whole pass, so its rate limit and per-host circuit
+    # breaker apply across candidates rather than resetting for each one.
+    fetcher = None if args.no_email else enrich_module.PageFetcher()
+    homepages = _homepage_overrides(args.homepage)
+    supplied_ranks: dict[str, tuple[str, str]] = {}
+    if getattr(args, "homepages", None):
+        from academia.reviewer.contact import read_lookups
+
+        lookups = read_lookups(args.homepages)
+        for person_id, urls in lookups.urls.items():
+            homepages.setdefault(person_id, []).extend(urls)
+        supplied_ranks = lookups.ranks
+    # Co-authors in one field share papers; each landing page is fetched once.
+    seen_pages: dict[str, list[str]] = {}
+
     enriched: list[dict] = []
     with db.session() as conn:
         for row in subset:
@@ -280,7 +314,23 @@ def run_enrich(args: argparse.Namespace) -> int:
             if person is None:
                 continue
             person = enrich_module.enrich(conn, person)
-            finding = enrich_module.find_email(conn, person)
+            if (supplied := supplied_ranks.get(person.person_id)) is not None:
+                rank, rank_source = supplied
+                repo.set_stated_rank(conn, person.person_id, rank, source_url=rank_source)
+                person.stated_rank, person.rank_source = rank, rank_source
+            contact = (
+                enrich_module.Contact()
+                if args.no_email
+                else enrich_module.contact_for(person)
+            )
+            finding = enrich_module.discover_email(
+                conn,
+                person,
+                contact=contact,
+                fetcher=fetcher,
+                extra_urls=homepages.get(person.person_id, []),
+                seen_pages=seen_pages,
+            )
             enriched.append(
                 {
                     "person_id": person.person_id,
@@ -290,6 +340,7 @@ def run_enrich(args: argparse.Namespace) -> int:
                         person.current_affiliation.institution if person.current_affiliation else ""
                     ),
                     "education_entries": len(person.education),
+                    "position": person.rank,
                     "email": finding.as_dict(),
                 }
             )
@@ -300,10 +351,12 @@ def run_enrich(args: argparse.Namespace) -> int:
 
     with_email = sum(1 for e in enriched if e["email"]["email"])
     with_education = sum(1 for e in enriched if e["education_entries"])
+    with_position = sum(1 for e in enriched if e["position"] != "unknown")
     payload = {
         "enriched": len(enriched),
         "with_email": with_email,
         "with_education": with_education,
+        "with_position": with_position,
     }
     if args.json:
         log.emit(payload)
@@ -453,7 +506,7 @@ def run_report(args: argparse.Namespace) -> int:
                 )
             )
 
-        ordered = rank.rank(candidates)[: args.top] if args.top else rank.rank(candidates)
+        ordered = rank.take(rank.rank(candidates), args.top)
         emails = {
             pid: enrich_module.EmailFinding(
                 email=(row["email"] or {}).get("email") or "",
@@ -465,6 +518,9 @@ def run_report(args: argparse.Namespace) -> int:
         }
         rows = report.build_rows(ordered, emails)
 
+        # candidate_scores is the ranking table, and a blocked candidate has no
+        # ranking — score_candidate leaves its components empty by design. The
+        # block itself is audited in coi_evidence, so nothing is lost here.
         for candidate in ordered:
             if not candidate.blocked:
                 repo.record_score(
@@ -527,4 +583,43 @@ def run_status(args: argparse.Namespace) -> int:
         for stage, status in state.stages.items():
             log.info(f"  {stage:<12} {status}")
         log.info(f"next: rev-disc {state.next_stage()} --slug {state.slug}")
+    return EXIT_OK
+
+
+# ----------------------------------------------------------------- contacts
+
+
+def run_contacts(args: argparse.Namespace) -> int:
+    """List candidates still without an address, ready to be looked up.
+
+    The pipeline reaches roughly a fifth of them from structured sources; the
+    rest need a search, which is the orchestrating agent's job rather than the
+    CLI's. Feed the answers back with `enrich --homepages`.
+    """
+    from academia.reviewer.contact import lookup_worklist
+
+    workspace = open_workspace(args.slug)
+    rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
+
+    with db.session() as conn:
+        people = []
+        resolved: set[str] = set()
+        for row in rows:
+            person = repo.load_person(conn, row["person_id"])
+            if person is None:
+                continue
+            people.append(person)
+            if repo.emails_of(conn, person.person_id):
+                resolved.add(person.person_id)
+        items = lookup_worklist(people, resolved=resolved)
+
+    payload = {"missing": len(items), "resolved": len(resolved), "candidates": items}
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"{len(resolved)} of {len(people)} candidates have an address")
+        for item in items:
+            log.info(f"  {item['person_id']}  {item['name']} — {item['institution'] or 'unknown'}")
+        log.info("Look these up, then: rev-disc enrich --slug "
+                 f"{args.slug} --homepages <file.json>")
     return EXIT_OK
