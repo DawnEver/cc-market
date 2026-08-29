@@ -8,6 +8,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The plugin is one directory of a multi-plugin repository, and the root has
+    # no pyproject.toml. Without this every uv step fails with "No
+    # `pyproject.toml` found in current directory or any parent directory".
+    defaults:
+      run:
+        working-directory: cc-academia
     steps:
       - uses: actions/checkout@v4
         with:
