@@ -100,6 +100,34 @@ def test_a_co_authors_address_is_not_attributed_to_the_candidate(conn):
     assert finding.email == ""
 
 
+def test_a_sole_address_is_not_assigned_to_the_wrong_co_corresponding_author(conn):
+    """A source may mark several authors corresponding but print one address."""
+    paper = Paper(
+        paper_id="p1",
+        source="openalex",
+        title="Joint work",
+        year=2024,
+        landing_page_url="https://example.edu/paper",
+        authors=[
+            Author(name="Rundong Huang", idx=0, orcid="0000-0001-0000-0001", is_corresponding=True),
+            Author(name="Chunhua Liu", idx=1, orcid="0000-0001-0000-0002", is_corresponding=True),
+        ],
+    )
+    repo.ingest_paper(conn, paper)
+    person_id = repo.upsert_person(
+        conn, Author(name="Chunhua Liu", idx=1, orcid="0000-0001-0000-0002")
+    )
+    person = repo.load_person(conn, person_id)
+
+    finding = contact.email_from_publications(
+        conn,
+        person,
+        fetcher=lambda url: "Contact: rundhuang2@cityu.edu.hk",
+    )
+
+    assert finding.email == ""
+
+
 def test_papers_where_the_candidate_corresponded_are_tried_first(conn):
     """Fetches cost a second each; the paper most likely to carry their address wins."""
     _paper_with_author(conn, "p1", "Ada Lead", corresponding=False, landing="https://a/1")

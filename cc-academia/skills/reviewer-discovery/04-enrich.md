@@ -29,7 +29,7 @@ uv run --project "<plugin-root>" rev-disc enrich --slug <slug>   --homepage <per
 `--no-email` skips contact discovery entirely; only the scholarly APIs are then
 contacted.
 
-## Closing the gap — the step you have to do
+## Closing the gap — agent-owned public search
 
 Structured sources reach roughly a fifth of candidates in this field, and that
 ceiling was measured, not assumed:
@@ -44,15 +44,19 @@ ceiling was measured, not assumed:
 | Crossref author metadata | 0 addresses in 8 records |
 
 So the rest needs a search — which the CLI cannot do and has no business
-guessing at. **That step is yours.** Run:
+guessing at. **The orchestrating agent owns this step; do not hand the worklist
+to the user.** Run:
 
 ```bash
 uv run --project "<plugin-root>" rev-disc contacts --slug <slug> --json
 ```
 
 It returns every candidate with something still missing — `needs` is `email`,
-`position`, or both — along with their institution and a suggested query. Search
-for each one's staff page and hand back what you found:
+`position`, or both — along with their institution and a suggested query. Use
+the current host's web-search capability to find each staff page, starting with
+the reportable shortlist and widening only as useful. Persist the query, URLs
+considered and selected URLs so the search is auditable and resumable, then
+hand the selected pages back to the CLI:
 
 ```json
 {
@@ -67,7 +71,8 @@ for each one's staff page and hand back what you found:
 
 A rank must come with `rank_source`, the URL of the page that states it — an
 unsourced claim about someone's job has no place in a dossier. An unrecognised
-rank stops the run rather than being silently dropped.
+rank stops the run rather than being silently dropped. Never reuse another
+workspace's homepage results during a clean run.
 
 ```bash
 uv run --project "<plugin-root>" rev-disc enrich --slug <slug>   --homepages homepages.json --json

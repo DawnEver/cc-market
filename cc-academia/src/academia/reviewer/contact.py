@@ -30,7 +30,6 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from academia.core import log
 from academia.core.models import Person
 from academia.reviewer.enrich import (
     EMAIL_CONFIDENCE,
@@ -156,12 +155,6 @@ def email_from_publications(
             continue
 
         match = match_email_to_person(addresses, person)
-        if not match and row["is_corresponding"] and len(addresses) == 1:
-            # Identity comes from the structured record, not from the string.
-            # This is what recovers the many researchers whose address is a
-            # number or a handle and could never match their name.
-            match = addresses[0]
-            log.detail(f"{person.display_name}: sole address on a paper they corresponded on")
         if not match:
             continue
 
