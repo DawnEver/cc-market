@@ -114,6 +114,26 @@ each recorded with its source URL and a confidence. Nothing else. A guessed
 address either bounces or reaches a stranger and the editor cannot tell which, so
 absent is reported as `not_found`.
 
+Automatic discovery reaches roughly a fifth of candidates in IEEE-adjacent
+engineering, which was measured rather than assumed. The rest come back through a
+worklist an editor or agent resolves by searching — and they hand back **the URL,
+never the value**. The tool fetches the page and extracts, so "found, never
+generated" holds even with a model in the loop, and a search snippet that has
+gone stale cannot become an invitation.
+
+## A blank field beats a confident wrong one
+
+Academic rank is stated by a source or left `unknown`. It is never inferred from
+a publication record, and it is not scraped out of arbitrary HTML: reading it
+from the text around a name on a staff page was implemented and then removed,
+because it called an associate professor an MSc student and a full professor
+unknown.
+
+An editor acts on these fields. A wrong rank means a good reviewer is dropped and
+nobody ever sees why, whereas a blank one is visibly a question. This is the same
+reason `unknown` is neutral everywhere else — geography, seniority, education —
+rather than counting against anyone.
+
 ## Manuscript confidentiality is enforced in the tool
 
 Codex may not support Claude Code's hooks, so a permission rule can never be the

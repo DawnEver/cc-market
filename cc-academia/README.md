@@ -33,6 +33,11 @@ source; none is ever generated from a name-and-domain pattern.
 Geographic separation uses the candidate's current affiliation country. Nothing
 is inferred from a name.
 
+Each candidate's academic position is shown — professor, lecturer, postdoc, PhD
+or MSc student — because a pool harvested from authorship contains students by
+construction. A position is stated by a source or left unknown; students stay on
+the list, flagged, rather than being dropped.
+
 ## Data sources
 
 OpenAlex (primary — CC0, ROR-linked institutions, country codes, reference
