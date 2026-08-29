@@ -31,7 +31,7 @@ from academia.reviewer.profile import (
     queries_fingerprint,
     write_sanitized,
 )
-from academia.reviewer.workspace import open_workspace, slugify
+from academia.reviewer.workspace import find_workspace_for, open_workspace, slugify, title_hash
 from academia.store import db
 from academia.store import repository as repo
 
@@ -99,12 +99,10 @@ def run_init(args: argparse.Namespace) -> int:
         pdf = None
         slug = slugify(args.slug or args.title)
 
-    workspace = open_workspace(slug, create=True)
-
+    # Read the manuscript before creating anything, so a refusal below cannot
+    # leave a half-made workspace behind.
     if pdf is not None:
-        if workspace.raw_pdf.resolve() != pdf:
-            shutil.copy2(pdf, workspace.raw_pdf)
-        sanitized = ingest_pdf(workspace.raw_pdf)
+        sanitized = ingest_pdf(pdf)
     else:
         sanitized = Sanitized(
             title=args.title,
@@ -122,6 +120,19 @@ def run_init(args: argparse.Namespace) -> int:
     sanitized.year = args.year or sanitized.year or _now_year()
     if (declared := _parse_authors(getattr(args, "authors", None))):
         sanitized.authors = declared
+
+    # One manuscript, one workspace. Two would mean two candidate pools and two
+    # shortlists that can disagree, with nothing to say which is current.
+    if (existing := find_workspace_for(title_hash(sanitized.title), excluding=slug)):
+        raise UsageError(
+            f"this manuscript already has a workspace: {existing}\n"
+            f"  Continue it:  rev-disc status --slug {existing}\n"
+            "  Or remove that workspace first if you meant to start over."
+        )
+
+    workspace = open_workspace(slug, create=True)
+    if pdf is not None and workspace.raw_pdf.resolve() != pdf:
+        shutil.copy2(pdf, workspace.raw_pdf)
 
     write_sanitized(workspace, sanitized)
     state = workspace.load_state()

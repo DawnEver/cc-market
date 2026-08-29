@@ -203,6 +203,24 @@ def open_workspace(slug: str, *, create: bool = False) -> Workspace:
     return workspace
 
 
+def find_workspace_for(hash_of_title: str, *, excluding: str = "") -> str:
+    """Slug of an existing workspace holding this manuscript, if any."""
+    for slug in list_workspaces():
+        if slug == excluding:
+            continue
+        path = workspace_root() / slug / MANUSCRIPT_DIR / SANITIZED
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if title_hash(str(data.get("title") or "")) == hash_of_title:
+            return slug
+    return ""
+
+
+
 def list_workspaces() -> list[str]:
     root = workspace_root()
     if not root.exists():

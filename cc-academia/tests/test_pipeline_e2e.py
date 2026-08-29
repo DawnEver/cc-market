@@ -288,3 +288,38 @@ def test_coi_refuses_when_no_submitting_authors_are_declared(tmp_path, stub_sour
 
     assert run("coi", "--slug", "noauth") == 2
     assert "submitting author" in capsys.readouterr().err
+
+
+def test_a_second_workspace_for_the_same_manuscript_is_refused(tmp_path, stub_sources, capsys):
+    """One manuscript, one workspace.
+
+    Two workspaces for one submission means two candidate pools, two COI runs
+    and two shortlists that can disagree, with nothing to say which is current.
+    The manuscript's identity is its title hash, so the collision is detectable
+    rather than a matter of naming discipline.
+    """
+    run("init", "--slug", "first", "--journal", "tie", "--title", "One Paper About Machines")
+
+    assert run("init", "--slug", "second", "--journal", "tie",
+               "--title", "One Paper About Machines") == 2
+    err = capsys.readouterr().err
+    assert "already has a workspace" in err
+    assert "first" in err
+
+
+def test_re_initialising_the_same_slug_is_still_allowed(tmp_path, stub_sources):
+    """Re-running init on its own workspace is how a bad extraction is fixed."""
+    run("init", "--slug", "again", "--journal", "tie", "--title", "One Paper About Machines")
+
+    assert run("init", "--slug", "again", "--journal", "tie",
+               "--title", "One Paper About Machines") == 0
+
+
+def test_a_refused_init_leaves_no_workspace_behind(tmp_path, stub_sources):
+    """Refusing must not half-create the thing it refused to create."""
+    from academia.core import paths
+
+    run("init", "--slug", "keeper", "--journal", "tie", "--title", "One Paper About Machines")
+    run("init", "--slug", "leftover", "--journal", "tie", "--title", "One Paper About Machines")
+
+    assert not (paths.workspaces_root("reviewer-discovery") / "leftover").exists()
