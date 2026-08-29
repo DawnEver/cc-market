@@ -1,7 +1,5 @@
 ---
 name: persistent-sessions-and-takeover-merge
-tier: short
-created: 2026-07-08
 ---
 
 # Persistent sessions over MCP + the takeover/fabric merge question

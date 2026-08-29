@@ -1,6 +1,5 @@
 ---
 name: design-console-v4-funnel-views
-created: 2026-08-11
 ---
 
 # Design: console v4 — funnel views (Fleet / Sessions / Chat) + attention model

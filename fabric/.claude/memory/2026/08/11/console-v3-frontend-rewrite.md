@@ -1,6 +1,5 @@
 ---
 name: console-v3-frontend-rewrite
-created: 2026-08-11
 ---
 
 # fabric console v3 — full frontend rewrite (option B), async probes, context window

@@ -1,6 +1,5 @@
 ---
 name: console-v3-transcript-truth-async
-created: 2026-08-11
 ---
 
 # Console v3: transcript-as-truth chat + non-blocking catalogue probes

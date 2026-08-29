@@ -1,5 +1,4 @@
 ---
-created: 2026-08-10
 description: goal = fabric-side marker loop (the CLI's native /goal is UNREACHABLE in the hook-free child architecture — three probes), plus serve crash recovery (sessionId capture, --resume continue, kill/tombstone decide)
 ---
 

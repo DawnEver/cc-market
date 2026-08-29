@@ -1,6 +1,4 @@
 ---
-created: 2026-08-09
-accessed: 2026-08-09
 description: first-principles gap analysis and target architecture for fabric as the L0 session layer under the swarm framework -- P0 Windows spawn bug, honesty/capacity/profile/durability gaps, the four target surfaces, and the foundation-first iteration order; written for user review
 ---
 

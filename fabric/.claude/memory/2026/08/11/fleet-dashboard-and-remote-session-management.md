@@ -1,6 +1,5 @@
 ---
 name: fleet-dashboard-and-remote-session-management
-created: 2026-08-11
 ---
 
 # Fleet dashboard + remote session management (device status, view/converse/kill)

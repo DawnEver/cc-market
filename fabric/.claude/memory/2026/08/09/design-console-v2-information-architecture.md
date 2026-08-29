@@ -1,6 +1,4 @@
 ---
-created: 2026-08-09
-accessed: 2026-08-09
 description: console v2 information architecture, derived from the user's five questions -- Node→Project→Session drill-down with filter-not-navigation, live-probed capability catalogue (subscription/actual-model identity), local/G unification, owner-scope honesty; for user review before implementation
 ---
 

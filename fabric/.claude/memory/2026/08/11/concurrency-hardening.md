@@ -1,6 +1,5 @@
 ---
 name: concurrency-hardening
-created: 2026-08-11
 ---
 
 # Concurrency hardening for dozens-of-agents scale

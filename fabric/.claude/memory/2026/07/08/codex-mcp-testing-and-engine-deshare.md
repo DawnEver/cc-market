@@ -1,7 +1,5 @@
 ---
 name: codex-mcp-testing-and-engine-deshare
-tier: short
-created: 2026-07-08
 ---
 
 # Testing plugin MCP availability inside Codex from Claude Code + fabric engine de-share

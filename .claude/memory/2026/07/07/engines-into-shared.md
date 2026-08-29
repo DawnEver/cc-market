@@ -1,7 +1,5 @@
 ---
 name: engines-into-shared
-tier: short
-created: 2026-07-07
 ---
 
 # Engines into shared/ — fabric/takeover dedup completed

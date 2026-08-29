@@ -1,5 +1,4 @@
 ---
-created: 2026-08-10
 description: native session compaction for codex AND claude, the shared+attach cross-machine convention, and the answer to "why can't I drive other workstations' sessions from G" — session ownership is per-connection by design
 ---
 

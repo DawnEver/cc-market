@@ -1,7 +1,6 @@
 ---
 name: tools-preset
 description: toolsPreset role tiers (exec/coord/daily/full) map to --tools schema trimming — measured token sizes, profile wiring, codex has no equivalent
-created: 2026-08-09
 tags: [tools, profile, cost, cache, codex]
 ---
 

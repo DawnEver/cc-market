@@ -1,6 +1,5 @@
 ---
 name: context-quota-attach-liveness-debug
-created: 2026-08-11
 ---
 
 # Debug session: context quota "full in two rounds" + attached sessions shown dead/duplicated

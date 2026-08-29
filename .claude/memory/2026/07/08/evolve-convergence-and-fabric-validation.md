@@ -1,7 +1,5 @@
 ---
 name: evolve-convergence-and-fabric-validation
-tier: short
-created: 2026-07-08
 ---
 
 # Evolve convergence + fabric live validation

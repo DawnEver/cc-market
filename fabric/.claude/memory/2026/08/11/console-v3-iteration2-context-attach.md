@@ -1,6 +1,5 @@
 ---
 name: console-v3-iteration2-context-attach
-created: 2026-08-11
 ---
 
 # Console v3 iteration 2: context-window %, full attached identity, render fixes

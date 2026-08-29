@@ -1,7 +1,6 @@
 ---
 name: system-prompt-platform
 description: Self-maintained system-prompt platform — GLOBAL-AGENTS.md owns principles, claude-base.md/codex-base.md platform layers, discover-styles/build/sync-official tooling, toolsPreset tiers
-created: 2026-08-09
 tags: [system-prompt, cache, styles, codex, cost]
 ---
 

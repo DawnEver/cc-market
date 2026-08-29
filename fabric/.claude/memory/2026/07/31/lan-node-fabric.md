@@ -1,6 +1,5 @@
 ---
 name: lan-node-fabric
-created: 2026-07-31
 ---
 
 # LAN node fabric — devices as teammates (v1)

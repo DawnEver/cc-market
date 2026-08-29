@@ -1,8 +1,4 @@
 ---
-tier: short
-created: 2026-07-07
-accessed: 2026-07-07
-access_count: 1
 ---
 
 # harness-as-fabric design

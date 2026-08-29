@@ -1,4 +1,6 @@
 .DS_Store
+!**/.claude/sharp-review.json
+
 **/.claude/**
 !**/.claude/settings.json
 !**/.claude/agents/
@@ -9,12 +11,13 @@
 !**/.claude/commands/**
 !**/.claude/workflows/
 !**/.claude/workflows/**
+!**/.claude/output-styles/
+!**/.claude/output-styles/**
 !**/.claude/rules/
 !**/.claude/rules/**
 !**/.claude/memory/
 !**/.claude/memory/**
 !**/.claude/docs/
 !**/.claude/docs/**
-!**/.claude/sharp-review.json
 **/.claude/rules/MEMORY.md
 **/_meta.json
