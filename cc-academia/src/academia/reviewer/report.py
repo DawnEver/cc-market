@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from academia.reviewer import trajectory
@@ -26,18 +27,20 @@ from academia.reviewer.profile import Profile
 from academia.reviewer.rank import Candidate
 from academia.store import repository as repo
 
-COLUMNS = (
-    "Rank",
-    "Reviewer",
-    # "Rank" above is the shortlist position; this is the academic one.
-    "Position",
-    "Institution",
-    "Country",
-    "Institution history",
-    "Score",
-    "Evidence",
-    "COI",
-    "Email",
+EXPORT_COLUMNS = (
+    "rank", "reviewer", "person_id", "orcid", "openalex_id", "ieee_author_id",
+    "identity_method", "identity_confidence", "position", "position_source",
+    "current_institution", "current_country", "current_year_from", "current_year_to",
+    "current_source", "current_source_url", "historical_institution_count",
+    "historical_countries", "institution_history", "education_count", "degrees",
+    "education_institutions", "education_history", "score", "blocked", "coi_status",
+    "coi_summary", "coi_rules", "coi_findings", "evidence_count", "best_similarity",
+    "evidence_year_from", "evidence_year_to", "evidence_titles", "evidence_dois",
+    "evidence_urls", "evidence_json", "component_topic", "component_method",
+    "component_recent_expertise", "component_publication_evidence",
+    "component_geographic", "component_reviewer_history", "email", "email_found",
+    "email_source", "email_confidence", "email_source_url", "notes",
+    "data_quality_warning", "invitation_count", "response_count", "acceptance_count",
 )
 
 
@@ -123,7 +126,12 @@ def build_rows(
     ]
 
 
-def render_markdown(rows: list[Row], profile: Profile, policy_sources: list[str]) -> str:
+def render_markdown(
+    conn: sqlite3.Connection,
+    rows: list[Row],
+    profile: Profile,
+    policy_sources: list[str],
+) -> str:
     out: list[str] = []
     out.append(f"# Reviewer shortlist — {profile.manuscript_id}")
     out.append("")
@@ -143,10 +151,11 @@ def render_markdown(rows: list[Row], profile: Profile, policy_sources: list[str]
         out.append("Historical institution-country evidence (people may count in multiple countries): " +
                    ", ".join(f"{country} {count}" for country, count in historical.most_common()))
         out.append("")
-    out.append("| " + " | ".join(COLUMNS) + " |")
-    out.append("|" + "|".join(["---"] * len(COLUMNS)) + "|")
-    for row in rows:
-        out.append("| " + " | ".join(cell.replace("|", "\\|") for cell in row.as_list()) + " |")
+    out.append("| " + " | ".join(EXPORT_COLUMNS) + " |")
+    out.append("|" + "|".join(["---"] * len(EXPORT_COLUMNS)) + "|")
+    for record in (_export_record(conn, row) for row in rows):
+        cells = [str(record[column] if record[column] is not None else "") for column in EXPORT_COLUMNS]
+        out.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
     out.append("")
     out.append(f"\\* Clear means **{CLEAR_WORDING}**. A bibliographic database cannot")
     out.append("prove that no personal, financial or competitive relationship exists.")
@@ -189,12 +198,85 @@ def render_reading_list(rows: list[Row]) -> str:
     return chr(10).join(out)
 
 
-def render_csv(rows: list[Row]) -> str:
+def _json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
+    candidate = row.candidate
+    person = candidate.person
+    current = person.current_affiliation
+    steps = trajectory.build(person)
+    historical = [step for step in steps if step.kind != "current"]
+    years = [item.year for item in candidate.evidence if item.year]
+    verdict = candidate.verdict
+    findings = verdict.findings if verdict else []
+    invitations = repo.invitation_history(conn, person.person_id)
+    education = person.education
+    components = candidate.components
+    return {
+        "rank": row.rank,
+        "reviewer": person.display_name,
+        "person_id": person.person_id,
+        "orcid": person.orcid,
+        "openalex_id": person.openalex_id,
+        "ieee_author_id": person.ieee_author_id,
+        "identity_method": person.resolution_method,
+        "identity_confidence": round(person.confidence, 3),
+        "position": row.position,
+        "position_source": person.rank_source,
+        "current_institution": current.institution if current else "",
+        "current_country": current.country_code if current else "",
+        "current_year_from": current.year_from if current else None,
+        "current_year_to": current.year_to if current else None,
+        "current_source": current.source if current else "",
+        "current_source_url": current.source_url if current else "",
+        "historical_institution_count": len(historical),
+        "historical_countries": ";".join(sorted({step.country for step in historical if step.country})),
+        "institution_history": _json([asdict(step) for step in historical]),
+        "education_count": len(education),
+        "degrees": ";".join(entry.degree for entry in education if entry.degree),
+        "education_institutions": ";".join(dict.fromkeys(entry.institution for entry in education if entry.institution)),
+        "education_history": _json([asdict(entry) for entry in education]),
+        "score": "" if candidate.blocked else round(candidate.score, 6),
+        "blocked": candidate.blocked,
+        "coi_status": candidate.coi_status,
+        "coi_summary": verdict.summary() if verdict else CLEAR_WORDING,
+        "coi_rules": ";".join(finding.rule for finding in findings),
+        "coi_findings": _json([{"rule": finding.rule, "status": finding.status, "evidence": finding.evidence} for finding in findings]),
+        "evidence_count": len(candidate.evidence),
+        "best_similarity": max((item.similarity for item in candidate.evidence), default=0.0),
+        "evidence_year_from": min(years) if years else None,
+        "evidence_year_to": max(years) if years else None,
+        "evidence_titles": ";".join(item.title for item in candidate.evidence),
+        "evidence_dois": ";".join(item.doi for item in candidate.evidence if item.doi),
+        "evidence_urls": ";".join(item.url for item in candidate.evidence if item.url),
+        "evidence_json": _json([item.as_dict() for item in candidate.evidence]),
+        "component_topic": components.get("topic", ""),
+        "component_method": components.get("method", ""),
+        "component_recent_expertise": components.get("recent_expertise", ""),
+        "component_publication_evidence": components.get("publication_evidence", ""),
+        "component_geographic": components.get("geographic", ""),
+        "component_reviewer_history": components.get("reviewer_history", ""),
+        "email": row.email.email,
+        "email_found": row.email.found,
+        "email_source": row.email.source,
+        "email_confidence": row.email.confidence,
+        "email_source_url": row.email.source_url,
+        "notes": ";".join(candidate.notes),
+        "data_quality_warning": trajectory.quality_note(person),
+        "invitation_count": len(invitations),
+        "response_count": sum(bool(item["responded"]) for item in invitations),
+        "acceptance_count": sum(bool(item["accepted"]) for item in invitations),
+    }
+
+
+def render_csv(conn: sqlite3.Connection, rows: list[Row]) -> str:
     buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(COLUMNS)
+    writer = csv.DictWriter(buffer, fieldnames=EXPORT_COLUMNS, lineterminator="\n")
+    writer.writeheader()
     for row in rows:
-        writer.writerow(row.as_list())
+        writer.writerow(_export_record(conn, row))
     return buffer.getvalue()
 
 
@@ -325,10 +407,10 @@ def write_all(
         previous.unlink()
 
     shortlist = directory / "shortlist.md"
-    shortlist.write_text(render_markdown(rows, profile, policy_sources), encoding="utf-8")
+    shortlist.write_text(render_markdown(conn, rows, profile, policy_sources), encoding="utf-8")
 
     csv_path = directory / "shortlist.csv"
-    csv_path.write_text(render_csv(rows), encoding="utf-8")
+    csv_path.write_text(render_csv(conn, rows), encoding="utf-8-sig")
 
     reading = directory / "reading-list.md"
     reading.write_text(render_reading_list(rows), encoding="utf-8")

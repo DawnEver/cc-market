@@ -10,6 +10,13 @@ sources, and the header summarises career-country exposure. A person may count
 in several historical countries; this is career evidence, not nationality or
 ethnicity, and it never overwrites the current-affiliation country.
 
+`shortlist.md` and `shortlist.csv` use one canonical export schema and identical
+column order. The schema is deliberately comprehensive: identity identifiers
+and confidence, current and historical institutions, education, every score
+component, COI findings, publication evidence, contact provenance, quality
+warnings and invitation history. CSV scalar counts/scores remain numeric for
+sorting; complete nested histories are JSON cells so no evidence is discarded.
+
 Writes into `5-shortlist/`:
 
 - `shortlist.md` — the table to read

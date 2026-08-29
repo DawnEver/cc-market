@@ -165,7 +165,7 @@ def test_the_shortlist_shows_the_academic_position(tmp_path):
     candidate = rank_module.Candidate(person=person)
     rows = report_module.build_rows([candidate])
 
-    assert "Position" in report_module.COLUMNS
+    assert "position" in report_module.EXPORT_COLUMNS
     assert "Associate Professor" in rows[0].as_list()
 
 
