@@ -28,6 +28,7 @@ from academia.reviewer.profile import (
     build_profile,
     ingest_pdf,
     load_sanitized,
+    queries_fingerprint,
     write_sanitized,
 )
 from academia.reviewer.workspace import open_workspace, slugify
@@ -52,6 +53,32 @@ def _sources(names: list[str] | None):
 
 
 # --------------------------------------------------------------------- init
+
+
+def _parse_authors(value: str | None):
+    """Parse ``--authors "Name|Institution|CC; Other Name"``.
+
+    Only the name is required. Conflict screening uses these for exclusion
+    alone; they never influence who is recommended.
+    """
+    from academia.reviewer.geo import origin_countries_from
+    from academia.reviewer.profile import ManuscriptAuthor
+
+    authors = []
+    for entry in (value or "").split(";"):
+        parts = [p.strip() for p in entry.split("|")]
+        if not parts or not parts[0]:
+            continue
+        author = ManuscriptAuthor(
+            name=parts[0],
+            affiliation=parts[1] if len(parts) > 1 else "",
+            country=parts[2].upper() if len(parts) > 2 else "",
+        )
+        if not author.country and author.affiliation:
+            countries = origin_countries_from([author.affiliation], [])
+            author.country = countries[0] if countries else ""
+        authors.append(author)
+    return authors
 
 
 def run_init(args: argparse.Namespace) -> int:
@@ -85,6 +112,7 @@ def run_init(args: argparse.Namespace) -> int:
             keywords=[k.strip() for k in (args.keywords or "").split(",") if k.strip()],
             journal=args.journal or "",
             year=args.year or _now_year(),
+            authors=_parse_authors(args.authors),
         )
 
     if args.journal:
@@ -92,6 +120,8 @@ def run_init(args: argparse.Namespace) -> int:
     # A PDF carries no submission year, and a year of 0 would widen the
     # co-authorship window to everything ever published.
     sanitized.year = args.year or sanitized.year or _now_year()
+    if (declared := _parse_authors(getattr(args, "authors", None))):
+        sanitized.authors = declared
 
     write_sanitized(workspace, sanitized)
     state = workspace.load_state()
@@ -123,10 +153,32 @@ def run_init(args: argparse.Namespace) -> int:
 def run_profile(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
+
+    # --approve records that a human read the queries. It never regenerates
+    # them, or approving would discard the edits being approved.
+    if getattr(args, "approve", False):
+        profile = _load_profile(workspace)
+        state.approved_queries = queries_fingerprint(profile.queries)
+        state.mark("profile")
+        workspace.save_state(state)
+        payload = {
+            "approved": len(profile.queries),
+            "fingerprint": state.approved_queries,
+            "next": f"rev-disc search --slug {args.slug}",
+        }
+        if args.json:
+            log.emit(payload)
+        else:
+            log.info(f"{len(profile.queries)} queries approved")
+            log.info(f"  next: {payload['next']}")
+        return EXIT_OK
+
     sanitized = load_sanitized(workspace)
 
     profile = build_profile(sanitized, manuscript_id=state.ms_id, journal=state.journal)
     workspace.write_json(workspace.profile_path, profile.to_dict())
+    # Regenerating invalidates any previous approval.
+    state.approved_queries = ""
 
     with db.session() as conn:
         repo.create_manuscript(
@@ -162,7 +214,38 @@ def run_profile(args: argparse.Namespace) -> int:
         log.info(f"methods: {', '.join(profile.methods) or 'none detected'}")
         log.info(f"origin : {', '.join(profile.origin_countries) or 'unknown'}")
         log.info(f"{len(profile.queries)} queries written to {workspace.profile_path}")
+        for query in profile.queries:
+            log.detail(f"  {query.query_id}: {query.expression}")
+        log.warn(
+            "Review these before searching. Bad queries mean the right reviewers "
+            "never enter the pool, and nothing downstream can recover them.\n"
+            f"  Edit {workspace.profile_path} if needed, then:\n"
+            f"  rev-disc profile --slug {args.slug} --approve"
+        )
     return EXIT_OK
+
+
+def _require_approved_queries(slug: str, state, profile: Profile) -> None:
+    """Refuse to search until a human has read the queries.
+
+    This is the highest-leverage step in the workflow and the only one whose
+    mistakes are unrecoverable: a query set that misses a subfield produces a
+    shortlist that looks complete and is not. The approval is bound to a
+    fingerprint of the queries, so editing them afterwards re-arms the gate
+    rather than inheriting an approval of something else.
+    """
+    current = queries_fingerprint(profile.queries)
+    if not state.approved_queries:
+        raise UsageError(
+            f"the search queries have not been reviewed.\n"
+            f"  Read {slug}'s 1-manuscript/paper_profile.json, edit if needed, then:\n"
+            f"  rev-disc profile --slug {slug} --approve"
+        )
+    if state.approved_queries != current:
+        raise UsageError(
+            f"the queries have changed since they were approved.\n"
+            f"  Re-read them, then: rev-disc profile --slug {slug} --approve"
+        )
 
 
 def _load_profile(workspace) -> Profile:
@@ -176,6 +259,7 @@ def run_search(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
     profile = _load_profile(workspace)
+    _require_approved_queries(args.slug, state, profile)
 
     outcome = discover.run_search(
         _sources(args.source),
@@ -388,6 +472,15 @@ def run_coi(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
     profile = _load_profile(workspace)
+    if not profile.author_names:
+        raise UsageError(
+            "no submitting authors are declared, so every conflict rule that "
+            "matters would pass vacuously — including the one that stops a "
+            "submitting author from reviewing their own paper.\n"
+            f"  Add them to {workspace.sanitized_path} under 'authors', then:\n"
+            f"  rev-disc profile --slug {args.slug} && "
+            f"rev-disc profile --slug {args.slug} --approve"
+        )
     policy = load_policy(
         state.journal or profile.journal,
         exclusion_list=[n.strip() for n in (args.exclude or "").split(",") if n.strip()],

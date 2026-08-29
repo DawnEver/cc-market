@@ -97,11 +97,23 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     init.add_argument("--title", help="Use instead of a PDF when metadata is supplied by hand.")
     init.add_argument("--abstract", default="")
     init.add_argument("--keywords", default="", help="Comma-separated author keywords.")
+    init.add_argument(
+        "--authors",
+        default="",
+        help='Submitting authors, used for conflict screening only: '
+        '"Name|Institution|CC; Other Name". Read from the PDF when it has them.',
+    )
     init.add_argument("--journal", default="", help="Journal slug, e.g. tie, tii, tte.")
     init.add_argument("--year", type=int)
     _add_common(init)
 
     profile = sub.add_parser("profile", help="Derive topics, methods and search queries.")
+    profile.add_argument(
+        "--approve",
+        action="store_true",
+        help="Record that you have read the queries. Required before search; "
+        "editing them afterwards re-arms the gate.",
+    )
     profile.add_argument("--slug", required=True)
     _add_common(profile)
 

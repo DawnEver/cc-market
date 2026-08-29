@@ -89,9 +89,11 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
         "--keywords", "Torque ripple,Electric Motor Design",
         "--journal", "tie",
         "--year", "2026",
+        "--authors", "Alice Author|Tsinghua University|CN; Bob Second|Tsinghua University|CN",
     ) == 0
 
     assert run("profile", "--slug", "tie-demo") == 0
+    assert run("profile", "--slug", "tie-demo", "--approve") == 0
     assert run("search", "--slug", "tie-demo") == 0
     assert run("candidates", "--slug", "tie-demo") == 0
     assert run("coi", "--slug", "tie-demo") == 0
@@ -137,6 +139,7 @@ def test_a_manuscript_author_is_blocked_end_to_end(tmp_path, stub_sources, capsy
     sanitized_path.write_text(json.dumps(data), encoding="utf-8")
 
     run("profile", "--slug", "tie-demo")
+    run("profile", "--slug", "tie-demo", "--approve")
     run("search", "--slug", "tie-demo")
     run("candidates", "--slug", "tie-demo")
     capsys.readouterr()
@@ -165,6 +168,7 @@ def test_status_reports_the_next_stage(stub_sources, capsys):
 def test_an_unknown_journal_stops_the_run(stub_sources):
     run("init", "--slug", "tie-demo", "--title", "A study", "--journal", "nope")
     run("profile", "--slug", "tie-demo")
+    run("profile", "--slug", "tie-demo", "--approve")
     run("search", "--slug", "tie-demo")
     run("candidates", "--slug", "tie-demo")
     assert run("coi", "--slug", "tie-demo") == 2
@@ -184,6 +188,7 @@ def test_candidates_are_written_in_evidence_order(tmp_path, stub_sources):
         "--abstract", "Torque ripple suppression for PMSM traction drives.",
         "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026")
     run("profile", "--slug", "tie-demo")
+    run("profile", "--slug", "tie-demo", "--approve")
     run("search", "--slug", "tie-demo")
     run("candidates", "--slug", "tie-demo")
 
@@ -225,3 +230,61 @@ def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources)
         )
 
     assert not stale.exists()
+
+
+def _init_and_profile(slug):
+    run(
+        "init", "--slug", slug, "--journal", "tie", "--title", "Torque Ripple In Machines",
+        "--abstract", "A study of torque ripple.", "--keywords", "torque ripple,machines",
+    )
+    run("profile", "--slug", slug)
+
+
+def test_search_refuses_until_the_queries_have_been_reviewed(tmp_path, stub_sources, capsys):
+    """Bad queries mean the right reviewers never enter the pool, and nothing
+    downstream can recover them. It is the one step a human has to see."""
+    _init_and_profile("gate")
+
+    assert run("search", "--slug", "gate") == 2
+    assert "not been reviewed" in capsys.readouterr().err
+
+
+def test_search_proceeds_once_the_queries_are_approved(tmp_path, stub_sources):
+    _init_and_profile("gate2")
+    assert run("profile", "--slug", "gate2", "--approve") == 0
+    assert run("search", "--slug", "gate2", "--source", "openalex") == 0
+
+
+def test_editing_the_queries_after_approval_re_arms_the_gate(tmp_path, stub_sources, capsys):
+    """Approval binds to what was approved, not to the act of approving."""
+    from academia.reviewer.workspace import open_workspace
+
+    _init_and_profile("gate3")
+    run("profile", "--slug", "gate3", "--approve")
+
+    workspace = open_workspace("gate3")
+    profile = json.loads(workspace.profile_path.read_text(encoding="utf-8"))
+    profile["queries"].append(
+        {"query_id": "qX", "expression": '"something else"', "rationale": "added by hand"}
+    )
+    workspace.profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+    assert run("search", "--slug", "gate3") == 2
+    assert "changed since" in capsys.readouterr().err
+
+
+def test_coi_refuses_when_no_submitting_authors_are_declared(tmp_path, stub_sources, capsys):
+    """Every conflict rule that matters keys off the author list.
+
+    With it empty the engine reports "no detected conflict" for the submitting
+    authors themselves — a confident, wrong Clear on exactly the people who must
+    never review. Refusing is the only safe answer.
+    """
+    run("init", "--slug", "noauth", "--journal", "tie", "--title", "A Study Of Things")
+    run("profile", "--slug", "noauth")
+    run("profile", "--slug", "noauth", "--approve")
+    run("search", "--slug", "noauth", "--source", "openalex")
+    run("candidates", "--slug", "noauth")
+
+    assert run("coi", "--slug", "noauth") == 2
+    assert "submitting author" in capsys.readouterr().err

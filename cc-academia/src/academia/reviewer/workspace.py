@@ -52,6 +52,10 @@ class RunState:
     journal: str = ""
     ms_id: str = ""
     run_id: str = ""
+    #: Fingerprint of the query set an editor approved. Bound to the queries
+    #: themselves rather than to the act of approving, so editing them
+    #: afterwards re-arms the gate.
+    approved_queries: str = ""
     updated_at: str = ""
 
     def mark(self, stage: str, status: str = "done") -> None:
@@ -76,6 +80,7 @@ class RunState:
             "journal": self.journal,
             "ms_id": self.ms_id,
             "run_id": self.run_id,
+            "approved_queries": self.approved_queries,
             "stages": self.stages,
             "updated_at": self.updated_at,
         }
@@ -145,6 +150,7 @@ class Workspace:
             journal=data.get("journal", ""),
             ms_id=data.get("ms_id", ""),
             run_id=data.get("run_id", ""),
+            approved_queries=data.get("approved_queries", ""),
             updated_at=data.get("updated_at", ""),
         )
 

@@ -425,3 +425,98 @@ def test_page_fetcher_blames_the_publisher_not_the_doi_redirector():
     # Failures cannot be attributed to a publisher that was never reached, so
     # they are not counted against the redirector either.
     assert len(attempts) == 5
+
+
+# ------------------------------------------------------- submitting authors
+
+
+COVER_AUTHORS = """
+Regular Paper
+A Rotating Load Reconstruction Method to Predict Dominant
+Electromagnetic Noise Orders in Double-Rotor Single-Stator
+AFPM Machine
+Submission ID
+e94bacb1-3cd2-49d0-bd47-f260156eae60
+Submission Version
+Initial Submission
+PDF Generation
+19 Aug 2026 02:22:09 EST by Atypon ReX
+Authors
+Mr. Liming Liu
+Affiliations
+\ufffd the School of Electrical Engineering, Southeast
+University, Nanjing 210096, China
+Dr. Lingyun Shao
+Corresponding Author
+Submitting Author
+ORCiD
+https://orcid.org/0000-0002-6072-0849
+Affiliations
+\ufffd the College of Automation Engineering, Nanjing
+University of Aeronautics and Astronautics, Nanjing
+211106, China
+Prof. Wei Hua
+Affiliations
+\ufffd the School of Electrical Engineering, Southeast
+University, Nanjing 210096, China
+For consideration in IEEE Transactions on Transportation Electrification
+Page 1 of 12
+"""
+
+
+def test_cover_sheet_authors_are_extracted_with_affiliations():
+    """COI cannot work without the author list, and asking for it by hand is
+    exactly where it gets forgotten — leaving every conflict rule vacuous."""
+    authors = ingest_pdf.parse_cover_authors(COVER_AUTHORS)
+
+    assert [a.name for a in authors] == ["Liming Liu", "Lingyun Shao", "Wei Hua"]
+    assert "Southeast University" in authors[0].affiliation
+    assert "Nanjing University of Aeronautics" in authors[1].affiliation
+    assert authors[0].country == "CN"
+
+
+def test_the_corresponding_authors_orcid_is_captured():
+    authors = ingest_pdf.parse_cover_authors(COVER_AUTHORS)
+    assert authors[1].orcid == "0000-0002-6072-0849"
+    assert authors[0].orcid == ""
+
+
+def test_honorifics_are_stripped_from_author_names():
+    authors = ingest_pdf.parse_cover_authors(COVER_AUTHORS)
+    assert not any(a.name.startswith(("Mr.", "Dr.", "Prof.")) for a in authors)
+
+
+def test_a_page_with_no_author_block_yields_nothing():
+    assert ingest_pdf.parse_cover_authors("Just a title\n\nAbstract—text") == []
+
+
+BYLINE_PAGE = """
+A Rotating Load Reconstruction Method to Predict
+Dominant Electromagnetic Noise Orders
+
+Liming Liu, Lingyun Shao, Zhuoran Zhang, Zhongze Wu, and Wei Hua
+
+Abstract\ufffdIn double-rotor machines...
+"""
+
+
+def test_the_byline_is_read_when_there_is_no_cover_sheet():
+    """Not every submission arrives through an editorial system."""
+    authors = ingest_pdf.parse_byline_authors(BYLINE_PAGE)
+
+    assert [a.name for a in authors] == [
+        "Liming Liu",
+        "Lingyun Shao",
+        "Zhuoran Zhang",
+        "Zhongze Wu",
+        "Wei Hua",
+    ]
+
+
+def test_ieee_membership_grades_are_not_read_as_names():
+    authors = ingest_pdf.parse_byline_authors(
+        "Title Of The Paper Here\n\n"
+        "Grace Expert, Senior Member, IEEE, and Ravi Junior, Member, IEEE\n\n"
+        "Abstract\u2014text"
+    )
+    assert [a.name for a in authors] == ["Grace Expert", "Ravi Junior"]

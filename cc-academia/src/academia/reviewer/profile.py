@@ -36,6 +36,14 @@ class ManuscriptAuthor:
     orcid: str = ""
 
 
+def queries_fingerprint(queries) -> str:
+    """Stable digest of a query set, for binding an approval to it."""
+    import hashlib
+
+    joined = chr(10).join(sorted(q.expression.strip() for q in queries))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:32]
+
+
 @dataclass
 class Sanitized:
     """The only representation of a submission that may reach a model."""

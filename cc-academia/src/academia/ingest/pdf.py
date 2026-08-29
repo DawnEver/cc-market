@@ -233,6 +233,154 @@ def _read_title(lines: list[str]) -> str:
     return " ".join(joined.split()[:TITLE_WORD_LIMIT])
 
 
+
+# --------------------------------------------------------- submitting authors
+
+
+#: Honorifics an editorial system prepends to a name.
+_HONORIFIC = re.compile(r"^(mr|mrs|ms|miss|dr|prof|professor|assoc|assist)\.?\s+", re.IGNORECASE)
+
+#: Labels inside the cover sheet's author block that are not names.
+_COVER_LABELS = frozenset(
+    {
+        "authors",
+        "affiliations",
+        "affiliation",
+        "corresponding author",
+        "submitting author",
+        "orcid",
+        "orcid id",
+        "email",
+    }
+)
+
+#: The cover sheet's author block ends here.
+_COVER_END = re.compile(r"^(for consideration in|page \d+ of \d+|funding|abstract)", re.IGNORECASE)
+
+_ORCID_URL = re.compile(r"(\d{4}-\d{4}-\d{4}-\d{3}[\dX])", re.IGNORECASE)
+
+#: An IEEE membership grade, which sits in the byline looking exactly like a
+#: two-word name. Filtered per comma-separated part rather than stripped to the
+#: end of the line, or "…, Senior Member, IEEE, and Ravi Junior" loses Ravi.
+_IS_GRADE = re.compile(
+    r"^(life\s+)?(senior|student|graduate)?\s*(member|fellow)$|^ieee$", re.IGNORECASE
+)
+
+
+def _looks_like_a_name(line: str) -> bool:
+    """A person's name, not a section label or an address line."""
+    if not line or line.lower().rstrip(":") in _COVER_LABELS:
+        return False
+    if _ORCID_URL.search(line) or "@" in line or line.startswith(("http", "�")):
+        return False
+    stripped = _HONORIFIC.sub("", line).strip()
+    words = stripped.split()
+    if not 1 < len(words) <= 5:
+        return False
+    # Addresses and departments carry digits or institution words.
+    if any(ch.isdigit() for ch in stripped) or _AFFILIATION.search(stripped):
+        return False
+    return all(w[:1].isupper() or not w[:1].isalpha() for w in words)
+
+
+def _clean_name(line: str) -> str:
+    return " ".join(_HONORIFIC.sub("", line).split()).strip(" ,;")
+
+
+def parse_cover_authors(text: str):
+    """Read the author block an editorial system prints on its cover sheet.
+
+    The conflict rules are worthless without this list — every rule that matters
+    keys off it, and a run with no authors reports "no detected conflict" for the
+    submitting authors themselves. Asking for it by hand is precisely where it
+    gets forgotten, so it is parsed and then *verified* downstream rather than
+    trusted to a human step.
+    """
+    from academia.reviewer.geo import origin_countries_from
+    from academia.reviewer.profile import ManuscriptAuthor
+
+    lines = [line.strip() for line in (text or "").splitlines()]
+    try:
+        start = next(i for i, line in enumerate(lines) if line.lower() == "authors")
+    except StopIteration:
+        return []
+
+    authors: list[ManuscriptAuthor] = []
+    current: ManuscriptAuthor | None = None
+    collecting_affiliation = False
+
+    for line in lines[start + 1 :]:
+        if not line:
+            continue
+        if _COVER_END.match(line):
+            break
+        lowered = line.lower().rstrip(":")
+
+        if lowered in ("affiliations", "affiliation"):
+            collecting_affiliation = True
+            continue
+        if lowered in _COVER_LABELS:
+            collecting_affiliation = False
+            continue
+        if current is not None and (match := _ORCID_URL.search(line)):
+            current.orcid = match.group(1)
+            continue
+        if _looks_like_a_name(line):
+            current = ManuscriptAuthor(name=_clean_name(line))
+            authors.append(current)
+            collecting_affiliation = False
+            continue
+        if collecting_affiliation and current is not None:
+            # The cover marks each affiliation with a bullet that survives
+            # extraction as whichever glyph the font mapped it to.
+            piece = re.sub(r"^[^\w(]+", "", line).strip()
+            current.affiliation = f"{current.affiliation} {piece}".strip()
+
+    for author in authors:
+        countries = origin_countries_from([author.affiliation], [])
+        author.country = countries[0] if countries else ""
+    return authors
+
+
+def parse_byline_authors(text: str):
+    """Read the author line printed under the title, for PDFs with no cover.
+
+    Names only: the affiliation footnote is laid out too many ways to parse
+    reliably, and a name alone is enough for the rule that matters most —
+    never recommending one of the submission's own authors.
+    """
+    from academia.reviewer.profile import ManuscriptAuthor
+
+    lines = [line.strip() for line in (text or "").splitlines()]
+    title = _read_title(lines)
+    if not title:
+        return []
+    try:
+        index = next(i for i, line in enumerate(lines) if line and line in title)
+    except StopIteration:
+        return []
+
+    for line in lines[index + 1 :]:
+        if not line:
+            continue
+        if _ABSTRACT_START.match(line):
+            break
+        parts = [p.strip(" ,;") for p in re.split(r",| and ", line) if p.strip(" ,;")]
+        names = [
+            _clean_name(p)
+            for p in parts
+            if not _IS_GRADE.match(p) and _looks_like_a_name(p)
+        ]
+        if len(names) >= 2:
+            return [ManuscriptAuthor(name=n) for n in names]
+    return []
+
+
+def read_authors(text: str):
+    """Submitting authors from whichever layout the PDF uses."""
+    return parse_cover_authors(text) or parse_byline_authors(text)
+
+
 def parse_front_matter(text: str) -> dict[str, object]:
     """Pull title, abstract, keywords and DOI out of first-page text.
 
@@ -277,7 +425,11 @@ def extract_front_matter(pdf: Path):
     from academia.reviewer.profile import Sanitized
 
     pages = _page_texts(pdf, FRONT_MATTER_SCAN_PAGES)
-    parsed = parse_front_matter(pages[select_front_matter_page(pages)] if pages else "")
+    front_page = pages[select_front_matter_page(pages)] if pages else ""
+    parsed = parse_front_matter(front_page)
+    # The cover sheet carries a structured author block; the paper's own page
+    # carries a byline. Try both, cover first — it has affiliations.
+    authors = read_authors(pages[0] if pages else "") or read_authors(front_page)
     title = as_text(parsed["title"])
     abstract = as_text(parsed["abstract"])
 
@@ -292,8 +444,14 @@ def extract_front_matter(pdf: Path):
         )
         abstract = " ".join(abstract.split()[:ABSTRACT_WORD_LIMIT])
 
+    if not authors:
+        log.warn(
+            "no submitting authors could be read from the PDF. Conflict screening "
+            "needs them: add them to 1-manuscript/sanitized.json before running coi."
+        )
     return Sanitized(
         title=title,
         abstract=abstract,
         keywords=list(parsed["keywords"]),  # type: ignore[arg-type]
+        authors=authors,
     )
