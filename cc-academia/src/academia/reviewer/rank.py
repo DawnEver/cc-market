@@ -39,6 +39,11 @@ class Evidence:
     position: str
     position_weight: float
     similarity: float
+    #: Where the paper can actually be read. A title and a score are not enough
+    #: to open one with, and the evidence is what an editor judges a candidate
+    #: on. Empty when no source gave a resolvable location — never invented.
+    url: str = ""
+    doi: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +53,8 @@ class Evidence:
             "position": self.position,
             "position_weight": self.position_weight,
             "similarity": round(self.similarity, 3),
+            "url": self.url,
+            "doi": self.doi,
         }
 
 

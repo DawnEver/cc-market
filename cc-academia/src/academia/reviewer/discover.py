@@ -222,6 +222,23 @@ def relevance(
 # -------------------------------------------------------------- candidates
 
 
+def _readable_url(row) -> str:
+    """Where a paper can be opened, preferring what a human can actually read.
+
+    The OpenAlex work id is an API record, not a paper, so it is never used
+    here. An open-access landing page is best; a DOI resolves to whatever the
+    publisher offers. Nothing is constructed when neither exists.
+    """
+    # `in` on a sqlite3.Row tests its *values*, not its columns, so the
+    # .keys() call is load-bearing however much SIM118 dislikes it.
+    columns = row.keys()
+    landing = (row["landing_page_url"] or "").strip() if "landing_page_url" in columns else ""
+    if landing:
+        return landing
+    doi = (row["doi"] or "").strip()
+    return f"https://doi.org/{doi}" if doi else ""
+
+
 def build_candidates(
     conn: sqlite3.Connection,
     paper_scores: dict[str, float],
@@ -251,6 +268,8 @@ def build_candidates(
                     paper_id=paper_id,
                     title=row["title"],
                     year=row["year"],
+                    url=_readable_url(row),
+                    doi=row["doi"] or "",
                     position=authorship["position"] or "middle",
                     position_weight=authorship["position_weight"],
                     similarity=similarity,

@@ -71,13 +71,19 @@ class Row:
         return "blocked" if self.candidate.blocked else f"{self.candidate.score:.2f}"
 
     @property
+    def dossier_name(self) -> str:
+        return f"{self.rank:02d}-{self.candidate.person.person_id}.md"
+
+    @property
     def evidence_text(self) -> str:
         count = len(self.candidate.evidence)
         if not count:
             return "none"
         years = [e.year for e in self.candidate.evidence if e.year]
         span = f"{min(years)}–{max(years)}" if years else "undated"
-        return f"{count} related papers ({span})"
+        # Linked, because the papers are what an editor judges a candidate on
+        # and the dossier is where they are listed with their own links.
+        return f"[{count} related papers ({span})](dossiers/{self.dossier_name})"
 
     @property
     def coi_text(self) -> str:
@@ -134,6 +140,39 @@ def render_markdown(rows: list[Row], profile: Profile, policy_sources: list[str]
     out.append("Blocked candidates are listed rather than hidden, so it is visible that")
     out.append("an obvious name was considered and why it was set aside.")
     return "\n".join(out) + "\n"
+
+
+def render_reading_list(rows: list[Row]) -> str:
+    """The papers behind the shortlist, most relevant first.
+
+    Assembled once rather than left scattered across dossiers: an editor
+    weighing a broad candidate list reads the literature, and the same paper
+    frequently qualifies several candidates.
+    """
+    best: dict[str, list] = {}
+    for row in rows:
+        for item in row.candidate.evidence:
+            name = row.candidate.person.display_name
+            entry = best.get(item.paper_id)
+            if entry is None:
+                best[item.paper_id] = [item.similarity, item.title, item.year, item.url, [name]]
+            else:
+                entry[0] = max(entry[0], item.similarity)
+                if name not in entry[4]:
+                    entry[4].append(name)
+
+    out = ["# Reading list — the work behind the shortlist", ""]
+    out.append("Papers that qualified one or more candidates, most relevant first.")
+    out.append("A paper that qualifies several people is listed once.")
+    out.append("")
+    for _score, title, year, url, names in sorted(best.values(), key=lambda v: -v[0]):
+        heading = f"[{title}]({url})" if url else f"{title} (no link available)"
+        out.append(f"- **{heading}** — {year or 'n.d.'}")
+        out.append(f"  - qualifies: {', '.join(sorted(names))}")
+    if not best:
+        out.append("- none recorded")
+    out.append("")
+    return chr(10).join(out)
 
 
 def render_csv(rows: list[Row]) -> str:
@@ -207,8 +246,9 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     out.append("## Evidence")
     out.append("")
     for item in row.candidate.evidence:
+        title = f"[{item.title}]({item.url})" if item.url else item.title
         out.append(
-            f"- [{item.year or 'n.d.'}] {item.title} "
+            f"- [{item.year or 'n.d.'}] {title} "
             f"({item.position} author, similarity {item.similarity:.2f})"
         )
     if not row.candidate.evidence:
@@ -269,8 +309,16 @@ def write_all(
     csv_path = directory / "shortlist.csv"
     csv_path.write_text(render_csv(rows), encoding="utf-8")
 
+    reading = directory / "reading-list.md"
+    reading.write_text(render_reading_list(rows), encoding="utf-8")
+
     for row in rows:
         name = f"{row.rank:02d}-{row.candidate.person.person_id}.md"
         (dossier_dir / name).write_text(render_dossier(conn, row), encoding="utf-8")
 
-    return {"shortlist": shortlist, "csv": csv_path, "dossiers": dossier_dir}
+    return {
+        "shortlist": shortlist,
+        "csv": csv_path,
+        "reading_list": reading,
+        "dossiers": dossier_dir,
+    }

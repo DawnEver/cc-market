@@ -584,6 +584,8 @@ def run_report(args: argparse.Namespace) -> int:
                     position=e["position"],
                     position_weight=e["position_weight"],
                     similarity=e["similarity"],
+                    url=e.get("url", ""),
+                    doi=e.get("doi", ""),
                 )
                 for e in row["evidence"]
             ]

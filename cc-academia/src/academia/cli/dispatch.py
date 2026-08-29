@@ -168,7 +168,13 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
 
     report = sub.add_parser("report", help="Rank and render the shortlist.")
     report.add_argument("--slug", required=True)
-    report.add_argument("--top", type=int, default=25, help="0 for the full list.")
+    report.add_argument(
+        "--top",
+        type=int,
+        default=0,
+        help="Cap the invitable list. Default 0 = everyone, because the "
+        "editor picks from a broad slate rather than being handed a few.",
+    )
     _add_common(report)
 
     contacts = sub.add_parser(
