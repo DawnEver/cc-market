@@ -167,6 +167,7 @@ class Paper:
     source_id: str = ""
     url: str = ""
     pdf_url: str = ""
+    landing_page_url: str = ""
     authors: list[Author] = field(default_factory=list)
     terms: list[tuple[str, str, float | None]] = field(default_factory=list)
     referenced_ids: list[str] = field(default_factory=list)
@@ -204,6 +205,8 @@ class Paper:
             "source": self.source,
             "source_id": self.source_id or None,
             "url": self.url or None,
+            "pdf_url": self.pdf_url or None,
+            "landing_page_url": self.landing_page_url or None,
             "first_seen": now,
             "last_seen": now,
         }
@@ -230,6 +233,56 @@ class Person:
     affiliations: list[Affiliation] = field(default_factory=list)
     education: list[Education] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
+    stated_rank: str = ""
+    rank_source: str = ""
+
+    @property
+    def rank(self) -> str:
+        """Most senior academic rank stated anywhere in the career history.
+
+        A career record holds every post someone ever held and the doctorate is
+        usually the oldest entry, so taking the most senior avoids reporting a
+        professor as a PhD student. Never inferred from output: no publication
+        count promotes anybody.
+        """
+        from academia.reviewer.seniority import best_rank, rank_from_title
+
+        # A supplied rank was read off a page by someone and carries its source.
+        # It is authoritative, so it wins outright rather than competing on
+        # seniority — otherwise a PhD candidate whose only ORCID employment is
+        # an industry post gets reported as an engineer.
+        if self.stated_rank:
+            return self.stated_rank
+        academic = [a for a in self._titled_affiliations if a.employer_rank == 0]
+        considered = academic or self._titled_affiliations
+        return best_rank([rank_from_title(a.role) for a in considered])
+
+    @property
+    def _titled_affiliations(self) -> list[Affiliation]:
+        """Affiliations that state a role, academic employers first.
+
+        Many academics also hold a post at a spin-off, and ORCID lists both.
+        Reading the company title would report an associate professor as an
+        engineer, which is the opposite of what an editor needs.
+        """
+        from academia.reviewer.seniority import clean_title
+
+        titled = [a for a in self.affiliations if clean_title(a.role)]
+        return sorted(titled, key=lambda a: (a.employer_rank, not a.is_current))
+
+    @property
+    def stated_title(self) -> str:
+        """The raw job title a source gave, whether or not it maps to a rank.
+
+        Reporting "Research Assistant" as unknown throws away a real answer.
+        Unknown should mean nobody stated anything.
+        """
+        from academia.reviewer.seniority import clean_title
+
+        for affiliation in self._titled_affiliations:
+            if (title := clean_title(affiliation.role)):
+                return title
+        return ""
 
     @property
     def current_affiliation(self) -> Affiliation | None:

@@ -56,12 +56,33 @@ def _request(
     timeout: int = 30,
 ) -> tuple[str, str]:
     """Perform one request. Returns ``(body_text, content_type)``."""
+    return _request_resolved(
+        url, source, method=method, body=body, headers=headers, timeout=timeout
+    )[:2]
+
+
+def _request_resolved(
+    url: str,
+    source: str,
+    *,
+    method: str = "GET",
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[str, str, str]:
+    """As ``_request``, but also reports the URL actually served.
+
+    Almost every open-access landing page is a ``doi.org`` link that redirects
+    to a publisher. Callers that track which hosts are failing need the host
+    that failed, not the redirector every one of them shares.
+    """
     request = Request(url, data=body, method=method, headers=headers or {})
     try:
         with urlopen(request, timeout=timeout) as response:
             return (
                 response.read().decode("utf-8", errors="replace"),
                 response.headers.get("content-type", ""),
+                getattr(response, "url", url) or url,
             )
     except HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")
@@ -95,6 +116,37 @@ def get_json(
     merged.update(headers or {})
     text, _ = _request(url, source, headers=merged, timeout=timeout)
     return _parse_json(text, source)
+
+
+def get_text(
+    url: str,
+    source: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> str:
+    """Fetch a page as text.
+
+    Separate from ``get_json`` because a public homepage is HTML and is read by
+    a regex, not a parser. Sends a browser user agent: several university CMSs
+    answer an unrecognised agent with a consent interstitial containing no
+    contact details.
+    """
+    return get_text_resolved(url, source, headers=headers, timeout=timeout)[0]
+
+
+def get_text_resolved(
+    url: str,
+    source: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[str, str]:
+    """Fetch a page as text, reporting ``(text, final_url)`` after redirects."""
+    merged = {"User-Agent": BROWSER_USER_AGENT, "Accept": "text/html,*/*"}
+    merged.update(headers or {})
+    text, _, final = _request_resolved(url, source, headers=merged, timeout=timeout)
+    return text, final
 
 
 def post_json(

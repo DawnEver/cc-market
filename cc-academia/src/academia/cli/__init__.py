@@ -9,6 +9,6 @@ Three console scripts share one dispatcher:
 
 from __future__ import annotations
 
-from academia.cli.dispatch import lit_review_main, main, rev_disc_main
+from academia.cli.dispatch import lit_review_main, main, ms_review_main, rev_disc_main
 
-__all__ = ["lit_review_main", "main", "rev_disc_main"]
+__all__ = ["lit_review_main", "main", "ms_review_main", "rev_disc_main"]

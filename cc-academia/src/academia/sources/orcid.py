@@ -12,6 +12,7 @@ private and only surface when the researcher published them themselves.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from academia.core.errors import SourceError
@@ -121,6 +122,39 @@ def institutions_from(payload: dict[str, Any], key: str) -> list[Institution]:
     return list(seen.values())
 
 
+@dataclass
+class Contact:
+    """What a public ORCID record says about how to reach someone.
+
+    ``urls`` are the researcher's own "researcher-urls" entries — pages they
+    chose to publish, which is what makes fetching one defensible where a
+    general web crawl would not be.
+    """
+
+    emails: list[str] = field(default_factory=list)
+    urls: list[str] = field(default_factory=list)
+
+
+def parse_contact(email_payload: dict[str, Any], url_payload: dict[str, Any]) -> Contact:
+    """Public addresses and self-published URLs, ignoring everything else.
+
+    ORCID defaults an address to private and reports its visibility alongside.
+    Anything not explicitly ``PUBLIC`` is not ours to use, however visible the
+    API happens to make it.
+    """
+    emails = [
+        as_text(entry.get("email"))
+        for entry in (email_payload or {}).get("email") or []
+        if as_text(entry.get("visibility")).upper() == "PUBLIC" and as_text(entry.get("email"))
+    ]
+    urls = []
+    for entry in (url_payload or {}).get("researcher-url") or []:
+        url = as_text((entry.get("url") or {}).get("value"))
+        if url.startswith(("http://", "https://")):
+            urls.append(url)
+    return Contact(emails=list(dict.fromkeys(emails)), urls=list(dict.fromkeys(urls)))
+
+
 class Orcid(AuthorSource):
     request_delay = 0.15
 
@@ -158,6 +192,24 @@ class Orcid(AuthorSource):
         person.education = parse_educations(educations, orcid)
         person.affiliations = parse_employments(employments, orcid)
         return person
+
+    def get_contact(self, author_id: str, *, timeout: int = 30) -> Contact:
+        """Public email addresses and self-published URLs for one researcher.
+
+        An empty result is the common case and not an error — most records keep
+        addresses private, which is exactly why nothing here is ever inferred.
+        """
+        orcid = normalize_orcid(author_id)
+        if not orcid:
+            return Contact()
+        try:
+            emails = self._fetch(orcid, "email", timeout)
+            urls = self._fetch(orcid, "researcher-urls", timeout)
+        except SourceError as error:
+            if error.details.get("status") in (404, 409):
+                return Contact()
+            raise
+        return parse_contact(emails, urls)
 
     def find_author_by_orcid(self, orcid: str, *, timeout: int = 30) -> Person | None:
         return self.get_author(orcid, timeout=timeout)

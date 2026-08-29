@@ -61,3 +61,30 @@ def test_polite_user_agent_includes_contact(monkeypatch):
     assert "me@example.com" in http.polite_user_agent()
     monkeypatch.setenv("ACADEMIA_CONTACT", "")
     assert http.polite_user_agent() == "cc-academia/0.1"
+
+
+def test_get_text_reports_the_host_it_was_redirected_to(monkeypatch):
+    """Nearly every landing page is a doi.org link that redirects to a publisher.
+
+    Attributing a failure to doi.org rather than to the publisher lets two dead
+    publishers disable every remaining lookup in the run.
+    """
+
+    class Response:
+        headers = {"content-type": "text/html"}  # noqa: RUF012
+        url = "https://www.mdpi.com/article/1"
+
+        def read(self):
+            return b"<html>ok</html>"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(http, "urlopen", lambda *a, **k: Response())
+    text, final = http.get_text_resolved("https://doi.org/10.3390/en17051089", "probe")
+
+    assert text == "<html>ok</html>"
+    assert final == "https://www.mdpi.com/article/1"

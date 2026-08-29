@@ -129,6 +129,24 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         help="Cap the number enriched (0 = all, the default). Affiliations feed "
         "the conflict rules, so a cap can leave top candidates unscreened.",
     )
+    enrich.add_argument(
+        "--no-email",
+        action="store_true",
+        help="Skip contact discovery. Nothing is fetched from outside the APIs.",
+    )
+    enrich.add_argument(
+        "--homepage",
+        action="append",
+        metavar="PERSON_ID=URL",
+        help="A page to read for one candidate's address, when ORCID lists none. "
+        "Repeatable.",
+    )
+    enrich.add_argument(
+        "--homepages",
+        metavar="FILE",
+        help="JSON answers to a `rev-disc contacts` worklist: person_id to a "
+        "URL, a list of URLs, or {urls, rank, rank_source}.",
+    )
     _add_common(enrich)
 
     coi = sub.add_parser("coi", help="Run the conflict rules. No model is involved.")
@@ -140,6 +158,12 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     report.add_argument("--slug", required=True)
     report.add_argument("--top", type=int, default=25, help="0 for the full list.")
     _add_common(report)
+
+    contacts = sub.add_parser(
+        "contacts", help="List candidates still needing an address looked up."
+    )
+    contacts.add_argument("--slug", required=True)
+    _add_common(contacts)
 
     status = sub.add_parser("status", help="Show run state, or list workspaces.")
     status.add_argument("--slug")
@@ -159,6 +183,7 @@ def _rev_disc_handlers() -> dict[str, Handler]:
         "enrich": rev_disc.run_enrich,
         "coi": rev_disc.run_coi,
         "report": rev_disc.run_report,
+        "contacts": rev_disc.run_contacts,
         "status": rev_disc.run_status,
     }
 
@@ -173,6 +198,12 @@ def lit_review_main(argv: list[str] | None = None) -> int:
     return _dispatch(
         lit_review.build_parser(), lit_review.handlers(), argv or sys.argv[1:]
     )
+
+
+def ms_review_main(argv: list[str] | None = None) -> int:
+    from academia.cli import ms_review
+
+    return _dispatch(ms_review.build_parser(), ms_review.handlers(), argv or sys.argv[1:])
 
 
 def rev_disc_main(argv: list[str] | None = None) -> int:

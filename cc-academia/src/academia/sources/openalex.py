@@ -111,6 +111,10 @@ def to_paper(record: dict[str, Any]) -> Paper:
         citation_count=optional_int(record.get("cited_by_count")),
         url=as_text(record.get("id")),
         pdf_url=as_text(best_oa.get("pdf_url")),
+        # Publishers answer a direct PDF request with 403 far more often than
+        # they block the landing page, and the landing page is where the
+        # corresponding-author address is rendered as HTML.
+        landing_page_url=as_text(best_oa.get("landing_page_url")),
     )
     paper.authors = _authors_from(record)
     paper.terms = _terms_from(record)
