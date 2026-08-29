@@ -2,23 +2,26 @@
 
 Read this once; every playbook references it rather than repeating it.
 
+## Resolve the plugin root
+
+The loaded workflow lives at `<plugin-root>/skills/<skill>/SKILL.md`; derive
+`<plugin-root>` from that path and substitute its absolute value below. This is
+skill-relative resource resolution, not configuration. Do not read or create a
+plugin-root environment variable. Quote the path because installations may
+contain spaces.
+
 ## The invocation
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review <command> [flags]
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc  <command> [flags]
-uv run --project "${CLAUDE_PLUGIN_ROOT}" academia  <command> [flags]
+uv run --project "<plugin-root>" lit-review <command> [flags]
+uv run --project "<plugin-root>" rev-disc  <command> [flags]
+uv run --project "<plugin-root>" academia  <command> [flags]
 ```
-
-`${CLAUDE_PLUGIN_ROOT}` is injected by **both** Claude Code and Codex — only the
-path underneath differs — so playbooks never branch on the host for this.
 
 Why `--project` rather than a bare `lit-review`: the playbook and the code it
 calls are in the same tree and therefore the same version. Nothing has to be
 installed, checked or pinned. This is the reason there is no lock file or
 version check anywhere in this plugin.
-
-On Windows PowerShell the variable is `$env:CLAUDE_PLUGIN_ROOT`.
 
 ## First run
 
@@ -29,7 +32,7 @@ is instant. If the environment ends up on a synced folder, set
 ## Checking the installation
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" academia doctor
+uv run --project "<plugin-root>" academia doctor
 ```
 
 Reports the active plugin root, which config directory is in effect, whether a
@@ -64,5 +67,5 @@ Some commands need dependencies that are not installed by default:
 | `zotero` | the Zotero bridge |
 | `ai` | deep-read and synthesis through litellm |
 
-Install with `uv sync --project "${CLAUDE_PLUGIN_ROOT}" --extra <name>`. If a
+Install with `uv sync --project "<plugin-root>" --extra <name>`. If a
 command needs one, it says so by name rather than failing obscurely.

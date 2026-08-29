@@ -3,7 +3,7 @@
 Fill in where each candidate works, how they got there, and how to reach them.
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc enrich --slug <slug> --limit 40 --json
+uv run --project "<plugin-root>" rev-disc enrich --slug <slug> --limit 40 --json
 ```
 
 Background and contact details are one step because they share a source. ORCID
@@ -23,7 +23,7 @@ stops touching a host after two consecutive failures rather than retrying.
 When ORCID lists no URL but you can see a staff page, supply it:
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc enrich --slug <slug>   --homepage <person_id>=https://www.example.edu/staff/name
+uv run --project "<plugin-root>" rev-disc enrich --slug <slug>   --homepage <person_id>=https://www.example.edu/staff/name
 ```
 
 `--no-email` skips contact discovery entirely; only the scholarly APIs are then
@@ -47,7 +47,7 @@ So the rest needs a search — which the CLI cannot do and has no business
 guessing at. **That step is yours.** Run:
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc contacts --slug <slug> --json
+uv run --project "<plugin-root>" rev-disc contacts --slug <slug> --json
 ```
 
 It returns every candidate with something still missing — `needs` is `email`,
@@ -70,7 +70,7 @@ unsourced claim about someone's job has no place in a dossier. An unrecognised
 rank stops the run rather than being silently dropped.
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc enrich --slug <slug>   --homepages homepages.json --json
+uv run --project "<plugin-root>" rev-disc enrich --slug <slug>   --homepages homepages.json --json
 ```
 
 **Give it the URL, never the address.** Even if the search snippet shows the

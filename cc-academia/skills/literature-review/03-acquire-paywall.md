@@ -71,7 +71,7 @@ Paper needs PDF
 - Direct PDF URL pattern: `{article_url}/pdfft?download=true`
 - Issue: serves CAPTCHA if headless; real Chrome + existing session works
 - Issue: `user_data_dir=""` creates empty profile without cookies
-- Fix: use named profile with saved login → `uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review login --profile elsevier`
+- Fix: use named profile with saved login → `uv run --project "<plugin-root>" lit-review login --profile elsevier`
 
 ### SciTePress
 - Papers listed at: `https://www.scitepress.org/Papers/{year}/{paper_id}/`

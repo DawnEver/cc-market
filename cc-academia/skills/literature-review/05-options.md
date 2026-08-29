@@ -18,23 +18,23 @@
 
 **报告/卡片一律用 ShortRef（作者+年份），禁用 hash。**
 
-- 唯一引用源 = 各 workspace 的 `reading/papers_registry.md`（模板见 `${CLAUDE_PLUGIN_ROOT}/configs/templates/_papers_registry_template.md`）。
+- 唯一引用源 = 各 workspace 的 `reading/papers_registry.md`（模板见 `<plugin-root>/configs/templates/_papers_registry_template.md`）。
 - 正文引用：`[Author et al. YYYY]` 或 `Author (YYYY)`。
 - 卡片文件名 = `<author-lastname>-<year>_card.md`（多名作者取首个；同作者同年加后缀）。
 - `candidate_id`(hash) 只用于 CLI 操作，绝不进入叙述性报告。
-- card 模板见 `${CLAUDE_PLUGIN_ROOT}/configs/templates/_card_template.md`（skill 层，跨 topic 共享）。
+- card 模板见 `<plugin-root>/configs/templates/_card_template.md`（skill 层，跨 topic 共享）。
 
 ## Available Options
 
 ### Deep-Read Papers
 
 用 fabric(deepseek) 对论文做深度阅读 → 生成 paper card：
-1. 复制 `${CLAUDE_PLUGIN_ROOT}/configs/templates/_card_template.md` 为 `reading/<lastname>-<year>_card.md`
+1. 复制 `<plugin-root>/configs/templates/_card_template.md` 为 `reading/<lastname>-<year>_card.md`
 2. **先询问用户确认模型**（默认 deepseek-v4-flash）
 3. 用 `fabric__call`（provider=deepseek）读分解后的 `ingest/<id>/1-paper-text/` markdown，产出结构化 card
 4. 追加对应行到 `reading/papers_registry.md`
 
-（`uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review read` 命令依赖 litellm，已被 fabric 机制取代，不再使用。）
+（`uv run --project "<plugin-root>" lit-review read` 命令依赖 litellm，已被 fabric 机制取代，不再使用。）
 
 ### Cross-Paper Synthesis
 
@@ -43,20 +43,20 @@
 ### Export
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review export --topic <slug> [--format markdown|csv|bibtex|json] [--paper <id1> ...]
+uv run --project "<plugin-root>" lit-review export --topic <slug> [--format markdown|csv|bibtex|json] [--paper <id1> ...]
 ```
 Exports paper cards in the requested format to `export/`.
 
 ### Statistics & Plots
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review stats --topic <slug> [--plots]
+uv run --project "<plugin-root>" lit-review stats --topic <slug> [--plots]
 ```
 Summary statistics (candidates, screening breakdown, downloads, decomposed, deep-read). With `--plots`, generates year/venue distribution charts.
 
 ### Zotero Sync
 
-**Capability gate:** Zotero is optional. Before offering or executing an MCP-only Zotero action, check whether the current host exposes the required Zotero tools. A project `.mcp.json` being present does not prove that Codex loaded it. If unavailable (commonly in Codex), say clearly that Zotero sync is disabled in this session, keep the local registry/export workflow usable, and offer `uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review export --format bibtex|json` as the non-destructive fallback. Never fabricate a successful sync. CLI `zotero-import`/`zotero-maintain` may still be used only when their configured backend is independently available.
+**Capability gate:** Zotero is optional. Before offering or executing an MCP-only Zotero action, check whether the current host exposes the required Zotero tools. A project `.mcp.json` being present does not prove that Codex loaded it. If unavailable (commonly in Codex), say clearly that Zotero sync is disabled in this session, keep the local registry/export workflow usable, and offer `uv run --project "<plugin-root>" lit-review export --format bibtex|json` as the non-destructive fallback. Never fabricate a successful sync. CLI `zotero-import`/`zotero-maintain` may still be used only when their configured backend is independently available.
 
 All papers → ONE shared Zotero collection (from `workspace.toml` → `[zotero]`, resolved by
 `collection_key`, names are not unique). Workspace identity = `zotero_registry.jsonl` +
@@ -65,9 +65,9 @@ workspace tag. Never create per-topic collections.
 **1. 确认范围再导入。** 用户说"导入哪几篇"就导入哪几篇。先 dry-run 展示计划,核对范围后执行:
 
 ```
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review zotero-import --topic <slug> --dry-run                                          # show what would import
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review zotero-import --topic <slug> --candidate-id <id1> --candidate-id <id2>          # per-paper (recommended for "just these")
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review zotero-import --topic <slug>                                                    # full workspace, only on explicit request
+uv run --project "<plugin-root>" lit-review zotero-import --topic <slug> --dry-run                                          # show what would import
+uv run --project "<plugin-root>" lit-review zotero-import --topic <slug> --candidate-id <id1> --candidate-id <id2>          # per-paper (recommended for "just these")
+uv run --project "<plugin-root>" lit-review zotero-import --topic <slug>                                                    # full workspace, only on explicit request
 ```
 
 去重:DOI → title-key(three-pass);DOI-bearing groups CrossRef-enriched at creation。
@@ -76,15 +76,15 @@ Interactive single paper: `zotero_add_from_file` (MCP), collection + workspace t
 **2. Import 后**:`zotero-maintain`(registry-scoped enrich + **mirror**)+ re-embed:
 
 ```
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review zotero-import --topic <slug> --candidate-id <id1> ...   # (or full)
-uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review zotero-maintain --topic <slug>                          # enrich + mirror; --all for whole collection
+uv run --project "<plugin-root>" lit-review zotero-import --topic <slug> --candidate-id <id1> ...   # (or full)
+uv run --project "<plugin-root>" lit-review zotero-maintain --topic <slug>                          # enrich + mirror; --all for whole collection
 zotero_update_search_database (MCP)                                # re-embed for zotero_semantic_search
 ```
 
 **3. PDF unavailable(桌面 "File Not Found" / 附件打不开)**:
 - 症状:item 有 `imported_file` attachment 记录,但本地 `~/Zotero/storage/<key>/` 缺文件。
 - 根因:批量 import 上传后未拉回本地。
-- 修复:`uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review zotero-maintain --topic <slug>` 的 **mirror** 下载到 storage(md5 校验)。
+- 修复:`uv run --project "<plugin-root>" lit-review zotero-maintain --topic <slug>` 的 **mirror** 下载到 storage(md5 校验)。
   注意目录 key = attachment 的 key(非父 item key)。**不要手动复制 PDF 到 storage**。
 
 ### Custom

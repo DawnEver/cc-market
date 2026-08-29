@@ -1,7 +1,6 @@
 ---
 name: literature-review
 description: Conduct a systematic literature review — define scope, search across providers, screen abstracts, acquire PDFs, ingest, and choose from deep-read/synthesis/Zotero/bibliography options.
-argument-hint: <topic-name>
 allowed-tools: "Read,Write,Bash,Glob,Grep,Agent,Skill,WebFetch,WebSearch"
 ---
 
@@ -16,10 +15,10 @@ Running the CLI: `_shared/running-the-cli.md`. Host differences:
 
 | Step | File | CLI | What happens |
 |------|------|-----|--------------|
-| 01 | `01-define.md` | `uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review init` | Define topic & scope → `workspace.toml` + `research_brief.toml` |
-| 02 | `02-search.md` | `uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review search` | AI queries → multi-provider search → dedupe → screening packet |
-| 03 | `03-acquire.md` | `uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review acquire` | Script-first batch PDF acquisition — auto walks http→browser→researchgate ladder, run in background |
-| 04 | `04-ingest.md` | `uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review ingest` | On-demand decomposition with cache reuse |
+| 01 | `01-define.md` | `uv run --project "<plugin-root>" lit-review init` | Define topic & scope → `workspace.toml` + `research_brief.toml` |
+| 02 | `02-search.md` | `uv run --project "<plugin-root>" lit-review search` | AI queries → multi-provider search → dedupe → screening packet |
+| 03 | `03-acquire.md` | `uv run --project "<plugin-root>" lit-review acquire` | Script-first batch PDF acquisition — auto walks http→browser→researchgate ladder, run in background |
+| 04 | `04-ingest.md` | `uv run --project "<plugin-root>" lit-review ingest` | On-demand decomposition with cache reuse |
 | — | `05-options.md` | AI(deep-read/synthesize via fabric/litellm,每次确认模型)· export · stats | Post-acquisition capabilities as a menu |
 
 ## How to execute

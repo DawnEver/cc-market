@@ -8,7 +8,7 @@ travel anywhere.
 With a PDF:
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc init /path/to/manuscript.pdf \
+uv run --project "<plugin-root>" rev-disc init /path/to/manuscript.pdf \
   --slug <slug> --journal <tie|tii|tte|...>
 ```
 
@@ -16,7 +16,7 @@ Without one — metadata pasted from the editorial system. Often the better path
 since it avoids putting the PDF on disk at all:
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc init \
+uv run --project "<plugin-root>" rev-disc init \
   --slug <slug> --journal tie --year 2026 \
   --title "..." --abstract "..." --keywords "kw1,kw2,kw3"
 ```
@@ -50,7 +50,7 @@ the country of the *institution*, not anyone's nationality.
 ## Build the profile
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc profile --slug <slug> --json
+uv run --project "<plugin-root>" rev-disc profile --slug <slug> --json
 ```
 
 Produces topics, methods and a set of boolean queries deterministically, so the

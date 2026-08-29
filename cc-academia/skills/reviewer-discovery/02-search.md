@@ -3,7 +3,7 @@
 Run every query against every source, merge, and store.
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc search --slug <slug> \
+uv run --project "<plugin-root>" rev-disc search --slug <slug> \
   --source openalex --source ieee --pages 3 --year-from 2018 --json
 ```
 

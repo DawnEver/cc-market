@@ -13,6 +13,7 @@ import pytest
 
 from academia.cli import dispatch
 from academia.core.models import Author, Paper
+from academia.reviewer.workspace import STAGES, open_workspace
 from academia.sources.base import SearchPage
 
 
@@ -163,6 +164,20 @@ def test_status_reports_the_next_stage(stub_sources, capsys):
     assert run("status", "--slug", "tie-demo", "--json") == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["next_stage"] == "profile"
+
+
+def test_completed_status_does_not_tell_the_user_to_repeat_report(stub_sources, capsys):
+    run("init", "--slug", "tie-demo", "--title", "A study", "--journal", "tie")
+    workspace = open_workspace("tie-demo")
+    state = workspace.load_state()
+    for stage in STAGES:
+        state.mark(stage)
+    workspace.save_state(state)
+
+    capsys.readouterr()
+    assert run("status", "--slug", "tie-demo", "--json") == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["next_stage"] == "complete"
 
 
 def test_an_unknown_journal_stops_the_run(stub_sources):

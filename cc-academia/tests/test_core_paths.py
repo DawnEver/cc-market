@@ -5,13 +5,7 @@ from __future__ import annotations
 from academia.core import paths
 
 
-def test_plugin_root_prefers_the_host_injected_variable(tmp_path, monkeypatch):
-    monkeypatch.setenv(paths.PLUGIN_ROOT_ENV, str(tmp_path))
-    assert paths.plugin_root() == tmp_path
-
-
-def test_plugin_root_falls_back_to_the_checkout(monkeypatch):
-    monkeypatch.delenv(paths.PLUGIN_ROOT_ENV, raising=False)
+def test_plugin_root_is_the_package_checkout():
     assert (paths.plugin_root() / "pyproject.toml").exists()
 
 

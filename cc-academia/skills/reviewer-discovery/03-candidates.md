@@ -3,7 +3,7 @@
 Score the papers, then take the people who wrote the best ones.
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc candidates --slug <slug> \
+uv run --project "<plugin-root>" rev-disc candidates --slug <slug> \
   --pool 300 --top-papers 50 --min-evidence 1 --json
 ```
 

@@ -8,7 +8,7 @@
 
 2. **Create workspace**:
    ```bash
-   uv run --project "${CLAUDE_PLUGIN_ROOT}" lit-review init "<topic>"
+   uv run --project "<plugin-root>" lit-review init "<topic>"
    ```
    Creates `workspaces/<slug>/` with `workspace.toml` and all subdirectories.
 

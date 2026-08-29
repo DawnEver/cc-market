@@ -1,7 +1,6 @@
 ---
 name: manuscript-rerun
 description: Re-run a single step of the manuscript-review pipeline against an existing slug. Replaces the old manuscript-archive / manuscript-repolish skills.
-argument-hint: <step-number> <slug>
 allowed-tools: "Read,Write,Bash,Glob,Grep,Agent,Skill"
 ---
 

@@ -1,7 +1,7 @@
 # 06 — Report
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc report --slug <slug> --top 25 --json
+uv run --project "<plugin-root>" rev-disc report --slug <slug> --top 25 --json
 ```
 
 Writes into `5-shortlist/`:

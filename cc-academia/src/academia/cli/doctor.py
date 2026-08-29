@@ -35,7 +35,6 @@ def collect() -> dict:
         "version": __version__,
         "python": sys.version.split()[0],
         "plugin_root": str(paths.plugin_root()),
-        "plugin_root_from_host": bool(os.environ.get(paths.PLUGIN_ROOT_ENV)),
         "config_dir_default": str(paths.default_config_dir()),
         "config_dir_override": os.environ.get(paths.ENV_CONFIG_DIR) or None,
         "lens_dir": str(paths.lens_dir()),

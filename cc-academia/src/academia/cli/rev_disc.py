@@ -688,7 +688,11 @@ def run_status(args: argparse.Namespace) -> int:
     else:
         for stage, status in state.stages.items():
             log.info(f"  {stage:<12} {status}")
-        log.info(f"next: rev-disc {state.next_stage()} --slug {state.slug}")
+        next_stage = state.next_stage()
+        if next_stage == "complete":
+            log.info("pipeline complete")
+        else:
+            log.info(f"next: rev-disc {next_stage} --slug {state.slug}")
     return EXIT_OK
 
 

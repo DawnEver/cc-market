@@ -39,7 +39,7 @@ ongoing/<slug>/
    `ongoing/<slug>/`, copies the PDF in as `0-raw.pdf`, decomposes it, and
    builds the figure index, in one command:
    ```bash
-   uv run --project "${CLAUDE_PLUGIN_ROOT}" ms-review ingest "<pdf-path>" --json
+   uv run --project "<plugin-root>" ms-review ingest "<pdf-path>" --json
    ```
    Pass `--slug` to override the derived name. The command is idempotent: a run
    that failed part-way leaves the workspace holding the PDF and nothing else,

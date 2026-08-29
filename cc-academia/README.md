@@ -8,18 +8,33 @@ local database.
 
 ## Install
 
-```
-/plugin marketplace add DawnEver/cc-market
-/plugin install cc-academia@cc-market
-```
+Install `cc-academia` from the `DawnEver/cc-market` marketplace in the host you
+use. Claude Code reads `.claude-plugin/plugin.json`; Codex reads
+`.codex-plugin/plugin.json`. Installing either host is sufficient and neither
+manifest refers to the other installation.
 
 ## Workflows
 
-| Command | What it does |
-|---------|--------------|
-| `/cc-academia:literature-review <topic>` | Define scope, search across sources, screen abstracts, acquire PDFs, deep-read, synthesise, export, sync to Zotero |
-| `/cc-academia:manuscript-review <pdf>` | Ingest a paper, profile its literature, fan out multi-angle critiques, polish reviewer comments |
-| `/cc-academia:reviewer-discovery <pdf>` | Profile a submission, find authors of the closest work, screen conflicts, produce an evidenced shortlist |
+| Workflow | Claude Code | Codex |
+|----------|-------------|-------|
+| Literature review | `/cc-academia:literature-review <topic>` | invoke `literature-review` with `<topic>` |
+| Manuscript review | `/cc-academia:manuscript-review <pdf>` | invoke `manuscript-review` with `<pdf>` |
+| Reviewer discovery | `/cc-academia:reviewer-discovery <pdf>` | invoke `reviewer-discovery` with `<pdf>` |
+
+## Architecture
+
+- **Package:** skills, deterministic Python code, default policy and both native
+  manifests ship together as one version.
+- **Runtime:** code locates package resources from `__file__`; playbooks locate
+  `<plugin-root>` from their own loaded `SKILL.md`. No plugin-root environment
+  variable or cross-host compatibility layer exists.
+- **Workspace:** confidential inputs and generated artifacts live outside the
+  package in workflow-specific `ongoing/` and `archived/` directories.
+- **Personal state:** API contact details and config overrides use explicit
+  `ACADEMIA_*` settings; the SQLite database stays off synced storage.
+- **Host adapters:** only genuine orchestration differences—subagents, hooks,
+  background work and optional MCP tools—are adapted. Domain logic and schemas
+  remain shared and deterministic.
 
 ## What makes the reviewer shortlist trustworthy
 

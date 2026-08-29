@@ -146,9 +146,10 @@ a hash of the manuscript title, never the title.
 
 ## Two hosts, one playbook
 
-`${CLAUDE_PLUGIN_ROOT}` is injected by both Claude Code and Codex, so playbooks
-use it directly without branching. Genuine host differences are collected in
-`skills/_shared/host-adapters.md` and referenced from there.
+The library derives its immutable plugin root from its own module path. A
+playbook resolves `<plugin-root>` from the loaded skill path; no host-specific
+environment variable participates. Genuine host differences are collected in
+`skills/_shared/host-adapters.md`.
 
 Manifest versions are kept in step by `scripts/release.py`, guarded by
 `tests/test_manifests.py`. Never hand-edit a version.

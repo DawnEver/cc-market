@@ -6,17 +6,14 @@ Three roots, three lifetimes (see PLAN §1):
 * **config/lens override dirs** — personal customisation; change when the user changes.
 * **data root / database** — research output; changes with the work itself.
 
-Everything is resolved from environment variables so the same code runs from a
-Claude plugin cache, a Codex plugin cache, or a plain checkout.
+The immutable plugin root is derived from this module's location. User-owned
+configuration and data locations remain explicit environment overrides.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-
-#: Both Claude Code and Codex inject this; only the root path differs.
-PLUGIN_ROOT_ENV = "CLAUDE_PLUGIN_ROOT"
 
 ENV_CONFIG_DIR = "ACADEMIA_CONFIG_DIR"
 ENV_LENS_DIR = "ACADEMIA_LENS_DIR"
@@ -31,11 +28,7 @@ def _env_path(name: str) -> Path | None:
 
 
 def plugin_root() -> Path:
-    """Root of the installed plugin, or of the source checkout when developing."""
-    from_env = _env_path(PLUGIN_ROOT_ENV)
-    if from_env is not None:
-        return from_env
-    # src/academia/core/paths.py -> repo root
+    """Root of the installed plugin or source checkout containing this code."""
     return Path(__file__).resolve().parents[3]
 
 

@@ -1,7 +1,7 @@
 # 05 — Conflict of interest
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc coi --slug <slug> \
+uv run --project "<plugin-root>" rev-disc coi --slug <slug> \
   --exclude "Name One,Name Two" --json
 ```
 

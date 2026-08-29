@@ -1,7 +1,6 @@
 ---
 name: reviewer-discovery
 description: Find candidate peer reviewers for a journal submission — profile the manuscript, search the literature, harvest authors of the closest work, screen conflicts of interest deterministically, and produce an evidenced shortlist with institutions, backgrounds and public contact addresses.
-argument-hint: <manuscript-pdf-or-slug>
 allowed-tools: "Read,Write,Bash,Glob,Grep,Agent,Skill,WebFetch,WebSearch"
 ---
 
@@ -71,7 +70,7 @@ The submission is unpublished and confidential.
 Re-invoking with a slug picks up where the run stopped:
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc status --slug <slug>
+uv run --project "<plugin-root>" rev-disc status --slug <slug>
 ```
 
 | Last completed | Next |
@@ -112,7 +111,7 @@ Ask the user for the journal at intake if the manuscript does not say.
 Once invitations go out, record them:
 
 ```bash
-uv run --project "${CLAUDE_PLUGIN_ROOT}" rev-disc status --slug <slug>
+uv run --project "<plugin-root>" rev-disc status --slug <slug>
 ```
 
 Invitation history feeds the next manuscript's ranking, which is what makes the

@@ -72,7 +72,7 @@ class RunState:
         for stage in STAGES:
             if self.stages.get(stage) != "done":
                 return stage
-        return "report"
+        return "complete"
 
     def to_dict(self) -> dict[str, Any]:
         return {
