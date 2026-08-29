@@ -33,6 +33,7 @@ embed = ["numpy>=2.0"]
 academia = "academia.cli:main"
 lit-review = "academia.cli:lit_review_main"
 rev-disc = "academia.cli:rev_disc_main"
+ms-review = "academia.cli:ms_review_main"
 academia-zotero-mcp = "academia.litreview.zotero.mcp_launcher:main"
 
 [dependency-groups]

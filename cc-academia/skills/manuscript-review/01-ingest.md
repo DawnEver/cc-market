@@ -1,6 +1,6 @@
 # Step 01 — Ingest PDF → Markdown
 
-Convert the PDF into a per-section markdown folder with per-section images, using `scripts/ingest` (Python package).
+Convert the PDF into a per-section markdown folder with per-section images, using `ms-review ingest`.
 
 ## Inputs
 - `<pdf-path>` — argument to `/manuscript-review:new`
@@ -35,12 +35,16 @@ ongoing/<slug>/
 
 ## Steps
 
-1. **Derive slug** from the PDF filename (lowercase, non-alphanum → `-`, strip leading/trailing `-`). Create `ongoing/<slug>/`, copy the PDF in as `0-raw.pdf`.
-
-2. **Run `scripts/ingest`** — it handles tool selection, splitting, noise filtering, multi-paper separation, image distribution, and index building automatically:
+1. **Run `ms-review ingest`** — it derives the slug from the filename, creates
+   `ongoing/<slug>/`, copies the PDF in as `0-raw.pdf`, decomposes it, and
+   builds the figure index, in one command:
    ```bash
-   python -m scripts.ingest "ongoing/<slug>/0-raw.pdf" "ongoing/<slug>"
+   uv run --project "${CLAUDE_PLUGIN_ROOT}" ms-review ingest "<pdf-path>" --json
    ```
+   Pass `--slug` to override the derived name. The command is idempotent: a run
+   that failed part-way leaves the workspace holding the PDF and nothing else,
+   so re-running it is always safe.
+
    Tool selection logic (built into the script):
    - Detects GPU VRAM via `system_profiler` (Metal), `torch.cuda`, or `nvidia-smi`
    - VRAM ≥ 4 GB → **marker-pdf** (best layout fidelity)
@@ -61,7 +65,9 @@ ongoing/<slug>/
    The script outputs `1-paper-text/paper.md`, `1-paper-text/md/`, `1-paper-text/img/sec*/`, `1-paper-text/INDEX.md` in one shot.
    If it fails completely, STOP and report the error to the user.
 
-3. **Build `INDEX.md`** — figure-number ↔ file mapping. Grep all section files for `Figure \d+` / `Fig. \d+` / `Table \d+` references; correlate with image filenames in order of first appearance. **Captions are not auto-extracted** — the Caption column will contain "—". Write:
+2. **Check the figure index.** `ms-review ingest` writes `1-paper-text/INDEX.md`
+   mapping every extracted image to its section. Captions are *not* extracted,
+   so if the review needs figure numbers rather than filenames, enrich it — Grep all section files for `Figure \d+` / `Fig. \d+` / `Table \d+` references; correlate with image filenames in order of first appearance. **Captions are not auto-extracted** — the Caption column will contain "—". Write:
    ```markdown
    # Figure / Table index
 
@@ -73,13 +79,20 @@ ongoing/<slug>/
    ```
    This lets vision reviewers find "Figure 2" without scanning every file — they open the image directly to see the caption.
 
-4. **Cleanup** `_marker_tmp/`.
+3. **Cleanup** `_marker_tmp/`.
 
-5. **Verify**: `1-paper-text/paper.md` exists, `1-paper-text/md/` non-empty, `1-paper-text/img/` exists. Report counts to the user (sections, figures, tables) before continuing to step 02.
+4. **Verify**: `1-paper-text/paper.md` exists, `1-paper-text/md/` non-empty, `1-paper-text/img/` exists. Report counts to the user (sections, figures, tables) before continuing to step 02.
 
 ## Failure triage
 
-When `scripts/ingest` fails, match the error against `templates/ingest-errors.md`. Common case: `marker_single: command not found` → auto-fallback to pymupdf4llm (no user action).
+`ms-review ingest` refuses rather than reporting a partial decomposition: on
+failure it removes `1-paper-text/` entirely, because every later step treats the
+presence of `paper.md` as proof the work was done. The two failures worth
+recognising:
+
+- *"decomposition requires the 'pdf' extra"* — run `uv sync --extra pdf`.
+- *"produced no paper.md"* — usually an image-only scan. There is nothing to
+  review as text; tell the user rather than proceeding.
 
 ## Resume rule
 
