@@ -4,6 +4,12 @@
 uv run --project "<plugin-root>" rev-disc report --slug <slug> --top 25 --json
 ```
 
+The shortlist distinguishes current institution from verified institutional
+history. Historical employment and education are reported with dates and
+sources, and the header summarises career-country exposure. A person may count
+in several historical countries; this is career evidence, not nationality or
+ethnicity, and it never overwrites the current-affiliation country.
+
 Writes into `5-shortlist/`:
 
 - `shortlist.md` — the table to read

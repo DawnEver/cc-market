@@ -19,6 +19,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from academia.reviewer import trajectory
 from academia.reviewer.coi import CLEAR, CLEAR_WORDING
 from academia.reviewer.enrich import EmailFinding
 from academia.reviewer.profile import Profile
@@ -32,6 +33,7 @@ COLUMNS = (
     "Position",
     "Institution",
     "Country",
+    "Institution history",
     "Score",
     "Evidence",
     "COI",
@@ -103,6 +105,7 @@ class Row:
             self.position,
             self.institution,
             self.country,
+            trajectory.history_text(self.candidate.person),
             self.score_text,
             self.evidence_text,
             self.coi_text,
@@ -129,6 +132,17 @@ def render_markdown(rows: list[Row], profile: Profile, policy_sources: list[str]
     out.append(f"Topics: {', '.join(profile.primary_topics) or 'none extracted'}")
     out.append(f"Policy: {', '.join(Path(p).name for p in policy_sources)}")
     out.append("")
+    people = [row.candidate.person for row in rows]
+    current = trajectory.country_exposure(people, historical=False)
+    if current:
+        out.append("Current-affiliation countries: " +
+                   ", ".join(f"{country} {count}" for country, count in current.most_common()))
+        out.append("")
+    historical = trajectory.country_exposure(people, historical=True)
+    if historical:
+        out.append("Historical institution-country evidence (people may count in multiple countries): " +
+                   ", ".join(f"{country} {count}" for country, count in historical.most_common()))
+        out.append("")
     out.append("| " + " | ".join(COLUMNS) + " |")
     out.append("|" + "|".join(["---"] * len(COLUMNS)) + "|")
     for row in rows:
@@ -225,13 +239,20 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
         out.append("researchers, and nothing here is inferred.")
         out.append("")
 
-    if len(person.affiliations) > 1:
-        out.append("## Career")
+    steps = trajectory.build(person)
+    if steps:
+        out.append("## Institutional trajectory")
         out.append("")
-        for affiliation in person.affiliations:
-            years = "–".join(str(y) for y in (affiliation.year_from, affiliation.year_to) if y)
-            marker = " (current)" if affiliation.is_current else ""
-            out.append(f"- {affiliation.institution} {years}{marker} — {affiliation.source}")
+    if note := trajectory.quality_note(person):
+        out.append(f"> Data-quality warning: {note}. OpenAlex history is publication-affiliation")
+        out.append("> evidence, not proof of employment, nationality or ethnicity.")
+        out.append("")
+        for step in steps:
+            country = f", {step.country}" if step.country else ""
+            source = f" — {step.source} {step.source_url}".rstrip() if step.source else ""
+            out.append(
+                f"- **{step.kind}**: {step.institution}{country} ({step.years}){source}"
+            )
         out.append("")
 
     out.append("## Why this candidate")
