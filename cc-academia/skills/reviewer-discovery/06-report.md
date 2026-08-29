@@ -10,17 +10,21 @@ sources, and the header summarises career-country exposure. A person may count
 in several historical countries; this is career evidence, not nationality or
 ethnicity, and it never overwrites the current-affiliation country.
 
-`shortlist.md` and `shortlist.csv` use one canonical export schema and identical
-column order. The schema is deliberately comprehensive: identity identifiers
-and confidence, current and historical institutions, education, every score
-component, COI findings, publication evidence, contact provenance, quality
-warnings and invitation history. CSV scalar counts/scores remain numeric for
-sorting; complete nested histories are JSON cells so no evidence is discarded.
+`shortlist.md` and `shortlist.csv` use one canonical candidate schema and
+identical column order. Every cell is a scalar suitable for Excel sorting and
+filtering; no cell contains JSON or a delimiter-packed list. One-to-many data is
+normalized into detail CSVs, each repeating `rank`, `reviewer`, and `person_id`
+so Excel users can sort, filter, join, or place each file on its own worksheet.
 
 Writes into `5-shortlist/`:
 
 - `shortlist.md` — the table to read
 - `shortlist.csv` — the same rows, for pasting into the editorial system
+- `institutions.csv` — one current or historical institution per row
+- `education.csv` — one degree per row
+- `evidence.csv` — one qualifying publication per row
+- `coi-findings.csv` — one conflict finding per row
+- `invitations.csv` — one previous invitation per row
 - `dossiers/` — one file per candidate, with the full audit trail
 
 ## Ranking

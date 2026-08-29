@@ -647,6 +647,11 @@ def run_report(args: argparse.Namespace) -> int:
         "shortlist": str(written["shortlist"]),
         "csv": str(written["csv"]),
         "dossiers": str(written["dossiers"]),
+        "institutions": str(written["institutions"]),
+        "education": str(written["education"]),
+        "evidence": str(written["evidence"]),
+        "coi_findings": str(written["coi_findings"]),
+        "invitations": str(written["invitations"]),
         "candidates": len(rows),
         "without_affiliation": unknown,
     }

@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import sqlite3
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from academia.reviewer import trajectory
@@ -32,11 +31,9 @@ EXPORT_COLUMNS = (
     "identity_method", "identity_confidence", "position", "position_source",
     "current_institution", "current_country", "current_year_from", "current_year_to",
     "current_source", "current_source_url", "historical_institution_count",
-    "historical_countries", "institution_history", "education_count", "degrees",
-    "education_institutions", "education_history", "score", "blocked", "coi_status",
-    "coi_summary", "coi_rules", "coi_findings", "evidence_count", "best_similarity",
-    "evidence_year_from", "evidence_year_to", "evidence_titles", "evidence_dois",
-    "evidence_urls", "evidence_json", "component_topic", "component_method",
+    "historical_country_count", "education_count", "score", "blocked", "coi_status",
+    "coi_summary", "coi_finding_count", "evidence_count", "best_similarity",
+    "evidence_year_from", "evidence_year_to", "component_topic", "component_method",
     "component_recent_expertise", "component_publication_evidence",
     "component_geographic", "component_reviewer_history", "email", "email_found",
     "email_source", "email_confidence", "email_source_url", "notes",
@@ -198,10 +195,6 @@ def render_reading_list(rows: list[Row]) -> str:
     return chr(10).join(out)
 
 
-def _json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
 def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
     candidate = row.candidate
     person = candidate.person
@@ -232,26 +225,17 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "current_source": current.source if current else "",
         "current_source_url": current.source_url if current else "",
         "historical_institution_count": len(historical),
-        "historical_countries": ";".join(sorted({step.country for step in historical if step.country})),
-        "institution_history": _json([asdict(step) for step in historical]),
+        "historical_country_count": len({step.country for step in historical if step.country}),
         "education_count": len(education),
-        "degrees": ";".join(entry.degree for entry in education if entry.degree),
-        "education_institutions": ";".join(dict.fromkeys(entry.institution for entry in education if entry.institution)),
-        "education_history": _json([asdict(entry) for entry in education]),
         "score": "" if candidate.blocked else round(candidate.score, 6),
         "blocked": candidate.blocked,
         "coi_status": candidate.coi_status,
         "coi_summary": verdict.summary() if verdict else CLEAR_WORDING,
-        "coi_rules": ";".join(finding.rule for finding in findings),
-        "coi_findings": _json([{"rule": finding.rule, "status": finding.status, "evidence": finding.evidence} for finding in findings]),
+        "coi_finding_count": len(findings),
         "evidence_count": len(candidate.evidence),
         "best_similarity": max((item.similarity for item in candidate.evidence), default=0.0),
         "evidence_year_from": min(years) if years else None,
         "evidence_year_to": max(years) if years else None,
-        "evidence_titles": ";".join(item.title for item in candidate.evidence),
-        "evidence_dois": ";".join(item.doi for item in candidate.evidence if item.doi),
-        "evidence_urls": ";".join(item.url for item in candidate.evidence if item.url),
-        "evidence_json": _json([item.as_dict() for item in candidate.evidence]),
         "component_topic": components.get("topic", ""),
         "component_method": components.get("method", ""),
         "component_recent_expertise": components.get("recent_expertise", ""),
@@ -278,6 +262,59 @@ def render_csv(conn: sqlite3.Connection, rows: list[Row]) -> str:
     for row in rows:
         writer.writerow(_export_record(conn, row))
     return buffer.getvalue()
+
+
+def _detail_csv(columns: tuple[str, ...], records: list[dict[str, object]]) -> str:
+    """Render a normalized Excel-friendly detail table without nested cells."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(records)
+    return buffer.getvalue()
+
+
+DETAIL_KEY_COLUMNS = ("rank", "reviewer", "person_id")
+
+
+def detail_exports(conn: sqlite3.Connection, rows: list[Row]) -> dict[str, str]:
+    institutions, education, evidence, coi, invitations = [], [], [], [], []
+    for row in rows:
+        person = row.candidate.person
+        key = {"rank": row.rank, "reviewer": person.display_name, "person_id": person.person_id}
+        for step in trajectory.build(person):
+            institutions.append(key | {
+                "kind": step.kind, "institution": step.institution, "country": step.country,
+                "year_from": step.year_from, "year_to": step.year_to,
+                "source": step.source, "source_url": step.source_url,
+            })
+        for entry in person.education:
+            education.append(key | {
+                "institution": entry.institution, "degree": entry.degree, "field": entry.field,
+                "year_from": entry.year_from, "year_to": entry.year_to,
+                "advisor_person_id": entry.advisor_person_id, "source": entry.source,
+                "source_url": entry.source_url,
+            })
+        for item in row.candidate.evidence:
+            evidence.append(key | {
+                "paper_id": item.paper_id, "title": item.title, "year": item.year,
+                "doi": item.doi, "url": item.url, "similarity": item.similarity,
+            })
+        verdict = row.candidate.verdict
+        for finding in verdict.findings if verdict else []:
+            coi.append(key | {"rule": finding.rule, "status": finding.status, "evidence": finding.evidence})
+        for item in repo.invitation_history(conn, person.person_id):
+            invitations.append(key | {
+                "manuscript_id": item["ms_id"], "invited_at": item["invited_at"],
+                "responded": bool(item["responded"]), "accepted": bool(item["accepted"]),
+            })
+    specs = {
+        "institutions.csv": ((*DETAIL_KEY_COLUMNS, "kind", "institution", "country", "year_from", "year_to", "source", "source_url"), institutions),
+        "education.csv": ((*DETAIL_KEY_COLUMNS, "institution", "degree", "field", "year_from", "year_to", "advisor_person_id", "source", "source_url"), education),
+        "evidence.csv": ((*DETAIL_KEY_COLUMNS, "paper_id", "title", "year", "doi", "url", "similarity"), evidence),
+        "coi-findings.csv": ((*DETAIL_KEY_COLUMNS, "rule", "status", "evidence"), coi),
+        "invitations.csv": ((*DETAIL_KEY_COLUMNS, "manuscript_id", "invited_at", "responded", "accepted"), invitations),
+    }
+    return {name: _detail_csv(columns, records) for name, (columns, records) in specs.items()}
 
 
 def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
@@ -412,6 +449,12 @@ def write_all(
     csv_path = directory / "shortlist.csv"
     csv_path.write_text(render_csv(conn, rows), encoding="utf-8-sig")
 
+    detail_paths = {}
+    for name, content in detail_exports(conn, rows).items():
+        path = directory / name
+        path.write_text(content, encoding="utf-8-sig")
+        detail_paths[name.removesuffix(".csv").replace("-", "_")] = path
+
     reading = directory / "reading-list.md"
     reading.write_text(render_reading_list(rows), encoding="utf-8")
 
@@ -424,4 +467,4 @@ def write_all(
         "csv": csv_path,
         "reading_list": reading,
         "dossiers": dossier_dir,
-    }
+    } | detail_paths

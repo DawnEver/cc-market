@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import json
+from pathlib import Path
 
 import pytest
 
@@ -118,7 +119,14 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert markdown_columns == list(exported[0])
     assert exported[0]["person_id"]
     assert float(exported[0]["identity_confidence"]) >= 0
-    assert json.loads(exported[0]["evidence_json"])
+    assert "evidence_json" not in exported[0]
+    assert "evidence_titles" not in exported[0]
+    for name in ("institutions", "education", "evidence", "coi_findings", "invitations"):
+        detail_path = Path(payload[name])
+        assert detail_path.exists()
+        with detail_path.open(encoding="utf-8-sig", newline="") as handle:
+            header = next(csv.reader(handle))
+        assert header[:3] == ["rank", "reviewer", "person_id"]
 
 
 def test_the_raw_pdf_is_never_required_and_body_text_never_stored(tmp_path, stub_sources):
