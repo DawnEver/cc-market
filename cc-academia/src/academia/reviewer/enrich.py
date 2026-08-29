@@ -106,12 +106,13 @@ def extract_emails(text: str) -> list[str]:
 
 
 def _name_tokens(person: Person) -> list[str]:
-    return [
+    tokens = [
         part
         for name in [person.display_name, *person.names]
         for part in name.lower().replace("-", " ").split()
         if len(part) > 2
     ]
+    return list(dict.fromkeys(tokens))
 
 
 def match_strength(email: str, person: Person) -> int:
@@ -137,7 +138,12 @@ def match_strength(email: str, person: Person) -> int:
     others = [t for t in tokens if t != hit]
     if any(other[0] in prefix for other in others):
         return 2
-    return 1
+    # A weak match means surname only, not any single name fragment. Given-name
+    # fragments can occur accidentally inside another person's local part
+    # (e.g. ``hua`` in ``rundhuang``).
+    display_parts = person.display_name.lower().replace("-", " ").split()
+    surname = display_parts[-1] if display_parts else ""
+    return 1 if hit == surname else 0
 
 
 def match_email_to_person(emails: list[str], person: Person) -> str:

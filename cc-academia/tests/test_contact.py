@@ -117,6 +117,12 @@ def test_a_sole_address_is_not_assigned_to_the_wrong_co_corresponding_author(con
     person_id = repo.upsert_person(
         conn, Author(name="Chunhua Liu", idx=1, orcid="0000-0001-0000-0002")
     )
+    repo.upsert_person(
+        conn, Author(name="Chun Hua Liu", idx=1, orcid="0000-0001-0000-0002")
+    )
+    repo.upsert_person(
+        conn, Author(name="Chun-Hua Liu", idx=1, orcid="0000-0001-0000-0002")
+    )
     person = repo.load_person(conn, person_id)
 
     finding = contact.email_from_publications(
