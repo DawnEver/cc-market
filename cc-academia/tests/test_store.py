@@ -186,6 +186,30 @@ def test_education_without_a_source_url_is_refused(conn):
     assert conn.execute("SELECT count(*) FROM education").fetchone()[0] == 1
 
 
+def test_editor_attestation_can_record_a_second_degree_at_the_same_institution(conn):
+    from academia.core.models import Education, Institution
+
+    person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
+    inst = Institution.build(name="Southeast University")
+    repo.upsert_institution(conn, inst)
+    repo.record_education(
+        conn, person_id, Education(inst_id=inst.inst_id, degree="Master", source="orcid")
+    )
+    repo.record_education(
+        conn,
+        person_id,
+        Education(inst_id=inst.inst_id, degree="PhD", source="editor_attestation"),
+    )
+
+    degrees = conn.execute(
+        "SELECT degree, source FROM education ORDER BY degree", ()
+    ).fetchall()
+    assert [(row["degree"], row["source"]) for row in degrees] == [
+        ("Master", "orcid"),
+        ("PhD", "editor_attestation"),
+    ]
+
+
 def test_phd_year_and_academic_age(conn):
     from academia.core.models import Education, Institution
 

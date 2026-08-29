@@ -1,5 +1,6 @@
 from academia.core.models import Affiliation, Education, Person
-from academia.reviewer import trajectory
+from academia.reviewer import rank, report, trajectory
+from academia.store import db
 
 
 def person_with_history() -> Person:
@@ -46,3 +47,12 @@ def test_an_implausibly_broad_bibliographic_history_is_flagged():
         for i in range(21)
     )
     assert "requires verification" in trajectory.quality_note(person)
+
+
+def test_dossier_renders_ordinary_trajectory_without_requiring_a_warning(tmp_path):
+    person = person_with_history()
+    row = report.build_rows([rank.Candidate(person=person)])[0]
+    with db.connect(tmp_path / "report.db") as conn:
+        dossier = report.render_dossier(conn, row)
+    assert "**current**: University B, GB" in dossier
+    assert "**education**: University C" in dossier

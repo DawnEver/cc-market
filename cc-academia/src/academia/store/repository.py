@@ -368,10 +368,11 @@ def record_affiliation(conn: sqlite3.Connection, person_id: str, aff: Affiliatio
 def record_education(conn: sqlite3.Connection, person_id: str, edu: Education) -> None:
     """Education is best-effort: ORCID fills it for roughly 30% of researchers.
 
-    A row without a source URL is not recorded at all — an unsourced claim about
-    someone's doctorate has no place in a reviewer dossier.
+    A row without a source URL is not recorded unless it is an explicit editor
+    attestation. That provenance is shown as such; it never masquerades as a
+    public record.
     """
-    if not edu.source_url and edu.source != "orcid":
+    if not edu.source_url and edu.source not in {"orcid", "editor_attestation"}:
         return
     conn.execute(
         """

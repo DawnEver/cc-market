@@ -243,16 +243,16 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     if steps:
         out.append("## Institutional trajectory")
         out.append("")
-    if note := trajectory.quality_note(person):
-        out.append(f"> Data-quality warning: {note}. OpenAlex history is publication-affiliation")
-        out.append("> evidence, not proof of employment, nationality or ethnicity.")
-        out.append("")
         for step in steps:
             country = f", {step.country}" if step.country else ""
             source = f" — {step.source} {step.source_url}".rstrip() if step.source else ""
             out.append(
                 f"- **{step.kind}**: {step.institution}{country} ({step.years}){source}"
             )
+        out.append("")
+    if note := trajectory.quality_note(person):
+        out.append(f"> Data-quality warning: {note}. OpenAlex history is publication-affiliation")
+        out.append("> evidence, not proof of employment, nationality or ethnicity.")
         out.append("")
 
     out.append("## Why this candidate")

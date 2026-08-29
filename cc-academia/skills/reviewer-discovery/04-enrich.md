@@ -142,7 +142,8 @@ hand from the manuscript itself.
 - **Unknown stays unknown.** An empty education section is a gap in public data,
   not a fact about the person, and it never counts against them.
 - **Every stored field carries its source URL**, because a dossier has to be
-  checkable.
+  checkable. The sole exception is an explicit `editor_attestation`, which is
+  labelled as editor-provided rather than presented as a public-source fact.
 - ORCID is not an email directory. Addresses there default to private, and only
   ones the researcher chose to publish are ever read.
 
