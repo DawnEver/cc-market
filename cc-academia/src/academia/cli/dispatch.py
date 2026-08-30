@@ -18,6 +18,14 @@ from academia.core.errors import EXIT_USAGE, AcademiaError
 Handler = Callable[[argparse.Namespace], int]
 
 
+def _configure_standard_streams() -> None:
+    """Make human and machine CLI output portable across Windows code pages."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
+
+
 def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON on stdout.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose progress on stderr.")
@@ -262,10 +270,12 @@ def _rev_disc_handlers() -> dict[str, Handler]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_standard_streams()
     return _dispatch(build_academia_parser(), _academia_handlers(), argv or sys.argv[1:])
 
 
 def lit_review_main(argv: list[str] | None = None) -> int:
+    _configure_standard_streams()
     from academia.cli import lit_review
 
     return _dispatch(
@@ -274,12 +284,14 @@ def lit_review_main(argv: list[str] | None = None) -> int:
 
 
 def ms_review_main(argv: list[str] | None = None) -> int:
+    _configure_standard_streams()
     from academia.cli import ms_review
 
     return _dispatch(ms_review.build_parser(), ms_review.handlers(), argv or sys.argv[1:])
 
 
 def rev_disc_main(argv: list[str] | None = None) -> int:
+    _configure_standard_streams()
     return _dispatch(build_rev_disc_parser(), _rev_disc_handlers(), argv or sys.argv[1:])
 
 

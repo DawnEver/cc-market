@@ -61,7 +61,7 @@ def _paper(doi, title, authors, year=2025):
 
 
 def _corpus():
-    expert = Author(name="Grace Expert", idx=0, position="first", openalex_id="A-expert")
+    expert = Author(name="Gökhan Çakal", idx=0, position="first", openalex_id="A-expert")
     junior = Author(name="Ravi Junior", idx=1, position="last", openalex_id="A-junior")
     submitter = Author(name="Alice Author", idx=0, position="first", openalex_id="A-alice")
     collaborator = Author(name="Bob Collaborator", idx=1, position="last", openalex_id="A-bob")
@@ -99,6 +99,9 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert run("profile", "--slug", "tie-demo", "--approve") == 0
     assert run("search", "--slug", "tie-demo") == 0
     assert run("candidates", "--slug", "tie-demo") == 0
+    assert run("contacts", "--slug", "tie-demo", "--json") == 0
+    contacts = json.loads(capsys.readouterr().out)
+    assert any(person["name"] == "Gökhan Çakal" for person in contacts["candidates"])
     assert run("coi", "--slug", "tie-demo") == 0
     assert run("report", "--slug", "tie-demo", "--json") == 0
 
@@ -107,7 +110,7 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert shortlist.exists()
 
     text = shortlist.read_text(encoding="utf-8")
-    assert "Grace Expert" in text
+    assert "Gökhan Çakal" in text
     assert "no detected conflict" in text
     assert payload["candidates"] >= 1
 
