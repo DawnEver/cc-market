@@ -369,11 +369,22 @@ def run_candidates(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
     profile = _load_profile(workspace)
+    policy = load_policy(state.journal or profile.journal)
+    pool = (
+        args.pool
+        if args.pool is not None
+        else policy.retrieval_int("candidate_pool", discover.DEFAULT_CANDIDATE_POOL)
+    )
+    top_papers = (
+        args.top_papers
+        if args.top_papers is not None
+        else policy.retrieval_int("top_papers", discover.DEFAULT_TOP_PAPERS)
+    )
 
     with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
-        scores = discover.relevance(conn, profile, now_year=_now_year(), limit=args.pool)
+        scores = discover.relevance(conn, profile, now_year=_now_year(), limit=pool)
         candidates = discover.build_candidates(
-            conn, scores, top_papers=args.top_papers, min_evidence=args.min_evidence
+            conn, scores, top_papers=top_papers, min_evidence=args.min_evidence
         )
         rows = [
             {
@@ -391,7 +402,11 @@ def run_candidates(args: argparse.Namespace) -> int:
     state.mark("candidates")
     workspace.save_state(state)
 
-    payload = {"candidates": len(rows), "papers_considered": len(scores)}
+    payload = {
+        "candidates": len(rows),
+        "papers_considered": len(scores),
+        "retrieval": {"candidate_pool": pool, "top_papers": top_papers},
+    }
     if args.json:
         log.emit(payload)
     else:
@@ -434,6 +449,8 @@ def _homepage_overrides(values: list[str] | None) -> dict[str, list[str]]:
 def run_enrich(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
+    profile = _load_profile(workspace)
+    policy = load_policy(state.journal or profile.journal)
     rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
     # Default is everyone. Affiliations feed the conflict rules and the
     # geography check, and the final ranking is not known until after those,
@@ -444,7 +461,27 @@ def run_enrich(args: argparse.Namespace) -> int:
 
     # One fetcher for the whole pass, so its rate limit and per-host circuit
     # breaker apply across candidates rather than resetting for each one.
-    fetcher = None if args.no_email else enrich_module.PageFetcher()
+    fetcher = (
+        None
+        if args.no_email
+        else enrich_module.PageFetcher(
+            delay=policy.retrieval_float(
+                "page_request_delay", enrich_module.PAGE_REQUEST_DELAY
+            ),
+            max_bytes=policy.retrieval_int("max_page_bytes", enrich_module.MAX_PAGE_BYTES),
+            failure_budget=policy.retrieval_int(
+                "host_failure_budget", enrich_module.HOST_FAILURE_BUDGET
+            ),
+            pdf_front_pages=policy.retrieval_int(
+                "pdf_front_pages", contact_module.PDF_FRONT_PAGES
+            ),
+        )
+    )
+    email_confidence = {**enrich_module.EMAIL_CONFIDENCE, **policy.email_confidence}
+    email_precedence = policy.email_precedence or enrich_module.EMAIL_PRECEDENCE
+    max_papers_per_candidate = policy.retrieval_int(
+        "max_papers_per_candidate", contact_module.MAX_PAPERS_PER_CANDIDATE
+    )
     homepages = _homepage_overrides(args.homepage)
     lookup_attempts = [
         contact_module.LookupAttempt(
@@ -512,6 +549,9 @@ def run_enrich(args: argparse.Namespace) -> int:
                 fetcher=fetcher,
                 extra_urls=homepages.get(person.person_id, []),
                 seen_pages=seen_pages,
+                max_papers_per_candidate=max_papers_per_candidate,
+                email_confidence=email_confidence,
+                email_precedence=email_precedence,
             )
             enriched.append(
                 {
@@ -539,6 +579,22 @@ def run_enrich(args: argparse.Namespace) -> int:
         "with_email": with_email,
         "with_education": with_education,
         "with_position": with_position,
+        "retrieval": {
+            "max_papers_per_candidate": max_papers_per_candidate,
+            "pdf_front_pages": policy.retrieval_int(
+                "pdf_front_pages", contact_module.PDF_FRONT_PAGES
+            ),
+            "page_request_delay": policy.retrieval_float(
+                "page_request_delay", enrich_module.PAGE_REQUEST_DELAY
+            ),
+            "host_failure_budget": policy.retrieval_int(
+                "host_failure_budget", enrich_module.HOST_FAILURE_BUDGET
+            ),
+            "max_page_bytes": policy.retrieval_int(
+                "max_page_bytes", enrich_module.MAX_PAGE_BYTES
+            ),
+            "email_precedence": list(email_precedence),
+        },
     }
     if args.json:
         log.emit(payload)

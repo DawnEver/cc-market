@@ -115,7 +115,7 @@ def looks_like_pdf(body: bytes, content_type: str = "", url: str = "") -> bool:
     return (url or "").lower().split("?")[0].endswith(".pdf")
 
 
-def pdf_text(body: bytes) -> str:
+def pdf_text(body: bytes, *, front_pages: int = PDF_FRONT_PAGES) -> str:
     """The front page of a paper as text, or empty without the PDF extra."""
     try:
         import pymupdf as fitz  # from the 'pdf' extra
@@ -125,7 +125,7 @@ def pdf_text(body: bytes) -> str:
 
     try:
         with fitz.open(stream=body, filetype="pdf") as document:
-            wanted = range(min(PDF_FRONT_PAGES, document.page_count))
+            wanted = range(min(front_pages, document.page_count))
             pages = [document.load_page(index).get_text("text") for index in wanted]
             return "\n".join(pages)
     except Exception as error:  # a truncated or encrypted file is not an outage
@@ -175,6 +175,8 @@ def email_from_publications(
     *,
     fetcher,
     seen_pages: dict[str, list[str]] | None = None,
+    max_papers: int = MAX_PAPERS_PER_CANDIDATE,
+    confidence: float = EMAIL_CONFIDENCE[SOURCE],
 ) -> EmailFinding:
     """Look for the candidate's address in the front matter of their own papers.
 
@@ -186,7 +188,7 @@ def email_from_publications(
         return EmailFinding()
 
     cache = seen_pages if seen_pages is not None else {}
-    for row in _candidate_papers(conn, person.person_id)[:MAX_PAPERS_PER_CANDIDATE]:
+    for row in _candidate_papers(conn, person.person_id)[:max_papers]:
         # The landing page first: it is HTML, it is cheap, and a publisher that
         # blocks the PDF often renders the same footnote as text. The PDF is the
         # fallback, because for most papers that is the only place the address
@@ -210,7 +212,7 @@ def email_from_publications(
                 email=match,
                 source=SOURCE,
                 source_url=url,
-                confidence=EMAIL_CONFIDENCE[SOURCE],
+                confidence=confidence,
             )
 
     return EmailFinding()

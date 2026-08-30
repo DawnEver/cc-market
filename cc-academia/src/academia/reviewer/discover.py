@@ -32,6 +32,9 @@ RELEVANCE_WEIGHTS = {
     "embedding": 0.40,
 }
 
+DEFAULT_CANDIDATE_POOL = 300
+DEFAULT_TOP_PAPERS = 50
+
 
 @dataclass
 class SearchOutcome:

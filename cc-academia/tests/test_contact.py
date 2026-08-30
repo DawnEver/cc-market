@@ -531,6 +531,31 @@ def test_a_footnote_printed_only_in_the_pdf_is_still_found():
     assert "l.author@some.edu" in contact.extract_page_emails(contact.pdf_text(body))
 
 
+def test_publication_lookup_honours_the_configured_paper_budget(conn):
+    person_id = repo.upsert_person(conn, Author(name="Ada Budget", idx=0, openalex_id="A-budget"))
+    for index in range(2):
+        paper = Paper.build(
+            title=f"Paper {index}",
+            source="openalex",
+            doi=f"10.1/budget-{index}",
+            landing_page_url=f"https://example.edu/{index}",
+            year=2026 - index,
+        )
+        paper.authors = [Author(name="Ada Budget", idx=0, openalex_id="A-budget")]
+        repo.ingest_paper(conn, paper)
+    person = repo.load_person(conn, person_id)
+    calls = []
+
+    contact.email_from_publications(
+        conn,
+        person,
+        fetcher=lambda url: calls.append(url) or "",
+        max_papers=1,
+    )
+
+    assert calls == ["https://example.edu/0"]
+
+
 def test_pdf_fallback_reads_only_the_front_page():
     body = _three_page_pdf(
         "front matter front@uni.edu",

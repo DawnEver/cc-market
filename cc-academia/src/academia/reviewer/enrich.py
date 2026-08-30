@@ -365,12 +365,14 @@ class PageFetcher:
         max_bytes: int = MAX_PAGE_BYTES,
         failure_budget: int = HOST_FAILURE_BUDGET,
         timeout: int = 15,
+        pdf_front_pages: int = 1,
     ) -> None:
         self._getter = getter or http.get_body_resolved
         self._delay = delay
         self._max_bytes = max_bytes
         self._failure_budget = failure_budget
         self._timeout = timeout
+        self._pdf_front_pages = pdf_front_pages
         self._failures: dict[str, int] = {}
         self._last_request = 0.0
 
@@ -378,7 +380,7 @@ class PageFetcher:
         return urllib.parse.urlparse(url).netloc.lower()
 
     def _as_text(self, result, url: str) -> tuple[str, str]:
-        return _page_fetcher_as_text(result, url)
+        return _page_fetcher_as_text(result, url, pdf_front_pages=self._pdf_front_pages)
 
     def __call__(self, url: str) -> str:
         """Return the page text, or an empty string. Never raises."""
@@ -410,7 +412,7 @@ class PageFetcher:
         return (text or "")[: self._max_bytes]
 
 
-def _page_fetcher_as_text(result, url: str) -> tuple[str, str]:
+def _page_fetcher_as_text(result, url: str, *, pdf_front_pages: int = 1) -> tuple[str, str]:
     """Normalise a getter's return value to ``(text, final_url)``.
 
     Bytes are the real fetch: an address printed only in a paper's PDF is
@@ -424,7 +426,7 @@ def _page_fetcher_as_text(result, url: str) -> tuple[str, str]:
         body, content_type, final = result
         if isinstance(body, bytes):
             if looks_like_pdf(body, content_type, final):
-                return pdf_text(body), final
+                return pdf_text(body, front_pages=pdf_front_pages), final
             return body.decode("utf-8", errors="replace"), final
         return body or "", final
     if isinstance(result, tuple):
@@ -457,6 +459,9 @@ def discover_email(
     fetcher=None,
     extra_urls: list[str] | None = None,
     seen_pages: dict[str, list[str]] | None = None,
+    max_papers_per_candidate: int = 4,
+    email_confidence: dict[str, float] | None = None,
+    email_precedence: tuple[str, ...] | None = None,
 ) -> EmailFinding:
     """Find a public professional address, in the order the policy requires.
 
@@ -470,6 +475,8 @@ def discover_email(
     a person, and nothing constructs an address from a name and a domain.
     """
     contact = contact or Contact()
+    confidence = email_confidence or EMAIL_CONFIDENCE
+    precedence = email_precedence or EMAIL_PRECEDENCE
     candidates: list[EmailFinding] = []
 
     # What is already stored competes, it does not win by default. Handing back
@@ -477,7 +484,7 @@ def discover_email(
     # here made that impossible: the correction was fetched and matched, and
     # then thrown away because the answer had already been given.
     for row in repo.emails_of(conn, person.person_id):
-        if row["source"] in EMAIL_CONFIDENCE:
+        if row["source"] in confidence:
             candidates.append(
                 EmailFinding(
                     email=row["email"],
@@ -494,7 +501,7 @@ def discover_email(
     # when there is no address yet; with an address already stored and no new
     # page to read, the crawl would only rediscover what is above.
     if candidates and not urls:
-        return max(candidates, key=lambda finding: EMAIL_PRECEDENCE.index(finding.source))
+        return max(candidates, key=lambda finding: precedence.index(finding.source))
 
     # The candidate's own corresponding-author footnote outranks everything
     # else, so it is worth the fetches even when ORCID already offered one.
@@ -502,7 +509,12 @@ def discover_email(
         from academia.reviewer.contact import email_from_publications
 
         published = email_from_publications(
-            conn, person, fetcher=fetcher, seen_pages=seen_pages
+            conn,
+            person,
+            fetcher=fetcher,
+            seen_pages=seen_pages,
+            max_papers=max_papers_per_candidate,
+            confidence=confidence["published_corresponding"],
         )
         if published.found:
             candidates.append(published)
@@ -521,7 +533,7 @@ def discover_email(
                     email=match,
                     source=source,
                     source_url=url,
-                    confidence=EMAIL_CONFIDENCE[source],
+                    confidence=confidence[source],
                 )
             )
 
@@ -531,14 +543,14 @@ def discover_email(
                 email=address,
                 source="orcid_public",
                 source_url=_ORCID_RECORD_URL.format(orcid=person.orcid) if person.orcid else "",
-                confidence=EMAIL_CONFIDENCE["orcid_public"],
+                confidence=confidence["orcid_public"],
             )
         )
 
     if not candidates:
         return EmailFinding()
 
-    best = max(candidates, key=lambda finding: EMAIL_PRECEDENCE.index(finding.source))
+    best = max(candidates, key=lambda finding: precedence.index(finding.source))
 
     # Every address that was actually observed is kept, not only the one that
     # won on precedence. Someone who has moved institution has a footnote

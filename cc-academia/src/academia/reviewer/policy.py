@@ -162,6 +162,27 @@ class Policy:
     def weights(self) -> dict[str, float]:
         return {k: float(v) for k, v in self.data["scoring"].items()}
 
+    # -- retrieval -------------------------------------------------------
+    def retrieval(self, key: str, default: Any = None) -> Any:
+        """A retrieval mechanic, falling back to the caller's module default."""
+        return (self.data.get("retrieval") or {}).get(key, default)
+
+    def retrieval_int(self, key: str, default: int) -> int:
+        return int(self.retrieval(key, default))
+
+    def retrieval_float(self, key: str, default: float) -> float:
+        return float(self.retrieval(key, default))
+
+    @property
+    def email_confidence(self) -> dict[str, float]:
+        values = (self.data.get("retrieval") or {}).get("email_confidence") or {}
+        return {str(key): float(value) for key, value in values.items()}
+
+    @property
+    def email_precedence(self) -> tuple[str, ...]:
+        values = self.retrieval("email_precedence", [])
+        return tuple(str(value) for value in values)
+
     def fingerprint(self) -> str:
         """Stable hash of the effective policy, recorded with every run."""
         import hashlib

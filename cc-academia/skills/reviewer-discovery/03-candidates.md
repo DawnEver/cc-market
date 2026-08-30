@@ -4,8 +4,12 @@ Score the papers, then take the people who wrote the best ones.
 
 ```bash
 uv run --project "<plugin-root>" rev-disc candidates --slug <slug> \
-  --pool 300 --top-papers 50 --min-evidence 1 --json
+  --min-evidence 1 --json
 ```
+
+`candidate_pool` and `top_papers` default from `[retrieval]` in `coi.toml` and
+may be overridden per journal. `--pool` and `--top-papers` remain explicit
+one-run overrides.
 
 ## How relevance is scored
 
@@ -52,3 +56,8 @@ history and the conflict check may all belong to a different person.
   incidental co-authors.
 - `--top-papers` sets how deep into the ranking authors are harvested.
 - `--pool` sets how many stored papers are scored at all.
+
+`top_papers` is not a target candidate count: co-author density makes the
+mapping nonlinear. The measured TTE run produced `50→21`, `100→44`, `110→50`,
+`200→109`, and `400→225` candidates. Change it deliberately and inspect the
+reported candidate count rather than assuming a fixed ratio.

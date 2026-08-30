@@ -105,3 +105,31 @@ publication_evidence = 0.10
 geographic = 0.08
 reviewer_history = 0.05
 activity = 0.07
+
+# Retrieval and enrichment mechanics use the same journal overlay loader as
+# policy, but remain isolated in their own table. Keeping one resolved config
+# prevents a journal's search breadth and contact budget from drifting apart.
+# Module constants remain the fallback when a personal override omits a key.
+[retrieval]
+candidate_pool = 300
+top_papers = 50
+max_papers_per_candidate = 4
+pdf_front_pages = 1
+page_request_delay = 1.0
+host_failure_budget = 2
+max_page_bytes = 400000
+
+# Lowest to highest precedence. These defaults preserve the editor's explicit
+# choice to keep a published corresponding address above a staff-page address.
+email_precedence = [
+  "orcid_public",
+  "lab_homepage",
+  "institutional_profile",
+  "published_corresponding",
+]
+
+[retrieval.email_confidence]
+orcid_public = 0.65
+lab_homepage = 0.75
+institutional_profile = 0.90
+published_corresponding = 0.95

@@ -147,8 +147,15 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
 
     candidates = sub.add_parser("candidates", help="Score papers, then take their authors.")
     candidates.add_argument("--slug", required=True)
-    candidates.add_argument("--pool", type=int, default=300, help="Papers to score.")
-    candidates.add_argument("--top-papers", type=int, default=50, help="Papers to harvest authors from.")
+    candidates.add_argument(
+        "--pool", type=int, default=None, help="Papers to score; overrides journal config."
+    )
+    candidates.add_argument(
+        "--top-papers",
+        type=int,
+        default=None,
+        help="Papers to harvest authors from; overrides journal config.",
+    )
     candidates.add_argument("--min-evidence", type=int, default=1)
     _add_facts_flag(candidates)
     _add_common(candidates)

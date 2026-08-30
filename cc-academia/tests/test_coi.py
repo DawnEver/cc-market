@@ -281,3 +281,18 @@ def test_journal_overlay_only_changes_what_it_states():
     assert tte.coauthor_years == 4
     assert tte.block_rules == base.block_rules
     assert tte.weights == base.weights
+
+
+def test_journal_overlay_can_change_retrieval_without_forking_defaults(tmp_path, monkeypatch):
+    override = tmp_path / "configs"
+    (override / "journals").mkdir(parents=True)
+    (override / "journals" / "tte.toml").write_text(
+        "[retrieval]\nmax_papers_per_candidate = 7\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ACADEMIA_CONFIG_DIR", str(override))
+
+    policy = load_policy("tte")
+
+    assert policy.retrieval_int("max_papers_per_candidate", 4) == 7
+    assert policy.retrieval_int("host_failure_budget", 2) == 2

@@ -10,6 +10,14 @@ uv run --project "<plugin-root>" rev-disc enrich --slug <slug> --json
 rules read the rank and education this step fills in, so a cap silently changes
 who is filtered as well as who has an address.
 
+Fetch budgets and source precedence live under `[retrieval]` in `coi.toml` and
+use the same per-journal overlay mechanism as the eligibility policy:
+`max_papers_per_candidate`, `pdf_front_pages`, `page_request_delay`,
+`host_failure_budget`, `max_page_bytes`, `email_precedence`, and
+`email_confidence`. Unset personal-overlay keys retain the shipped defaults.
+The default precedence is unchanged: the published corresponding address still
+wins, while every observed alternate remains stored and visible.
+
 Background and contact details are one step because they share a source. ORCID
 carries an education section for only about 30% of researchers in this field —
 measured on a live sample, not assumed — so an institutional page usually has to
