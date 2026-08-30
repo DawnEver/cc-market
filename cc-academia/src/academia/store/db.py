@@ -29,6 +29,7 @@ TABLES = (
     "person_names",
     "person_topics",
     "person_ranks",
+    "person_output",
     "authorships",
     "institutions",
     "affiliations",

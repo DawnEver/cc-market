@@ -96,6 +96,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_orcid ON persons(orcid) WHERE orci
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_openalex ON persons(openalex_id) WHERE openalex_id IS NOT NULL AND openalex_id <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_ieee ON persons(ieee_author_id) WHERE ieee_author_id IS NOT NULL AND ieee_author_id <> '';
 
+-- How many works a person published in a given year, as their bibliographic
+-- profile reports it. Kept apart from `papers`, which only ever holds the works
+-- one run's queries harvested: counting those would call a prolific author
+-- dormant because this manuscript's topic is not what they published last year.
+CREATE TABLE IF NOT EXISTS person_output (
+    person_id  TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
+    year       INTEGER NOT NULL,
+    works      INTEGER NOT NULL,
+    source     TEXT NOT NULL,
+    source_url TEXT,
+    PRIMARY KEY (person_id, year, source)
+);
+
 -- A rank read from a page, kept beside the career history rather than merged
 -- into it: a page states what someone is now, an employment record states what
 -- they were appointed as, and the report shows whichever is more senior.

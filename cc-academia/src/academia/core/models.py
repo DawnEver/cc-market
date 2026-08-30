@@ -235,6 +235,9 @@ class Person:
     topics: list[str] = field(default_factory=list)
     stated_rank: str = ""
     rank_source: str = ""
+    #: Works published per year, as the bibliographic profile reports it —
+    #: the whole record, not the papers one run happened to harvest.
+    works_by_year: dict[int, int] = field(default_factory=dict)
 
     @property
     def rank(self) -> str:

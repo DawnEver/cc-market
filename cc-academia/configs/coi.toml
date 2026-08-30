@@ -69,7 +69,10 @@ min_year = 3
 #   prefer   — feeds the score and adds a note; nobody is removed
 #   require  — the candidate is excluded, and stays on the list with the reason
 [activity]
-# Still working in the field: papers published within the window.
+# Still publishing: works within the window, counted from the candidate's own
+# bibliographic profile rather than from the papers this run harvested. Counting
+# the harvest would ask a different question and call a prolific author dormant
+# because their latest work is not on this manuscript's topic.
 mode = "prefer"
 recent_years = 3
 min_recent_papers = 1

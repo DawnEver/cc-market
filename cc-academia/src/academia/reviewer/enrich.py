@@ -214,6 +214,15 @@ def enrich_from_openalex(
         )
     if profile.topics:
         repo.set_person_topics(conn, person.person_id, profile.topics, source="openalex")
+    if profile.works_by_year:
+        repo.record_output(
+            conn,
+            person.person_id,
+            profile.works_by_year,
+            source="openalex",
+            source_url=f"https://openalex.org/{profile.openalex_id}" if profile.openalex_id else "",
+        )
+        person.works_by_year = profile.works_by_year
     person.topics = profile.topics or person.topics
     return person
 

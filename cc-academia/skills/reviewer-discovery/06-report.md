@@ -55,10 +55,18 @@ overridable per journal:
 
 | Config table | Name in the notes | Default | Fires when |
 |--------------|-------------------|---------|-----------|
-| `activity` | `recent_activity` | prefer | no paper in the last 3 years |
+| `activity` | `recent_activity` | prefer | their publication profile shows no work in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
 | `activity.invitations` | `invitation_response` | prefer | answered under half of the recent invitations whose outcome was recorded |
 | `activity.veteran` | `unresponsive_veteran` | require | a 10-year career, at least 2 invitations with a recorded outcome (all-time, not windowed) and none of them answered |
+
+Activity is read from the candidate's own OpenAlex output per year — their
+whole record, not the papers this run harvested. The distinction is not
+academic: measured against the harvested set, a live TTE run flagged 19 of 22
+candidates as dormant, including Z. Q. Zhu, purely because their most recent
+work is not on this manuscript's topic. When no profile is available the note
+says `[harvested papers only]`, so a weaker basis is visible rather than
+implied.
 
 Only an invitation whose outcome was written down counts. Three sent and never
 followed up are three unknowns, not three silences, so neither invitation rule

@@ -135,6 +135,11 @@ def to_person(record: dict[str, Any]) -> Person:
         confidence=0.99 if record.get("orcid") else 0.9,
         resolution_method="orcid" if record.get("orcid") else "openalex_id",
     )
+    person.works_by_year = {
+        int(entry["year"]): int(entry.get("works_count") or 0)
+        for entry in record.get("counts_by_year") or []
+        if isinstance(entry, dict) and isinstance(entry.get("year"), int)
+    }
     person.names = [as_text(n) for n in record.get("display_name_alternatives") or []]
     person.topics = [as_text(t.get("display_name")) for t in record.get("topics") or []][:8]
 
@@ -181,7 +186,7 @@ class OpenAlex(PaperSource, AuthorSource):
     )
     AUTHOR_SELECT = (
         "id,orcid,display_name,display_name_alternatives,affiliations,"
-        "last_known_institutions,topics,works_count,cited_by_count"
+        "last_known_institutions,topics,works_count,cited_by_count,counts_by_year"
     )
 
     @property

@@ -310,6 +310,38 @@ def papers_of(conn: sqlite3.Connection, person_id: str, limit: int = 50) -> list
     ).fetchall()
 
 
+def record_output(
+    conn: sqlite3.Connection,
+    person_id: str,
+    works_by_year: dict[int, int],
+    *,
+    source: str,
+    source_url: str = "",
+) -> None:
+    """Store a person's yearly output as their bibliographic profile reports it."""
+    for year, works in works_by_year.items():
+        conn.execute(
+            """
+            INSERT INTO person_output (person_id, year, works, source, source_url)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(person_id, year, source) DO UPDATE SET
+                works      = excluded.works,
+                source_url = coalesce(nullif(excluded.source_url, ''), person_output.source_url)
+            """,
+            (person_id, int(year), int(works), source, source_url or None),
+        )
+
+
+def output_by_year(conn: sqlite3.Connection, person_id: str) -> dict[int, int]:
+    """Works per year across every source that reported any, newest wins ties."""
+    rows = conn.execute(
+        "SELECT year, max(works) AS works FROM person_output "
+        "WHERE person_id = ? GROUP BY year",
+        (person_id,),
+    ).fetchall()
+    return {int(row["year"]): int(row["works"]) for row in rows}
+
+
 def publication_years(conn: sqlite3.Connection, person_id: str) -> list[int]:
     """The year of each paper this person authored, newest first.
 
@@ -543,6 +575,7 @@ def load_person(conn: sqlite3.Connection, person_id: str) -> Person | None:
             (person_id,),
         )
     ]
+    person.works_by_year = output_by_year(conn, person_id)
     return person
 
 

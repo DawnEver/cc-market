@@ -17,6 +17,11 @@ build if they drift.
   Missing evidence always passes, and that part is not configurable: an empty
   invitation history, an unresolved outcome or an unstated enrolment year is a
   gap in public data, not a fact about the person.
+- **Per-year publication output** from OpenAlex (`counts_by_year`), stored in
+  `person_output` and used by the activity and veteran rules. Reading activity
+  off the harvested papers instead flagged 19 of 22 candidates on a live TTE run
+  as dormant, Z. Q. Zhu among them, because the harvest only holds work on this
+  manuscript's topic.
 - **`rev-disc invite`** — record an invitation and its outcome. Invitation
   history feeds the next manuscript's ranking and is the only evidence the two
   responsiveness rules have; until now nothing could write it.

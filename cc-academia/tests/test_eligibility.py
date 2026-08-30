@@ -344,3 +344,43 @@ def test_an_invalid_mode_is_rejected_when_the_policy_loads(tmp_path, monkeypatch
     monkeypatch.setenv("ACADEMIA_CONFIG_DIR", str(config))
     with pytest.raises(UsageError):
         load()
+
+
+# ------------------------------------------------- profile-reported output --
+
+
+def with_output(conn, person: Person, works_by_year: dict[int, int]) -> Person:
+    repo.record_output(conn, person.person_id, works_by_year, source="openalex")
+    person.works_by_year = works_by_year
+    return person
+
+
+def test_the_profile_record_beats_the_papers_this_run_happened_to_harvest(conn, policy):
+    """A prolific author whose recent work is off-topic is not dormant."""
+    person = with_output(conn, author_with_papers(conn, 2018, name="Prolific2"), {2025: 12, 2024: 9})
+    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assert not assessment.excluded
+    assert assessment.score == 1.0
+    assert not any("only 0 paper" in note for note in assessment.notes())
+
+
+def test_a_genuinely_dormant_profile_still_fails(conn, policy):
+    person = with_output(conn, author_with_papers(conn, 2012, name="Retired"), {2012: 4, 2013: 1})
+    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assert any("last published 2013" in note for note in assessment.notes())
+
+
+def test_the_fallback_says_which_evidence_it_used(conn, policy):
+    person = author_with_papers(conn, 2012, name="StoreOnly")
+    notes = eligibility.assess(conn, person, policy, now_year=NOW).notes()
+    assert any("harvested papers only" in note for note in notes)
+
+
+def test_career_length_comes_from_the_profile_when_it_is_known(conn, policy):
+    """The store's oldest harvested paper is not the start of a career."""
+    person = with_output(conn, author_with_papers(conn, 2024, name="Long"), {2008: 3, 2024: 5})
+    for index in range(2):
+        repo.record_invitation(
+            conn, person.person_id, f"ms-l{index}", invited_at="2025-01-01", responded=False
+        )
+    assert eligibility.assess(conn, person, policy, now_year=NOW).excluded

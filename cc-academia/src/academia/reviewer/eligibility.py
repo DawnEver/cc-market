@@ -102,21 +102,46 @@ def _year_of(invited_at: str | None) -> int | None:
     return int(text) if text.isdigit() else None
 
 
-def _activity(person_years: list[int], constraint: Constraint, now_year: int) -> RuleOutcome:
+def _activity(
+    works_by_year: dict[int, int],
+    person_years: list[int],
+    constraint: Constraint,
+    now_year: int,
+) -> RuleOutcome:
+    """Is this person still publishing at all?
+
+    Read from their bibliographic profile's yearly output when it is known.
+    Falling back to the papers in the store would ask a different question —
+    "did *this manuscript's* queries harvest anything recent from them" — and a
+    prolific author whose latest work is off-topic would come back dormant.
+    """
     window = constraint.int_("recent_years", 3)
     needed = constraint.int_("min_recent_papers", 1)
-    person_years = [year for year in person_years if year <= now_year]
-    recent = [year for year in person_years if year >= now_year - window + 1]
-    if not person_years:
-        return RuleOutcome(
-            constraint.name, True, "no publication years on record — activity not assessed"
-        )
-    passed = len(recent) >= needed
+    floor = now_year - window + 1
+
+    if works_by_year:
+        recent = sum(w for year, w in works_by_year.items() if floor <= year <= now_year)
+        latest = max((year for year, w in works_by_year.items() if w and year <= now_year), default=None)
+        source = "profile"
+    else:
+        years = [year for year in person_years if year <= now_year]
+        if not years:
+            return RuleOutcome(
+                constraint.name, True, "no publication record available — activity not assessed"
+            )
+        recent = sum(1 for year in years if year >= floor)
+        latest = max(years)
+        # The store holds only what this run harvested, so an absence here is
+        # weaker evidence than an absence in a full profile. Say which was used.
+        source = "harvested papers only"
+
+    passed = recent >= needed
+    last = f"last published {latest}" if latest else "no dated work"
     detail = (
-        f"{len(recent)} paper(s) in the last {window} years"
+        f"{recent} paper(s) in the last {window} years ({source})"
         if passed
-        else f"only {len(recent)} paper(s) in the last {window} years "
-        f"(needs {needed}); last published {max(person_years)}"
+        else f"only {recent} paper(s) in the last {window} years "
+        f"(needs {needed}); {last} [{source}]"
     )
     return RuleOutcome(constraint.name, passed, detail, excluding=constraint.excluding)
 
@@ -168,11 +193,16 @@ def _invitation_response(
 
 
 def _veteran(
-    person_years: list[int], rows: list[sqlite3.Row], constraint: Constraint, now_year: int
+    works_by_year: dict[int, int],
+    person_years: list[int],
+    rows: list[sqlite3.Row],
+    constraint: Constraint,
+    now_year: int,
 ) -> RuleOutcome:
     """A long career alone is never a reason. Silence on top of one is."""
     span = constraint.int_("career_years", 10)
-    dated = [year for year in person_years if year <= now_year]
+    known = [year for year, works in works_by_year.items() if works] or person_years
+    dated = [year for year in known if year <= now_year]
     career = (now_year - min(dated) + 1) if dated else None
     if career is None or career < span:
         return RuleOutcome(constraint.name, True, "not a long-career candidate")
@@ -205,18 +235,19 @@ def assess(
         return Assessment()
 
     years = repo.publication_years(conn, person.person_id)
+    works_by_year = person.works_by_year or repo.output_by_year(conn, person.person_id)
     history = repo.invitation_history(conn, person.person_id)
 
     activity, doctoral, invitations, veteran = constraints
     outcomes = []
     if not activity.off:
-        outcomes.append(_activity(years, activity, now_year))
+        outcomes.append(_activity(works_by_year, years, activity, now_year))
     if not doctoral.off:
         outcomes.append(_doctoral(person, doctoral, now_year))
     if not invitations.off:
         outcomes.append(_invitation_response(history, invitations, now_year))
     if not veteran.off:
-        outcomes.append(_veteran(years, history, veteran, now_year))
+        outcomes.append(_veteran(works_by_year, years, history, veteran, now_year))
 
     # Only ``prefer`` rules feed the score. A ``require`` rule has already had
     # its say by excluding or not excluding; letting it also pay a bonus would
