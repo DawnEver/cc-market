@@ -225,7 +225,30 @@ def load_policy(journal: str = "", *, exclusion_list: list[str] | None = None) -
     # Build every constraint now so a typo in a mode stops the run here, rather
     # than at report time with intake, search and enrichment already spent.
     _ = (policy.activity, policy.doctoral, policy.invitation_activity, policy.veteran)
+    _validate_retrieval(policy)
     return policy
+
+
+def _validate_retrieval(policy: Policy) -> None:
+    """Reject partial precedence lists before enrichment can spend any requests."""
+    precedence = policy.email_precedence
+    confidence = policy.email_confidence
+    if not precedence and not confidence:
+        return
+    if len(precedence) != len(set(precedence)) or set(precedence) != set(confidence):
+        missing = sorted(set(confidence) - set(precedence))
+        unknown = sorted(set(precedence) - set(confidence))
+        details = []
+        if missing:
+            details.append(f"missing: {', '.join(missing)}")
+        if unknown:
+            details.append(f"unknown: {', '.join(unknown)}")
+        if len(precedence) != len(set(precedence)):
+            details.append("duplicate entries")
+        raise UsageError(
+            "retrieval.email_precedence must list every configured email source "
+            f"exactly once ({'; '.join(details)})"
+        )
 
 
 def excluded_names(policy: Policy) -> set[str]:

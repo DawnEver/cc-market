@@ -16,6 +16,7 @@ instead.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from academia.core.errors import SourceError
@@ -27,6 +28,11 @@ from academia.sources.base import PaperSource, SearchPage
 SEARCH_URL = "https://ieeexplore.ieee.org/rest/search"
 BASE_URL = "https://ieeexplore.ieee.org"
 SOURCE = "ieee"
+
+_NEGATED_CLAUSE = re.compile(
+    r'\bNOT\s+(?:"[^"]*"|\([^)]*\)|[^\s()]+)',
+    re.IGNORECASE,
+)
 
 #: The endpoint answers a bot check with a 200 and an HTML body, so a successful
 #: status code is not enough to trust the payload.
@@ -109,7 +115,7 @@ class IeeeXplore(PaperSource):
         sent as plain terms. Its endpoint applies its own relevance semantics,
         so carrying OpenAlex's quotes and operators across is destructive.
         """
-        cleaned = expression.replace('"', " ")
+        cleaned = _NEGATED_CLAUSE.sub(" ", expression).replace('"', " ")
         for operator in (" AND ", " OR ", " NOT ", "(", ")"):
             cleaned = cleaned.replace(operator, " ")
         return " ".join(cleaned.split())

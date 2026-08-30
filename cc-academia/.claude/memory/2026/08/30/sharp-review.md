@@ -1,9 +1,10 @@
 ---
 name: sharp-review-2026-08-30
-description: Sharp review findings — 29 total
+description: Sharp review findings — 31 total
 metadata:
   type: project
 ---
+
 
 
 ## Review 2026-08-30 (session) — diff review + docs review (文档锐评)
@@ -349,3 +350,39 @@ policy.py names the constraints and RuleOutcome.rule carries those strings into 
 - **Suggestion:** State in 06-report.md that academic-age bounds annotate only, unlike the require-capable eligibility rules.
 
 rank._seniority_note appends a note and nothing else; there is no exclusion path. Sitting directly above [seniority.doctoral], which does exclude under require, the asymmetry is easy to misread.
+
+
+## Review 2026-08-30 (follow-up)
+
+## Review 2026-08-30 (session) — diff review + security audit (安全锐评)
+
+### Reviewer Status
+- Reviewer claude (claude): skipped
+- Reviewer codex (codex): skipped
+- Reviewer deepseek (deepseek): OK
+- Reviewer gmi (gmi): OK
+- Reviewer kimi (kimi): skipped
+
+### Confirmed findings
+
+---
+
+### [SR-20260830-030] [MEDIUM] cc-academia/src/academia/sources/ieee.py — IEEE query adaptation turns negated terms into required positive search terms
+
+- **Category:** Bug
+- **Status:** FIXED
+- **Confidence:** single-reviewer
+- **Suggestion:** Parse the Boolean expression and remove each NOT clause together with its operand, or reject unsupported NOT expressions for IEEE rather than retaining the negated term as positive text.
+
+adapt_expression removes the literal NOT token but leaves its operand. For example, motor NOT review becomes motor review, which searches for the material the profile explicitly excluded and can substantially degrade reviewer recall and relevance.
+
+---
+
+### [SR-20260830-031] [MEDIUM] cc-academia/src/academia/reviewer/enrich.py — Configurable email precedence can crash enrichment when it omits a configured source
+
+- **Category:** Bug
+- **Status:** FIXED
+- **Confidence:** single-reviewer
+- **Suggestion:** Validate at policy load that precedence contains every supported/configured confidence source exactly once, or rank unknown/missing sources with a safe fallback instead of calling tuple.index directly.
+
+Stored email rows are admitted based on membership in confidence, but selection calls precedence.index(finding.source). A journal overlay can legally replace the precedence array while the recursively merged confidence table still contains all default sources, causing ValueError once an omitted source is present. The new retrieval configuration is not validated by load_policy.

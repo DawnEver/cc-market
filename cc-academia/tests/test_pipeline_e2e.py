@@ -142,7 +142,14 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert float(exported[0]["identity_confidence"]) >= 0
     assert "evidence_json" not in exported[0]
     assert "evidence_titles" not in exported[0]
-    for name in ("institutions", "education", "evidence", "coi_findings", "invitations"):
+    for name in (
+        "institutions",
+        "education",
+        "emails",
+        "evidence",
+        "coi_findings",
+        "invitations",
+    ):
         detail_path = Path(payload[name])
         assert detail_path.exists()
         with detail_path.open(encoding="utf-8-sig", newline="") as handle:

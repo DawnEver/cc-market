@@ -91,6 +91,13 @@ def test_ieee_adapts_boolean_phrases_to_its_plain_query_text():
     )
 
 
+def test_ieee_drops_a_negated_clause_instead_of_searching_for_it():
+    source = ieee.IeeeXplore()
+
+    assert source.adapt_expression('motor AND NOT "review article"') == "motor"
+    assert source.adapt_expression("motor NOT (review OR survey)") == "motor"
+
+
 # -------------------------------------------------------------- OpenAlex ----
 
 

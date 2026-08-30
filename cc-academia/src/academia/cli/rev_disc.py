@@ -836,6 +836,7 @@ def run_report(args: argparse.Namespace) -> int:
         "dossiers": str(written["dossiers"]),
         "institutions": str(written["institutions"]),
         "education": str(written["education"]),
+        "emails": str(written["emails"]),
         "evidence": str(written["evidence"]),
         "coi_findings": str(written["coi_findings"]),
         "invitations": str(written["invitations"]),

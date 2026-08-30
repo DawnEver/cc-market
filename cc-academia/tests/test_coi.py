@@ -296,3 +296,18 @@ def test_journal_overlay_can_change_retrieval_without_forking_defaults(tmp_path,
 
     assert policy.retrieval_int("max_papers_per_candidate", 4) == 7
     assert policy.retrieval_int("host_failure_budget", 2) == 2
+
+
+def test_email_precedence_must_cover_every_configured_source(tmp_path, monkeypatch):
+    override = tmp_path / "configs"
+    (override / "journals").mkdir(parents=True)
+    (override / "journals" / "tte.toml").write_text(
+        '[retrieval]\nemail_precedence = ["orcid_public"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ACADEMIA_CONFIG_DIR", str(override))
+
+    from academia.core.errors import UsageError
+
+    with pytest.raises(UsageError, match="email_precedence must list every"):
+        load_policy("tte")
