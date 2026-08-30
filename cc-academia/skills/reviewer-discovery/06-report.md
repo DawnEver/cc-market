@@ -116,7 +116,7 @@ how well-received a candidate's *qualifying* work is, this one asks whether they
 are still publishing and still answering at all. A journal that considers that a
 double count sets `activity = 0.0` in `[scoring]` and keeps the gate.
 
-An excluded candidate keeps `coi_status = CLEAR` — no conflict was detected —
+An excluded candidate keeps `coi_status = CLEAR` — **no detected conflict** —
 but carries `blocked = True`, an empty score and the reason in `notes`. Blocked
 rows sort below every invitable candidate whatever the reason, so the ranking
 reads: invitable by conflict status, then expertise, then geography; then
