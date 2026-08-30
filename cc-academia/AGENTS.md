@@ -25,14 +25,18 @@ change needs one, that is a signal the seam was cut in the wrong place.
 which syncs. Left alone, `.venv` and the pytest/ruff caches are copied
 file-by-file by the sync client on every dependency change.
 
+`~/.cache` rather than a folder under `Documents`: OneDrive's Known Folder Move
+redirects Documents into the sync root on a managed machine, which is the exact
+problem this avoids, and it names no institution's directory layout.
+
 Point uv at local disk — **per shell, not globally**:
 
 ```powershell
-$env:UV_PROJECT_ENVIRONMENT = "$HOME/Documents/PEMC/cc-academia-data/venv"
+$env:UV_PROJECT_ENVIRONMENT = "$HOME/.cache/cc-academia/venv"
 ```
 
 ```bash
-export UV_PROJECT_ENVIRONMENT="$HOME/Documents/PEMC/cc-academia-data/venv"
+export UV_PROJECT_ENVIRONMENT="$HOME/.cache/cc-academia/venv"
 ```
 
 Do **not** `setx` it. The variable names a path, not a policy, so a machine-wide

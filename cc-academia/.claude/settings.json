@@ -5,6 +5,6 @@
     ]
   },
   "env": {
-    "UV_PROJECT_ENVIRONMENT": "${HOME}/Documents/PEMC/cc-academia-data/venv"
+    "UV_PROJECT_ENVIRONMENT": "${HOME}/.cache/cc-academia/venv"
   }
 }
