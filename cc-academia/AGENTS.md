@@ -128,9 +128,14 @@ their outcomes, a rank read off a page, an address found on a page, a corrected
 affiliation, and doctorate years.** Every one of them carries the URL that
 stated it.
 
-Those five are exported as line-oriented JSON into a synced folder — OneDrive
-when the client's own environment variables point at one, `ACADEMIA_FACTS_DIR`
-otherwise — under one directory per device. Import merges every device's files;
+Those five can be exported as line-oriented JSON, under one directory per
+device, into whatever folder `ACADEMIA_FACTS_DIR` names.
+
+**Export is off unless `ACADEMIA_FACTS_SYNC=1`, and it never picks the folder
+for you.** These files hold real people's addresses and employment. Copying them
+into a cloud folder — an institutional OneDrive above all — is a decision about
+someone else's personal data, and a default that made it silently would be
+wrong however convenient it is. Import merges every device's files;
 export only ever writes this device's. Two machines therefore never write the
 same path, so a folder syncer has no conflict to resolve, and a "conflicted
 copy" left behind by one is still read.

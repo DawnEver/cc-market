@@ -68,10 +68,14 @@ not a fact about the person.
 The SQLite store stays on local disk — syncing a WAL-mode database through
 OneDrive corrupts it. The facts that cannot be re-derived travel instead:
 invitations and their outcomes, verified ranks, public addresses, corrected
-affiliations and doctorate years, written as JSON Lines into a synced folder,
-one directory per device, every record carrying the URL that stated it. Sync is
-automatic; `rev-disc facts` runs it by hand and `academia doctor` says where the
-folder is.
+affiliations and doctorate years, written as JSON Lines, one directory per
+device, every record carrying the URL that stated it.
+
+This is off by default and never chooses a location on its own: the files hold
+real people's addresses and employment, so putting them in a shared or cloud
+folder has to be a deliberate act. Set `ACADEMIA_FACTS_SYNC=1` and
+`ACADEMIA_FACTS_DIR`; `rev-disc facts` runs it by hand and `academia doctor`
+says where the folder is.
 
 ## Data sources
 

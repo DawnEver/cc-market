@@ -35,11 +35,11 @@ build if they drift.
 - **Portable facts (`rev-disc facts`)** — the five things in the store nobody
   can re-derive (invitations, verified ranks, addresses, corrected affiliations,
   doctorate years) are exported as JSON Lines into a synced folder, one
-  directory per device, and merged back automatically at the start of every
-  command. OneDrive is discovered from the client's own environment variables,
-  so no absolute path is committed anywhere; `ACADEMIA_FACTS_DIR` overrides it
-  and `ACADEMIA_FACTS_SYNC=0` turns it off. The database keeps to local disk:
-  WAL mode and a file-level syncer corrupt each other silently.
+  directory per device. Off unless `ACADEMIA_FACTS_SYNC=1`, and the location is
+  always `ACADEMIA_FACTS_DIR` — nothing is copied anywhere by default, because
+  these records are real people's addresses and employment. The database keeps
+  to local disk regardless: WAL mode and a file-level syncer corrupt each other
+  silently.
 - **`rev-disc invite`** — record an invitation and its outcome. Invitation
   history feeds the next manuscript's ranking and is the only evidence the two
   responsiveness rules have; until now nothing could write it.

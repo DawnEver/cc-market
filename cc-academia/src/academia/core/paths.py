@@ -22,6 +22,10 @@ ENV_DB = "ACADEMIA_DB"
 ENV_FACTS_DIR = "ACADEMIA_FACTS_DIR"
 ENV_DEVICE = "ACADEMIA_DEVICE"
 ENV_FACTS_SYNC = "ACADEMIA_FACTS_SYNC"
+
+#: Folder name for the portable facts, under ACADEMIA_FACTS_DIR or the home
+#: directory. Never chosen for the operator: see facts_sync_enabled.
+FACTS_DIRNAME = "cc-academia-facts"
 ENV_CONTACT = "ACADEMIA_CONTACT"
 
 
@@ -166,47 +170,22 @@ def database_path() -> Path:
     return Path.home() / "Documents" / "PEMC" / "cc-academia-data" / "academia.db"
 
 
-#: Environment variables OneDrive sets for its own roots. Commercial first: a
-#: university tenant is where research data belongs, and a machine signed into
-#: both would otherwise put it in the personal drive.
-_ONEDRIVE_ENV = ("OneDriveCommercial", "OneDriveConsumer", "OneDrive")
-
-#: Where the portable facts live inside whichever synced root is found.
-FACTS_DIRNAME = "cc-academia-facts"
-
-
-def onedrive_root() -> Path | None:
-    """The OneDrive folder this machine syncs, if there is one.
-
-    Discovered, never configured: the environment variables are set by the
-    OneDrive client itself, and the folder name differs per tenant — "OneDrive -
-    The University of Nottingham" on one machine, plain "OneDrive" on another.
-    An absolute path in a committed config would be correct on exactly one
-    machine, which is the bug this avoids.
-    """
-    for name in _ONEDRIVE_ENV:
-        raw = os.environ.get(name, "").strip()
-        if raw and Path(raw).is_dir():
-            return Path(raw)
-    for candidate in sorted(Path.home().glob("OneDrive*")):
-        if candidate.is_dir():
-            return candidate
-    return None
-
-
 def facts_dir() -> Path:
     """Where the portable, syncable facts are kept.
 
     Unlike the database this is safe to sync: line-oriented text, one directory
     per device, so two machines never write the same file and a conflict is a
-    visible diff rather than a corrupted page. Falls back to the home directory
-    when no synced root exists, which still works — it just does not travel.
+    visible diff rather than a corrupted page.
+
+    A shared location is never guessed at. These files hold real people's
+    addresses and employment, and discovering a cloud folder and quietly writing
+    them there is a decision about someone else's personal data. Without
+    ``ACADEMIA_FACTS_DIR`` they stay in the home directory and do not travel.
     """
     explicit = _env_path(ENV_FACTS_DIR)
     if explicit is not None:
         return explicit
-    root = onedrive_root()
-    return (root / FACTS_DIRNAME) if root is not None else (Path.home() / FACTS_DIRNAME)
+    return Path.home() / FACTS_DIRNAME
 
 
 def device_id() -> str:
@@ -220,8 +199,14 @@ def device_id() -> str:
 
 
 def facts_sync_enabled() -> bool:
-    """Sync unless the environment turns it off."""
-    return os.environ.get(ENV_FACTS_SYNC, "").strip().lower() not in {"0", "false", "off", "no"}
+    """Off unless the operator turns it on.
+
+    These files hold real people's addresses and employment. Publishing them to
+    a cloud folder is a decision about someone else's personal data, and a
+    default that does it silently is the wrong one however convenient. Set
+    ``ACADEMIA_FACTS_SYNC=1``, and ``ACADEMIA_FACTS_DIR`` to say where.
+    """
+    return os.environ.get(ENV_FACTS_SYNC, "").strip().lower() in {"1", "true", "on", "yes"}
 
 
 def contact_email() -> str:

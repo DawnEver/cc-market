@@ -43,7 +43,7 @@ def collect() -> dict:
         "facts": {
             "path": str(paths.facts_dir()),
             "device": paths.device_id(),
-            "synced": paths.onedrive_root() is not None or bool(os.environ.get(paths.ENV_FACTS_DIR)),
+            "shared_location": bool(os.environ.get(paths.ENV_FACTS_DIR)),
             "enabled": paths.facts_sync_enabled(),
         },
         "contact_email": paths.contact_email() or None,

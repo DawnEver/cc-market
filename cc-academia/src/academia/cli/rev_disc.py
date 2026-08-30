@@ -11,6 +11,7 @@ research summary, never to decide who is conflicted or who is qualified.
 from __future__ import annotations
 
 import argparse
+import os
 import contextlib
 import shutil
 from datetime import datetime
@@ -847,7 +848,7 @@ def run_facts(args: argparse.Namespace) -> int:
         "exported": exported,
         "imported": imported,
         "skipped": skipped,
-        "onedrive": paths.onedrive_root() is not None,
+        "shared_location": bool(os.environ.get(paths.ENV_FACTS_DIR)),
     }
     if args.json:
         log.emit(payload)
@@ -859,10 +860,11 @@ def run_facts(args: argparse.Namespace) -> int:
             log.info(f"  published : {sum(exported.values())} fact(s)")
         if skipped:
             log.info(f"  skipped   : {skipped} record(s) whose person could not be identified")
-        if paths.onedrive_root() is None:
-            log.warn(
-                "no OneDrive folder found, so the facts are local only. "
-                "Set ACADEMIA_FACTS_DIR to a synced path to share them."
+        if not os.environ.get(paths.ENV_FACTS_DIR):
+            log.info(
+                "these facts are local only. Set ACADEMIA_FACTS_DIR to a shared "
+                "path to carry them between machines — deliberately, since they "
+                "are real people's addresses and employment."
             )
     return EXIT_OK
 
