@@ -97,13 +97,19 @@ nothing. A later `contacts --json` therefore returns `searched` and
 `missing`, `resolved`, and `never_searched`. Do not call coverage final while
 `never_searched` is non-zero.
 
-**Read their papers, not only their staff page.** An IEEE Transactions paper
+**When doing the manual lookup, read their papers, not only their staff page.** An IEEE Transactions paper
 ends with an author biography — "received the Ph.D. degree from ... in 2015. He
 is currently an Associate Professor with ..." — which states in one paragraph
 the two things the staff page often omits and the eligibility rules need: the
 rank and the doctorate years. Search results, publisher landing pages and the
 candidate's own recent papers are all fair game here; you are reading published
 literature, not the submission.
+
+The CLI does not fetch or parse PDF back pages for this. A measured 65-PDF
+sample found no currently unknown-rank candidate that an automatic biography
+parser could fill, so paying that cost for every candidate was removed. If the
+manual lookup finds a biography, return the paper URL as `rank_source` or
+`doctorate_source`; the stored fact remains sourced and checkable.
 
 `phd_start_year` and `phd_year` need `doctorate_source`, the URL that stated
 them. They matter because the doctoral-year floor can only be applied to

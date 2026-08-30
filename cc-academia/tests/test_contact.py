@@ -514,12 +514,35 @@ def _one_page_pdf(text: str) -> bytes:
     return document.tobytes()
 
 
+def _three_page_pdf(*texts: str) -> bytes:
+    fitz = pytest.importorskip("fitz")
+    document = fitz.open()
+    for text in texts:
+        page = document.new_page()
+        page.insert_text((72, 72), text)
+    return document.tobytes()
+
+
 def test_a_footnote_printed_only_in_the_pdf_is_still_found():
     """Publishers render some author blocks nowhere but the PDF itself."""
     body = _one_page_pdf("L. Author is with Some Uni (e-mail: l.author@some.edu).")
 
     assert contact.looks_like_pdf(body)
     assert "l.author@some.edu" in contact.extract_page_emails(contact.pdf_text(body))
+
+
+def test_pdf_fallback_reads_only_the_front_page():
+    body = _three_page_pdf(
+        "front matter front@uni.edu",
+        "manuscript body body@uni.edu",
+        "author biography back@uni.edu",
+    )
+
+    text = contact.pdf_text(body)
+
+    assert "front@uni.edu" in text
+    assert "body@uni.edu" not in text
+    assert "back@uni.edu" not in text
 
 
 def test_html_bytes_are_not_mistaken_for_a_pdf():

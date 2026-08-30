@@ -16,9 +16,8 @@ live sample of stored papers:
 * repository *metadata* pages (PubMed, figshare, DOAJ) yielded 0 of 9 — they
   hold abstracts, not the author block.
 
-So this reads the landing page first and falls back to the PDF, parsing its
-front page for the footnote and its last pages for the IEEE author biography.
-It does not search the open web for a person.
+So this reads the landing page first and falls back to the PDF, parsing only its
+front page for the footnote. It does not search the open web for a person.
 
 What it cannot reach is a paper that is paywalled with no open copy at all: the
 store then holds no URL to try, and the honest answer is ``not_found`` rather
@@ -101,10 +100,8 @@ def is_publisher_address(email: str) -> bool:
     return any(local.startswith(marker) for marker in _PUBLISHER_LOCALS)
 
 
-#: Pages of a paper to read. The author block and the corresponding-author
-#: footnote are on the first; IEEE author biographies are on the last two.
+#: The author block and corresponding-author footnote are on the first page.
 PDF_FRONT_PAGES = 1
-PDF_BACK_PAGES = 2
 
 #: A PDF whose bytes start with anything else is a publisher's error page.
 PDF_MAGIC = b"%PDF"
@@ -119,12 +116,7 @@ def looks_like_pdf(body: bytes, content_type: str = "", url: str = "") -> bool:
 
 
 def pdf_text(body: bytes) -> str:
-    """The front and back pages of a paper as text, or empty without the extra.
-
-    Front for the corresponding-author footnote, back because that is where an
-    IEEE Transactions author biography states a rank and a doctorate year. The
-    middle is the science, and reading it would only cost time.
-    """
+    """The front page of a paper as text, or empty without the PDF extra."""
     try:
         import pymupdf as fitz  # from the 'pdf' extra
     except ImportError:  # pragma: no cover - depends on optional extra
@@ -133,10 +125,7 @@ def pdf_text(body: bytes) -> str:
 
     try:
         with fitz.open(stream=body, filetype="pdf") as document:
-            count = document.page_count
-            wanted = sorted(
-                {*range(min(PDF_FRONT_PAGES, count)), *range(max(0, count - PDF_BACK_PAGES), count)}
-            )
+            wanted = range(min(PDF_FRONT_PAGES, document.page_count))
             pages = [document.load_page(index).get_text("text") for index in wanted]
             return "\n".join(pages)
     except Exception as error:  # a truncated or encrypted file is not an outage
