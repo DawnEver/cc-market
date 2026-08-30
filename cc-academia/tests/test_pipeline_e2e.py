@@ -515,6 +515,15 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
         source="institutional_profile", source_url="https://now.edu/staff/x",
         confidence=0.9,
     )
+    repo.store_institution_for(
+        connection,
+        person_id,
+        name="Now University",
+        country_code="GB",
+        is_current=True,
+        source="agent_lookup",
+        source_url="https://now.edu/staff/x",
+    )
     connection.commit()
     connection.close()
 
@@ -544,6 +553,17 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     assert row["email_alternate"] == "current.address@now.edu"
     assert row["email_alternate_source"] == "institutional_profile"
     assert row["email_alternate_source_url"] == "https://now.edu/staff/x"
+    assert row["email_affiliation_domain"] == "mismatch"
+
+    with (workspace.shortlist_dir / "emails.csv").open(
+        encoding="utf-8-sig", newline=""
+    ) as handle:
+        emails = [item for item in csv.DictReader(handle) if item["person_id"] == person_id]
+    assert {item["email"] for item in emails} == {
+        "old.address@previous.edu",
+        "current.address@now.edu",
+    }
+    assert {item["email_affiliation_domain"] for item in emails} == {"match", "mismatch"}
 
 
 def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, stub_sources, capsys):

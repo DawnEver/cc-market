@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -38,6 +39,7 @@ EXPORT_COLUMNS = (
     "component_geographic", "component_reviewer_history", "component_activity",
     "email", "email_found",
     "email_source", "email_confidence", "email_source_url",
+    "email_affiliation_domain",
     "email_alternate", "email_alternate_source", "email_alternate_source_url", "notes",
     "data_quality_warning", "invitation_count", "response_count", "acceptance_count",
 )
@@ -262,6 +264,7 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "email_source": row.email.source,
         "email_confidence": row.email.confidence,
         "email_source_url": row.email.source_url,
+        "email_affiliation_domain": email_affiliation_domain(person, row.email.email),
         "email_alternate": row.alternate.email,
         "email_alternate_source": row.alternate.source if row.alternate.found else "",
         "email_alternate_source_url": row.alternate.source_url,
@@ -294,8 +297,33 @@ def _detail_csv(columns: tuple[str, ...], records: list[dict[str, object]]) -> s
 DETAIL_KEY_COLUMNS = ("rank", "reviewer", "person_id")
 
 
+_NON_INSTITUTION_HOSTS = {
+    "api.openalex.org",
+    "openalex.org",
+    "orcid.org",
+    "ror.org",
+    "doi.org",
+    "dx.doi.org",
+}
+
+
+def email_affiliation_domain(person, email: str) -> str:
+    """Conservative recency signal; it never changes address precedence."""
+    affiliation = person.current_affiliation
+    domain = (email or "").lower().partition("@")[2]
+    if not affiliation or not domain or not affiliation.source_url:
+        return "unknown"
+    host = urllib.parse.urlparse(affiliation.source_url).netloc.lower().split(":")[0]
+    host = host.removeprefix("www.")
+    if not host or host in _NON_INSTITUTION_HOSTS:
+        return "unknown"
+    if host == domain or host.endswith("." + domain) or domain.endswith("." + host):
+        return "match"
+    return "mismatch"
+
+
 def detail_exports(conn: sqlite3.Connection, rows: list[Row]) -> dict[str, str]:
-    institutions, education, evidence, coi, invitations = [], [], [], [], []
+    institutions, education, evidence, coi, invitations, emails = [], [], [], [], [], []
     for row in rows:
         person = row.candidate.person
         key = {"rank": row.rank, "reviewer": person.display_name, "person_id": person.person_id}
@@ -325,12 +353,22 @@ def detail_exports(conn: sqlite3.Connection, rows: list[Row]) -> dict[str, str]:
                 "manuscript_id": item["ms_id"], "invited_at": item["invited_at"],
                 "responded": bool(item["responded"]), "accepted": bool(item["accepted"]),
             })
+        for item in repo.emails_of(conn, person.person_id):
+            emails.append(key | {
+                "email": item["email"],
+                "source": item["source"],
+                "source_url": item["source_url"] or "",
+                "confidence": item["confidence"],
+                "selected": item["email"] == row.email.email,
+                "email_affiliation_domain": email_affiliation_domain(person, item["email"]),
+            })
     specs = {
         "institutions.csv": ((*DETAIL_KEY_COLUMNS, "kind", "institution", "country", "year_from", "year_to", "source", "source_url"), institutions),
         "education.csv": ((*DETAIL_KEY_COLUMNS, "institution", "degree", "field", "year_from", "year_to", "advisor_person_id", "source", "source_url"), education),
         "evidence.csv": ((*DETAIL_KEY_COLUMNS, "paper_id", "title", "year", "doi", "url", "similarity"), evidence),
         "coi-findings.csv": ((*DETAIL_KEY_COLUMNS, "rule", "status", "evidence"), coi),
         "invitations.csv": ((*DETAIL_KEY_COLUMNS, "manuscript_id", "invited_at", "responded", "accepted"), invitations),
+        "emails.csv": ((*DETAIL_KEY_COLUMNS, "email", "source", "source_url", "confidence", "selected", "email_affiliation_domain"), emails),
     }
     return {name: _detail_csv(columns, records) for name, (columns, records) in specs.items()}
 
@@ -383,6 +421,9 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
         out.append(f"- Email: {row.email.email}")
         out.append(f"  - source: {row.email.source} ({row.email.source_url or 'no url'})")
         out.append(f"  - confidence: {row.email.confidence:.2f}")
+        signal = email_affiliation_domain(person, row.email.email)
+        if signal == "mismatch":
+            out.append("  - recency signal: domain differs from the current-affiliation page")
     else:
         out.append("- Email: not found — no public professional address was located")
         out.append("  - no address is guessed from a name/domain pattern")

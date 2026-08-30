@@ -32,6 +32,10 @@ Writes into `5-shortlist/`:
   removed. A missing address reads `not found` rather than dropping the row.
 - `institutions.csv` — one current or historical institution per row
 - `education.csv` — one degree per row
+- `emails.csv` — every observed address, not only the selected address and one
+  runner-up. `selected` records the precedence result;
+  `email_affiliation_domain` is `match`, `mismatch`, or `unknown` against a
+  sourced current-affiliation page.
 - `evidence.csv` — one qualifying publication per row
 - `coi-findings.csv` — one conflict finding per row
 - `invitations.csv` — one previous invitation per row
@@ -39,6 +43,12 @@ Writes into `5-shortlist/`:
 - `lookup-coverage.json` — missing, resolved, and never-searched public-data
   counts. A non-zero `never_searched` means reachability coverage is not final.
 - `dossiers/` — one file per candidate, with the full audit trail
+
+The domain signal is deliberately advisory. A mismatch can indicate an address
+from before an institutional move, but it never reorders or discards an address;
+the editor's existing choice to prefer published corresponding addresses is
+preserved. `unknown` means there was no defensible institutional domain to
+compare, not that the address is current.
 
 ## Ranking
 
