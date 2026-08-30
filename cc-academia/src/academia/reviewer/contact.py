@@ -225,6 +225,15 @@ class Lookups:
 
     urls: dict[str, list[str]] = field(default_factory=dict)
     ranks: dict[str, tuple[str, str]] = field(default_factory=dict)
+    #: person_id -> (institution, year_from, year_to, source_url). Read off a
+    #: bio or a staff page by whoever did the search; the doctoral floor cannot
+    #: be applied to anybody whose years nobody has stated.
+    doctorates: dict[str, tuple[str, int | None, int | None, str]] = field(default_factory=dict)
+    #: person_id -> (institution, country_code, source_url). A bibliographic
+    #: database can attach someone to an institution they never worked at, and
+    #: the country it implies then feeds the geographic score. A correction read
+    #: off their own staff page outranks it — with the page recorded.
+    affiliations: dict[str, tuple[str, str, str]] = field(default_factory=dict)
 
 
 def read_lookups(path) -> Lookups:
@@ -235,6 +244,15 @@ def read_lookups(path) -> Lookups:
         "person-1": "https://a.edu/x"
         "person-2": ["https://a.edu/x", "https://lab.example/y"]
         "person-3": {"urls": [...], "rank": "professor", "rank_source": "https://..."}
+        "person-4": {"rank": "phd_student", "rank_source": "https://...",
+                     "phd_start_year": 2022, "doctorate_source": "https://..."}
+        "person-5": {"institution": "University of Sheffield", "institution_country": "GB",
+                     "institution_source": "https://..."}
+
+    ``phd_start_year`` and ``phd_year`` are the enrolment and award years of the
+    doctorate, and ``doctorate_source`` is the page or author biography that
+    stated them — an IEEE paper's author block usually does. Without them the
+    doctoral-year floor has nothing to measure and every student passes.
 
     A rank must come with the URL that stated it. Whoever did the search read a
     page; the dossier records which one, so the claim stays checkable — the same
@@ -272,6 +290,36 @@ def read_lookups(path) -> Lookups:
                         f"{key}: a rank needs rank_source — the URL of the page stating it"
                     )
                 lookups.ranks[key] = (rank, source)
+
+            phd_start = _year_or_none(key, "phd_start_year", value.get("phd_start_year"))
+            phd_end = _year_or_none(key, "phd_year", value.get("phd_year"))
+            if phd_start or phd_end:
+                doctorate_source = as_text_or_empty(value.get("doctorate_source"))
+                if not doctorate_source:
+                    raise UsageError(
+                        f"{key}: a doctorate year needs doctorate_source — the URL of "
+                        "the page or author biography stating it"
+                    )
+                lookups.doctorates[key] = (
+                    as_text_or_empty(value.get("doctorate_institution")),
+                    phd_start,
+                    phd_end,
+                    doctorate_source,
+                )
+            institution = as_text_or_empty(value.get("institution"))
+            if institution:
+                institution_source = as_text_or_empty(value.get("institution_source"))
+                if not institution_source:
+                    raise UsageError(
+                        f"{key}: an institution needs institution_source — the URL of "
+                        "the page stating where they work now"
+                    )
+                country = as_text_or_empty(value.get("institution_country")).upper()
+                if country and len(country) != 2:
+                    raise UsageError(
+                        f"{key}: institution_country must be a two-letter code, got {country!r}"
+                    )
+                lookups.affiliations[key] = (institution, country, institution_source)
         else:
             raw_urls = value
 
@@ -280,6 +328,21 @@ def read_lookups(path) -> Lookups:
         if cleaned:
             lookups.urls[key] = cleaned
     return lookups
+
+
+def _year_or_none(key: str, field_name: str, value) -> int | None:
+    """A four-digit year, or nothing. A malformed one stops the run."""
+    from academia.core.errors import UsageError
+
+    if value in (None, ""):
+        return None
+    try:
+        year = int(value)
+    except (TypeError, ValueError):
+        raise UsageError(f"{key}: {field_name} must be a year, got {value!r}") from None
+    if not 1900 <= year <= 2100:
+        raise UsageError(f"{key}: {field_name} {year} is not a plausible year")
+    return year
 
 
 def as_text_or_empty(value) -> str:

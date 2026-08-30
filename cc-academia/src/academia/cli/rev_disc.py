@@ -392,6 +392,8 @@ def run_enrich(args: argparse.Namespace) -> int:
     fetcher = None if args.no_email else enrich_module.PageFetcher()
     homepages = _homepage_overrides(args.homepage)
     supplied_ranks: dict[str, tuple[str, str]] = {}
+    supplied_doctorates: dict[str, tuple[str, int | None, int | None, str]] = {}
+    supplied_affiliations: dict[str, tuple[str, str, str]] = {}
     if getattr(args, "homepages", None):
         from academia.reviewer.contact import read_lookups
 
@@ -399,6 +401,8 @@ def run_enrich(args: argparse.Namespace) -> int:
         for person_id, urls in lookups.urls.items():
             homepages.setdefault(person_id, []).extend(urls)
         supplied_ranks = lookups.ranks
+        supplied_doctorates = lookups.doctorates
+        supplied_affiliations = lookups.affiliations
     # Co-authors in one field share papers; each landing page is fetched once.
     seen_pages: dict[str, list[str]] = {}
 
@@ -413,6 +417,20 @@ def run_enrich(args: argparse.Namespace) -> int:
                 rank, rank_source = supplied
                 repo.set_stated_rank(conn, person.person_id, rank, source_url=rank_source)
                 person.stated_rank, person.rank_source = rank, rank_source
+            if (doctorate := supplied_doctorates.get(person.person_id)) is not None:
+                _record_doctorate(conn, person, doctorate)
+            if (affiliation := supplied_affiliations.get(person.person_id)) is not None:
+                institution, country, source_url = affiliation
+                repo.store_institution_for(
+                    conn,
+                    person.person_id,
+                    name=institution,
+                    country_code=country,
+                    is_current=True,
+                    source="agent_lookup",
+                    source_url=source_url,
+                )
+                person = repo.load_person(conn, person.person_id) or person
             contact = (
                 enrich_module.Contact()
                 if args.no_email
@@ -723,6 +741,51 @@ def run_invite(args: argparse.Namespace) -> int:
     else:
         log.info(f"recorded: {person.display_name} — {len(history)} invitation(s) on record")
     return EXIT_OK
+
+
+def _record_doctorate(
+    conn, person, supplied: tuple[str, int | None, int | None, str]
+) -> None:
+    """Store doctorate years read off a bio, with the page that stated them.
+
+    The doctoral-year floor can only be applied to someone whose enrolment year
+    is known, and ORCID states one for a minority of candidates. An author
+    biography in a published paper usually does — so this is the field that
+    makes that rule work at all, and like every other claim it travels with its
+    source URL.
+    """
+    from academia.core.models import Education, Institution
+
+    institution, year_from, year_to, source_url = supplied
+    name = institution or (
+        person.current_affiliation.institution if person.current_affiliation else ""
+    ) or "institution unknown"
+    built = Institution.build(name=name)
+    repo.upsert_institution(conn, built)
+    repo.record_education(
+        conn,
+        person.person_id,
+        Education(
+            inst_id=built.inst_id,
+            institution=name,
+            degree="Ph.D.",
+            year_from=year_from,
+            year_to=year_to,
+            source="agent_lookup",
+            source_url=source_url,
+        ),
+    )
+    person.education.append(
+        Education(
+            inst_id=built.inst_id,
+            institution=name,
+            degree="Ph.D.",
+            year_from=year_from,
+            year_to=year_to,
+            source="agent_lookup",
+            source_url=source_url,
+        )
+    )
 
 
 def run_status(args: argparse.Namespace) -> int:

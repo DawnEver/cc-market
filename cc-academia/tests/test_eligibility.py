@@ -384,3 +384,31 @@ def test_career_length_comes_from_the_profile_when_it_is_known(conn, policy):
             conn, person.person_id, f"ms-l{index}", invited_at="2025-01-01", responded=False
         )
     assert eligibility.assess(conn, person, policy, now_year=NOW).excluded
+
+
+def test_a_verified_affiliation_outranks_a_bibliographic_guess(conn, policy):
+    """An author index can attach someone to an institution they never joined."""
+    from academia.core.models import Affiliation
+
+    person = author_with_papers(conn, 2025, name="Misplaced")
+    person.affiliations.append(
+        Affiliation(
+            inst_id="i-guess",
+            institution="Beihang University",
+            country_code="CN",
+            is_current=True,
+            year_to=2025,
+            source="openalex",
+        )
+    )
+    person.affiliations.append(
+        Affiliation(
+            inst_id="i-real",
+            institution="University of Sheffield",
+            country_code="GB",
+            is_current=True,
+            source="agent_lookup",
+            source_url="https://sheffield.ac.uk/eee/people/x",
+        )
+    )
+    assert person.country_code == "GB"

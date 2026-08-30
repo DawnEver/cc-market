@@ -212,6 +212,12 @@ class Paper:
         }
 
 
+#: Affiliation sources that state where someone works, rather than inferring it
+#: from where their papers were written. Both carry a URL or an explicit
+#: attestation, so a correction stays as checkable as the thing it replaces.
+VERIFIED_AFFILIATION_SOURCES = frozenset({"agent_lookup", "editor_attestation"})
+
+
 @dataclass(slots=True)
 class Person:
     """A resolved researcher identity.
@@ -298,6 +304,13 @@ class Person:
         collaboration added.
         """
         current = [a for a in self.affiliations if a.is_current]
+        # A correction someone read off the person's own staff page, with the
+        # URL recorded, outranks anything a bibliographic database inferred. An
+        # author index can attach a researcher to an institution they never
+        # worked at, and the country it implies then feeds the geographic score.
+        verified = [a for a in current if a.source in VERIFIED_AFFILIATION_SOURCES]
+        if verified:
+            return max(verified, key=lambda a: (a.year_to or a.year_from or 0))
         if current:
             return min(
                 current,

@@ -22,6 +22,13 @@ build if they drift.
   off the harvested papers instead flagged 19 of 22 candidates on a live TTE run
   as dormant, Z. Q. Zhu among them, because the harvest only holds work on this
   manuscript's topic.
+- **Sourced corrections in the `--homepages` hand-back**: `phd_start_year` /
+  `phd_year` (+ `doctorate_source`) and `institution` / `institution_country`
+  (+ `institution_source`). The doctoral-year floor could not be applied to
+  anybody before this — ORCID states an enrolment year for a minority — and a
+  verified current affiliation now outranks the bibliographic guess, which on a
+  live run had Z. Q. Zhu at Beihang rather than Sheffield and scored his country
+  accordingly.
 - **`rev-disc invite`** — record an invitation and its outcome. Invitation
   history feeds the next manuscript's ranking and is the only evidence the two
   responsiveness rules have; until now nothing could write it.

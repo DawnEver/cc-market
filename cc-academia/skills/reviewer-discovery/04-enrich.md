@@ -68,10 +68,26 @@ hand the selected pages back to the CLI:
   "person-757153134717aca0": {
     "urls": ["https://sparklab.engr.uky.edu/people"],
     "rank": "phd_student",
-    "rank_source": "https://sparklab.engr.uky.edu/people"
+    "rank_source": "https://sparklab.engr.uky.edu/people",
+    "phd_start_year": 2022,
+    "doctorate_institution": "University of Kentucky",
+    "doctorate_source": "https://ieeexplore.ieee.org/document/10123456"
   }
 }
 ```
+
+**Read their papers, not only their staff page.** An IEEE Transactions paper
+ends with an author biography — "received the Ph.D. degree from ... in 2015. He
+is currently an Associate Professor with ..." — which states in one paragraph
+the two things the staff page often omits and the eligibility rules need: the
+rank and the doctorate years. Search results, publisher landing pages and the
+candidate's own recent papers are all fair game here; you are reading published
+literature, not the submission.
+
+`phd_start_year` and `phd_year` need `doctorate_source`, the URL that stated
+them. They matter because the doctoral-year floor can only be applied to
+somebody whose enrolment year is known — without it, every doctoral candidate
+passes and the editor is told nothing.
 
 A rank must come with `rank_source`, the URL of the page that states it — an
 unsourced claim about someone's job has no place in a dossier. An unrecognised
@@ -132,14 +148,21 @@ picking one.
 | Career history with years | OpenAlex affiliation series | high |
 | Degrees and alma mater | ORCID education | around 30% |
 | Doctoral supervisor | direct textual evidence only | low |
-| Public email | institutional page > lab page > public ORCID | ~20% |
+| Public email | corresponding footnote > institutional page > lab page > public ORCID | ~20% |
 
-The precedence is deliberately not cheapest-first. An address on someone's own
-institutional profile is the one they maintain; the ORCID field is frequently
-years out of date. `published_corresponding` ranks above all of these and is
-honoured when present, but **no wired source supplies it today** — OpenAlex does
-not expose author addresses. It is there for an address an editor records by
-hand from the manuscript itself.
+The precedence is deliberately not cheapest-first. The corresponding-author
+footnote of the candidate's own paper is where an editor looks by hand, and it
+is wired: `contact.email_from_publications` fetches the open-access **landing
+page** of up to four of their papers, corresponding-authored first, and reads
+the footnote out of the HTML. It does not download PDFs — publishers answer a
+direct PDF request with 403 or 502 — and it never searches the open web for a
+person. Below it, an address on someone's own institutional profile is the one
+they maintain, and the ORCID field is frequently years out of date.
+
+An address from a landing page is attributed only when the candidate's own name
+matches its local part, or when the record says they are the corresponding
+author of that exact paper. A footnote address belongs to whoever corresponded,
+not to every author on the paper.
 
 ## Rules that are not negotiable
 

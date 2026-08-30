@@ -323,6 +323,94 @@ def test_lookups_accept_a_rank_with_its_source(tmp_path):
     assert lookups.ranks["person-1"][1].endswith("dr-berker-bilgin/")
 
 
+def test_doctorate_years_arrive_with_the_page_that_stated_them(tmp_path):
+    """Without an enrolment year the doctoral floor has nothing to measure."""
+    import json
+
+    path = tmp_path / "lookups.json"
+    path.write_text(
+        json.dumps(
+            {
+                "person-1": {
+                    "rank": "phd_student",
+                    "rank_source": "https://lab.example/people",
+                    "phd_start_year": 2022,
+                    "doctorate_institution": "Some Uni",
+                    "doctorate_source": "https://ieeexplore.ieee.org/document/1",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    institution, year_from, year_to, source = contact.read_lookups(path).doctorates["person-1"]
+    assert (institution, year_from, year_to) == ("Some Uni", 2022, None)
+    assert source.endswith("/document/1")
+
+
+def test_a_doctorate_year_without_a_source_is_refused(tmp_path):
+    """Same rule as a rank and an address: the claim travels with its page."""
+    import json
+
+    from academia.core.errors import UsageError
+
+    path = tmp_path / "l.json"
+    path.write_text(json.dumps({"person-1": {"phd_year": 2015}}), encoding="utf-8")
+
+    with pytest.raises(UsageError, match="doctorate_source"):
+        contact.read_lookups(path)
+
+
+def test_an_implausible_doctorate_year_stops_the_run(tmp_path):
+    import json
+
+    from academia.core.errors import UsageError
+
+    path = tmp_path / "l.json"
+    path.write_text(
+        json.dumps({"person-1": {"phd_year": 15, "doctorate_source": "https://a"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UsageError, match="plausible year"):
+        contact.read_lookups(path)
+
+
+def test_a_corrected_affiliation_arrives_with_its_page(tmp_path):
+    """A bibliographic database can attach someone to the wrong institution."""
+    import json
+
+    path = tmp_path / "l.json"
+    path.write_text(
+        json.dumps(
+            {
+                "person-1": {
+                    "institution": "University of Sheffield",
+                    "institution_country": "gb",
+                    "institution_source": "https://sheffield.ac.uk/eee/people/x",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    name, country, source = contact.read_lookups(path).affiliations["person-1"]
+    assert (name, country) == ("University of Sheffield", "GB")
+    assert source.startswith("https://sheffield")
+
+
+def test_an_affiliation_without_a_source_is_refused(tmp_path):
+    import json
+
+    from academia.core.errors import UsageError
+
+    path = tmp_path / "l.json"
+    path.write_text(json.dumps({"person-1": {"institution": "Somewhere"}}), encoding="utf-8")
+
+    with pytest.raises(UsageError, match="institution_source"):
+        contact.read_lookups(path)
+
+
 def test_a_rank_without_a_source_is_refused(tmp_path):
     """An unsourced claim about someone's job has no place in a dossier."""
     import json
