@@ -88,3 +88,18 @@ def test_get_text_reports_the_host_it_was_redirected_to(monkeypatch):
 
     assert text == "<html>ok</html>"
     assert final == "https://www.mdpi.com/article/1"
+
+
+def test_a_browser_fetch_sends_a_whole_browser_header_set():
+    """A lone User-Agent is not a browser and some university sites know it.
+
+    uakron.edu returns 403 to a request carrying only ``User-Agent`` and 200 to
+    the same request with the headers a real browser always sends alongside it.
+    That 403 cost us a candidate's address that was in the page all along, so
+    the browser headers travel together rather than one of them alone.
+    """
+    from academia.core.http import BROWSER_HEADERS, BROWSER_USER_AGENT
+
+    assert BROWSER_HEADERS["User-Agent"] == BROWSER_USER_AGENT
+    for header in ("Accept", "Accept-Language", "Upgrade-Insecure-Requests"):
+        assert header in BROWSER_HEADERS

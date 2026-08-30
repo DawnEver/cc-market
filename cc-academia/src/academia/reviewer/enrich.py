@@ -115,13 +115,45 @@ def _name_tokens(person: Person) -> list[str]:
     return list(dict.fromkeys(tokens))
 
 
+#: An initials-only local part is at most this long. "gww" and "ys" are the
+#: ordinary forms; past four characters a local part is a word, not initials.
+MAX_INITIALS_LOCAL = 4
+
+
+def _initials_strength(local: str, person: Person) -> int:
+    """Whether a local part is this person's initials and nothing else.
+
+    ``gww`` is Geng Wei Wei and ``ys`` is Yilmaz Sozer: the address carries the
+    name, but not as a substring, so the token test above cannot see it. A
+    Chinese given name is written as one token ("Weiwei") while its address
+    spells out both syllables, which is why this compares *sets* of letters
+    rather than a fixed initial order.
+
+    It is deliberately unforgiving. Every one of the person's initials must
+    appear and no other letter may, so "gg" is not Weiwei Geng and neither is
+    "gwx". Even then the result is only weak: two colleagues in one department
+    share initials as readily as they share a surname, so the caller's
+    sole-match rule still decides whether the address is used.
+    """
+    if not (2 <= len(local) <= MAX_INITIALS_LOCAL) or not local.isalpha():
+        return 0
+    for name in [person.display_name, *person.names]:
+        parts = [part for part in name.lower().replace("-", " ").split() if len(part) > 2]
+        initials = {part[0] for part in parts}
+        if len(initials) > 1 and set(local) == initials:
+            return 1
+    return 0
+
+
 def match_strength(email: str, person: Person) -> int:
     """How confidently an address belongs to this person: 0 none, 1 weak, 2 strong.
 
     Strong means the local part carries more than a surname — either two name
     parts ("guohai.liu"), or an initial followed by the surname ("ghliu"), which
     is the ordinary academic form. Weak means a bare surname, which on a
-    department directory is shared by everyone in a large family of namesakes.
+    department directory is shared by everyone in a large family of namesakes,
+    or a local part that is purely the person's initials ("gww", "ys"), which
+    collides just as easily.
     """
     local = (email or "").split("@", 1)[0].lower()
     tokens = _name_tokens(person)
@@ -129,7 +161,7 @@ def match_strength(email: str, person: Person) -> int:
         return 0
     hits = [token for token in tokens if token in local]
     if not hits:
-        return 0
+        return _initials_strength(local, person)
     if len(hits) >= 2:
         return 2
     hit = hits[0]
@@ -437,18 +469,32 @@ def discover_email(
     record, or one the editor supplied. Nothing here searches the open web for
     a person, and nothing constructs an address from a name and a domain.
     """
-    stored = repo.emails_of(conn, person.person_id)
-    if stored:
-        row = stored[0]
-        return EmailFinding(
-            email=row["email"],
-            source=row["source"],
-            source_url=row["source_url"] or "",
-            confidence=row["confidence"],
-        )
-
     contact = contact or Contact()
     candidates: list[EmailFinding] = []
+
+    # What is already stored competes, it does not win by default. Handing back
+    # a better URL is the documented way to correct an address, and returning
+    # here made that impossible: the correction was fetched and matched, and
+    # then thrown away because the answer had already been given.
+    for row in repo.emails_of(conn, person.person_id):
+        if row["source"] in EMAIL_CONFIDENCE:
+            candidates.append(
+                EmailFinding(
+                    email=row["email"],
+                    source=row["source"],
+                    source_url=row["source_url"] or "",
+                    confidence=row["confidence"],
+                )
+            )
+
+    urls = [*(extra_urls or []), *contact.urls]
+
+    # Looking again is worth minutes of fetching when it can change the answer,
+    # and nothing when it cannot. It can when the editor handed back a URL, or
+    # when there is no address yet; with an address already stored and no new
+    # page to read, the crawl would only rediscover what is above.
+    if candidates and not urls:
+        return max(candidates, key=lambda finding: EMAIL_PRECEDENCE.index(finding.source))
 
     # The candidate's own corresponding-author footnote outranks everything
     # else, so it is worth the fetches even when ORCID already offered one.
@@ -461,7 +507,6 @@ def discover_email(
         if published.found:
             candidates.append(published)
 
-    urls = [*(extra_urls or []), *contact.urls]
     if fetcher is not None:
         for url in urls:
             text = fetcher(url)
@@ -494,14 +539,20 @@ def discover_email(
         return EmailFinding()
 
     best = max(candidates, key=lambda finding: EMAIL_PRECEDENCE.index(finding.source))
-    repo.record_email(
-        conn,
-        person.person_id,
-        best.email,
-        source=best.source,
-        source_url=best.source_url,
-        confidence=best.confidence,
-    )
+
+    # Every address that was actually observed is kept, not only the one that
+    # won on precedence. Someone who has moved institution has a footnote
+    # address and a current staff-page address, both real, and which of them
+    # reaches them is a judgement the editor makes at the point of writing.
+    for finding in candidates:
+        repo.record_email(
+            conn,
+            person.person_id,
+            finding.email,
+            source=finding.source,
+            source_url=finding.source_url,
+            confidence=finding.confidence,
+        )
     return best
 
 

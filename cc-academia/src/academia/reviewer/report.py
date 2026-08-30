@@ -16,7 +16,7 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from academia.reviewer import trajectory
@@ -37,7 +37,8 @@ EXPORT_COLUMNS = (
     "component_recent_expertise", "component_publication_evidence",
     "component_geographic", "component_reviewer_history", "component_activity",
     "email", "email_found",
-    "email_source", "email_confidence", "email_source_url", "notes",
+    "email_source", "email_confidence", "email_source_url",
+    "email_alternate", "email_alternate_source", "email_alternate_source_url", "notes",
     "data_quality_warning", "invitation_count", "response_count", "acceptance_count",
 )
 
@@ -47,6 +48,10 @@ class Row:
     rank: int
     candidate: Candidate
     email: EmailFinding
+    #: The best address that is not the one offered first. A candidate who has
+    #: changed institution has two, and which one reaches them is the editor's
+    #: call rather than the precedence table's.
+    alternate: EmailFinding = field(default_factory=EmailFinding)
 
     @property
     def position(self) -> str:
@@ -115,11 +120,19 @@ class Row:
 
 
 def build_rows(
-    candidates: list[Candidate], emails: dict[str, EmailFinding] | None = None
+    candidates: list[Candidate],
+    emails: dict[str, EmailFinding] | None = None,
+    alternates: dict[str, EmailFinding] | None = None,
 ) -> list[Row]:
     lookup = emails or {}
+    second = alternates or {}
     return [
-        Row(rank=index, candidate=candidate, email=lookup.get(candidate.person.person_id, EmailFinding()))
+        Row(
+            rank=index,
+            candidate=candidate,
+            email=lookup.get(candidate.person.person_id, EmailFinding()),
+            alternate=second.get(candidate.person.person_id, EmailFinding()),
+        )
         for index, candidate in enumerate(candidates, start=1)
     ]
 
@@ -249,6 +262,9 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "email_source": row.email.source,
         "email_confidence": row.email.confidence,
         "email_source_url": row.email.source_url,
+        "email_alternate": row.alternate.email,
+        "email_alternate_source": row.alternate.source if row.alternate.found else "",
+        "email_alternate_source_url": row.alternate.source_url,
         "notes": ";".join(candidate.notes),
         "data_quality_warning": trajectory.quality_note(person),
         "invitation_count": len(invitations),

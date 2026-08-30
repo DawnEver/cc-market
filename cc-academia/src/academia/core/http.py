@@ -29,6 +29,17 @@ BROWSER_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
+#: The rest of what a browser sends. Several university sites — uakron.edu
+#: among them — answer a request carrying nothing but a User-Agent with a 403,
+#: and the same request with these added with a 200. The header set is the
+#: signal, not any one header, so they are kept together and used together.
+BROWSER_HEADERS = {
+    "User-Agent": BROWSER_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 
 def polite_user_agent() -> str:
     """Identify ourselves to APIs with polite pools (OpenAlex, Crossref, ORCID)."""
@@ -143,7 +154,7 @@ def get_text_resolved(
     timeout: int = 30,
 ) -> tuple[str, str]:
     """Fetch a page as text, reporting ``(text, final_url)`` after redirects."""
-    merged = {"User-Agent": BROWSER_USER_AGENT, "Accept": "text/html,*/*"}
+    merged = dict(BROWSER_HEADERS)
     merged.update(headers or {})
     text, _, final = _request_resolved(url, source, headers=merged, timeout=timeout)
     return text, final
@@ -162,7 +173,7 @@ def get_body_resolved(
     destroys a PDF. A paper's corresponding-author footnote lives in a PDF often
     enough that the bytes have to survive the trip.
     """
-    merged = {"User-Agent": BROWSER_USER_AGENT, "Accept": "text/html,application/pdf,*/*"}
+    merged = {**BROWSER_HEADERS, "Accept": "text/html,application/pdf,*/*"}
     merged.update(headers or {})
     request = Request(url, headers=merged, method="GET")
     try:

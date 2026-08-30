@@ -357,3 +357,119 @@ def test_a_refused_init_leaves_no_workspace_behind(tmp_path, stub_sources):
     run("init", "--slug", "leftover", "--journal", "tie", "--title", "One Paper About Machines")
 
     assert not (paths.ongoing_root("reviewer-discovery") / "leftover").exists()
+
+
+def test_coi_survives_a_workspace_that_arrived_from_another_machine(tmp_path, stub_sources):
+    """The workspace syncs; the database deliberately does not.
+
+    ``run_state.json`` records which stages are done, and it travels in the
+    synced folder along with the rest of the workspace. The rows those stages
+    wrote live in SQLite, which stays on the machine that wrote them because
+    WAL mode and a file-level syncer corrupt each other. So on the second
+    machine every stage reads as complete while the database is empty, and
+    ``coi`` used to die on a foreign key pointing at a manuscript nobody had
+    inserted here.
+
+    Each command has to be able to rebuild what it needs from the workspace it
+    was handed.
+    """
+    import sqlite3
+
+    from academia.core import paths
+
+    for argv in (
+        ("init", "--slug", "tie-moved",
+         "--title", "Torque ripple suppression in PMSM drives for traction",
+         "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
+         "--keywords", "Torque ripple,Electric Motor Design",
+         "--journal", "tie", "--year", "2026",
+         "--authors", "Alice Author|Tsinghua University|CN"),
+        ("profile", "--slug", "tie-moved"),
+        ("profile", "--slug", "tie-moved", "--approve"),
+        ("search", "--slug", "tie-moved"),
+        ("candidates", "--slug", "tie-moved"),
+    ):
+        assert run(*argv) == 0
+
+    # The other machine's database never arrives. Only the workspace does.
+    connection = sqlite3.connect(paths.database_path())
+    connection.execute("DELETE FROM manuscripts")
+    connection.commit()
+    connection.close()
+
+    assert run("coi", "--slug", "tie-moved") == 0
+
+
+def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_sources):
+    """Both addresses reach the editor, with where each came from.
+
+    Precedence still decides which is offered first, but a candidate who has
+    moved has a footnote address and a current staff-page address and only the
+    editor can tell which one to write to. Dropping the runner-up from the
+    report hides that the choice exists.
+    """
+    import csv
+
+    from academia.reviewer.workspace import open_workspace
+    from academia.store import db, repository as repo
+    from academia.core import paths
+
+    for argv in (
+        ("init", "--slug", "tie-two-addresses",
+         "--title", "Torque ripple suppression in PMSM drives for traction",
+         "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
+         "--keywords", "Torque ripple,Electric Motor Design",
+         "--journal", "tie", "--year", "2026",
+         "--authors", "Alice Author|Tsinghua University|CN"),
+        ("profile", "--slug", "tie-two-addresses"),
+        ("profile", "--slug", "tie-two-addresses", "--approve"),
+        ("search", "--slug", "tie-two-addresses"),
+        ("candidates", "--slug", "tie-two-addresses"),
+        ("coi", "--slug", "tie-two-addresses"),
+    ):
+        assert run(*argv) == 0
+
+    workspace = open_workspace("tie-two-addresses")
+    rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
+    person_id = rows[0]["person_id"]
+
+    connection = db.connect(paths.database_path())
+    repo.record_email(
+        connection, person_id, "old.address@previous.edu",
+        source="published_corresponding", source_url="https://doi.example/paper",
+        confidence=0.95,
+    )
+    repo.record_email(
+        connection, person_id, "current.address@now.edu",
+        source="institutional_profile", source_url="https://now.edu/staff/x",
+        confidence=0.9,
+    )
+    connection.commit()
+    connection.close()
+
+    # What enrich would have written: the address that won on precedence.
+    workspace.write_jsonl(
+        workspace.audit_dir / "enrichment.jsonl",
+        [{
+            "person_id": person_id,
+            "name": rows[0].get("name", ""),
+            "email": {
+                "email": "old.address@previous.edu",
+                "source": "published_corresponding",
+                "source_url": "https://doi.example/paper",
+                "confidence": 0.95,
+            },
+        }],
+    )
+
+    assert run("report", "--slug", "tie-two-addresses") == 0
+
+    csv_path = workspace.shortlist_dir / "shortlist.csv"
+    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+        exported = {row["person_id"]: row for row in csv.DictReader(handle)}
+
+    row = exported[person_id]
+    assert row["email"] == "old.address@previous.edu"
+    assert row["email_alternate"] == "current.address@now.edu"
+    assert row["email_alternate_source"] == "institutional_profile"
+    assert row["email_alternate_source_url"] == "https://now.edu/staff/x"

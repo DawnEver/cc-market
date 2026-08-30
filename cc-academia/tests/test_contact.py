@@ -500,3 +500,171 @@ def test_the_fetcher_decodes_html_and_extracts_pdfs():
         getter=lambda url, source, timeout=15: (b"<p>a@b.edu</p>", "text/html", url), delay=0
     )
     assert "a@b.edu" in html("https://example.edu/staff")
+
+
+def test_an_all_initials_local_part_is_a_weak_match():
+    """"gww" is Geng Wei Wei, and "ys" is Yilmaz Sozer.
+
+    An address that is nothing but the person's initials is the ordinary form on
+    Chinese university staff pages and on plenty of US ones. Scoring it zero
+    discarded a correct address that was sitting in plain sight on the page we
+    had already fetched. It is only ever *weak*: on a directory listing, initials
+    collide even more readily than surnames do, so the sole-match rule still
+    decides whether it is used.
+    """
+    from academia.reviewer.enrich import match_strength
+
+    geng = Person(person_id="p", display_name="Weiwei Geng")
+    assert match_strength("gww@njust.edu.cn", geng) == 1
+
+    sozer = Person(person_id="p", display_name="Yilmaz Sozer")
+    assert match_strength("ys@uakron.edu", sozer) == 1
+
+
+def test_initials_belonging_to_someone_else_are_not_a_match():
+    from academia.reviewer.enrich import match_strength
+
+    geng = Person(person_id="p", display_name="Weiwei Geng")
+    assert match_strength("apsc-zzr@nuaa.edu.cn", geng) == 0
+    assert match_strength("gg@example.edu", geng) == 0
+
+
+def test_a_sole_initials_address_on_a_staff_page_is_accepted():
+    from academia.reviewer.enrich import match_email_to_person
+
+    geng = Person(person_id="p", display_name="Weiwei Geng")
+    page = ["apsc-zzr@nuaa.edu.cn", "gww@njust.edu.cn"]
+
+    assert match_email_to_person(page, geng) == "gww@njust.edu.cn"
+
+
+def test_a_package_version_is_not_an_address():
+    """"bootstrap@5.1.3" sits in the <script> tags of most modern staff pages.
+
+    It has the shape of an address and none of the substance. A real top-level
+    domain is alphabetic, which is enough to tell the two apart.
+    """
+    from academia.reviewer.enrich import extract_emails
+
+    page = "bootstrap@5.1.3 jquery-ui@6.0 ys@uakron.edu"
+
+    assert extract_emails(page) == ["ys@uakron.edu"]
+
+
+def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(tmp_path):
+    """Handing back a better URL is the documented way to correct an address.
+
+    ``discover_email`` short-circuited on anything already in the database, so
+    the correction was fetched, matched — and then never looked at, because the
+    function had returned several lines earlier. The stale address stayed put no
+    matter how many times the editor re-ran enrich with the right page.
+    """
+    from academia.reviewer.enrich import discover_email
+    from academia.core.models import Author
+    from academia.store import db, repository as repo
+
+    conn = db.connect(tmp_path / "e.db")
+    person_id = repo.upsert_person(
+        conn, Author(name="Zaixin Song", idx=0, orcid="0000-0002-0599-3350")
+    )
+    person = Person(person_id=person_id, display_name="Zaixin Song")
+    repo.record_email(
+        conn, person_id, "zaixisong2@cityu.edu.hk",
+        source="orcid_public", confidence=0.7,
+    )
+
+    finding = discover_email(
+        conn, person,
+        fetcher=lambda url: "zaixin.song@polyu.edu.hk",
+        extra_urls=["https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/"],
+    )
+
+    assert finding.email == "zaixin.song@polyu.edu.hk"
+    assert finding.source == "institutional_profile"
+
+
+def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
+    """A candidate often has two live addresses and the choice is the editor's.
+
+    The corresponding-author footnote proves an address was theirs when the
+    paper went out; the staff page of where they work now proves where they read
+    mail today. Those disagree for anyone who has moved, so one pass that sees
+    both has to store both — the report shows them side by side rather than
+    silently discarding the one that lost on precedence.
+    """
+    from academia.core.models import Author
+    from academia.reviewer.enrich import discover_email
+    from academia.store import db, repository as repo
+
+    conn = db.connect(tmp_path / "both.db")
+    person_id = repo.upsert_person(
+        conn, Author(name="Zaixin Song", idx=0, orcid="0000-0002-0599-3350")
+    )
+    person = Person(person_id=person_id, display_name="Zaixin Song")
+
+    pages = {
+        "https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/": "zaixin.song@polyu.edu.hk",
+        "https://songlab.example.org/team": "zaixisong2@cityu.edu.hk",
+    }
+    discover_email(
+        conn, person, fetcher=pages.get, extra_urls=list(pages),
+    )
+
+    stored = {row["email"] for row in repo.emails_of(conn, person_id)}
+    assert stored == {"zaixin.song@polyu.edu.hk", "zaixisong2@cityu.edu.hk"}
+
+
+def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
+    """Re-reading every candidate's papers on every run costs minutes.
+
+    The reason to look again is that the editor handed back a URL to look at.
+    With nothing new supplied, what is already stored is the answer, and enrich
+    stays as cheap on the tenth run as on the first.
+    """
+    from academia.core.models import Author
+    from academia.reviewer import contact as contact_module
+    from academia.reviewer.enrich import discover_email
+    from academia.store import db, repository as repo
+
+    conn = db.connect(tmp_path / "settled.db")
+    person_id = repo.upsert_person(
+        conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097")
+    )
+    person = Person(person_id=person_id, display_name="Ada Researcher")
+    repo.record_email(
+        conn, person_id, "ada@uni.edu",
+        source="institutional_profile", source_url="https://uni.edu/ada", confidence=0.9,
+    )
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("papers were re-crawled for a settled address")
+
+    monkeypatch.setattr(contact_module, "email_from_publications", refuse)
+
+    finding = discover_email(conn, person, fetcher=lambda url: "")
+
+    assert finding.email == "ada@uni.edu"
+
+
+def test_a_supplied_url_still_reopens_a_settled_address(tmp_path):
+    """The saving above must not switch the correction path back off."""
+    from academia.core.models import Author
+    from academia.reviewer.enrich import discover_email
+    from academia.store import db, repository as repo
+
+    conn = db.connect(tmp_path / "reopen.db")
+    person_id = repo.upsert_person(
+        conn, Author(name="Zaixin Song", idx=0, orcid="0000-0002-0599-3350")
+    )
+    person = Person(person_id=person_id, display_name="Zaixin Song")
+    repo.record_email(
+        conn, person_id, "zaixisong2@cityu.edu.hk", source="orcid_public", confidence=0.7,
+    )
+
+    finding = discover_email(
+        conn, person,
+        fetcher=lambda url: "zaixin.song@polyu.edu.hk",
+        extra_urls=["https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/"],
+    )
+
+    assert finding.email == "zaixin.song@polyu.edu.hk"

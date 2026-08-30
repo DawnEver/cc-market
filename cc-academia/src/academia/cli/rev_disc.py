@@ -557,6 +557,18 @@ def run_coi(args: argparse.Namespace) -> int:
     verdicts: list[dict] = []
 
     with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+        # The workspace syncs between machines and the database does not, so a
+        # stage marked done in run_state.json may have written its rows into a
+        # database that is still on the other machine. The profile on disk
+        # holds everything the manuscript row needs, and writing it again is a
+        # no-op where it already exists.
+        repo.create_manuscript(
+            conn,
+            ms_id=profile.manuscript_id,
+            journal=profile.journal,
+            title_hash=profile.title_hash,
+            origin_countries=profile.origin_countries,
+        )
         repo.create_run(
             conn, run_id=run_id, ms_id=profile.manuscript_id, config_hash=policy.fingerprint()
         )
@@ -677,7 +689,24 @@ def run_report(args: argparse.Namespace) -> int:
             )
             for pid, row in email_rows.items()
         }
-        rows = report.build_rows(ordered, emails)
+        # Everything else observed for this person, best first. The chosen
+        # address is dropped from the list rather than repeated beside itself.
+        alternates = {}
+        for candidate in ordered:
+            pid = candidate.person.person_id
+            chosen = emails.get(pid, enrich_module.EmailFinding()).email
+            for stored in repo.emails_of(conn, pid):
+                if stored["email"] == chosen:
+                    continue
+                alternates[pid] = enrich_module.EmailFinding(
+                    email=stored["email"],
+                    source=stored["source"],
+                    source_url=stored["source_url"] or "",
+                    confidence=stored["confidence"],
+                )
+                break
+
+        rows = report.build_rows(ordered, emails, alternates)
 
         # candidate_scores is the ranking table, and a blocked candidate has no
         # ranking — score_candidate leaves its components empty by design. The

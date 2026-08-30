@@ -19,7 +19,12 @@ so Excel users can sort, filter, join, or place each file on its own worksheet.
 Writes into `5-shortlist/`:
 
 - `shortlist.md` — the table to read
-- `shortlist.csv` — the same rows, for pasting into the editorial system
+- `shortlist.csv` — the same rows, for pasting into the editorial system.
+  `email` is the address that won on precedence and `email_alternate` is the
+  other one found, each with its own source. Read both before writing to anyone
+  who has changed institution: a corresponding-author footnote outranks a staff
+  page, and it necessarily predates the move, so the higher-ranked address is
+  the likelier of the two to be dead.
 - `contact-list.csv` — name, email, institution and nothing else, for addressing
   the invitations. Blocked candidates are omitted from this one file: they stay
   in every other export so the editor can see they were considered, but a list
