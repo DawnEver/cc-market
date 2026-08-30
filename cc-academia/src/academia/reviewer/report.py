@@ -319,6 +319,34 @@ def detail_exports(conn: sqlite3.Connection, rows: list[Row]) -> dict[str, str]:
     return {name: _detail_csv(columns, records) for name, (columns, records) in specs.items()}
 
 
+#: The three columns an editorial system asks for when an invitation goes out.
+CONTACT_COLUMNS = ("reviewer", "email", "institution")
+
+
+def render_contact_list(rows: list[Row]) -> str:
+    """Name, email, institution — the paste-into-the-system version.
+
+    Blocked candidates are the one thing left out. They stay in every other
+    export because an editor needs to see that an obvious name was considered,
+    but a list whose only purpose is to address invitations must not carry
+    somebody the conflict rules removed.
+
+    A candidate without an address stays, with the cell reading ``not found``:
+    they are still invitable through the editorial system, and a silently
+    shorter list would misrepresent the shortlist.
+    """
+    records = [
+        {
+            "reviewer": row.candidate.person.display_name,
+            "email": row.email.email if row.email.found else "not found",
+            "institution": row.institution,
+        }
+        for row in rows
+        if not row.candidate.blocked
+    ]
+    return _detail_csv(CONTACT_COLUMNS, records)
+
+
 def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     person = row.candidate.person
     out: list[str] = []
@@ -457,6 +485,9 @@ def write_all(
         path.write_text(content, encoding="utf-8-sig")
         detail_paths[name.removesuffix(".csv").replace("-", "_")] = path
 
+    contacts = directory / "contact-list.csv"
+    contacts.write_text(render_contact_list(rows), encoding="utf-8-sig")
+
     reading = directory / "reading-list.md"
     reading.write_text(render_reading_list(rows), encoding="utf-8")
 
@@ -467,6 +498,7 @@ def write_all(
     return {
         "shortlist": shortlist,
         "csv": csv_path,
+        "contact_list": contacts,
         "reading_list": reading,
         "dossiers": dossier_dir,
     } | detail_paths

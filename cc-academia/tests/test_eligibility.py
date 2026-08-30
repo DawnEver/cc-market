@@ -412,3 +412,39 @@ def test_a_verified_affiliation_outranks_a_bibliographic_guess(conn, policy):
         )
     )
     assert person.country_code == "GB"
+
+
+# ------------------------------------------------------------ contact list --
+
+
+def test_the_contact_list_is_three_columns_and_omits_blocked_candidates(conn, policy):
+    """The one export whose only job is to address invitations."""
+    from academia.core.models import Affiliation
+    from academia.reviewer import report
+    from academia.reviewer.enrich import EmailFinding
+
+    def row(rank, name, blocked, email):
+        person = Person(person_id=f"p-{name}", display_name=name)
+        person.affiliations.append(
+            Affiliation(inst_id="i1", institution="Some Uni", is_current=True, source="openalex")
+        )
+        candidate = rank_module_candidate(person, blocked)
+        return report.Row(rank=rank, candidate=candidate, email=email)
+
+    def rank_module_candidate(person, blocked):
+        candidate = rank.Candidate(person=person)
+        if blocked:
+            candidate.score = rank.BLOCKED_SCORE
+        return candidate
+
+    rows = [
+        row(1, "Invitable", False, EmailFinding(email="a@uni.edu", source="orcid_public")),
+        row(2, "NoAddress", False, EmailFinding()),
+        row(3, "Conflicted", True, EmailFinding(email="c@uni.edu", source="orcid_public")),
+    ]
+
+    lines = report.render_contact_list(rows).strip().split("\n")
+    assert lines[0] == "reviewer,email,institution"
+    assert lines[1] == "Invitable,a@uni.edu,Some Uni"
+    assert lines[2] == "NoAddress,not found,Some Uni"
+    assert len(lines) == 3  # the blocked candidate is not addressable

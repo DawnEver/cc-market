@@ -29,6 +29,9 @@ build if they drift.
   verified current affiliation now outranks the bibliographic guess, which on a
   live run had Z. Q. Zhu at Beihang rather than Sheffield and scored his country
   accordingly.
+- **`contact-list.csv`** — name, email, institution, nothing else, written by
+  `report` beside the full shortlist. Blocked candidates are excluded from this
+  export alone.
 - **`rev-disc invite`** — record an invitation and its outcome. Invitation
   history feeds the next manuscript's ranking and is the only evidence the two
   responsiveness rules have; until now nothing could write it.

@@ -20,6 +20,11 @@ Writes into `5-shortlist/`:
 
 - `shortlist.md` — the table to read
 - `shortlist.csv` — the same rows, for pasting into the editorial system
+- `contact-list.csv` — name, email, institution and nothing else, for addressing
+  the invitations. Blocked candidates are omitted from this one file: they stay
+  in every other export so the editor can see they were considered, but a list
+  whose only purpose is to send mail must not carry someone the conflict rules
+  removed. A missing address reads `not found` rather than dropping the row.
 - `institutions.csv` — one current or historical institution per row
 - `education.csv` — one degree per row
 - `evidence.csv` — one qualifying publication per row
