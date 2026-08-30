@@ -86,7 +86,8 @@
         "installation": "AVAILABLE",
         "authentication": "ON_USE"
       },
-      "category": "Productivity"
+      "category": "Productivity",
+      "version": "0.1.9"
     }
   ]
 }
