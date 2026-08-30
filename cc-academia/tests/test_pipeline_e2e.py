@@ -188,6 +188,55 @@ def test_status_reports_the_next_stage(stub_sources, capsys):
     assert payload["next_stage"] == "profile"
 
 
+def test_lookup_attempts_make_unsearched_candidates_visible_in_report(
+    tmp_path, stub_sources, capsys, monkeypatch
+):
+    monkeypatch.setattr("academia.reviewer.enrich.enrich", lambda conn, person: person)
+    run(
+        "init", "--slug", "tie-lookups", "--title", "Torque ripple suppression",
+        "--abstract", "Torque ripple suppression for PMSM traction drives.",
+        "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026",
+        "--authors", "Alice Author|Tsinghua University|CN",
+    )
+    run("profile", "--slug", "tie-lookups")
+    run("profile", "--slug", "tie-lookups", "--approve")
+    run("search", "--slug", "tie-lookups")
+    run("candidates", "--slug", "tie-lookups")
+    capsys.readouterr()
+    run("contacts", "--slug", "tie-lookups", "--json")
+    initial = json.loads(capsys.readouterr().out)
+    searched_ids = [item["person_id"] for item in initial["candidates"][:2]]
+    answers = tmp_path / "lookups.json"
+    answers.write_text(
+        json.dumps(
+            {
+                person_id: {
+                    "queries": [f"{person_id} faculty profile"],
+                    "urls_seen": [],
+                    "urls": [],
+                    "outcome": "no_public_data",
+                }
+                for person_id in searched_ids
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run("enrich", "--slug", "tie-lookups", "--no-email", "--homepages", str(answers))
+    run("contacts", "--slug", "tie-lookups", "--json")
+    contacts = json.loads(capsys.readouterr().out)
+    assert contacts["never_searched"] == contacts["missing"] - 2
+    searched = {item["person_id"]: item for item in contacts["candidates"]}
+    assert all(searched[person_id]["last_outcome"] == "no_public_data" for person_id in searched_ids)
+
+    assert run("coi", "--slug", "tie-lookups") == 0
+    assert run("report", "--slug", "tie-lookups", "--json") == 0
+    report_payload = json.loads(capsys.readouterr().out)
+    assert report_payload["lookup_coverage"]["never_searched"] == contacts["never_searched"]
+    coverage = json.loads(Path(report_payload["lookup_coverage_file"]).read_text(encoding="utf-8"))
+    assert coverage == report_payload["lookup_coverage"]
+
+
 def test_completed_status_does_not_tell_the_user_to_repeat_report(stub_sources, capsys):
     run("init", "--slug", "tie-demo", "--title", "A study", "--journal", "tie")
     workspace = open_workspace("tie-demo")

@@ -36,6 +36,8 @@ Writes into `5-shortlist/`:
 - `coi-findings.csv` — one conflict finding per row
 - `invitations.csv` — one previous invitation per row
 - `reading-list.md` — the qualifying papers, to read before deciding
+- `lookup-coverage.json` — missing, resolved, and never-searched public-data
+  counts. A non-zero `never_searched` means reachability coverage is not final.
 - `dossiers/` — one file per candidate, with the full audit trail
 
 ## Ranking

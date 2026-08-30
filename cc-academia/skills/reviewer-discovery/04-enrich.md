@@ -64,17 +64,38 @@ hand the selected pages back to the CLI:
 
 ```json
 {
-  "person-8e8ea1e0efc0971b": ["https://www.uwindsor.ca/engineering/electrical/328/dr-narayan-kar"],
+  "person-8e8ea1e0efc0971b": {
+    "queries": ["Narayan Kar Windsor faculty profile"],
+    "urls_seen": ["https://www.uwindsor.ca/engineering/electrical/328/dr-narayan-kar"],
+    "urls": ["https://www.uwindsor.ca/engineering/electrical/328/dr-narayan-kar"],
+    "outcome": "found"
+  },
   "person-757153134717aca0": {
+    "queries": ["candidate name Kentucky faculty profile"],
+    "urls_seen": ["https://sparklab.engr.uky.edu/people"],
     "urls": ["https://sparklab.engr.uky.edu/people"],
+    "outcome": "found",
     "rank": "phd_student",
     "rank_source": "https://sparklab.engr.uky.edu/people",
     "phd_start_year": 2022,
     "doctorate_institution": "University of Kentucky",
     "doctorate_source": "https://ieeexplore.ieee.org/document/10123456"
+  },
+  "person-no-public-result": {
+    "queries": ["candidate name institution faculty profile"],
+    "urls_seen": [],
+    "urls": [],
+    "outcome": "no_public_data"
   }
 }
 ```
+
+`outcome` is one of `found`, `no_public_data`, `blocked`, or `skipped`. The CLI
+appends every answer to `4-audit/lookups.jsonl`, including searches that found
+nothing. A later `contacts --json` therefore returns `searched` and
+`last_outcome` for every still-incomplete candidate plus the summary counts
+`missing`, `resolved`, and `never_searched`. Do not call coverage final while
+`never_searched` is non-zero.
 
 **Read their papers, not only their staff page.** An IEEE Transactions paper
 ends with an author biography — "received the Ph.D. degree from ... in 2015. He

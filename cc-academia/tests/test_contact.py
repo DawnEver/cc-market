@@ -214,6 +214,49 @@ def test_batch_homepages_are_read_from_a_file(tmp_path):
     }
 
 
+def test_lookup_answers_record_empty_searches_as_attempts(tmp_path):
+    import json
+
+    path = tmp_path / "lookups.json"
+    path.write_text(
+        json.dumps(
+            {
+                "person-1": {
+                    "queries": ["Ada Lovelace faculty profile"],
+                    "urls_seen": ["https://example.edu/search"],
+                    "urls": [],
+                    "outcome": "no_public_data",
+                },
+                "person-2": "https://example.edu/person-2",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    lookups = contact.read_lookups(path)
+
+    assert lookups.attempts[0].person_id == "person-1"
+    assert lookups.attempts[0].outcome == "no_public_data"
+    assert lookups.attempts[0].queries == ["Ada Lovelace faculty profile"]
+    assert lookups.attempts[1].outcome == "found"
+    assert lookups.attempts[1].urls_selected == ["https://example.edu/person-2"]
+
+
+def test_lookup_coverage_distinguishes_unsearched_from_searched_empty():
+    items = [{"person_id": f"person-{index}"} for index in range(5)]
+    attempts = [
+        contact.LookupAttempt(person_id="person-0", outcome="no_public_data"),
+        contact.LookupAttempt(person_id="person-1", outcome="no_public_data"),
+    ]
+
+    annotated, summary = contact.annotate_lookup_status(items, attempts, total=5)
+
+    assert summary == {"missing": 5, "resolved": 0, "never_searched": 3}
+    assert [item["searched"] for item in annotated] == [True, True, False, False, False]
+    assert annotated[0]["last_outcome"] == "no_public_data"
+    assert annotated[2]["last_outcome"] == ""
+
+
 def test_a_malformed_homepage_file_is_a_usage_error(tmp_path):
     from academia.core.errors import UsageError
 

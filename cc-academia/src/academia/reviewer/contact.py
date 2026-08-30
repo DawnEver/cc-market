@@ -38,7 +38,7 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from academia.core import log
-from academia.core.models import Person
+from academia.core.models import Person, utcnow
 from academia.reviewer.enrich import (
     EMAIL_CONFIDENCE,
     EmailFinding,
@@ -279,6 +279,31 @@ def lookup_worklist(
 
 
 @dataclass
+class LookupAttempt:
+    """One explicit public-web search attempt for a candidate."""
+
+    person_id: str
+    searched_at: str = ""
+    queries: list[str] = field(default_factory=list)
+    urls_seen: list[str] = field(default_factory=list)
+    urls_selected: list[str] = field(default_factory=list)
+    outcome: str = ""
+
+    def as_dict(self) -> dict:
+        return {
+            "person_id": self.person_id,
+            "searched_at": self.searched_at or utcnow(),
+            "queries": self.queries,
+            "urls_seen": self.urls_seen,
+            "urls_selected": self.urls_selected,
+            "outcome": self.outcome,
+        }
+
+
+LOOKUP_OUTCOMES = {"found", "no_public_data", "blocked", "skipped"}
+
+
+@dataclass
 class Lookups:
     """What a search turned up, ready to be recorded with its provenance."""
 
@@ -293,6 +318,7 @@ class Lookups:
     #: the country it implies then feeds the geographic score. A correction read
     #: off their own staff page outranks it — with the page recorded.
     affiliations: dict[str, tuple[str, str, str]] = field(default_factory=dict)
+    attempts: list[LookupAttempt] = field(default_factory=list)
 
 
 def read_lookups(path) -> Lookups:
@@ -386,7 +412,82 @@ def read_lookups(path) -> Lookups:
         cleaned = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
         if cleaned:
             lookups.urls[key] = cleaned
+        outcome = as_text_or_empty(value.get("outcome")) if isinstance(value, dict) else ""
+        if outcome and outcome not in LOOKUP_OUTCOMES:
+            raise UsageError(
+                f"{key}: unrecognised lookup outcome {outcome!r}. "
+                f"Expected one of: {', '.join(sorted(LOOKUP_OUTCOMES))}"
+            )
+        if not outcome:
+            outcome = "found"
+        queries = _text_list(value.get("queries")) if isinstance(value, dict) else []
+        urls_seen = _text_list(value.get("urls_seen")) if isinstance(value, dict) else []
+        searched_at = as_text_or_empty(value.get("searched_at")) if isinstance(value, dict) else ""
+        lookups.attempts.append(
+            LookupAttempt(
+                person_id=key,
+                searched_at=searched_at,
+                queries=queries,
+                urls_seen=urls_seen,
+                urls_selected=cleaned,
+                outcome=outcome,
+            )
+        )
     return lookups
+
+
+def _text_list(value) -> list[str]:
+    values = [value] if isinstance(value, str) else list(value or [])
+    return [item.strip() for item in values if isinstance(item, str) and item.strip()]
+
+
+def read_lookup_attempts(path) -> list[LookupAttempt]:
+    """Read a workspace attempt log; a missing log means nobody searched yet."""
+    import json
+    from pathlib import Path
+
+    source = Path(path)
+    if not source.exists():
+        return []
+    attempts = []
+    for line in source.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        attempts.append(
+            LookupAttempt(
+                person_id=str(row["person_id"]),
+                searched_at=as_text_or_empty(row.get("searched_at")),
+                queries=_text_list(row.get("queries")),
+                urls_seen=_text_list(row.get("urls_seen")),
+                urls_selected=_text_list(row.get("urls_selected")),
+                outcome=as_text_or_empty(row.get("outcome")),
+            )
+        )
+    return attempts
+
+
+def annotate_lookup_status(
+    items: list[dict], attempts: list[LookupAttempt], *, total: int
+) -> tuple[list[dict], dict[str, int]]:
+    """Add attempt state to missing-data items and summarize lookup coverage."""
+    latest = {attempt.person_id: attempt for attempt in attempts}
+    annotated = []
+    for item in items:
+        attempt = latest.get(str(item["person_id"]))
+        annotated.append(
+            {
+                **item,
+                "searched": attempt is not None,
+                "last_outcome": attempt.outcome if attempt else "",
+            }
+        )
+    never_searched = sum(not item["searched"] for item in annotated)
+    return annotated, {
+        "missing": len(annotated),
+        "resolved": max(0, total - len(annotated)),
+        "never_searched": never_searched,
+    }
 
 
 def _year_or_none(key: str, field_name: str, value) -> int | None:

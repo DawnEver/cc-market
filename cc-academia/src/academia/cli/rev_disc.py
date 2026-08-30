@@ -21,6 +21,7 @@ from academia.core import log, paths
 from academia.core.errors import EXIT_OK, UsageError
 from academia.core.models import stable_id
 from academia.reviewer import coi as coi_module
+from academia.reviewer import contact as contact_module
 from academia.reviewer import discover, geo, rank, report
 from academia.reviewer import enrich as enrich_module
 from academia.reviewer.policy import load_policy
@@ -438,18 +439,32 @@ def run_enrich(args: argparse.Namespace) -> int:
     # breaker apply across candidates rather than resetting for each one.
     fetcher = None if args.no_email else enrich_module.PageFetcher()
     homepages = _homepage_overrides(args.homepage)
+    lookup_attempts = [
+        contact_module.LookupAttempt(
+            person_id=person_id,
+            urls_selected=urls,
+            outcome="found",
+        )
+        for person_id, urls in homepages.items()
+    ]
     supplied_ranks: dict[str, tuple[str, str]] = {}
     supplied_doctorates: dict[str, tuple[str, int | None, int | None, str]] = {}
     supplied_affiliations: dict[str, tuple[str, str, str]] = {}
     if getattr(args, "homepages", None):
-        from academia.reviewer.contact import read_lookups
-
-        lookups = read_lookups(args.homepages)
+        lookups = contact_module.read_lookups(args.homepages)
         for person_id, urls in lookups.urls.items():
             homepages.setdefault(person_id, []).extend(urls)
         supplied_ranks = lookups.ranks
         supplied_doctorates = lookups.doctorates
         supplied_affiliations = lookups.affiliations
+        lookup_attempts.extend(lookups.attempts)
+    if lookup_attempts:
+        attempt_path = workspace.audit_dir / "lookups.jsonl"
+        existing = contact_module.read_lookup_attempts(attempt_path)
+        workspace.write_jsonl(
+            attempt_path,
+            [attempt.as_dict() for attempt in [*existing, *lookup_attempts]],
+        )
     # Co-authors in one field share papers; each landing page is fetched once.
     seen_pages: dict[str, list[str]] = {}
 
@@ -689,7 +704,8 @@ def run_report(args: argparse.Namespace) -> int:
                 )
             )
 
-        ordered = rank.take(rank.rank(candidates), args.top)
+        all_ordered = rank.rank(candidates)
+        ordered = rank.take(all_ordered, args.top)
         emails = {
             pid: enrich_module.EmailFinding(
                 email=(row["email"] or {}).get("email") or "",
@@ -733,6 +749,19 @@ def run_report(args: argparse.Namespace) -> int:
             if row.institution == "unknown" and not row.candidate.blocked
         ]
         written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy.sources)
+        all_people = [candidate.person for candidate in all_ordered]
+        resolved = {
+            person.person_id for person in all_people if repo.emails_of(conn, person.person_id)
+        }
+        missing = contact_module.lookup_worklist(all_people, resolved=resolved)
+        _, lookup_coverage = contact_module.annotate_lookup_status(
+            missing,
+            contact_module.read_lookup_attempts(workspace.audit_dir / "lookups.jsonl"),
+            total=len(all_people),
+        )
+        coverage_path = workspace.write_json(
+            workspace.shortlist_dir / "lookup-coverage.json", lookup_coverage
+        )
 
     state.mark("report")
     workspace.save_state(state)
@@ -748,6 +777,8 @@ def run_report(args: argparse.Namespace) -> int:
         "invitations": str(written["invitations"]),
         "candidates": len(rows),
         "without_affiliation": unknown,
+        "lookup_coverage": lookup_coverage,
+        "lookup_coverage_file": str(coverage_path),
     }
     if args.json:
         log.emit(payload)
@@ -760,6 +791,11 @@ def run_report(args: argparse.Namespace) -> int:
                 + ", ".join(unknown[:5])
             )
             log.warn("run `rev-disc enrich` without --limit, then re-run coi and report")
+        if lookup_coverage["never_searched"]:
+            log.warn(
+                f"contact coverage is not final: {lookup_coverage['never_searched']} "
+                "candidate(s) with missing data were never searched"
+            )
     return EXIT_OK
 
 
@@ -947,8 +983,6 @@ def run_contacts(args: argparse.Namespace) -> int:
     rest need a search, which is the orchestrating agent's job rather than the
     CLI's. Feed the answers back with `enrich --homepages`.
     """
-    from academia.reviewer.contact import lookup_worklist
-
     workspace = open_workspace(args.slug)
     rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
 
@@ -962,13 +996,22 @@ def run_contacts(args: argparse.Namespace) -> int:
             people.append(person)
             if repo.emails_of(conn, person.person_id):
                 resolved.add(person.person_id)
-        items = lookup_worklist(people, resolved=resolved)
+        items = contact_module.lookup_worklist(people, resolved=resolved)
 
-    payload = {"missing": len(items), "resolved": len(resolved), "candidates": items}
+    items, summary = contact_module.annotate_lookup_status(
+        items,
+        contact_module.read_lookup_attempts(workspace.audit_dir / "lookups.jsonl"),
+        total=len(people),
+    )
+    payload = {**summary, "candidates": items}
     if args.json:
         log.emit(payload)
     else:
-        log.info(f"{len(resolved)} of {len(people)} candidates have an address")
+        log.info(
+            f"{summary['resolved']} of {len(people)} candidates have all requested public fields"
+        )
+        if summary["never_searched"]:
+            log.info(f"{summary['never_searched']} candidates have never been searched")
         for item in items:
             log.info(f"  {item['person_id']}  {item['name']} — {item['institution'] or 'unknown'}")
         log.info("Look these up, then: rev-disc enrich --slug "
