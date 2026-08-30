@@ -11,11 +11,12 @@ research summary, never to decide who is conflicted or who is qualified.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import shutil
 from datetime import datetime
 from pathlib import Path
 
-from academia.core import log
+from academia.core import log, paths
 from academia.core.errors import EXIT_OK, UsageError
 from academia.core.models import stable_id
 from academia.reviewer import coi as coi_module
@@ -38,6 +39,41 @@ from academia.store import repository as repo
 
 def _now_year() -> int:
     return datetime.now().year
+
+
+@contextlib.contextmanager
+def store(*, sync: bool = True):
+    """A database session that carries the portable facts in and out.
+
+    The store is a cache and stays on local disk; the handful of facts nobody
+    can re-derive — invitations, verified ranks, addresses, affiliations and
+    doctorate years — live as text in a synced folder. Every command therefore
+    starts by merging what other machines learned and ends by publishing what
+    this one learned, which is what makes "the second manuscript is cheaper"
+    true across devices rather than only across runs on one.
+
+    Sync failures are reported and swallowed: a syncing folder that is briefly
+    unavailable must not take the pipeline down with it.
+    """
+    from academia.store import facts
+
+    enabled = sync and paths.facts_sync_enabled()
+    with db.session() as conn:
+        if enabled:
+            try:
+                imported, skipped = facts.import_(conn)
+                if (total := sum(imported.values())):
+                    log.detail(f"facts: merged {total} from {paths.facts_dir()}")
+                if skipped:
+                    log.detail(f"facts: skipped {skipped} unidentifiable record(s)")
+            except OSError as error:
+                log.warn(f"could not read shared facts: {error}")
+        yield conn
+        if enabled:
+            try:
+                facts.export(conn)
+            except OSError as error:
+                log.warn(f"could not publish facts: {error}")
 
 
 def _sources(names: list[str] | None):
@@ -191,7 +227,7 @@ def run_profile(args: argparse.Namespace) -> int:
     # Regenerating invalidates any previous approval.
     state.approved_queries = ""
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         repo.create_manuscript(
             conn,
             ms_id=profile.manuscript_id,
@@ -280,7 +316,7 @@ def run_search(args: argparse.Namespace) -> int:
         year_from=args.year_from,
     )
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         stored = discover.store_papers(conn, outcome.papers)
 
     workspace.write_jsonl(
@@ -325,7 +361,7 @@ def run_candidates(args: argparse.Namespace) -> int:
     state = workspace.load_state()
     profile = _load_profile(workspace)
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         scores = discover.relevance(conn, profile, now_year=_now_year(), limit=args.pool)
         candidates = discover.build_candidates(
             conn, scores, top_papers=args.top_papers, min_evidence=args.min_evidence
@@ -407,7 +443,7 @@ def run_enrich(args: argparse.Namespace) -> int:
     seen_pages: dict[str, list[str]] = {}
 
     enriched: list[dict] = []
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         for row in subset:
             person = repo.load_person(conn, row["person_id"])
             if person is None:
@@ -519,7 +555,7 @@ def run_coi(args: argparse.Namespace) -> int:
     run_id = state.run_id or stable_id("run", profile.manuscript_id, policy.fingerprint())
     verdicts: list[dict] = []
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         repo.create_run(
             conn, run_id=run_id, ms_id=profile.manuscript_id, config_hash=policy.fingerprint()
         )
@@ -587,7 +623,7 @@ def run_report(args: argparse.Namespace) -> int:
     except UsageError:
         email_rows = {}
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         candidates: list[rank.Candidate] = []
         for row in candidate_rows:
             person = repo.load_person(conn, row["person_id"])
@@ -712,7 +748,7 @@ def run_invite(args: argparse.Namespace) -> int:
     def tri(value: str) -> bool | None:
         return None if not value else value == "yes"
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         person = repo.load_person(conn, args.person)
         if person is None:
             raise UsageError(
@@ -757,9 +793,11 @@ def _record_doctorate(
     from academia.core.models import Education, Institution
 
     institution, year_from, year_to, source_url = supplied
-    name = institution or (
-        person.current_affiliation.institution if person.current_affiliation else ""
-    ) or "institution unknown"
+    # Not defaulted to where they work now: a doctorate is rarely from the same
+    # place, and inheriting the current affiliation writes a false alma mater
+    # into the record — visible in the shared facts as "PhD, Beihang" for
+    # somebody whose only link to Beihang was a mis-parsed author index.
+    name = institution or "institution unknown"
     built = Institution.build(name=name)
     repo.upsert_institution(conn, built)
     repo.record_education(
@@ -786,6 +824,47 @@ def _record_doctorate(
             source_url=source_url,
         )
     )
+
+
+def run_facts(args: argparse.Namespace) -> int:
+    """Merge every device's shared facts, then publish this device's."""
+    from academia.store import facts as facts_module
+
+    directory = Path(args.dir).expanduser() if args.dir else paths.facts_dir()
+    with db.session() as conn:
+        if args.export_only:
+            exported, imported, skipped = facts_module.export(conn, directory), {}, 0
+        elif args.import_only:
+            imported, skipped = facts_module.import_(conn, directory)
+            exported = {}
+        else:
+            report = facts_module.sync(conn, directory)
+            exported, imported, skipped = report.exported, report.imported, report.skipped
+
+    payload = {
+        "directory": str(directory),
+        "device": paths.device_id(),
+        "exported": exported,
+        "imported": imported,
+        "skipped": skipped,
+        "onedrive": paths.onedrive_root() is not None,
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"facts folder: {directory}  (device '{paths.device_id()}')")
+        if imported:
+            log.info(f"  merged in : {sum(imported.values())} fact(s) from other devices")
+        if exported:
+            log.info(f"  published : {sum(exported.values())} fact(s)")
+        if skipped:
+            log.info(f"  skipped   : {skipped} record(s) whose person could not be identified")
+        if paths.onedrive_root() is None:
+            log.warn(
+                "no OneDrive folder found, so the facts are local only. "
+                "Set ACADEMIA_FACTS_DIR to a synced path to share them."
+            )
+    return EXIT_OK
 
 
 def run_status(args: argparse.Namespace) -> int:
@@ -832,7 +911,7 @@ def run_contacts(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
 
-    with db.session() as conn:
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         people = []
         resolved: set[str] = set()
         for row in rows:

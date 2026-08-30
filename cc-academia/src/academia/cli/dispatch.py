@@ -23,6 +23,14 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose progress on stderr.")
 
 
+def _add_facts_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-facts-sync",
+        action="store_true",
+        help="Do not read or write the shared facts folder for this command.",
+    )
+
+
 def build_academia_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="academia",
@@ -130,6 +138,7 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     candidates.add_argument("--pool", type=int, default=300, help="Papers to score.")
     candidates.add_argument("--top-papers", type=int, default=50, help="Papers to harvest authors from.")
     candidates.add_argument("--min-evidence", type=int, default=1)
+    _add_facts_flag(candidates)
     _add_common(candidates)
 
     enrich = sub.add_parser("enrich", help="Affiliation, career history and public email.")
@@ -159,11 +168,13 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         help="JSON answers to a `rev-disc contacts` worklist: person_id to a "
         "URL, a list of URLs, or {urls, rank, rank_source}.",
     )
+    _add_facts_flag(enrich)
     _add_common(enrich)
 
     coi = sub.add_parser("coi", help="Run the conflict rules. No model is involved.")
     coi.add_argument("--slug", required=True)
     coi.add_argument("--exclude", default="", help="Comma-separated names to block outright.")
+    _add_facts_flag(coi)
     _add_common(coi)
 
     report = sub.add_parser("report", help="Rank and render the shortlist.")
@@ -175,12 +186,14 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         help="Cap the invitable list. Default 0 = everyone, because the "
         "editor picks from a broad slate rather than being handed a few.",
     )
+    _add_facts_flag(report)
     _add_common(report)
 
     contacts = sub.add_parser(
         "contacts", help="List candidates still needing an address looked up."
     )
     contacts.add_argument("--slug", required=True)
+    _add_facts_flag(contacts)
     _add_common(contacts)
 
     invite = sub.add_parser(
@@ -202,7 +215,26 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     )
     invite.add_argument("--accepted", choices=("yes", "no"), default="")
     invite.add_argument("--note", default="", help="Review quality, free text.")
+    _add_facts_flag(invite)
     _add_common(invite)
+
+    facts = sub.add_parser(
+        "facts",
+        help="Merge and publish the portable facts other devices can share.",
+        description="Invitations, verified ranks, addresses, affiliations and "
+        "doctorate years are the only things in the store nobody can re-derive. "
+        "They are kept as text, one directory per device, in a folder a sync "
+        "client can carry between machines. The database itself is never synced: "
+        "WAL mode makes a file-level syncer corrupt it silently.",
+    )
+    facts.add_argument("--dir", help="Override the shared facts folder for this run.")
+    facts.add_argument(
+        "--export-only", action="store_true", help="Publish this device's facts without merging."
+    )
+    facts.add_argument(
+        "--import-only", action="store_true", help="Merge other devices' facts without publishing."
+    )
+    _add_common(facts)
 
     status = sub.add_parser("status", help="Show run state, or list workspaces.")
     status.add_argument("--slug")
@@ -224,6 +256,7 @@ def _rev_disc_handlers() -> dict[str, Handler]:
         "report": rev_disc.run_report,
         "contacts": rev_disc.run_contacts,
         "invite": rev_disc.run_invite,
+        "facts": rev_disc.run_facts,
         "status": rev_disc.run_status,
     }
 
