@@ -37,6 +37,7 @@ RELEVANCE_WEIGHTS = {
 class SearchOutcome:
     papers: list[Paper]
     per_query: dict[str, int]
+    per_source: dict[str, int]
     failures: dict[str, str]
 
 
@@ -57,6 +58,7 @@ def run_search(
     per_query: dict[str, int] = {}
     failures: dict[str, str] = {}
     papers_by_key: dict[str, Paper] = {}
+    paper_ids_by_source: dict[str, set[str]] = {source.name: set() for source in sources}
 
     for source in sources:
         for query in profile.queries:
@@ -77,6 +79,7 @@ def run_search(
             found = [paper for page in pages for paper in page.papers]
             per_query[key] = len(found)
             for paper in found:
+                paper_ids_by_source[source.name].add(paper.paper_id)
                 papers_by_key[paper.paper_id] = paper
                 collected.append(
                     {
@@ -92,7 +95,12 @@ def run_search(
 
     merged = dedupe_records(collected)
     papers = [papers_by_key[row["paper_id"]] for row in merged if row["paper_id"] in papers_by_key]
-    return SearchOutcome(papers=papers, per_query=per_query, failures=failures)
+    return SearchOutcome(
+        papers=papers,
+        per_query=per_query,
+        per_source={name: len(ids) for name, ids in paper_ids_by_source.items()},
+        failures=failures,
+    )
 
 
 def store_papers(conn: sqlite3.Connection, papers: list[Paper]) -> int:

@@ -79,15 +79,10 @@ def store(*, sync: bool = True):
 
 
 def _sources(names: list[str] | None):
-    from academia.sources.ieee import IeeeXplore
-    from academia.sources.openalex import OpenAlex
+    from academia.sources import get_source
 
-    registry = {"openalex": OpenAlex, "ieee": IeeeXplore}
-    chosen = names or ["openalex", "ieee"]
-    unknown = [n for n in chosen if n not in registry]
-    if unknown:
-        raise UsageError(f"unknown source(s): {', '.join(unknown)}")
-    return [registry[name]() for name in chosen]
+    chosen = names or ["openalex", "ieee", "semantic_scholar"]
+    return [get_source(name) for name in chosen]
 
 
 # --------------------------------------------------------------------- init
@@ -337,17 +332,29 @@ def run_search(args: argparse.Namespace) -> int:
     )
     workspace.write_json(
         workspace.search_dir / "summary.json",
-        {"per_query": outcome.per_query, "failures": outcome.failures, "stored": stored},
+        {
+            "per_query": outcome.per_query,
+            "per_source": outcome.per_source,
+            "failures": outcome.failures,
+            "stored": stored,
+        },
     )
 
     state.mark("search")
     workspace.save_state(state)
 
-    payload = {"papers": stored, "per_query": outcome.per_query, "failures": outcome.failures}
+    payload = {
+        "papers": stored,
+        "per_query": outcome.per_query,
+        "per_source": outcome.per_source,
+        "failures": outcome.failures,
+    }
     if args.json:
         log.emit(payload)
     else:
         log.info(f"{stored} unique papers stored")
+        for source, count in sorted(outcome.per_source.items()):
+            log.info(f"  {source}: {count} papers before cross-source deduplication")
         for key, count in sorted(outcome.per_query.items()):
             log.detail(f"  {key}: {count}")
         for key, reason in outcome.failures.items():

@@ -17,12 +17,14 @@ uv run --project "<plugin-root>" rev-disc search --slug <slug> \
 | `arxiv` | preprints | most reliable open PDF links |
 | `dblp` | CS venue coverage | metadata only |
 
-Default to `openalex` plus `ieee`. Add `arxiv` in fast-moving areas where the
-relevant work may not be published yet.
+The default registry is `openalex`, `ieee`, and `semantic_scholar`. Add `arxiv`
+in fast-moving areas where the relevant work may not be published yet.
 
 A source that fails is recorded and skipped rather than fatal — losing IEEE must
 not abort a run that OpenAlex can still serve. Check `failures` in the JSON and
-tell the user which sources actually contributed.
+tell the user which sources actually contributed. `per_source` reports unique
+papers returned by each source before cross-source de-duplication, so a source
+that collapses to zero is visible even when the combined corpus looks healthy.
 
 ## Judging the result
 

@@ -102,6 +102,18 @@ class IeeeXplore(PaperSource):
     def name(self) -> str:
         return SOURCE
 
+    def adapt_expression(self, expression: str) -> str:
+        """Translate the shared Boolean profile into IEEE's plain query text.
+
+        IEEE returns zero results for quoted phrases that return results when
+        sent as plain terms. Its endpoint applies its own relevance semantics,
+        so carrying OpenAlex's quotes and operators across is destructive.
+        """
+        cleaned = expression.replace('"', " ")
+        for operator in (" AND ", " OR ", " NOT ", "(", ")"):
+            cleaned = cleaned.replace(operator, " ")
+        return " ".join(cleaned.split())
+
     def search(
         self,
         expression: str,
@@ -117,7 +129,7 @@ class IeeeXplore(PaperSource):
         search_field: str = "All Metadata",
     ) -> SearchPage:
         payload: dict[str, Any] = {
-            "queryText": expression,
+            "queryText": self.adapt_expression(expression),
             "newsearch": True,
             "pageNumber": page,
             "rowsPerPage": per_page,

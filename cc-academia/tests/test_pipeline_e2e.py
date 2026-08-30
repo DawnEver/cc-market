@@ -83,6 +83,24 @@ def run(*argv) -> int:
     return dispatch.rev_disc_main(list(argv))
 
 
+def test_reviewer_search_registry_includes_semantic_scholar():
+    from academia.cli import rev_disc
+
+    assert [source.name for source in rev_disc._sources(None)] == [
+        "openalex",
+        "ieee",
+        "semantic_scholar",
+    ]
+
+
+def test_unknown_reviewer_search_source_is_a_usage_error():
+    from academia.cli import rev_disc
+    from academia.core.errors import UsageError
+
+    with pytest.raises(UsageError, match="unknown source"):
+        rev_disc._sources(["not-a-source"])
+
+
 def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, capsys):
     assert run(
         "init",

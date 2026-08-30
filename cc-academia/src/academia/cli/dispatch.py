@@ -135,7 +135,11 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
 
     search = sub.add_parser("search", help="Run the queries across sources and store the papers.")
     search.add_argument("--slug", required=True)
-    search.add_argument("--source", action="append", help="Repeatable: openalex, ieee.")
+    search.add_argument(
+        "--source",
+        action="append",
+        help="Repeatable: openalex, ieee, semantic_scholar.",
+    )
     search.add_argument("--pages", type=int, default=2)
     search.add_argument("--per-page", type=int, default=25)
     search.add_argument("--year-from", type=int)

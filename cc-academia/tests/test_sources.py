@@ -82,6 +82,15 @@ def test_ieee_parses_a_captured_page(ieee_search):
     assert page.total_count >= len(page.papers)
 
 
+def test_ieee_adapts_boolean_phrases_to_its_plain_query_text():
+    source = ieee.IeeeXplore()
+
+    assert (
+        source.adapt_expression('"Axial flux machine" AND "double-rotor single-stator machine"')
+        == "Axial flux machine double-rotor single-stator machine"
+    )
+
+
 # -------------------------------------------------------------- OpenAlex ----
 
 
