@@ -457,3 +457,46 @@ def test_a_candidate_needing_only_a_position_says_so(conn):
     items = contact.lookup_worklist([person], resolved={person_id})
 
     assert items[0]["needs"] == ["position"]
+
+
+# --------------------------------------------------------------- PDF path --
+
+
+def _one_page_pdf(text: str) -> bytes:
+    """A real PDF, so the reader is exercised rather than a stub of it."""
+    fitz = pytest.importorskip("fitz")
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text)
+    return document.tobytes()
+
+
+def test_a_footnote_printed_only_in_the_pdf_is_still_found():
+    """Publishers render some author blocks nowhere but the PDF itself."""
+    body = _one_page_pdf("L. Author is with Some Uni (e-mail: l.author@some.edu).")
+
+    assert contact.looks_like_pdf(body)
+    assert "l.author@some.edu" in contact.extract_page_emails(contact.pdf_text(body))
+
+
+def test_html_bytes_are_not_mistaken_for_a_pdf():
+    assert not contact.looks_like_pdf(b"<html><body>hi</body></html>", "text/html", "https://a/b")
+
+
+def test_a_url_ending_in_pdf_is_treated_as_one_even_without_a_content_type():
+    assert contact.looks_like_pdf(b"", "", "https://repo.example/paper.pdf?download=1")
+
+
+def test_the_fetcher_decodes_html_and_extracts_pdfs():
+    from academia.reviewer.enrich import PageFetcher
+
+    pdf = _one_page_pdf("contact: someone@uni.edu")
+    fetcher = PageFetcher(
+        getter=lambda url, source, timeout=15: (pdf, "application/pdf", url), delay=0
+    )
+    assert "someone@uni.edu" in fetcher("https://repo.example/p.pdf")
+
+    html = PageFetcher(
+        getter=lambda url, source, timeout=15: (b"<p>a@b.edu</p>", "text/html", url), delay=0
+    )
+    assert "a@b.edu" in html("https://example.edu/staff")

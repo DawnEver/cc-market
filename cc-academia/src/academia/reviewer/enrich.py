@@ -334,7 +334,7 @@ class PageFetcher:
         failure_budget: int = HOST_FAILURE_BUDGET,
         timeout: int = 15,
     ) -> None:
-        self._getter = getter or http.get_text_resolved
+        self._getter = getter or http.get_body_resolved
         self._delay = delay
         self._max_bytes = max_bytes
         self._failure_budget = failure_budget
@@ -344,6 +344,9 @@ class PageFetcher:
 
     def _host(self, url: str) -> str:
         return urllib.parse.urlparse(url).netloc.lower()
+
+    def _as_text(self, result, url: str) -> tuple[str, str]:
+        return _page_fetcher_as_text(result, url)
 
     def __call__(self, url: str) -> str:
         """Return the page text, or an empty string. Never raises."""
@@ -368,11 +371,34 @@ class PageFetcher:
             log.detail(f"could not read {url}: {error}")
             return ""
 
-        text, final_url = result if isinstance(result, tuple) else (result, url)
+        text, final_url = self._as_text(result, url)
         final_host = self._host(final_url)
         if final_host and final_host not in REDIRECTORS:
             self._failures.setdefault(final_host, 0)
         return (text or "")[: self._max_bytes]
+
+
+def _page_fetcher_as_text(result, url: str) -> tuple[str, str]:
+    """Normalise a getter's return value to ``(text, final_url)``.
+
+    Bytes are the real fetch: an address printed only in a paper's PDF is
+    unreachable if the body was decoded as UTF-8 on the way in. A test may still
+    inject a plain string, and a two-tuple of text is what the older getter
+    returned, so both keep working.
+    """
+    from academia.reviewer.contact import looks_like_pdf, pdf_text
+
+    if isinstance(result, tuple) and len(result) == 3:
+        body, content_type, final = result
+        if isinstance(body, bytes):
+            if looks_like_pdf(body, content_type, final):
+                return pdf_text(body), final
+            return body.decode("utf-8", errors="replace"), final
+        return body or "", final
+    if isinstance(result, tuple):
+        text, final = result
+        return text or "", final
+    return result or "", url
 
 
 def email_source_for(url: str, email: str = "") -> str:

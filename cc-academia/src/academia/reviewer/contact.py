@@ -7,15 +7,22 @@ table and, until now, the only unwired one.
 The approach is shaped by measurement rather than by what ought to work. On a
 live sample of stored papers:
 
-* 66% had an open-access PDF URL, but publishers answered a direct request for
-  it with ``403 Forbidden`` (MDPI) or ``502`` (IEEE);
 * the open-access **landing page** returned an address in 7 of 12 fetches,
   because it renders the footnote as HTML;
-* repository copies (PubMed, figshare, DOAJ) yielded 0 of 9 — they hold
-  metadata and abstracts, not the author block.
+* 66% had an open-access PDF URL. A publisher's own copy is often refused —
+  ``403`` from MDPI, ``502`` from IEEE — but a repository copy (OSTI, a
+  university's own archive, arXiv) serves fine, and for a great many papers the
+  footnote was printed nowhere else;
+* repository *metadata* pages (PubMed, figshare, DOAJ) yielded 0 of 9 — they
+  hold abstracts, not the author block.
 
-So this reads landing pages. It does not download PDFs, and it does not search
-the open web for a person.
+So this reads the landing page first and falls back to the PDF, parsing its
+front page for the footnote and its last pages for the IEEE author biography.
+It does not search the open web for a person.
+
+What it cannot reach is a paper that is paywalled with no open copy at all: the
+store then holds no URL to try, and the honest answer is ``not_found`` rather
+than a pattern-generated address.
 
 The safety property is unchanged and is the whole point: an address is only ever
 attributed to a candidate when their own name matches its local part, or when
@@ -30,6 +37,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
+from academia.core import log
 from academia.core.models import Person
 from academia.reviewer.enrich import (
     EMAIL_CONFIDENCE,
@@ -93,6 +101,49 @@ def is_publisher_address(email: str) -> bool:
     return any(local.startswith(marker) for marker in _PUBLISHER_LOCALS)
 
 
+#: Pages of a paper to read. The author block and the corresponding-author
+#: footnote are on the first; IEEE author biographies are on the last two.
+PDF_FRONT_PAGES = 1
+PDF_BACK_PAGES = 2
+
+#: A PDF whose bytes start with anything else is a publisher's error page.
+PDF_MAGIC = b"%PDF"
+
+
+def looks_like_pdf(body: bytes, content_type: str = "", url: str = "") -> bool:
+    if body[:4] == PDF_MAGIC:
+        return True
+    if "application/pdf" in (content_type or "").lower():
+        return True
+    return (url or "").lower().split("?")[0].endswith(".pdf")
+
+
+def pdf_text(body: bytes) -> str:
+    """The front and back pages of a paper as text, or empty without the extra.
+
+    Front for the corresponding-author footnote, back because that is where an
+    IEEE Transactions author biography states a rank and a doctorate year. The
+    middle is the science, and reading it would only cost time.
+    """
+    try:
+        import pymupdf as fitz  # from the 'pdf' extra
+    except ImportError:  # pragma: no cover - depends on optional extra
+        log.detail("a PDF was fetched but the 'pdf' extra is not installed")
+        return ""
+
+    try:
+        with fitz.open(stream=body, filetype="pdf") as document:
+            count = document.page_count
+            wanted = sorted(
+                {*range(min(PDF_FRONT_PAGES, count)), *range(max(0, count - PDF_BACK_PAGES), count)}
+            )
+            pages = [document.load_page(index).get_text("text") for index in wanted]
+            return "\n".join(pages)
+    except Exception as error:  # a truncated or encrypted file is not an outage
+        log.detail(f"could not read PDF: {error}")
+        return ""
+
+
 def extract_page_emails(html: str) -> list[str]:
     """Addresses on a landing page, publisher boilerplate removed.
 
@@ -114,12 +165,14 @@ def _candidate_papers(conn: sqlite3.Connection, person_id: str) -> list[sqlite3.
     return list(
         conn.execute(
             """
-            SELECT p.paper_id, p.landing_page_url, a.is_corresponding
+            SELECT p.paper_id, p.landing_page_url, p.pdf_url, a.is_corresponding
             FROM authorships a
             JOIN papers p ON p.paper_id = a.paper_id
             WHERE a.person_id = ?
-              AND p.landing_page_url IS NOT NULL
-              AND p.landing_page_url <> ''
+              AND (
+                    (p.landing_page_url IS NOT NULL AND p.landing_page_url <> '')
+                 OR (p.pdf_url IS NOT NULL AND p.pdf_url <> '')
+              )
             ORDER BY a.is_corresponding DESC, p.year DESC
             """,
             (person_id,),
@@ -145,25 +198,31 @@ def email_from_publications(
 
     cache = seen_pages if seen_pages is not None else {}
     for row in _candidate_papers(conn, person.person_id)[:MAX_PAPERS_PER_CANDIDATE]:
-        url = row["landing_page_url"]
-        if url in cache:
-            addresses = cache[url]
-        else:
-            addresses = extract_page_emails(fetcher(url))
-            cache[url] = addresses
-        if not addresses:
-            continue
+        # The landing page first: it is HTML, it is cheap, and a publisher that
+        # blocks the PDF often renders the same footnote as text. The PDF is the
+        # fallback, because for most papers that is the only place the address
+        # was ever printed.
+        for url in (row["landing_page_url"], row["pdf_url"]):
+            if not url:
+                continue
+            if url in cache:
+                addresses = cache[url]
+            else:
+                addresses = extract_page_emails(fetcher(url))
+                cache[url] = addresses
+            if not addresses:
+                continue
 
-        match = match_email_to_person(addresses, person)
-        if not match:
-            continue
+            match = match_email_to_person(addresses, person)
+            if not match:
+                continue
 
-        return EmailFinding(
-            email=match,
-            source=SOURCE,
-            source_url=url,
-            confidence=EMAIL_CONFIDENCE[SOURCE],
-        )
+            return EmailFinding(
+                email=match,
+                source=SOURCE,
+                source_url=url,
+                confidence=EMAIL_CONFIDENCE[SOURCE],
+            )
 
     return EmailFinding()
 

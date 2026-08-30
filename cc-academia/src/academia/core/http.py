@@ -149,6 +149,37 @@ def get_text_resolved(
     return text, final
 
 
+def get_body_resolved(
+    url: str,
+    source: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[bytes, str, str]:
+    """Fetch a resource as raw bytes, reporting ``(body, content_type, final_url)``.
+
+    Text callers decode with ``errors="replace"``, which is right for HTML and
+    destroys a PDF. A paper's corresponding-author footnote lives in a PDF often
+    enough that the bytes have to survive the trip.
+    """
+    merged = {"User-Agent": BROWSER_USER_AGENT, "Accept": "text/html,application/pdf,*/*"}
+    merged.update(headers or {})
+    request = Request(url, headers=merged, method="GET")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return (
+                response.read(),
+                response.headers.get("content-type", ""),
+                getattr(response, "url", url) or url,
+            )
+    except HTTPError as exc:
+        raise SourceError(f"http_{exc.code}", source, {"status": exc.code}) from exc
+    except URLError as exc:
+        raise SourceError(f"network_error: {exc.reason}", source) from exc
+    except TimeoutError as exc:
+        raise SourceError("timeout", source) from exc
+
+
 def post_json(
     url: str,
     payload: dict[str, Any],
