@@ -356,4 +356,4 @@ def test_a_refused_init_leaves_no_workspace_behind(tmp_path, stub_sources):
     run("init", "--slug", "keeper", "--journal", "tie", "--title", "One Paper About Machines")
     run("init", "--slug", "leftover", "--journal", "tie", "--title", "One Paper About Machines")
 
-    assert not (paths.workspaces_root("reviewer-discovery") / "leftover").exists()
+    assert not (paths.ongoing_root("reviewer-discovery") / "leftover").exists()

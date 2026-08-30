@@ -40,7 +40,7 @@ files remain the single source of truth for both hosts.
 
 ## Resume
 
-Re-invoking `/literature-review <topic>` checks `workspaces/<slug>/run_state.json`:
+Re-invoking `/literature-review <topic>` checks `ongoing/<slug>/run_state.json`:
 
 | Step status | Action |
 |-------------|--------|

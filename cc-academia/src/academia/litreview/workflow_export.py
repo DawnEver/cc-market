@@ -102,7 +102,7 @@ def run_export(
     """Export paper cards in the requested format.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         format: Output format
         paper_ids: Specific papers. None = all cards.
 
@@ -143,7 +143,7 @@ def run_stats(
     """Generate summary statistics for the review.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         plots: If True, generate matplotlib plots
 
     Returns:

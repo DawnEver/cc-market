@@ -55,7 +55,7 @@ def run_search(
     """Run end-to-end search: brief → queries → probe → search → normalize → dedupe → screening packet.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         provider: Provider name(s) (e.g. 'ieee', 'semantic_scholar', or ['ieee', 'arxiv']).
                   If None, reads providers from workspace.toml, falling back
                   to ['ieee_xplore'] when the file is absent.
@@ -214,4 +214,3 @@ def run_search(
 # ---------------------------------------------------------------------------
 # 2. Acquire pipeline
 # ---------------------------------------------------------------------------
-

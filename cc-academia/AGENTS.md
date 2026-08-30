@@ -119,6 +119,35 @@ absence would remove the people with the thinnest public records rather than the
 people the policy is about, and the invitation-based rules are therefore inert
 on a fresh store, by design.
 
+## The store is a cache; five facts are not
+
+Everything in the database comes back by re-running the pipeline — papers,
+authorships, resolved identities, OpenAlex affiliations, yearly output. Five
+things do not, because a person paid to establish each one: **invitations and
+their outcomes, a rank read off a page, an address found on a page, a corrected
+affiliation, and doctorate years.** Every one of them carries the URL that
+stated it.
+
+Those five are exported as line-oriented JSON into a synced folder — OneDrive
+when the client's own environment variables point at one, `ACADEMIA_FACTS_DIR`
+otherwise — under one directory per device. Import merges every device's files;
+export only ever writes this device's. Two machines therefore never write the
+same path, so a folder syncer has no conflict to resolve, and a "conflicted
+copy" left behind by one is still read.
+
+**The database itself is never synced.** It is SQLite in WAL mode, whose
+consistency depends on the `-wal` sidecar matching the main file; a file-level
+syncer uploads them independently and the failure mode is a silently mixed pair,
+not an error. `paths.database_path()` deliberately resolves outside the data
+root for this reason.
+
+Anything added to the portable set must be a *stated* fact with a source, and
+merging it must be idempotent — automatic sync runs on every command, so a
+non-idempotent merge grows the store without bound. One already did: an
+affiliation with a NULL `year_from` cannot be matched by `ON CONFLICT`, because
+SQLite treats every NULL as distinct, and re-importing turned 23 people into
+458k rows.
+
 ## Geography, not ethnicity
 
 Cross-region separation operates on the candidate's **current affiliation

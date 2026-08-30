@@ -63,6 +63,16 @@ they stay on the list with the reason. Missing evidence always passes: an
 unstated enrolment year or an empty invitation history is a gap in public data,
 not a fact about the person.
 
+## Working across machines
+
+The SQLite store stays on local disk — syncing a WAL-mode database through
+OneDrive corrupts it. The facts that cannot be re-derived travel instead:
+invitations and their outcomes, verified ranks, public addresses, corrected
+affiliations and doctorate years, written as JSON Lines into a synced folder,
+one directory per device, every record carrying the URL that stated it. Sync is
+automatic; `rev-disc facts` runs it by hand and `academia doctor` says where the
+folder is.
+
 ## Data sources
 
 OpenAlex (primary — CC0, ROR-linked institutions, country codes, reference

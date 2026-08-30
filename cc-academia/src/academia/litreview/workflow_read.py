@@ -52,7 +52,7 @@ def run_read(
     """Deep-read a single paper and produce a PaperCard.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         candidate_id: Which paper to read
         lens: Optional domain lens name (e.g. 'power_electronics')
         model: Optional model override
@@ -146,7 +146,7 @@ def run_synthesize(
     """Synthesize findings across deep-read papers.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         paper_ids: Specific paper candidate IDs. None = all with cards.
         model: Optional model override
 
@@ -171,4 +171,3 @@ def run_synthesize(
 # ---------------------------------------------------------------------------
 # 6. Export & stats (wires orphaned render + plot)
 # ---------------------------------------------------------------------------
-

@@ -392,6 +392,43 @@ def upsert_institution(conn: sqlite3.Connection, institution: Institution) -> st
 
 
 def record_affiliation(conn: sqlite3.Connection, person_id: str, aff: Affiliation) -> None:
+    """Upsert one affiliation.
+
+    ``year_from`` is part of the primary key and is frequently unknown — a
+    correction read off a staff page rarely states a start year. SQLite treats
+    every NULL as distinct in a unique index, so ``ON CONFLICT`` cannot see the
+    duplicate and each write inserts another row; sharing facts between machines
+    turned that into 458k rows for 23 people before it was caught. Undated rows
+    are therefore matched explicitly, and only dated ones take the fast path.
+    """
+    if aff.year_from is None:
+        existing = conn.execute(
+            "SELECT rowid FROM affiliations "
+            "WHERE person_id = ? AND inst_id = ? AND year_from IS NULL",
+            (person_id, aff.inst_id),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                """
+                UPDATE affiliations SET
+                    year_to    = coalesce(?, year_to),
+                    is_current = max(is_current, ?),
+                    department = coalesce(nullif(?, ''), department),
+                    role       = coalesce(nullif(?, ''), role),
+                    source_url = coalesce(nullif(?, ''), source_url)
+                WHERE rowid = ?
+                """,
+                (
+                    aff.year_to,
+                    int(aff.is_current),
+                    aff.department or "",
+                    aff.role or "",
+                    aff.source_url or "",
+                    existing["rowid"],
+                ),
+            )
+            return
+
     conn.execute(
         """
         INSERT INTO affiliations (person_id, inst_id, department, role, year_from, year_to,

@@ -59,7 +59,7 @@ def run_acquire(
     """Run end-to-end acquisition: screening → queue → download → match → manifest.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         profile: Browser profile path for authenticated download
         queue_only: If True, only build the queue (for user review)
         candidate_ids: Specific candidate IDs to approve (if None, prompt)
@@ -186,4 +186,3 @@ def run_acquire(
 # ---------------------------------------------------------------------------
 # 3. Ingest pipeline
 # ---------------------------------------------------------------------------
-

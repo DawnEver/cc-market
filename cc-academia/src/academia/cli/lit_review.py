@@ -13,7 +13,7 @@ from datetime import UTC
 from pathlib import Path
 
 from academia import __version__
-from academia.core.paths import legacy_workspaces_root, workspaces_root
+from academia.core.paths import legacy_workspaces_root, ongoing_root
 from academia.litreview.acquire.options import (
     COMPLETION_MODES,
     DEFAULT_BROWSER_CHANNEL,
@@ -53,14 +53,14 @@ Post-acquisition (choose what you need):
 
 def _topic_dir(slug: str) -> Path:
     """Resolve a topic slug to its workspace directory."""
-    d = workspaces_root("literature-review") / slug
+    d = ongoing_root("literature-review") / slug
     if d.exists():
         return d
 
     legacy = legacy_workspaces_root("literature-review")
     if legacy is not None and (legacy / slug).exists():
         print(f"error: this topic is still under the old layout: {legacy / slug}", file=sys.stderr)
-        print("Every workflow now uses ongoing/ and archived/. Rename it:", file=sys.stderr)
+        print("Literature review uses ongoing/ and archive/. Rename it:", file=sys.stderr)
         print(f'  mv "{legacy}" "{legacy.parent / "ongoing"}"', file=sys.stderr)
         raise SystemExit(2)
 
@@ -89,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # === Pipeline: search ===
     p = sub.add_parser("search", help="End-to-end: queries -> probe -> search -> dedupe -> screening packet.")
-    p.add_argument("--topic", required=True, help="Topic slug (workspaces/<slug>).")
+    p.add_argument("--topic", required=True, help="Topic slug (ongoing/<slug>).")
     p.add_argument("--provider", action="append", help="Literature source provider (repeatable; default: all from workspace.toml).")
     p.add_argument("--max-pages", type=int, default=5)
     p.add_argument("--rows-per-page", type=int, default=DEFAULT_PAGE_SIZE)
@@ -215,7 +215,7 @@ def _handle_init(args: argparse.Namespace) -> int:
     from datetime import datetime
 
     slug = re.sub(r"[^a-z0-9]+", "-", args.topic.lower()).strip("-")
-    ws_dir = workspaces_root("literature-review") / slug
+    ws_dir = ongoing_root("literature-review") / slug
 
     if ws_dir.exists():
         print(f"Workspace already exists: {ws_dir}")

@@ -66,7 +66,7 @@ def prepare(pdf: Path, *, slug: str, root: Path | None = None) -> Workspace:
     if not pdf.exists():
         raise UsageError(f"file not found: {pdf}")
 
-    base = Path(root) if root is not None else paths.workspaces_root(WORKFLOW)
+    base = Path(root) if root is not None else paths.ongoing_root(WORKFLOW)
     workspace = Workspace(root=base / slug, slug=slug)
     workspace.root.mkdir(parents=True, exist_ok=True)
     if workspace.raw_pdf.resolve() != pdf.resolve():

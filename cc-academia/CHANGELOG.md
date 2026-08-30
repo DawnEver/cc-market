@@ -32,6 +32,14 @@ build if they drift.
 - **`contact-list.csv`** — name, email, institution, nothing else, written by
   `report` beside the full shortlist. Blocked candidates are excluded from this
   export alone.
+- **Portable facts (`rev-disc facts`)** — the five things in the store nobody
+  can re-derive (invitations, verified ranks, addresses, corrected affiliations,
+  doctorate years) are exported as JSON Lines into a synced folder, one
+  directory per device, and merged back automatically at the start of every
+  command. OneDrive is discovered from the client's own environment variables,
+  so no absolute path is committed anywhere; `ACADEMIA_FACTS_DIR` overrides it
+  and `ACADEMIA_FACTS_SYNC=0` turns it off. The database keeps to local disk:
+  WAL mode and a file-level syncer corrupt each other silently.
 - **`rev-disc invite`** — record an invitation and its outcome. Invitation
   history feeds the next manuscript's ranking and is the only evidence the two
   responsiveness rules have; until now nothing could write it.
@@ -54,6 +62,13 @@ build if they drift.
 
 ### Changed
 
+- `record_affiliation` no longer duplicates an undated affiliation. `year_from`
+  is part of the primary key and SQLite treats every NULL as distinct, so
+  `ON CONFLICT` never fired: with facts syncing on, 23 people became 458k rows.
+- `_record_doctorate` no longer falls back to the current employer as the alma
+  mater. A doctorate is rarely from where someone works now, and the fallback
+  wrote "PhD, Beihang University" for a candidate whose only link to Beihang was
+  a mis-parsed author index.
 - `[scoring]` gains `activity = 0.07`, taken from `topic` (0.40 → 0.35) and
   `geographic` (0.10 → 0.08). Scores are not comparable with earlier shortlists;
   a journal that wants the old ranking sets `activity = 0.0` and keeps the gate.

@@ -40,6 +40,12 @@ def collect() -> dict:
         "lens_dir": str(paths.lens_dir()),
         "data_root": str(paths.data_root()),
         "database": {"path": str(db), "exists": db.exists()},
+        "facts": {
+            "path": str(paths.facts_dir()),
+            "device": paths.device_id(),
+            "synced": paths.onedrive_root() is not None or bool(os.environ.get(paths.ENV_FACTS_DIR)),
+            "enabled": paths.facts_sync_enabled(),
+        },
         "contact_email": paths.contact_email() or None,
         "extras": {name: _installed(mod) for name, mod in OPTIONAL_MODULES.items()},
         "s2_api_key": bool(os.environ.get("S2_API_KEY")),
@@ -61,8 +67,18 @@ def run(args: argparse.Namespace) -> int:
     log.info(f"  data root   : {report['data_root']}")
     state = "present" if report["database"]["exists"] else "not created"
     log.info(f"  database    : {report['database']['path']} ({state})")
+    facts = report["facts"]
+    how = "synced" if facts["synced"] else "local only"
+    if not facts["enabled"]:
+        how = "sync disabled"
+    log.info(f"  facts       : {facts['path']} ({how}, device '{facts['device']}')")
     extras = ", ".join(k for k, v in report["extras"].items() if v) or "none"
     log.info(f"  extras      : {extras}")
+    if not report["facts"]["synced"]:
+        log.detail(
+            "no synced folder found for the portable facts — invitations, verified "
+            "ranks and addresses stay on this machine. Set ACADEMIA_FACTS_DIR to share them."
+        )
     if not report["contact_email"]:
         log.warn("ACADEMIA_CONTACT is unset — OpenAlex/ORCID polite pools give lower rate limits.")
     if not report["s2_api_key"]:

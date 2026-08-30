@@ -188,7 +188,7 @@ class Workspace:
 
 
 def workspace_root() -> Path:
-    return paths.workspaces_root("reviewer-discovery")
+    return paths.ongoing_root("reviewer-discovery")
 
 
 def open_workspace(slug: str, *, create: bool = False) -> Workspace:

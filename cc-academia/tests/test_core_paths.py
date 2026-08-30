@@ -39,8 +39,9 @@ def test_database_never_defaults_under_the_data_root(monkeypatch):
 def test_every_workflow_uses_the_same_two_directories(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.ENV_DATA_ROOT, str(tmp_path))
     for workflow in paths.WORKFLOWS:
-        assert paths.workspaces_root(workflow) == tmp_path / workflow / "ongoing"
-        assert paths.archive_root(workflow) == tmp_path / workflow / "archived"
+        assert paths.ongoing_root(workflow) == tmp_path / workflow / "ongoing"
+        expected = "archive" if workflow == "literature-review" else "archived"
+        assert paths.archive_root(workflow) == tmp_path / workflow / expected
 
 
 def test_a_legacy_directory_is_reported_so_it_can_be_renamed(tmp_path, monkeypatch):

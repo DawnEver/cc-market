@@ -19,6 +19,9 @@ ENV_CONFIG_DIR = "ACADEMIA_CONFIG_DIR"
 ENV_LENS_DIR = "ACADEMIA_LENS_DIR"
 ENV_DATA_ROOT = "ACADEMIA_DATA_ROOT"
 ENV_DB = "ACADEMIA_DB"
+ENV_FACTS_DIR = "ACADEMIA_FACTS_DIR"
+ENV_DEVICE = "ACADEMIA_DEVICE"
+ENV_FACTS_SYNC = "ACADEMIA_FACTS_SYNC"
 ENV_CONTACT = "ACADEMIA_CONTACT"
 
 
@@ -66,15 +69,16 @@ def lens_file(lens_id: str) -> Path | None:
     return None
 
 
-#: Every workflow uses the same two directories: work in progress, and work
-#: finished. The repository already followed this for ai-post, reply-email and
-#: manuscript-review; literature-review was the one outlier.
+#: Every workflow uses ``ongoing`` for work in progress. Archive names are
+#: workflow-specific: literature-review uses the singular ``archive`` while the
+#: other established workflows retain ``archived``.
 ONGOING = "ongoing"
-ARCHIVED = "archived"
+ARCHIVE_DIRS = {"literature-review": "archive"}
+DEFAULT_ARCHIVE_DIR = "archived"
 
 WORKFLOWS = ("literature-review", "manuscript-review", "reviewer-discovery")
 
-DEFAULT_DATA_DIRNAME = "cc-academia-workspaces"
+DEFAULT_DATA_DIRNAME = "cc-academia-data"
 
 #: Files that mark a real project rather than a directory that happens to share
 #: the name. Committed, so they survive a fresh clone where `ongoing/` does not.
@@ -127,14 +131,14 @@ def data_root() -> Path:
     return Path.home() / DEFAULT_DATA_DIRNAME
 
 
-def workspaces_root(workflow: str) -> Path:
+def ongoing_root(workflow: str) -> Path:
     """Where this workflow keeps work in progress."""
     return data_root() / workflow / ONGOING
 
 
 def archive_root(workflow: str) -> Path:
     """Where this workflow keeps finished work."""
-    return data_root() / workflow / ARCHIVED
+    return data_root() / workflow / ARCHIVE_DIRS.get(workflow, DEFAULT_ARCHIVE_DIR)
 
 
 def legacy_workspaces_root(workflow: str) -> Path | None:
@@ -160,6 +164,64 @@ def database_path() -> Path:
     if explicit is not None:
         return explicit
     return Path.home() / "Documents" / "PEMC" / "cc-academia-data" / "academia.db"
+
+
+#: Environment variables OneDrive sets for its own roots. Commercial first: a
+#: university tenant is where research data belongs, and a machine signed into
+#: both would otherwise put it in the personal drive.
+_ONEDRIVE_ENV = ("OneDriveCommercial", "OneDriveConsumer", "OneDrive")
+
+#: Where the portable facts live inside whichever synced root is found.
+FACTS_DIRNAME = "cc-academia-facts"
+
+
+def onedrive_root() -> Path | None:
+    """The OneDrive folder this machine syncs, if there is one.
+
+    Discovered, never configured: the environment variables are set by the
+    OneDrive client itself, and the folder name differs per tenant — "OneDrive -
+    The University of Nottingham" on one machine, plain "OneDrive" on another.
+    An absolute path in a committed config would be correct on exactly one
+    machine, which is the bug this avoids.
+    """
+    for name in _ONEDRIVE_ENV:
+        raw = os.environ.get(name, "").strip()
+        if raw and Path(raw).is_dir():
+            return Path(raw)
+    for candidate in sorted(Path.home().glob("OneDrive*")):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def facts_dir() -> Path:
+    """Where the portable, syncable facts are kept.
+
+    Unlike the database this is safe to sync: line-oriented text, one directory
+    per device, so two machines never write the same file and a conflict is a
+    visible diff rather than a corrupted page. Falls back to the home directory
+    when no synced root exists, which still works — it just does not travel.
+    """
+    explicit = _env_path(ENV_FACTS_DIR)
+    if explicit is not None:
+        return explicit
+    root = onedrive_root()
+    return (root / FACTS_DIRNAME) if root is not None else (Path.home() / FACTS_DIRNAME)
+
+
+def device_id() -> str:
+    """A short, stable name for this machine, used as its facts subdirectory."""
+    import platform
+    import re
+
+    raw = os.environ.get(ENV_DEVICE, "").strip() or platform.node() or "unknown-device"
+    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+    return slug or "unknown-device"
+
+
+def facts_sync_enabled() -> bool:
+    """Sync unless the environment turns it off."""
+    return os.environ.get(ENV_FACTS_SYNC, "").strip().lower() not in {"0", "false", "off", "no"}
 
 
 def contact_email() -> str:

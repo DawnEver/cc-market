@@ -51,7 +51,7 @@ def run_ingest(
     """Run on-demand ingestion with cache check.
 
     Args:
-        topic_dir: Path to workspaces/<slug>/
+        topic_dir: Path to ongoing/<slug>/
         paper_ids: Specific candidate IDs to decompose. None = all pending.
         dry_run: If True, only report what would be done.
 
@@ -127,4 +127,3 @@ def run_ingest(
 # ---------------------------------------------------------------------------
 # 4. Deep read (wires orphaned review_paper)
 # ---------------------------------------------------------------------------
-

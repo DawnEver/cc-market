@@ -244,23 +244,23 @@ def test_bibtex_export_uses_candidate_metadata(topic_dir):
 # 5. Workspace root resolution
 # ---------------------------------------------------------------------------
 
-def test_workspaces_root_follows_the_data_root_setting(tmp_path, monkeypatch):
+def test_ongoing_root_follows_the_data_root_setting(tmp_path, monkeypatch):
     """`find_root` walked up looking for a project marker.
 
     Shipped as a plugin there is no such tree, so the workspace location is a
     user setting instead.
     """
-    from academia.core.paths import workspaces_root
+    from academia.core.paths import ongoing_root
 
     monkeypatch.setenv("ACADEMIA_DATA_ROOT", str(tmp_path))
-    assert workspaces_root("literature-review") == tmp_path / "literature-review" / "ongoing"
+    assert ongoing_root("literature-review") == tmp_path / "literature-review" / "ongoing"
 
 
-def test_workspaces_root_separates_workflows(tmp_path, monkeypatch):
-    from academia.core.paths import workspaces_root
+def test_ongoing_root_separates_workflows(tmp_path, monkeypatch):
+    from academia.core.paths import ongoing_root
 
     monkeypatch.setenv("ACADEMIA_DATA_ROOT", str(tmp_path))
-    assert workspaces_root("literature-review") != workspaces_root("reviewer-discovery")
+    assert ongoing_root("literature-review") != ongoing_root("reviewer-discovery")
 
 
 # ---------------------------------------------------------------------------

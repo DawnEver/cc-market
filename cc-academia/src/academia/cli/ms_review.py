@@ -38,7 +38,7 @@ def run_ingest(args: argparse.Namespace) -> int:
 
 
 def run_status(args: argparse.Namespace) -> int:
-    root = paths.workspaces_root(ms_ingest.WORKFLOW)
+    root = paths.ongoing_root(ms_ingest.WORKFLOW)
     if args.slug:
         workspace = root / args.slug
         if not workspace.exists():

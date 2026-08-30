@@ -52,6 +52,25 @@ Read each step's file when you reach it. This file is the map.
 Running the CLI: `_shared/running-the-cli.md`. Host differences:
 `_shared/host-adapters.md`.
 
+## What travels between machines
+
+The store is a local cache and is never synced. What does travel is the handful
+of facts nobody can re-derive — invitations and their outcomes, verified ranks,
+addresses, corrected affiliations, doctorate years — as text in a synced folder,
+one directory per device:
+
+```bash
+uv run --project "<plugin-root>" rev-disc facts --json
+```
+
+Every command already does this automatically, merging in before it runs and
+publishing after. `--no-facts-sync` opts one command out; `ACADEMIA_FACTS_SYNC=0`
+opts out entirely. `academia doctor` prints the folder and whether it is synced.
+
+The folder holds real people's addresses and employment. It is not the place for
+manuscript content — nothing about a submission is written there — but it is
+personal data, so treat the location accordingly.
+
 ## Confidentiality
 
 The submission is unpublished and confidential.

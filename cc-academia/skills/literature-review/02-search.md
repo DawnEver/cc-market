@@ -12,7 +12,7 @@ AI 生成查询 → CLI 执行检索 → AI 批量筛选摘要。
    - **Codex:** read that prompt, then spawn a collaboration subagent with the brief and proposed queries. If collaboration tools are unavailable, run the same prompt in the current model; do not silently skip review.
    - Treat the prompt file as the single source of truth. Require one result for every `query_id`, reject duplicate/unknown IDs, and require `verdict`, `issues`, `suggested_fix`, and `rationale` before applying suggestions. The user still approves queries before they are written.
 
-3. **Present queries** to user. Write to `workspaces/<slug>/queries.toml`.
+3. **Present queries** to user. Write to `ongoing/<slug>/queries.toml`.
 
 4. **Probe** (optional but recommended):
    ```bash

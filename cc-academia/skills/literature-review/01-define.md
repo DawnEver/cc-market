@@ -10,7 +10,7 @@
    ```bash
    uv run --project "<plugin-root>" lit-review init "<topic>"
    ```
-   Creates `workspaces/<slug>/` with `workspace.toml` and all subdirectories.
+   Creates `ongoing/<slug>/` with `workspace.toml` and all subdirectories.
 
 3. **Agent helps user define the research brief**. Work through interactively:
    - `original_request` — the user's question in their own words
@@ -22,7 +22,7 @@
 
 4. **Show concept table** as keyword grid. Let user edit. Iterate until satisfied.
 
-5. **Write** `workspaces/<slug>/research_brief.toml`.
+5. **Write** `ongoing/<slug>/research_brief.toml`.
 
 6. **User confirms** the brief. Verbal OK is sufficient — no crypto ceremony.
 
@@ -30,4 +30,4 @@
 
 ## Existing workspace
 
-If `workspaces/<slug>/` already exists, present current state and ask: continue, revise, or start fresh.
+If `ongoing/<slug>/` already exists, present current state and ask: continue, revise, or start fresh.
