@@ -45,7 +45,7 @@ with a rule and a citation, not an opinion.
 | 03 | `03-candidates.md` | `rev-disc candidates` | authors of the closest work |
 | 04 | `04-enrich.md` | `rev-disc enrich` | affiliation, career, public email |
 | 05 | `05-coi.md` | `rev-disc coi` | three-tier verdicts with evidence |
-| 06 | `06-report.md` | `rev-disc report` | `shortlist.md` + `.csv` + dossiers |
+| 06 | `06-report.md` | `rev-disc report` | `shortlist.md` + `.csv` + detail CSVs + `reading-list.md` + dossiers |
 
 Read each step's file when you reach it. This file is the map.
 
@@ -82,15 +82,21 @@ uv run --project "<plugin-root>" rev-disc status --slug <slug>
 | `candidates` | 04 enrich |
 | `enrich` | 05 coi |
 | `coi` | 06 report |
-| `report` | offer to widen the search, adjust the journal policy, or record invitations |
+| `report` | offer to widen the search, adjust the journal policy, or record invitations with `rev-disc invite` |
 
 ## Journal policy
 
 Every run is bound to a journal config (`configs/journals/<slug>.toml`), which
-sets the co-authorship window, the seniority floor and whether geographic
-separation is a preference or a hard filter. An unknown journal slug stops the
-run rather than quietly applying defaults — reviewing a TIE submission under the
-wrong window is exactly the mistake worth failing on.
+sets the co-authorship window, the seniority and eligibility floors and whether
+geographic separation is a preference or a hard filter. An unknown journal slug
+stops the run rather than quietly applying defaults — reviewing a TIE submission
+under the wrong window is exactly the mistake worth failing on.
+
+Every constraint an editor might want to move is a key in `configs/coi.toml` and
+a per-journal override, never a number in the code: the activity window, the
+doctoral-year floor, the invitation-response threshold, the career length that
+makes someone a veteran, and how strictly each is applied (`off`, `prefer`,
+`require`). `06-report.md` has the table.
 
 Ask the user for the journal at intake if the manuscript does not say.
 
@@ -108,11 +114,18 @@ Ask the user for the journal at intake if the manuscript does not say.
 
 ## After the shortlist
 
-Once invitations go out, record them:
+Once invitations go out, record them — one command per candidate:
 
 ```bash
-uv run --project "<plugin-root>" rev-disc status --slug <slug>
+uv run --project "<plugin-root>" rev-disc invite --slug <slug>   --person <person_id> --invited-at 2026-03-01 --responded yes --accepted no   --note "thorough, on time"
 ```
 
-Invitation history feeds the next manuscript's ranking, which is what makes the
-second run better than the first. Offer this; do not do it unasked.
+Leave `--responded` unset while the outcome is still open. An unrecorded answer
+stays unrecorded rather than counting as a silence, and neither responsiveness
+rule counts it. Run the command again for the same person when the answer
+arrives: it amends that invitation rather than adding a second one.
+
+Invitation history feeds the next manuscript's ranking and is the only evidence
+the two responsiveness rules have, so on a fresh store they are inert by design:
+the veteran rule cannot fire and the response rule reports "too few to judge".
+Offer this; do not do it unasked.

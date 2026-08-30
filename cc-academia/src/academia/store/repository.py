@@ -310,6 +310,29 @@ def papers_of(conn: sqlite3.Connection, person_id: str, limit: int = 50) -> list
     ).fetchall()
 
 
+def publication_years(conn: sqlite3.Connection, person_id: str) -> list[int]:
+    """The year of each paper this person authored, newest first.
+
+    One entry per paper, not per distinct year: an activity rule counting
+    publications would otherwise read three papers in one year as one.
+
+    Career length and recent activity are both read from here rather than from
+    a career record: ORCID states an employment history for a minority of
+    researchers, while the publication record is the evidence the pool was
+    built from in the first place.
+    """
+    rows = conn.execute(
+        """
+        SELECT p.year
+        FROM authorships a JOIN papers p ON p.paper_id = a.paper_id
+        WHERE a.person_id = ? AND p.year IS NOT NULL
+        ORDER BY p.year DESC
+        """,
+        (person_id,),
+    ).fetchall()
+    return [int(row["year"]) for row in rows]
+
+
 # ---------------------------------------------------- institutions & career
 
 

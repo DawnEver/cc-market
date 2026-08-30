@@ -8,6 +8,19 @@ build if they drift.
 
 ### Added
 
+- **Configurable reviewer eligibility** (`activity`, `seniority.doctoral`,
+  `activity.invitations`, `activity.veteran` in `configs/coi.toml`). Prefers
+  authors publishing inside a recent window, holds doctoral candidates to a
+  year-of-study floor, and drops the long-career name that never answers an
+  invitation. Each rule has its own `off`/`prefer`/`require` mode and its own
+  window, so a journal moves one number rather than forking the pipeline.
+  Missing evidence always passes, and that part is not configurable: an empty
+  invitation history, an unresolved outcome or an unstated enrolment year is a
+  gap in public data, not a fact about the person.
+- **`rev-disc invite`** — record an invitation and its outcome. Invitation
+  history feeds the next manuscript's ranking and is the only evidence the two
+  responsiveness rules have; until now nothing could write it.
+
 - **reviewer-discovery** — candidate peer reviewers for a journal submission.
   Candidates are found as authors of demonstrably related work, never by asking a
   model for names. A deterministic rule engine decides conflicts of interest and
@@ -25,6 +38,10 @@ build if they drift.
   library, the same PDF ingest and the same store.
 
 ### Changed
+
+- `[scoring]` gains `activity = 0.07`, taken from `topic` (0.40 → 0.35) and
+  `geographic` (0.10 → 0.08). Scores are not comparable with earlier shortlists;
+  a journal that wants the old ranking sets `activity = 0.0` and keeps the gate.
 
 - One HTTP and retry policy for every source, replacing four divergent copies.
 - Record normalisation happens once, in `litreview.candidates`, rather than once

@@ -22,6 +22,7 @@ from academia.core.errors import UsageError
 from academia.core.models import Person
 from academia.core.text import recency_score, word_overlap
 from academia.reviewer import coi as coi_module
+from academia.reviewer import eligibility as eligibility_module
 from academia.reviewer.geo import GeoAssessment
 from academia.reviewer.policy import Policy
 from academia.store import repository as repo
@@ -64,6 +65,7 @@ class Candidate:
     evidence: list[Evidence] = field(default_factory=list)
     verdict: coi_module.Verdict | None = None
     geo: GeoAssessment | None = None
+    eligibility: eligibility_module.Assessment | None = None
     components: dict[str, float] = field(default_factory=dict)
     score: float = 0.0
     notes: list[str] = field(default_factory=list)
@@ -158,7 +160,7 @@ def _seniority_note(person: Person, policy: Policy, now_year: int) -> str:
     return ""
 
 
-def _student_note(person: Person) -> str:
+def _student_note(person: Person, now_year: int) -> str:
     """Flag a candidate who is still in training.
 
     The pool is harvested from authorship, so students are in it by
@@ -168,9 +170,11 @@ def _student_note(person: Person) -> str:
     """
     from academia.reviewer.seniority import is_student, label
 
-    if is_student(person.rank):
-        return f"{label(person.rank)} — confirm before inviting"
-    return ""
+    if not is_student(person.rank):
+        return ""
+    year = person.doctoral_year(now_year)
+    where = f" in year {year}" if year else ""
+    return f"{label(person.rank)}{where} — confirm before inviting"
 
 
 def score_candidate(
@@ -195,6 +199,18 @@ def score_candidate(
         candidate.notes.append(f"excluded: {candidate.geo.reason}")
         return candidate
 
+    # Eligibility is a policy gate, not a scoring feature. Under ``require`` a
+    # failure removes the candidate the same way a conflict does, so nobody
+    # climbs back onto the shortlist on expertise alone; under ``prefer`` it
+    # only feeds a component and leaves its reason in the notes.
+    assessment = eligibility_module.assess(conn, candidate.person, policy, now_year=now_year)
+    candidate.eligibility = assessment
+    if assessment.excluded:
+        candidate.score = BLOCKED_SCORE
+        candidate.components = {}
+        candidate.notes.append(f"excluded: {assessment.reason}")
+        return candidate
+
     history, history_notes = _reviewer_history(conn, candidate.person)
     candidate.notes.extend(history_notes)
 
@@ -206,14 +222,16 @@ def score_candidate(
         "publication_evidence": _weighted_evidence(candidate.evidence),
         "geographic": 1.0 if (candidate.geo and candidate.geo.cross_region) else 0.0,
         "reviewer_history": history,
+        "activity": assessment.score,
     }
     weights = policy.weights
     candidate.components = components
     candidate.score = sum(components[k] * weights.get(k, 0.0) for k in components)
 
+    candidate.notes.extend(assessment.notes())
     if (note := _seniority_note(candidate.person, policy, now_year)):
         candidate.notes.append(note)
-    if (note := _student_note(candidate.person)):
+    if (note := _student_note(candidate.person, now_year)):
         candidate.notes.append(note)
     if candidate.person.confidence < 0.6:
         candidate.notes.append(
@@ -231,8 +249,11 @@ def rank(candidates: list[Candidate]) -> list[Candidate]:
     """
     severity = {coi_module.CLEAR: 0, coi_module.REVIEW: 1, coi_module.BLOCK: 2}
 
-    def key(candidate: Candidate) -> tuple[int, float, float]:
+    def key(candidate: Candidate) -> tuple[int, int, float, float]:
         return (
+            # Removed for any reason — a conflict or a policy floor — sorts
+            # below everyone still invitable, including REVIEW-flagged names.
+            int(candidate.blocked),
             severity.get(candidate.coi_status, 0),
             -(candidate.score if candidate.score != BLOCKED_SCORE else -1e9),
             -(candidate.components.get("geographic", 0.0)),

@@ -183,6 +183,27 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     contacts.add_argument("--slug", required=True)
     _add_common(contacts)
 
+    invite = sub.add_parser(
+        "invite",
+        help="Record that a candidate was invited, and how they answered.",
+        description="Invitation history is what makes the next manuscript's "
+        "ranking better than this one's, and it is the only evidence the "
+        "responsiveness rules have to work with.",
+    )
+    invite.add_argument("--slug", required=True)
+    invite.add_argument("--person", required=True, help="person_id from the shortlist.")
+    invite.add_argument("--invited-at", default="", help="ISO date. Defaults to today.")
+    invite.add_argument(
+        "--responded",
+        choices=("yes", "no"),
+        default="",
+        help="Leave unset while the outcome is still open — an unrecorded "
+        "answer is not counted as a silence.",
+    )
+    invite.add_argument("--accepted", choices=("yes", "no"), default="")
+    invite.add_argument("--note", default="", help="Review quality, free text.")
+    _add_common(invite)
+
     status = sub.add_parser("status", help="Show run state, or list workspaces.")
     status.add_argument("--slug")
     _add_common(status)
@@ -202,6 +223,7 @@ def _rev_disc_handlers() -> dict[str, Handler]:
         "coi": rev_disc.run_coi,
         "report": rev_disc.run_report,
         "contacts": rev_disc.run_contacts,
+        "invite": rev_disc.run_invite,
         "status": rev_disc.run_status,
     }
 

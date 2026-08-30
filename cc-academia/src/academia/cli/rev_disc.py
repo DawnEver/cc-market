@@ -672,6 +672,59 @@ def run_report(args: argparse.Namespace) -> int:
 # ------------------------------------------------------------------ status
 
 
+def run_invite(args: argparse.Namespace) -> int:
+    """Record an invitation and its outcome against the manuscript it was for.
+
+    Without this the responsiveness rules have nothing to read: an editor who
+    never records an outcome sees the same unresponsive name at the top of every
+    shortlist. An outcome left unset stays ``NULL`` rather than becoming a
+    ``no``, because a pending invitation is not a refusal.
+
+    The record lands in the accumulating store, keyed by person and manuscript,
+    so it is read back for *every* future manuscript rather than only this one.
+    Recording the same person and manuscript twice amends that row instead of
+    appending a second invitation.
+    """
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    # Bookkeeping should not require a profile: an editor may record an outcome
+    # months after the run, against a workspace whose files have moved on.
+    ms_id = state.ms_id or _load_profile(workspace).manuscript_id
+
+    def tri(value: str) -> bool | None:
+        return None if not value else value == "yes"
+
+    with db.session() as conn:
+        person = repo.load_person(conn, args.person)
+        if person is None:
+            raise UsageError(
+                f"no candidate '{args.person}' in the store. Use the person_id "
+                f"column from {workspace.shortlist_dir / 'shortlist.csv'}."
+            )
+        repo.record_invitation(
+            conn,
+            args.person,
+            ms_id,
+            invited_at=args.invited_at or datetime.now().date().isoformat(),
+            responded=tri(args.responded),
+            accepted=tri(args.accepted),
+            note=args.note,
+        )
+        history = repo.invitation_history(conn, args.person)
+
+    payload = {
+        "person_id": args.person,
+        "name": person.display_name,
+        "manuscript_id": ms_id,
+        "invitations": len(history),
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(f"recorded: {person.display_name} — {len(history)} invitation(s) on record")
+    return EXIT_OK
+
+
 def run_status(args: argparse.Namespace) -> int:
     from academia.reviewer.workspace import list_workspaces
 

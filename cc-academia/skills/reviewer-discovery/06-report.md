@@ -25,6 +25,7 @@ Writes into `5-shortlist/`:
 - `evidence.csv` — one qualifying publication per row
 - `coi-findings.csv` — one conflict finding per row
 - `invitations.csv` — one previous invitation per row
+- `reading-list.md` — the qualifying papers, to read before deciding
 - `dossiers/` — one file per candidate, with the full audit trail
 
 ## Ranking
@@ -38,12 +39,83 @@ conflict status  >  expertise  >  geographic preference
 Within `CLEAR`, the score is:
 
 ```
-0.40 topic + 0.20 method + 0.15 recent expertise
-+ 0.10 publication evidence + 0.10 geography + 0.05 reviewer history
+0.35 topic + 0.20 method + 0.15 recent expertise
++ 0.10 publication evidence + 0.08 geography + 0.05 reviewer history
++ 0.07 activity        # the eligibility component
 ```
 
 Every component appears in the dossier. A bare "91% suitable" is not something an
 editor can act on or defend.
+
+## Eligibility
+
+Expertise says a candidate *could* review the manuscript. Eligibility says the
+invitation is worth sending. Four rules, all in `configs/coi.toml` and all
+overridable per journal:
+
+| Config table | Name in the notes | Default | Fires when |
+|--------------|-------------------|---------|-----------|
+| `activity` | `recent_activity` | prefer | no paper in the last 3 years |
+| `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
+| `activity.invitations` | `invitation_response` | prefer | answered under half of the recent invitations whose outcome was recorded |
+| `activity.veteran` | `unresponsive_veteran` | require | a 10-year career, at least 2 invitations with a recorded outcome (all-time, not windowed) and none of them answered |
+
+Only an invitation whose outcome was written down counts. Three sent and never
+followed up are three unknowns, not three silences, so neither invitation rule
+can fire on them. That history lives in the accumulating store and is read back
+for every manuscript, not just this workspace's — excluding someone as an
+unresponsive veteran here excludes them on the next submission too.
+
+Each carries its own `mode`:
+
+- `off` — not evaluated
+- `prefer` — feeds the eligibility component and leaves its reason in the notes
+- `require` — the candidate is excluded, and stays on the list with the reason
+
+`require` excludes rather than penalising, for the same reason a conflict does:
+blending a policy failure into a score is how somebody who does not meet the
+policy climbs back onto the shortlist on expertise alone. Only `prefer` rules
+feed the score, and they arrive in one column, `component_activity` — the
+fraction of the `prefer` rules the candidate met. It is `1.0` when no rule is in
+`prefer` mode, so an all-`require` journal hands the same 0.07 to everyone left
+standing rather than ranking them by it.
+
+`activity` overlaps on purpose with `recent_expertise` and `reviewer_history`,
+which read the same records from a different angle: those two ask how recent and
+how well-received a candidate's *qualifying* work is, this one asks whether they
+are still publishing and still answering at all. A journal that considers that a
+double count sets `activity = 0.0` in `[scoring]` and keeps the gate.
+
+An excluded candidate keeps `coi_status = CLEAR` — no conflict was detected —
+but carries `blocked = True`, an empty score and the reason in `notes`. Blocked
+rows sort below every invitable candidate whatever the reason, so the ranking
+reads: invitable by conflict status, then expertise, then geography; then
+everyone who was removed.
+
+**A missing fact never disqualifies anybody.** No publication years, no stated
+enrolment year, no invitation history — each of these is a gap in public data,
+not evidence about the person, and each passes. The veteran rule in particular
+never fires on career length alone: it needs unanswered invitations recorded in
+this workspace, which the first run does not have.
+
+Windows, floors and thresholds are all keys in the config, and a journal file
+overlays table by table — state only the keys you change:
+
+```toml
+[activity]
+recent_years = 5
+
+[seniority.doctoral]
+mode = "off"
+```
+
+`[seniority]`'s `min_academic_age` and `max_academic_age` sit next to these but
+behave differently: they only add a note, and never exclude anybody.
+
+One thing is deliberately not configurable: a doctoral candidate whose enrolment
+year is nowhere stated is always kept and marked. Turning that gap into an
+exclusion would remove the people with the thinnest public records rather than
+the ones who are too junior.
 
 ## Geography
 

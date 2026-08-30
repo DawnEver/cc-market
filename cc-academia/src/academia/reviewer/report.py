@@ -35,7 +35,8 @@ EXPORT_COLUMNS = (
     "coi_summary", "coi_finding_count", "evidence_count", "best_similarity",
     "evidence_year_from", "evidence_year_to", "component_topic", "component_method",
     "component_recent_expertise", "component_publication_evidence",
-    "component_geographic", "component_reviewer_history", "email", "email_found",
+    "component_geographic", "component_reviewer_history", "component_activity",
+    "email", "email_found",
     "email_source", "email_confidence", "email_source_url", "notes",
     "data_quality_warning", "invitation_count", "response_count", "acceptance_count",
 )
@@ -242,6 +243,7 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "component_publication_evidence": components.get("publication_evidence", ""),
         "component_geographic": components.get("geographic", ""),
         "component_reviewer_history": components.get("reviewer_history", ""),
+        "component_activity": components.get("activity", ""),
         "email": row.email.email,
         "email_found": row.email.found,
         "email_source": row.email.source,

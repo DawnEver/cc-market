@@ -53,7 +53,7 @@ other.
 |----------|---------|------------------|
 | `ACADEMIA_CONFIG_DIR` | `configs/` | COI policy, journal parameters |
 | `ACADEMIA_LENS_DIR` | `configs/lenses/` | domain appraisal lenses |
-| `ACADEMIA_DATA_ROOT` | `~/cc-academia-workspaces` | where workspaces live |
+| `ACADEMIA_DATA_ROOT` | `~/cc-academia-data` | where workflow data live |
 | `ACADEMIA_DB` | `Documents/PEMC/cc-academia-data/academia.db` | the accumulating store |
 | `ACADEMIA_CONTACT` | unset | polite-pool address for OpenAlex, Crossref, ORCID |
 
@@ -99,6 +99,25 @@ up on a shortlist.
 A clean result is always worded **no detected conflict** — never "no conflict".
 A bibliographic database cannot prove the absence of a personal, financial or
 competitive relationship.
+
+## Eligibility is policy, not expertise
+
+Whether someone *could* review a manuscript and whether the invitation is worth
+sending are separate questions, and they are answered separately: expertise is a
+score, eligibility is a gate.
+
+Every eligibility rule — the activity window, the doctoral year-of-study floor,
+invitation responsiveness, the unresponsive long-career expert — is a key in
+`configs/coi.toml` with its own `off` / `prefer` / `require` mode. A `require`
+failure sets the score to negative infinity for the same reason a `BLOCK` does.
+A `prefer` failure only annotates and feeds one score component, so an editor
+can see it and disagree.
+
+Missing evidence always passes. No publication years, no stated enrolment year,
+no invitation history — each is a gap in public data. A rule that fired on
+absence would remove the people with the thinnest public records rather than the
+people the policy is about, and the invitation-based rules are therefore inert
+on a fresh store, by design.
 
 ## Geography, not ethnicity
 

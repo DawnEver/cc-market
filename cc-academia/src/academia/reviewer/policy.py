@@ -31,6 +31,51 @@ def _merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+OFF = "off"
+PREFER = "prefer"
+REQUIRE = "require"
+_MODES = (OFF, PREFER, REQUIRE)
+
+
+@dataclass(frozen=True)
+class Constraint:
+    """One tunable eligibility rule and how strictly it is applied.
+
+    Every constraint an editor can set carries its own mode, so a journal can
+    demand a third-year doctoral floor while merely preferring recent activity.
+    ``require`` excludes rather than penalises: blending an eligibility failure
+    into a score is how someone who does not meet the policy climbs back onto a
+    shortlist on expertise alone.
+    """
+
+    name: str
+    mode: str
+    settings: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.mode not in _MODES:
+            raise UsageError(
+                f"{self.name}: unknown mode '{self.mode}'. Use one of {', '.join(_MODES)}"
+            )
+
+    @property
+    def off(self) -> bool:
+        return self.mode == OFF
+
+    @property
+    def excluding(self) -> bool:
+        return self.mode == REQUIRE
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.settings.get(key, default)
+
+    def int_(self, key: str, default: int = 0) -> int:
+        return int(self.settings.get(key, default))
+
+    def float_(self, key: str, default: float = 0.0) -> float:
+        return float(self.settings.get(key, default))
+
+
 @dataclass(frozen=True)
 class Policy:
     """A resolved policy plus the provenance of where it came from."""
@@ -91,6 +136,27 @@ class Policy:
     def max_academic_age(self) -> int:
         return int(self.data["seniority"]["max_academic_age"])
 
+    @property
+    def doctoral(self) -> "Constraint":
+        """The floor a doctoral candidate has to clear to be invitable."""
+        return self._constraint("doctoral_year", self.data["seniority"]["doctoral"])
+
+    # -- activity --------------------------------------------------------
+    @property
+    def activity(self) -> "Constraint":
+        return self._constraint("recent_activity", self.data["activity"])
+
+    @property
+    def invitation_activity(self) -> "Constraint":
+        return self._constraint("invitation_response", self.data["activity"]["invitations"])
+
+    @property
+    def veteran(self) -> "Constraint":
+        return self._constraint("unresponsive_veteran", self.data["activity"]["veteran"])
+
+    def _constraint(self, name: str, table: dict[str, Any]) -> "Constraint":
+        return Constraint(name=name, mode=str(table["mode"]), settings=dict(table))
+
     # -- scoring ---------------------------------------------------------
     @property
     def weights(self) -> dict[str, float]:
@@ -134,7 +200,11 @@ def load_policy(journal: str = "", *, exclusion_list: list[str] | None = None) -
     if exclusion_list:
         data = _merge(data, {"exclusions": {"names": list(exclusion_list)}})
 
-    return Policy(data=data, sources=sources, journal=journal)
+    policy = Policy(data=data, sources=sources, journal=journal)
+    # Build every constraint now so a typo in a mode stops the run here, rather
+    # than at report time with intake, search and enrichment already spent.
+    _ = (policy.activity, policy.doctoral, policy.invitation_activity, policy.veteran)
+    return policy
 
 
 def excluded_names(policy: Policy) -> set[str]:

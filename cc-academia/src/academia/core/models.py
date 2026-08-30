@@ -321,5 +321,24 @@ class Person:
         year = self.phd_year
         return None if year is None else max(0, now_year - year)
 
+    @property
+    def _doctoral_education(self) -> "Education | None":
+        for entry in self.education:
+            if re.search(r"ph\.?\s?d|doctor", entry.degree or "", re.IGNORECASE):
+                return entry
+        return None
+
+    def doctoral_year(self, now_year: int) -> int | None:
+        """Which year of doctoral study this person is in, or ``None``.
+
+        Counted inclusively from the enrolment year, so someone who started in
+        ``now_year`` is in year 1. ``None`` means no start year is stated
+        anywhere — a gap in public data, never evidence that someone is junior.
+        """
+        entry = self._doctoral_education
+        if entry is None or not entry.year_from:
+            return None
+        return max(1, now_year - entry.year_from + 1)
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

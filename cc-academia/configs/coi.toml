@@ -40,8 +40,6 @@ review = [
 [thresholds]
 # References to a candidate's work above this count suggest closeness worth noting.
 heavily_cited_by_manuscript = 3
-# A single piece of evidence is enough to raise a rule.
-minimum_evidence = 1
 
 [geo]
 # Cross-region preference operates on the candidate's *current affiliation
@@ -55,10 +53,52 @@ bonus = 0.08
 min_academic_age = 3
 max_academic_age = 0           # 0 means no upper bound
 
+# Doctoral candidates. The pool is harvested from authorship, so it contains
+# students by construction, and a late-stage one can be the right reviewer on a
+# narrow topic. The floor is the year of study, counted from the enrolment year
+# on the education record: 3 means "third year or later".
+[seniority.doctoral]
+mode = "require"               # off | prefer | require
+min_year = 3
+# A student whose enrolment year is nowhere stated is kept and marked, and that
+# is not configurable: turning a gap in ORCID into an exclusion would remove the
+# candidates with the thinnest records rather than the ones who are too junior.
+
+# Every constraint below follows the same three modes:
+#   off      — not evaluated at all
+#   prefer   — feeds the score and adds a note; nobody is removed
+#   require  — the candidate is excluded, and stays on the list with the reason
+[activity]
+# Still working in the field: papers published within the window.
+mode = "prefer"
+recent_years = 3
+min_recent_papers = 1
+
+[activity.invitations]
+# Responsiveness to review invitations, read from the accumulating store — every
+# manuscript it holds, not just this workspace. Empty history is neutral: a
+# candidate nobody has invited yet is not unresponsive, and the first run has no
+# history at all. Only invitations whose outcome was actually recorded count;
+# one still pending is not a silence.
+mode = "prefer"
+recent_years = 3
+min_invitations = 1            # resolved outcomes; below this, too thin to judge
+min_response_rate = 0.5        # responses / invitations inside the window
+
+# The senior expert who no longer takes review work. Career length alone never
+# excludes anyone: the rule fires only when a long career *and* a record of
+# unanswered invitations coincide.
+[activity.veteran]
+mode = "require"
+career_years = 10              # years since the first publication on record
+min_invitations = 2            # resolved outcomes, all-time rather than windowed
+max_response_rate = 0.0        # at or below this, treat as not accepting work
+
 [scoring]
-topic = 0.40
+topic = 0.35
 method = 0.20
 recent_expertise = 0.15
 publication_evidence = 0.10
-geographic = 0.10
+geographic = 0.08
 reviewer_history = 0.05
+activity = 0.07

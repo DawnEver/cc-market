@@ -3,8 +3,12 @@
 Fill in where each candidate works, how they got there, and how to reach them.
 
 ```bash
-uv run --project "<plugin-root>" rev-disc enrich --slug <slug> --limit 40 --json
+uv run --project "<plugin-root>" rev-disc enrich --slug <slug> --json
 ```
+
+`--limit` caps how many candidates are enriched. Leave it off: the eligibility
+rules read the rank and education this step fills in, so a cap silently changes
+who is filtered as well as who has an address.
 
 Background and contact details are one step because they share a source. ORCID
 carries an education section for only about 30% of researchers in this field —
@@ -90,7 +94,10 @@ highest-ranked, in one pass of four searches.
 ## Academic position
 
 The pool is harvested from authorship, so it contains PhD and MSc students by
-construction. On the live TTE run **two of the top ten were PhD candidates**,
+construction, and the doctoral floor in the policy (third year by default) only
+applies to people whose year of study is known. The rank you supply here is what
+identifies a doctoral candidate at all; the year of study comes solely from the
+ORCID education record, so a student without one is always kept and marked. On the live TTE run **two of the top ten were PhD candidates**,
 and one of them was reported as "Engineer" because his only ORCID employment was
 an industry post. Students are flagged with "confirm before inviting" and kept
 on the list — a late-stage doctoral researcher may be right on a narrow topic,

@@ -3,3 +3,11 @@ journal = "IEEE Transactions on Transportation Electrification"
 
 [windows]
 coauthor_years = 4
+
+# Eligibility overlays go here, table by table — state only what changes:
+#
+# [activity]
+# recent_years = 5
+#
+# [seniority.doctoral]
+# min_year = 4
