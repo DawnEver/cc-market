@@ -24,6 +24,7 @@ from academia.reviewer import coi as coi_module
 from academia.reviewer import contact as contact_module
 from academia.reviewer import discover, geo, rank, report
 from academia.reviewer import enrich as enrich_module
+from academia.reviewer import lookups as lookup_module
 from academia.reviewer.policy import load_policy
 from academia.reviewer.profile import (
     Profile,
@@ -484,7 +485,7 @@ def run_enrich(args: argparse.Namespace) -> int:
     )
     homepages = _homepage_overrides(args.homepage)
     lookup_attempts = [
-        contact_module.LookupAttempt(
+        lookup_module.LookupAttempt(
             person_id=person_id,
             urls_selected=urls,
             outcome="found",
@@ -495,7 +496,7 @@ def run_enrich(args: argparse.Namespace) -> int:
     supplied_doctorates: dict[str, tuple[str, int | None, int | None, str]] = {}
     supplied_affiliations: dict[str, tuple[str, str, str]] = {}
     if getattr(args, "homepages", None):
-        lookups = contact_module.read_lookups(args.homepages)
+        lookups = lookup_module.read_lookups(args.homepages)
         for person_id, urls in lookups.urls.items():
             homepages.setdefault(person_id, []).extend(urls)
         supplied_ranks = lookups.ranks
@@ -504,7 +505,7 @@ def run_enrich(args: argparse.Namespace) -> int:
         lookup_attempts.extend(lookups.attempts)
     if lookup_attempts:
         attempt_path = workspace.audit_dir / "lookups.jsonl"
-        existing = contact_module.read_lookup_attempts(attempt_path)
+        existing = lookup_module.read_lookup_attempts(attempt_path)
         workspace.write_jsonl(
             attempt_path,
             [attempt.as_dict() for attempt in [*existing, *lookup_attempts]],
@@ -816,10 +817,10 @@ def run_report(args: argparse.Namespace) -> int:
         resolved = {
             person.person_id for person in all_people if repo.emails_of(conn, person.person_id)
         }
-        missing = contact_module.lookup_worklist(all_people, resolved=resolved)
-        _, lookup_coverage = contact_module.annotate_lookup_status(
+        missing = lookup_module.lookup_worklist(all_people, resolved=resolved)
+        _, lookup_coverage = lookup_module.annotate_lookup_status(
             missing,
-            contact_module.read_lookup_attempts(workspace.audit_dir / "lookups.jsonl"),
+            lookup_module.read_lookup_attempts(workspace.audit_dir / "lookups.jsonl"),
             total=len(all_people),
         )
         coverage_path = workspace.write_json(
@@ -1059,11 +1060,11 @@ def run_contacts(args: argparse.Namespace) -> int:
             people.append(person)
             if repo.emails_of(conn, person.person_id):
                 resolved.add(person.person_id)
-        items = contact_module.lookup_worklist(people, resolved=resolved)
+        items = lookup_module.lookup_worklist(people, resolved=resolved)
 
-    items, summary = contact_module.annotate_lookup_status(
+    items, summary = lookup_module.annotate_lookup_status(
         items,
-        contact_module.read_lookup_attempts(workspace.audit_dir / "lookups.jsonl"),
+        lookup_module.read_lookup_attempts(workspace.audit_dir / "lookups.jsonl"),
         total=len(people),
     )
     payload = {**summary, "candidates": items}
