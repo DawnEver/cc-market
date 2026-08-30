@@ -68,10 +68,7 @@ def run(args: argparse.Namespace) -> int:
     state = "present" if report["database"]["exists"] else "not created"
     log.info(f"  database    : {report['database']['path']} ({state})")
     facts = report["facts"]
-    if not facts["enabled"]:
-        how = "export off"
-    else:
-        how = "shared location" if facts["shared_location"] else "this machine only"
+    how = "export on" if facts["enabled"] else "export off"
     log.info(f"  facts       : {facts['path']} ({how}, device '{facts['device']}')")
     extras = ", ".join(k for k, v in report["extras"].items() if v) or "none"
     log.info(f"  extras      : {extras}")

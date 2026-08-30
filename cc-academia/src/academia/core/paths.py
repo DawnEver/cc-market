@@ -205,12 +205,22 @@ def facts_dir() -> Path:
 
     A shared location is never guessed at. These files hold real people's
     addresses and employment, and discovering a cloud folder and quietly writing
-    them there is a decision about someone else's personal data. Without
-    ``ACADEMIA_FACTS_DIR`` they stay in the home directory and do not travel.
+    them there is a decision about someone else's personal data.
+
+    ``ACADEMIA_FACTS_DIR`` names the folder outright. Otherwise, once the
+    operator has turned export on, the facts go beside the research data they
+    describe — under the data root, which is already whatever that person chose
+    to sync. That way one flag is the whole configuration and no machine's
+    directory layout is written down anywhere. With export off they stay in the
+    home directory and do not travel.
     """
     explicit = _env_path(ENV_FACTS_DIR)
     if explicit is not None:
         return explicit
+    if facts_sync_enabled():
+        root = find_data_root()
+        if root is not None:
+            return root / FACTS_DIRNAME
     return Path.home() / FACTS_DIRNAME
 
 

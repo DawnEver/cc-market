@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from academia.core import paths
 
 
@@ -129,3 +131,23 @@ def test_an_explicit_store_path_still_wins(monkeypatch, tmp_path):
     """Which is how an existing store is kept exactly where it already is."""
     monkeypatch.setenv(paths.ENV_DB, str(tmp_path / "elsewhere" / "academia.db"))
     assert paths.database_path() == tmp_path / "elsewhere" / "academia.db"
+
+
+def test_facts_follow_the_data_root_once_export_is_turned_on(monkeypatch, tmp_path):
+    """One flag is the whole configuration; the location follows the synced data."""
+    root = tmp_path / "agents"
+    (root / "reviewer-discovery" / "ongoing").mkdir(parents=True)
+    monkeypatch.delenv(paths.ENV_FACTS_DIR, raising=False)
+    monkeypatch.chdir(root)
+
+    monkeypatch.setenv(paths.ENV_FACTS_SYNC, "0")
+    assert paths.facts_dir() == Path.home() / paths.FACTS_DIRNAME
+
+    monkeypatch.setenv(paths.ENV_FACTS_SYNC, "1")
+    assert paths.facts_dir() == root / paths.FACTS_DIRNAME
+
+
+def test_an_explicit_facts_dir_still_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv(paths.ENV_FACTS_SYNC, "1")
+    monkeypatch.setenv(paths.ENV_FACTS_DIR, str(tmp_path / "elsewhere"))
+    assert paths.facts_dir() == tmp_path / "elsewhere"

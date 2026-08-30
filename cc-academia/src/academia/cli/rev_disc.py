@@ -855,17 +855,17 @@ def run_facts(args: argparse.Namespace) -> int:
     else:
         log.info(f"facts folder: {directory}  (device '{paths.device_id()}')")
         if imported:
-            log.info(f"  merged in : {sum(imported.values())} fact(s) from other devices")
+            log.info(f"  merged in : {sum(imported.values())} fact(s) from the folder "
+                f"(every device including this one — that is what rebuilds a lost store)")
         if exported:
             log.info(f"  published : {sum(exported.values())} fact(s)")
         if skipped:
             log.info(f"  skipped   : {skipped} record(s) whose person could not be identified")
-        if not os.environ.get(paths.ENV_FACTS_DIR):
-            log.info(
-                "these facts are local only. Set ACADEMIA_FACTS_DIR to a shared "
-                "path to carry them between machines — deliberately, since they "
-                "are real people's addresses and employment."
-            )
+        log.detail(
+            "whether these travel depends on whether that folder is synced — "
+            "the tool cannot tell, and does not choose it. ACADEMIA_FACTS_DIR "
+            "overrides the location; ACADEMIA_FACTS_SYNC=0 stops writing it."
+        )
     return EXIT_OK
 
 
