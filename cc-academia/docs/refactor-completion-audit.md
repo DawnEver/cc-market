@@ -13,9 +13,9 @@ the complete offline test suite, and a live downstream rerun of the sanitized
 | 1 biography spike | complete | `author-biography-spike.md`: 144 attempted URLs, 65 fetched PDFs, 11 formulaic biographies, zero unknown-rank candidate yield. This selects the plan's `<5` branch. |
 | 2.1 biography parser | correctly not built | The measured gate rejected it. `PDF_BACK_PAGES` and automatic back-page rendering were removed; first-page address extraction remains. |
 | 2.2 source wiring and observability | complete | Semantic Scholar is in the default registry; unknown sources raise `UsageError`; every search writes `per_source`. `ieee-recall-diagnosis.md` records the query-shape diagnosis and source-specific fix. |
-| 2.3 address recency | complete without precedence reversal | Every address is exported in `emails.csv`; `email_affiliation_domain` is a conservative match/mismatch/unknown signal. It never reorders an address. |
+| 2.3 address recency | complete without precedence reversal | Every address is embedded in `shortlist.csv`'s `emails_json`; `email_affiliation_domain` is a conservative match/mismatch/unknown signal. It never reorders an address. |
 | 3 retrieval configuration | complete | `[retrieval]` in `coi.toml` uses the existing recursive journal overlay. Candidate breadth, publication budget, PDF pages, page delay/size/failure budget, confidence, and precedence are configurable; CLI breadth flags remain explicit overrides; missing override keys fall back. |
-| 4 responsibility cleanup | complete | Public-page/PDF address extraction remains in `contact.py`; agent-owned worklists, answers, and attempt state moved to `lookups.py`. One-to-many addresses moved to a normalized detail export rather than widening the shortlist for every alternate. |
+| 4 responsibility cleanup | complete | Public-page/PDF address extraction remains in `contact.py`; agent-owned worklists, answers, and attempt state moved to `lookups.py`. User-facing CSV output is consolidated into one comprehensive shortlist and one minimal contact list. |
 
 ## Live rerun evidence
 

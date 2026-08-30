@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import sqlite3
 import urllib.parse
 from dataclasses import dataclass, field
@@ -42,6 +43,8 @@ EXPORT_COLUMNS = (
     "email_affiliation_domain",
     "email_alternate", "email_alternate_source", "email_alternate_source_url", "notes",
     "data_quality_warning", "invitation_count", "response_count", "acceptance_count",
+    "institutions_json", "education_json", "emails_json", "evidence_json",
+    "coi_findings_json", "invitations_json",
 )
 
 
@@ -223,6 +226,70 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
     invitations = repo.invitation_history(conn, person.person_id)
     education = person.education
     components = candidate.components
+    institutions = [
+        {
+            "kind": step.kind,
+            "institution": step.institution,
+            "country": step.country,
+            "year_from": step.year_from,
+            "year_to": step.year_to,
+            "source": step.source,
+            "source_url": step.source_url,
+        }
+        for step in steps
+    ]
+    education_records = [
+        {
+            "institution": entry.institution,
+            "degree": entry.degree,
+            "field": entry.field,
+            "year_from": entry.year_from,
+            "year_to": entry.year_to,
+            "advisor_person_id": entry.advisor_person_id,
+            "source": entry.source,
+            "source_url": entry.source_url,
+        }
+        for entry in education
+    ]
+    email_records = [
+        {
+            "email": item["email"],
+            "source": item["source"],
+            "source_url": item["source_url"] or "",
+            "confidence": item["confidence"],
+            "selected": item["email"] == row.email.email,
+            "affiliation_domain": email_affiliation_domain(person, item["email"]),
+        }
+        for item in repo.emails_of(conn, person.person_id)
+    ]
+    evidence_records = [
+        {
+            "paper_id": item.paper_id,
+            "title": item.title,
+            "year": item.year,
+            "doi": item.doi,
+            "url": item.url,
+            "similarity": item.similarity,
+        }
+        for item in candidate.evidence
+    ]
+    finding_records = [
+        {"rule": finding.rule, "status": finding.status, "evidence": finding.evidence}
+        for finding in findings
+    ]
+    invitation_records = [
+        {
+            "manuscript_id": item["ms_id"],
+            "invited_at": item["invited_at"],
+            "responded": item["responded"],
+            "accepted": item["accepted"],
+        }
+        for item in invitations
+    ]
+
+    def packed(value) -> str:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+
     return {
         "rank": row.rank,
         "reviewer": person.display_name,
@@ -273,6 +340,12 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "invitation_count": len(invitations),
         "response_count": sum(bool(item["responded"]) for item in invitations),
         "acceptance_count": sum(bool(item["accepted"]) for item in invitations),
+        "institutions_json": packed(institutions),
+        "education_json": packed(education_records),
+        "emails_json": packed(email_records),
+        "evidence_json": packed(evidence_records),
+        "coi_findings_json": packed(finding_records),
+        "invitations_json": packed(invitation_records),
     }
 
 
@@ -292,9 +365,6 @@ def _detail_csv(columns: tuple[str, ...], records: list[dict[str, object]]) -> s
     writer.writeheader()
     writer.writerows(records)
     return buffer.getvalue()
-
-
-DETAIL_KEY_COLUMNS = ("rank", "reviewer", "person_id")
 
 
 _NON_INSTITUTION_HOSTS = {
@@ -320,57 +390,6 @@ def email_affiliation_domain(person, email: str) -> str:
     if host == domain or host.endswith("." + domain) or domain.endswith("." + host):
         return "match"
     return "mismatch"
-
-
-def detail_exports(conn: sqlite3.Connection, rows: list[Row]) -> dict[str, str]:
-    institutions, education, evidence, coi, invitations, emails = [], [], [], [], [], []
-    for row in rows:
-        person = row.candidate.person
-        key = {"rank": row.rank, "reviewer": person.display_name, "person_id": person.person_id}
-        for step in trajectory.build(person):
-            institutions.append(key | {
-                "kind": step.kind, "institution": step.institution, "country": step.country,
-                "year_from": step.year_from, "year_to": step.year_to,
-                "source": step.source, "source_url": step.source_url,
-            })
-        for entry in person.education:
-            education.append(key | {
-                "institution": entry.institution, "degree": entry.degree, "field": entry.field,
-                "year_from": entry.year_from, "year_to": entry.year_to,
-                "advisor_person_id": entry.advisor_person_id, "source": entry.source,
-                "source_url": entry.source_url,
-            })
-        for item in row.candidate.evidence:
-            evidence.append(key | {
-                "paper_id": item.paper_id, "title": item.title, "year": item.year,
-                "doi": item.doi, "url": item.url, "similarity": item.similarity,
-            })
-        verdict = row.candidate.verdict
-        for finding in verdict.findings if verdict else []:
-            coi.append(key | {"rule": finding.rule, "status": finding.status, "evidence": finding.evidence})
-        for item in repo.invitation_history(conn, person.person_id):
-            invitations.append(key | {
-                "manuscript_id": item["ms_id"], "invited_at": item["invited_at"],
-                "responded": bool(item["responded"]), "accepted": bool(item["accepted"]),
-            })
-        for item in repo.emails_of(conn, person.person_id):
-            emails.append(key | {
-                "email": item["email"],
-                "source": item["source"],
-                "source_url": item["source_url"] or "",
-                "confidence": item["confidence"],
-                "selected": item["email"] == row.email.email,
-                "email_affiliation_domain": email_affiliation_domain(person, item["email"]),
-            })
-    specs = {
-        "institutions.csv": ((*DETAIL_KEY_COLUMNS, "kind", "institution", "country", "year_from", "year_to", "source", "source_url"), institutions),
-        "education.csv": ((*DETAIL_KEY_COLUMNS, "institution", "degree", "field", "year_from", "year_to", "advisor_person_id", "source", "source_url"), education),
-        "evidence.csv": ((*DETAIL_KEY_COLUMNS, "paper_id", "title", "year", "doi", "url", "similarity"), evidence),
-        "coi-findings.csv": ((*DETAIL_KEY_COLUMNS, "rule", "status", "evidence"), coi),
-        "invitations.csv": ((*DETAIL_KEY_COLUMNS, "manuscript_id", "invited_at", "responded", "accepted"), invitations),
-        "emails.csv": ((*DETAIL_KEY_COLUMNS, "email", "source", "source_url", "confidence", "selected", "email_affiliation_domain"), emails),
-    }
-    return {name: _detail_csv(columns, records) for name, (columns, records) in specs.items()}
 
 
 #: The three columns an editorial system asks for when an invitation goes out.
@@ -536,11 +555,18 @@ def write_all(
     csv_path = directory / "shortlist.csv"
     csv_path.write_text(render_csv(conn, rows), encoding="utf-8-sig")
 
-    detail_paths = {}
-    for name, content in detail_exports(conn, rows).items():
-        path = directory / name
-        path.write_text(content, encoding="utf-8-sig")
-        detail_paths[name.removesuffix(".csv").replace("-", "_")] = path
+    # Older versions emitted six normalized detail CSVs. The comprehensive
+    # shortlist now embeds those one-to-many records as JSON cells, so delete
+    # stale files rather than leaving the output directory looking current.
+    for obsolete in (
+        "institutions.csv",
+        "education.csv",
+        "emails.csv",
+        "evidence.csv",
+        "coi-findings.csv",
+        "invitations.csv",
+    ):
+        (directory / obsolete).unlink(missing_ok=True)
 
     contacts = directory / "contact-list.csv"
     contacts.write_text(render_contact_list(rows), encoding="utf-8-sig")
@@ -558,4 +584,4 @@ def write_all(
         "contact_list": contacts,
         "reading_list": reading,
         "dossiers": dossier_dir,
-    } | detail_paths
+    }

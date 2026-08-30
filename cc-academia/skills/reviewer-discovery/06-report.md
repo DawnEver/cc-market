@@ -10,18 +10,18 @@ sources, and the header summarises career-country exposure. A person may count
 in several historical countries; this is career evidence, not nationality or
 ethnicity, and it never overwrites the current-affiliation country.
 
-`shortlist.md` and `shortlist.csv` use one canonical candidate schema and
-identical column order. Every cell is a scalar suitable for Excel sorting and
-filtering; no cell contains JSON or a delimiter-packed list. One-to-many data is
-normalized into detail CSVs, each repeating `rank`, `reviewer`, and `person_id`
-so Excel users can sort, filter, join, or place each file on its own worksheet.
+The workflow exports exactly two CSV tables. `shortlist.csv` is comprehensive:
+one row per candidate, scalar columns for sorting plus JSON cells for complete
+one-to-many history. `contact-list.csv` is deliberately minimal.
 
 Writes into `5-shortlist/`:
 
 - `shortlist.md` — the table to read
-- `shortlist.csv` — the same rows, for pasting into the editorial system.
-  `email` is the address that won on precedence and `email_alternate` is the
-  other one found, each with its own source. Read both before writing to anyone
+- `shortlist.csv` — the comprehensive table. It includes institutions,
+  education, every address, publication evidence, COI findings, and invitation
+  history in the corresponding `*_json` columns. `email` is the address that
+  won on precedence and `email_alternate` is the other one surfaced directly.
+  Read both before writing to anyone
   who has changed institution: a corresponding-author footnote outranks a staff
   page, and it necessarily predates the move, so the higher-ranked address is
   the likelier of the two to be dead.
@@ -30,15 +30,6 @@ Writes into `5-shortlist/`:
   in every other export so the editor can see they were considered, but a list
   whose only purpose is to send mail must not carry someone the conflict rules
   removed. A missing address reads `not found` rather than dropping the row.
-- `institutions.csv` — one current or historical institution per row
-- `education.csv` — one degree per row
-- `emails.csv` — every observed address, not only the selected address and one
-  runner-up. `selected` records the precedence result;
-  `email_affiliation_domain` is `match`, `mismatch`, or `unknown` against a
-  sourced current-affiliation page.
-- `evidence.csv` — one qualifying publication per row
-- `coi-findings.csv` — one conflict finding per row
-- `invitations.csv` — one previous invitation per row
 - `reading-list.md` — the qualifying papers, to read before deciding
 - `lookup-coverage.json` — missing, resolved, and never-searched public-data
   counts. A non-zero `never_searched` means reachability coverage is not final.

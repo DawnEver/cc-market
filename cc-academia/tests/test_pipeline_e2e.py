@@ -140,21 +140,16 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert markdown_columns == list(exported[0])
     assert exported[0]["person_id"]
     assert float(exported[0]["identity_confidence"]) >= 0
-    assert "evidence_json" not in exported[0]
-    assert "evidence_titles" not in exported[0]
     for name in (
-        "institutions",
-        "education",
-        "emails",
-        "evidence",
-        "coi_findings",
-        "invitations",
+        "institutions_json",
+        "education_json",
+        "emails_json",
+        "evidence_json",
+        "coi_findings_json",
+        "invitations_json",
     ):
-        detail_path = Path(payload[name])
-        assert detail_path.exists()
-        with detail_path.open(encoding="utf-8-sig", newline="") as handle:
-            header = next(csv.reader(handle))
-        assert header[:3] == ["rank", "reviewer", "person_id"]
+        assert isinstance(json.loads(exported[0][name]), list)
+    assert Path(payload["contact_list"]).exists()
 
 
 def test_the_raw_pdf_is_never_required_and_body_text_never_stored(tmp_path, stub_sources):
@@ -562,15 +557,13 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     assert row["email_alternate_source_url"] == "https://now.edu/staff/x"
     assert row["email_affiliation_domain"] == "mismatch"
 
-    with (workspace.shortlist_dir / "emails.csv").open(
-        encoding="utf-8-sig", newline=""
-    ) as handle:
-        emails = [item for item in csv.DictReader(handle) if item["person_id"] == person_id]
+    emails = json.loads(row["emails_json"])
     assert {item["email"] for item in emails} == {
         "old.address@previous.edu",
         "current.address@now.edu",
     }
-    assert {item["email_affiliation_domain"] for item in emails} == {"match", "mismatch"}
+    assert {item["affiliation_domain"] for item in emails} == {"match", "mismatch"}
+    assert not (workspace.shortlist_dir / "emails.csv").exists()
 
 
 def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, stub_sources, capsys):
