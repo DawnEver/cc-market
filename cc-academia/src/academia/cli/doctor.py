@@ -68,16 +68,19 @@ def run(args: argparse.Namespace) -> int:
     state = "present" if report["database"]["exists"] else "not created"
     log.info(f"  database    : {report['database']['path']} ({state})")
     facts = report["facts"]
-    how = "synced" if facts["synced"] else "local only"
     if not facts["enabled"]:
-        how = "sync disabled"
+        how = "export off"
+    else:
+        how = "shared location" if facts["shared_location"] else "this machine only"
     log.info(f"  facts       : {facts['path']} ({how}, device '{facts['device']}')")
     extras = ", ".join(k for k, v in report["extras"].items() if v) or "none"
     log.info(f"  extras      : {extras}")
-    if not report["facts"]["synced"]:
+    if not report["facts"]["enabled"]:
         log.detail(
-            "no synced folder found for the portable facts — invitations, verified "
-            "ranks and addresses stay on this machine. Set ACADEMIA_FACTS_DIR to share them."
+            "portable facts are not exported — invitations, verified ranks and "
+            "addresses stay in the local store. These are real people's contact "
+            "details, so carrying them elsewhere is deliberate: set "
+            "ACADEMIA_FACTS_SYNC=1 and ACADEMIA_FACTS_DIR."
         )
     if not report["contact_email"]:
         log.warn("ACADEMIA_CONTACT is unset — OpenAlex/ORCID polite pools give lower rate limits.")

@@ -13,12 +13,16 @@ configuration and data locations remain explicit environment overrides.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 ENV_CONFIG_DIR = "ACADEMIA_CONFIG_DIR"
 ENV_LENS_DIR = "ACADEMIA_LENS_DIR"
 ENV_DATA_ROOT = "ACADEMIA_DATA_ROOT"
 ENV_DB = "ACADEMIA_DB"
+
+#: One directory name for everything this plugin keeps on local disk.
+APP_DIRNAME = "cc-academia"
 ENV_FACTS_DIR = "ACADEMIA_FACTS_DIR"
 ENV_DEVICE = "ACADEMIA_DEVICE"
 ENV_FACTS_SYNC = "ACADEMIA_FACTS_SYNC"
@@ -158,16 +162,38 @@ def legacy_workspaces_root(workflow: str) -> Path | None:
     return path if path.is_dir() else None
 
 
+def local_state_dir() -> Path:
+    """The platform's own directory for application state that never syncs.
+
+    Every one of these is excluded from cloud sync by the sync clients
+    themselves — ``LOCALAPPDATA`` is the Windows convention precisely because
+    OneDrive leaves it alone — which is what the store needs and what a path
+    under ``Documents`` cannot promise.
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA", "").strip()
+        return (Path(base) if base else Path.home() / "AppData" / "Local") / APP_DIRNAME
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_DIRNAME
+    base = os.environ.get("XDG_DATA_HOME", "").strip()
+    return (Path(base) if base else Path.home() / ".local" / "share") / APP_DIRNAME
+
+
 def database_path() -> Path:
     """The accumulating store.
 
-    Deliberately *not* under the data root: a SQLite file on a syncing folder
-    (OneDrive, Dropbox) gets corrupted. Keep it on local disk.
+    Deliberately *not* under the data root, and never under a folder a person
+    would think to sync: SQLite in WAL mode is corrupted by a file-level syncer.
+    It also carries no institution's folder name — a plugin that hardcodes one
+    developer's directory layout works on exactly one machine.
+
+    ``ACADEMIA_DB`` moves it anywhere, which is how an existing store is kept
+    where it already is.
     """
     explicit = _env_path(ENV_DB)
     if explicit is not None:
         return explicit
-    return Path.home() / "Documents" / "PEMC" / "cc-academia-data" / "academia.db"
+    return local_state_dir() / "academia.db"
 
 
 def facts_dir() -> Path:

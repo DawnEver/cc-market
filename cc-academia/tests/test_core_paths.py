@@ -108,3 +108,24 @@ def test_discovery_finds_the_root_from_a_sibling_project(tmp_path, monkeypatch):
     (root / "reviewer-discovery").mkdir(parents=True)
     monkeypatch.chdir(root / "reviewer-discovery")
     assert paths.data_root() == root.resolve()
+
+
+def test_the_store_defaults_to_local_state_not_a_synced_folder(monkeypatch, tmp_path):
+    """A hardcoded Documents subfolder works on exactly one person's machine."""
+    monkeypatch.delenv(paths.ENV_DB, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+
+    path = paths.database_path()
+
+    assert path.name == "academia.db"
+    assert paths.APP_DIRNAME in path.parts
+    assert "Documents" not in path.parts
+    assert "PEMC" not in path.parts
+    assert not any("onedrive" in part.lower() for part in path.parts)
+
+
+def test_an_explicit_store_path_still_wins(monkeypatch, tmp_path):
+    """Which is how an existing store is kept exactly where it already is."""
+    monkeypatch.setenv(paths.ENV_DB, str(tmp_path / "elsewhere" / "academia.db"))
+    assert paths.database_path() == tmp_path / "elsewhere" / "academia.db"

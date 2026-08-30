@@ -54,7 +54,7 @@ other.
 | `ACADEMIA_CONFIG_DIR` | `configs/` | COI policy, journal parameters |
 | `ACADEMIA_LENS_DIR` | `configs/lenses/` | domain appraisal lenses |
 | `ACADEMIA_DATA_ROOT` | `~/cc-academia-data` | where workflow data live |
-| `ACADEMIA_DB` | `Documents/PEMC/cc-academia-data/academia.db` | the accumulating store |
+| `ACADEMIA_DB` | the platform's local application-state directory (`%LOCALAPPDATA%\cc-academia` on Windows, `~/Library/Application Support/cc-academia` on macOS, `$XDG_DATA_HOME/cc-academia` on Linux) | the accumulating store. Never under `Documents` or any folder a person would sync: WAL-mode SQLite and a file-level syncer corrupt each other |
 | `ACADEMIA_CONTACT` | unset | polite-pool address for OpenAlex, Crossref, ORCID |
 
 A file present in the override directory wins; anything absent falls back here.
