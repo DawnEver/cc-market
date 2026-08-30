@@ -559,9 +559,10 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
     function had returned several lines earlier. The stale address stayed put no
     matter how many times the editor re-ran enrich with the right page.
     """
-    from academia.reviewer.enrich import discover_email
     from academia.core.models import Author
-    from academia.store import db, repository as repo
+    from academia.reviewer.enrich import discover_email
+    from academia.store import db
+    from academia.store import repository as repo
 
     conn = db.connect(tmp_path / "e.db")
     person_id = repo.upsert_person(
@@ -594,7 +595,8 @@ def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
     """
     from academia.core.models import Author
     from academia.reviewer.enrich import discover_email
-    from academia.store import db, repository as repo
+    from academia.store import db
+    from academia.store import repository as repo
 
     conn = db.connect(tmp_path / "both.db")
     person_id = repo.upsert_person(
@@ -624,7 +626,8 @@ def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
     from academia.core.models import Author
     from academia.reviewer import contact as contact_module
     from academia.reviewer.enrich import discover_email
-    from academia.store import db, repository as repo
+    from academia.store import db
+    from academia.store import repository as repo
 
     conn = db.connect(tmp_path / "settled.db")
     person_id = repo.upsert_person(
@@ -650,7 +653,8 @@ def test_a_supplied_url_still_reopens_a_settled_address(tmp_path):
     """The saving above must not switch the correction path back off."""
     from academia.core.models import Author
     from academia.reviewer.enrich import discover_email
-    from academia.store import db, repository as repo
+    from academia.store import db
+    from academia.store import repository as repo
 
     conn = db.connect(tmp_path / "reopen.db")
     person_id = repo.upsert_person(

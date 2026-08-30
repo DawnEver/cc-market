@@ -137,24 +137,24 @@ class Policy:
         return int(self.data["seniority"]["max_academic_age"])
 
     @property
-    def doctoral(self) -> "Constraint":
+    def doctoral(self) -> Constraint:
         """The floor a doctoral candidate has to clear to be invitable."""
         return self._constraint("doctoral_year", self.data["seniority"]["doctoral"])
 
     # -- activity --------------------------------------------------------
     @property
-    def activity(self) -> "Constraint":
+    def activity(self) -> Constraint:
         return self._constraint("recent_activity", self.data["activity"])
 
     @property
-    def invitation_activity(self) -> "Constraint":
+    def invitation_activity(self) -> Constraint:
         return self._constraint("invitation_response", self.data["activity"]["invitations"])
 
     @property
-    def veteran(self) -> "Constraint":
+    def veteran(self) -> Constraint:
         return self._constraint("unresponsive_veteran", self.data["activity"]["veteran"])
 
-    def _constraint(self, name: str, table: dict[str, Any]) -> "Constraint":
+    def _constraint(self, name: str, table: dict[str, Any]) -> Constraint:
         return Constraint(name=name, mode=str(table["mode"]), settings=dict(table))
 
     # -- scoring ---------------------------------------------------------

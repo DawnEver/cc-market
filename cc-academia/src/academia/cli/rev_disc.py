@@ -11,8 +11,8 @@ research summary, never to decide who is conflicted or who is qualified.
 from __future__ import annotations
 
 import argparse
-import os
 import contextlib
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path

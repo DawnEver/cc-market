@@ -410,9 +410,10 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     """
     import csv
 
-    from academia.reviewer.workspace import open_workspace
-    from academia.store import db, repository as repo
     from academia.core import paths
+    from academia.reviewer.workspace import open_workspace
+    from academia.store import db
+    from academia.store import repository as repo
 
     for argv in (
         ("init", "--slug", "tie-two-addresses",

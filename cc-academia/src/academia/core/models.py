@@ -338,7 +338,7 @@ class Person:
         return None if year is None else max(0, now_year - year)
 
     @property
-    def _doctoral_education(self) -> "Education | None":
+    def _doctoral_education(self) -> Education | None:
         for entry in self.education:
             if re.search(r"ph\.?\s?d|doctor", entry.degree or "", re.IGNORECASE):
                 return entry
