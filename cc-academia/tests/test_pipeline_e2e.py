@@ -473,3 +473,43 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     assert row["email_alternate"] == "current.address@now.edu"
     assert row["email_alternate_source"] == "institutional_profile"
     assert row["email_alternate_source_url"] == "https://now.edu/staff/x"
+
+
+def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, stub_sources, capsys):
+    """Zero candidates from 277 stored papers is a broken machine, not a result.
+
+    ``search`` writes papers to the workspace, which syncs, and to the database,
+    which does not. On the second machine ``run_state.json`` says search is done
+    while the papers table is empty, so ``candidates`` scores nothing and
+    cheerfully reports no candidates — indistinguishable from a search that
+    genuinely found nobody. It has to name the cause and the cure instead.
+    """
+    import sqlite3
+
+    from academia.core import paths
+
+    for argv in (
+        ("init", "--slug", "tie-no-papers",
+         "--title", "Torque ripple suppression in PMSM drives for traction",
+         "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
+         "--keywords", "Torque ripple,Electric Motor Design",
+         "--journal", "tie", "--year", "2026",
+         "--authors", "Alice Author|Tsinghua University|CN"),
+        ("profile", "--slug", "tie-no-papers"),
+        ("profile", "--slug", "tie-no-papers", "--approve"),
+        ("search", "--slug", "tie-no-papers"),
+    ):
+        assert run(*argv) == 0
+
+    # The other machine's database never arrives. Only the workspace does.
+    connection = sqlite3.connect(paths.database_path())
+    connection.execute("DELETE FROM papers")
+    connection.commit()
+    connection.close()
+
+    capsys.readouterr()  # discard the earlier stages' output
+    assert run("candidates", "--slug", "tie-no-papers") == 0
+
+    warning = capsys.readouterr().err
+    assert "no papers" in warning
+    assert "rev-disc search" in warning

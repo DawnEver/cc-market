@@ -388,6 +388,16 @@ def run_candidates(args: argparse.Namespace) -> int:
         log.emit(payload)
     else:
         log.info(f"{len(rows)} candidates from {len(scores)} scored papers")
+        # An empty pool on a machine whose run_state.json says search is done
+        # means the papers are in the workspace file and not in this database.
+        # Reported as "0 candidates" alone it reads like a search that found
+        # nobody, and the editor concludes the topic has no reviewers.
+        if not scores:
+            log.warn(
+                "no papers in this database to score — the workspace says search "
+                "ran, but its results are not here"
+            )
+            log.warn(f"  run `rev-disc search --slug {args.slug}` on this machine first")
         low = [r for r in rows if r["confidence"] < 0.6]
         if low:
             log.warn(f"{len(low)} candidates resolved by name only — confirm before inviting")
