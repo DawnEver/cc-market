@@ -197,6 +197,12 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Dedicated literature-review browser profile carrying login cookies.",
     )
+    enrich.add_argument(
+        "--browser-channel",
+        default="chromium",
+        choices=("chromium", "chrome", "msedge"),
+        help="Playwright browser channel (default: chromium).",
+    )
     _add_facts_flag(enrich)
     _add_common(enrich)
 

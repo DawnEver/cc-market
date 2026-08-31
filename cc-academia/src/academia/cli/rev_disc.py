@@ -470,7 +470,9 @@ def run_enrich(args: argparse.Namespace) -> int:
         from academia.litreview.acquire.download import playwright_page
 
         profile = Path(args.browser_profile) if args.browser_profile else None
-        page, close_browser = playwright_page(profile=profile)
+        page, close_browser = playwright_page(
+            profile=profile, browser_channel=args.browser_channel
+        )
         browser_getter = contact_module.BrowserGetter(page)
     fetcher = (
         None

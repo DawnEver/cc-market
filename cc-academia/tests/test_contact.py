@@ -881,6 +881,16 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
     assert finding.source == "institutional_profile"
 
 
+def test_enrich_parser_accepts_browser_channel():
+    from academia.cli.dispatch import build_rev_disc_parser
+
+    args = build_rev_disc_parser().parse_args(
+        ["enrich", "--slug", "paper", "--browser", "--browser-channel", "chrome"]
+    )
+
+    assert args.browser_channel == "chrome"
+
+
 def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
     from academia.core.models import Author
     from academia.reviewer.enrich import Contact, discover_email
