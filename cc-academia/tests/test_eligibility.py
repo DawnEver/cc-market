@@ -417,7 +417,7 @@ def test_a_verified_affiliation_outranks_a_bibliographic_guess(conn, policy):
 # ------------------------------------------------------------ contact list --
 
 
-def test_the_contact_list_is_three_columns_and_omits_blocked_candidates(conn, policy):
+def test_contact_list_marks_every_candidate_and_explains_rejections(conn, policy):
     """The one export whose only job is to address invitations."""
     from academia.core.models import Affiliation
     from academia.reviewer import report
@@ -444,7 +444,9 @@ def test_the_contact_list_is_three_columns_and_omits_blocked_candidates(conn, po
     ]
 
     lines = report.render_contact_list(rows).strip().split("\n")
-    assert lines[0] == "reviewer,email,institution"
-    assert lines[1] == "Invitable,a@uni.edu,Some Uni"
-    assert lines[2] == "NoAddress,not found,Some Uni"
-    assert len(lines) == 3  # the blocked candidate is not addressable
+    assert lines[0] == "reviewer,institution,email,eligible,rejection_reason"
+    assert lines[1] == "Invitable,Some Uni,a@uni.edu,yes,"
+    assert lines[2].startswith("NoAddress,Some Uni,not found,no,")
+    assert "no verified public professional email" in lines[2]
+    assert lines[3].startswith("Conflicted,Some Uni,c@uni.edu,no,")
+    assert len(lines) == 4

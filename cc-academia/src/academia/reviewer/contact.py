@@ -34,6 +34,9 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import urllib.parse
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from academia.core import log
 from academia.core.models import Person
@@ -53,6 +56,7 @@ from academia.reviewer.lookups import (
 )
 
 __all__ = (
+    "BrowserGetter",
     "LookupAttempt",
     "annotate_lookup_status",
     "email_from_publications",
@@ -65,11 +69,32 @@ __all__ = (
     "read_lookups",
 )
 
+
+class BrowserGetter:
+    """Read scholarly HTML/PDF through the shared literature-review browser."""
+
+    def __init__(self, page) -> None:
+        from academia.litreview.acquire.transport import BrowserTransport
+
+        self._page = page
+        self._transport = BrowserTransport(page)
+
+    def __call__(self, url: str):
+        from academia.litreview.acquire.types import Source
+
+        with TemporaryDirectory(prefix="rev-disc-browser-") as temporary:
+            target = Path(temporary) / "paper.pdf"
+            found = self._transport.fetch(Source(url=url), target)
+            if found and target.is_file():
+                return target.read_bytes(), "application/pdf", found
+        return self._page.content(), "text/html", self._page.url or url
+
 #: How many of a candidate's papers to try. Each is a network fetch, and a
 #: candidate whose first few papers carry no address rarely has one on the tenth.
 MAX_PAPERS_PER_CANDIDATE = 4
 
 SOURCE = "published_corresponding"
+AUTHOR_SOURCE = "published_author"
 
 #: Domains that belong to a publisher rather than to a researcher. A landing
 #: page renders the journal's own contacts beside the author's, and
@@ -120,7 +145,7 @@ def is_publisher_address(email: str) -> bool:
     return any(local.startswith(marker) for marker in _PUBLISHER_LOCALS)
 
 
-#: The author block and corresponding-author footnote are on the first page.
+#: Compatibility argument; the fast path now scans the whole paper.
 PDF_FRONT_PAGES = 1
 
 #: A PDF whose bytes start with anything else is a publisher's error page.
@@ -136,21 +161,25 @@ def looks_like_pdf(body: bytes, content_type: str = "", url: str = "") -> bool:
 
 
 def pdf_text(body: bytes, *, front_pages: int = PDF_FRONT_PAGES) -> str:
-    """The front page of a paper as text, or empty without the PDF extra."""
+    """Extract full-paper text through ``paper_pdf_ingest`` fast mode."""
+    del front_pages  # retained for source-compatible callers and policy files
     try:
-        import pymupdf as fitz  # from the 'pdf' extra
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from paper_pdf_ingest import convert
+
+        with TemporaryDirectory(prefix="rev-disc-pdf-") as temporary:
+            root = Path(temporary)
+            pdf = root / "paper.pdf"
+            pdf.write_bytes(body)
+            text, _tool = convert(pdf, root / "output", mode="fast")
+            return text
     except ImportError:  # pragma: no cover - depends on optional extra
         log.detail("a PDF was fetched but the 'pdf' extra is not installed")
-        return ""
-
-    try:
-        with fitz.open(stream=body, filetype="pdf") as document:
-            wanted = range(min(front_pages, document.page_count))
-            pages = [document.load_page(index).get_text("text") for index in wanted]
-            return "\n".join(pages)
-    except Exception as error:  # a truncated or encrypted file is not an outage
-        log.detail(f"could not read PDF: {error}")
-        return ""
+    except Exception as error:  # a malformed or encrypted PDF is not an outage
+        log.detail(f"paper_pdf_ingest could not read PDF: {error}")
+    return ""
 
 
 def extract_page_emails(html: str) -> list[str]:
@@ -160,7 +189,7 @@ def extract_page_emails(html: str) -> list[str]:
     the author's address only as a link and never as visible text.
     """
     found = extract_emails(html)
-    found += [m.lower() for m in _MAILTO.findall(html or "")]
+    found += [urllib.parse.unquote(m).lower() for m in _MAILTO.findall(html or "")]
     ordered = list(dict.fromkeys(found))
     return [e for e in ordered if not is_publisher_address(e)]
 
@@ -174,7 +203,10 @@ def _candidate_papers(conn: sqlite3.Connection, person_id: str) -> list[sqlite3.
     return list(
         conn.execute(
             """
-            SELECT p.paper_id, p.landing_page_url, p.pdf_url, a.is_corresponding
+            SELECT p.paper_id, p.landing_page_url, p.pdf_url, a.is_corresponding,
+                   (SELECT count(*) FROM authorships peers
+                    WHERE peers.paper_id = p.paper_id AND peers.is_corresponding = 1)
+                   AS corresponding_count
             FROM authorships a
             JOIN papers p ON p.paper_id = a.paper_id
             WHERE a.person_id = ?
@@ -189,6 +221,175 @@ def _candidate_papers(conn: sqlite3.Connection, person_id: str) -> list[sqlite3.
     )
 
 
+def _given_name_id_match(
+    conn: sqlite3.Connection,
+    paper_id: str,
+    addresses: list[str],
+    person: Person,
+) -> str:
+    """Match an institutional student/staff ID carrying a unique given name."""
+    parts = re.findall(r"[^\W\d_]+", person.display_name.lower())
+    if not parts or len(parts[0]) < 5:
+        return ""
+    given = parts[0]
+    author_givens = [
+        (re.findall(r"[^\W\d_]+", row[0].lower()) or [""])[0]
+        for row in conn.execute(
+            """SELECT pe.display_name FROM authorships a
+               JOIN persons pe ON pe.person_id = a.person_id
+               WHERE a.paper_id = ?""",
+            (paper_id,),
+        )
+    ]
+    if author_givens.count(given) != 1:
+        return ""
+    pattern = re.compile(rf"^{re.escape(given)}[._-]?\d+$")
+    matches = [email for email in addresses if pattern.fullmatch(email.split("@", 1)[0])]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def _within_one_edit(left: str, right: str) -> bool:
+    if abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) > len(right):
+        left, right = right, left
+    if len(left) == len(right):
+        return sum(a != b for a, b in zip(left, right, strict=True)) <= 1
+    for index in range(len(right)):
+        if left[:index] == right[:index] and left[index:] == right[index + 1 :]:
+            return True
+    return False
+
+
+def _unique_full_name_typo_match(
+    conn: sqlite3.Connection,
+    paper_id: str,
+    addresses: list[str],
+    person: Person,
+) -> str:
+    """Accept one obvious full-name typo only when unique among paper authors."""
+    rows = conn.execute(
+        """SELECT pe.person_id, pe.display_name FROM authorships a
+           JOIN persons pe ON pe.person_id = a.person_id
+           WHERE a.paper_id = ?""",
+        (paper_id,),
+    ).fetchall()
+    forms: dict[str, set[str]] = {}
+    for row in rows:
+        parts = re.findall(r"[^\W\d_]+", row["display_name"].lower())
+        if len(parts) >= 2:
+            forms[row["person_id"]] = {parts[0] + parts[-1], parts[-1] + parts[0]}
+    for email in addresses:
+        local = email.split("@", 1)[0]
+        if len(local) < 6 or not local.isalpha():
+            continue
+        matched = [pid for pid, names in forms.items() if any(_within_one_edit(local, name) for name in names)]
+        if matched == [person.person_id]:
+            return email
+    return ""
+
+
+def hydrate_open_access_pdfs(
+    conn: sqlite3.Connection,
+    person_ids: list[str],
+    *,
+    resolver=None,
+) -> int:
+    """Batch-resolve OA PDF URLs for candidate papers that only carry a DOI."""
+    if not person_ids:
+        return 0
+    placeholders = ",".join("?" for _ in person_ids)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT lower(p.doi) AS doi
+        FROM papers p
+        JOIN authorships a ON a.paper_id = p.paper_id
+        WHERE a.person_id IN ({placeholders})
+          AND p.doi <> ''
+        """,
+        person_ids,
+    ).fetchall()
+    dois = [row["doi"] for row in rows]
+    if not dois:
+        return 0
+    if resolver is None:
+        from academia.sources.openalex import resolve_open_access_pdfs as resolve_openalex
+        from academia.sources.semantic_scholar import resolve_open_access_pdfs as resolve_s2
+
+        def resolver(wanted):
+            # OpenAlex exposes every known location, so it can select an
+            # institutional repository instead of an IEEE URL that answers
+            # automated PDF requests with 403. S2 fills what remains.
+            try:
+                found = resolve_openalex(wanted)
+            except Exception as error:
+                log.detail(f"OpenAlex OA resolution skipped: {error}")
+                found = {}
+            try:
+                alternatives = resolve_s2(wanted)
+            except Exception as error:
+                log.detail(f"Semantic Scholar OA resolution skipped: {error}")
+                alternatives = {}
+            # S2 often exposes a repository copy when OpenAlex's first URL is a
+            # publisher endpoint. Prefer that independently indexed copy; the
+            # same DOI still proves it is the same paper.
+            for doi, url in alternatives.items():
+                current = found.get(doi, "")
+                if not current or "repository" in url or "arxiv.org" in url:
+                    found[doi] = url
+            return found
+    resolved = resolver(dois)
+    changed = 0
+    for doi, url in resolved.items():
+        cursor = conn.execute(
+            "UPDATE papers SET pdf_url = ? WHERE lower(doi) = ? AND coalesce(pdf_url, '') <> ?",
+            (url, doi.lower(), url),
+        )
+        changed += cursor.rowcount
+    return changed
+
+
+def hydrate_recent_publications(
+    conn: sqlite3.Connection,
+    people: list[Person],
+    *,
+    year_from: int,
+    limit: int = 10,
+    loader=None,
+) -> int:
+    """Add recent works for strictly resolved authors before contact extraction."""
+    from academia.store import repository as store_repo
+
+    unresolved = [
+        person
+        for person in people
+        if person.openalex_id and not store_repo.emails_of(conn, person.person_id)
+    ]
+    added = 0
+    if loader is None:
+        from academia.sources.openalex import recent_corresponding_works, recent_works_for_author
+
+        loader = recent_works_for_author
+        # A person's current activity and their contact evidence have different
+        # clocks. Recent works below prove activity; older papers are still
+        # useful when OpenAlex explicitly marks this person as corresponding.
+        for paper in recent_corresponding_works(
+            [person.openalex_id for person in unresolved]
+        ):
+            store_repo.ingest_paper(conn, paper)
+            added += 1
+    for person in unresolved:
+        try:
+            papers = loader(person.openalex_id, year_from=year_from, limit=limit)
+        except Exception as error:
+            log.detail(f"recent works skipped for {person.display_name}: {error}")
+            continue
+        for paper in papers:
+            store_repo.ingest_paper(conn, paper)
+            added += 1
+    return added
+
+
 def email_from_publications(
     conn: sqlite3.Connection,
     person: Person,
@@ -197,6 +398,7 @@ def email_from_publications(
     seen_pages: dict[str, list[str]] | None = None,
     max_papers: int = MAX_PAPERS_PER_CANDIDATE,
     confidence: float = EMAIL_CONFIDENCE[SOURCE],
+    author_confidence: float = EMAIL_CONFIDENCE[AUTHOR_SOURCE],
 ) -> EmailFinding:
     """Look for the candidate's address in the front matter of their own papers.
 
@@ -224,15 +426,35 @@ def email_from_publications(
             if not addresses:
                 continue
 
-            match = match_email_to_person(addresses, person)
+            # A paper can list every co-author's address. A surname-only match
+            # is not attributable there; structured correspondence below is.
+            match = match_email_to_person(addresses, person, allow_weak=False)
+            source = SOURCE if row["is_corresponding"] else AUTHOR_SOURCE
+            if not match and not row["is_corresponding"]:
+                match = _given_name_id_match(conn, row["paper_id"], addresses, person)
+            if not match and not row["is_corresponding"]:
+                match = _unique_full_name_typo_match(
+                    conn, row["paper_id"], addresses, person
+                )
+            # The scholarly record sometimes marks the candidate as the
+            # corresponding author while the address local part is an opaque
+            # staff number. A sole non-publisher address on that exact paper is
+            # then structured attribution, not a name-pattern guess.
+            if (
+                not match
+                and row["is_corresponding"]
+                and row["corresponding_count"] == 1
+                and len(addresses) == 1
+            ):
+                match = addresses[0]
             if not match:
                 continue
 
             return EmailFinding(
                 email=match,
-                source=SOURCE,
+                source=source,
                 source_url=url,
-                confidence=confidence,
+                confidence=confidence if source == SOURCE else author_confidence,
             )
 
     return EmailFinding()

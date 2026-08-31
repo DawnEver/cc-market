@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 from academia.litreview.acquire import http_fetch, researchgate
 from academia.litreview.acquire.types import Blocked, Denied, NotOpenAccess, Source
@@ -324,7 +324,26 @@ class BrowserTransport:
         return None
 
     def _from_ieee_iframe(self, target, url, response, downloads) -> str | None:
-        """IEEE serves the PDF inside an iframe rather than as a link."""
+        """Fetch IEEE's PDF endpoint from its current stamp link or old iframe."""
+        stamp = ""
+        with contextlib.suppress(Exception):
+            stamp = self.page.locator('a[href*="/stamp/stamp.jsp"]').first.get_attribute(
+                "href", timeout=3_000
+            ) or ""
+        if stamp:
+            query = parse_qs(urlparse(stamp).query)
+            number = (query.get("arnumber") or [""])[0]
+            if number:
+                pdf_url = urljoin(
+                    self._url() or url,
+                    "/stampPDF/getPDF.jsp?" + urlencode(
+                        {"tp": "", "arnumber": number, "ref": ""}
+                    ),
+                )
+                body = self._request_bytes(pdf_url, referer=self._url() or url)
+                if body is not None:
+                    target.write_bytes(body)
+                    return pdf_url
         try:
             src = self.page.locator('iframe[src*="stampPDF/getPDF.jsp"]').first.get_attribute(
                 "src", timeout=10_000

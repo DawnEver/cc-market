@@ -187,6 +187,16 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         help="JSON answers to a `rev-disc contacts` worklist: person_id to a "
         "URL, a list of URLs, or {urls, rank, rank_source}.",
     )
+    enrich.add_argument(
+        "--browser",
+        action="store_true",
+        help="Fall back to the shared Playwright session for blocked publisher pages.",
+    )
+    enrich.add_argument(
+        "--browser-profile",
+        metavar="DIR",
+        help="Dedicated literature-review browser profile carrying login cookies.",
+    )
     _add_facts_flag(enrich)
     _add_common(enrich)
 

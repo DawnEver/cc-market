@@ -462,6 +462,16 @@ def run_enrich(args: argparse.Namespace) -> int:
 
     # One fetcher for the whole pass, so its rate limit and per-host circuit
     # breaker apply across candidates rather than resetting for each one.
+    close_browser = None
+    browser_getter = None
+    if not args.no_email and getattr(args, "browser", False):
+        from pathlib import Path
+
+        from academia.litreview.acquire.download import playwright_page
+
+        profile = Path(args.browser_profile) if args.browser_profile else None
+        page, close_browser = playwright_page(profile=profile)
+        browser_getter = contact_module.BrowserGetter(page)
     fetcher = (
         None
         if args.no_email
@@ -476,6 +486,7 @@ def run_enrich(args: argparse.Namespace) -> int:
             pdf_front_pages=policy.retrieval_int(
                 "pdf_front_pages", contact_module.PDF_FRONT_PAGES
             ),
+            fallback_getter=browser_getter,
         )
     )
     email_confidence = {**enrich_module.EMAIL_CONFIDENCE, **policy.email_confidence}
@@ -515,6 +526,26 @@ def run_enrich(args: argparse.Namespace) -> int:
 
     enriched: list[dict] = []
     with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+        if not args.no_email:
+            try:
+                from datetime import UTC, datetime
+
+                people = [
+                    person
+                    for row in subset
+                    if (person := repo.load_person(conn, row["person_id"])) is not None
+                ]
+                contact_module.hydrate_recent_publications(
+                    conn,
+                    people,
+                    year_from=datetime.now(UTC).year - 3,
+                    limit=max_papers_per_candidate,
+                )
+                contact_module.hydrate_open_access_pdfs(
+                    conn, [row["person_id"] for row in subset]
+                )
+            except Exception as error:
+                log.warn(f"open-access PDF resolution failed: {error}")
         for row in subset:
             person = repo.load_person(conn, row["person_id"])
             if person is None:
@@ -568,6 +599,8 @@ def run_enrich(args: argparse.Namespace) -> int:
                 }
             )
 
+    if close_browser is not None:
+        close_browser()
     workspace.write_jsonl(workspace.audit_dir / "enrichment.jsonl", enriched)
     state.mark("enrich")
     workspace.save_state(state)

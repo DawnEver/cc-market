@@ -330,6 +330,21 @@ def test_page_fetcher_truncates_an_oversized_page():
     assert len(fetcher("https://example.org/big")) == 100
 
 
+def test_page_fetcher_uses_browser_fallback_after_http_failure():
+    from academia.reviewer.enrich import PageFetcher
+
+    def failing(*args, **kwargs):
+        raise SourceError("http_403", "page")
+
+    fetcher = PageFetcher(
+        getter=failing,
+        fallback_getter=lambda url: (b"contact: ada@example.edu", "text/html", url),
+        delay=0.0,
+    )
+
+    assert fetcher("https://publisher.example/paper") == "contact: ada@example.edu"
+
+
 def test_email_discovery_prefers_an_institutional_page_over_public_orcid(conn):
     """The documented precedence is institutional > lab > ORCID, not cheapest first."""
     from academia.reviewer import enrich as enrich_module

@@ -221,6 +221,38 @@ def post_json(
     return _parse_json(text, source), text
 
 
+def post_json_list(
+    url: str,
+    payload: dict[str, Any],
+    source: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> list[Any]:
+    """POST JSON to an endpoint whose top-level response is an array."""
+    merged = {
+        "User-Agent": polite_user_agent(),
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    merged.update(headers or {})
+    text, _ = _request(
+        url,
+        source,
+        method="POST",
+        body=json.dumps(payload).encode("utf-8"),
+        headers=merged,
+        timeout=timeout,
+    )
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SourceError("non_json_response", source) from exc
+    if not isinstance(data, list):
+        raise SourceError("unexpected_json_shape", source)
+    return data
+
+
 def is_transient(error: Exception) -> bool:
     status = None
     if isinstance(error, SourceError):

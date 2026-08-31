@@ -30,6 +30,121 @@ SOURCE = "openalex"
 KEYWORD_SCORE_FLOOR = 0.3
 
 
+def resolve_open_access_pdfs(dois: list[str], *, timeout: int = 60) -> dict[str, str]:
+    """Return repository/publisher PDF locations for many DOIs per request."""
+    unique = list(dict.fromkeys(doi.strip().lower() for doi in dois if doi.strip()))
+    resolved: dict[str, str] = {}
+    # Keep URLs comfortably below common proxy limits while still replacing
+    # dozens of per-paper calls with one indexed query.
+    for start in range(0, len(unique), 50):
+        batch = unique[start : start + 50]
+        data = get_json(
+            build_url(
+                WORKS_URL,
+                _polite(
+                    {
+                        "filter": "doi:" + "|".join(batch),
+                        "per-page": 50,
+                        "select": "doi,locations",
+                    }
+                ),
+            ),
+            SOURCE,
+            timeout=timeout,
+        )
+        for record in data.get("results") or []:
+            if not isinstance(record, dict):
+                continue
+            doi = as_text(record.get("doi")).lower()
+            doi = doi.removeprefix("https://doi.org/")
+            locations = [item for item in record.get("locations") or [] if isinstance(item, dict)]
+            locations.sort(
+                key=lambda item: (item.get("source") or {}).get("type") != "repository"
+            )
+            pdf = next((as_text(item.get("pdf_url")) for item in locations if item.get("pdf_url")), "")
+            if doi and pdf:
+                resolved[doi] = pdf
+    return resolved
+
+
+def recent_works_for_author(
+    openalex_id: str,
+    *,
+    year_from: int,
+    limit: int = 10,
+    timeout: int = 30,
+) -> list[Paper]:
+    """Fetch one resolved author's recent works for contact verification."""
+    data = get_json(
+        build_url(
+            WORKS_URL,
+            _polite(
+                {
+                    "filter": f"author.id:{_short_id(openalex_id)},from_publication_date:{year_from}-01-01",
+                    "sort": "publication_date:desc",
+                    "per-page": limit,
+                }
+            ),
+        ),
+        SOURCE,
+        timeout=timeout,
+    )
+    return [to_paper(record) for record in data.get("results") or [] if isinstance(record, dict)]
+
+
+def recent_corresponding_works(
+    openalex_ids: list[str],
+    *,
+    year_from: int | None = None,
+    limit_per_author: int = 10,
+    max_pages: int = 10,
+    timeout: int = 30,
+) -> list[Paper]:
+    """Fetch corresponding-author works for many resolved people in batches."""
+    ids = list(dict.fromkeys(_short_id(value) for value in openalex_ids if _short_id(value)))
+    if not ids:
+        return []
+    wanted = set(ids)
+    counts = dict.fromkeys(ids, 0)
+    papers: list[Paper] = []
+    cursor = "*"
+    filters = [f"corresponding_author_ids:{'|'.join(ids)}"]
+    if year_from is not None:
+        filters.append(f"from_publication_date:{year_from}-01-01")
+    for _ in range(max_pages):
+        data = get_json(
+            build_url(
+                WORKS_URL,
+                _polite(
+                    {
+                        "filter": ",".join(filters),
+                        "sort": "publication_date:desc",
+                        "per-page": 200,
+                        "cursor": cursor,
+                    }
+                ),
+            ),
+            SOURCE,
+            timeout=timeout,
+        )
+        for record in data.get("results") or []:
+            if not isinstance(record, dict):
+                continue
+            authors = wanted & {
+                _short_id(value) for value in record.get("corresponding_author_ids") or []
+            }
+            eligible = [author for author in authors if counts[author] < limit_per_author]
+            if not eligible:
+                continue
+            papers.append(to_paper(record))
+            for author in eligible:
+                counts[author] += 1
+        cursor = as_text((data.get("meta") or {}).get("next_cursor"))
+        if not cursor or all(count >= limit_per_author for count in counts.values()):
+            break
+    return papers
+
+
 def _short_id(value: Any) -> str:
     """``https://openalex.org/W123`` -> ``W123``."""
     text = as_text(value)

@@ -393,7 +393,28 @@ def email_affiliation_domain(person, email: str) -> str:
 
 
 #: The three columns an editorial system asks for when an invitation goes out.
-CONTACT_COLUMNS = ("reviewer", "email", "institution")
+CONTACT_COLUMNS = ("reviewer", "institution", "email", "eligible", "rejection_reason")
+
+
+def _contact_rejection_reasons(row: Row) -> list[str]:
+    reasons: list[str] = []
+    candidate = row.candidate
+    if candidate.blocked:
+        if candidate.verdict and candidate.verdict.status != CLEAR:
+            reasons.append(candidate.verdict.summary())
+        if candidate.eligibility and candidate.eligibility.reason:
+            reasons.append(candidate.eligibility.reason)
+        if not reasons:
+            reasons.append("blocked by policy")
+    if candidate.eligibility:
+        reasons.extend(
+            outcome.detail
+            for outcome in candidate.eligibility.outcomes
+            if outcome.rule == "recent_activity" and not outcome.passed
+        )
+    if not row.email.found:
+        reasons.append("no verified public professional email")
+    return list(dict.fromkeys(reasons))
 
 
 def render_contact_list(rows: list[Row]) -> str:
@@ -408,15 +429,18 @@ def render_contact_list(rows: list[Row]) -> str:
     they are still invitable through the editorial system, and a silently
     shorter list would misrepresent the shortlist.
     """
-    records = [
-        {
-            "reviewer": row.candidate.person.display_name,
-            "email": row.email.email if row.email.found else "not found",
-            "institution": row.institution,
-        }
-        for row in rows
-        if not row.candidate.blocked
-    ]
+    records = []
+    for row in rows:
+        reasons = _contact_rejection_reasons(row)
+        records.append(
+            {
+                "reviewer": row.candidate.person.display_name,
+                "institution": row.institution,
+                "email": row.email.email if row.email.found else "not found",
+                "eligible": "yes" if not reasons else "no",
+                "rejection_reason": "; ".join(reasons),
+            }
+        )
     return _detail_csv(CONTACT_COLUMNS, records)
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from academia.core.http import build_url, get_json
+from academia.core.http import build_url, get_json, post_json_list
 from academia.core.models import Author, Paper, position_label
 from academia.core.text import as_text, optional_int
 from academia.sources.base import PaperSource, SearchPage
@@ -44,6 +44,30 @@ def open_access_pdf(record: dict[str, Any]) -> str:
     external = record.get("externalIds")
     arxiv_id = external.get("ArXiv") if isinstance(external, dict) else None
     return f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else ""
+
+
+def resolve_open_access_pdfs(dois: list[str], *, timeout: int = 60) -> dict[str, str]:
+    """Resolve DOI-backed OA copies in batches instead of one request per paper."""
+    resolved: dict[str, str] = {}
+    unique = list(dict.fromkeys(doi.strip().lower() for doi in dois if doi.strip()))
+    for start in range(0, len(unique), 500):
+        batch = unique[start : start + 500]
+        records = post_json_list(
+            build_url(f"{BASE_URL}/paper/batch", {"fields": "externalIds,openAccessPdf"}),
+            {"ids": [f"DOI:{doi}" for doi in batch]},
+            SOURCE,
+            headers={"x-api-key": api_key()} if api_key() else {},
+            timeout=timeout,
+        )
+        for requested_doi, record in zip(batch, records, strict=False):
+            if not isinstance(record, dict):
+                continue
+            url = open_access_pdf(record)
+            if url:
+                external = record.get("externalIds")
+                returned_doi = external.get("DOI") if isinstance(external, dict) else ""
+                resolved[str(returned_doi or requested_doi).lower()] = url
+    return resolved
 
 
 def to_paper(record: dict[str, Any]) -> Paper:

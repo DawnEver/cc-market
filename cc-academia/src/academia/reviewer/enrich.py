@@ -20,6 +20,7 @@ cannot tell which. When nothing is found the answer is ``not_found``.
 
 from __future__ import annotations
 
+import html
 import re
 import sqlite3
 import time
@@ -36,6 +37,7 @@ from academia.store import repository as repo
 
 EMAIL_SOURCES = (
     "published_corresponding",
+    "published_author",
     "institutional_profile",
     "lab_homepage",
     "orcid_public",
@@ -43,6 +45,7 @@ EMAIL_SOURCES = (
 
 EMAIL_CONFIDENCE = {
     "published_corresponding": 0.95,
+    "published_author": 0.85,
     "institutional_profile": 0.9,
     "lab_homepage": 0.75,
     "orcid_public": 0.7,
@@ -52,11 +55,22 @@ NOT_FOUND = "not_found"
 
 #: Weakest first. An address on the researcher's own institutional profile is
 #: the one they maintain; the ORCID field is frequently years out of date.
-EMAIL_PRECEDENCE = ("orcid_public", "lab_homepage", "institutional_profile", "published_corresponding")
+EMAIL_PRECEDENCE = (
+    "orcid_public",
+    "lab_homepage",
+    "published_author",
+    "institutional_profile",
+    "published_corresponding",
+)
 
 _ORCID_RECORD_URL = "https://orcid.org/{orcid}"
 
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_GROUPED_EMAIL_PATTERN = re.compile(
+    r"\{([^{}]+)\}\s*@\s*([A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+)
+_EMAIL_LOCAL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+$")
+_CLOUDFLARE_EMAIL = re.compile(r"data-cfemail=[\"']([0-9a-f]{4,})[\"']", re.IGNORECASE)
 
 #: Addresses that belong to a service rather than a person.
 _ROLE_PREFIXES = (
@@ -94,8 +108,34 @@ class EmailFinding:
 
 def extract_emails(text: str) -> list[str]:
     """Pull plausible personal addresses out of a page, dropping role accounts."""
+    raw = text or ""
+    cloudflare = []
+    for encoded in _CLOUDFLARE_EMAIL.findall(raw):
+        try:
+            key = int(encoded[:2], 16)
+            cloudflare.append(
+                "".join(chr(int(encoded[index : index + 2], 16) ^ key) for index in range(2, len(encoded), 2))
+            )
+        except ValueError:
+            continue
+    source = html.unescape(raw).replace("＠", "@").replace("．", ".")
+    # Institutional CMSs sometimes wrap each visual fragment in its own span
+    # or insert an HTML comment inside the address. The rendered text is still
+    # public, so scan that representation as well as the source markup.
+    rendered = re.sub(r"<[^>]*>", "", source)
+    source = re.sub(r"\s*[\[(]\s*at\s*[\])]\s*", "@", source, flags=re.IGNORECASE)
+    source = re.sub(r"\s*[\[(]\s*dot\s*[\])]\s*", ".", source, flags=re.IGNORECASE)
+    source = re.sub(r"(?<=[A-Za-z0-9._%+-])\s*@\s*(?=[A-Za-z0-9])", "@", source)
+    source = re.sub(r"(?<=[A-Za-z0-9])\s*\.\s*(?=[A-Za-z]{2,}\b)", ".", source)
+    matches = [*_EMAIL_PATTERN.findall(source), *_EMAIL_PATTERN.findall(rendered), *cloudflare]
+    for local_parts, domain in _GROUPED_EMAIL_PATTERN.findall(source):
+        matches.extend(
+            f"{local.strip()}@{domain}"
+            for local in re.split(r"[,;]", local_parts)
+            if _EMAIL_LOCAL_PATTERN.fullmatch(local.strip())
+        )
     found = []
-    for match in _EMAIL_PATTERN.findall(text or ""):
+    for match in matches:
         lowered = match.lower()
         if lowered.startswith(_ROLE_PREFIXES):
             continue
@@ -105,12 +145,16 @@ def extract_emails(text: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def _name_parts(name: str) -> list[str]:
+    """Unicode letter-only name parts, without citation punctuation."""
+    return [part.lower() for part in re.findall(r"[^\W\d_]+", name or "") if len(part) > 1]
+
+
 def _name_tokens(person: Person) -> list[str]:
     tokens = [
         part
         for name in [person.display_name, *person.names]
-        for part in name.lower().replace("-", " ").split()
-        if len(part) > 2
+        for part in _name_parts(name)
     ]
     return list(dict.fromkeys(tokens))
 
@@ -138,7 +182,7 @@ def _initials_strength(local: str, person: Person) -> int:
     if not (2 <= len(local) <= MAX_INITIALS_LOCAL) or not local.isalpha():
         return 0
     for name in [person.display_name, *person.names]:
-        parts = [part for part in name.lower().replace("-", " ").split() if len(part) > 2]
+        parts = _name_parts(name)
         initials = {part[0] for part in parts}
         if len(initials) > 1 and set(local) == initials:
             return 1
@@ -168,17 +212,19 @@ def match_strength(email: str, person: Person) -> int:
     position = local.index(hit)
     prefix = local[:position]
     others = [t for t in tokens if t != hit]
-    if any(other[0] in prefix for other in others):
+    display_parts = _name_parts(person.display_name)
+    surname = display_parts[-1] if display_parts else ""
+    if hit == surname and any(other[0] in prefix for other in others):
         return 2
     # A weak match means surname only, not any single name fragment. Given-name
     # fragments can occur accidentally inside another person's local part
     # (e.g. ``hua`` in ``rundhuang``).
-    display_parts = person.display_name.lower().replace("-", " ").split()
-    surname = display_parts[-1] if display_parts else ""
     return 1 if hit == surname else 0
 
 
-def match_email_to_person(emails: list[str], person: Person) -> str:
+def match_email_to_person(
+    emails: list[str], person: Person, *, allow_weak: bool = True
+) -> str:
     """Pick the address most likely to belong to this person.
 
     Requires the local part to carry a piece of their name. Without that check a
@@ -195,6 +241,8 @@ def match_email_to_person(emails: list[str], person: Person) -> str:
     if strong:
         return strong[0]
     weak = [email for strength, email in scored if strength == 1]
+    if not allow_weak:
+        return ""
     if len(weak) == 1:
         return weak[0]
     if weak:
@@ -333,7 +381,7 @@ def contact_for(person: Person, *, source: Orcid | None = None) -> Contact:
 
 #: Public homepages are small. Anything larger is a document dump or a listing
 #: page, and reading further costs time without adding contact details.
-MAX_PAGE_BYTES = 400_000
+MAX_PAGE_BYTES = 1_000_000
 
 #: Consecutive failures tolerated per host before it is left alone. The design
 #: circuit-breaks rather than retrying: a dead or blocking host must cost one
@@ -366,6 +414,7 @@ class PageFetcher:
         failure_budget: int = HOST_FAILURE_BUDGET,
         timeout: int = 15,
         pdf_front_pages: int = 1,
+        fallback_getter=None,
     ) -> None:
         self._getter = getter or http.get_body_resolved
         self._delay = delay
@@ -373,6 +422,7 @@ class PageFetcher:
         self._failure_budget = failure_budget
         self._timeout = timeout
         self._pdf_front_pages = pdf_front_pages
+        self._fallback_getter = fallback_getter
         self._failures: dict[str, int] = {}
         self._last_request = 0.0
 
@@ -397,6 +447,14 @@ class PageFetcher:
         try:
             result = self._getter(url, "homepage", timeout=self._timeout)
         except Exception as error:
+            if self._fallback_getter is not None:
+                try:
+                    result = self._fallback_getter(url)
+                except Exception:
+                    pass
+                else:
+                    text, final_url = self._as_text(result, url)
+                    return (text or "")[: self._max_bytes]
             # A request that never reached a publisher cannot be held against
             # one, and holding it against the redirector every landing page
             # shares would disable the rest of the run after two dead links.
@@ -477,6 +535,7 @@ def discover_email(
     contact = contact or Contact()
     confidence = email_confidence or EMAIL_CONFIDENCE
     precedence = email_precedence or EMAIL_PRECEDENCE
+    source_rank = {source: rank for rank, source in enumerate(precedence)}
     candidates: list[EmailFinding] = []
 
     # What is already stored competes, it does not win by default. Handing back
@@ -501,24 +560,21 @@ def discover_email(
     # when there is no address yet; with an address already stored and no new
     # page to read, the crawl would only rediscover what is above.
     if candidates and not urls:
-        return max(candidates, key=lambda finding: precedence.index(finding.source))
+        return max(candidates, key=lambda finding: source_rank.get(finding.source, -1))
 
-    # The candidate's own corresponding-author footnote outranks everything
-    # else, so it is worth the fetches even when ORCID already offered one.
-    if fetcher is not None:
-        from academia.reviewer.contact import email_from_publications
-
-        published = email_from_publications(
-            conn,
-            person,
-            fetcher=fetcher,
-            seen_pages=seen_pages,
-            max_papers=max_papers_per_candidate,
-            confidence=confidence["published_corresponding"],
+    for address in contact.emails:
+        candidates.append(
+            EmailFinding(
+                email=address,
+                source="orcid_public",
+                source_url=_ORCID_RECORD_URL.format(orcid=person.orcid) if person.orcid else "",
+                confidence=confidence["orcid_public"],
+            )
         )
-        if published.found:
-            candidates.append(published)
 
+    # Explicit profile/lab URLs are cheap and intentional. Try them before the
+    # publication fallback so a batch of verified pages does not also trigger
+    # hundreds of publisher and PDF requests.
     if fetcher is not None:
         for url in urls:
             text = fetcher(url)
@@ -537,20 +593,29 @@ def discover_email(
                 )
             )
 
-    for address in contact.emails:
-        candidates.append(
-            EmailFinding(
-                email=address,
-                source="orcid_public",
-                source_url=_ORCID_RECORD_URL.format(orcid=person.orcid) if person.orcid else "",
-                confidence=confidence["orcid_public"],
-            )
+    # Publication crawling is the expensive fallback. Once an address is
+    # stored, only explicitly supplied pages can improve/correct it; re-reading
+    # up to N papers for that person adds minutes to a batch lookup without
+    # changing the evidence the editor just supplied.
+    if fetcher is not None and not candidates:
+        from academia.reviewer.contact import email_from_publications
+
+        published = email_from_publications(
+            conn,
+            person,
+            fetcher=fetcher,
+            seen_pages=seen_pages,
+            max_papers=max_papers_per_candidate,
+            confidence=confidence["published_corresponding"],
+            author_confidence=confidence["published_author"],
         )
+        if published.found:
+            candidates.append(published)
 
     if not candidates:
         return EmailFinding()
 
-    best = max(candidates, key=lambda finding: precedence.index(finding.source))
+    best = max(candidates, key=lambda finding: source_rank.get(finding.source, -1))
 
     # Every address that was actually observed is kept, not only the one that
     # won on precedence. Someone who has moved institution has a footnote
