@@ -170,6 +170,13 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         "the conflict rules, so a cap can leave top candidates unscreened.",
     )
     enrich.add_argument(
+        "--person-id",
+        action="append",
+        default=[],
+        metavar="PERSON_ID",
+        help="Enrich only this candidate. Repeatable; intended for verified lookup retries.",
+    )
+    enrich.add_argument(
         "--no-email",
         action="store_true",
         help="Skip contact discovery. Nothing is fetched from outside the APIs.",

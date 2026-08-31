@@ -447,6 +447,13 @@ def _homepage_overrides(values: list[str] | None) -> dict[str, list[str]]:
     return overrides
 
 
+def _merge_person_rows(existing: list[dict], updates: list[dict]) -> list[dict]:
+    """Replace only the people present in a targeted enrichment pass."""
+    by_person = {row["person_id"]: row for row in existing}
+    by_person.update({row["person_id"]: row for row in updates})
+    return list(by_person.values())
+
+
 def run_enrich(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
@@ -458,7 +465,10 @@ def run_enrich(args: argparse.Namespace) -> int:
     # so capping here would silently leave top candidates without an
     # institution. --limit exists for when the user knowingly wants a
     # cheaper partial pass.
-    subset = rows[: args.limit] if args.limit else rows
+    requested_people = set(args.person_id)
+    targeted = [row for row in rows if row.get("person_id") in requested_people]
+    subset = targeted if requested_people else rows
+    subset = subset[: args.limit] if args.limit else subset
 
     # One fetcher for the whole pass, so its rate limit and per-host circuit
     # breaker apply across candidates rather than resetting for each one.
@@ -603,7 +613,11 @@ def run_enrich(args: argparse.Namespace) -> int:
 
     if close_browser is not None:
         close_browser()
-    workspace.write_jsonl(workspace.audit_dir / "enrichment.jsonl", enriched)
+    enrichment_path = workspace.audit_dir / "enrichment.jsonl"
+    if requested_people or args.limit:
+        with contextlib.suppress(UsageError):
+            enriched = _merge_person_rows(workspace.read_jsonl(enrichment_path), enriched)
+    workspace.write_jsonl(enrichment_path, enriched)
     state.mark("enrich")
     workspace.save_state(state)
 
@@ -814,6 +828,21 @@ def run_report(args: argparse.Namespace) -> int:
             )
             for pid, row in email_rows.items()
         }
+        # The database is the durable source of verified addresses.  The audit
+        # snapshot can be partial after an interrupted or targeted pass, so it
+        # must not make already verified contacts disappear from a report.
+        for candidate in ordered:
+            pid = candidate.person.person_id
+            if emails.get(pid, enrich_module.EmailFinding()).email:
+                continue
+            if stored := repo.emails_of(conn, pid):
+                best = stored[0]
+                emails[pid] = enrich_module.EmailFinding(
+                    email=best["email"],
+                    source=best["source"],
+                    source_url=best["source_url"] or "",
+                    confidence=best["confidence"],
+                )
         # Everything else observed for this person, best first. The chosen
         # address is dropped from the list rather than repeated beside itself.
         alternates = {}

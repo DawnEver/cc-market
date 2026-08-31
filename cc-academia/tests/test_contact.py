@@ -891,6 +891,46 @@ def test_enrich_parser_accepts_browser_channel():
     assert args.browser_channel == "chrome"
 
 
+def test_enrich_parser_accepts_target_people():
+    from academia.cli.dispatch import build_rev_disc_parser
+
+    args = build_rev_disc_parser().parse_args(
+        ["enrich", "--slug", "paper", "--person-id", "person-a", "--person-id", "person-b"]
+    )
+
+    assert args.person_id == ["person-a", "person-b"]
+
+
+def test_targeted_enrichment_preserves_other_people():
+    from academia.cli.rev_disc import _merge_person_rows
+
+    existing = [
+        {"person_id": "person-a", "email": {"email": "old@a.edu"}},
+        {"person_id": "person-b", "email": {"email": "b@b.edu"}},
+    ]
+    updates = [{"person_id": "person-a", "email": {"email": "new@a.edu"}}]
+
+    assert _merge_person_rows(existing, updates) == [
+        {"person_id": "person-a", "email": {"email": "new@a.edu"}},
+        {"person_id": "person-b", "email": {"email": "b@b.edu"}},
+    ]
+
+
+def test_author_proximity_uses_visible_html_not_markup():
+    from academia.core.models import Person
+    from academia.reviewer.enrich import match_email_in_text
+
+    person = Person(person_id="person-sabir", display_name="Syed Sabir Hussain Bukhari")
+    markup = "x" * 500
+    page = (
+        '<section><h2>Syed Sabir Hussain Bukhari</h2>'
+        f'<div data-layout="{markup}" class="contact">'
+        '<span>Email</span>: sabir@iba-suk.edu.pk</div></section>'
+    )
+
+    assert match_email_in_text(page, person) == "sabir@iba-suk.edu.pk"
+
+
 def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
     from academia.core.models import Author
     from academia.reviewer.enrich import Contact, discover_email

@@ -10,8 +10,12 @@ Only stdlib — no ``requests``/``httpx`` dependency for what amounts to GET and
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import time
 import urllib.parse
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -189,6 +193,62 @@ def get_body_resolved(
         raise SourceError(f"network_error: {exc.reason}", source) from exc
     except TimeoutError as exc:
         raise SourceError("timeout", source) from exc
+
+
+def get_body_via_curl(
+    url: str,
+    source: str,
+    *,
+    timeout: int = 30,
+) -> tuple[bytes, str, str]:
+    """Last-resort public GET for hosts that stall Python's TLS stack.
+
+    The URL is passed as one argv item, never through a shell. Curl is already
+    shipped by current Windows and is common on macOS/Linux; when absent this
+    behaves like any unavailable transport rather than becoming a dependency.
+    """
+    executable = shutil.which("curl")
+    if not executable:
+        raise SourceError("curl_unavailable", source)
+    with TemporaryDirectory(prefix="academia-curl-") as temporary:
+        target = Path(temporary) / "body"
+        try:
+            result = subprocess.run(
+                [
+                    executable,
+                    "--location",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    str(timeout),
+                    "--user-agent",
+                    BROWSER_USER_AGENT,
+                    "--header",
+                    "Accept: text/html,application/pdf,*/*",
+                    "--output",
+                    str(target),
+                    "--write-out",
+                    "%{json}",
+                    url,
+                ],
+                capture_output=True,
+                timeout=timeout + 5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SourceError("curl_failed", source) from exc
+        if result.returncode or not target.is_file():
+            detail = result.stderr.decode("utf-8", errors="replace")[:500]
+            raise SourceError("curl_failed", source, {"body": detail})
+        try:
+            metadata = json.loads(result.stdout.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SourceError("curl_metadata_invalid", source) from exc
+        return (
+            target.read_bytes(),
+            str(metadata.get("content_type") or ""),
+            str(metadata.get("url_effective") or url),
+        )
 
 
 def post_json(

@@ -345,6 +345,29 @@ def test_page_fetcher_uses_browser_fallback_after_http_failure():
     assert fetcher("https://publisher.example/paper") == "contact: ada@example.edu"
 
 
+def test_page_fetcher_uses_transport_rescue_before_browser():
+    from academia.reviewer.enrich import PageFetcher
+
+    calls = []
+
+    def failing(*args, **kwargs):
+        raise SourceError("network_error", "page")
+
+    def rescue(url, source, timeout=0):
+        calls.append("rescue")
+        return b"sabir@iba-suk.edu.pk", "text/html", url
+
+    fetcher = PageFetcher(
+        getter=failing,
+        rescue_getter=rescue,
+        fallback_getter=lambda url: calls.append("browser"),
+        delay=0.0,
+    )
+
+    assert fetcher("https://university.example/profile") == "sabir@iba-suk.edu.pk"
+    assert calls == ["rescue"]
+
+
 def test_email_discovery_prefers_an_institutional_page_over_public_orcid(conn):
     """The documented precedence is institutional > lab > ORCID, not cheapest first."""
     from academia.reviewer import enrich as enrich_module

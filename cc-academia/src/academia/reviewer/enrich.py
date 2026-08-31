@@ -123,7 +123,7 @@ def extract_emails(text: str) -> list[str]:
     # Institutional CMSs sometimes wrap each visual fragment in its own span
     # or insert an HTML comment inside the address. The rendered text is still
     # public, so scan that representation as well as the source markup.
-    rendered = re.sub(r"<[^>]*>", "", source)
+    rendered = visible_text(source)
     source = re.sub(r"\s*[\[(]\s*at\s*[\])]\s*", "@", source, flags=re.IGNORECASE)
     source = re.sub(r"\s*[\[(]\s*dot\s*[\])]\s*", ".", source, flags=re.IGNORECASE)
     source = re.sub(r"(?<=[A-Za-z0-9._%+-])\s*@\s*(?=[A-Za-z0-9])", "@", source)
@@ -144,6 +144,12 @@ def extract_emails(text: str) -> list[str]:
             continue
         found.append(lowered)
     return list(dict.fromkeys(found))
+
+
+def visible_text(text: str) -> str:
+    """Return what a person sees, without HTML attributes inflating distance."""
+    without_markup = re.sub(r"<[^>]*>", "", html.unescape(text or ""))
+    return " ".join(without_markup.split())
 
 
 def _name_parts(name: str) -> list[str]:
@@ -265,18 +271,22 @@ def match_email_in_text(text: str, person: Person, *, radius: int = 240) -> str:
     direct = match_email_to_person(emails, person)
     if direct:
         return direct
-    lowered = text.casefold()
+    lowered_versions = [text.casefold()]
+    rendered = visible_text(text).casefold()
+    if rendered != lowered_versions[0]:
+        lowered_versions.append(rendered)
     names = [person.display_name, *person.names]
     nearby: list[str] = []
     for name in names:
         clean = " ".join(name.casefold().split())
         if len(clean.split()) < 2:
             continue
-        start = 0
-        while (position := lowered.find(clean, start)) >= 0:
-            window = lowered[max(0, position - radius) : position + len(clean) + radius]
-            nearby.extend(email for email in emails if email.casefold() in window)
-            start = position + len(clean)
+        for lowered in lowered_versions:
+            start = 0
+            while (position := lowered.find(clean, start)) >= 0:
+                window = lowered[max(0, position - radius) : position + len(clean) + radius]
+                nearby.extend(email for email in emails if email.casefold() in window)
+                start = position + len(clean)
     unique = list(dict.fromkeys(nearby))
     return unique[0] if len(unique) == 1 else ""
 
@@ -443,6 +453,7 @@ class PageFetcher:
         timeout: int = 15,
         pdf_front_pages: int = 1,
         fallback_getter=None,
+        rescue_getter=None,
     ) -> None:
         self._getter = getter or http.get_body_resolved
         self._delay = delay
@@ -451,6 +462,11 @@ class PageFetcher:
         self._timeout = timeout
         self._pdf_front_pages = pdf_front_pages
         self._fallback_getter = fallback_getter
+        self._rescue_getter = (
+            rescue_getter
+            if rescue_getter is not None
+            else (http.get_body_via_curl if getter is None else None)
+        )
         self._failures: dict[str, int] = {}
         self._last_request = 0.0
 
@@ -475,11 +491,17 @@ class PageFetcher:
         try:
             result = self._getter(url, "homepage", timeout=self._timeout)
         except Exception as error:
-            if self._fallback_getter is not None:
+            for fallback in (self._rescue_getter, self._fallback_getter):
+                if fallback is None:
+                    continue
                 try:
-                    result = self._fallback_getter(url)
+                    result = (
+                        fallback(url, "homepage", timeout=self._timeout)
+                        if fallback is self._rescue_getter
+                        else fallback(url)
+                    )
                 except Exception:
-                    pass
+                    continue
                 else:
                     text, final_url = self._as_text(result, url)
                     return (text or "")[: self._max_bytes]
