@@ -64,6 +64,7 @@ EMAIL_PRECEDENCE = (
 )
 
 _ORCID_RECORD_URL = "https://orcid.org/{orcid}"
+_ORCID_URL_PATTERN = re.compile(r"^https?://(?:www\.)?orcid\.org/(\d{4}-\d{4}-\d{4}-[\dX]{4})/?$", re.I)
 
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _GROUPED_EMAIL_PATTERN = re.compile(
@@ -520,6 +521,7 @@ def discover_email(
     max_papers_per_candidate: int = 4,
     email_confidence: dict[str, float] | None = None,
     email_precedence: tuple[str, ...] | None = None,
+    orcid: Orcid | None = None,
 ) -> EmailFinding:
     """Find a public professional address, in the order the policy requires.
 
@@ -533,6 +535,17 @@ def discover_email(
     a person, and nothing constructs an address from a name and a domain.
     """
     contact = contact or Contact()
+    # A verified lookup may establish the ORCID before identity enrichment did.
+    # Read its public contact endpoint instead of scraping the JavaScript page.
+    for url in extra_urls or []:
+        match = _ORCID_URL_PATTERN.match(url.strip())
+        if not match:
+            continue
+        verified = (orcid or Orcid()).get_contact(match.group(1))
+        contact = Contact(
+            emails=list(dict.fromkeys([*contact.emails, *verified.emails])),
+            urls=list(dict.fromkeys([*contact.urls, *verified.urls])),
+        )
     confidence = email_confidence or EMAIL_CONFIDENCE
     precedence = email_precedence or EMAIL_PRECEDENCE
     source_rank = {source: rank for rank, source in enumerate(precedence)}

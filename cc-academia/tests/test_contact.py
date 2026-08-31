@@ -881,6 +881,30 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
     assert finding.source == "institutional_profile"
 
 
+def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
+    from academia.core.models import Author
+    from academia.reviewer.enrich import Contact, discover_email
+    from academia.store import repository as repo
+
+    person_id = repo.upsert_person(conn, Author(name="Eric Ho Tatt Wei", idx=0))
+    person = Person(person_id=person_id, display_name="Eric Ho Tatt Wei")
+
+    class PublicOrcid:
+        def get_contact(self, orcid):
+            assert orcid == "0000-0002-7590-1028"
+            return Contact(emails=["hotattwei@utp.edu.my"])
+
+    finding = discover_email(
+        conn,
+        person,
+        extra_urls=["https://orcid.org/0000-0002-7590-1028"],
+        orcid=PublicOrcid(),
+    )
+
+    assert finding.email == "hotattwei@utp.edu.my"
+    assert finding.source == "orcid_public"
+
+
 def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
     """A candidate often has two live addresses and the choice is the editor's.
 
