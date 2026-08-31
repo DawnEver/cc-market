@@ -4,6 +4,20 @@ journal = "IEEE Transactions on Transportation Electrification"
 [windows]
 coauthor_years = 4
 
+[seniority.career]
+mode = "require"
+max_years = 10
+
+[activity]
+mode = "require"
+recent_years = 3
+min_recent_papers = 1
+
+[activity.relevant]
+mode = "require"
+recent_years = 3
+min_recent_papers = 1
+
 # Eligibility overlays go here, table by table — state only what changes:
 #
 # [activity]

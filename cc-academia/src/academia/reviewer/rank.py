@@ -205,6 +205,12 @@ def score_candidate(
     # only feeds a component and leaves its reason in the notes.
     assessment = eligibility_module.assess(conn, candidate.person, policy, now_year=now_year)
     candidate.eligibility = assessment
+    relevant = eligibility_module.assess_relevant_activity(
+        [evidence.year for evidence in candidate.evidence if evidence.year],
+        policy.relevant_activity,
+        now_year=now_year,
+    )
+    assessment.outcomes.append(relevant)
     if assessment.excluded:
         candidate.score = BLOCKED_SCORE
         candidate.components = {}

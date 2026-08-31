@@ -23,6 +23,7 @@ from pathlib import Path
 
 from academia.reviewer import trajectory
 from academia.reviewer.coi import CLEAR, CLEAR_WORDING
+from academia.reviewer.eligibility import invitation_readiness
 from academia.reviewer.enrich import EmailFinding
 from academia.reviewer.profile import Profile
 from academia.reviewer.rank import Candidate
@@ -393,28 +394,7 @@ def email_affiliation_domain(person, email: str) -> str:
 
 
 #: The three columns an editorial system asks for when an invitation goes out.
-CONTACT_COLUMNS = ("reviewer", "institution", "email", "eligible", "rejection_reason")
-
-
-def _contact_rejection_reasons(row: Row) -> list[str]:
-    reasons: list[str] = []
-    candidate = row.candidate
-    if candidate.blocked:
-        if candidate.verdict and candidate.verdict.status != CLEAR:
-            reasons.append(candidate.verdict.summary())
-        if candidate.eligibility and candidate.eligibility.reason:
-            reasons.append(candidate.eligibility.reason)
-        if not reasons:
-            reasons.append("blocked by policy")
-    if candidate.eligibility:
-        reasons.extend(
-            outcome.detail
-            for outcome in candidate.eligibility.outcomes
-            if outcome.rule == "recent_activity" and not outcome.passed
-        )
-    if not row.email.found:
-        reasons.append("no verified public professional email")
-    return list(dict.fromkeys(reasons))
+CONTACT_COLUMNS = ("reviewer", "institution", "email", "status", "decision_reason")
 
 
 def render_contact_list(rows: list[Row]) -> str:
@@ -431,14 +411,18 @@ def render_contact_list(rows: list[Row]) -> str:
     """
     records = []
     for row in rows:
-        reasons = _contact_rejection_reasons(row)
+        decision = invitation_readiness(
+            row.candidate,
+            row.email,
+            domain_status=email_affiliation_domain(row.candidate.person, row.email.email),
+        )
         records.append(
             {
                 "reviewer": row.candidate.person.display_name,
                 "institution": row.institution,
                 "email": row.email.email if row.email.found else "not found",
-                "eligible": "yes" if not reasons else "no",
-                "rejection_reason": "; ".join(reasons),
+                "status": decision.status,
+                "decision_reason": "; ".join(decision.reasons),
             }
         )
     return _detail_csv(CONTACT_COLUMNS, records)

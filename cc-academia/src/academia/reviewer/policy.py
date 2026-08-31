@@ -141,10 +141,18 @@ class Policy:
         """The floor a doctoral candidate has to clear to be invitable."""
         return self._constraint("doctoral_year", self.data["seniority"]["doctoral"])
 
+    @property
+    def career(self) -> Constraint:
+        return self._constraint("career_length", self.data["seniority"]["career"])
+
     # -- activity --------------------------------------------------------
     @property
     def activity(self) -> Constraint:
         return self._constraint("recent_activity", self.data["activity"])
+
+    @property
+    def relevant_activity(self) -> Constraint:
+        return self._constraint("recent_relevant_activity", self.data["activity"]["relevant"])
 
     @property
     def invitation_activity(self) -> Constraint:
@@ -224,7 +232,14 @@ def load_policy(journal: str = "", *, exclusion_list: list[str] | None = None) -
     policy = Policy(data=data, sources=sources, journal=journal)
     # Build every constraint now so a typo in a mode stops the run here, rather
     # than at report time with intake, search and enrichment already spent.
-    _ = (policy.activity, policy.doctoral, policy.invitation_activity, policy.veteran)
+    _ = (
+        policy.activity,
+        policy.relevant_activity,
+        policy.doctoral,
+        policy.career,
+        policy.invitation_activity,
+        policy.veteran,
+    )
     _validate_retrieval(policy)
     return policy
 

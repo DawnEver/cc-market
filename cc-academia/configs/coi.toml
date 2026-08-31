@@ -53,6 +53,10 @@ bonus = 0.08
 min_academic_age = 3
 max_academic_age = 0           # 0 means no upper bound
 
+[seniority.career]
+mode = "off"
+max_years = 10
+
 # Doctoral candidates. The pool is harvested from authorship, so it contains
 # students by construction, and a late-stage one can be the right reviewer on a
 # narrow topic. The floor is the year of study, counted from the enrolment year
@@ -73,6 +77,11 @@ min_year = 3
 # bibliographic profile rather than from the papers this run harvested. Counting
 # the harvest would ask a different question and call a prolific author dormant
 # because their latest work is not on this manuscript's topic.
+mode = "prefer"
+recent_years = 3
+min_recent_papers = 1
+
+[activity.relevant]
 mode = "prefer"
 recent_years = 3
 min_recent_papers = 1

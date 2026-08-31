@@ -109,6 +109,37 @@ def test_the_window_is_configurable(conn, policy):
     assert not eligibility.assess(conn, person, wide, now_year=NOW).excluded
 
 
+def test_tte_rejects_more_than_ten_years_since_doctorate(conn):
+    person = author_with_papers(conn, 2025, name="SeniorExpert")
+    person.education.append(
+        Education(inst_id="i1", institution="Some Uni", degree="PhD", year_to=2015)
+    )
+
+    assessment = eligibility.assess(conn, person, load_policy("tte"), now_year=NOW)
+
+    assert assessment.excluded
+    assert "exceeds maximum of 10 years" in assessment.reason
+
+
+def test_tte_rejects_a_publication_career_over_ten_years(conn):
+    person = author_with_papers(conn, 2015, 2025, name="LongCareer")
+
+    assessment = eligibility.assess(conn, person, load_policy("tte"), now_year=NOW)
+
+    assert assessment.excluded
+    assert "publication career" in assessment.reason
+
+
+def test_tte_requires_a_relevant_paper_in_the_last_three_years():
+    constraint = load_policy("tte").relevant_activity
+
+    stale = eligibility.assess_relevant_activity([2020, 2022], constraint, now_year=NOW)
+    current = eligibility.assess_relevant_activity([2022, 2025], constraint, now_year=NOW)
+
+    assert stale.excluded
+    assert not current.excluded
+
+
 # ------------------------------------------------------------- doctoral ----
 
 
@@ -444,9 +475,9 @@ def test_contact_list_marks_every_candidate_and_explains_rejections(conn, policy
     ]
 
     lines = report.render_contact_list(rows).strip().split("\n")
-    assert lines[0] == "reviewer,institution,email,eligible,rejection_reason"
-    assert lines[1] == "Invitable,Some Uni,a@uni.edu,yes,"
-    assert lines[2].startswith("NoAddress,Some Uni,not found,no,")
+    assert lines[0] == "reviewer,institution,email,status,decision_reason"
+    assert lines[1].startswith("Invitable,Some Uni,a@uni.edu,manual_review,")
+    assert lines[2].startswith("NoAddress,Some Uni,not found,rejected,")
     assert "no verified public professional email" in lines[2]
-    assert lines[3].startswith("Conflicted,Some Uni,c@uni.edu,no,")
+    assert lines[3].startswith("Conflicted,Some Uni,c@uni.edu,rejected,")
     assert len(lines) == 4

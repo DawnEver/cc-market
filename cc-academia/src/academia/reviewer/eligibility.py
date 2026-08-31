@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from typing import Any
 
 from academia.core.models import Person
 from academia.reviewer.policy import Constraint, Policy
@@ -43,6 +44,7 @@ class RuleOutcome:
     passed: bool
     detail: str
     excluding: bool = False
+    manual_review: bool = False
 
     @property
     def excluded(self) -> bool:
@@ -68,6 +70,48 @@ class Assessment:
     def notes(self) -> list[str]:
         """Every rule that did not pass, whether or not it excluded anybody."""
         return [o.detail for o in self.outcomes if not o.passed]
+
+
+@dataclass(frozen=True)
+class Readiness:
+    status: str
+    reasons: tuple[str, ...] = ()
+
+
+def invitation_readiness(candidate: Any, email: Any, *, domain_status: str) -> Readiness:
+    """One invitation decision, shared by every report/export."""
+    rejected: list[str] = []
+    review: list[str] = []
+    if candidate.blocked:
+        rejected.append("blocked by conflict-of-interest policy")
+    elif candidate.verdict and candidate.verdict.status == "BLOCK":
+        rejected.append(candidate.verdict.summary())
+    elif candidate.verdict and candidate.verdict.status == "REVIEW":
+        review.append(candidate.verdict.summary())
+    assessment = candidate.eligibility
+    if assessment:
+        rejected.extend(outcome.detail for outcome in assessment.outcomes if outcome.excluded)
+        review.extend(outcome.detail for outcome in assessment.outcomes if outcome.manual_review)
+    if not email.found:
+        rejected.append("no verified public professional email")
+    person = candidate.person
+    if person.resolution_method == "name_only" or person.confidence < 0.8:
+        review.append(
+            f"identity requires confirmation ({person.resolution_method}, "
+            f"confidence {person.confidence:.2f})"
+        )
+    affiliation = person.current_affiliation
+    if affiliation is None:
+        review.append("current affiliation unknown")
+    elif affiliation.kind == "company":
+        review.append("industry affiliation — competitive conflict not assessed")
+    if email.found and domain_status != "match":
+        review.append(f"email/current-affiliation domain {domain_status}")
+    if rejected:
+        return Readiness("rejected", tuple(dict.fromkeys(rejected + review)))
+    if review:
+        return Readiness("manual_review", tuple(dict.fromkeys(review)))
+    return Readiness("eligible")
 
 
 def _response_rate(
@@ -160,12 +204,58 @@ def _doctoral(person: Person, constraint: Constraint, now_year: int) -> RuleOutc
             constraint.name,
             True,
             "doctoral candidate, year of study not stated — confirm before inviting",
+            manual_review=True,
         )
     passed = year >= floor
     detail = (
         f"doctoral candidate in year {year} — confirm before inviting"
         if passed
         else f"doctoral candidate in year {year}, below the journal floor of year {floor}"
+    )
+    return RuleOutcome(constraint.name, passed, detail, excluding=constraint.excluding)
+
+
+def _career(
+    person: Person, person_years: list[int], constraint: Constraint, now_year: int
+) -> RuleOutcome:
+    """Enforce doctorate age, falling back to the observable publication career."""
+    maximum = constraint.int_("max_years", 10)
+    if person.phd_year:
+        years = max(0, now_year - person.phd_year)
+        evidence = f"{years} years since doctorate ({person.phd_year})"
+    else:
+        dated = [year for year in person_years if year <= now_year]
+        if not dated:
+            return RuleOutcome(
+                constraint.name,
+                True,
+                "career length unknown — confirm before inviting",
+                manual_review=True,
+            )
+        years = now_year - min(dated) + 1
+        evidence = f"{years}-year publication career (first paper {min(dated)})"
+    passed = years <= maximum
+    detail = evidence if passed else f"{evidence}, exceeds maximum of {maximum} years"
+    return RuleOutcome(constraint.name, passed, detail, excluding=constraint.excluding)
+
+
+def assess_relevant_activity(
+    years: list[int], constraint: Constraint, *, now_year: int
+) -> RuleOutcome:
+    """Require manuscript-relevant evidence inside the configured window."""
+    if constraint.off:
+        return RuleOutcome(constraint.name, True, "not assessed")
+    window = constraint.int_("recent_years", 3)
+    minimum = constraint.int_("min_recent_papers", 1)
+    floor = now_year - window + 1
+    recent = sum(year >= floor for year in years if year <= now_year)
+    passed = recent >= minimum
+    latest = max((year for year in years if year <= now_year), default=None)
+    detail = (
+        f"{recent} relevant paper(s) in the last {window} years"
+        if passed
+        else f"only {recent} relevant paper(s) in the last {window} years "
+        f"(needs {minimum}); latest relevant paper {latest or 'unknown'}"
     )
     return RuleOutcome(constraint.name, passed, detail, excluding=constraint.excluding)
 
@@ -230,7 +320,13 @@ def assess(
     conn: sqlite3.Connection, person: Person, policy: Policy, *, now_year: int
 ) -> Assessment:
     """Run every switched-on rule against one candidate."""
-    constraints = (policy.activity, policy.doctoral, policy.invitation_activity, policy.veteran)
+    constraints = (
+        policy.activity,
+        policy.doctoral,
+        policy.career,
+        policy.invitation_activity,
+        policy.veteran,
+    )
     if all(constraint.off for constraint in constraints):
         return Assessment()
 
@@ -238,12 +334,14 @@ def assess(
     works_by_year = person.works_by_year or repo.output_by_year(conn, person.person_id)
     history = repo.invitation_history(conn, person.person_id)
 
-    activity, doctoral, invitations, veteran = constraints
+    activity, doctoral, career, invitations, veteran = constraints
     outcomes = []
     if not activity.off:
         outcomes.append(_activity(works_by_year, years, activity, now_year))
     if not doctoral.off:
         outcomes.append(_doctoral(person, doctoral, now_year))
+    if not career.off:
+        outcomes.append(_career(person, years, career, now_year))
     if not invitations.off:
         outcomes.append(_invitation_response(history, invitations, now_year))
     if not veteran.off:
