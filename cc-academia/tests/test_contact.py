@@ -905,6 +905,34 @@ def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
     assert finding.source == "orcid_public"
 
 
+def test_an_opaque_email_is_attributed_from_a_unique_nearby_full_name(conn):
+    from academia.core.models import Author
+    from academia.reviewer.enrich import discover_email
+    from academia.store import repository as repo
+
+    person_id = repo.upsert_person(conn, Author(name="Lianjie Ma", idx=0))
+    person = Person(person_id=person_id, display_name="Lianjie Ma")
+    page = "Contact: Lianjie Ma E-mail: mlj@mail.neu.edu.cn"
+
+    finding = discover_email(
+        conn,
+        person,
+        fetcher=lambda _: page,
+        extra_urls=["https://example.edu/profile"],
+    )
+
+    assert finding.email == "mlj@mail.neu.edu.cn"
+
+
+def test_proximity_does_not_choose_between_multiple_nearby_addresses(conn):
+    from academia.reviewer.enrich import match_email_in_text
+
+    person = Person(person_id="p", display_name="Ada Expert")
+    text = "Ada Expert; lab@uni.edu; assistant@uni.edu"
+
+    assert match_email_in_text(text, person) == ""
+
+
 def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
     """A candidate often has two live addresses and the choice is the editor's.
 

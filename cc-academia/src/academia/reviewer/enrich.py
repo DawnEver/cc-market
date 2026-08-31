@@ -254,6 +254,33 @@ def match_email_to_person(
     return ""
 
 
+def match_email_in_text(text: str, person: Person, *, radius: int = 240) -> str:
+    """Attribute an address printed beside the author's full name.
+
+    Conference headers often use opaque usernames (``mlj`` or an employee ID),
+    so the local part cannot identify the author.  Proximity can, but only when
+    exactly one address occurs close to an exact full-name occurrence.
+    """
+    emails = extract_emails(text)
+    direct = match_email_to_person(emails, person)
+    if direct:
+        return direct
+    lowered = text.casefold()
+    names = [person.display_name, *person.names]
+    nearby: list[str] = []
+    for name in names:
+        clean = " ".join(name.casefold().split())
+        if len(clean.split()) < 2:
+            continue
+        start = 0
+        while (position := lowered.find(clean, start)) >= 0:
+            window = lowered[max(0, position - radius) : position + len(clean) + radius]
+            nearby.extend(email for email in emails if email.casefold() in window)
+            start = position + len(clean)
+    unique = list(dict.fromkeys(nearby))
+    return unique[0] if len(unique) == 1 else ""
+
+
 # ------------------------------------------------------------- background
 
 
@@ -593,7 +620,7 @@ def discover_email(
             text = fetcher(url)
             if not text:
                 continue
-            match = match_email_to_person(extract_emails(text), person)
+            match = match_email_in_text(text, person)
             if not match:
                 continue
             source = email_source_for(url, match)
