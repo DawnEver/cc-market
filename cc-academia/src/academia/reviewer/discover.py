@@ -281,6 +281,8 @@ def build_candidates(
                     year=row["year"],
                     url=_readable_url(row),
                     doi=row["doi"] or "",
+                    venue=row["venue"] or "",
+                    venue_type=row["venue_type"] or "",
                     position=authorship["position"] or "middle",
                     position_weight=authorship["position_weight"],
                     similarity=similarity,

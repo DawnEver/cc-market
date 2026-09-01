@@ -8,6 +8,24 @@ build if they drift.
 
 ### Added
 
+- **Restricted countries** (`geo.restricted` in `configs/coi.toml`). A standing
+  refusal to invite from named countries, separate from the cross-region
+  preference: that one spreads a review across regions, this one is a sanctions
+  regime or a publisher instruction. Read from the current affiliation, never
+  from nationality or from a name. Off and empty by default, because refusing a
+  whole country is a decision an editor makes explicitly; a switched-on rule
+  with an empty list, or one naming something that is not a two-letter ISO code,
+  is refused at load time rather than silently passing everybody. An unknown
+  affiliation country is flagged for confirmation rather than guessed. TTE sets
+  it to `["IN", "IR"]`.
+- **Related-journal floor** (`activity.related_journals`). Requires that enough
+  of the evidence which qualified a candidate be journal work rather than
+  conference papers — a review report is a journal genre. Counted over the
+  relevant evidence, so it asks whether somebody has published journal work on
+  *this* topic, not how much they publish. Evidence now carries `venue` and
+  `venue_type`; a paper whose venue type no source stated is reported rather
+  than counted, and a candidate who would clear the floor if only those were
+  resolved is sent to manual review instead of being failed. TTE requires 3.
 - **Configurable reviewer eligibility** (`activity`, `seniority.doctoral`,
   `activity.invitations`, `activity.veteran` in `configs/coi.toml`). Prefers
   authors publishing inside a recent window, holds doctoral candidates to a

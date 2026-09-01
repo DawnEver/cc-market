@@ -5,13 +5,17 @@ invitation is worth sending: someone still working in the field, far enough into
 their training to carry a report, and not a name that has quietly stopped taking
 review work.
 
-Four rules, each read from the policy file and each carrying its own mode:
+Each rule is read from the policy file and carries its own mode:
 
 * **recent activity** — published inside the window
 * **doctoral year** — a doctoral candidate is past the journal's floor
 * **invitation response** — answered a fair share of recent invitations
 * **unresponsive veteran** — a long career *and* a record of unanswered
   invitations, which is the only combination that fires
+* **restricted country** — currently affiliated somewhere the journal will not
+  invite from, read from the affiliation and never from a name
+* **related journals** — enough of the relevant record is journal work
+  (evaluated in ``rank`` alongside relevant activity, where the evidence lives)
 
 Nothing here is inferred. A rule that has no evidence to work with passes: an
 empty invitation history means nobody has asked this person yet, and a missing
@@ -260,6 +264,79 @@ def assess_relevant_activity(
     return RuleOutcome(constraint.name, passed, detail, excluding=constraint.excluding)
 
 
+#: Sources disagree on how they spell a venue type — ``Journal``,
+#: ``journal-article``, ``Journals``, ``JournalArticle`` — so match on the word
+#: rather than on any one source's vocabulary.
+def is_journal(venue_type: str) -> bool:
+    return "journal" in (venue_type or "").lower()
+
+
+def assess_related_journals(venue_types: list[str], constraint: Constraint) -> RuleOutcome:
+    """Require journal-published work on the manuscript's own topic.
+
+    Counted over the evidence that qualified the candidate, so it asks "has this
+    person written journal papers about *this*", not "how much do they publish".
+    A paper whose venue type no source stated is not counted and not held
+    against anybody, but it is reported, because a candidate who misses the
+    floor only on unresolved venues is a data gap rather than a weak reviewer.
+    """
+    if constraint.off:
+        return RuleOutcome(constraint.name, True, "not assessed")
+    minimum = constraint.int_("min_publications", 3)
+    journals = sum(1 for venue_type in venue_types if is_journal(venue_type))
+    unknown = sum(1 for venue_type in venue_types if not (venue_type or "").strip())
+    if journals >= minimum:
+        return RuleOutcome(
+            constraint.name,
+            True,
+            f"{journals} relevant journal publication(s)",
+            excluding=constraint.excluding,
+        )
+    shortfall = (
+        f"only {journals} relevant journal publication(s) of {len(venue_types)} "
+        f"relevant paper(s) (needs {minimum})"
+    )
+    if unknown and journals + unknown >= minimum:
+        # Enough papers to clear the floor, if only their venues were resolved.
+        return RuleOutcome(
+            constraint.name,
+            True,
+            f"{shortfall}; {unknown} paper(s) of unstated venue type — "
+            "resolve the venues before relying on this",
+            excluding=constraint.excluding,
+            manual_review=True,
+        )
+    return RuleOutcome(constraint.name, False, shortfall, excluding=constraint.excluding)
+
+
+def _restricted_country(person: Person, constraint: Constraint) -> RuleOutcome:
+    """Refuse an invitation to a country the journal will not invite from.
+
+    Reads the current affiliation country, never nationality. An unknown country
+    is a gap in the affiliation record and cannot exclude anybody, but it is the
+    one case here that an editor has to settle by hand: the whole point of the
+    rule is that the answer must not be guessed.
+    """
+    countries = constraint.upper_set("countries")
+    country = (person.country_code or "").strip().upper()[:2]
+    named = ", ".join(sorted(countries))
+    if not country:
+        return RuleOutcome(
+            constraint.name,
+            True,
+            f"current country unknown — confirm it is not {named} before inviting",
+            manual_review=True,
+        )
+    if country in countries:
+        return RuleOutcome(
+            constraint.name,
+            False,
+            f"currently affiliated in {country}, which the journal does not invite from",
+            excluding=constraint.excluding,
+        )
+    return RuleOutcome(constraint.name, True, f"{country} is not a restricted country")
+
+
 def _invitation_response(
     rows: list[sqlite3.Row], constraint: Constraint, now_year: int
 ) -> RuleOutcome:
@@ -326,6 +403,7 @@ def assess(
         policy.career,
         policy.invitation_activity,
         policy.veteran,
+        policy.restricted_country,
     )
     if all(constraint.off for constraint in constraints):
         return Assessment()
@@ -334,8 +412,10 @@ def assess(
     works_by_year = person.works_by_year or repo.output_by_year(conn, person.person_id)
     history = repo.invitation_history(conn, person.person_id)
 
-    activity, doctoral, career, invitations, veteran = constraints
+    activity, doctoral, career, invitations, veteran, restricted = constraints
     outcomes = []
+    if not restricted.off:
+        outcomes.append(_restricted_country(person, restricted))
     if not activity.off:
         outcomes.append(_activity(works_by_year, years, activity, now_year))
     if not doctoral.off:

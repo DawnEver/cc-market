@@ -18,6 +18,18 @@ mode = "require"
 recent_years = 3
 min_recent_papers = 1
 
+# Three journal papers on the manuscript's topic. This is the floor that does
+# most of the work on a TTE run: the pool is harvested from a literature search,
+# so almost everyone in it is relevant, and what separates a reviewer from a
+# name on a conference paper is having carried the topic through peer review.
+[activity.related_journals]
+mode = "require"
+min_publications = 3
+
+[geo.restricted]
+mode = "require"
+countries = ["IN", "IR"]
+
 # Eligibility overlays go here, table by table — state only what changes:
 #
 # [activity]

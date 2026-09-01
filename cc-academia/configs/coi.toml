@@ -47,6 +47,17 @@ heavily_cited_by_manuscript = 3
 mode = "prefer_cross_region"   # or "hard_filter" or "off"
 bonus = 0.08
 
+# Countries the journal will not invite from at all — a sanctions regime or a
+# publisher instruction, not a preference. Off by default and deliberately
+# unpopulated: refusing a whole country is a decision an editor has to make
+# explicitly, in a journal file, where it is reviewable. A switched-on rule with
+# an empty list is rejected at load time rather than silently passing everybody.
+# Read from the current affiliation, never from nationality or from a name; an
+# unknown affiliation is flagged for manual confirmation rather than guessed.
+[geo.restricted]
+mode = "off"                   # off | prefer | require
+countries = []                 # two-letter ISO codes, e.g. ["IN", "IR"]
+
 [seniority]
 # Years since the doctorate. Unknown never excludes anybody — ORCID fills the
 # education section for roughly 30% of researchers in this field.
@@ -85,6 +96,17 @@ min_recent_papers = 1
 mode = "prefer"
 recent_years = 3
 min_recent_papers = 1
+
+# Journal work on the manuscript's topic. Conferences are where this field moves
+# fastest, but a review report is a journal genre, and an editor wants somebody
+# who has written for one on this subject. Counted over the evidence that
+# qualified the candidate rather than over their whole output, so it asks "about
+# *this*" and not "how much". Papers whose venue type no source stated are
+# reported rather than counted, and a candidate who would clear the floor if
+# only those were resolved is flagged for manual review instead of failed.
+[activity.related_journals]
+mode = "off"                   # off | prefer | require
+min_publications = 3
 
 [activity.invitations]
 # Responsiveness to review invitations, read from the accumulating store — every

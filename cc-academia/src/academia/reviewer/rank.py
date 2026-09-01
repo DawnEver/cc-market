@@ -45,6 +45,11 @@ class Evidence:
     #: on. Empty when no source gave a resolvable location — never invented.
     url: str = ""
     doi: str = ""
+    #: Where it appeared, and whether that venue is a journal. Sources spell the
+    #: type differently and some state none at all, so it is carried verbatim
+    #: and interpreted at the point of use rather than normalised on the way in.
+    venue: str = ""
+    venue_type: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +61,8 @@ class Evidence:
             "similarity": round(self.similarity, 3),
             "url": self.url,
             "doi": self.doi,
+            "venue": self.venue,
+            "venue_type": self.venue_type,
         }
 
 
@@ -211,6 +218,12 @@ def score_candidate(
         now_year=now_year,
     )
     assessment.outcomes.append(relevant)
+    assessment.outcomes.append(
+        eligibility_module.assess_related_journals(
+            [evidence.venue_type for evidence in candidate.evidence],
+            policy.related_journals,
+        )
+    )
     if assessment.excluded:
         candidate.score = BLOCKED_SCORE
         candidate.components = {}

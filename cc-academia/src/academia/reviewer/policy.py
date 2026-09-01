@@ -75,6 +75,12 @@ class Constraint:
     def float_(self, key: str, default: float = 0.0) -> float:
         return float(self.settings.get(key, default))
 
+    def upper_set(self, key: str) -> frozenset[str]:
+        """A set of codes, normalised so a lookup never fails on case or spacing."""
+        return frozenset(
+            str(value).strip().upper() for value in self.settings.get(key, []) if str(value).strip()
+        )
+
 
 @dataclass(frozen=True)
 class Policy:
@@ -127,6 +133,17 @@ class Policy:
     def geo_bonus(self) -> float:
         return float(self.data["geo"]["bonus"])
 
+    @property
+    def restricted_country(self) -> Constraint:
+        """Countries an editor will not invite from at all.
+
+        Separate from the cross-region preference above, which is about spreading
+        a review across regions. This one is a standing instruction — a sanctions
+        regime, a publisher rule — and it names countries explicitly rather than
+        deriving them from the submission.
+        """
+        return self._constraint("restricted_country", self.data["geo"]["restricted"])
+
     # -- seniority -------------------------------------------------------
     @property
     def min_academic_age(self) -> int:
@@ -153,6 +170,19 @@ class Policy:
     @property
     def relevant_activity(self) -> Constraint:
         return self._constraint("recent_relevant_activity", self.data["activity"]["relevant"])
+
+    @property
+    def related_journals(self) -> Constraint:
+        """How much of the relevant record has to be journal work.
+
+        Conference papers are how this field moves fastest, but a review report
+        is a journal genre, and an editor wants somebody who has written for one
+        on this topic. Counted over the evidence that qualified the candidate,
+        not over their whole output.
+        """
+        return self._constraint(
+            "related_journal_publications", self.data["activity"]["related_journals"]
+        )
 
     @property
     def invitation_activity(self) -> Constraint:
@@ -235,13 +265,39 @@ def load_policy(journal: str = "", *, exclusion_list: list[str] | None = None) -
     _ = (
         policy.activity,
         policy.relevant_activity,
+        policy.related_journals,
         policy.doctoral,
         policy.career,
         policy.invitation_activity,
         policy.veteran,
+        policy.restricted_country,
     )
     _validate_retrieval(policy)
+    _validate_restricted_countries(policy)
     return policy
+
+
+def _validate_restricted_countries(policy: Policy) -> None:
+    """A switched-on restriction has to name the countries it restricts.
+
+    An empty list would read as "no country is restricted" while the mode says
+    the opposite, and the rule would silently pass everybody. Better to refuse
+    the policy than to ship a run whose reason column is a lie.
+    """
+    constraint = policy.restricted_country
+    if constraint.off:
+        return
+    countries = constraint.upper_set("countries")
+    if not countries:
+        raise UsageError(
+            "geo.restricted.mode is "
+            f"'{constraint.mode}' but geo.restricted.countries is empty — "
+            "name the countries or set the mode to 'off'"
+        )
+    if malformed := sorted(code for code in countries if len(code) != 2):
+        raise UsageError(
+            "geo.restricted.countries takes two-letter ISO codes; got: " + ", ".join(malformed)
+        )
 
 
 def _validate_retrieval(policy: Policy) -> None:
