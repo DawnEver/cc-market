@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ai = ["litellm>=1.77"]
+# scripts/audit_xlsx.py only; the pipeline itself never writes a spreadsheet.
+xlsx = ["openpyxl>=3.1"]
 # Acquisition: HTTP first, a real browser only when a publisher demands one.
 acquire = ["requests>=2.32"]
 browser = ["playwright>=1.61", "requests>=2.32"]
