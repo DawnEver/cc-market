@@ -1,11 +1,20 @@
 # IEEE Transactions on Transportation Electrification.
 journal = "IEEE Transactions on Transportation Electrification"
 
-[windows]
-coauthor_years = 4
+# Conflict windows are inherited from coi.toml. This file used to narrow the
+# co-authorship window to four years, which made TTE *more* permissive than the
+# shared default and let a collaborator from five years ago through unflagged.
+# Nothing recorded why, so it is gone; a journal that genuinely wants a
+# narrower window has to state a reason next to it, and a test refuses a
+# silent one.
 
+# Career length is a preference, not a bar. This was `require` with a ten-year
+# maximum, which excluded every senior researcher in the pool — the people an
+# editor most wants a report from — and left a run with nobody to invite. Under
+# `prefer` an early-career candidate still scores higher and a long career only
+# shows up in the audit.
 [seniority.career]
-mode = "require"
+mode = "prefer"
 max_years = 10
 
 [activity]
