@@ -31,6 +31,7 @@ def _installed(module: str) -> bool:
 
 def collect() -> dict:
     db = paths.database_path()
+    export = paths.export_facts_dir()
     return {
         "version": __version__,
         "python": sys.version.split()[0],
@@ -41,7 +42,8 @@ def collect() -> dict:
         "data_root": str(paths.data_root()),
         "database": {"path": str(db), "exists": db.exists()},
         "facts": {
-            "path": str(paths.facts_dir()),
+            "path": str(export) if export else None,
+            "resting_path": str(paths.facts_dir()),
             "device": paths.device_id(),
             "shared_location": bool(os.environ.get(paths.ENV_FACTS_DIR)),
             "enabled": paths.facts_sync_enabled(),
@@ -69,7 +71,14 @@ def run(args: argparse.Namespace) -> int:
     log.info(f"  database    : {report['database']['path']} ({state})")
     facts = report["facts"]
     how = "export on" if facts["enabled"] else "export off"
-    log.info(f"  facts       : {facts['path']} ({how}, device '{facts['device']}')")
+    where = facts["path"] or f"{facts['resting_path']} (local only)"
+    log.info(f"  facts       : {where} ({how}, device '{facts['device']}')")
+    if facts["enabled"] and not facts["path"]:
+        log.warn(
+            "ACADEMIA_FACTS_SYNC is on but no data root was found above the "
+            "working directory, so nothing is published. Name the folder with "
+            "ACADEMIA_FACTS_DIR."
+        )
     extras = ", ".join(k for k, v in report["extras"].items() if v) or "none"
     log.info(f"  extras      : {extras}")
     if not report["facts"]["enabled"]:

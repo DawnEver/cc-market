@@ -60,13 +60,20 @@ def store(*, sync: bool = True):
     """
     from academia.store import facts
 
-    enabled = sync and paths.facts_sync_enabled()
+    directory = paths.export_facts_dir() if sync else None
+    if sync and paths.facts_sync_enabled() and directory is None:
+        log.warn(
+            "ACADEMIA_FACTS_SYNC is on but no data root was found above this "
+            "directory — facts are staying in the local store. Set "
+            "ACADEMIA_FACTS_DIR to say where they belong."
+        )
+    enabled = directory is not None
     with db.session() as conn:
         if enabled:
             try:
-                imported, skipped = facts.import_(conn)
+                imported, skipped = facts.import_(conn, directory)
                 if (total := sum(imported.values())):
-                    log.detail(f"facts: merged {total} from {paths.facts_dir()}")
+                    log.detail(f"facts: merged {total} from {directory}")
                 if skipped:
                     log.detail(f"facts: skipped {skipped} unidentifiable record(s)")
             except OSError as error:
@@ -74,7 +81,7 @@ def store(*, sync: bool = True):
         yield conn
         if enabled:
             try:
-                facts.export(conn)
+                facts.export(conn, directory)
             except OSError as error:
                 log.warn(f"could not publish facts: {error}")
 
@@ -1032,7 +1039,12 @@ def run_facts(args: argparse.Namespace) -> int:
     """Merge every device's shared facts, then publish this device's."""
     from academia.store import facts as facts_module
 
-    directory = Path(args.dir).expanduser() if args.dir else paths.facts_dir()
+    directory = Path(args.dir).expanduser() if args.dir else paths.export_facts_dir()
+    if directory is None:
+        raise UsageError(
+            "no facts folder: set ACADEMIA_FACTS_DIR, or run this from inside "
+            "the data root with ACADEMIA_FACTS_SYNC=1, or pass --dir"
+        )
     with db.session() as conn:
         if args.export_only:
             exported, imported, skipped = facts_module.export(conn, directory), {}, 0

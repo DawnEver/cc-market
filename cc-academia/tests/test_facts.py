@@ -9,9 +9,11 @@ machines never write the same path.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
+from academia.core import paths
 from academia.core.models import Author, Education, Institution
 from academia.store import db, facts
 from academia.store import repository as repo
@@ -282,3 +284,34 @@ def test_repeated_syncs_do_not_grow_the_store(conn, tmp_path):
         sizes.append(conn.execute("SELECT count(*) AS n FROM affiliations").fetchone()["n"])
 
     assert len(set(sizes)) == 1
+
+
+def test_export_never_falls_back_to_the_home_directory(tmp_path, monkeypatch):
+    """With export on and no data root above the caller, home is the wrong answer.
+
+    The fallback is what let a test run write its stub people into the
+    operator's own facts folder: ``ACADEMIA_FACTS_SYNC`` lives in the shell of
+    anyone who syncs their research data, and any process started there inherits
+    it. Export is a statement about where the data *belongs*, so with nowhere to
+    put it the honest outcome is to refuse rather than to pick the home
+    directory, which is neither synced nor expected.
+    """
+    monkeypatch.setenv(paths.ENV_FACTS_SYNC, "1")
+    monkeypatch.delenv(paths.ENV_FACTS_DIR, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert paths.export_facts_dir() is None
+
+
+def test_an_explicit_folder_is_always_honoured(tmp_path, monkeypatch):
+    monkeypatch.delenv(paths.ENV_FACTS_SYNC, raising=False)
+    monkeypatch.setenv(paths.ENV_FACTS_DIR, str(tmp_path / "shared"))
+    assert paths.export_facts_dir() == tmp_path / "shared"
+
+
+def test_the_resting_place_stays_the_home_directory(tmp_path, monkeypatch):
+    """Export off is not an error, it is the default: the facts stay put."""
+    monkeypatch.delenv(paths.ENV_FACTS_SYNC, raising=False)
+    monkeypatch.delenv(paths.ENV_FACTS_DIR, raising=False)
+    assert paths.facts_dir() == Path.home() / paths.FACTS_DIRNAME
+    assert paths.export_facts_dir() is None

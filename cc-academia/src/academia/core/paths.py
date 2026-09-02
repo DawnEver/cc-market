@@ -224,6 +224,27 @@ def facts_dir() -> Path:
     return Path.home() / FACTS_DIRNAME
 
 
+def export_facts_dir() -> Path | None:
+    """Where an export may write, or ``None`` when there is nowhere it belongs.
+
+    ``facts_dir`` always answers with a path because the facts have to rest
+    somewhere; the home directory is that resting place while export is off.
+    Publishing is a different question. ``ACADEMIA_FACTS_SYNC`` lives in a shell
+    profile, so every process started there inherits it, including ones running
+    somewhere the data root cannot be found — a test run, a script in a
+    temporary directory. Answering "home" for those wrote their people into the
+    operator's own facts folder and merged them back on the next run.
+
+    So: an explicit folder, or one beside the research data, or nothing.
+    """
+    if (explicit := _env_path(ENV_FACTS_DIR)) is not None:
+        return explicit
+    if not facts_sync_enabled():
+        return None
+    root = find_data_root()
+    return root / FACTS_DIRNAME if root is not None else None
+
+
 def device_id() -> str:
     """A short, stable name for this machine, used as its facts subdirectory."""
     import platform
