@@ -116,6 +116,10 @@ class Profile:
     queries: list[Query] = field(default_factory=list)
     origin_countries: list[str] = field(default_factory=list)
     author_names: list[str] = field(default_factory=list)
+    #: Parallel to ``author_names``, blank where the manuscript gave none. An
+    #: ORCID is the only identifier here that resolves a submitting author to a
+    #: person with certainty, which is what the co-authorship rules need.
+    author_orcids: list[str] = field(default_factory=list)
     author_institutions: list[str] = field(default_factory=list)
     reference_dois: list[str] = field(default_factory=list)
 
@@ -136,6 +140,7 @@ class Profile:
             application_domains=list(data.get("application_domains") or []),
             origin_countries=list(data.get("origin_countries") or []),
             author_names=list(data.get("author_names") or []),
+            author_orcids=list(data.get("author_orcids") or []),
             author_institutions=list(data.get("author_institutions") or []),
             reference_dois=list(data.get("reference_dois") or []),
         )
@@ -265,6 +270,7 @@ def build_profile(sanitized: Sanitized, *, manuscript_id: str, journal: str = ""
             institutions, [a.country for a in sanitized.authors]
         ),
         author_names=[a.name for a in sanitized.authors if a.name],
+        author_orcids=[a.orcid for a in sanitized.authors if a.name],
         author_institutions=institutions,
         reference_dois=sanitized.reference_dois,
     )

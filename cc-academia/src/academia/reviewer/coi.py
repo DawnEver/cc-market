@@ -77,6 +77,11 @@ class ManuscriptContext:
     ms_id: str
     author_names: list[str]
     author_person_ids: list[str] = field(default_factory=list)
+    #: Authors matched on a name alone. Kept apart from the identified ones
+    #: because a name is not an identity: three researchers publish as "Wei
+    #: Hua", and a co-authorship with one of them is not evidence about the
+    #: others. Findings drawn from these go to the editor, never to a block.
+    possible_author_person_ids: list[str] = field(default_factory=list)
     author_institutions: list[str] = field(default_factory=list)
     author_countries: list[str] = field(default_factory=list)
     referenced_paper_ids: list[str] = field(default_factory=list)
@@ -88,7 +93,92 @@ class ManuscriptContext:
 
     @property
     def institution_keys(self) -> set[str]:
-        return {normalize_title(i) for i in self.author_institutions if i}
+        """The institutions named in the affiliation lines, one key each.
+
+        A manuscript gives one string per author — "the School of Electrical
+        Engineering, Southeast University, Nanjing 210096, China" — and matching
+        that whole line against a candidate's employer never succeeds. Splitting
+        on the commas the string already carries does, and comparing segments
+        for equality rather than by containment keeps Nanjing University
+        distinct from Nanjing University of Aeronautics and Astronautics.
+        """
+        return {key for line in self.author_institutions for key in affiliation_keys(line)}
+
+
+#: Segments naming a place rather than an employer. A candidate whose
+#: institution is recorded as "China" must not collide with every Chinese
+#: address.
+_NOT_AN_INSTITUTION = {
+    "china",
+    "usa",
+    "uk",
+    "united kingdom",
+    "united states",
+    "japan",
+    "korea",
+    "india",
+    "iran",
+}
+
+
+def affiliation_keys(line: str) -> set[str]:
+    """Split one affiliation line into comparable institution keys."""
+    keys = set()
+    for segment in (line or "").split(","):
+        key = normalize_title(segment).removeprefix("the ").strip()
+        if not key or key in _NOT_AN_INSTITUTION:
+            continue
+        # A postcode segment — "nanjing 210096" — names a place, not an employer.
+        if any(token.isdigit() for token in key.split()):
+            continue
+        keys.add(key)
+    return keys
+
+
+@dataclass(frozen=True)
+class AuthorIdentity:
+    """One submitting author, matched to a person in the store."""
+
+    name: str
+    person_id: str
+    #: ``orcid`` when an identifier matched, ``name`` when only a name did.
+    how: str
+
+    @property
+    def certain(self) -> bool:
+        return self.how == "orcid"
+
+
+def identify_authors(
+    conn: sqlite3.Connection, authors: list[tuple[str, str]]
+) -> list[AuthorIdentity]:
+    """Resolve the submitting authors to people in the store.
+
+    The co-authorship, shared-doctorate and advisor rules all work on person
+    ids. Nothing ever filled those ids in, so all three ran against an empty
+    list and passed everybody — the quietest kind of failure, because the report
+    reads the same whether the rule cleared a candidate or never examined one.
+
+    An ORCID is an identity and a match on it is treated as one. A name is not,
+    so its matches come back separately.
+    """
+    identities: list[AuthorIdentity] = []
+    for name, orcid in authors:
+        if orcid:
+            row = conn.execute(
+                "SELECT person_id FROM persons WHERE orcid = ?", (orcid.strip(),)
+            ).fetchone()
+            if row is not None:
+                identities.append(AuthorIdentity(name, row["person_id"], "orcid"))
+                continue
+        identities.extend(
+            AuthorIdentity(name, row["person_id"], "name")
+            for row in repo.find_person_by_name(conn, name)
+        )
+
+    # An identified author is not also a guess about the same person.
+    certain = {i.person_id for i in identities if i.certain}
+    return [i for i in identities if i.certain or i.person_id not in certain]
 
 
 # ------------------------------------------------------------------- rules
@@ -117,7 +207,9 @@ def _coauthorship(
     conn: sqlite3.Connection, person: Person, context: ManuscriptContext, policy: Policy
 ) -> list[Finding]:
     """Recent co-authorship blocks; an older but dense record is flagged."""
-    if not context.author_person_ids:
+    identified = set(context.author_person_ids)
+    supposed = [pid for pid in context.possible_author_person_ids if pid not in identified]
+    if not identified and not supposed:
         return []
 
     # Inclusive window: coauthor_years = 5 means the five years ending with the
@@ -125,8 +217,11 @@ def _coauthorship(
     cutoff = (context.year or 0) - policy.coauthor_years + 1
     edges = {row["other"]: row for row in repo.coauthors_of(conn, person.person_id)}
 
+    ordered = [(pid, "identity") for pid in context.author_person_ids]
+    ordered += [(pid, "name") for pid in supposed]
+
     findings: list[Finding] = []
-    for author_id in context.author_person_ids:
+    for author_id, how in ordered:
         edge = edges.get(author_id)
         if edge is None:
             continue
@@ -137,9 +232,14 @@ def _coauthorship(
             "first_year": edge["first_year"],
             "last_year": edge["last_year"],
             "window_from": cutoff,
+            "identified_by": how,
         }
-        if last_year >= cutoff:
+        if last_year >= cutoff and how == "identity":
             findings.append(Finding("recent_coauthor", BLOCK, evidence))
+        elif last_year >= cutoff:
+            # Reported for judgement: the collaboration is real, the identity
+            # behind the name is not established.
+            findings.append(Finding("possible_recent_coauthor", REVIEW, evidence))
         elif edge["paper_count"] >= policy.historic_collaboration_papers:
             findings.append(Finding("dense_historic_collaboration", REVIEW, evidence))
     return findings
@@ -158,7 +258,10 @@ def _institutions(person: Person, context: ManuscriptContext) -> list[Finding]:
 
     current = person.current_affiliation
     if current and normalize_title(current.institution) in manuscript_institutions:
-        if current.department:
+        # A department is a research group; a university is not. So the block
+        # needs the department to be named on both sides, and an affiliation
+        # line names it in a segment of its own.
+        if current.department and normalize_title(current.department) in manuscript_institutions:
             findings.append(
                 Finding(
                     "same_department",

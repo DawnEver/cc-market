@@ -402,6 +402,9 @@ def run_candidates(args: argparse.Namespace) -> int:
                 "confidence": c.person.confidence,
                 "resolution_method": c.person.resolution_method,
                 "evidence": [e.as_dict() for e in c.evidence],
+                # The whole relevant record, so a counting rule reads the same
+                # basis on a re-run as it did on the run that wrote this.
+                "relevant_papers": [e.as_dict() for e in c.relevant_papers],
             }
             for c in candidates
         ]
@@ -666,11 +669,37 @@ def run_enrich(args: argparse.Namespace) -> int:
 
 
 def _context(conn, profile: Profile) -> coi_module.ManuscriptContext:
+    """Assemble what the rules need, including who the authors actually are.
+
+    Resolution has to happen here rather than at ``profile`` time: the corpus
+    that contains the authors has not been fetched yet when the profile is
+    built. Identified authors are written back so a re-run and the dossiers
+    agree on them.
+    """
     author_rows = repo.manuscript_authors(conn, profile.manuscript_id)
+    names = [r["name"] for r in author_rows] or profile.author_names
+    orcids = dict(zip(profile.author_names, profile.author_orcids, strict=False))
+    recorded = [r["person_id"] for r in author_rows if r["person_id"]]
+
+    identities = coi_module.identify_authors(
+        conn, [(name, orcids.get(name, "")) for name in names]
+    )
+    certain = [i.person_id for i in identities if i.certain]
+    possible = [i.person_id for i in identities if not i.certain]
+    for identity in identities:
+        if identity.certain:
+            repo.add_manuscript_author(
+                conn,
+                profile.manuscript_id,
+                name=identity.name,
+                person_id=identity.person_id,
+            )
+
     return coi_module.ManuscriptContext(
         ms_id=profile.manuscript_id,
-        author_names=[r["name"] for r in author_rows] or profile.author_names,
-        author_person_ids=[r["person_id"] for r in author_rows if r["person_id"]],
+        author_names=names,
+        author_person_ids=list(dict.fromkeys(recorded + certain)),
+        possible_author_person_ids=possible,
         author_institutions=[r["affiliation"] for r in author_rows if r["affiliation"]]
         or profile.author_institutions,
         author_countries=profile.origin_countries,
@@ -763,6 +792,21 @@ def run_coi(args: argparse.Namespace) -> int:
 # ------------------------------------------------------------------ report
 
 
+def _evidence(payload: dict) -> rank.Evidence:
+    return rank.Evidence(
+        paper_id=payload["paper_id"],
+        title=payload["title"],
+        year=payload["year"],
+        position=payload["position"],
+        position_weight=payload["position_weight"],
+        similarity=payload["similarity"],
+        url=payload.get("url", ""),
+        doi=payload.get("doi", ""),
+        venue=payload.get("venue", ""),
+        venue_type=payload.get("venue_type", ""),
+    )
+
+
 def run_report(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     state = workspace.load_state()
@@ -788,20 +832,12 @@ def run_report(args: argparse.Namespace) -> int:
             if person is None:
                 continue
             candidate = rank.Candidate(person=person)
-            candidate.evidence = [
-                rank.Evidence(
-                    paper_id=e["paper_id"],
-                    title=e["title"],
-                    year=e["year"],
-                    position=e["position"],
-                    position_weight=e["position_weight"],
-                    similarity=e["similarity"],
-                    url=e.get("url", ""),
-                    doi=e.get("doi", ""),
-                    venue=e.get("venue", ""),
-                    venue_type=e.get("venue_type", ""),
-                )
-                for e in row["evidence"]
+            candidate.evidence = [_evidence(e) for e in row["evidence"]]
+            # Written since the relevant record became a separate field; an
+            # older workspace falls back to its evidence rather than reporting
+            # an empty record, which a counting rule would read as a failure.
+            candidate.relevant_papers = [
+                _evidence(e) for e in row.get("relevant_papers") or row["evidence"]
             ]
             candidate.person.topics = discover.topics_for(conn, candidate)
 

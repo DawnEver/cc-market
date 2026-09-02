@@ -31,6 +31,11 @@ block = [
 
 # Flags for the editor to judge. These stay in the shortlist, marked.
 review = [
+  # A co-authorship with somebody who merely shares a submitting author's name.
+  # Three researchers publish as "Wei Hua"; blocking on the name would remove a
+  # legitimate reviewer on no evidence, and hiding it would drop the commonest
+  # conflict there is. So the editor sees it and decides.
+  "possible_recent_coauthor",
   "same_institution",
   "previous_institution_overlap",
   "dense_historic_collaboration",
