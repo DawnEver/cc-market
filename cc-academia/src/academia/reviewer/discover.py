@@ -263,9 +263,13 @@ def build_candidates(
     second authors would systematically miss senior reviewers in fields that put
     the group leader last.
     """
-    ranked = sorted(paper_scores.items(), key=lambda kv: -kv[1])[:top_papers]
+    ranked = sorted(paper_scores.items(), key=lambda kv: -kv[1])
+    shown = {paper_id for paper_id, _ in ranked[:top_papers]}
     by_person: dict[str, list[Evidence]] = {}
+    record: dict[str, list[Evidence]] = {}
 
+    # Two passes over one loop: the top papers become the evidence an editor
+    # reads, and every relevant paper becomes the record a counting rule needs.
     for paper_id, similarity in ranked:
         row = repo.get_paper(conn, paper_id)
         if row is None:
@@ -274,20 +278,21 @@ def build_candidates(
             "SELECT person_id, position, position_weight FROM authorships WHERE paper_id = ?",
             (paper_id,),
         ):
-            by_person.setdefault(authorship["person_id"], []).append(
-                Evidence(
-                    paper_id=paper_id,
-                    title=row["title"],
-                    year=row["year"],
-                    url=_readable_url(row),
-                    doi=row["doi"] or "",
-                    venue=row["venue"] or "",
-                    venue_type=row["venue_type"] or "",
-                    position=authorship["position"] or "middle",
-                    position_weight=authorship["position_weight"],
-                    similarity=similarity,
-                )
+            item = Evidence(
+                paper_id=paper_id,
+                title=row["title"],
+                year=row["year"],
+                url=_readable_url(row),
+                doi=row["doi"] or "",
+                venue=row["venue"] or "",
+                venue_type=row["venue_type"] or "",
+                position=authorship["position"] or "middle",
+                position_weight=authorship["position_weight"],
+                similarity=similarity,
             )
+            record.setdefault(authorship["person_id"], []).append(item)
+            if paper_id in shown:
+                by_person.setdefault(authorship["person_id"], []).append(item)
 
     candidates: list[Candidate] = []
     for person_id, evidence in by_person.items():
@@ -297,7 +302,10 @@ def build_candidates(
         if person is None:
             continue
         evidence.sort(key=lambda e: -e.similarity)
-        candidates.append(Candidate(person=person, evidence=evidence[:10]))
+        papers = sorted(record.get(person_id, evidence), key=lambda e: -e.similarity)
+        candidates.append(
+            Candidate(person=person, evidence=evidence[:10], relevant_papers=papers)
+        )
 
     # Ordered by evidence strength, because every downstream `--limit` slices
     # this list. Unordered, enriching 40 of 200 candidates could miss all of the

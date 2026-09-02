@@ -109,7 +109,14 @@ def test_the_window_is_configurable(conn, policy):
     assert not eligibility.assess(conn, person, wide, now_year=NOW).excluded
 
 
-def test_tte_rejects_more_than_ten_years_since_doctorate(conn):
+def test_a_long_career_is_noted_under_tte_and_excludes_nobody(conn):
+    """Career length is a preference there, not a bar.
+
+    It was a requirement with a ten-year ceiling, which removed every senior
+    researcher in a pool — the people an editor most wants a report from — and
+    left a run with nobody to invite. The signal is still worth having, so it
+    is reported; it just does not disqualify.
+    """
     person = author_with_papers(conn, 2025, name="SeniorExpert")
     person.education.append(
         Education(inst_id="i1", institution="Some Uni", degree="PhD", year_to=2015)
@@ -117,17 +124,28 @@ def test_tte_rejects_more_than_ten_years_since_doctorate(conn):
 
     assessment = eligibility.assess(conn, person, load_policy("tte"), now_year=NOW)
 
-    assert assessment.excluded
-    assert "exceeds maximum of 10 years" in assessment.reason
+    assert not assessment.excluded
+    assert any("exceeds maximum of 10 years" in note for note in assessment.notes())
 
 
-def test_tte_rejects_a_publication_career_over_ten_years(conn):
+def test_a_long_publication_career_is_noted_rather_than_excluded(conn):
     person = author_with_papers(conn, 2015, 2025, name="LongCareer")
 
     assessment = eligibility.assess(conn, person, load_policy("tte"), now_year=NOW)
 
-    assert assessment.excluded
-    assert "publication career" in assessment.reason
+    assert not assessment.excluded
+    assert any("publication career" in note for note in assessment.notes())
+
+
+def test_a_career_ceiling_still_excludes_where_a_journal_requires_it(conn):
+    """The mechanism is intact — TTE simply does not use it."""
+    from academia.reviewer.policy import Constraint
+
+    person = author_with_papers(conn, 2015, 2025, name="LongCareer")
+    required = Constraint(name="career", mode="require", settings={"max_years": 10})
+    outcome = eligibility._career(person, [2015, 2025], required, NOW)
+
+    assert outcome.excluded
 
 
 def test_tte_requires_a_relevant_paper_in_the_last_three_years():

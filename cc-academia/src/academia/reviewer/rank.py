@@ -70,6 +70,12 @@ class Evidence:
 class Candidate:
     person: Person
     evidence: list[Evidence] = field(default_factory=list)
+    #: Every relevant paper of theirs in this run's corpus, not just the
+    #: highest-scoring few that get shown. Rules that count a record have to
+    #: read this: the shown evidence is capped at the top papers overall, so a
+    #: median candidate keeps one paper and a floor of three would be
+    #: unsatisfiable by construction rather than by merit.
+    relevant_papers: list[Evidence] = field(default_factory=list)
     verdict: coi_module.Verdict | None = None
     geo: GeoAssessment | None = None
     eligibility: eligibility_module.Assessment | None = None
@@ -156,17 +162,6 @@ def _reviewer_history(conn: sqlite3.Connection, person: Person) -> tuple[float, 
     return min(1.0, (responded + accepted) / (2 * invited)), notes
 
 
-def _seniority_note(person: Person, policy: Policy, now_year: int) -> str:
-    age = person.academic_age(now_year)
-    if age is None:
-        return ""
-    if age < policy.min_academic_age:
-        return f"academic age {age} is below the journal minimum of {policy.min_academic_age}"
-    if policy.max_academic_age and age > policy.max_academic_age:
-        return f"academic age {age} exceeds the journal maximum of {policy.max_academic_age}"
-    return ""
-
-
 def _student_note(person: Person, now_year: int) -> str:
     """Flag a candidate who is still in training.
 
@@ -212,15 +207,25 @@ def score_candidate(
     # only feeds a component and leaves its reason in the notes.
     assessment = eligibility_module.assess(conn, candidate.person, policy, now_year=now_year)
     candidate.eligibility = assessment
+    # The whole relevant record again, not the top few papers: "has this person
+    # published on the topic lately" is a question about their record, and the
+    # evidence list is capped by how many papers the run kept overall.
     relevant = eligibility_module.assess_relevant_activity(
-        [evidence.year for evidence in candidate.evidence if evidence.year],
+        [
+            paper.year
+            for paper in (candidate.relevant_papers or candidate.evidence)
+            if paper.year
+        ],
         policy.relevant_activity,
         now_year=now_year,
     )
     assessment.outcomes.append(relevant)
     assessment.outcomes.append(
+        eligibility_module.assess_academic_age(candidate.person, policy, now_year)
+    )
+    assessment.outcomes.append(
         eligibility_module.assess_related_journals(
-            [evidence.venue_type for evidence in candidate.evidence],
+            candidate.relevant_papers or candidate.evidence,
             policy.related_journals,
         )
     )
@@ -248,8 +253,6 @@ def score_candidate(
     candidate.score = sum(components[k] * weights.get(k, 0.0) for k in components)
 
     candidate.notes.extend(assessment.notes())
-    if (note := _seniority_note(candidate.person, policy, now_year)):
-        candidate.notes.append(note)
     if (note := _student_note(candidate.person, now_year)):
         candidate.notes.append(note)
     if candidate.person.confidence < 0.6:

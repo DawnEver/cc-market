@@ -18,6 +18,7 @@ from academia.core.models import Affiliation, Person
 from academia.reviewer import eligibility
 from academia.reviewer import policy as policy_module
 from academia.reviewer.policy import Policy, load_policy
+from academia.reviewer.rank import Evidence
 from academia.store import db
 
 NOW = 2026
@@ -123,9 +124,25 @@ def test_tte_does_not_invite_from_india_or_iran(conn):
 # ---------------------------------------------------- related journals ----
 
 
+def papers(*venue_types: str, position: str = "first") -> list[Evidence]:
+    """The relevant record, as the ranker hands it to the rule."""
+    return [
+        Evidence(
+            paper_id=f"paper-{index}",
+            title=f"Paper {index}",
+            year=NOW,
+            position=position,
+            position_weight=1.0,
+            similarity=0.5,
+            venue_type=venue_type,
+        )
+        for index, venue_type in enumerate(venue_types)
+    ]
+
+
 def test_enough_journal_papers_passes():
     outcome = eligibility.assess_related_journals(
-        ["Journal", "journal-article", "JournalArticle"], related().related_journals
+        papers("Journal", "journal-article", "JournalArticle"), related().related_journals
     )
 
     assert outcome.passed
@@ -134,7 +151,7 @@ def test_enough_journal_papers_passes():
 
 def test_conference_papers_do_not_count_towards_the_floor():
     outcome = eligibility.assess_related_journals(
-        ["Journal", "Conference", "Conference"], related().related_journals
+        papers("Journal", "Conference", "Conference"), related().related_journals
     )
 
     assert outcome.excluded
@@ -143,7 +160,7 @@ def test_conference_papers_do_not_count_towards_the_floor():
 
 def test_an_unresolved_venue_is_reported_rather_than_counted_against_anyone():
     outcome = eligibility.assess_related_journals(
-        ["Journal", "Journal", ""], related().related_journals
+        papers("Journal", "Journal", ""), related().related_journals
     )
 
     assert not outcome.excluded
@@ -152,14 +169,14 @@ def test_an_unresolved_venue_is_reported_rather_than_counted_against_anyone():
 
 
 def test_unresolved_venues_that_could_not_reach_the_floor_still_fail():
-    outcome = eligibility.assess_related_journals(["Conference", ""], related().related_journals)
+    outcome = eligibility.assess_related_journals(papers("Conference", ""), related().related_journals)
 
     assert outcome.excluded
     assert not outcome.manual_review
 
 
 def test_under_prefer_a_thin_journal_record_annotates_but_keeps():
-    outcome = eligibility.assess_related_journals(["Conference"], related("prefer").related_journals)
+    outcome = eligibility.assess_related_journals(papers("Conference"), related("prefer").related_journals)
 
     assert not outcome.passed
     assert not outcome.excluded
@@ -176,5 +193,48 @@ def test_tte_requires_three_related_journal_papers():
     constraint = load_policy("tte").related_journals
 
     assert constraint.excluding
-    assert eligibility.assess_related_journals(["Journal"] * 3, constraint).passed
-    assert eligibility.assess_related_journals(["Journal"] * 2, constraint).excluded
+    assert eligibility.assess_related_journals(papers(*["Journal"] * 3), constraint).passed
+    assert eligibility.assess_related_journals(papers(*["Journal"] * 2), constraint).excluded
+
+
+@pytest.mark.parametrize(
+    "venue_type,journal",
+    [
+        # OpenAlex states the work type and leaves the journal in the venue.
+        ("article", True),
+        ("review", True),
+        ("conference-paper", False),
+        ("preprint", False),
+        ("dissertation", False),
+        # IEEE states the venue type instead.
+        ("IEEE Journals", True),
+        ("IEEE Conferences", False),
+        ("IEEE Standards", False),
+        ("Artech Books", False),
+        # Spellings seen from other sources.
+        ("journal-article", True),
+        ("JournalArticle", True),
+    ],
+)
+def test_both_vocabularies_are_read(venue_type, journal):
+    """One column, two sources, two ways of naming the same thing."""
+    assert eligibility.is_journal(venue_type) is journal
+    assert eligibility.venue_type_stated(venue_type)
+
+
+def test_an_unstated_venue_is_neither(monkeypatch):
+    assert not eligibility.is_journal("")
+    assert not eligibility.venue_type_stated("")
+    assert not eligibility.venue_type_stated("something nobody has seen")
+
+
+def test_openalex_articles_count_towards_the_floor():
+    outcome = eligibility.assess_related_journals(
+        papers("article", "article", "review", "conference-paper"),
+        related().related_journals,
+    )
+
+    assert outcome.passed
+    assert outcome.facts["related_journal_count"] == 3
+    assert outcome.facts["related_nonjournal_count"] == 1
+    assert outcome.facts["related_unknown_type_count"] == 0
