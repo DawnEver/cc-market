@@ -325,6 +325,11 @@ def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources)
     (directory / "dossiers").mkdir(parents=True)
     stale = directory / "dossiers" / "07-person-old.md"
     stale.write_text("from an earlier run", encoding="utf-8")
+    # A pool of more than ninety-nine ranks three digits wide, and the cleanup
+    # pattern used to assume two — so exactly the deep entries a wider run adds
+    # were the ones left behind.
+    deep = directory / "dossiers" / "141-person-old.md"
+    deep.write_text("from an earlier, wider run", encoding="utf-8")
 
     with db.session(tmp_path / "e.db") as conn:
         report_module.write_all(
@@ -336,6 +341,7 @@ def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources)
         )
 
     assert not stale.exists()
+    assert not deep.exists()
 
 
 def _init_and_profile(slug):

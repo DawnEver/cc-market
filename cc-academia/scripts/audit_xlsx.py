@@ -32,7 +32,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 DROP = ("person_id",)
-RENAME = {"selected_for_contact": "recommend_for_reviewer", "filter_details": "reasoning"}
+RENAME = {"recommendation": "recommend_for_reviewer", "filter_details": "reasoning"}
 
 #: Columns that state a policy threshold rather than a fact about the person.
 #: Dropped from the sheet when they hold one value for everybody — sixty columns
@@ -60,9 +60,12 @@ DIMENSIONS: list[tuple[str, tuple[str, ...]]] = [
     ("Decision", ("recommend_for_reviewer", "blocking_reason")),
     ("Conflict of interest", ("coi",)),
     ("Geography", ("author_country",)),
-    ("Restricted country", ("banned_country",)),
+    ("Restricted country", ("restricted_countr",)),
     ("Related-journal record", ("related_",)),
-    ("Recent activity", ("recent_activity", "recent_paper", "latest_year")),
+    ("Still publishing", ("activity_",)),
+    ("Recent activity on this topic", ("recent_activity", "recent_paper", "latest_year")),
+    ("Career length", ("career_",)),
+    ("Years since the doctorate", ("academic_age",)),
     ("Doctoral floor", ("doctoral_year", "is_doctoral")),
     ("Invitation response", ("invitation_", "recent_invitation")),
     ("Unresponsive veteran", ("unresponsive_veteran", "veteran_")),
@@ -87,9 +90,11 @@ LABELS: dict[str, str] = {
     "author_country_known": "Is the current country known?",
     "author_country_cross_region": "In a different country from the submission? (adds score, never excludes)",
     "author_country_origin_count": "Countries the submission comes from",
-    "banned_country": "Rule: not working in {restricted_countries}",
-    "banned_country_known": "Is the country known, for the restricted-list check?",
-    "banned_country_is_banned": "Working in {restricted_countries}",
+    "restricted_country": "Rule: not working in {restricted_countries}",
+    "restricted_country_known": "Is the country known, for the restricted-list check?",
+    "restricted_country_current": "Country of the current affiliation",
+    "restricted_country_is_restricted": "Working in {restricted_countries}",
+    "restricted_countries": "Countries this journal will not invite from",
     "related_journal_publications": "Rule: related journal papers ≥ {related_journal_minimum}",
     "related_journal_count": "Related journal papers — {related_journal_minimum} required",
     "related_journal_gap": "Related journal papers above the {related_journal_minimum} required",
@@ -104,7 +109,21 @@ LABELS: dict[str, str] = {
     "related_leadership_count": "Of those, in a leading role (first, last or corresponding)",
     "related_position_weight_sum": "Author-position score, total",
     "related_position_weight_mean": "Author-position score, average (1.0 = always leading)",
-    "recent_activity": "Rule: ≥ {recent_paper_minimum} paper in the last {recent_window_years} years",
+    "recent_relevant_activity": "Rule: ≥ {recent_paper_minimum} paper on this topic in the last {recent_window_years} years",
+    "recent_activity": "Rule: still publishing — ≥ {activity_paper_minimum} paper in the last {activity_window_years} years",
+    "activity_known": "Is a publication profile available?",
+    "activity_paper_count": "Papers of any kind in the last {activity_window_years} years — {activity_paper_minimum} required",
+    "activity_paper_gap": "Papers above the {activity_paper_minimum} required",
+    "activity_latest_year": "Most recent publication year, any topic",
+    "activity_source": "Whether the count came from the publication profile or only from papers this run harvested",
+    "career_length": "Rule: career length (a preference under this journal, excludes nobody)",
+    "career_known": "Is a career length known?",
+    "career_years": "Years since the doctorate, or since the first paper — preferred at or below {career_years_maximum}",
+    "career_years_gap": "Years below the {career_years_maximum} preferred",
+    "academic_age": "Rule: years since the doctorate ≥ {academic_age_minimum}",
+    "academic_age_known": "Is a doctorate year on record? ORCID states one for a minority.",
+    "academic_age_value": "Years since the doctorate — {academic_age_minimum} required",
+    "academic_age_gap": "Years above the {academic_age_minimum} required",
     "recent_activity_known": "Is a publication profile available?",
     "recent_paper_count": "Papers in the last {recent_window_years} years — {recent_paper_minimum} required",
     "latest_year": "Most recent publication year",
@@ -136,15 +155,22 @@ LABELS: dict[str, str] = {
     "veteran_career_minimum": "Career length that makes the veteran rule apply",
     "veteran_invitation_minimum": "Invitations needed before a veteran is judged",
     "veteran_response_rate_maximum": "Answer rate at or below which someone counts as unresponsive",
+    "activity_paper_minimum": "Papers of any kind required in the recent window",
+    "activity_window_years": "Length of the still-publishing window, in years",
+    "career_years_maximum": "Career length this journal prefers to stay within",
+    "academic_age_minimum": "Years since the doctorate required",
+    "academic_age_maximum": "Years since the doctorate allowed (0 means no ceiling)",
 }
 
 
 #: What ``Why not recommended`` says. A dimension name is not a reason.
 BLOCKING_REASONS = {
     "coi": "Conflict of interest with the authors",
-    "banned_country": "Works in a restricted country",
+    "restricted_country": "Works in a restricted country",
     "related_journal_publications": "Too few papers in related journals",
-    "recent_activity": "Not publishing recently",
+    "recent_relevant_activity": "Nothing published on this topic lately",
+    "recent_activity": "Not publishing at all lately",
+    "academic_age": "Too soon after the doctorate",
     "doctoral_year": "PhD student below the year floor",
     "invitation_response": "Rarely answers review invitations",
     "unresponsive_veteran": "Long career, no longer answers invitations",
@@ -193,9 +219,12 @@ def missing_thresholds(header: list[str]) -> list[str]:
 #: The verdict column of each dimension, in the order a blocking reason is read.
 VERDICTS_IN_ORDER = (
     "coi",
-    "banned_country",
+    "restricted_country",
     "related_journal_publications",
+    "recent_relevant_activity",
     "recent_activity",
+    "academic_age",
+    "career_length",
     "doctoral_year",
     "invitation_response",
     "unresponsive_veteran",
@@ -204,6 +233,9 @@ VERDICTS_IN_ORDER = (
 #: PASS / FILTERED / PREFERENCE_MISSED are pipeline vocabulary. A reader who has
 #: never seen the pipeline gets the same states in words they already know.
 VERDICT_TEXT = {
+    "recommend": "Recommend",
+    "check_first": "Check first",
+    "do_not_invite": "Do not invite",
     "PASS": "Pass",
     "CLEAR": "Pass",
     "FILTERED": "Fail",
@@ -214,6 +246,9 @@ VERDICT_TEXT = {
 }
 
 VERDICT_STYLE = {
+    "Recommend": ("C6EFCE", "0B6B2E"),
+    "Check first": ("FFE9A8", "8A6100"),
+    "Do not invite": ("F8C9C6", "9C0006"),
     "Pass": ("C6EFCE", "0B6B2E"),
     "Fail": ("F8C9C6", "9C0006"),
     "No evidence": ("FFE9A8", "8A6100"),
@@ -227,6 +262,8 @@ VERDICT_STYLE = {
 MEASURES: tuple[tuple[str, str, bool], ...] = (
     ("related_journal_count", "related_journal_minimum", True),
     ("recent_paper_count", "recent_paper_minimum", True),
+    ("activity_paper_count", "activity_paper_minimum", True),
+    ("academic_age_value", "academic_age_minimum", True),
     ("doctoral_year_value", "doctoral_year_minimum", True),
     ("invitation_response_rate", "invitation_response_rate_minimum", True),
     ("recent_invitation_count", "recent_invitation_minimum", True),
@@ -242,7 +279,10 @@ MEASURES: tuple[tuple[str, str, bool], ...] = (
 RULE_MEASURES = {
     "coi": "coi_severity",
     "related_journal_publications": "related_journal_count",
-    "recent_activity": "recent_paper_count",
+    "recent_relevant_activity": "recent_paper_count",
+    "recent_activity": "activity_paper_count",
+    "academic_age": "academic_age_value",
+    "career_length": "career_years",
     "doctoral_year": "doctoral_year_value",
     "invitation_response": "invitation_response_rate",
 }
@@ -251,6 +291,8 @@ RULE_MEASURES = {
 GAP_COLUMNS = (
     "related_journal_gap",
     "recent_paper_gap",
+    "activity_paper_gap",
+    "academic_age_gap",
     "doctoral_year_gap",
     "invitation_response_rate_gap",
 )
@@ -271,7 +313,7 @@ HOW_TO_READ = [
     ("How to read this workbook", ""),
     (
         "1. Start on the decision sheet.",
-        "One row per candidate, one column per dimension. Filter ‘Recommend as reviewer’ = TRUE for the people who cleared everything.",
+        "One row per candidate, one column per dimension. Filter ‘Recommend as reviewer’ for Recommend (cleared everything) or Check first (cleared every rule, something still needs a human).",
     ),
     (
         "2. To ask why somebody is out, filter ‘Why not recommended’.",
@@ -323,7 +365,7 @@ GLOSSARY: dict[str, str] = {
     "email": "Best verified contact address; details/evidence records where it came from.",
     "institution": "Current affiliation.",
     "current_country": "ISO code of the current affiliation, never nationality.",
-    "recommend_for_reviewer": "TRUE only when every required dimension passed. This is the shortlist.",
+    "recommend_for_reviewer": "Recommend = every required rule passed and an address was verified against the institution. Check first = every rule passed but something still needs a human (usually the address). Do not invite = a rule excluded them.",
     "blocking_reason": "The first dimension that excluded this candidate; blank when none did. Derived here, not in the CSV.",
     "coi": "Conflict-of-interest verdict under coi.toml plus the journal overlay: CLEAR or FILTERED.",
     "coi_severity": "0 clear, 1 review-level, 2 blocking.",
@@ -573,8 +615,8 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
     # so a policy that has moved on cannot leave a workbook claiming the old rule.
     restricted = restricted_countries(src, journal)
     THRESHOLDS["restricted_countries"] = describe_countries(restricted)
-    if restricted and "banned_country_is_banned" in header:
-        position = header.index("banned_country_is_banned")
+    if restricted and "restricted_country_is_restricted" in header:
+        position = header.index("restricted_country_is_restricted")
         country = header.index("current_country")
         flagged = {row[country] for row in body if row[position] == 1}
         present = {row[country] for row in body if row[country] in restricted}

@@ -21,6 +21,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from academia.reviewer import eligibility as eligibility_module
 from academia.reviewer import trajectory
 from academia.reviewer.coi import CLEAR, CLEAR_WORDING
 from academia.reviewer.eligibility import invitation_readiness
@@ -428,6 +429,120 @@ def render_contact_list(rows: list[Row]) -> str:
     return _detail_csv(CONTACT_COLUMNS, records)
 
 
+#: Three states, not a yes/no. Somebody who meets every rule but whose address
+#: could not be checked against their institution is neither a recommendation
+#: nor a rejection, and a boolean column has to lie about one of them.
+RECOMMENDATION = {
+    "eligible": "recommend",
+    "manual_review": "check_first",
+    "rejected": "do_not_invite",
+}
+
+
+#: Identity first, then the decision, then one block per rule. Order matters
+#: only for reading: the workbook groups on these names.
+AUDIT_IDENTITY = ("rank", "reviewer", "email", "institution", "current_country")
+
+#: Columns that state a policy threshold rather than a fact about a person.
+THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_target", "_window_years")
+
+
+def render_audit(rows: list[Row]) -> str:
+    """One row per candidate, one column per thing a rule looked at.
+
+    The counterpart to the shortlist: the shortlist says who to invite, this
+    says why everybody else was not. Every column comes from a rule that
+    actually ran — the verdict it reached, the numbers it compared and the
+    threshold it compared them against — so a run whose policy differs produces
+    a differently shaped file rather than a file with misleading headings.
+
+    Two things stay out. The rules that were switched off contribute nothing,
+    because a column of blanks reads as a rule that found nothing wrong. And
+    ``person_id`` is absent: it identifies a row in a store nobody reading a
+    spreadsheet has, and the reviewer's name is the identity that matters here.
+    """
+    columns: list[str] = [*AUDIT_IDENTITY, "recommendation", "filter_coi"]
+    seen = set(columns)
+    records: list[dict[str, object]] = []
+
+    for row in rows:
+        candidate = row.candidate
+        person = candidate.person
+        verdict = candidate.verdict
+        decision = invitation_readiness(
+            candidate,
+            row.email,
+            domain_status=email_affiliation_domain(person, row.email.email),
+        )
+        record: dict[str, object] = {
+            "rank": row.rank,
+            "reviewer": person.display_name,
+            "email": row.email.email if row.email.found else "",
+            "institution": row.institution,
+            "current_country": person.country_code or "",
+            "recommendation": RECOMMENDATION[decision.status],
+            "filter_coi": "CLEAR" if not verdict or verdict.status == "CLEAR" else "FILTERED",
+            "filter_coi_severity": {"CLEAR": 0, "REVIEW": 1, "BLOCK": 2}.get(
+                verdict.status if verdict else "CLEAR", 0
+            ),
+            "filter_coi_finding_count": len(verdict.findings) if verdict else 0,
+        }
+        for name in ("filter_coi_severity", "filter_coi_finding_count"):
+            if name not in seen:
+                columns.append(name)
+                seen.add(name)
+
+        if candidate.geo is not None:
+            record["filter_author_country_reference"] = candidate.geo.describe()
+            record["filter_author_country_cross_region"] = int(candidate.geo.cross_region)
+            for name in (
+                "filter_author_country_reference",
+                "filter_author_country_cross_region",
+            ):
+                if name not in seen:
+                    columns.append(name)
+                    seen.add(name)
+
+        details: list[str] = []
+        for outcome in candidate.eligibility.outcomes if candidate.eligibility else []:
+            if outcome.detail == "not assessed":
+                continue
+            verdict_column = f"filter_{outcome.rule}"
+            record[verdict_column] = eligibility_module.verdict_of(outcome)
+            if verdict_column not in seen:
+                columns.append(verdict_column)
+                seen.add(verdict_column)
+            for key, value in outcome.facts.items():
+                column = f"filter_{key}"
+                record[column] = value
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
+            details.append(outcome.detail)
+
+        record["filter_details"] = "; ".join(details)
+        records.append(record)
+
+    if "filter_details" not in seen:
+        columns.append("filter_details")
+
+    # A threshold belongs to the run, not to a person, so it is stated on every
+    # row — including the rows of candidates a conflict removed before any rule
+    # could measure them. Everything else that is missing stays missing: a rule
+    # that did not run for somebody is a gap in the record, not a zero.
+    thresholds = {
+        column: value
+        for column in columns
+        if column.endswith(THRESHOLD_SUFFIXES)
+        for value in (next((r[column] for r in records if column in r), None),)
+        if value is not None
+    }
+    return _detail_csv(
+        tuple(columns),
+        [{c: r.get(c, thresholds.get(c, "")) for c in columns} for r in records],
+    )
+
+
 def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     person = row.candidate.person
     out: list[str] = []
@@ -553,8 +668,11 @@ def write_all(
     dossier_dir = directory / "dossiers"
     dossier_dir.mkdir(parents=True, exist_ok=True)
     # Dossier filenames carry the rank, so a re-run after tuning the profile
-    # would otherwise leave last run's ranking sitting beside this one's.
-    for previous in dossier_dir.glob("[0-9][0-9]-person-*.md"):
+    # would otherwise leave last run's ranking sitting beside this one's. The
+    # rank is not two digits wide: a pool of 166 reaches three, and a pattern
+    # that assumed two left every hundredth-and-later dossier behind to be read
+    # as part of this shortlist.
+    for previous in dossier_dir.glob("[0-9]*-person-*.md"):
         previous.unlink()
 
     shortlist = directory / "shortlist.md"
@@ -579,6 +697,9 @@ def write_all(
     contacts = directory / "contact-list.csv"
     contacts.write_text(render_contact_list(rows), encoding="utf-8-sig")
 
+    audit = directory / "contact-list-audit.csv"
+    audit.write_text(render_audit(rows), encoding="utf-8-sig")
+
     reading = directory / "reading-list.md"
     reading.write_text(render_reading_list(rows), encoding="utf-8")
 
@@ -590,6 +711,7 @@ def write_all(
         "shortlist": shortlist,
         "csv": csv_path,
         "contact_list": contacts,
+        "contact_list_audit": audit,
         "reading_list": reading,
         "dossiers": dossier_dir,
     }
