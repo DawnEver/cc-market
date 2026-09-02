@@ -1077,3 +1077,25 @@ def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
     )
 
     assert finding.email == "zaixin.song@polyu.edu.hk"
+
+
+def test_pdf_text_falls_back_when_the_layout_reader_is_absent(monkeypatch):
+    """CI excludes the git-only reader, and so does any offline install.
+
+    Going dark there would mean an address printed only in a PDF footnote — the
+    one the editorial system does not already have — silently stops being
+    found, with a debug line as the only trace.
+    """
+    pytest.importorskip("fitz")
+    import builtins
+
+    real_import = builtins.__import__
+
+    def without_ingest(name, *args, **kwargs):
+        if name == "paper_pdf_ingest":
+            raise ImportError("no git dependency here")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_ingest)
+
+    assert "fallback@uni.edu" in contact.pdf_text(_one_page_pdf("write to fallback@uni.edu"))

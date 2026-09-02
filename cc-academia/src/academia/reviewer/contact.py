@@ -161,7 +161,16 @@ def looks_like_pdf(body: bytes, content_type: str = "", url: str = "") -> bool:
 
 
 def pdf_text(body: bytes, *, front_pages: int = PDF_FRONT_PAGES) -> str:
-    """Extract full-paper text through ``paper_pdf_ingest`` fast mode."""
+    """Extract full-paper text, best available reader first.
+
+    ``paper_pdf_ingest`` reads a paper's layout, which is what finds an address
+    in a two-column footnote. It installs from git, so it is absent wherever a
+    git dependency cannot be fetched — including this project's own CI, which
+    excludes it deliberately. PyMuPDF ships in the same extra from PyPI and can
+    still read the text, just without the layout work, so it is the fallback
+    rather than the feature simply going dark: an address printed only in a PDF
+    is the one the editorial system will not have.
+    """
     del front_pages  # retained for source-compatible callers and policy files
     try:
         from pathlib import Path
@@ -175,11 +184,25 @@ def pdf_text(body: bytes, *, front_pages: int = PDF_FRONT_PAGES) -> str:
             pdf.write_bytes(body)
             text, _tool = convert(pdf, root / "output", mode="fast")
             return text
-    except ImportError:  # pragma: no cover - depends on optional extra
-        log.detail("a PDF was fetched but the 'pdf' extra is not installed")
+    except ImportError:
+        return _pdf_text_via_pymupdf(body)
     except Exception as error:  # a malformed or encrypted PDF is not an outage
         log.detail(f"paper_pdf_ingest could not read PDF: {error}")
     return ""
+
+
+def _pdf_text_via_pymupdf(body: bytes) -> str:
+    try:
+        import fitz
+    except ImportError:  # pragma: no cover - depends on optional extra
+        log.detail("a PDF was fetched but the 'pdf' extra is not installed")
+        return ""
+    try:
+        with fitz.open(stream=body, filetype="pdf") as document:
+            return "\n".join(page.get_text() for page in document)
+    except Exception as error:  # a malformed or encrypted PDF is not an outage
+        log.detail(f"could not read PDF: {error}")
+        return ""
 
 
 def extract_page_emails(html: str) -> list[str]:
