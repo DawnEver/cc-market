@@ -9,7 +9,7 @@ metadata:
 
 # `scripts/audit_xlsx.py`, and the two rules it exposed
 
-Uncommitted. `uv run --extra xlsx python scripts/audit_xlsx.py
+`uv run --extra xlsx python scripts/audit_xlsx.py
 <workspace>/ongoing/<slug>/5-shortlist/contact-list-audit.csv` writes `.xlsx`
 beside the input — code here, output in the case workspace. `openpyxl` is
 declared as the optional `xlsx` extra; nothing in the pipeline itself writes a
@@ -31,8 +31,10 @@ then the thresholds pulled out of the sheets).
 
 The user drove all of these, several by rejecting an earlier attempt.
 
-- `person_id` dropped; `selected_for_contact` → `Recommend as reviewer`;
-  `filter_` prefixes stripped.
+- `person_id` dropped; `recommendation` → `Recommend as reviewer`;
+  `filter_` prefixes stripped. The recommendation is three states —
+  Recommend / Check first / Do not invite — because "meets every rule, address
+  unverified" is neither a recommendation nor a rejection.
 - **`Why not recommended` is derived by the script, not in the CSV** — the first
   failed check in a fixed precedence order (COI → restricted country →
   related-journal → activity → doctoral → invitation response → veteran),
@@ -80,29 +82,83 @@ applied ad hoc by whatever produced the audit CSV — **neither existed in
   venue type is reported, not counted; somebody who would clear the floor if
   only those were resolved goes to `manual_review` rather than failing. TTE: 3.
 
-Venue type is matched on the substring `journal` because sources spell it
-`Journal`, `journal-article`, `Journals`, `JournalArticle`.
+Venue type turned out to carry two vocabularies, which cost a whole rule:
+OpenAlex states the *work* type (`article`, `review`, `conference-paper`) and
+leaves the journal name in the venue, IEEE states the *venue* type (`IEEE
+Journals`, `IEEE Conferences`, `Artech Books`). Matching the substring
+`journal` read only the second, so every OpenAlex journal paper scored as a
+non-journal. `is_journal` now reads both and `venue_type_stated` says whether
+the record claims anything at all.
 
-## What the tte-2026-08-2905 run actually says
+## The CSV has a producer now
 
-160 candidates, 2 recommended. Blocked by: 149 too few related-journal papers,
-5 restricted country, 4 COI (all `manuscript_author`).
+The audit CSV was written by a script that no longer exists, so the file an
+editor filtered on described a policy that had moved on and could not be
+regenerated. `report` writes `contact-list-audit.csv` itself, from the same
+outcomes the pipeline computed: one column group per rule that *ran*, carrying
+its verdict, the numbers it compared and the thresholds it applied.
 
-**The invitation-response and unresponsive-veteran rules are `No evidence` for
-everybody** — the store holds no invitation history, so both abstain by design.
-Only three dimensions did real work. Also suspicious and unresolved: across 160
-topically-close candidates, *no* COI rule other than `manuscript_author` fired —
-no `recent_coauthor`, no `same_institution`. Worth verifying the collaboration
-data ever reached the COI engine.
+That required `RuleOutcome.facts` — the arithmetic behind the sentence — plus
+`RuleOutcome.abstained`, because a rule that had no evidence passes but must not
+read as a pass. Verdict vocabulary lives in `eligibility.verdict_of`:
+PASS / FILTERED / VERIFY / PREFERENCE_MISSED. Thresholds are stated on every
+row, including rows of candidates a conflict removed before any rule measured
+them, because a threshold belongs to the run and not to a person.
 
-Note too that TTE narrows `coauthor_years` to 4 from the default 5, which makes
-it **looser** than the default policy, and that `run-state.md` describes a
-21-candidate run while this CSV has 160 — they are different runs.
+## Four defects the workbook exposed
+
+All four made a rule look like it had cleared somebody it never examined.
+
+1. **`manuscript_authors.person_id` was never filled in.** The co-authorship,
+   shared-doctorate and advisor rules all key on person ids, so all three ran
+   against an empty list. Resolution happens at `coi` time (the corpus does not
+   exist earlier). An ORCID identifies and blocks; a name only raises
+   `possible_recent_coauthor` for the editor — three researchers publish as
+   "Wei Hua".
+2. **Affiliation strings were compared whole.** A manuscript gives "the School
+   of Electrical Engineering, Southeast University, Nanjing 210096, China",
+   which never equals a recorded employer. Compared segment by segment now;
+   `same_department` needs the department named on both sides rather than merely
+   present in the candidate's record.
+3. **Counting rules counted the sample, not the record.** `candidate.evidence`
+   is what survived the top-papers cut — a median of one paper — so a floor of
+   three was unsatisfiable by construction. `Candidate.relevant_papers` carries
+   the whole relevant record and the counting rules read that.
+4. **`academic_age` only ever spoke when it had a complaint**, so nothing could
+   verify it had run. It is a `RuleOutcome` now, abstaining where no doctorate
+   year is on record.
+
+Policy fixes that came with them: TTE no longer narrows `coauthor_years` to 4
+(it was *looser* than the default, and a test now refuses a silent narrowing),
+and `[seniority.career]` is `prefer` rather than a hard ten-year ceiling that
+excluded 64 senior candidates and left the run with nobody to invite.
+
+## What the tte-2026-08-2905 run says after all that
+
+300 scored papers → 166 candidates → 143 CLEAR, 19 REVIEW, 4 BLOCK (the four
+submitting authors). Ten candidates clear every rule, all ten reading
+`Check first` because their address is unverified against their institution.
+Out for: 121 too few related journal papers, 23 COI, 8 nothing on this topic
+lately, 4 restricted country.
+
+Findings that had never fired before: 46 `possible_recent_coauthor`, 24
+`previous_institution_overlap`, 6 `same_institution`, 1 `same_department`, 1
+`dense_historic_collaboration`.
+
+**Invitation response and unresponsive veteran still abstain for everybody** —
+the store holds no invitation history, and nothing has been sent. So do 123
+academic-age rows, for want of a doctorate year.
 
 ## Gotchas
 
 - Regenerating while the `.xlsx` is open in Excel fails with
   `PermissionError: [Errno 13]`.
-- `tests/test_pipeline_e2e.py::test_full_pipeline_produces_an_evidenced_shortlist`
-  fails on a name with a diacritic. Pre-existing, verified by stashing; not
-  caused by the rule work.
+- The suite used to write its stub people into `~/cc-academia-facts/`:
+  `ACADEMIA_FACTS_SYNC` lives in a shell profile, pytest inherits it, and with
+  no data root above a temporary directory `facts_dir()` fell back to home.
+  Those facts merged back in on the next run and renamed a stubbed expert,
+  which is what the long-standing `test_pipeline_e2e` failure actually was —
+  not the diacritic in the name. Export resolves separately now
+  (`export_facts_dir`), and `conftest` isolates the folder regardless.
+- Dossier cleanup globbed `[0-9][0-9]-person-*.md`, so a run with more than 99
+  candidates left every later dossier for the next run to present as its own.
