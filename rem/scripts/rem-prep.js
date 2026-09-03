@@ -10,8 +10,9 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
-  scopeIndexFile, findAllScopes, loadState,
-  todayISO, bumpAccessed, getMemoryMeta, saveMemoryMeta, MAX_ENTRIES, rebuildIndex,
+  findAllScopes, loadState, scopeRoot,
+  todayISO, bumpAccessed, getMemoryMeta, saveMemoryMeta,
+  catalogFilePath, CATALOG_ADVISORY_MAX, rebuildIndex,
 } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -202,19 +203,20 @@ if (promoted > 0) {
   console.log('  (no promotion candidates — run with --promote to auto-upgrade)');
 }
 
-// ── 4. Crystallize check ──
+// ── 4. Crystallize check (against the full catalog, not the injected hot list) ──
 console.log('\n─── Crystallize status ──');
-if (existsSync(scopeIndexFile)) {
+const catalogFor = scope => catalogFilePath(scope);
+if (existsSync(catalogFor(scopeRoot))) {
   try {
-    const entries = readFileSync(scopeIndexFile, 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
-    if (entries.length >= MAX_ENTRIES) {
+    const entries = readFileSync(catalogFor(scopeRoot), 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
+    if (entries.length >= CATALOG_ADVISORY_MAX) {
       console.log(`  ⚠ ${entries.length} entries — crystallize recommended`);
     } else {
-      console.log(`  ✓ ${entries.length} entries (<${MAX_ENTRIES}) — no crystallize needed`);
+      console.log(`  ✓ ${entries.length} entries (<${CATALOG_ADVISORY_MAX}) — no crystallize needed`);
     }
-  } catch { console.log('  (error reading MEMORY.md)'); }
+  } catch { console.log('  (error reading catalog)'); }
 } else {
-  console.log('  (no MEMORY.md yet)');
+  console.log('  (no catalog yet)');
 }
 
 // Rebuild index for all touched scopes

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// Prune MEMORY.md index:
-//   - Short-term (>90d stale or >20 count): evict from index
-//     (entries with frontmatter `metadata.type: feedback` are exempt from the
-//     90-day stale eviction — explicit user corrections have long-term value —
-//     but still count toward and can be dropped by the capacity cap)
+// Prune memory retention by TIME, not by a fixed count cap:
+//   - Promote-first: short-term at count>=3 → long (protected), before any eviction.
+//   - Short-term (>90d stale): evict from index (entries with frontmatter
+//     `metadata.type: feedback` are exempt from the 90-day stale eviction —
+//     explicit user corrections have long-term value)
 //   - Long-term (not accessed since last prune): demote to short
+// There is NO count-based capacity cap. Eviction is time-based only, so an active
+// working set is never silently dropped by a fixed-size treadmill — a file has the
+// full 90 days to be re-accessed and promoted instead of dying to make room.
 // Run: node scripts/prune-memory.js [--dry-run] [--evict-stale] [--quiet]
 // Called by SessionStart hook; runs scope-validate --fix first.
 
@@ -16,7 +19,7 @@ import { withStateLock } from '../shared/state.mjs';
 import {
   scopeRoot,
   stateFile,
-  MAX_ENTRIES, STALE_DAYS, DAY_MS,
+  STALE_DAYS, DAY_MS,
   loadMemoryState, saveMemoryMeta, loadState, appendEvent, dayPrecision,
   rebuildIndex, collectMemoryFiles, parseFrontmatter,
   findAllScopes,
@@ -104,13 +107,30 @@ if (demoted.length > 0) {
   }
 }
 
+// ── Short-term promotion, promote-first (before any stale eviction) ──
+// A short already at the promotion threshold (count>=3 distinct-day accesses) is
+// upgraded to long so it is protected this cycle. A long just demoted this run is
+// excluded — its count resets to 1 at mutation, so it must re-earn promotion and
+// is never ping-ponged long↔short within a single run.
+const demotedSet = new Set(demoted.map(e => e.path));
+const promoted = shortTerm.filter(e => e.count >= 3 && !demotedSet.has(e.path));
+if (promoted.length > 0) {
+  log(`[prune-memory] ${promoted.length} short-term entries at count>=3 → promoting to long:`);
+  for (const e of promoted) {
+    log(`  ${e.accessed} ${e.path} (accessed ${e.count}x)`);
+    longTerm.push(e);
+    const idx = shortTerm.indexOf(e);
+    if (idx >= 0) shortTerm.splice(idx, 1);
+  }
+}
+
 if (longTerm.length > 0) {
   log(`[prune-memory] ${longTerm.length} long-term entries (protected this cycle):`);
   for (const e of longTerm) log(`  ${e.accessed} ${e.path}`);
 }
 
-// ── Short-term eviction ──
-// feedback entries are exempt from the 90-day stale eviction, never from the cap.
+// ── Short-term stale eviction (time-based only — no count capacity cap) ──
+// feedback entries are exempt from the 90-day stale eviction.
 const stale = shortTerm.filter(e => now - e.accessedDate > STALE_DAYS * DAY_MS);
 const staleEvictable = stale.filter(e => e.type !== 'feedback');
 const staleExempt = stale.filter(e => e.type === 'feedback');
@@ -129,28 +149,16 @@ if (staleExempt.length > 0) {
   for (const e of staleExempt) log(`  ${e.accessed} ${e.path}`);
 }
 
-const over = shortTerm.length - MAX_ENTRIES;
-const toDrop = over > 0
-  ? [...shortTerm].sort((a, b) => a.accessedDate - b.accessedDate).slice(0, over)
-  : [];
-if (over > 0) {
-  log(`[prune-memory] ${shortTerm.length} short-term entries, dropping ${over} oldest:`);
-  for (const e of toDrop) {
-    log(`  ${e.accessed} ${e.path}`);
-  }
-}
-
-// Apply evictions
+// Apply evictions — stale short-term only (dropped under --evict-stale).
 const dropSet = new Set();
 if (evictStale) staleEvictable.forEach(e => dropSet.add(e.path));
-toDrop.forEach(e => dropSet.add(e.path));
 
 if (dryRun) {
-  if (dropSet.size > 0 || demoted.length > 0) {
-    log('[prune-memory] --dry-run: would drop ' + dropSet.size + ' entries');
+  if (dropSet.size > 0 || demoted.length > 0 || promoted.length > 0) {
+    log(`[prune-memory] --dry-run: would drop ${dropSet.size}, demote ${demoted.length}, promote ${promoted.length}`);
   } else {
     const total = longTerm.length + shortTerm.length;
-    log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale, ${over > 0 ? over : 0} over limit`);
+    log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale`);
   }
 } else {
   // Mutation phase (meta drops, state, index rebuilds) under a prune-wide lease
@@ -165,17 +173,21 @@ if (dryRun) {
       appendEvent('demote', { path: e.path, previousTier: 'long', reason: 'inactive between prune cycles' }, { onTimeout: 'throw' });
     }
 
+    for (const e of promoted) {
+      saveMemoryMeta(scopeRoot, e.path, { tier: 'long' }, { onTimeout: 'throw' });
+      appendEvent('promote', { path: e.path, previousTier: 'short', reason: 'count >= 3 (promote-first)' }, { onTimeout: 'throw' });
+    }
+
     // Load→mutate→save the prune timestamp atomically — a stale snapshot here
     // would clobber another process's concurrent state write (TOCTOU).
     withStateLock(stateFile, (fresh) => { fresh.prune.lastPruneAt = now; }, { onTimeout: 'throw' });
 
     for (const p of dropSet) {
-      const reason = staleEvictable.some(e => e.path === p) ? 'stale-90d' : 'over-capacity';
-      saveMemoryMeta(scopeRoot, p, { dropped: reason }, { onTimeout: 'throw' });
-      appendEvent('evict', { path: p, reason }, { onTimeout: 'throw' });
+      saveMemoryMeta(scopeRoot, p, { dropped: 'stale-90d' }, { onTimeout: 'throw' });
+      appendEvent('evict', { path: p, reason: 'stale-90d' }, { onTimeout: 'throw' });
     }
 
-    if (dropSet.size > 0 || demoted.length > 0) {
+    if (dropSet.size > 0 || demoted.length > 0 || promoted.length > 0) {
       const scopes = findAllScopes();
       for (const scope of scopes) {
         rebuildIndex(scope, { onTimeout: 'throw' });
@@ -190,11 +202,11 @@ if (dryRun) {
     throw err;
   }
 
-  if (dropSet.size === 0 && demoted.length === 0) {
+  if (dropSet.size === 0 && demoted.length === 0 && promoted.length === 0) {
     const total = longTerm.length + shortTerm.length;
-    log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale, ${over > 0 ? over : 0} over limit`);
+    log(`[prune-memory] ${total} total (${longTerm.length} long, ${shortTerm.length} short), ${stale.length} stale`);
   } else {
     const kept = entries.length - dropSet.size;
-    log(`[prune-memory] removed ${dropSet.size} entries, ${kept} remaining`);
+    log(`[prune-memory] dropped ${dropSet.size}, demoted ${demoted.length}, promoted ${promoted.length}; ${kept} entries remaining`);
   }
 }
