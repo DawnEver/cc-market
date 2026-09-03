@@ -1,9 +1,9 @@
 """Everything the rules know about one candidate, derived once.
 
 A rule is a predicate over a handful of quantities: how long this person has
-been publishing, how much they have published lately, how much of that is on
-this manuscript's topic and in a journal, and how they have answered
-invitations. Each of those is one question with one answer.
+been publishing, how much they have published lately, and how much of that is
+on this manuscript's topic and in a journal. Each of those is one question with
+one answer.
 
 Before this module every rule derived its own. Two of them derived career
 length, from two different sources — the run's harvest and the person's own
@@ -137,42 +137,6 @@ class RelevantRecord:
 
 
 @dataclass(frozen=True)
-class InvitationRecord:
-    """Invitations this person has received, across every manuscript.
-
-    Held as the stored rows because two rules read them over different windows.
-    An invitation whose outcome nobody recorded is unresolved rather than a
-    silence: counting a field an editor has not filled in as a refusal would let
-    bookkeeping exclude a reviewer.
-    """
-
-    rows: tuple[Any, ...] = ()
-
-    def resolved(self, *, since_year: int | None, now_year: int) -> tuple[int, float]:
-        """Count and answer-rate of invitations with a recorded outcome."""
-
-        def inside(row: Any) -> bool:
-            year = _year_of(row["invited_at"])
-            if year is not None and year > now_year:
-                return False  # a future date is a data error, not evidence
-            if since_year is None:
-                return True
-            # An undated invitation still happened; dropping it would let a
-            # missing field erase a record of silence.
-            return year is None or year >= since_year
-
-        considered = [r for r in self.rows if inside(r) and r["responded"] is not None]
-        if not considered:
-            return 0, 0.0
-        return len(considered), sum(1 for r in considered if r["responded"]) / len(considered)
-
-
-def _year_of(invited_at: str | None) -> int | None:
-    text = (invited_at or "").strip()[:4]
-    return int(text) if text.isdigit() else None
-
-
-@dataclass(frozen=True)
 class CandidateRecord:
     """One candidate, as the rules see them."""
 
@@ -180,7 +144,6 @@ class CandidateRecord:
     now_year: int
     publications: PublicationRecord = field(default_factory=PublicationRecord)
     relevant: RelevantRecord = field(default_factory=RelevantRecord)
-    invitations: InvitationRecord = field(default_factory=InvitationRecord)
 
     @property
     def seniority(self) -> Seniority:
@@ -216,5 +179,4 @@ class CandidateRecord:
                 now_year,
             ),
             relevant=RelevantRecord(tuple(relevant_papers or ())),
-            invitations=InvitationRecord(tuple(repo.invitation_history(conn, person.person_id))),
         )

@@ -26,7 +26,6 @@ from academia.reviewer import eligibility as eligibility_module
 from academia.reviewer import record as record_module
 from academia.reviewer.geo import GeoAssessment
 from academia.reviewer.policy import Policy
-from academia.store import repository as repo
 
 BLOCKED_SCORE = -math.inf
 
@@ -143,26 +142,6 @@ def _recent_expertise(evidence: list[Evidence], now_year: int) -> float:
     return max(recency_score(e.year, now_year) for e in evidence)
 
 
-def _reviewer_history(conn: sqlite3.Connection, person: Person) -> tuple[float, list[str]]:
-    """Prior invitations shape the score once the database has any history.
-
-    This is what makes the second manuscript cheaper than the first: someone who
-    never responded should not top the list again.
-    """
-    rows = repo.invitation_history(conn, person.person_id)
-    if not rows:
-        return 0.5, []  # neutral: unknown is not a mark against anyone
-
-    invited = len(rows)
-    responded = sum(1 for r in rows if r["responded"])
-    accepted = sum(1 for r in rows if r["accepted"])
-    notes = [f"invited {invited}x, responded {responded}, accepted {accepted}"]
-    if responded == 0:
-        notes.append("never responded to a previous invitation")
-        return 0.0, notes
-    return min(1.0, (responded + accepted) / (2 * invited)), notes
-
-
 def _student_note(person: Person, now_year: int) -> str:
     """Flag a candidate who is still in training.
 
@@ -227,9 +206,6 @@ def score_candidate(
         candidate.notes.append(f"excluded: {assessment.reason}")
         return candidate
 
-    history, history_notes = _reviewer_history(conn, candidate.person)
-    candidate.notes.extend(history_notes)
-
     vocabulary = _candidate_vocabulary(conn, candidate)
     components = {
         "topic": _topic_match(vocabulary, profile_topics),
@@ -237,7 +213,6 @@ def score_candidate(
         "recent_expertise": _recent_expertise(candidate.evidence, now_year),
         "publication_evidence": _weighted_evidence(candidate.evidence),
         "geographic": 1.0 if (candidate.geo and candidate.geo.cross_region) else 0.0,
-        "reviewer_history": history,
         "activity": assessment.score,
     }
     weights = policy.weights

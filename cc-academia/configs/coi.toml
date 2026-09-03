@@ -133,32 +133,27 @@ min_recent_papers = 1
 mode = "off"                   # off | prefer | require
 min_publications = 3
 
-# The senior expert who no longer takes review work. Career length alone never
-# excludes anyone: the rule fires only when a long career *and* a record of
-# unanswered invitations coincide.
+# Nothing judges whether an invitation was answered. Two rules did — a
+# windowed response rate and an "unresponsive veteran" gate — and both are
+# gone. They asked one question on two windows, so they agreed by
+# construction; on any store without a long invitation history both
+# abstained; and the veteran gate carried its own ten-year career threshold
+# beside [seniority]'s, so one axis had two numbers on it in two tables.
 #
-# The only rule that reads the invitation record. A windowed "answered at least
-# half of recent invitations" rule sat beside it and was removed: it asked the
-# same question over a shorter window, so the two agreed by construction, and
-# on any store without a long invitation history both abstain anyway.
-#
-# Responsiveness is read from the accumulating store — every manuscript it
-# holds, not just this workspace. An empty history is neutral: a candidate
-# nobody has invited yet is not unresponsive. Only invitations whose outcome was
-# actually recorded count; one still pending is not a silence.
-[activity.veteran]
-mode = "require"
-career_years = 10              # years since the first publication on record
-min_invitations = 2            # resolved outcomes, all-time rather than windowed
-max_response_rate = 0.0        # at or below this, treat as not accepting work
+# Who was invited is still recorded, and still travels between machines. It
+# is reported beside a candidate, not judged.
 
+# Six components, summing to 1.0. A seventh, `reviewer_history`, scored a
+# candidate on the share of past invitations they answered and is gone with the
+# rest of the answered-invitation reading. Its 0.05 is folded into `topic`, the
+# primary expertise signal — no ranking moves, because that component returned a
+# neutral 0.5 for anyone with no invitation history, which so far is everyone.
 [scoring]
-topic = 0.35
+topic = 0.40
 method = 0.20
 recent_expertise = 0.15
 publication_evidence = 0.10
 geographic = 0.08
-reviewer_history = 0.05
 activity = 0.07
 
 # Retrieval and enrichment mechanics use the same journal overlay loader as

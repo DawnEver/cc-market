@@ -113,9 +113,11 @@ under the wrong window is exactly the mistake worth failing on.
 
 Every constraint an editor might want to move is a key in `configs/coi.toml` and
 a per-journal override, never a number in the code: the activity window, the
-doctoral-year floor, the invitation-response threshold, the career length that
-makes someone a veteran, and how strictly each is applied (`off`, `prefer`,
-`require`). `06-report.md` has the table.
+doctoral-year floor, the seniority floor and preferred ceiling, the
+related-journal floor, the restricted countries, the identity-confidence
+threshold, and how strictly each is applied (`off`, `prefer`, `require`).
+`06-report.md` lists every table, and the handful of things that are
+deliberately fixed.
 
 Ask the user for the journal at intake if the manuscript does not say.
 
@@ -149,12 +151,16 @@ Once invitations go out, record them — one command per candidate:
 uv run --project "<plugin-root>" rev-disc invite --slug <slug>   --person <person_id> --invited-at 2026-03-01 --responded yes --accepted no   --note "thorough, on time"
 ```
 
-Leave `--responded` unset while the outcome is still open. An unrecorded answer
-stays unrecorded rather than counting as a silence, and neither responsiveness
-rule counts it. Run the command again for the same person when the answer
-arrives: it amends that invitation rather than adding a second one.
+Leave `--responded` unset while the outcome is still open. Run the command again
+for the same person when the answer arrives: it amends that invitation rather
+than adding a second one.
 
-Invitation history feeds the next manuscript's ranking and is the only evidence
-the two responsiveness rules have, so on a fresh store they are inert by design:
-the veteran rule cannot fire and the response rule reports "too few to judge".
+**This is bookkeeping, not an input.** No rule and no score reads whether an
+invitation was answered — the two rules that did were removed, because they
+asked one question on two windows and abstained for everybody on any store
+without a long history. What the record buys you is knowing who you have
+already asked, on this submission and every earlier one; it is one of the few
+facts nobody can re-derive, so it travels between machines. It is reported
+beside a candidate in `shortlist.csv` and in their dossier.
+
 Offer this; do not do it unasked.

@@ -5,7 +5,7 @@ invitation is worth sending: someone still working in the field, far enough into
 their training to carry a report, and not a name that has quietly stopped taking
 review work.
 
-Seven rules, and the list is closed — every one is in :data:`RULES`, every one
+Six rules, and the list is closed — every one is in :data:`RULES`, every one
 reads a quantity from :mod:`academia.reviewer.record`, and nothing outside this
 module may add a ninth. Three of them used to be appended by ``rank`` after the
 assessment was already built, which is how a ``prefer`` rule came to contribute
@@ -18,15 +18,14 @@ nothing to the score it exists to feed.
 * **recent activity** — publishing at all, from their own profile
 * **seniority** — far enough past the doctorate, or the first paper
 * **doctoral year** — a doctoral candidate is past the journal's floor
-* **unresponsive veteran** — a long career *and* a record of unanswered
-  invitations, which is the only combination that fires
-
-There was an eighth: a windowed "answered at least half of recent invitations"
-rule. It is gone rather than switched off. It asked the veteran rule's question
-on a shorter window, so the two fired together or not at all, and on any store
-without a long invitation history — every store, so far — both abstained. A
-rule that cannot distinguish itself from another is not a rule an editor needs
-to read a verdict from.
+**Nothing here reads whether an invitation was answered.** Two rules did — a
+windowed response rate and an unresponsive-veteran gate — and they are gone
+rather than switched off. They asked one question on two windows, so they
+agreed by construction; on any store without a long invitation history, which
+is every store so far, both abstained; and the veteran gate carried a *second*
+career-length threshold beside the seniority rule's, so one axis had two
+numbers on it again. The record of who was invited is still kept, and still
+travels between machines — it is simply not a thing any rule judges.
 
 Every rule carries its own mode: ``require`` excludes, ``prefer`` only scores
 and annotates, ``off`` skips it entirely. ``require`` excludes rather than
@@ -452,6 +451,11 @@ def seniority(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
     from the profile, one from the run's harvest, disagreeing by up to 28 years
     in adjacent columns of the same spreadsheet. One axis is one rule.
 
+    It is also the *only* career threshold in the policy. An
+    unresponsive-veteran rule used to carry a second one — "a career of at least
+    ten years" — as its own gate, so the same axis was measured against two
+    numbers stated in two tables. That rule is gone, and its threshold with it.
+
     The floor obeys the mode; **the ceiling never excludes**, whatever the mode
     says. Refusing a reviewer for being too experienced is not something an
     editor should be able to state by accident, and it is not hypothetical: this
@@ -534,68 +538,6 @@ def doctoral_year(record: CandidateRecord, constraint: Constraint) -> RuleOutcom
     )
 
 
-def unresponsive_veteran(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
-    """A long career alone is never a reason. Silence on top of one is.
-
-    Reads the seniority axis for "long career" and the invitation record for
-    "silence" — the latter over the whole career rather than a window, because
-    the question is whether somebody has stopped taking review work at all, not
-    whether they were busy last year.
-
-    It does not publish the career figure as a column of its own. It is the
-    same number ``seniority_years`` holds, and two columns carrying one
-    quantity is what this refactor exists to remove: the previous pair derived
-    it from two different sources and disagreed for 158 of 197 candidates on a
-    live case. The rule's sentence states the figure it used, so nothing is
-    hidden — only unduplicated.
-    """
-    span = constraint.int_("career_years", 10)
-    minimum = constraint.int_("min_invitations", 2)
-    ceiling = constraint.float_("max_response_rate", 0.0)
-    thresholds = {
-        "career_minimum": span,
-        "invitation_minimum": minimum,
-        "rate_maximum": ceiling,
-    }
-    measure = record.seniority
-    career = measure.years
-    if career is None:
-        return _outcome(
-            constraint,
-            True,
-            "no doctorate year and no dated publication — career length unknown",
-            thresholds,
-            abstained=True,
-        )
-    basis = f"{career} year(s) since {measure.basis}"
-    if career < span:
-        return _outcome(
-            constraint, True, f"{basis} — not a long-career candidate", thresholds
-        )
-    invited, rate = record.invitations.resolved(since_year=None, now_year=record.now_year)
-    facts = {"invitations": invited, **thresholds}
-    if invited < minimum:
-        return _outcome(
-            constraint,
-            True,
-            f"{basis}, {invited} invitation(s) on record — no basis to judge",
-            facts,
-            abstained=True,
-        )
-    facts["rate"] = round(rate, 2)
-    if rate > ceiling:
-        return _outcome(
-            constraint, True, f"{basis}, responds to {rate:.0%} of invitations", facts
-        )
-    return _outcome(
-        constraint,
-        False,
-        f"{basis} and no response to {invited} invitation(s) — "
-        "appears to have stopped accepting review work",
-        facts,
-    )
-
-
 Rule = Callable[[CandidateRecord, Constraint], RuleOutcome]
 
 #: Every rule there is. The list is the whole eligibility surface: an audit
@@ -609,7 +551,6 @@ RULES: tuple[tuple[str, Rule], ...] = (
     ("recent_activity", recent_activity),
     ("doctoral_year", doctoral_year),
     ("seniority", seniority),
-    ("unresponsive_veteran", unresponsive_veteran),
 )
 
 #: The rule names, in audit order. Exports read this rather than restating it.

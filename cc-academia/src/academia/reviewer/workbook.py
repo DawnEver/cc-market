@@ -80,7 +80,6 @@ RULE_DIMENSIONS: dict[str, str] = {
     "recent_activity": "Still publishing",
     "doctoral_year": "Doctoral floor",
     "seniority": "Seniority",
-    "unresponsive_veteran": "Unresponsive veteran",
 }
 
 #: The two blocks that are not a rule: who this is, and what to do about them.
@@ -150,13 +149,6 @@ LABELS: dict[str, str] = {
     "seniority_minimum": "Years required",
     "seniority_maximum": "Years this journal prefers to stay within (0 = no ceiling). A preference only; it excludes nobody.",
     # Invitation response
-    # Unresponsive veteran
-    "unresponsive_veteran": "Rule: not (career ≥ {unresponsive_veteran_career_minimum} years and answered ≤ {unresponsive_veteran_rate_maximum} of ≥ {unresponsive_veteran_invitation_minimum} invitations)",
-    "unresponsive_veteran_invitations": "Invitations ever received — {unresponsive_veteran_invitation_minimum} needed before judging",
-    "unresponsive_veteran_rate": "Share answered over the whole career — unresponsive at {unresponsive_veteran_rate_maximum}",
-    "unresponsive_veteran_career_minimum": "Career length that makes the veteran rule apply",
-    "unresponsive_veteran_invitation_minimum": "Invitations needed before a veteran is judged",
-    "unresponsive_veteran_rate_maximum": "Answer rate at or below which someone counts as unresponsive",
     "reasoning": "Reason for each check, in words",
 }
 
@@ -170,7 +162,6 @@ BLOCKING_REASONS = {
     "recent_activity": "Not publishing at all lately",
     "doctoral_year": "PhD student below the year floor",
     "seniority": "Too early in an independent career",
-    "unresponsive_veteran": "Long career, no longer answers invitations",
 }
 
 
@@ -261,7 +252,6 @@ MEASURES: tuple[tuple[str, str], ...] = (
     ("recent_activity_papers", "recent_activity_minimum"),
     ("seniority_years", "seniority_minimum"),
     ("doctoral_year_value", "doctoral_year_minimum"),
-    ("unresponsive_veteran_invitations", "unresponsive_veteran_invitation_minimum"),
 )
 
 #: A rule that measures something shows the measurement, not a verdict: the
@@ -398,9 +388,6 @@ GLOSSARY: dict[str, str] = {
     "seniority_basis": "doctorate = counted from a stated doctorate year, the better basis. first publication = the fallback, because ORCID states a doctorate year for a minority of researchers in this field.",
     "seniority_since": "The year the count starts from, so the figure can be checked.",
     "seniority_maximum": "The preferred ceiling. It scores and never excludes, whatever the mode says: refusing a reviewer for being too experienced is not something an editor should be able to state by accident, and a required ceiling once emptied a live shortlist of every senior name in it.",
-    "unresponsive_veteran": "Fires only on a long career AND a record of silence. Career length alone never excludes anybody. Abstains when the invitation record is too thin to judge, which on a fresh store is everybody.",
-    "unresponsive_veteran_invitations": "All resolved invitations on record, over the whole career rather than a window.",
-    "unresponsive_veteran_rate": "Lifetime response rate; blank when unknown.",
     "reasoning": "One human-readable sentence per rule. The reason an editor can disagree with.",
 }
 

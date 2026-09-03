@@ -14,7 +14,7 @@ import pytest
 
 from academia.core.errors import UsageError
 from academia.core.models import Author, Education, Paper, Person
-from academia.reviewer import eligibility, rank
+from academia.reviewer import eligibility, rank, report
 from academia.reviewer.policy import Constraint, Policy, load_policy
 from academia.reviewer.record import CandidateRecord
 from academia.store import db
@@ -173,37 +173,32 @@ def test_the_seniority_floor_does_obey_require(conn):
     assert assess(conn, person, required, now_year=NOW).excluded
 
 
-def test_one_career_length_is_shared_by_every_rule_that_reads_one(conn, policy):
-    """Two rules used to derive this, from two different sources.
+def test_exactly_one_rule_measures_a_career_length(conn, policy):
+    """Three rules used to, and two of them derived it themselves.
 
-    ``career_length`` read the papers this run harvested and
+    ``career_length`` read the papers this run harvested while
     ``unresponsive_veteran`` read the person's own profile, so the same
     candidate carried two career lengths in adjacent audit columns — on a live
-    case they disagreed for 158 of 197 people, by as much as 28 years.
+    case they disagreed for 158 of 197 people, by as much as 28 years. The
+    veteran rule is gone and ``academic_age`` is folded in, so the axis is
+    measured once, from the profile where there is one.
     """
     person = author_with_papers(conn, 2015, 2025, name="OneCareer")
     person.works_by_year = {1994: 2, 2025: 3}
-    strict = tuned(
-        policy,
-        seniority={**policy.data["seniority"], "max_years": 10},
-        activity={
-            **policy.data["activity"],
-            "veteran": {**policy.data["activity"]["veteran"], "mode": "require"},
-        },
-    )
 
-    facts = {o.rule: o.facts for o in assess(conn, person, strict, now_year=NOW).outcomes}
+    outcomes = assess(conn, person, policy, now_year=NOW).outcomes
+    # A measured span of years, as opposed to a threshold stating one.
+    measured = [
+        o
+        for o in outcomes
+        if any(
+            k.endswith("_years") and not k.endswith(report.THRESHOLD_SUFFIXES)
+            for k in o.facts
+        )
+    ]
 
-    # The profile wins over the harvest, and the veteran gate reads the same
-    # figure rather than deriving a second one: it publishes no career column
-    # of its own, because there is only one career length.
-    assert facts["seniority"]["seniority_years"] == NOW - 1994 + 1
-    assert not [k for k in facts["unresponsive_veteran"] if k.endswith("career_years")]
-    veteran = next(
-        o for o in assess(conn, person, strict, now_year=NOW).outcomes
-        if o.rule == "unresponsive_veteran"
-    )
-    assert f"{NOW - 1994 + 1} year(s) since first publication" in veteran.detail
+    assert [o.rule for o in measured] == ["seniority"]
+    assert measured[0].facts["seniority_years"] == NOW - 1994 + 1
 
 
 def test_tte_requires_a_relevant_paper_in_the_last_three_years(conn):
@@ -271,16 +266,20 @@ def test_a_professor_is_not_measured_against_the_doctoral_floor(conn, policy):
 # ------------------------------------------------------------ invitations --
 
 
-def test_silence_alone_flags_nobody_without_a_long_career(conn, policy):
-    """The windowed responsiveness rule is gone, deliberately.
+def test_no_rule_reads_whether_an_invitation_was_answered(conn, policy):
+    """Two rules did, and both are gone.
 
-    It read the same invitation record the veteran rule reads, over a shorter
-    window, so the two agreed by construction — and on any store without a long
-    invitation history both abstained. Silence is now only a reason alongside a
-    long career, which is the case an editor actually acts on.
+    A windowed response rate and an unresponsive-veteran gate asked one question
+    on two windows, so they agreed by construction; on any store without a long
+    invitation history both abstained. The veteran gate also carried its own
+    ten-year career threshold beside the seniority rule's, so one axis had two
+    numbers on it in two config tables.
+
+    The record is still kept and still travels between machines. Nothing judges
+    it.
     """
-    person = author_with_papers(conn, 2025, name="Silent")
-    for index in range(3):
+    person = author_with_papers(conn, 2000, 2025, name="Silent")
+    for index in range(4):
         repo.record_invitation(
             conn, person.person_id, f"ms-{index}", invited_at="2025-01-01", responded=False
         )
@@ -289,70 +288,33 @@ def test_silence_alone_flags_nobody_without_a_long_career(conn, policy):
 
     assert not assessment.excluded
     assert not any("invitation" in note for note in assessment.notes())
-    assert "invitation_response" not in {o.rule for o in assessment.outcomes}
-
-
-def test_an_empty_invitation_history_is_neutral(conn, policy):
-    """Nobody has asked this person yet, which is not a silence."""
-    person = author_with_papers(conn, 2005, 2025, name="Fresh")
-    strict = tuned(
-        policy,
-        activity={
-            **policy.data["activity"],
-            "veteran": {**policy.data["activity"]["veteran"], "mode": "require"},
-        },
+    assert {"invitation_response", "unresponsive_veteran"}.isdisjoint(
+        o.rule for o in assessment.outcomes
     )
-
-    assessment = assess(conn, person, strict, now_year=NOW)
-    veteran = next(o for o in assessment.outcomes if o.rule == "unresponsive_veteran")
-
-    assert not assessment.excluded
-    assert veteran.abstained
+    # The history is still there to be read, just not to be judged.
+    assert len(repo.invitation_history(conn, person.person_id)) == 4
 
 
-
-# --------------------------------------------------------------- veteran ---
-
-
-def test_a_long_career_with_no_response_is_excluded(conn, policy):
-    person = author_with_papers(conn, 2005, 2025, name="Veteran")
-    for index in range(2):
-        repo.record_invitation(
-            conn, person.person_id, f"ms-v{index}", invited_at="2024-01-01", responded=False
-        )
-    assessment = assess(conn, person, policy, now_year=NOW)
-    assert assessment.excluded
-    assert "stopped accepting review work" in assessment.reason
-
-
-def test_a_long_career_alone_is_never_a_reason(conn, policy):
-    person = author_with_papers(conn, 2000, 2025, name="Elder")
-    assessment = assess(conn, person, policy, now_year=NOW)
-    assert not assessment.excluded
-
-
-def test_a_veteran_who_does_respond_stays(conn, policy):
-    person = author_with_papers(conn, 2005, 2025, name="Willing")
-    repo.record_invitation(conn, person.person_id, "ms-a", invited_at="2024-01-01", responded=True)
-    repo.record_invitation(conn, person.person_id, "ms-b", invited_at="2025-01-01", responded=False)
-    assert not assess(conn, person, policy, now_year=NOW).excluded
-
-
-def test_the_career_length_is_configurable(conn, policy):
+def test_the_career_threshold_is_configurable_and_there_is_only_one(conn, policy):
     person = author_with_papers(conn, 2021, 2025, name="MidCareer")
-    for index in range(2):
-        repo.record_invitation(
-            conn, person.person_id, f"ms-m{index}", invited_at="2025-01-01", responded=False
-        )
     strict = tuned(
-        policy,
-        activity={
-            **policy.data["activity"],
-            "veteran": {**policy.data["activity"]["veteran"], "career_years": 5},
-        },
+        policy, seniority={**policy.data["seniority"], "mode": "require", "min_years": 10}
     )
+
     assert assess(conn, person, strict, now_year=NOW).excluded
     assert not assess(conn, person, policy, now_year=NOW).excluded
+    # One rule owns the axis, so one table states its bounds.
+    thresholds = {
+        key
+        for outcome in assess(conn, person, policy, now_year=NOW).outcomes
+        for key in outcome.facts
+        if key.endswith(("_minimum", "_maximum"))
+    }
+    assert {k for k in thresholds if "career" in k or "seniority" in k} == {
+        "seniority_minimum",
+        "seniority_maximum",
+    }
+
 
 
 # ----------------------------------------------------------------- wiring --
@@ -365,7 +327,6 @@ def test_every_rule_off_leaves_the_score_untouched(conn, policy):
         activity={
             "mode": "off",
             "relevant": {**policy.data["activity"]["relevant"], "mode": "off"},
-            "veteran": {**policy.data["activity"]["veteran"], "mode": "off"},
         },
         seniority={
             **policy.data["seniority"],
@@ -415,34 +376,26 @@ def test_an_eligible_candidate_carries_an_activity_component(conn, policy):
 # ----------------------------------------------------------------- CLI -----
 
 
-def test_recording_an_invitation_feeds_the_responsiveness_rules(conn, policy):
-    """The veteran rule is inert until an outcome can actually be written down."""
+def test_an_invitation_can_still_be_recorded_and_changes_no_verdict(conn, policy):
+    """The editor's own record of who was asked, which no rule reads.
+
+    Worth keeping and worth recording: it is one of the few facts nobody can
+    re-derive, and it travels between machines. It is reported beside a
+    candidate rather than used to judge them.
+    """
     from academia.cli import dispatch
 
     person = author_with_papers(conn, 2005, 2025, name="Recorded")
-    assert not assess(conn, person, policy, now_year=NOW).excluded
+    before = assess(conn, person, policy, now_year=NOW)
 
     for index in range(2):
         repo.record_invitation(
-            conn,
-            person.person_id,
-            f"ms-cli-{index}",
-            invited_at="2024-01-01",
-            responded=False,
+            conn, person.person_id, f"ms-cli-{index}", invited_at="2024-01-01", responded=False
         )
-    assert assess(conn, person, policy, now_year=NOW).excluded
+    after = assess(conn, person, policy, now_year=NOW)
+
+    assert [o.detail for o in before.outcomes] == [o.detail for o in after.outcomes]
     assert "invite" in dispatch.build_rev_disc_parser().format_help()
-
-
-def test_an_unresolved_outcome_is_not_a_silence(conn, policy):
-    person = author_with_papers(conn, 2005, 2025, name="Pending")
-    for index in range(3):
-        repo.record_invitation(
-            conn, person.person_id, f"ms-p{index}", invited_at="2025-01-01", responded=None
-        )
-    assessment = assess(conn, person, policy, now_year=NOW)
-    assert not assessment.excluded
-    assert not any("responded to only" in note for note in assessment.notes())
 
 
 def test_several_papers_in_one_year_count_separately(conn, policy):
@@ -509,11 +462,13 @@ def test_the_fallback_says_which_evidence_it_used(conn, policy):
 def test_career_length_comes_from_the_profile_when_it_is_known(conn, policy):
     """The store's oldest harvested paper is not the start of a career."""
     person = with_output(conn, author_with_papers(conn, 2024, name="Long"), {2008: 3, 2024: 5})
-    for index in range(2):
-        repo.record_invitation(
-            conn, person.person_id, f"ms-l{index}", invited_at="2025-01-01", responded=False
-        )
-    assert assess(conn, person, policy, now_year=NOW).excluded
+
+    outcome = next(
+        o for o in assess(conn, person, policy, now_year=NOW).outcomes if o.rule == "seniority"
+    )
+
+    assert outcome.facts["seniority_since"] == 2008
+    assert outcome.facts["seniority_years"] == NOW - 2008 + 1
 
 
 def test_a_verified_affiliation_outranks_a_bibliographic_guess(conn, policy):

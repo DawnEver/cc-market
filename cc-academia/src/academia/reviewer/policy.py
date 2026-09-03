@@ -43,7 +43,6 @@ RULE_TABLES: dict[str, tuple[str, ...]] = {
     "recent_activity": ("activity",),
     "doctoral_year": ("seniority", "doctoral"),
     "seniority": ("seniority",),
-    "unresponsive_veteran": ("activity", "veteran"),
 }
 
 OFF = "off"

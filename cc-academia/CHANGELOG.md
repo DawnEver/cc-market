@@ -8,11 +8,26 @@ build if they drift.
 
 ### Removed
 
-- **The windowed `invitation_response` rule.** It asked the veteran rule's
-  question over a shorter window, so the two agreed by construction, and on any
-  store without a long invitation history both abstained. Silence is now a
-  reason only alongside a long career. Invitation history still feeds the
-  veteran gate and the `reviewer_history` score component.
+- **Everything that judged whether an invitation was answered.** Two rules and
+  a score component:
+  - `invitation_response`, a windowed response rate, and `unresponsive_veteran`,
+    a long-career-plus-silence gate. They asked one question on two windows, so
+    they agreed by construction, and on any store without a long invitation
+    history both abstained — which is every store so far.
+  - The veteran gate also carried its **own ten-year career threshold** beside
+    `[seniority]`'s, so one axis had two numbers on it in two config tables.
+    `[seniority]` now holds the only career threshold in the policy: a floor and
+    a preferred ceiling on one measured figure.
+  - The `reviewer_history` score component, which scored the share of past
+    invitations answered. Its 0.05 is folded into `topic` (0.35 → 0.40); no
+    ranking moves, because the component returned a neutral 0.5 for anyone with
+    no invitation history.
+  - `InvitationRecord` is gone from the candidate record — no rule reads it.
+
+  Who was invited is still recorded, still travels between machines, and is
+  still reported beside a candidate. `rev-disc invite` is bookkeeping for the
+  editor now, not an input to the next run's ranking.
+
 - **`geo.bonus`.** Computed into every assessment and never read: the score uses
   the component and `scoring.geographic`, which held the same 0.08, so tuning
   `geo.bonus` changed nothing. The weight is stated once, where every other

@@ -214,24 +214,24 @@ def test_evidence_saturates_so_volume_alone_does_not_win(conn, policy):
     assert scored.components["publication_evidence"] == 1.0
 
 
-def test_a_reviewer_who_never_responded_is_pushed_down(conn, policy):
+def test_the_score_has_no_invitation_component(conn, policy):
+    """A `reviewer_history` component scored the share of invitations answered.
+
+    It is gone with the rest of the answered-invitation reading, and its 0.05
+    is folded into `topic`. No ranking moved: the component returned a neutral
+    0.5 for anyone with no invitation history, which so far is everyone.
+    """
     person = person_in("GB", person_id=repo.upsert_person(conn, Author(name="Silent", idx=0, openalex_id="A1")))
     repo.record_invitation(conn, person.person_id, "ms-old", responded=False)
 
-    candidate = make_candidate(person)
     scored = rank.score_candidate(
-        conn, candidate, profile_topics=[], profile_methods=[], policy=policy, now_year=2026
+        conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=policy, now_year=2026
     )
-    assert scored.components["reviewer_history"] == 0.0
-    assert any("never responded" in n for n in scored.notes)
 
+    assert "reviewer_history" not in scored.components
+    assert not any("responded" in n for n in scored.notes)
+    assert sum(policy.weights.values()) == pytest.approx(1.0)
 
-def test_no_history_is_neutral_rather_than_negative(conn, policy):
-    candidate = make_candidate(person_in("GB"))
-    scored = rank.score_candidate(
-        conn, candidate, profile_topics=[], profile_methods=[], policy=policy, now_year=2026
-    )
-    assert scored.components["reviewer_history"] == 0.5
 
 
 def test_low_identity_confidence_is_surfaced_not_hidden(conn, policy):

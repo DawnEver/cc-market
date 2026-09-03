@@ -251,7 +251,6 @@ def every_fact_key() -> set[str]:
     from academia.reviewer.rank import Evidence
     from academia.reviewer.record import (
         CandidateRecord,
-        InvitationRecord,
         PublicationRecord,
         RelevantRecord,
     )
@@ -278,9 +277,6 @@ def every_fact_key() -> set[str]:
         )
         for y, t in ((2025, "article"), (2024, "conference"), (2023, ""))
     )
-    invitations = tuple(
-        {"invited_at": "2024-01-01", "responded": False, "accepted": False} for _ in range(3)
-    )
 
     records = [
         # everything measurable
@@ -289,7 +285,6 @@ def every_fact_key() -> set[str]:
             now_year=now,
             publications=PublicationRecord({1990: 2, 2025: 3}, "profile"),
             relevant=RelevantRecord(papers),
-            invitations=InvitationRecord(invitations),
         ),
         # nothing measurable — every rule abstains
         CandidateRecord(person=person(country=""), now_year=now),

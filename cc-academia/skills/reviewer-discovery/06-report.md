@@ -71,8 +71,8 @@ conflict status  >  expertise  >  geographic preference
 Within `CLEAR`, the score is:
 
 ```
-0.35 topic + 0.20 method + 0.15 recent expertise
-+ 0.10 publication evidence + 0.08 geography + 0.05 reviewer history
+0.40 topic + 0.20 method + 0.15 recent expertise
++ 0.10 publication evidence + 0.08 geography
 + 0.07 activity        # the eligibility component
 ```
 
@@ -82,7 +82,7 @@ editor can act on or defend.
 ## Eligibility
 
 Expertise says a candidate *could* review the manuscript. Eligibility says the
-invitation is worth sending. **Seven rules, and that is all of them** — the list
+invitation is worth sending. **Six rules, and that is all of them** — the list
 is closed, it lives in `eligibility.RULES`, and nothing outside that module may
 add a ninth. Each is in `configs/coi.toml` and overridable per journal:
 
@@ -94,7 +94,6 @@ add a ninth. Each is in `configs/coi.toml` and overridable per journal:
 | `activity` | `recent_activity` | prefer | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
 | `seniority` | `seniority` | prefer | fewer than 3 years into an independent career (floor), or past the journal's preferred ceiling |
-| `activity.veteran` | `unresponsive_veteran` | require | a 10-year career, at least 2 invitations with a recorded outcome (all-time, not windowed) and none of them answered |
 
 Every rule reads its quantities off one `CandidateRecord`, built once per
 candidate. That is the point of it: `career_length` and `unresponsive_veteran`
@@ -113,11 +112,21 @@ says. That is not a nicety — this journal's ceiling was once `require`, which
 removed every senior researcher in the pool and left a run with nobody to
 invite.
 
-There was an eighth, a windowed "answered at least half of recent invitations".
-It is gone rather than switched off: it asked the veteran rule's question over a
-shorter window, so the two agreed by construction, and on any store without a
-long invitation history both abstained. Invitation history still feeds the
-veteran gate and the `reviewer_history` score component.
+**Nothing reads whether an invitation was answered.** Two rules did — a
+windowed response rate and an unresponsive-veteran gate — and both are gone
+rather than switched off. They asked one question on two windows, so they agreed
+by construction; on any store without a long invitation history both abstained;
+and the veteran gate carried its *own* ten-year career threshold beside
+`[seniority]`'s, so one axis had two numbers on it in two config tables. The
+`reviewer_history` score component went with them, its 0.05 folded into `topic`.
+
+Who was invited is still recorded, still travels between machines, and is still
+reported beside a candidate in `shortlist.csv` and the dossier. It is simply not
+something any rule or score judges. `rev-disc invite` is now bookkeeping for the
+editor rather than an input to the next run's ranking.
+
+`[seniority]` therefore holds the only career threshold in the policy — a floor
+and a preferred ceiling on one measured figure.
 
 Each rule's audit columns are named after it — `seniority_years`,
 `related_journals_count` — so the workbook groups them by the rule that produced
@@ -135,12 +144,6 @@ work is not on this manuscript's topic. When no profile is available the note
 says `[harvested papers only]`, so a weaker basis is visible rather than
 implied.
 
-Only an invitation whose outcome was written down counts. Three sent and never
-followed up are three unknowns, not three silences, so the veteran rule cannot
-fire on them. That history lives in the accumulating store and is read back
-for every manuscript, not just this workspace's — excluding someone as an
-unresponsive veteran here excludes them on the next submission too.
-
 Each carries its own `mode`:
 
 - `off` — not evaluated
@@ -157,11 +160,11 @@ a measurement, not a met preference. It is `1.0` when nothing was judged, so an
 all-`require` journal hands the same 0.07 to everyone left standing rather than
 ranking them by it.
 
-`activity` overlaps on purpose with `recent_expertise` and `reviewer_history`,
-which read the same records from a different angle: those two ask how recent and
-how well-received a candidate's *qualifying* work is, this one asks whether they
-are still publishing and still answering at all. A journal that considers that a
-double count sets `activity = 0.0` in `[scoring]` and keeps the gate.
+`activity` overlaps on purpose with `recent_expertise`, which reads the same
+records from a different angle: that one asks how recent a candidate's
+*qualifying* work is, this one asks whether they are still publishing at all. A
+journal that considers that a double count sets `activity = 0.0` in `[scoring]`
+and keeps the gate.
 
 An excluded candidate keeps `coi_status = CLEAR` — **no detected conflict** —
 but carries `blocked = True`, an empty score and the reason in `notes`. Blocked
@@ -170,13 +173,11 @@ reads: invitable by conflict status, then expertise, then geography; then
 everyone who was removed.
 
 **A missing fact never disqualifies anybody.** No publication years, no stated
-enrolment year, no invitation history, **no public address** — each of these is
+enrolment year, **no public address** — each of these is
 a gap in public data, not evidence about the person, and each passes. A
 candidate with no address reads `check_first`, not `do_not_invite`: the
 editorial system can address an invitation this tool cannot, and structured
-sources reach only about a fifth of candidates in this field. The veteran rule in particular
-never fires on career length alone: it needs unanswered invitations recorded in
-this workspace, which the first run does not have.
+sources reach only about a fifth of candidates in this field.
 
 Windows, floors and thresholds are all keys in the config, and a journal file
 overlays table by table — state only the keys you change:
@@ -223,8 +224,7 @@ is stated twice.
 | `activity` | still-publishing window and minimum |
 | `activity.relevant` | same window, asked of this manuscript's topic |
 | `activity.related_journals` | the journal-work floor over the relevant record |
-| `activity.veteran` | career length, invitations and answer rate that make a veteran unresponsive |
-| `scoring` | the seven component weights, including `geographic` |
+| `scoring` | the six component weights, including `geographic` |
 | `retrieval` | pool size, fetch budgets, email precedence and confidence |
 
 Every eligibility table carries a `mode` of `off`, `prefer` or `require`, and
@@ -242,9 +242,8 @@ Deliberately **not** configurable, and each for a reason:
 - **A missing fact.** No publication years, no doctorate year, no invitation
   history, no address: each abstains. There is no switch that makes an absence
   into evidence.
-- **The recency decay** on `recent_expertise` (ten years, linear) and the
-  neutral 0.5 for a candidate with no invitation history. These shape a
-  component rather than gate anybody, and the knob that matters is the
+- **The recency decay** on `recent_expertise`: ten years, linear. It shapes a
+  component rather than gating anybody, and the knob that matters is that
   component's own weight in `scoring`.
 
 ## Geography
