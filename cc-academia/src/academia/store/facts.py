@@ -6,8 +6,10 @@ pipeline, and a lost store costs a few minutes and a few API calls.
 
 Five things do not come back, because a person paid to establish each one:
 
-* **invitations** — who was asked and how they answered. The only evidence the
-  responsiveness rules read, and it can only ever be typed in by an editor.
+* **invitations** — who was asked, and how they answered if anybody wrote it
+  down. No rule reads it: the two that judged responsiveness were removed. It
+  travels because it is the editor's own record of who has already been asked,
+  on this submission and every earlier one, and it can only ever be typed in.
 * **ranks** — a title someone read off a page, with the page.
 * **emails** — an address found on a staff page or a corresponding-author
   footnote, with the page.
