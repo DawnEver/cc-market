@@ -5,7 +5,7 @@ invitation is worth sending: someone still working in the field, far enough into
 their training to carry a report, and not a name that has quietly stopped taking
 review work.
 
-Eight rules, and the list is closed — every one is in :data:`RULES`, every one
+Seven rules, and the list is closed — every one is in :data:`RULES`, every one
 reads a quantity from :mod:`academia.reviewer.record`, and nothing outside this
 module may add a ninth. Three of them used to be appended by ``rank`` after the
 assessment was already built, which is how a ``prefer`` rule came to contribute
@@ -18,9 +18,15 @@ nothing to the score it exists to feed.
 * **recent activity** — publishing at all, from their own profile
 * **seniority** — far enough past the doctorate, or the first paper
 * **doctoral year** — a doctoral candidate is past the journal's floor
-* **invitation response** — answered a fair share of recent invitations
 * **unresponsive veteran** — a long career *and* a record of unanswered
   invitations, which is the only combination that fires
+
+There was an eighth: a windowed "answered at least half of recent invitations"
+rule. It is gone rather than switched off. It asked the veteran rule's question
+on a shorter window, so the two fired together or not at all, and on any store
+without a long invitation history — every store, so far — both abstained. A
+rule that cannot distinguish itself from another is not a rule an editor needs
+to read a verdict from.
 
 Every rule carries its own mode: ``require`` excludes, ``prefer`` only scores
 and annotates, ``off`` skips it entirely. ``require`` excludes rather than
@@ -145,7 +151,9 @@ class Readiness:
     reasons: tuple[str, ...] = ()
 
 
-def invitation_readiness(candidate: Any, email: Any, *, domain_status: str) -> Readiness:
+def invitation_readiness(
+    candidate: Any, email: Any, *, domain_status: str, min_confidence: float
+) -> Readiness:
     """One invitation decision, shared by every report and export."""
     rejected: list[str] = []
     review: list[str] = []
@@ -168,7 +176,7 @@ def invitation_readiness(candidate: Any, email: Any, *, domain_status: str) -> R
         # candidates on one live case.
         review.append("no public address found — invite through the editorial system")
     person = candidate.person
-    if person.resolution_method == "name_only" or person.confidence < 0.8:
+    if person.resolution_method == "name_only" or person.confidence < min_confidence:
         review.append(
             f"identity requires confirmation ({person.resolution_method}, "
             f"confidence {person.confidence:.2f})"
@@ -526,43 +534,6 @@ def doctoral_year(record: CandidateRecord, constraint: Constraint) -> RuleOutcom
     )
 
 
-def invitation_response(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
-    """Does this person answer the review invitations they are sent lately?"""
-    window = constraint.int_("recent_years", 3)
-    minimum = constraint.int_("min_invitations", 1)
-    required = constraint.float_("min_response_rate", 0.5)
-    thresholds = {
-        "invitation_minimum": minimum,
-        "window_years": window,
-        "rate_minimum": required,
-    }
-    invited, rate = record.invitations.resolved(
-        since_year=record.now_year - window + 1, now_year=record.now_year
-    )
-    if invited < minimum:
-        return _outcome(
-            constraint,
-            True,
-            f"{invited} invitation(s) in the last {window} years — too few to judge",
-            {"invitations": invited, **thresholds},
-            abstained=True,
-        )
-    facts = {"invitations": invited, "rate": round(rate, 2), **thresholds}
-    if rate >= required:
-        return _outcome(
-            constraint,
-            True,
-            f"responded to {rate:.0%} of {invited} invitation(s) in the last {window} years",
-            facts,
-        )
-    return _outcome(
-        constraint,
-        False,
-        f"responded to only {rate:.0%} of {invited} invitation(s) in the last {window} years",
-        facts,
-    )
-
-
 def unresponsive_veteran(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
     """A long career alone is never a reason. Silence on top of one is.
 
@@ -638,7 +609,6 @@ RULES: tuple[tuple[str, Rule], ...] = (
     ("recent_activity", recent_activity),
     ("doctoral_year", doctoral_year),
     ("seniority", seniority),
-    ("invitation_response", invitation_response),
     ("unresponsive_veteran", unresponsive_veteran),
 )
 

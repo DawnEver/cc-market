@@ -922,7 +922,7 @@ def run_report(args: argparse.Namespace) -> int:
             for row in rows
             if row.institution == "unknown" and not row.candidate.blocked
         ]
-        written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy.sources)
+        written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy)
         # The one file that leaves the workspace, built from the audit CSV that
         # was just written so the workbook cannot describe an earlier run.
         deliverable = workspace.deliverable

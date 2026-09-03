@@ -227,3 +227,132 @@ def test_each_rule_gets_exactly_one_verdict_column(tmp_path):
     heading = [c.value for c in openpyxl.load_workbook(src.with_suffix(".xlsx"))["decision"][1]]
 
     assert len(heading) == len(set(heading))
+
+
+# ---------------------------------------------------------------- coverage --
+#
+# The set of columns is derived: a rule that ran contributes its verdict and its
+# facts, and a rule that is off contributes nothing. What is *not* derived is
+# what each column is called and what it means, because no code can write those.
+# So the two hand-written tables have to keep up with the rules, and these tests
+# are what makes that true rather than hoped for.
+
+
+def every_fact_key() -> set[str]:
+    """Every fact key the rules can emit, by running each over live branches.
+
+    Not introspection — a rule's facts depend on which branch it takes, and the
+    branches are the point: an abstention names its thresholds and nothing else,
+    a measured pass names the measurement too.
+    """
+    from academia.core.models import Affiliation, Education, Person
+    from academia.reviewer import eligibility
+    from academia.reviewer.policy import load_policy
+    from academia.reviewer.rank import Evidence
+    from academia.reviewer.record import (
+        CandidateRecord,
+        InvitationRecord,
+        PublicationRecord,
+        RelevantRecord,
+    )
+
+    now = 2026
+
+    def person(country="CN", *, student=False, phd=None):
+        p = Person(person_id=f"p-{country}-{student}-{phd}", display_name="X")
+        p.affiliations.append(
+            Affiliation(inst_id="i", institution="Uni", country_code=country, is_current=True)
+        )
+        if student:
+            p.stated_rank = "phd_student"
+            p.rank_source = "https://example.edu"
+            p.education.append(Education(inst_id="i", degree="PhD", year_from=2025))
+        if phd:
+            p.education.append(Education(inst_id="i", degree="PhD", year_to=phd))
+        return p
+
+    papers = tuple(
+        Evidence(
+            paper_id=f"p{y}", title="t", year=y, position="first",
+            position_weight=1.0, similarity=0.5, venue_type=t,
+        )
+        for y, t in ((2025, "article"), (2024, "conference"), (2023, ""))
+    )
+    invitations = tuple(
+        {"invited_at": "2024-01-01", "responded": False, "accepted": False} for _ in range(3)
+    )
+
+    records = [
+        # everything measurable
+        CandidateRecord(
+            person=person(phd=2000),
+            now_year=now,
+            publications=PublicationRecord({1990: 2, 2025: 3}, "profile"),
+            relevant=RelevantRecord(papers),
+            invitations=InvitationRecord(invitations),
+        ),
+        # nothing measurable — every rule abstains
+        CandidateRecord(person=person(country=""), now_year=now),
+        # a restricted country, and a student below the floor
+        CandidateRecord(
+            person=person("IN", student=True),
+            now_year=now,
+            publications=PublicationRecord({2025: 1}, "harvest"),
+            relevant=RelevantRecord(papers[:1]),
+        ),
+    ]
+    keys: set[str] = set()
+    for record in records:
+        for journal in ("", "tte"):
+            policy = load_policy(journal)
+            for name, rule in eligibility.RULES:
+                constraint = policy.constraint(name)
+                if constraint.off:
+                    continue
+                keys |= set(rule(record, constraint).facts)
+    return keys
+
+
+def test_every_rule_is_named_and_explained():
+    """A rule with no label prints its field name at an editor."""
+    from academia.reviewer.eligibility import RULE_NAMES
+
+    for rule in RULE_NAMES:
+        assert rule in script.RULE_DIMENSIONS, f"{rule} belongs to no block"
+        assert rule in script.LABELS, f"{rule} has no heading"
+        assert rule in script.GLOSSARY, f"{rule} is undocumented"
+        assert rule in script.BLOCKING_REASONS, f"{rule} can exclude with no stated reason"
+
+
+def test_every_fact_a_rule_emits_is_named_and_explained():
+    """A threshold needs a heading only; everything else needs both.
+
+    A threshold constant is printed in the glossary as its heading and its
+    value — "Papers required = 3" — so a separate sentence explaining it would
+    say the same thing twice. A measurement is different: the heading names it,
+    and the glossary says where the number came from.
+    """
+    for key in sorted(every_fact_key()):
+        assert key in script.LABELS, f"{key} would print as a field name"
+        if key.endswith(script.THRESHOLD_SUFFIXES):
+            continue
+        assert key in script.GLOSSARY, f"{key} would print as (undocumented)"
+
+
+def test_nothing_is_labelled_that_no_rule_produces():
+    """The other direction: a table entry left behind by a deleted rule.
+
+    A stale label is invisible until a column happens to be named the same
+    thing again, and then it silently mislabels it.
+    """
+    from academia.reviewer.eligibility import RULE_NAMES
+
+    produced = every_fact_key() | set(RULE_NAMES) | set(script.IDENTITY_COLUMNS)
+    produced |= set(script.DECISION_BLOCK) | {"reasoning"}
+    # The conflict engine and the geography preference are not eligibility
+    # rules; they reach the audit from the report rather than from RULES.
+    produced |= {"coi", "coi_severity", "coi_finding_count"}
+    produced |= {"author_country_reference", "author_country_cross_region"}
+
+    assert not set(script.LABELS) - produced
+    assert not set(script.GLOSSARY) - produced

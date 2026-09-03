@@ -5,9 +5,14 @@ and never on anything inferred from a name. A Chinese researcher now at Stanford
 counts as US, which is both more accurate and avoids profiling reviewers by
 ethnicity — a proxy that is unreliable and that an editor could not defend.
 
-Default behaviour is a soft preference: cross-region candidates gain a small
-bonus rather than same-region candidates being deleted. A journal that genuinely
+Default behaviour is a soft preference: a cross-region candidate scores higher
+rather than a same-region candidate being deleted. A journal that genuinely
 requires exclusion can switch ``geo.mode`` to ``hard_filter``.
+
+How *much* higher is not stated here. It is ``scoring.geographic``, the weight
+the component carries like every other component. This module used to compute a
+``bonus`` from a second config key that said the same thing — and nothing ever
+read it, so a journal that tuned ``geo.bonus`` changed nothing at all.
 """
 
 from __future__ import annotations
@@ -27,7 +32,6 @@ class GeoAssessment:
     candidate_country: str
     origin_countries: tuple[str, ...]
     cross_region: bool
-    bonus: float
     excluded: bool
     reason: str
 
@@ -50,12 +54,12 @@ def assess(person: Person, origin_countries: list[str], policy: Policy) -> GeoAs
     mode = policy.geo_mode
 
     if mode == MODE_OFF or not origins:
-        return GeoAssessment(country, origins, False, 0.0, False, "geographic preference disabled")
+        return GeoAssessment(country, origins, False, False, "geographic preference disabled")
 
     if not country:
         # Unknown affiliation must not be punished — it is a data gap, not a fact
         # about the reviewer.
-        return GeoAssessment(country, origins, False, 0.0, False, "candidate country unknown")
+        return GeoAssessment(country, origins, False, False, "candidate country unknown")
 
     cross = country not in origins
     if mode == MODE_HARD:
@@ -63,7 +67,6 @@ def assess(person: Person, origin_countries: list[str], policy: Policy) -> GeoAs
             country,
             origins,
             cross,
-            0.0,
             excluded=not cross,
             reason="hard geographic filter" if not cross else "cross-region",
         )
@@ -72,9 +75,8 @@ def assess(person: Person, origin_countries: list[str], policy: Policy) -> GeoAs
         country,
         origins,
         cross,
-        policy.geo_bonus if cross else 0.0,
         False,
-        "cross-region bonus" if cross else "same region as submission",
+        "cross-region" if cross else "same region as submission",
     )
 
 

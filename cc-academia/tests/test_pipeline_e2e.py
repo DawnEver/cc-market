@@ -16,6 +16,7 @@ import pytest
 
 from academia.cli import dispatch
 from academia.core.models import Author, Paper
+from academia.reviewer.policy import load_policy
 from academia.reviewer.workspace import STAGES, open_workspace
 from academia.sources.base import SearchPage
 
@@ -357,7 +358,7 @@ def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources)
             directory,
             [],
             Profile(manuscript_id="ms-1", title_hash="h", journal="tte", year=2026),
-            ["coi.toml"],
+            load_policy("tte"),
         )
 
     assert not stale.exists()

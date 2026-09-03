@@ -26,6 +26,7 @@ from academia.reviewer import trajectory
 from academia.reviewer.coi import CLEAR, CLEAR_WORDING
 from academia.reviewer.eligibility import invitation_readiness
 from academia.reviewer.enrich import EmailFinding
+from academia.reviewer.policy import Policy
 from academia.reviewer.profile import Profile
 from academia.reviewer.rank import Candidate
 from academia.store import repository as repo
@@ -148,7 +149,7 @@ def render_markdown(
     conn: sqlite3.Connection,
     rows: list[Row],
     profile: Profile,
-    policy_sources: list[str],
+    policy: Policy,
 ) -> str:
     out: list[str] = []
     out.append(f"# Reviewer shortlist — {profile.manuscript_id}")
@@ -156,7 +157,7 @@ def render_markdown(
     out.append(f"Journal: {profile.journal or 'unspecified'}")
     out.append(f"Submission origin: {', '.join(profile.origin_countries) or 'unknown'}")
     out.append(f"Topics: {', '.join(profile.primary_topics) or 'none extracted'}")
-    out.append(f"Policy: {', '.join(Path(p).name for p in policy_sources)}")
+    out.append(f"Policy: {', '.join(Path(p).name for p in policy.sources)}")
     out.append("")
     people = [row.candidate.person for row in rows]
     current = trajectory.country_exposure(people, historical=False)
@@ -427,7 +428,7 @@ def profile_url(candidate: Candidate) -> str:
 CONTACT_COLUMNS = ("reviewer", "institution", "email", "status", "decision_reason")
 
 
-def render_contact_list(rows: list[Row]) -> str:
+def render_contact_list(rows: list[Row], policy: Policy) -> str:
     """Name, email, institution — the paste-into-the-system version.
 
     Blocked candidates are the one thing left out. They stay in every other
@@ -445,6 +446,7 @@ def render_contact_list(rows: list[Row]) -> str:
             row.candidate,
             row.email,
             domain_status=email_affiliation_domain(row.candidate.person, row.email.email),
+            min_confidence=policy.min_identity_confidence,
         )
         records.append(
             {
@@ -480,7 +482,7 @@ AUDIT_IDENTITY = (
 THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_window_years", "_countries")
 
 
-def render_audit(rows: list[Row]) -> str:
+def render_audit(rows: list[Row], policy: Policy) -> str:
     """One row per candidate, one column per thing a rule looked at.
 
     The counterpart to the shortlist: the shortlist says who to invite, this
@@ -506,6 +508,7 @@ def render_audit(rows: list[Row]) -> str:
             candidate,
             row.email,
             domain_status=email_affiliation_domain(person, row.email.email),
+            min_confidence=policy.min_identity_confidence,
         )
         record: dict[str, object] = {
             "rank": row.rank,
@@ -699,7 +702,7 @@ def write_all(
     directory: Path,
     rows: list[Row],
     profile: Profile,
-    policy_sources: list[str],
+    policy: Policy,
 ) -> dict[str, Path]:
     directory.mkdir(parents=True, exist_ok=True)
     dossier_dir = directory / "dossiers"
@@ -713,7 +716,7 @@ def write_all(
         previous.unlink()
 
     shortlist = directory / "shortlist.md"
-    shortlist.write_text(render_markdown(conn, rows, profile, policy_sources), encoding="utf-8")
+    shortlist.write_text(render_markdown(conn, rows, profile, policy), encoding="utf-8")
 
     csv_path = directory / "shortlist.csv"
     csv_path.write_text(render_csv(conn, rows), encoding="utf-8-sig")
@@ -732,10 +735,10 @@ def write_all(
         (directory / obsolete).unlink(missing_ok=True)
 
     contacts = directory / "contact-list.csv"
-    contacts.write_text(render_contact_list(rows), encoding="utf-8-sig")
+    contacts.write_text(render_contact_list(rows, policy), encoding="utf-8-sig")
 
     audit = directory / "contact-list-audit.csv"
-    audit.write_text(render_audit(rows), encoding="utf-8-sig")
+    audit.write_text(render_audit(rows, policy), encoding="utf-8-sig")
 
     reading = directory / "reading-list.md"
     reading.write_text(render_reading_list(rows), encoding="utf-8")

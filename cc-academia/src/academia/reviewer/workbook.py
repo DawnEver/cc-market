@@ -80,7 +80,6 @@ RULE_DIMENSIONS: dict[str, str] = {
     "recent_activity": "Still publishing",
     "doctoral_year": "Doctoral floor",
     "seniority": "Seniority",
-    "invitation_response": "Invitation response",
     "unresponsive_veteran": "Unresponsive veteran",
 }
 
@@ -151,12 +150,6 @@ LABELS: dict[str, str] = {
     "seniority_minimum": "Years required",
     "seniority_maximum": "Years this journal prefers to stay within (0 = no ceiling). A preference only; it excludes nobody.",
     # Invitation response
-    "invitation_response": "Rule: answered ≥ {invitation_response_rate_minimum} of invitations in the last {invitation_response_window_years} years",
-    "invitation_response_invitations": "Invitations in the last {invitation_response_window_years} years — {invitation_response_invitation_minimum} needed before judging",
-    "invitation_response_rate": "Share of those invitations answered — {invitation_response_rate_minimum} required",
-    "invitation_response_invitation_minimum": "Invitations needed before the answer rate is judged",
-    "invitation_response_rate_minimum": "Answer rate required",
-    "invitation_response_window_years": "Length of the invitation window, in years",
     # Unresponsive veteran
     "unresponsive_veteran": "Rule: not (career ≥ {unresponsive_veteran_career_minimum} years and answered ≤ {unresponsive_veteran_rate_maximum} of ≥ {unresponsive_veteran_invitation_minimum} invitations)",
     "unresponsive_veteran_invitations": "Invitations ever received — {unresponsive_veteran_invitation_minimum} needed before judging",
@@ -177,7 +170,6 @@ BLOCKING_REASONS = {
     "recent_activity": "Not publishing at all lately",
     "doctoral_year": "PhD student below the year floor",
     "seniority": "Too early in an independent career",
-    "invitation_response": "Rarely answers review invitations",
     "unresponsive_veteran": "Long career, no longer answers invitations",
 }
 
@@ -269,8 +261,6 @@ MEASURES: tuple[tuple[str, str], ...] = (
     ("recent_activity_papers", "recent_activity_minimum"),
     ("seniority_years", "seniority_minimum"),
     ("doctoral_year_value", "doctoral_year_minimum"),
-    ("invitation_response_rate", "invitation_response_rate_minimum"),
-    ("invitation_response_invitations", "invitation_response_invitation_minimum"),
     ("unresponsive_veteran_invitations", "unresponsive_veteran_invitation_minimum"),
 )
 
@@ -287,7 +277,6 @@ RULE_MEASURES = {
     "recent_activity": "recent_activity_papers",
     "seniority": "seniority_years",
     "doctoral_year": "doctoral_year_value",
-    "invitation_response": "invitation_response_rate",
 }
 
 DECISION_COLUMNS = (
@@ -409,9 +398,6 @@ GLOSSARY: dict[str, str] = {
     "seniority_basis": "doctorate = counted from a stated doctorate year, the better basis. first publication = the fallback, because ORCID states a doctorate year for a minority of researchers in this field.",
     "seniority_since": "The year the count starts from, so the figure can be checked.",
     "seniority_maximum": "The preferred ceiling. It scores and never excludes, whatever the mode says: refusing a reviewer for being too experienced is not something an editor should be able to state by accident, and a required ceiling once emptied a live shortlist of every senior name in it.",
-    "invitation_response": "Passes, or abstains when no invitation history exists — nobody has asked this person yet, which is not a silence. Only an invitation whose outcome was actually recorded counts.",
-    "invitation_response_invitations": "Resolved invitations inside the window.",
-    "invitation_response_rate": "Share answered, 0..1; blank when unknown.",
     "unresponsive_veteran": "Fires only on a long career AND a record of silence. Career length alone never excludes anybody. Abstains when the invitation record is too thin to judge, which on a fresh store is everybody.",
     "unresponsive_veteran_invitations": "All resolved invitations on record, over the whole career rather than a window.",
     "unresponsive_veteran_rate": "Lifetime response rate; blank when unknown.",

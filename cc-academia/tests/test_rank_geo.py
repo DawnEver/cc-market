@@ -50,17 +50,28 @@ def hard_policy() -> Policy:
 # ------------------------------------------------------------- geography ----
 
 
-def test_cross_region_earns_a_bonus(policy):
+def test_cross_region_scores_and_the_weight_is_stated_once(conn, policy):
+    """How much cross-region is worth is ``scoring.geographic``, and only that.
+
+    A ``geo.bonus`` key said the same thing and nothing read it, so a journal
+    that tuned it changed nothing.
+    """
     assessment = geo.assess(person_in("GB"), ["CN"], policy)
     assert assessment.cross_region
-    assert assessment.bonus == pytest.approx(0.08)
     assert not assessment.excluded
 
+    candidate = make_candidate(person_in("GB"))
+    candidate.geo = assessment
+    scored = rank.score_candidate(
+        conn, candidate, profile_topics=[], profile_methods=[], policy=policy, now_year=2026
+    )
+    assert scored.components["geographic"] == 1.0
+    assert policy.weights["geographic"] == pytest.approx(0.08)
 
-def test_same_region_earns_nothing_but_is_not_excluded(policy):
+
+def test_same_region_scores_nothing_but_is_not_excluded(policy):
     assessment = geo.assess(person_in("CN"), ["CN"], policy)
     assert not assessment.cross_region
-    assert assessment.bonus == 0.0
     assert not assessment.excluded
 
 
@@ -75,7 +86,7 @@ def test_country_comes_from_the_current_post_not_from_a_name(policy):
 
 def test_unknown_country_is_neither_rewarded_nor_punished(policy):
     assessment = geo.assess(person_in(""), ["CN"], policy)
-    assert assessment.bonus == 0.0
+    assert not assessment.cross_region
     assert not assessment.excluded
     assert "unknown" in assessment.reason
 

@@ -64,7 +64,7 @@ def test_a_rule_that_ran_contributes_its_verdict_and_its_numbers():
         outcomes=[journal_outcome([paper("Journal"), paper("Journal"), paper("Conference")])]
     )
 
-    header, rows = read(report.render_audit([row(cand)]))
+    header, rows = read(report.render_audit([row(cand)], load_policy()))
 
     # Every column a rule produces is named after that rule, which is what lets
     # a workbook group them without a hand-kept table of prefixes.
@@ -88,7 +88,7 @@ def test_a_rule_that_was_switched_off_leaves_no_column():
         CandidateRecord(person=cand.person, now_year=2026), load_policy()
     )
 
-    header, _ = read(report.render_audit([row(cand)]))
+    header, _ = read(report.render_audit([row(cand)], load_policy()))
 
     assert not [name for name in header if name.startswith("filter_related")]
 
@@ -102,7 +102,7 @@ def test_an_abstention_reads_as_verify_rather_than_as_a_pass():
 
     cand = candidate()
     cand.eligibility = eligibility.Assessment(outcomes=[outcome])
-    _, rows = read(report.render_audit([row(cand)]))
+    _, rows = read(report.render_audit([row(cand)], load_policy()))
     assert rows[0]["filter_invitation_response"] == "VERIFY"
 
 
@@ -114,7 +114,7 @@ def test_a_preference_that_was_missed_is_not_a_failure():
 def test_the_person_id_never_reaches_the_sheet():
     cand = candidate()
     cand.eligibility = eligibility.Assessment()
-    header, _ = read(report.render_audit([row(cand)]))
+    header, _ = read(report.render_audit([row(cand)], load_policy()))
     assert "person_id" not in header
 
 
@@ -155,7 +155,7 @@ def test_the_conflict_verdict_and_its_severity_are_stated():
     cand.verdict = coi.Verdict(person_id="p1")
     cand.verdict.add(coi.Finding("manuscript_author", coi.BLOCK, {"matched_by": "name"}))
 
-    _, rows = read(report.render_audit([row(cand)]))
+    _, rows = read(report.render_audit([row(cand)], load_policy()))
     assert rows[0]["filter_coi"] == "BLOCK"
     assert rows[0]["filter_coi_severity"] == "2"
     assert rows[0]["recommendation"] == "do_not_invite"
@@ -165,7 +165,7 @@ def test_the_conflict_verdict_and_its_severity_are_stated():
 def test_a_missing_address_leaves_the_cell_empty_rather_than_guessing(found):
     cand = candidate()
     cand.eligibility = eligibility.Assessment()
-    _, rows = read(report.render_audit([row(cand, email="a@b.edu" if found else "")]))
+    _, rows = read(report.render_audit([row(cand, email="a@b.edu" if found else "")], load_policy()))
     assert rows[0]["email"] == ("a@b.edu" if found else "")
 
 

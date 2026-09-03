@@ -49,8 +49,10 @@ heavily_cited_by_manuscript = 3
 [geo]
 # Cross-region preference operates on the candidate's *current affiliation
 # country*, never on nationality or on any inference from a name.
+# How much a cross-region candidate gains is scoring.geographic, like every
+# other component. A second key here saying the same thing was dead: nothing
+# read it, so tuning it changed nothing.
 mode = "prefer_cross_region"   # or "hard_filter" or "off"
-bonus = 0.08
 
 # Countries the journal will not invite from at all — a sanctions regime or a
 # publisher instruction, not a preference. Off by default and deliberately
@@ -73,6 +75,16 @@ countries = []                 # two-letter ISO codes, e.g. ["IN", "IR"]
 # mode says — refusing a reviewer for being too experienced is not a policy an
 # editor should be able to state by accident, and a `require` ceiling once
 # emptied a live shortlist of every senior name in it.
+# How sure the identity match has to be before an invitation goes out unasked.
+# Below this the candidate is kept and sent for confirmation — a weak match is a
+# reason to check a name, never a reason to drop a qualified reviewer.
+#
+# One threshold, because it is one question. There were two hardcoded numbers:
+# 0.8 sent a candidate for confirmation and 0.6 added a note saying the same
+# thing, so a candidate at 0.7 was flagged for a human and not told why.
+[identity]
+min_confidence = 0.8
+
 [seniority]
 mode = "prefer"
 min_years = 3
@@ -121,20 +133,19 @@ min_recent_papers = 1
 mode = "off"                   # off | prefer | require
 min_publications = 3
 
-[activity.invitations]
-# Responsiveness to review invitations, read from the accumulating store — every
-# manuscript it holds, not just this workspace. Empty history is neutral: a
-# candidate nobody has invited yet is not unresponsive, and the first run has no
-# history at all. Only invitations whose outcome was actually recorded count;
-# one still pending is not a silence.
-mode = "prefer"
-recent_years = 3
-min_invitations = 1            # resolved outcomes; below this, too thin to judge
-min_response_rate = 0.5        # responses / invitations inside the window
-
 # The senior expert who no longer takes review work. Career length alone never
 # excludes anyone: the rule fires only when a long career *and* a record of
 # unanswered invitations coincide.
+#
+# The only rule that reads the invitation record. A windowed "answered at least
+# half of recent invitations" rule sat beside it and was removed: it asked the
+# same question over a shorter window, so the two agreed by construction, and
+# on any store without a long invitation history both abstain anyway.
+#
+# Responsiveness is read from the accumulating store — every manuscript it
+# holds, not just this workspace. An empty history is neutral: a candidate
+# nobody has invited yet is not unresponsive. Only invitations whose outcome was
+# actually recorded count; one still pending is not a silence.
 [activity.veteran]
 mode = "require"
 career_years = 10              # years since the first publication on record

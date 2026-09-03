@@ -271,40 +271,44 @@ def test_a_professor_is_not_measured_against_the_doctoral_floor(conn, policy):
 # ------------------------------------------------------------ invitations --
 
 
-def test_recent_silence_is_flagged_once_there_is_enough_history(conn, policy):
+def test_silence_alone_flags_nobody_without_a_long_career(conn, policy):
+    """The windowed responsiveness rule is gone, deliberately.
+
+    It read the same invitation record the veteran rule reads, over a shorter
+    window, so the two agreed by construction — and on any store without a long
+    invitation history both abstained. Silence is now only a reason alongside a
+    long career, which is the case an editor actually acts on.
+    """
     person = author_with_papers(conn, 2025, name="Silent")
     for index in range(3):
         repo.record_invitation(
             conn, person.person_id, f"ms-{index}", invited_at="2025-01-01", responded=False
         )
+
     assessment = assess(conn, person, policy, now_year=NOW)
-    assert not assessment.excluded  # prefer, not require
-    assert any("responded to only 0%" in note for note in assessment.notes())
 
-
-def test_old_invitations_fall_outside_the_response_window(conn, policy):
-    person = author_with_papers(conn, 2025, name="Reformed")
-    repo.record_invitation(conn, person.person_id, "ms-old", invited_at="2015-01-01", responded=False)
-    strict = tuned(
-        policy,
-        activity={
-            **policy.data["activity"],
-            "invitations": {**policy.data["activity"]["invitations"], "mode": "require"},
-        },
-    )
-    assert not assess(conn, person, strict, now_year=NOW).excluded
+    assert not assessment.excluded
+    assert not any("invitation" in note for note in assessment.notes())
+    assert "invitation_response" not in {o.rule for o in assessment.outcomes}
 
 
 def test_an_empty_invitation_history_is_neutral(conn, policy):
-    person = author_with_papers(conn, 2025, name="Fresh")
+    """Nobody has asked this person yet, which is not a silence."""
+    person = author_with_papers(conn, 2005, 2025, name="Fresh")
     strict = tuned(
         policy,
         activity={
             **policy.data["activity"],
-            "invitations": {**policy.data["activity"]["invitations"], "mode": "require"},
+            "veteran": {**policy.data["activity"]["veteran"], "mode": "require"},
         },
     )
-    assert not assess(conn, person, strict, now_year=NOW).excluded
+
+    assessment = assess(conn, person, strict, now_year=NOW)
+    veteran = next(o for o in assessment.outcomes if o.rule == "unresponsive_veteran")
+
+    assert not assessment.excluded
+    assert veteran.abstained
+
 
 
 # --------------------------------------------------------------- veteran ---
@@ -361,7 +365,6 @@ def test_every_rule_off_leaves_the_score_untouched(conn, policy):
         activity={
             "mode": "off",
             "relevant": {**policy.data["activity"]["relevant"], "mode": "off"},
-            "invitations": {**policy.data["activity"]["invitations"], "mode": "off"},
             "veteran": {**policy.data["activity"]["veteran"], "mode": "off"},
         },
         seniority={
@@ -570,7 +573,7 @@ def test_contact_list_marks_every_candidate_and_explains_rejections(conn, policy
         row(3, "Conflicted", True, EmailFinding(email="c@uni.edu", source="orcid_public")),
     ]
 
-    lines = report.render_contact_list(rows).strip().split("\n")
+    lines = report.render_contact_list(rows, load_policy()).strip().split("\n")
     assert lines[0] == "reviewer,institution,email,status,decision_reason"
     assert lines[1].startswith("Invitable,Some Uni,a@uni.edu,manual_review,")
     # A missing address asks for a human, and never excludes: the editorial

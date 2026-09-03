@@ -43,7 +43,6 @@ RULE_TABLES: dict[str, tuple[str, ...]] = {
     "recent_activity": ("activity",),
     "doctoral_year": ("seniority", "doctoral"),
     "seniority": ("seniority",),
-    "invitation_response": ("activity", "invitations"),
     "unresponsive_veteran": ("activity", "veteran"),
 }
 
@@ -145,9 +144,10 @@ class Policy:
     def geo_mode(self) -> str:
         return str(self.data["geo"]["mode"])
 
+    # -- identity --------------------------------------------------------
     @property
-    def geo_bonus(self) -> float:
-        return float(self.data["geo"]["bonus"])
+    def min_identity_confidence(self) -> float:
+        return float(self.data["identity"]["min_confidence"])
 
     # -- eligibility rules -----------------------------------------------
     def constraint(self, name: str) -> Constraint:

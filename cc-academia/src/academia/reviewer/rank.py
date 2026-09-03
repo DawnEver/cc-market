@@ -247,7 +247,7 @@ def score_candidate(
     candidate.notes.extend(assessment.notes())
     if (note := _student_note(candidate.person, now_year)):
         candidate.notes.append(note)
-    if candidate.person.confidence < 0.6:
+    if candidate.person.confidence < policy.min_identity_confidence:
         candidate.notes.append(
             f"identity confidence {candidate.person.confidence:.2f} "
             f"({candidate.person.resolution_method}) — confirm before inviting"
