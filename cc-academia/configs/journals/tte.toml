@@ -8,13 +8,21 @@ journal = "IEEE Transactions on Transportation Electrification"
 # narrower window has to state a reason next to it, and a test refuses a
 # silent one.
 
-# A ten-year ceiling on the seniority axis: an early-career candidate scores
-# higher, and a long career only shows up in the audit. It cannot exclude
-# anybody — the rule enforces that regardless of the mode here — which is the
-# lesson of the run where this was `require` and removed every senior
-# researcher in the pool, leaving nobody to invite.
+# Under ten years into an independent career, and no floor. The rule TTE wants
+# is a preference for early-career reviewers, and it cannot exclude anybody —
+# the rule enforces that regardless of the mode here, which is the lesson of
+# the run where this was `require` and removed every senior researcher in the
+# pool, leaving nobody to invite.
+#
+# The shared default keeps a three-year floor, for "too soon after the
+# doctorate". Dropped here because the case it guards against is already a hard
+# gate elsewhere: [seniority.doctoral] excludes a PhD student before their
+# third year outright, and a floor that only costs score cannot add to that.
+# Stating both bounds would also have put "between 3 and 10 years" on the
+# workbook heading, which is not the rule an editor set.
 [seniority]
 mode = "prefer"
+min_years = 0
 max_years = 10
 
 [activity]

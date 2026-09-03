@@ -351,3 +351,38 @@ def test_nothing_is_labelled_that_no_rule_produces():
 
     assert not set(script.LABELS) - produced
     assert not set(script.GLOSSARY) - produced
+
+
+@pytest.mark.parametrize(
+    "floor,ceiling,expected",
+    [
+        ("3", "10", "between 3 and 10 years"),
+        ("0", "10", "under 10 years"),
+        ("3", "0", "at least 3 years"),
+        ("0", "0", "any number of years"),
+    ],
+)
+def test_the_seniority_heading_states_the_bounds_actually_in_force(floor, ceiling, expected):
+    """The one two-sided rule, and its heading named only the floor.
+
+    So a journal whose entire reason for setting the rule is a ten-year ceiling
+    got a column headed "at least 3 years" — true, inherited from the default,
+    and not what the run applied.
+    """
+    assert script.seniority_band(floor, ceiling) == f"{expected}"
+
+
+def test_the_workbook_follows_the_policy_rather_than_restating_it(tmp_path):
+    """Change a threshold and the heading changes; switch a rule off and its
+    columns leave the file entirely."""
+    src = write_csv(tmp_path, row("CN", "0", "CLEAR", "4"))
+    retune(src, filter_related_journals_minimum=["6"])
+
+    script.build(src, src.with_suffix(".xlsx"))
+    heading = [c.value for c in openpyxl.load_workbook(src.with_suffix(".xlsx"))["decision"][1]]
+
+    assert "Rule: related journal papers ≥ 6" in heading
+    # Nothing in this CSV came from the doctoral or seniority rules, so the
+    # workbook has no column for them — not a column of blanks.
+    assert not [h for h in heading if h and "PhD student" in h]
+    assert not [h for h in heading if h and "independent career" in h]

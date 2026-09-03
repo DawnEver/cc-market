@@ -93,7 +93,7 @@ add a ninth. Each is in `configs/coi.toml` and overridable per journal:
 | `activity.relevant` | `relevant_activity` | prefer | nothing on *this* topic in the last 3 years |
 | `activity` | `recent_activity` | prefer | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
-| `seniority` | `seniority` | prefer | fewer than 3 years into an independent career (floor), or past the journal's preferred ceiling |
+| `seniority` | `seniority` | prefer | outside the journal's band — a floor, a preferred ceiling, or both. TTE sets `min_years = 0`, `max_years = 10`: under ten years, no floor |
 
 Every rule reads its quantities off one `CandidateRecord`, built once per
 candidate. That is the point of it: `career_length` and `unresponsive_veteran`
@@ -126,7 +126,15 @@ something any rule or score judges. `rev-disc invite` is now bookkeeping for the
 editor rather than an input to the next run's ranking.
 
 `[seniority]` therefore holds the only career threshold in the policy — a floor
-and a preferred ceiling on one measured figure.
+and a preferred ceiling on one measured figure. The workbook heading states the
+bounds **actually in force**: "at least 3 years", "under 10 years" or "between
+3 and 10 years". It used to name the floor alone, so a journal whose whole
+reason for setting the rule was a ten-year ceiling got a column headed with the
+inherited default instead of the rule it had set.
+
+TTE drops the floor, because the case a floor guards against is already a hard
+gate elsewhere: `[seniority.doctoral]` excludes a PhD student before their third
+year outright, and a floor that can only cost score adds nothing to that.
 
 Each rule's audit columns are named after it — `seniority_years`,
 `related_journals_count` — so the workbook groups them by the rule that produced

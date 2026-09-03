@@ -142,7 +142,7 @@ LABELS: dict[str, str] = {
     "doctoral_year_value": "Year of PhD study — {doctoral_year_minimum} required",
     "doctoral_year_minimum": "Minimum year of PhD study",
     # Seniority
-    "seniority": "Rule: at least {seniority_minimum} years into an independent career",
+    "seniority": "Rule: {seniority_band} into an independent career",
     "seniority_years": "Years into an independent career",
     "seniority_basis": "What that is counted from — a stated doctorate year where there is one, otherwise the first publication",
     "seniority_since": "The year it is counted from",
@@ -186,6 +186,27 @@ def _readable(name: str, value: str) -> str:
 
 def label_of(name: str) -> str:
     return LABELS.get(name, name).format_map(THRESHOLDS)
+
+
+def seniority_band(minimum: str, maximum: str) -> str:
+    """The seniority rule's heading, from the bounds that are actually in force.
+
+    The only two-sided rule in the policy, and the heading used to name its
+    floor alone — so a journal whose whole reason for setting the rule is a
+    ten-year ceiling read "at least 3 years", which is true, is what the
+    inherited default says, and is not what the run applied.
+    """
+    try:
+        floor, ceiling = int(float(minimum or 0)), int(float(maximum or 0))
+    except ValueError:
+        return "a stated number of years"
+    if floor and ceiling:
+        return f"between {floor} and {ceiling} years"
+    if ceiling:
+        return f"under {ceiling} years"
+    if floor:
+        return f"at least {floor} years"
+    return "any number of years"
 
 
 def missing_thresholds(header: list[str]) -> list[str]:
@@ -619,6 +640,11 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
     # The restricted list is policy, not something this script gets to know. Name
     # it from the journal's own configuration, and cross-check the CSV against it
     # so a policy that has moved on cannot leave a workbook claiming the old rule.
+    if "seniority_minimum" in THRESHOLDS or "seniority_maximum" in THRESHOLDS:
+        THRESHOLDS["seniority_band"] = seniority_band(
+            THRESHOLDS.get("seniority_minimum", "0"), THRESHOLDS.get("seniority_maximum", "0")
+        )
+
     restricted = restricted_countries(src, journal)
     # Spelled out for the heading. The CSV states the list too, as the codes the
     # run applied, and that is what the cross-check below reads — this is the
