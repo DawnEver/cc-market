@@ -46,7 +46,7 @@ def row(country: str, banned: str, coi: str, journals: str) -> list[str]:
         "https://orcid.org/0000-0002-1825-0097",
         "do_not_invite",
         coi,
-        "0" if coi == "CLEAR" else "2",
+        {"CLEAR": "0", "REVIEW": "1"}.get(coi, "2"),
         "FILTERED" if banned == "1" else "PASS",
         banned,
         "PASS" if int(journals) >= 3 else "FILTERED",
@@ -182,3 +182,18 @@ def test_building_twice_does_not_carry_the_first_policy_into_the_second(tmp_path
     heading = [c.value for c in openpyxl.load_workbook(second.with_suffix(".xlsx"))["decision"][1]]
 
     assert "Rule: related journal papers ≥ 7" in heading
+
+
+def test_a_conflict_marked_for_review_is_not_a_blocking_reason(tmp_path):
+    """Two live TTE candidates read "Check first" while the blocking-reason
+    column said a conflict had excluded them. It had not: a REVIEW-level
+    conflict asks for a human. Anyone filtering that column for blanks to find
+    who is still in play lost them."""
+    src = write_csv(tmp_path, row("CN", "0", "REVIEW", "4"), row("CN", "0", "BLOCK", "4"))
+
+    script.build(src, src.with_suffix(".xlsx"))
+    sheet = openpyxl.load_workbook(src.with_suffix(".xlsx"))["decision"]
+    at = [c.value for c in sheet[1]].index("Why not recommended") + 1
+
+    assert sheet.cell(row=2, column=at).value is None
+    assert sheet.cell(row=3, column=at).value == "Conflict of interest with the authors"

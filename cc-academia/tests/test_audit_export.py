@@ -130,7 +130,7 @@ def test_the_conflict_verdict_and_its_severity_are_stated():
     cand.verdict.add(coi.Finding("manuscript_author", coi.BLOCK, {"matched_by": "name"}))
 
     _, rows = read(report.render_audit([row(cand)]))
-    assert rows[0]["filter_coi"] == "FILTERED"
+    assert rows[0]["filter_coi"] == "BLOCK"
     assert rows[0]["filter_coi_severity"] == "2"
     assert rows[0]["recommendation"] == "do_not_invite"
 

@@ -270,6 +270,11 @@ VERDICT_STYLE = {
     "Check by hand": ("FFE9A8", "8A6100"),
 }
 
+#: The verdicts that mean a rule excluded this candidate, and so name a
+#: blocking reason. A conflict reported for review is not one of them: it asks
+#: for a human, and a candidate awaiting that is still in play.
+EXCLUDING_VERDICTS = frozenset({"FILTERED", "BLOCK"})
+
 #: A measured number is judged against the same threshold its rule uses, so the
 #: figure itself reads pass or fail without cross-referencing the rule column.
 #: (column, threshold column, the number must reach the threshold)
@@ -332,7 +337,7 @@ HOW_TO_READ = [
     ),
     (
         "2. To ask why somebody is out, filter ‘Why not recommended’.",
-        "It states the first check they failed, and is blank for everyone still in play.",
+        "It states the first check they failed, and is blank for everyone still in play — including anyone whose only flag is a conflict marked for review, which asks for a human rather than excluding them.",
     ),
     (
         "3. A Rule column shows a number where there is one to show.",
@@ -628,7 +633,7 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
                 (
                     BLOCKING_REASONS[name]
                     for name, at in verdict_at.items()
-                    if row[at] == "FILTERED"
+                    if row[at] in EXCLUDING_VERDICTS
                 ),
                 None,
             )

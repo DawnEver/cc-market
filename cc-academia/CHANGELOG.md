@@ -25,6 +25,13 @@ build if they drift.
 
 ### Fixed
 
+- **A conflict marked for review is no longer reported as a blocking reason.**
+  The audit export collapsed `REVIEW` into `FILTERED`, so the workbook printed
+  "Conflict of interest with the authors" in `Why not recommended` against
+  candidates it simultaneously recommended checking — two of them on a live TTE
+  case. A review-level conflict asks for a human; it excludes nobody. The
+  column now carries all three states and only an excluding verdict names a
+  reason.
 - **Intake reads the editorial cover sheet properly.** Three defects, all found
   by re-verifying the workflow against live TTE proofs:
   - Two shipped regexes carried a literal backspace where a word boundary was

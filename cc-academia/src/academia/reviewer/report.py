@@ -513,7 +513,12 @@ def render_audit(rows: list[Row]) -> str:
             "current_country": person.country_code or "",
             "profile_url": profile_url(candidate),
             "recommendation": RECOMMENDATION[decision.status],
-            "filter_coi": "CLEAR" if not verdict or verdict.status == "CLEAR" else "FILTERED",
+            # Three states, not two. A REVIEW-level conflict does not exclude
+            # anybody — it asks for a human — and collapsing it into FILTERED
+            # printed "Conflict of interest with the authors" in the workbook's
+            # blocking-reason column against candidates who were still
+            # invitable. Anyone filtering that column for blanks lost them.
+            "filter_coi": verdict.status if verdict else "CLEAR",
             "filter_coi_severity": {"CLEAR": 0, "REVIEW": 1, "BLOCK": 2}.get(
                 verdict.status if verdict else "CLEAR", 0
             ),
