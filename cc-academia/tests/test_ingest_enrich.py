@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from academia.core.errors import SourceError
@@ -558,3 +560,90 @@ def test_ieee_membership_grades_are_not_read_as_names():
         "Abstract\u2014text"
     )
     assert [a.name for a in authors] == ["Grace Expert", "Ravi Junior"]
+
+
+#: An Atypon ReX cover, laid out as the live TTE submissions are: the title
+#: above the submission id, the keyword list running across the page break, and
+#: the paper's own first page carrying the IEEE template placeholder where the
+#: title should be.
+REX_COVER = """
+Regular Paper
+Integrated Thermal Design of Hybrid Winding and
+Oil-Immersed In-Slot Cooling for High-Power-Density
+Permanent Magnet Propulsion Motors
+Submission ID
+dec53079-9759-4600-a913-5f874183898c
+Submission Version
+Initial Submission
+Authors
+Prof. Huamin Gao
+Affiliations
+• Nanjing University of Aeronautics and Astronautics
+• Southwest Jiaotong University
+Dr. Weikang Huang
+Affiliations
+• Nanjing University of Aeronautics and Astronautics
+Additional Information
+Keywords
+Aircraft propulsion
+For consideration in IEEE Transactions on Transportation Electrification
+Page 2 of 13
+Electric machines
+Permanent magnet machines
+Subject Category
+Electric Machines and Drives
+"""
+
+
+def test_the_cover_title_is_read_when_the_paper_page_has_none():
+    """A proof whose template placeholder was never edited has no title of its
+    own, and the cover's is the complete one anyway."""
+    assert ingest_pdf.parse_cover_title(REX_COVER) == (
+        "Integrated Thermal Design of Hybrid Winding and Oil-Immersed In-Slot "
+        "Cooling for High-Power-Density Permanent Magnet Propulsion Motors"
+    )
+
+
+def test_a_page_without_the_submission_label_yields_no_cover_title():
+    assert ingest_pdf.parse_cover_title("Just a title" + chr(10) * 2 + "Abstract text") == ""
+
+
+def test_the_cover_keyword_list_survives_the_covers_own_page_break():
+    """Author-entered keywords, one per line, with a running head in the middle
+    of the list. The manuscript's own Index Terms sit against the introduction
+    and a live run read two sentences of it as keywords."""
+    assert ingest_pdf.parse_cover_keywords(REX_COVER) == [
+        "Aircraft propulsion",
+        "Electric machines",
+        "Permanent magnet machines",
+    ]
+
+
+def test_the_cover_author_block_ends_before_the_next_heading():
+    """`Additional Information` parsed as a fifth author while _COVER_END held a
+    literal backspace where a word boundary was meant, so it matched nothing."""
+    authors = ingest_pdf.parse_cover_authors(REX_COVER)
+
+    assert [a.name for a in authors] == ["Huamin Gao", "Weikang Huang"]
+
+
+def test_an_affiliation_bullet_is_never_read_as_a_name():
+    """"universit" cannot be followed by a word boundary, so for a while the
+    pattern that recognises an institution recognised no university at all and
+    a second affiliation line became an author."""
+    assert not ingest_pdf._looks_like_a_name("• Southwest Jiaotong University")
+    assert not ingest_pdf._looks_like_a_name("Ruhr-Universitaet Bochum")
+    assert not ingest_pdf._looks_like_a_name("Key Laboratory Of Things")
+    assert ingest_pdf._looks_like_a_name("Prof. Huimin Zhao")
+
+
+def test_no_regex_in_the_ingest_module_carries_a_control_character():
+    """A word boundary written outside a raw string collapses into a literal
+    backspace, and the pattern then silently matches nothing. Two shipped
+    patterns did. Cheap to assert, and invisible in review otherwise."""
+    import re as _re
+
+    source = pathlib.Path(ingest_pdf.__file__).read_text(encoding="utf-8")
+    stray = _re.findall(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", source)
+
+    assert not stray, f"{len(stray)} control character(s) in {ingest_pdf.__file__}"

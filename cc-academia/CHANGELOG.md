@@ -23,6 +23,25 @@ build if they drift.
   - Writing over a workbook that is open in Excel now reports which file to
     close instead of an errno.
 
+### Fixed
+
+- **Intake reads the editorial cover sheet properly.** Three defects, all found
+  by re-verifying the workflow against live TTE proofs:
+  - Two shipped regexes carried a literal backspace where a word boundary was
+    meant, and matched nothing at all: the pattern that recognises an
+    institution never recognised a university or a laboratory, and the one that
+    closes the cover's author block never closed it. Between them an
+    affiliation line and the `Additional information` heading became submitting
+    authors. A test now refuses any control character in the module.
+  - The title and keywords are read off the cover sheet when it has them. A
+    proof whose IEEE template placeholder was never edited has no title of its
+    own at all, and the manuscript's `Index Terms` sit against the
+    introduction — one live run took its last two keywords from the first two
+    sentences of it and searched for the wrong thing.
+  - `pdf_text` falls back to the plainer reader whenever the layout reader
+    fails, not only when it is missing. Installing the `pdf` extra could
+    previously make a PDF unreadable that had been readable without it.
+
 ### Added
 
 - **Homepage-or-paper link** on the `decision` sheet and in `shortlist.csv`

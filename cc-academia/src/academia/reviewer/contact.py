@@ -187,18 +187,22 @@ def pdf_text(body: bytes, *, front_pages: int = PDF_FRONT_PAGES) -> str:
     except ImportError:
         return _pdf_text_via_pymupdf(body)
     except Exception as error:  # a malformed or encrypted PDF is not an outage
+        # Not only when the layout reader is absent: when it is present and
+        # cannot read this particular file, the plainer reader is exactly the
+        # fallback that was wanted. Returning nothing here meant installing the
+        # extra could make a PDF unreadable that had been readable without it.
         log.detail(f"paper_pdf_ingest could not read PDF: {error}")
-    return ""
+        return _pdf_text_via_pymupdf(body)
 
 
 def _pdf_text_via_pymupdf(body: bytes) -> str:
     try:
-        import fitz
+        import pymupdf
     except ImportError:  # pragma: no cover - depends on optional extra
         log.detail("a PDF was fetched but the 'pdf' extra is not installed")
         return ""
     try:
-        with fitz.open(stream=body, filetype="pdf") as document:
+        with pymupdf.open(stream=body, filetype="pdf") as document:
             return "\n".join(page.get_text() for page in document)
     except Exception as error:  # a malformed or encrypted PDF is not an outage
         log.detail(f"could not read PDF: {error}")

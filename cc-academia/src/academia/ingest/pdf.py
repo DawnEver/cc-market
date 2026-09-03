@@ -143,9 +143,14 @@ _TITLE_MAX_LINES = 3
 #: these the join walks the author list and the affiliations straight into the
 #: abstract — carrying body text past the one command allowed to read it.
 _BYLINE = re.compile(r"\b(member|fellow|student member),?\s+ieee\b", re.IGNORECASE)
+#: Each stem takes any ending, because the endings are the point: "universit"
+#: has to reach University, Universität and Universidad alike. Written with a
+#: closing ``\w*`` rather than a closing ``\b`` — a boundary immediately after a
+#: stem is a boundary that can never be there, and for a while this pattern
+#: matched no university and no laboratory at all.
 _AFFILIATION = re.compile(
-    r"\b(universit|institute|department|school of|college|laborator|academy"
-    r"|centre|center|gmbh|ltd)\b",
+    r"\b(?:universit\w*|institut\w*|departmen\w*|school of|colleg\w*"
+    r"|laborator\w*|academ\w*|centre|center|gmbh|ltd)\b",
     re.IGNORECASE,
 )
 #: "Liming Liu, Lingyun Shao, and Wei Hua" — a comma-separated list, or any line
@@ -223,6 +228,11 @@ def _read_title(lines: list[str]) -> str:
                 if len(parts) >= _TITLE_MAX_LINES:
                     break
             break
+    return _join_wrapped(parts)
+
+
+def _join_wrapped(parts: list[str]) -> str:
+    """Re-join the lines a layout wrapped a title across, and cap the length."""
     if not parts:
         return ""
     # A hyphen at a wrap point belongs to the word, not between the words.
@@ -231,6 +241,86 @@ def _read_title(lines: list[str]) -> str:
         joined = joined.rstrip()
         joined = joined + part if joined.endswith("-") else f"{joined} {part}"
     return " ".join(joined.split()[:TITLE_WORD_LIMIT])
+
+
+#: The label that closes the cover sheet's title block.
+_COVER_TITLE_END = re.compile(r"^submission id", re.IGNORECASE)
+
+#: The line above the title, naming the submission category.
+_PAPER_TYPE = re.compile(
+    r"^(regular|original|research|review|special|brief|short|invited)\s+"
+    r"(paper|article|communication|letter)$",
+    re.IGNORECASE,
+)
+
+#: A title wrapping past this many cover lines means the walk is reading
+#: something that is not the title, so it yields nothing instead.
+_COVER_TITLE_MAX_LINES = 4
+
+#: Running heads and page markers a cover's own page breaks leave in the middle
+#: of a list. Skipped rather than treated as the end of one.
+_COVER_NOISE = re.compile(r"^(for consideration in|page \d+ of \d+)", re.IGNORECASE)
+
+#: The labels that close the cover's keyword list.
+_COVER_KEYWORDS_END = re.compile(
+    r"^(subject category|additional information|funding|files for peer review"
+    r"|abstract|authors|affiliations?)",
+    re.IGNORECASE,
+)
+
+
+def parse_cover_title(text: str) -> str:
+    """The title as the author typed it into the editorial system.
+
+    Read upwards from the "Submission ID" label, stopping at the category line
+    above it. This is a better title than the manuscript's own first page, which
+    is the reverse of what :func:`select_front_matter_page` assumes — and both
+    are right. That function is choosing which *page* holds the front matter,
+    and a wrapped cover title with no abstract behind it is no use for that. But
+    as a title it is the complete one: an IEEE two-column proof wraps its title
+    across lines a parser has to guess at, and some proofs carry no title at all
+    where the template's "replace this line" placeholder was never edited.
+
+    Nothing is returned unless the label is there and the lines above it look
+    like a title, because a caller handed an empty title asks for one.
+    """
+    lines = [line.strip() for line in (text or "").splitlines()]
+    end = next((i for i, line in enumerate(lines) if _COVER_TITLE_END.match(line)), -1)
+    if end < 0:
+        return ""
+    parts: list[str] = []
+    for line in reversed(lines[:end]):
+        if not line or _PAPER_TYPE.match(line):
+            break
+        if len(parts) == _COVER_TITLE_MAX_LINES:
+            return ""
+        parts.append(line)
+    parts.reverse()
+    return _join_wrapped(parts)
+
+
+def parse_cover_keywords(text: str) -> list[str]:
+    """The keyword list off the cover sheet, one per line.
+
+    Preferred over the manuscript's own "Index Terms", which sits immediately
+    above the introduction: a run on a live submission read the first two
+    sentences of the introduction as its last two keywords, and every query
+    built from them searched for the wrong thing.
+    """
+    lines = [line.strip() for line in (text or "").splitlines()]
+    start = next(
+        (i for i, line in enumerate(lines) if line.lower().rstrip(":") == "keywords"), -1
+    )
+    if start < 0:
+        return []
+    keywords: list[str] = []
+    for line in lines[start + 1 :]:
+        if not line or _COVER_NOISE.match(line):
+            continue
+        if _COVER_KEYWORDS_END.match(line):
+            break
+        keywords.append(line.strip(" .;,"))
+    return keywords[:12]
 
 
 
@@ -254,8 +344,15 @@ _COVER_LABELS = frozenset(
     }
 )
 
-#: The cover sheet's author block ends here.
-_COVER_END = re.compile(r"^(for consideration in|page \d+ of \d+|funding|abstract)", re.IGNORECASE)
+#: The cover sheet's author block ends at the next cover section. Two of
+#: these were missing, and the pattern carried a literal backspace where a
+#: word boundary was meant — so it matched nothing, the block ran on, and the
+#: "Additional information" heading parsed as one more submitting author.
+_COVER_END = re.compile(
+    r"^(for consideration in|page \d+ of \d+|funding|abstract"
+    r"|additional information|keywords|subject category)",
+    re.IGNORECASE,
+)
 
 _ORCID_URL = re.compile(r"(\d{4}-\d{4}-\d{4}-\d{3}[\dX])", re.IGNORECASE)
 
@@ -425,12 +522,22 @@ def extract_front_matter(pdf: Path):
     from academia.reviewer.profile import Sanitized
 
     pages = _page_texts(pdf, FRONT_MATTER_SCAN_PAGES)
-    front_page = pages[select_front_matter_page(pages)] if pages else ""
+    at = select_front_matter_page(pages)
+    front_page = pages[at] if pages else ""
+    # Everything before the paper's own front matter is the editorial cover, and
+    # it is one document rather than one page: a keyword list runs across its
+    # page break. Empty for a PDF that has no cover, so every fallback below
+    # simply does not fire.
+    cover = chr(10).join(pages[:at])
     parsed = parse_front_matter(front_page)
     # The cover sheet carries a structured author block; the paper's own page
     # carries a byline. Try both, cover first — it has affiliations.
-    authors = read_authors(pages[0] if pages else "") or read_authors(front_page)
-    title = as_text(parsed["title"])
+    authors = read_authors(cover) or read_authors(front_page)
+    # The cover states the title and keywords as the author entered them, so it
+    # wins where it has them: it is neither wrapped by a two-column layout nor
+    # adjacent to the introduction.
+    title = parse_cover_title(cover) or as_text(parsed["title"])
+    keywords = parse_cover_keywords(cover) or list(parsed["keywords"])
     abstract = as_text(parsed["abstract"])
 
     if not title:
@@ -452,6 +559,6 @@ def extract_front_matter(pdf: Path):
     return Sanitized(
         title=title,
         abstract=abstract,
-        keywords=list(parsed["keywords"]),  # type: ignore[arg-type]
+        keywords=keywords,
         authors=authors,
     )
