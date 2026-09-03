@@ -31,6 +31,22 @@ def _merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+#: Where each eligibility rule's mode and thresholds live in the policy file.
+#: The single mapping from a rule name to its configuration — the rules
+#: themselves are listed once more in ``eligibility.RULES``, which pairs each
+#: name with the function that reads it, and a name missing from either side is
+#: an error rather than a rule that silently never runs.
+RULE_TABLES: dict[str, tuple[str, ...]] = {
+    "restricted_country": ("geo", "restricted"),
+    "related_journals": ("activity", "related_journals"),
+    "relevant_activity": ("activity", "relevant"),
+    "recent_activity": ("activity",),
+    "doctoral_year": ("seniority", "doctoral"),
+    "seniority": ("seniority",),
+    "invitation_response": ("activity", "invitations"),
+    "unresponsive_veteran": ("activity", "veteran"),
+}
+
 OFF = "off"
 PREFER = "prefer"
 REQUIRE = "require"
@@ -133,67 +149,32 @@ class Policy:
     def geo_bonus(self) -> float:
         return float(self.data["geo"]["bonus"])
 
-    @property
-    def restricted_country(self) -> Constraint:
-        """Countries an editor will not invite from at all.
+    # -- eligibility rules -----------------------------------------------
+    def constraint(self, name: str) -> Constraint:
+        """The mode and thresholds for one eligibility rule, by rule name.
 
-        Separate from the cross-region preference above, which is about spreading
-        a review across regions. This one is a standing instruction — a sanctions
-        regime, a publisher rule — and it names countries explicitly rather than
-        deriving them from the submission.
+        One lookup rather than a property per rule. Eight bespoke properties
+        with eight names that did not match the rule names they returned is how
+        ``career_length`` and ``academic_age`` came to measure the same axis
+        without anybody noticing, and how three rules ended up being assembled
+        by their caller instead of by the loop that runs the rest.
         """
-        return self._constraint("restricted_country", self.data["geo"]["restricted"])
-
-    # -- seniority -------------------------------------------------------
-    @property
-    def min_academic_age(self) -> int:
-        return int(self.data["seniority"]["min_academic_age"])
-
-    @property
-    def max_academic_age(self) -> int:
-        return int(self.data["seniority"]["max_academic_age"])
-
-    @property
-    def doctoral(self) -> Constraint:
-        """The floor a doctoral candidate has to clear to be invitable."""
-        return self._constraint("doctoral_year", self.data["seniority"]["doctoral"])
-
-    @property
-    def career(self) -> Constraint:
-        return self._constraint("career_length", self.data["seniority"]["career"])
-
-    # -- activity --------------------------------------------------------
-    @property
-    def activity(self) -> Constraint:
-        return self._constraint("recent_activity", self.data["activity"])
-
-    @property
-    def relevant_activity(self) -> Constraint:
-        return self._constraint("recent_relevant_activity", self.data["activity"]["relevant"])
-
-    @property
-    def related_journals(self) -> Constraint:
-        """How much of the relevant record has to be journal work.
-
-        Conference papers are how this field moves fastest, but a review report
-        is a journal genre, and an editor wants somebody who has written for one
-        on this topic. Counted over the evidence that qualified the candidate,
-        not over their whole output.
-        """
-        return self._constraint(
-            "related_journal_publications", self.data["activity"]["related_journals"]
+        if name not in RULE_TABLES:
+            raise UsageError(
+                f"unknown eligibility rule '{name}'. Known: {', '.join(sorted(RULE_TABLES))}"
+            )
+        table = self.data
+        for key in RULE_TABLES[name]:
+            table = table[key]
+        # A nested table under a rule's own table is another rule's
+        # configuration — `[activity.veteran]` lives under `[activity]` because
+        # they are about the same subject, not because one contains the other.
+        # Only this rule's scalars are its settings.
+        return Constraint(
+            name=name,
+            mode=str(table["mode"]),
+            settings={k: v for k, v in table.items() if not isinstance(v, dict)},
         )
-
-    @property
-    def invitation_activity(self) -> Constraint:
-        return self._constraint("invitation_response", self.data["activity"]["invitations"])
-
-    @property
-    def veteran(self) -> Constraint:
-        return self._constraint("unresponsive_veteran", self.data["activity"]["veteran"])
-
-    def _constraint(self, name: str, table: dict[str, Any]) -> Constraint:
-        return Constraint(name=name, mode=str(table["mode"]), settings=dict(table))
 
     # -- scoring ---------------------------------------------------------
     @property
@@ -260,18 +241,11 @@ def load_policy(journal: str = "", *, exclusion_list: list[str] | None = None) -
         data = _merge(data, {"exclusions": {"names": list(exclusion_list)}})
 
     policy = Policy(data=data, sources=sources, journal=journal)
-    # Build every constraint now so a typo in a mode stops the run here, rather
-    # than at report time with intake, search and enrichment already spent.
-    _ = (
-        policy.activity,
-        policy.relevant_activity,
-        policy.related_journals,
-        policy.doctoral,
-        policy.career,
-        policy.invitation_activity,
-        policy.veteran,
-        policy.restricted_country,
-    )
+    # Build every constraint now so a typo in a mode, or a table a rule needs
+    # and the file does not have, stops the run here rather than at report time
+    # with intake, search and enrichment already spent.
+    for name in RULE_TABLES:
+        policy.constraint(name)
     _validate_retrieval(policy)
     _validate_restricted_countries(policy)
     return policy
@@ -284,7 +258,7 @@ def _validate_restricted_countries(policy: Policy) -> None:
     the opposite, and the rule would silently pass everybody. Better to refuse
     the policy than to ship a run whose reason column is a lie.
     """
-    constraint = policy.restricted_country
+    constraint = policy.constraint("restricted_country")
     if constraint.off:
         return
     countries = constraint.upper_set("countries")

@@ -5,44 +5,54 @@ invitation is worth sending: someone still working in the field, far enough into
 their training to carry a report, and not a name that has quietly stopped taking
 review work.
 
-Each rule is read from the policy file and carries its own mode:
+Eight rules, and the list is closed — every one is in :data:`RULES`, every one
+reads a quantity from :mod:`academia.reviewer.record`, and nothing outside this
+module may add a ninth. Three of them used to be appended by ``rank`` after the
+assessment was already built, which is how a ``prefer`` rule came to contribute
+nothing to the score it exists to feed.
 
-* **recent activity** — published inside the window
+* **restricted country** — currently affiliated somewhere the journal will not
+  invite from, read from the affiliation and never from a name
+* **related journals** — enough of the relevant record is journal work
+* **relevant activity** — publishing on *this* topic, from the run's evidence
+* **recent activity** — publishing at all, from their own profile
+* **seniority** — far enough past the doctorate, or the first paper
 * **doctoral year** — a doctoral candidate is past the journal's floor
 * **invitation response** — answered a fair share of recent invitations
 * **unresponsive veteran** — a long career *and* a record of unanswered
   invitations, which is the only combination that fires
-* **restricted country** — currently affiliated somewhere the journal will not
-  invite from, read from the affiliation and never from a name
-* **related journals** — enough of the relevant record is journal work
-  (evaluated in ``rank`` alongside relevant activity, where the evidence lives)
 
-Nothing here is inferred. A rule that has no evidence to work with passes: an
-empty invitation history means nobody has asked this person yet, and a missing
-enrolment year is a gap in ORCID rather than a fact about the person. Only a
-stated fact can disqualify someone, because an editor has to be able to read the
-reason and disagree with it.
+Every rule carries its own mode: ``require`` excludes, ``prefer`` only scores
+and annotates, ``off`` skips it entirely. ``require`` excludes rather than
+penalises, because blending an eligibility failure into a score is how somebody
+who does not meet the policy climbs back onto a shortlist on expertise alone.
 
-``require`` excludes, ``prefer`` only scores and annotates, ``off`` skips the
-rule entirely — so a journal that wants a third-year doctoral floor but no view
-on activity says exactly that, and nothing else changes.
+Nothing here is inferred, and a rule with no evidence **abstains**: it passes,
+and records that it never judged. An empty invitation history means nobody has
+asked this person yet; a missing enrolment year is a gap in ORCID rather than a
+fact about a person. Only a stated fact can disqualify somebody, because an
+editor has to be able to read the reason and disagree with it.
+
+Each rule's facts are keyed with its own name — ``seniority_years``,
+``related_journals_count``. Not tidiness: it is what lets an audit group columns
+by the rule that produced them, instead of by a hand-maintained prefix table
+that goes stale the moment a rule changes.
 """
 
 from __future__ import annotations
 
-import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from academia.core.models import Person
 from academia.reviewer.policy import Constraint, Policy
+from academia.reviewer.record import PROFILE, CandidateRecord
 from academia.reviewer.seniority import PHD_STUDENT
-from academia.store import repository as repo
 
 
 @dataclass(frozen=True)
 class RuleOutcome:
-    """One rule's verdict on one candidate, with the fact behind it."""
+    """One rule's verdict on one candidate, with the facts behind it."""
 
     rule: str
     passed: bool
@@ -55,16 +65,27 @@ class RuleOutcome:
     #: examined somebody it never could. Distinct from ``manual_review``, which
     #: asks the editor to go and find the answer before inviting.
     abstained: bool = False
-    #: The numbers this rule actually compared, and the thresholds it compared
-    #: them against, keyed by name. The prose in ``detail`` is for reading; this
-    #: is for auditing — an export can lay a column beside each verdict, and a
-    #: reader can see how far from a threshold somebody fell without trusting
-    #: the sentence. Rules that have nothing to count leave it empty.
+    #: The numbers this rule compared and the thresholds it compared them
+    #: against, each key prefixed with the rule's own name. The prose in
+    #: ``detail`` is for reading; this is for auditing — an export lays a column
+    #: beside each verdict, and a reader sees how far from a threshold somebody
+    #: fell without having to trust the sentence.
     facts: dict[str, Any] = field(default_factory=dict)
 
     @property
     def excluded(self) -> bool:
         return self.excluding and not self.passed
+
+    @property
+    def scored(self) -> bool:
+        """Whether this outcome may move the eligibility component.
+
+        A ``require`` rule has already had its say by excluding or not; letting
+        it also pay a bonus would dilute a genuine preference failure with gates
+        that everybody left standing has passed. An abstention is not a met
+        preference either — it is the absence of a measurement.
+        """
+        return not self.excluding and not self.abstained
 
 
 #: How one outcome reads in an audit column. A rule that abstains for want of
@@ -87,9 +108,23 @@ def verdict_of(outcome: RuleOutcome) -> str:
 @dataclass
 class Assessment:
     outcomes: list[RuleOutcome] = field(default_factory=list)
-    #: 0..1, how well the candidate meets the rules that are switched on. 1.0
-    #: when every rule is off, so turning the feature off leaves scores intact.
-    score: float = 1.0
+
+    @property
+    def score(self) -> float:
+        """0..1, the share of judged preferences this candidate meets.
+
+        Derived, not stored. It used to be a field set while the assessment was
+        being built, with three rules appended to ``outcomes`` afterwards — so
+        the number the report published had been computed before a third of the
+        rules existed.
+
+        1.0 when nothing was judged, so switching the feature off leaves every
+        score exactly where it was.
+        """
+        judged = [o for o in self.outcomes if o.scored]
+        if not judged:
+            return 1.0
+        return sum(1 for o in judged if o.passed) / len(judged)
 
     @property
     def excluded(self) -> bool:
@@ -97,8 +132,7 @@ class Assessment:
 
     @property
     def reason(self) -> str:
-        failed = [o for o in self.outcomes if o.excluded]
-        return "; ".join(o.detail for o in failed)
+        return "; ".join(o.detail for o in self.outcomes if o.excluded)
 
     def notes(self) -> list[str]:
         """Every rule that did not pass, whether or not it excluded anybody."""
@@ -112,7 +146,7 @@ class Readiness:
 
 
 def invitation_readiness(candidate: Any, email: Any, *, domain_status: str) -> Readiness:
-    """One invitation decision, shared by every report/export."""
+    """One invitation decision, shared by every report and export."""
     rejected: list[str] = []
     review: list[str] = []
     if candidate.blocked:
@@ -153,228 +187,152 @@ def invitation_readiness(candidate: Any, email: Any, *, domain_status: str) -> R
     return Readiness("eligible")
 
 
-def _response_rate(
-    rows: list[sqlite3.Row], since_year: int | None, now_year: int
-) -> tuple[int, float]:
-    """Resolved invitations in the window, and the share that got an answer.
-
-    ``responded`` is nullable: an invitation whose outcome nobody has recorded
-    yet is unresolved, not a silence. Counting it as a non-response would let a
-    field an editor simply has not filled in exclude a reviewer.
-    """
-
-    def inside(row: sqlite3.Row) -> bool:
-        year = _year_of(row["invited_at"])
-        if year is not None and year > now_year:
-            return False  # a date in the future is a data error, not evidence
-        if since_year is None:
-            return True
-        # An undated invitation still happened; dropping it would let a missing
-        # field erase a record of silence.
-        return year is None or year >= since_year
-
-    considered = [row for row in rows if inside(row) and row["responded"] is not None]
-    if not considered:
-        return 0, 0.0
-    responded = sum(1 for row in considered if row["responded"])
-    return len(considered), responded / len(considered)
+# --------------------------------------------------------------- the rules
+#
+# Every rule has the same shape: ``(record, constraint) -> RuleOutcome``. It
+# reads quantities off the record and thresholds off the constraint, and it
+# invents nothing. A rule that cannot measure what it is about abstains.
 
 
-def _year_of(invited_at: str | None) -> int | None:
-    text = (invited_at or "").strip()[:4]
-    return int(text) if text.isdigit() else None
-
-
-def _activity(
-    works_by_year: dict[int, int],
-    person_years: list[int],
+def _outcome(
     constraint: Constraint,
-    now_year: int,
+    passed: bool,
+    detail: str,
+    facts: dict[str, Any],
+    *,
+    manual_review: bool = False,
+    abstained: bool = False,
+    excluding: bool | None = None,
 ) -> RuleOutcome:
+    """Build an outcome, prefixing every fact with the rule's own name."""
+    return RuleOutcome(
+        constraint.name,
+        passed,
+        detail,
+        excluding=constraint.excluding if excluding is None else excluding,
+        manual_review=manual_review,
+        abstained=abstained,
+        facts={f"{constraint.name}_{key}": value for key, value in facts.items()},
+    )
+
+
+def restricted_country(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
+    """Refuse an invitation to a country the journal will not invite from.
+
+    Reads the current affiliation country, never nationality. An unknown country
+    cannot exclude anybody, but it is the one case here an editor has to settle
+    by hand: the whole point of the rule is that the answer must not be guessed.
+    """
+    countries = constraint.upper_set("countries")
+    named = ", ".join(sorted(countries))
+    country = (record.person.country_code or "").strip().upper()[:2]
+    if not country:
+        return _outcome(
+            constraint,
+            True,
+            f"current country unknown — confirm it is not {named} before inviting",
+            {"countries": named},
+            manual_review=True,
+        )
+    if country in countries:
+        return _outcome(
+            constraint,
+            False,
+            f"currently affiliated in {country}, which the journal does not invite from",
+            {"current": country, "countries": named},
+        )
+    return _outcome(
+        constraint,
+        True,
+        f"{country} is not a restricted country",
+        {"current": country, "countries": named},
+    )
+
+
+def recent_activity(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
     """Is this person still publishing at all?
 
-    Read from their bibliographic profile's yearly output when it is known.
-    Falling back to the papers in the store would ask a different question —
-    "did *this manuscript's* queries harvest anything recent from them" — and a
-    prolific author whose latest work is off-topic would come back dormant.
+    Read from their own profile's yearly output. Reading the run's harvest asks
+    a different question — "did *this manuscript's* queries turn up anything
+    recent from them" — under which a live run called 19 of 22 candidates
+    dormant, Z. Q. Zhu among them, purely because their latest work is not on
+    this manuscript's topic. The source is reported either way.
     """
     window = constraint.int_("recent_years", 3)
     needed = constraint.int_("min_recent_papers", 1)
-    floor = now_year - window + 1
-
-    if works_by_year:
-        recent = sum(w for year, w in works_by_year.items() if floor <= year <= now_year)
-        latest = max((year for year, w in works_by_year.items() if w and year <= now_year), default=None)
-        source = "profile"
-    else:
-        years = [year for year in person_years if year <= now_year]
-        if not years:
-            return RuleOutcome(
-                constraint.name,
-                True,
-                "no publication record available — activity not assessed",
-                facts={
-                    "activity_known": 0,
-                    "activity_paper_minimum": needed,
-                    "activity_window_years": window,
-                },
-            )
-        recent = sum(1 for year in years if year >= floor)
-        latest = max(years)
-        # The store holds only what this run harvested, so an absence here is
-        # weaker evidence than an absence in a full profile. Say which was used.
-        source = "harvested papers only"
-
-    passed = recent >= needed
-    last = f"last published {latest}" if latest else "no dated work"
-    detail = (
-        f"{recent} paper(s) in the last {window} years ({source})"
-        if passed
-        else f"only {recent} paper(s) in the last {window} years "
-        f"(needs {needed}); {last} [{source}]"
-    )
-    return RuleOutcome(
-        constraint.name,
-        passed,
-        detail,
-        excluding=constraint.excluding,
-        facts={
-            "activity_known": 1,
-            "activity_paper_count": recent,
-            "activity_paper_gap": recent - needed,
-            "activity_latest_year": latest,
-            "activity_source": source,
-            "activity_paper_minimum": needed,
-            "activity_window_years": window,
-        },
-    )
-
-
-def _doctoral(person: Person, constraint: Constraint, now_year: int) -> RuleOutcome:
-    floor = constraint.int_("min_year", 3)
-    if person.rank != PHD_STUDENT:
-        return RuleOutcome(
-            constraint.name,
+    thresholds = {"minimum": needed, "window_years": window}
+    publications = record.publications
+    if not publications.known:
+        return _outcome(
+            constraint,
             True,
-            "not a doctoral candidate",
-            facts={"is_doctoral": 0, "doctoral_year_minimum": floor},
+            "no publication record available — activity not assessed",
+            thresholds,
+            abstained=True,
         )
-    year = person.doctoral_year(now_year)
-    if year is None:
-        # Not configurable on purpose. ORCID states an enrolment year for a
-        # minority of candidates, and a switch that turned that gap into an
-        # exclusion would quietly remove the people whose records are thinnest
-        # rather than the ones who are too junior.
-        return RuleOutcome(
-            constraint.name,
-            True,
-            "doctoral candidate, year of study not stated — confirm before inviting",
-            manual_review=True,
-            facts={
-                "is_doctoral": 1,
-                "doctoral_year_known": 0,
-                "doctoral_year_minimum": floor,
-            },
-        )
-    passed = year >= floor
-    detail = (
-        f"doctoral candidate in year {year} — confirm before inviting"
-        if passed
-        else f"doctoral candidate in year {year}, below the journal floor of year {floor}"
-    )
-    return RuleOutcome(
-        constraint.name,
-        passed,
-        detail,
-        excluding=constraint.excluding,
-        facts={
-            "is_doctoral": 1,
-            "doctoral_year_known": 1,
-            "doctoral_year_value": year,
-            "doctoral_year_gap": year - floor,
-            "doctoral_year_minimum": floor,
-        },
+    count = publications.count_since(record.now_year - window + 1, record.now_year)
+    latest = publications.latest_year
+    facts = {
+        "papers": count,
+        "latest_year": latest,
+        "source": publications.source,
+        **thresholds,
+    }
+    if count >= needed:
+        return _outcome(constraint, True, f"{count} paper(s) in the last {window} years", facts)
+    weaker = "" if publications.source == PROFILE else " [harvested papers only]"
+    return _outcome(
+        constraint,
+        False,
+        f"only {count} paper(s) in the last {window} years (needs {needed}); "
+        f"last published {latest or 'never, on record'}{weaker}",
+        facts,
     )
 
 
-def _career(
-    person: Person, person_years: list[int], constraint: Constraint, now_year: int
-) -> RuleOutcome:
-    """Enforce doctorate age, falling back to the observable publication career."""
-    maximum = constraint.int_("max_years", 10)
-    if person.phd_year:
-        years = max(0, now_year - person.phd_year)
-        evidence = f"{years} years since doctorate ({person.phd_year})"
-    else:
-        dated = [year for year in person_years if year <= now_year]
-        if not dated:
-            return RuleOutcome(
-                constraint.name,
-                True,
-                "career length unknown — confirm before inviting",
-                manual_review=True,
-                facts={"career_known": 0, "career_years_maximum": maximum},
-            )
-        years = now_year - min(dated) + 1
-        evidence = f"{years}-year publication career (first paper {min(dated)})"
-    passed = years <= maximum
-    detail = evidence if passed else f"{evidence}, exceeds maximum of {maximum} years"
-    return RuleOutcome(
-        constraint.name,
-        passed,
-        detail,
-        excluding=constraint.excluding,
-        facts={
-            "career_known": 1,
-            "career_years": years,
-            "career_years_gap": maximum - years,
-            "career_years_maximum": maximum,
-        },
-    )
+def relevant_activity(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
+    """Publishing on *this* manuscript's topic, inside the window.
 
-
-def assess_relevant_activity(
-    years: list[int], constraint: Constraint, *, now_year: int
-) -> RuleOutcome:
-    """Require manuscript-relevant evidence inside the configured window."""
-    if constraint.off:
-        return RuleOutcome(constraint.name, True, "not assessed")
+    The run's own relevant corpus, not the handful of papers the report shows:
+    the shown evidence is capped by how many papers the run kept overall, so a
+    median candidate keeps one and any floor above that would be unsatisfiable
+    by construction rather than by merit.
+    """
     window = constraint.int_("recent_years", 3)
-    minimum = constraint.int_("min_recent_papers", 1)
-    floor = now_year - window + 1
-    recent = sum(year >= floor for year in years if year <= now_year)
-    passed = recent >= minimum
-    latest = max((year for year in years if year <= now_year), default=None)
-    detail = (
-        f"{recent} relevant paper(s) in the last {window} years"
-        if passed
-        else f"only {recent} relevant paper(s) in the last {window} years "
-        f"(needs {minimum}); latest relevant paper {latest or 'unknown'}"
-    )
-    return RuleOutcome(
-        constraint.name,
-        passed,
-        detail,
-        excluding=constraint.excluding,
-        facts={
-            "recent_activity_known": int(bool(years)),
-            "recent_paper_count": recent,
-            "recent_paper_gap": recent - minimum,
-            "latest_year": latest,
-            "recent_paper_minimum": minimum,
-            "recent_window_years": window,
-        },
+    needed = constraint.int_("min_recent_papers", 1)
+    thresholds = {"minimum": needed, "window_years": window}
+    if not record.relevant.papers:
+        return _outcome(
+            constraint,
+            True,
+            "no relevant papers in this run's corpus — relevance not assessed",
+            thresholds,
+            abstained=True,
+        )
+    count = record.relevant.count_since(record.now_year - window + 1, record.now_year)
+    latest = record.relevant.latest_year
+    facts = {"papers": count, "latest_year": latest, **thresholds}
+    if count >= needed:
+        return _outcome(
+            constraint, True, f"{count} relevant paper(s) in the last {window} years", facts
+        )
+    return _outcome(
+        constraint,
+        False,
+        f"only {count} relevant paper(s) in the last {window} years (needs {needed}); "
+        f"latest relevant paper {latest or 'undated'}",
+        facts,
     )
 
 
-#: Two vocabularies share this column, because two sources fill it. OpenAlex
-#: states the *work* type — ``article``, ``review``, ``conference-paper``,
-#: ``preprint`` — and puts the journal's name in the venue instead. IEEE states
-#: the *venue* type — ``IEEE Journals``, ``IEEE Conferences``, ``IEEE
-#: Standards``, ``Artech Books``. Matching only on the word "journal" reads the
-#: second and silently scores every OpenAlex journal paper as a non-journal,
-#: which is how a floor of three journal papers came to exclude 149 of 160
-#: candidates whose records were full of them.
+#: Two vocabularies share the venue-type field, because two sources fill it.
+#: OpenAlex states the *work* type — ``article``, ``review``,
+#: ``conference-paper``, ``preprint`` — and puts the journal's name in the venue
+#: instead. IEEE states the *venue* type — ``IEEE Journals``, ``IEEE
+#: Conferences``, ``IEEE Standards``, ``Artech Books``. Matching only on the
+#: word "journal" reads the second and silently scores every OpenAlex journal
+#: paper as a non-journal, which is how a floor of three journal papers came to
+#: exclude 149 of 160 candidates whose records were full of them.
 _JOURNAL_WORDS = ("journal",)
 _JOURNAL_TYPES = {"article", "review", "journal-article", "journalarticle"}
 _NOT_JOURNAL_WORDS = (
@@ -419,332 +377,286 @@ def venue_type_stated(venue_type: str) -> bool:
     )
 
 
-def related_journal_facts(evidence: list[Any], minimum: int, target: int) -> dict[str, Any]:
-    """The relevant record, counted the way the rule reads it.
-
-    Author position is part of the audit rather than the rule: a first or last
-    author carried the work, a middle author may not have, and an editor reading
-    a borderline candidate wants to see which. The rule itself only counts
-    journal papers — position never decides eligibility, because a supervisor
-    slot is not a qualification.
-    """
-    positions = [(getattr(item, "position", "") or "").lower() for item in evidence]
-    weights = [float(getattr(item, "position_weight", 0.0) or 0.0) for item in evidence]
-    types = [getattr(item, "venue_type", "") or "" for item in evidence]
-    journals = sum(1 for venue_type in types if is_journal(venue_type))
-    leading = sum(1 for position in positions if position in {"first", "last"})
-    return {
-        "related_journal_count": journals,
-        "related_journal_gap": journals - minimum,
-        "related_journal_target_ratio": round(journals / target, 2) if target else None,
-        "related_nonjournal_count": sum(
-            1 for venue_type in types if venue_type_stated(venue_type) and not is_journal(venue_type)
-        ),
-        "related_unknown_type_count": sum(
-            1 for venue_type in types if not venue_type_stated(venue_type)
-        ),
-        "related_first_author_count": positions.count("first"),
-        "related_second_author_count": positions.count("second"),
-        "related_last_author_count": positions.count("last"),
-        "related_middle_author_count": positions.count("middle"),
-        "related_leadership_count": leading,
-        "related_position_weight_sum": round(sum(weights), 2),
-        "related_position_weight_mean": round(sum(weights) / len(weights), 2) if weights else None,
-        "related_journal_minimum": minimum,
-        "related_journal_target": target,
-    }
-
-
-def assess_related_journals(evidence: list[Any], constraint: Constraint) -> RuleOutcome:
+def related_journals(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
     """Require journal-published work on the manuscript's own topic.
 
     Counted over the evidence that qualified the candidate, so it asks "has this
     person written journal papers about *this*", not "how much do they publish".
     A paper whose venue type no source stated is not counted and not held
-    against anybody, but it is reported, because a candidate who misses the
-    floor only on unresolved venues is a data gap rather than a weak reviewer.
+    against anybody, but it is reported: a candidate who misses the floor only
+    on unresolved venues is a data gap, not a weak reviewer.
+
+    Author position is audited, never decisive. A first or last author carried
+    the work and a middle author may not have, which an editor reading a
+    borderline candidate wants to see — but a supervisor slot is not a
+    qualification, so it cannot decide eligibility.
     """
-    if constraint.off:
-        return RuleOutcome(constraint.name, True, "not assessed")
     minimum = constraint.int_("min_publications", 3)
-    facts = related_journal_facts(
-        evidence, minimum, constraint.int_("target_publications", minimum)
-    )
-    journals = facts["related_journal_count"]
-    unknown = facts["related_unknown_type_count"]
-    if journals >= minimum:
-        return RuleOutcome(
-            constraint.name,
+    papers = record.relevant.papers
+    if not papers:
+        return _outcome(
+            constraint,
             True,
-            f"{journals} relevant journal publication(s)",
-            excluding=constraint.excluding,
-            facts=facts,
+            "no relevant papers in this run's corpus — journal record not assessed",
+            {"minimum": minimum},
+            abstained=True,
         )
+    positions = [(getattr(p, "position", "") or "").lower() for p in papers]
+    types = [getattr(p, "venue_type", "") or "" for p in papers]
+    weights = [float(getattr(p, "position_weight", 0.0) or 0.0) for p in papers]
+    count = sum(1 for t in types if is_journal(t))
+    unresolved = sum(1 for t in types if not venue_type_stated(t))
+    facts = {
+        "count": count,
+        "minimum": minimum,
+        "nonjournal": sum(1 for t in types if venue_type_stated(t) and not is_journal(t)),
+        "unresolved": unresolved,
+        "first_author": positions.count("first"),
+        "last_author": positions.count("last"),
+        "leading": sum(1 for p in positions if p in {"first", "last"}),
+        "position_weight_mean": round(sum(weights) / len(weights), 2) if weights else None,
+    }
+    if count >= minimum:
+        return _outcome(constraint, True, f"{count} relevant journal publication(s)", facts)
     shortfall = (
-        f"only {journals} relevant journal publication(s) of {len(evidence)} "
+        f"only {count} relevant journal publication(s) of {len(papers)} "
         f"relevant paper(s) (needs {minimum})"
     )
-    if unknown and journals + unknown >= minimum:
+    if unresolved and count + unresolved >= minimum:
         # Enough papers to clear the floor, if only their venues were resolved.
-        return RuleOutcome(
-            constraint.name,
+        return _outcome(
+            constraint,
             True,
-            f"{shortfall}; {unknown} paper(s) of unstated venue type — "
+            f"{shortfall}; {unresolved} paper(s) of unstated venue type — "
             "resolve the venues before relying on this",
-            excluding=constraint.excluding,
+            facts,
             manual_review=True,
-            facts=facts,
         )
-    return RuleOutcome(
-        constraint.name, False, shortfall, excluding=constraint.excluding, facts=facts
-    )
+    return _outcome(constraint, False, shortfall, facts)
 
 
-def _restricted_country(person: Person, constraint: Constraint) -> RuleOutcome:
-    """Refuse an invitation to a country the journal will not invite from.
+def seniority(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
+    """Position on the one seniority axis: a floor, and a soft ceiling.
 
-    Reads the current affiliation country, never nationality. An unknown country
-    is a gap in the affiliation record and cannot exclude anybody, but it is the
-    one case here that an editor has to settle by hand: the whole point of the
-    rule is that the answer must not be guessed.
+    This was two rules. ``academic_age`` set a floor in years since the
+    doctorate and ``career_length`` a ceiling in years of publishing, and
+    whenever a doctorate year was known they measured the same quantity — one
+    from the profile, one from the run's harvest, disagreeing by up to 28 years
+    in adjacent columns of the same spreadsheet. One axis is one rule.
+
+    The floor obeys the mode; **the ceiling never excludes**, whatever the mode
+    says. Refusing a reviewer for being too experienced is not something an
+    editor should be able to state by accident, and it is not hypothetical: this
+    journal's ceiling was once ``require``, which removed every senior
+    researcher in the pool — the people an editor most wants a report from — and
+    left a run with nobody to invite.
     """
-    countries = constraint.upper_set("countries")
-    country = (person.country_code or "").strip().upper()[:2]
-    named = ", ".join(sorted(countries))
-    if not country:
-        return RuleOutcome(
-            constraint.name,
+    floor = constraint.int_("min_years", 0)
+    ceiling = constraint.int_("max_years", 0)
+    thresholds = {"minimum": floor, "maximum": ceiling}
+    measure = record.seniority
+    if measure.years is None:
+        return _outcome(
+            constraint,
             True,
-            f"current country unknown — confirm it is not {named} before inviting",
-            manual_review=True,
-            facts={"restricted_country_known": 0, "restricted_countries": named},
+            "no doctorate year and no dated publication — seniority not assessed",
+            thresholds,
+            abstained=True,
         )
-    if country in countries:
-        return RuleOutcome(
-            constraint.name,
+    facts = {
+        "years": measure.years,
+        "basis": measure.basis,
+        "since": measure.since,
+        **thresholds,
+    }
+    stated = f"{measure.years} year(s) since {measure.basis} ({measure.since})"
+    if floor and measure.years < floor:
+        return _outcome(constraint, False, f"{stated}, below the floor of {floor}", facts)
+    if ceiling and measure.years > ceiling:
+        return _outcome(
+            constraint,
             False,
-            f"currently affiliated in {country}, which the journal does not invite from",
-            excluding=constraint.excluding,
-            facts={
-                "restricted_country_known": 1,
-                "restricted_country_current": country,
-                "restricted_country_is_restricted": 1,
-                "restricted_countries": named,
-            },
+            f"{stated}, above the preferred {ceiling} — a preference, not a bar",
+            facts,
+            excluding=False,
         )
-    return RuleOutcome(
-        constraint.name,
-        True,
-        f"{country} is not a restricted country",
-        facts={
-            "restricted_country_known": 1,
-            "restricted_country_current": country,
-            "restricted_country_is_restricted": 0,
-            "restricted_countries": named,
-        },
+    return _outcome(constraint, True, stated, facts)
+
+
+def doctoral_year(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
+    """A doctoral candidate has to be past the journal's year of study.
+
+    A different axis from :func:`seniority`, not a special case of it: a student
+    has no doctorate to count from, and their year of study is stated on an
+    education record rather than derived from a publication history.
+    """
+    floor = constraint.int_("min_year", 3)
+    person = record.person
+    if person.rank != PHD_STUDENT:
+        return _outcome(
+            constraint, True, "not a doctoral candidate", {"is_doctoral": 0, "minimum": floor}
+        )
+    year = person.doctoral_year(record.now_year)
+    if year is None:
+        # Not configurable on purpose. ORCID states an enrolment year for a
+        # minority of candidates, and a switch that turned that gap into an
+        # exclusion would quietly remove the people whose records are thinnest
+        # rather than the ones who are too junior.
+        return _outcome(
+            constraint,
+            True,
+            "doctoral candidate, year of study not stated — confirm before inviting",
+            {"is_doctoral": 1, "minimum": floor},
+            manual_review=True,
+        )
+    facts = {"is_doctoral": 1, "value": year, "minimum": floor}
+    if year >= floor:
+        return _outcome(
+            constraint,
+            True,
+            f"doctoral candidate in year {year} — confirm before inviting",
+            facts,
+            manual_review=True,
+        )
+    return _outcome(
+        constraint,
+        False,
+        f"doctoral candidate in year {year}, below the journal floor of year {floor}",
+        facts,
     )
 
 
-def _invitation_response(
-    rows: list[sqlite3.Row], constraint: Constraint, now_year: int
-) -> RuleOutcome:
+def invitation_response(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
+    """Does this person answer the review invitations they are sent lately?"""
     window = constraint.int_("recent_years", 3)
     minimum = constraint.int_("min_invitations", 1)
-    invited, rate = _response_rate(rows, now_year - window + 1, now_year)
+    required = constraint.float_("min_response_rate", 0.5)
+    thresholds = {
+        "invitation_minimum": minimum,
+        "window_years": window,
+        "rate_minimum": required,
+    }
+    invited, rate = record.invitations.resolved(
+        since_year=record.now_year - window + 1, now_year=record.now_year
+    )
     if invited < minimum:
-        return RuleOutcome(
-            constraint.name,
+        return _outcome(
+            constraint,
             True,
             f"{invited} invitation(s) in the last {window} years — too few to judge",
+            {"invitations": invited, **thresholds},
             abstained=True,
-            facts={
-                "invitation_response_known": 0,
-                "recent_invitation_count": invited,
-                "recent_invitation_minimum": minimum,
-                "invitation_window_years": window,
-                "invitation_response_rate_minimum": constraint.float_("min_response_rate", 0.5),
-            },
         )
-    required = constraint.float_("min_response_rate", 0.5)
-    passed = rate >= required
-    detail = (
-        f"responded to {rate:.0%} of {invited} invitation(s) in the last {window} years"
-        if passed
-        else f"responded to only {rate:.0%} of {invited} invitation(s) "
-        f"in the last {window} years"
-    )
-    return RuleOutcome(
-        constraint.name,
-        passed,
-        detail,
-        excluding=constraint.excluding,
-        facts={
-            "invitation_response_known": 1,
-            "recent_invitation_count": invited,
-            "invitation_response_rate": round(rate, 2),
-            "invitation_response_rate_gap": round(rate - required, 2),
-            "recent_invitation_minimum": minimum,
-            "invitation_window_years": window,
-            "invitation_response_rate_minimum": required,
-        },
+    facts = {"invitations": invited, "rate": round(rate, 2), **thresholds}
+    if rate >= required:
+        return _outcome(
+            constraint,
+            True,
+            f"responded to {rate:.0%} of {invited} invitation(s) in the last {window} years",
+            facts,
+        )
+    return _outcome(
+        constraint,
+        False,
+        f"responded to only {rate:.0%} of {invited} invitation(s) in the last {window} years",
+        facts,
     )
 
 
-def _veteran(
-    works_by_year: dict[int, int],
-    person_years: list[int],
-    rows: list[sqlite3.Row],
-    constraint: Constraint,
-    now_year: int,
-) -> RuleOutcome:
-    """A long career alone is never a reason. Silence on top of one is."""
+def unresponsive_veteran(record: CandidateRecord, constraint: Constraint) -> RuleOutcome:
+    """A long career alone is never a reason. Silence on top of one is.
+
+    Reads the seniority axis for "long career" and the invitation record for
+    "silence" — the latter over the whole career rather than a window, because
+    the question is whether somebody has stopped taking review work at all, not
+    whether they were busy last year.
+
+    It does not publish the career figure as a column of its own. It is the
+    same number ``seniority_years`` holds, and two columns carrying one
+    quantity is what this refactor exists to remove: the previous pair derived
+    it from two different sources and disagreed for 158 of 197 candidates on a
+    live case. The rule's sentence states the figure it used, so nothing is
+    hidden — only unduplicated.
+    """
     span = constraint.int_("career_years", 10)
-    known = [year for year, works in works_by_year.items() if works] or person_years
-    dated = [year for year in known if year <= now_year]
-    career = (now_year - min(dated) + 1) if dated else None
     minimum = constraint.int_("min_invitations", 2)
     ceiling = constraint.float_("max_response_rate", 0.0)
     thresholds = {
-        "veteran_career_minimum": span,
-        "veteran_invitation_minimum": minimum,
-        "veteran_response_rate_maximum": ceiling,
+        "career_minimum": span,
+        "invitation_minimum": minimum,
+        "rate_maximum": ceiling,
     }
-    if career is None or career < span:
-        return RuleOutcome(
-            constraint.name,
+    measure = record.seniority
+    career = measure.years
+    if career is None:
+        return _outcome(
+            constraint,
             True,
-            "not a long-career candidate",
-            facts={
-                "veteran_career_known": int(career is not None),
-                "veteran_career_years": career,
-                **thresholds,
-            },
+            "no doctorate year and no dated publication — career length unknown",
+            thresholds,
+            abstained=True,
         )
-    invited, rate = _response_rate(rows, None, now_year)
+    basis = f"{career} year(s) since {measure.basis}"
+    if career < span:
+        return _outcome(
+            constraint, True, f"{basis} — not a long-career candidate", thresholds
+        )
+    invited, rate = record.invitations.resolved(since_year=None, now_year=record.now_year)
+    facts = {"invitations": invited, **thresholds}
     if invited < minimum:
-        return RuleOutcome(
-            constraint.name,
+        return _outcome(
+            constraint,
             True,
-            f"{career}-year career, {invited} invitation(s) on record — no basis to judge",
+            f"{basis}, {invited} invitation(s) on record — no basis to judge",
+            facts,
             abstained=True,
-            facts={
-                "veteran_career_known": 1,
-                "veteran_career_years": career,
-                "veteran_invitation_count": invited,
-                **thresholds,
-            },
         )
+    facts["rate"] = round(rate, 2)
     if rate > ceiling:
-        return RuleOutcome(
-            constraint.name,
-            True,
-            f"{career}-year career, responds to {rate:.0%} of invitations",
-            facts={
-                "veteran_career_known": 1,
-                "veteran_career_years": career,
-                "veteran_invitation_count": invited,
-                "veteran_response_rate": round(rate, 2),
-                **thresholds,
-            },
+        return _outcome(
+            constraint, True, f"{basis}, responds to {rate:.0%} of invitations", facts
         )
-    return RuleOutcome(
-        constraint.name,
+    return _outcome(
+        constraint,
         False,
-        f"{career}-year career and no response to {invited} invitation(s) — "
+        f"{basis} and no response to {invited} invitation(s) — "
         "appears to have stopped accepting review work",
-        excluding=constraint.excluding,
-        facts={
-            "veteran_career_known": 1,
-            "veteran_career_years": career,
-            "veteran_invitation_count": invited,
-            "veteran_response_rate": round(rate, 2),
-            **thresholds,
-        },
+        facts,
     )
 
 
-def assess_academic_age(person: Person, policy: Policy, now_year: int) -> RuleOutcome:
-    """Years since the doctorate, against the journal's window.
+Rule = Callable[[CandidateRecord, Constraint], RuleOutcome]
 
-    Advisory rather than excluding, and it was advisory in a way nothing could
-    check: it only ever produced a note, and only when the note said something,
-    so a reader could not tell a candidate the rule cleared from one it never
-    examined. As an outcome it reports either way, and the doctorate year that
-    ORCID states for a minority of people shows up as an abstention rather than
-    as a silent pass.
+#: Every rule there is. The list is the whole eligibility surface: an audit
+#: column exists because a rule here produced it, and a rule runs because it is
+#: here and switched on. Order is the order an audit reads them in — the
+#: decisive gates first, the preferences last.
+RULES: tuple[tuple[str, Rule], ...] = (
+    ("restricted_country", restricted_country),
+    ("related_journals", related_journals),
+    ("relevant_activity", relevant_activity),
+    ("recent_activity", recent_activity),
+    ("doctoral_year", doctoral_year),
+    ("seniority", seniority),
+    ("invitation_response", invitation_response),
+    ("unresponsive_veteran", unresponsive_veteran),
+)
+
+#: The rule names, in audit order. Exports read this rather than restating it.
+RULE_NAMES: tuple[str, ...] = tuple(name for name, _ in RULES)
+
+
+def assess(record: CandidateRecord, policy: Policy) -> Assessment:
+    """Run every switched-on rule against one candidate.
+
+    Pure: everything it reads is already on the record, which was built once.
+    No caller adds a rule afterwards — three of them used to, by which time the
+    score had already been computed.
     """
-    minimum = policy.min_academic_age
-    maximum = policy.max_academic_age
-    thresholds = {"academic_age_minimum": minimum, "academic_age_maximum": maximum}
-    age = person.academic_age(now_year)
-    if age is None:
-        return RuleOutcome(
-            "academic_age",
-            True,
-            "no doctorate year on record — academic age not assessed",
-            abstained=True,
-            facts={"academic_age_known": 0, **thresholds},
-        )
-    facts = {
-        "academic_age_known": 1,
-        "academic_age_value": age,
-        "academic_age_gap": age - minimum,
-        **thresholds,
-    }
-    if age < minimum:
-        return RuleOutcome(
-            "academic_age",
-            False,
-            f"academic age {age} is below the journal minimum of {minimum}",
-            facts=facts,
-        )
-    if maximum and age > maximum:
-        return RuleOutcome(
-            "academic_age",
-            False,
-            f"academic age {age} exceeds the journal maximum of {maximum}",
-            facts=facts,
-        )
-    return RuleOutcome("academic_age", True, f"academic age {age}", facts=facts)
-
-
-def assess(
-    conn: sqlite3.Connection, person: Person, policy: Policy, *, now_year: int
-) -> Assessment:
-    """Run every switched-on rule against one candidate."""
-    constraints = (
-        policy.activity,
-        policy.doctoral,
-        policy.career,
-        policy.invitation_activity,
-        policy.veteran,
-        policy.restricted_country,
-    )
-    if all(constraint.off for constraint in constraints):
-        return Assessment()
-
-    years = repo.publication_years(conn, person.person_id)
-    works_by_year = person.works_by_year or repo.output_by_year(conn, person.person_id)
-    history = repo.invitation_history(conn, person.person_id)
-
-    activity, doctoral, career, invitations, veteran, restricted = constraints
     outcomes = []
-    if not restricted.off:
-        outcomes.append(_restricted_country(person, restricted))
-    if not activity.off:
-        outcomes.append(_activity(works_by_year, years, activity, now_year))
-    if not doctoral.off:
-        outcomes.append(_doctoral(person, doctoral, now_year))
-    if not career.off:
-        outcomes.append(_career(person, years, career, now_year))
-    if not invitations.off:
-        outcomes.append(_invitation_response(history, invitations, now_year))
-    if not veteran.off:
-        outcomes.append(_veteran(works_by_year, years, history, veteran, now_year))
-
-    # Only ``prefer`` rules feed the score. A ``require`` rule has already had
-    # its say by excluding or not excluding; letting it also pay a bonus would
-    # dilute a genuine preference failure with gates that everybody passes.
-    preferred = [o for o in outcomes if not o.excluding]
-    passed = sum(1 for outcome in preferred if outcome.passed)
-    return Assessment(outcomes=outcomes, score=passed / len(preferred) if preferred else 1.0)
+    for name, rule in RULES:
+        constraint = policy.constraint(name)
+        if constraint.off:
+            continue
+        outcomes.append(rule(record, constraint))
+    return Assessment(outcomes=outcomes)

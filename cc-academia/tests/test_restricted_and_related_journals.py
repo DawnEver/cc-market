@@ -19,9 +19,26 @@ from academia.reviewer import eligibility
 from academia.reviewer import policy as policy_module
 from academia.reviewer.policy import Policy, load_policy
 from academia.reviewer.rank import Evidence
+from academia.reviewer.record import CandidateRecord, RelevantRecord
 from academia.store import db
+from conftest import assess
 
 NOW = 2026
+
+
+def journal_record(papers, constraint):
+    """Run the related-journal rule over a relevant record built from ``papers``.
+
+    Every rule reads a :class:`CandidateRecord`, so a test that exercises one
+    builds the record rather than handing the rule a bare list. That is the
+    point of the record: one derivation per quantity, shared.
+    """
+    record = CandidateRecord(
+        person=Person(person_id="p", display_name="Candidate"),
+        now_year=NOW,
+        relevant=RelevantRecord(tuple(papers)),
+    )
+    return eligibility.related_journals(record, constraint)
 
 
 @pytest.fixture()
@@ -64,27 +81,27 @@ def related(mode: str = "require", minimum: int = 3) -> Policy:
 
 
 def test_a_restricted_country_excludes_the_candidate(conn):
-    assessment = eligibility.assess(conn, person_in("IN"), restricted(), now_year=NOW)
+    assessment = assess(conn, person_in("IN"), restricted(), now_year=NOW)
 
     assert assessment.excluded
     assert "does not invite from" in assessment.reason
 
 
 def test_the_country_code_is_matched_case_insensitively(conn):
-    assessment = eligibility.assess(conn, person_in("ir"), restricted(), now_year=NOW)
+    assessment = assess(conn, person_in("ir"), restricted(), now_year=NOW)
 
     assert assessment.excluded
 
 
 def test_an_unrestricted_country_passes_without_a_note(conn):
-    assessment = eligibility.assess(conn, person_in("CN"), restricted(), now_year=NOW)
+    assessment = assess(conn, person_in("CN"), restricted(), now_year=NOW)
 
     assert not assessment.excluded
     assert not any("restricted" in note for note in assessment.notes())
 
 
 def test_an_unknown_country_is_kept_and_sent_for_confirmation(conn):
-    assessment = eligibility.assess(conn, person_in(""), restricted(), now_year=NOW)
+    assessment = assess(conn, person_in(""), restricted(), now_year=NOW)
 
     assert not assessment.excluded
     outcome = next(o for o in assessment.outcomes if o.rule == "restricted_country")
@@ -93,7 +110,7 @@ def test_an_unknown_country_is_kept_and_sent_for_confirmation(conn):
 
 
 def test_under_prefer_a_restricted_country_annotates_but_keeps(conn):
-    assessment = eligibility.assess(conn, person_in("IN"), restricted("prefer"), now_year=NOW)
+    assessment = assess(conn, person_in("IN"), restricted("prefer"), now_year=NOW)
 
     assert not assessment.excluded
     assert any("does not invite from" in note for note in assessment.notes())
@@ -117,8 +134,8 @@ def test_an_off_rule_needs_no_countries():
 def test_tte_does_not_invite_from_india_or_iran(conn):
     tte = load_policy("tte")
 
-    assert tte.restricted_country.upper_set("countries") == {"IN", "IR"}
-    assert eligibility.assess(conn, person_in("IN"), tte, now_year=NOW).excluded
+    assert tte.constraint("restricted_country").upper_set("countries") == {"IN", "IR"}
+    assert assess(conn, person_in("IN"), tte, now_year=NOW).excluded
 
 
 # ---------------------------------------------------- related journals ----
@@ -141,8 +158,7 @@ def papers(*venue_types: str, position: str = "first") -> list[Evidence]:
 
 
 def test_enough_journal_papers_passes():
-    outcome = eligibility.assess_related_journals(
-        papers("Journal", "journal-article", "JournalArticle"), related().related_journals
+    outcome = journal_record(papers("Journal", "journal-article", "JournalArticle"), related().constraint("related_journals")
     )
 
     assert outcome.passed
@@ -150,8 +166,7 @@ def test_enough_journal_papers_passes():
 
 
 def test_conference_papers_do_not_count_towards_the_floor():
-    outcome = eligibility.assess_related_journals(
-        papers("Journal", "Conference", "Conference"), related().related_journals
+    outcome = journal_record(papers("Journal", "Conference", "Conference"), related().constraint("related_journals")
     )
 
     assert outcome.excluded
@@ -159,8 +174,7 @@ def test_conference_papers_do_not_count_towards_the_floor():
 
 
 def test_an_unresolved_venue_is_reported_rather_than_counted_against_anyone():
-    outcome = eligibility.assess_related_journals(
-        papers("Journal", "Journal", ""), related().related_journals
+    outcome = journal_record(papers("Journal", "Journal", ""), related().constraint("related_journals")
     )
 
     assert not outcome.excluded
@@ -169,32 +183,44 @@ def test_an_unresolved_venue_is_reported_rather_than_counted_against_anyone():
 
 
 def test_unresolved_venues_that_could_not_reach_the_floor_still_fail():
-    outcome = eligibility.assess_related_journals(papers("Conference", ""), related().related_journals)
+    outcome = journal_record(papers("Conference", ""), related().constraint("related_journals"))
 
     assert outcome.excluded
     assert not outcome.manual_review
 
 
 def test_under_prefer_a_thin_journal_record_annotates_but_keeps():
-    outcome = eligibility.assess_related_journals(papers("Conference"), related("prefer").related_journals)
+    outcome = journal_record(papers("Conference"), related("prefer").constraint("related_journals"))
 
     assert not outcome.passed
     assert not outcome.excluded
 
 
 def test_the_rule_is_off_by_default():
-    outcome = eligibility.assess_related_journals([], load_policy().related_journals)
+    assert load_policy().constraint("related_journals").off
+
+
+def test_a_candidate_with_no_relevant_papers_abstains_rather_than_passing():
+    """A rule that never ran must not print as a pass.
+
+    ``off`` used to be answered inside the rule with a "not assessed" outcome,
+    which meant a switched-off rule and a rule with nothing to measure produced
+    the same cell. Now a switched-off rule contributes no column at all, and a
+    rule with no evidence says so.
+    """
+    outcome = journal_record([], load_policy("tte").constraint("related_journals"))
 
     assert outcome.passed
-    assert outcome.detail == "not assessed"
+    assert outcome.abstained
+    assert not outcome.excluded
 
 
 def test_tte_requires_three_related_journal_papers():
-    constraint = load_policy("tte").related_journals
+    constraint = load_policy("tte").constraint("related_journals")
 
     assert constraint.excluding
-    assert eligibility.assess_related_journals(papers(*["Journal"] * 3), constraint).passed
-    assert eligibility.assess_related_journals(papers(*["Journal"] * 2), constraint).excluded
+    assert journal_record(papers(*["Journal"] * 3), constraint).passed
+    assert journal_record(papers(*["Journal"] * 2), constraint).excluded
 
 
 @pytest.mark.parametrize(
@@ -229,12 +255,11 @@ def test_an_unstated_venue_is_neither(monkeypatch):
 
 
 def test_openalex_articles_count_towards_the_floor():
-    outcome = eligibility.assess_related_journals(
-        papers("article", "article", "review", "conference-paper"),
-        related().related_journals,
+    outcome = journal_record(papers("article", "article", "review", "conference-paper"),
+        related().constraint("related_journals"),
     )
 
     assert outcome.passed
-    assert outcome.facts["related_journal_count"] == 3
-    assert outcome.facts["related_nonjournal_count"] == 1
-    assert outcome.facts["related_unknown_type_count"] == 0
+    assert outcome.facts["related_journals_count"] == 3
+    assert outcome.facts["related_journals_nonjournal"] == 1
+    assert outcome.facts["related_journals_unresolved"] == 0

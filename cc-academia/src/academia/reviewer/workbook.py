@@ -44,7 +44,7 @@ RENAME = {"recommendation": "recommend_for_reviewer", "filter_details": "reasoni
 #: Columns that state a policy threshold rather than a fact about the person.
 #: Dropped from the sheet when they hold one value for everybody — sixty columns
 #: is already too many to scan, and a column that never varies cannot filter.
-THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_target", "_window_years")
+THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_window_years", "_countries")
 
 #: Spelling out a country reads better than a bare code in a column heading.
 #: Display only — the list of restricted countries itself comes from the policy,
@@ -65,29 +65,36 @@ WHITE_COLUMNS = ("rank", "reviewer", "email", "institution", "profile_url")
 #: URL they retype.
 LINK_COLUMN = "profile_url"
 
-#: Dimension boundaries, in sheet order. Used for the rule between blocks and to
-#: group the glossary; the header itself stays grey so the eye rests on the name.
-DIMENSIONS: list[tuple[str, tuple[str, ...]]] = [
-    ("Identity", ("rank", "reviewer", "email", "institution", "current_country",
-                  "profile_url")),
-    ("Decision", ("recommend_for_reviewer", "blocking_reason")),
-    ("Conflict of interest", ("coi",)),
-    ("Geography", ("author_country",)),
-    ("Restricted country", ("restricted_countr",)),
-    ("Related-journal record", ("related_",)),
-    ("Still publishing", ("activity_",)),
-    ("Recent activity on this topic", ("recent_activity", "recent_paper", "latest_year")),
-    ("Career length", ("career_",)),
-    ("Years since the doctorate", ("academic_age",)),
-    ("Doctoral floor", ("doctoral_year", "is_doctoral")),
-    ("Invitation response", ("invitation_", "recent_invitation")),
-    ("Unresponsive veteran", ("unresponsive_veteran", "veteran_")),
-    ("Reasoning", ("reasoning",)),
-]
+#: What each rule's block of columns is called in the sheet, in sheet order.
+#: Keyed by rule name, and that is the whole mapping: every fact a rule emits is
+#: named ``<rule>_<fact>``, so the block a column belongs to is readable off the
+#: column itself. This used to be a list of hand-maintained prefixes that had
+#: drifted — ``recent_`` collected both the topic-activity columns and the
+#: invitation-count ones, and no prefix matched a rule that had been renamed.
+RULE_DIMENSIONS: dict[str, str] = {
+    "coi": "Conflict of interest",
+    "author_country": "Geography",
+    "restricted_country": "Restricted country",
+    "related_journals": "Related-journal record",
+    "relevant_activity": "Recent activity on this topic",
+    "recent_activity": "Still publishing",
+    "doctoral_year": "Doctoral floor",
+    "seniority": "Seniority",
+    "invitation_response": "Invitation response",
+    "unresponsive_veteran": "Unresponsive veteran",
+}
+
+#: The two blocks that are not a rule: who this is, and what to do about them.
+IDENTITY_COLUMNS = (
+    "rank", "reviewer", "email", "institution", "current_country", "profile_url",
+)
+DECISION_BLOCK = ("recommend_for_reviewer", "blocking_reason")
 
 #: What each column is called in the sheet. The internal name stays the key
-#: everywhere in this script but never reaches the workbook: a reader who has
+#: everywhere in this module but never reaches the workbook: a reader who has
 #: not seen the pipeline should not have to decode a field name to use the file.
+#: ``{...}`` placeholders are filled from the run's own thresholds, so a heading
+#: states the rule this run applied rather than a number frozen into the code.
 LABELS: dict[str, str] = {
     "rank": "Rank",
     "reviewer": "Reviewer name",
@@ -97,83 +104,67 @@ LABELS: dict[str, str] = {
     "profile_url": "Homepage or paper",
     "recommend_for_reviewer": "Recommend as reviewer",
     "blocking_reason": "Why not recommended",
+    # Conflict of interest
     "coi": "Rule: no conflict of interest (severity = 0)",
     "coi_severity": "Conflict severity (0 none, 1 review, 2 blocking)",
     "coi_finding_count": "Number of conflicts found",
+    # Geography — scores, never excludes
     "author_country_reference": "Country compared with the submission",
-    "author_country_known": "Is the current country known?",
     "author_country_cross_region": "In a different country from the submission? (adds score, never excludes)",
-    "author_country_origin_count": "Countries the submission comes from",
-    "restricted_country": "Rule: not working in {restricted_countries}",
-    "restricted_country_known": "Is the country known, for the restricted-list check?",
+    # Restricted country
+    "restricted_country": "Rule: not working in {restricted_country_countries}",
     "restricted_country_current": "Country of the current affiliation",
-    "restricted_country_is_restricted": "Working in {restricted_countries}",
-    "restricted_countries": "Countries this journal will not invite from",
-    "related_journal_publications": "Rule: related journal papers ≥ {related_journal_minimum}",
-    "related_journal_count": "Related journal papers — {related_journal_minimum} required",
-    "related_journal_gap": "Related journal papers above the {related_journal_minimum} required",
-    "related_journal_target_ratio": "Related journal papers ÷ target of {related_journal_target}",
-    "related_nonjournal_count": "Related conference papers (never count towards the {related_journal_minimum})",
-    "related_unknown_type_count": "Related papers, journal or conference unclear",
-    "related_first_author_count": "Of those, as first author",
-    "related_second_author_count": "Of those, as second author",
-    "related_last_author_count": "Of those, as last author (the supervisor slot)",
-    "related_middle_author_count": "Of those, as middle author",
-    "related_corresponding_observed_count": "Of those, as corresponding author (seen on the paper itself)",
-    "related_leadership_count": "Of those, in a leading role (first, last or corresponding)",
-    "related_position_weight_sum": "Author-position score, total",
-    "related_position_weight_mean": "Author-position score, average (1.0 = always leading)",
-    "recent_relevant_activity": "Rule: ≥ {recent_paper_minimum} paper on this topic in the last {recent_window_years} years",
-    "recent_activity": "Rule: still publishing — ≥ {activity_paper_minimum} paper in the last {activity_window_years} years",
-    "activity_known": "Is a publication profile available?",
-    "activity_paper_count": "Papers of any kind in the last {activity_window_years} years — {activity_paper_minimum} required",
-    "activity_paper_gap": "Papers above the {activity_paper_minimum} required",
-    "activity_latest_year": "Most recent publication year, any topic",
-    "activity_source": "Whether the count came from the publication profile or only from papers this run harvested",
-    "career_length": "Rule: career length (a preference under this journal, excludes nobody)",
-    "career_known": "Is a career length known?",
-    "career_years": "Years since the doctorate, or since the first paper — preferred at or below {career_years_maximum}",
-    "career_years_gap": "Years below the {career_years_maximum} preferred",
-    "academic_age": "Rule: years since the doctorate ≥ {academic_age_minimum}",
-    "academic_age_known": "Is a doctorate year on record? ORCID states one for a minority.",
-    "academic_age_value": "Years since the doctorate — {academic_age_minimum} required",
-    "academic_age_gap": "Years above the {academic_age_minimum} required",
-    "recent_activity_known": "Is a publication profile available?",
-    "recent_paper_count": "Papers in the last {recent_window_years} years — {recent_paper_minimum} required",
-    "latest_year": "Most recent publication year",
-    "recent_paper_gap": "Papers above the {recent_paper_minimum} required",
+    "restricted_country_countries": "Countries this journal will not invite from",
+    # Related-journal record
+    "related_journals": "Rule: related journal papers ≥ {related_journals_minimum}",
+    "related_journals_count": "Related journal papers — {related_journals_minimum} required",
+    "related_journals_minimum": "Related journal papers required",
+    "related_journals_nonjournal": "Related conference papers (never count towards the floor)",
+    "related_journals_unresolved": "Related papers, journal or conference unclear",
+    "related_journals_first_author": "Of the related papers, as first author",
+    "related_journals_last_author": "Of those, as last author (the supervisor slot)",
+    "related_journals_leading": "Of those, in a leading role (first or last)",
+    "related_journals_position_weight_mean": "Author-position score, average (1.0 = always leading)",
+    # Recent activity on this topic
+    "relevant_activity": "Rule: ≥ {relevant_activity_minimum} paper on this topic in the last {relevant_activity_window_years} years",
+    "relevant_activity_papers": "Papers on this topic in the last {relevant_activity_window_years} years — {relevant_activity_minimum} required",
+    "relevant_activity_latest_year": "Most recent paper on this topic",
+    "relevant_activity_minimum": "Papers on this topic required",
+    "relevant_activity_window_years": "Length of the topic-activity window, in years",
+    # Still publishing
+    "recent_activity": "Rule: still publishing — ≥ {recent_activity_minimum} paper in the last {recent_activity_window_years} years",
+    "recent_activity_papers": "Papers of any kind in the last {recent_activity_window_years} years — {recent_activity_minimum} required",
+    "recent_activity_latest_year": "Most recent publication year, any topic",
+    "recent_activity_source": "Whether the count came from the publication profile or only from papers this run harvested",
+    "recent_activity_minimum": "Papers of any kind required",
+    "recent_activity_window_years": "Length of the still-publishing window, in years",
+    # Doctoral floor
     "doctoral_year": "Rule: if a PhD student, year of study ≥ {doctoral_year_minimum}",
-    "is_doctoral": "Is a PhD student",
-    "doctoral_year_known": "Is the year of PhD study known?",
+    "doctoral_year_is_doctoral": "Is a PhD student",
     "doctoral_year_value": "Year of PhD study — {doctoral_year_minimum} required",
-    "doctoral_year_gap": "PhD years above the {doctoral_year_minimum} required",
-    "invitation_response": "Rule: answered ≥ {invitation_response_rate_minimum} of invitations in the last {invitation_window_years} years",
-    "invitation_response_known": "Enough invitation history to judge?",
-    "recent_invitation_count": "Invitations in the last {invitation_window_years} years — {recent_invitation_minimum} needed before judging",
-    "invitation_response_rate": "Share of those invitations answered — {invitation_response_rate_minimum} required",
-    "invitation_response_rate_gap": "Answer rate above the {invitation_response_rate_minimum} required",
-    "unresponsive_veteran": "Rule: not (career ≥ {veteran_career_minimum} years and answered ≤ {veteran_response_rate_maximum} of ≥ {veteran_invitation_minimum} invitations)",
-    "veteran_career_known": "Is the first publication year known?",
-    "veteran_career_years": "Years since first publication — rule applies from {veteran_career_minimum}",
-    "veteran_invitation_count": "Invitations ever received — {veteran_invitation_minimum} needed before judging",
-    "veteran_response_rate": "Share answered over the whole career — unresponsive at {veteran_response_rate_maximum}",
-    "reasoning": "Reason for each check, in words",
-    "related_journal_minimum": "Related journal papers required",
-    "related_journal_target": "Related journal papers aimed for",
-    "recent_paper_minimum": "Papers required in the recent window",
-    "recent_window_years": "Length of the recent-activity window, in years",
     "doctoral_year_minimum": "Minimum year of PhD study",
-    "recent_invitation_minimum": "Invitations needed before the answer rate is judged",
+    # Seniority
+    "seniority": "Rule: at least {seniority_minimum} years into an independent career",
+    "seniority_years": "Years into an independent career",
+    "seniority_basis": "What that is counted from — a stated doctorate year where there is one, otherwise the first publication",
+    "seniority_since": "The year it is counted from",
+    "seniority_minimum": "Years required",
+    "seniority_maximum": "Years this journal prefers to stay within (0 = no ceiling). A preference only; it excludes nobody.",
+    # Invitation response
+    "invitation_response": "Rule: answered ≥ {invitation_response_rate_minimum} of invitations in the last {invitation_response_window_years} years",
+    "invitation_response_invitations": "Invitations in the last {invitation_response_window_years} years — {invitation_response_invitation_minimum} needed before judging",
+    "invitation_response_rate": "Share of those invitations answered — {invitation_response_rate_minimum} required",
+    "invitation_response_invitation_minimum": "Invitations needed before the answer rate is judged",
     "invitation_response_rate_minimum": "Answer rate required",
-    "invitation_window_years": "Length of the invitation window, in years",
-    "veteran_career_minimum": "Career length that makes the veteran rule apply",
-    "veteran_invitation_minimum": "Invitations needed before a veteran is judged",
-    "veteran_response_rate_maximum": "Answer rate at or below which someone counts as unresponsive",
-    "activity_paper_minimum": "Papers of any kind required in the recent window",
-    "activity_window_years": "Length of the still-publishing window, in years",
-    "career_years_maximum": "Career length this journal prefers to stay within",
-    "academic_age_minimum": "Years since the doctorate required",
-    "academic_age_maximum": "Years since the doctorate allowed (0 means no ceiling)",
+    "invitation_response_window_years": "Length of the invitation window, in years",
+    # Unresponsive veteran
+    "unresponsive_veteran": "Rule: not (career ≥ {unresponsive_veteran_career_minimum} years and answered ≤ {unresponsive_veteran_rate_maximum} of ≥ {unresponsive_veteran_invitation_minimum} invitations)",
+    "unresponsive_veteran_invitations": "Invitations ever received — {unresponsive_veteran_invitation_minimum} needed before judging",
+    "unresponsive_veteran_rate": "Share answered over the whole career — unresponsive at {unresponsive_veteran_rate_maximum}",
+    "unresponsive_veteran_career_minimum": "Career length that makes the veteran rule apply",
+    "unresponsive_veteran_invitation_minimum": "Invitations needed before a veteran is judged",
+    "unresponsive_veteran_rate_maximum": "Answer rate at or below which someone counts as unresponsive",
+    "reasoning": "Reason for each check, in words",
 }
 
 
@@ -181,11 +172,11 @@ LABELS: dict[str, str] = {
 BLOCKING_REASONS = {
     "coi": "Conflict of interest with the authors",
     "restricted_country": "Works in a restricted country",
-    "related_journal_publications": "Too few papers in related journals",
-    "recent_relevant_activity": "Nothing published on this topic lately",
+    "related_journals": "Too few papers in related journals",
+    "relevant_activity": "Nothing published on this topic lately",
     "recent_activity": "Not publishing at all lately",
-    "academic_age": "Too soon after the doctorate",
     "doctoral_year": "PhD student below the year floor",
+    "seniority": "Too early in an independent career",
     "invitation_response": "Rarely answers review invitations",
     "unresponsive_veteran": "Long career, no longer answers invitations",
 }
@@ -230,19 +221,13 @@ def missing_thresholds(header: list[str]) -> list[str]:
                 wanted.add(field)
     return sorted(wanted - set(THRESHOLDS))
 
-#: The verdict column of each dimension, in the order a blocking reason is read.
-VERDICTS_IN_ORDER = (
-    "coi",
-    "restricted_country",
-    "related_journal_publications",
-    "recent_relevant_activity",
-    "recent_activity",
-    "academic_age",
-    "career_length",
-    "doctoral_year",
-    "invitation_response",
-    "unresponsive_veteran",
-)
+#: The verdict column of each rule, in the order a blocking reason is read.
+#: Conflict first because it is the only one that is about the manuscript rather
+#: than about the person; the rest follow the order the rules ran in.
+#: ``RULE_DIMENSIONS`` already leads with the conflict rule, and its order is
+#: the order the rules ran in. A name here that has no verdict column — the
+#: geography preference states a fact and reaches no verdict — simply drops out.
+VERDICTS_IN_ORDER = tuple(RULE_DIMENSIONS)
 
 #: PASS / FILTERED / PREFERENCE_MISSED are pipeline vocabulary. A reader who has
 #: never seen the pipeline gets the same states in words they already know.
@@ -278,15 +263,15 @@ EXCLUDING_VERDICTS = frozenset({"FILTERED", "BLOCK"})
 #: A measured number is judged against the same threshold its rule uses, so the
 #: figure itself reads pass or fail without cross-referencing the rule column.
 #: (column, threshold column, the number must reach the threshold)
-MEASURES: tuple[tuple[str, str, bool], ...] = (
-    ("related_journal_count", "related_journal_minimum", True),
-    ("recent_paper_count", "recent_paper_minimum", True),
-    ("activity_paper_count", "activity_paper_minimum", True),
-    ("academic_age_value", "academic_age_minimum", True),
-    ("doctoral_year_value", "doctoral_year_minimum", True),
-    ("invitation_response_rate", "invitation_response_rate_minimum", True),
-    ("recent_invitation_count", "recent_invitation_minimum", True),
-    ("veteran_invitation_count", "veteran_invitation_minimum", True),
+MEASURES: tuple[tuple[str, str], ...] = (
+    ("related_journals_count", "related_journals_minimum"),
+    ("relevant_activity_papers", "relevant_activity_minimum"),
+    ("recent_activity_papers", "recent_activity_minimum"),
+    ("seniority_years", "seniority_minimum"),
+    ("doctoral_year_value", "doctoral_year_minimum"),
+    ("invitation_response_rate", "invitation_response_rate_minimum"),
+    ("invitation_response_invitations", "invitation_response_invitation_minimum"),
+    ("unresponsive_veteran_invitations", "unresponsive_veteran_invitation_minimum"),
 )
 
 #: A rule that measures something shows the measurement, not a verdict: the
@@ -297,24 +282,13 @@ MEASURES: tuple[tuple[str, str, bool], ...] = (
 #: is not — keep their word.
 RULE_MEASURES = {
     "coi": "coi_severity",
-    "related_journal_publications": "related_journal_count",
-    "recent_relevant_activity": "recent_paper_count",
-    "recent_activity": "activity_paper_count",
-    "academic_age": "academic_age_value",
-    "career_length": "career_years",
+    "related_journals": "related_journals_count",
+    "relevant_activity": "relevant_activity_papers",
+    "recent_activity": "recent_activity_papers",
+    "seniority": "seniority_years",
     "doctoral_year": "doctoral_year_value",
     "invitation_response": "invitation_response_rate",
 }
-
-#: Gap columns are already measured-minus-required, so zero is the line.
-GAP_COLUMNS = (
-    "related_journal_gap",
-    "recent_paper_gap",
-    "activity_paper_gap",
-    "academic_age_gap",
-    "doctoral_year_gap",
-    "invitation_response_rate_gap",
-)
 
 DECISION_COLUMNS = (
     "rank",
@@ -360,11 +334,23 @@ HOW_TO_READ = [
 
 
 def dimension_of(name: str) -> str:
+    """Which block a column belongs to, read off the column's own name.
+
+    Every fact a rule emits is named ``<rule>_<fact>``, so the longest rule
+    name that prefixes a column is the rule that produced it. Longest wins
+    because ``recent_activity`` and ``relevant_activity`` are distinct rules and
+    a shorter prefix must not swallow a longer one.
+    """
+    if name in IDENTITY_COLUMNS:
+        return "Identity"
+    if name in DECISION_BLOCK:
+        return "Decision"
+    if name == "reasoning":
+        return "Reasoning"
     best, best_len = "", -1
-    for label, prefixes in DIMENSIONS:
-        for prefix in prefixes:
-            if name.startswith(prefix) and len(prefix) > best_len:
-                best, best_len = label, len(prefix)
+    for rule, label in RULE_DIMENSIONS.items():
+        if (name == rule or name.startswith(rule + "_")) and len(rule) > best_len:
+            best, best_len = label, len(rule)
     return best
 
 
@@ -386,56 +372,49 @@ def cast(value: str):
 GLOSSARY: dict[str, str] = {
     "rank": "Shortlist position, best expertise score first.",
     "reviewer": "Candidate name as resolved during identity matching.",
-    "email": "Best verified contact address; details/evidence records where it came from.",
+    "email": "Best verified contact address. Blank means none was found in public data, which is a gap in the sources and never a mark against the person — such a candidate reads Check first, and the editorial system can address the invitation.",
     "institution": "Current affiliation.",
     "current_country": "ISO code of the current affiliation, never nationality.",
     "profile_url": "Where to read about this person: their ORCID record, their publication profile, or failing both the closest of their papers to this manuscript. Whichever it is, it is a page that already existed — never a search built here.",
     "recommend_for_reviewer": "Recommend = every required rule passed and an address was verified against the institution. Check first = every rule passed but something still needs a human (usually the address). Do not invite = a rule excluded them.",
-    "blocking_reason": "The first dimension that excluded this candidate; blank when none did. Derived here, not in the CSV.",
-    "coi": "Conflict-of-interest verdict under coi.toml plus the journal overlay: CLEAR or FILTERED.",
+    "blocking_reason": "The first rule that excluded this candidate; blank when none did, including when the only flag is a conflict marked for review. Derived here, not in the CSV.",
+    "coi": "Conflict-of-interest verdict under coi.toml plus the journal overlay. Three states: clear, review-level (asks for a human, excludes nobody), blocking.",
     "coi_severity": "0 clear, 1 review-level, 2 blocking.",
     "coi_finding_count": "Number of COI findings recorded against this person.",
     "author_country_reference": "The candidate's country read against the submission's country of origin.",
-    "author_country_known": "1 when the current affiliation country is established.",
-    "author_country_cross_region": "1 when the candidate sits outside the submission's origin country. Policy geo mode is prefer_cross_region, so this only scores; it never excludes.",
-    "author_country_origin_count": "How many distinct origin countries the submission has.",
-    "banned_country": "Fails anyone whose current affiliation is in a restricted country. The list is India (IN) and Iran (IR); an unknown country abstains rather than guesses.",
-    "banned_country_known": "1 when the country is established; 0 forces VERIFY rather than a guess.",
-    "banned_country_is_banned": "1 when the current affiliation country is on the list.",
-    "related_journal_publications": "PASS once the verified related-journal count reaches the minimum.",
-    "related_journal_count": "Verified journal papers in venues related to the submission.",
-    "related_journal_gap": "count minus the minimum; negative means short of the floor.",
-    "related_journal_target_ratio": "count divided by the target, 0..1.",
-    "related_nonjournal_count": "Related conference or other non-journal items. They never satisfy the floor.",
-    "related_unknown_type_count": "Related items whose venue type could not be resolved.",
-    "related_first_author_count": "Related papers where the candidate is first author.",
-    "related_second_author_count": "Related papers where the candidate is second author.",
-    "related_last_author_count": "Related papers where the candidate is last author, the usual supervisor slot.",
-    "related_middle_author_count": "Related papers where the candidate is a middle author.",
-    "related_corresponding_observed_count": "Related papers where corresponding authorship was actually observed on the PDF or publisher page, never assumed.",
-    "related_leadership_count": "Related papers in a leading role: first, last or corresponding.",
-    "related_position_weight_sum": "Sum of authorship-position weights across the related papers.",
-    "related_position_weight_mean": "Mean position weight. Near 1.0 means consistently leading.",
-    "recent_activity": "PASS, or PREFERENCE_MISSED because this rule is set to prefer rather than require.",
-    "recent_activity_known": "1 when a publication profile was available to read.",
-    "recent_paper_count": "Papers inside the activity window.",
-    "latest_year": "Year of the most recent publication.",
-    "recent_paper_gap": "count minus the minimum.",
-    "doctoral_year": "PASS unless the candidate is a doctoral student below the journal's floor.",
-    "is_doctoral": "1 when the resolved rank is doctoral student.",
-    "doctoral_year_known": "1 when the year of study is stated.",
+    "author_country_cross_region": "1 when the candidate sits outside the submission's origin country. Under prefer_cross_region this only scores; it never excludes.",
+    "restricted_country": "Fails anyone whose current affiliation is in a country the journal will not invite from. An unknown country abstains rather than guessing, and is sent for confirmation.",
+    "restricted_country_current": "Country of the current affiliation, as an ISO code.",
+    "restricted_country_countries": "The journal's restricted list, from its own policy file.",
+    "related_journals": "Passes once the verified related-journal count reaches the minimum. Counted over the evidence that qualified this candidate, so it asks about *this* topic rather than about output in general.",
+    "related_journals_count": "Verified journal papers in venues related to the submission.",
+    "related_journals_nonjournal": "Related conference or other non-journal items. They never satisfy the floor.",
+    "related_journals_unresolved": "Related items whose venue type no source stated. Not counted, and not held against anybody — a candidate who misses the floor only on these is sent for a human check.",
+    "related_journals_first_author": "Related papers where the candidate is first author.",
+    "related_journals_last_author": "Related papers where the candidate is last author, the usual supervisor slot.",
+    "related_journals_leading": "Related papers in a leading role: first or last. Audited, never decisive — a supervisor slot is not a qualification.",
+    "related_journals_position_weight_mean": "Mean authorship-position weight. Near 1.0 means consistently leading.",
+    "relevant_activity": "Papers on this manuscript's topic inside the window, counted over the run's own relevant corpus — the only source that can say what is relevant to this submission.",
+    "relevant_activity_papers": "How many of those fall inside the window.",
+    "relevant_activity_latest_year": "Year of the most recent paper on this topic.",
+    "recent_activity": "Is this person publishing at all? Read from their own publication profile, not from the papers this run harvested: measured against the harvest a live run called 19 of 22 candidates dormant, because their latest work was not on this topic.",
+    "recent_activity_papers": "Papers of any kind inside the window.",
+    "recent_activity_latest_year": "Year of the most recent publication, any topic.",
+    "recent_activity_source": "profile = their own bibliographic record. harvest = only what this run found, which is weaker evidence and is labelled as such rather than implied.",
+    "doctoral_year": "Passes unless the candidate is a doctoral student below the journal's floor. A student whose year of study is nowhere stated is kept and sent for confirmation — not configurable, because turning that gap into an exclusion would remove the people with the thinnest records rather than the ones who are too junior.",
+    "doctoral_year_is_doctoral": "1 when the resolved rank is doctoral student.",
     "doctoral_year_value": "Year of doctoral study; blank for everyone who is not a student.",
-    "doctoral_year_gap": "value minus the minimum.",
-    "invitation_response": "PASS / VERIFY. VERIFY means no invitation history exists, so the rule abstains instead of failing anyone.",
-    "invitation_response_known": "1 when enough resolved invitations exist to judge.",
-    "recent_invitation_count": "Resolved invitations inside the invitation window.",
+    "seniority": "How far into an independent career this person is, as one axis with a floor and a preferred ceiling. This was two rules — one counting from the doctorate, one from the first paper — which measured the same thing from different sources and disagreed by up to 28 years.",
+    "seniority_years": "The figure itself.",
+    "seniority_basis": "doctorate = counted from a stated doctorate year, the better basis. first publication = the fallback, because ORCID states a doctorate year for a minority of researchers in this field.",
+    "seniority_since": "The year the count starts from, so the figure can be checked.",
+    "seniority_maximum": "The preferred ceiling. It scores and never excludes, whatever the mode says: refusing a reviewer for being too experienced is not something an editor should be able to state by accident, and a required ceiling once emptied a live shortlist of every senior name in it.",
+    "invitation_response": "Passes, or abstains when no invitation history exists — nobody has asked this person yet, which is not a silence. Only an invitation whose outcome was actually recorded counts.",
+    "invitation_response_invitations": "Resolved invitations inside the window.",
     "invitation_response_rate": "Share answered, 0..1; blank when unknown.",
-    "invitation_response_rate_gap": "rate minus the minimum.",
-    "unresponsive_veteran": "PASS / VERIFY. Fires only on a long career AND a record of silence; VERIFY means the invitation record is too thin to judge.",
-    "veteran_career_known": "1 when a first publication year was found.",
-    "veteran_career_years": "Years since the first publication.",
-    "veteran_invitation_count": "All resolved invitations on record, unwindowed.",
-    "veteran_response_rate": "Lifetime response rate; blank when unknown.",
+    "unresponsive_veteran": "Fires only on a long career AND a record of silence. Career length alone never excludes anybody. Abstains when the invitation record is too thin to judge, which on a fresh store is everybody.",
+    "unresponsive_veteran_invitations": "All resolved invitations on record, over the whole career rather than a window.",
+    "unresponsive_veteran_rate": "Lifetime response rate; blank when unknown.",
     "reasoning": "One human-readable sentence per rule. The reason an editor can disagree with.",
 }
 
@@ -468,13 +447,13 @@ FAIL_FONT = Font(color="9C0006", bold=True)
 
 
 def _floor_of(name: str) -> float | None:
-    for column, threshold, _ in MEASURES:
+    for column, threshold in MEASURES:
         if column == name:
             try:
                 return float(THRESHOLD_NUMBERS[threshold])
             except (KeyError, ValueError):
                 return None
-    return 0.0 if name in GAP_COLUMNS else None
+    return None
 
 
 def _style_body(ws, header: list[str], verdicts: list[list[str | None]]) -> None:
@@ -580,7 +559,7 @@ def restricted_countries(src: Path, journal: str) -> frozenset[str]:
         from academia.reviewer.policy import load_policy
     except ImportError:  # pragma: no cover - only when run outside the project
         return frozenset()
-    return load_policy(slug).restricted_country.upper_set("countries")
+    return load_policy(slug).constraint("restricted_country").upper_set("countries")
 
 
 def describe_countries(codes: frozenset[str]) -> str:
@@ -668,13 +647,21 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
     # it from the journal's own configuration, and cross-check the CSV against it
     # so a policy that has moved on cannot leave a workbook claiming the old rule.
     restricted = restricted_countries(src, journal)
-    THRESHOLDS["restricted_countries"] = describe_countries(restricted)
-    if restricted and "restricted_country_is_restricted" in header:
-        position = header.index("restricted_country_is_restricted")
+    # Spelled out for the heading. The CSV states the list too, as the codes the
+    # run applied, and that is what the cross-check below reads — this is the
+    # display form only.
+    THRESHOLDS["restricted_country_countries"] = describe_countries(restricted)
+    if restricted and "restricted_country" in header:
+        # Read off the verdict rather than a separate boolean: the verdict is
+        # the thing the workbook shows, so it is the thing that has to agree
+        # with the policy. A run whose policy has since changed produces a file
+        # that would state the old rule under the new heading, and refusing it
+        # is better than publishing it.
+        verdict = header.index("restricted_country")
         country = header.index("current_country")
-        flagged = {row[country] for row in body if row[position] == 1}
-        present = {row[country] for row in body if row[country] in restricted}
-        if disagreement := flagged.symmetric_difference(present):
+        failed = {row[country] for row in body if row[verdict] == VERDICT_TEXT["FILTERED"]}
+        listed = {row[country] for row in body if row[country] in restricted}
+        if disagreement := failed.symmetric_difference(listed):
             raise SystemExit(
                 "the CSV's restricted-country outcome disagrees with the policy on: "
                 + ", ".join(sorted(disagreement))

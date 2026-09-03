@@ -8,6 +8,36 @@ build if they drift.
 
 ### Changed
 
+- **The eligibility rule layer, rebuilt from first principles.** No
+  compatibility kept: `eligibility.assess` takes a `CandidateRecord` and the
+  policy exposes `constraint(<rule name>)` instead of a property per rule.
+  - **One derivation per quantity** (`reviewer/record.py`). Career length was
+    derived twice — `career_length` from the run's harvest, `unresponsive_veteran`
+    from the person's publication profile — and on a live case the two
+    disagreed for 158 of 197 candidates by as much as 28 years, in adjacent
+    columns of the delivered spreadsheet. The one reading the harvest was the
+    preference for early-career reviewers, so a 32-year veteran collected the
+    early-career bonus because the search had only found his recent papers.
+  - **`academic_age` and `career_length` become one `seniority` rule.** They
+    were a floor and a ceiling on the same axis, and coincided whenever a
+    doctorate year was stated. The basis — doctorate, else first publication —
+    is now reported, because the two are different claims. The floor obeys the
+    mode; the ceiling can never exclude anybody, enforced in the rule rather
+    than trusted to the config, because a `require` ceiling once removed every
+    senior researcher in a pool and left a run with nobody to invite.
+  - **One registry.** All eight rules are in `eligibility.RULES` and run by one
+    loop. Three used to be appended by `rank` *after* `Assessment.score` had
+    been computed, so a `prefer` rule added there fed nothing; `score` is a
+    property now, and abstentions are excluded from its denominator.
+  - **Uniform abstention.** A rule with no evidence says so instead of printing
+    as a pass, which two of them did.
+  - **Facts are named `<rule>_<fact>`,** so the workbook groups columns by the
+    rule that produced them rather than by a hand-kept prefix table that had
+    already drifted. `*_known` and `*_gap` columns are gone — the VERIFY verdict
+    and the threshold beside the value already carry them. 75 audit columns → 55.
+  - Config: `[seniority]` takes `mode`/`min_years`/`max_years`;
+    `min_academic_age`, `max_academic_age` and `[seniority.career]` are removed.
+
 - **Reviewer discovery hands over one file.** `rev-disc report` now writes
   `ongoing/<slug>/<slug>.xlsx` itself, beside the manuscript it is about, and
   that workbook is the whole deliverable. It is named after the case rather

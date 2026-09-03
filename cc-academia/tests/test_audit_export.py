@@ -17,6 +17,7 @@ from academia.reviewer import eligibility, report
 from academia.reviewer.enrich import EmailFinding
 from academia.reviewer.policy import load_policy
 from academia.reviewer.rank import Candidate, Evidence
+from academia.reviewer.record import CandidateRecord, RelevantRecord
 
 
 def read(text: str) -> tuple[list[str], list[dict[str, str]]]:
@@ -46,32 +47,45 @@ def paper(venue_type: str, *, position: str = "first", year: int = 2025) -> Evid
     )
 
 
+def journal_outcome(papers, journal="tte"):
+    record = CandidateRecord(
+        person=Person(person_id="p1", display_name="Candidate One"),
+        now_year=2026,
+        relevant=RelevantRecord(tuple(papers)),
+    )
+    return eligibility.related_journals(
+        record, load_policy(journal).constraint("related_journals")
+    )
+
+
 def test_a_rule_that_ran_contributes_its_verdict_and_its_numbers():
     cand = candidate()
     cand.eligibility = eligibility.Assessment(
-        outcomes=[
-            eligibility.assess_related_journals(
-                [paper("Journal"), paper("Journal"), paper("Conference")],
-                load_policy("tte").related_journals,
-            )
-        ]
+        outcomes=[journal_outcome([paper("Journal"), paper("Journal"), paper("Conference")])]
     )
 
     header, rows = read(report.render_audit([row(cand)]))
 
-    assert "filter_related_journal_publications" in header
-    assert rows[0]["filter_related_journal_publications"] == "FILTERED"
-    assert rows[0]["filter_related_journal_count"] == "2"
-    assert rows[0]["filter_related_journal_minimum"] == "3"
-    assert rows[0]["filter_related_journal_gap"] == "-1"
+    # Every column a rule produces is named after that rule, which is what lets
+    # a workbook group them without a hand-kept table of prefixes.
+    assert "filter_related_journals" in header
+    assert rows[0]["filter_related_journals"] == "FILTERED"
+    assert rows[0]["filter_related_journals_count"] == "2"
+    assert rows[0]["filter_related_journals_minimum"] == "3"
     # Author position is audited, never part of the rule.
-    assert rows[0]["filter_related_first_author_count"] == "3"
+    assert rows[0]["filter_related_journals_first_author"] == "3"
 
 
 def test_a_rule_that_was_switched_off_leaves_no_column():
+    """A switched-off rule contributes no outcome at all, so no column either.
+
+    It used to answer ``off`` from inside the rule with a "not assessed"
+    outcome that the exporter then had to recognise by its prose. Now the loop
+    that runs the rules skips it, and there is nothing to recognise.
+    """
     cand = candidate()
-    cand.eligibility = eligibility.Assessment(
-        outcomes=[eligibility.assess_related_journals([], load_policy().related_journals)]
+    cand.eligibility = eligibility.assess(
+        CandidateRecord(person=cand.person, now_year=2026), load_policy()
     )
 
     header, _ = read(report.render_audit([row(cand)]))
@@ -104,21 +118,33 @@ def test_the_person_id_never_reaches_the_sheet():
     assert "person_id" not in header
 
 
-def test_academic_age_reports_both_ways():
-    """The rule that only ever spoke when it had a complaint."""
-    policy = load_policy()
+def test_seniority_reports_the_figure_and_what_it_counted_from():
+    """One axis, and the basis is stated because the two bases differ.
+
+    This was two rules — a floor in years since the doctorate and a ceiling in
+    years of publishing — and when a doctorate year was known they measured the
+    same quantity from different sources. A reader could not tell which figure
+    a column held.
+    """
+    constraint = load_policy().constraint("seniority")
+
     senior = Person(person_id="p-senior", display_name="Senior")
     senior.education.append(
         Education(inst_id="i1", institution="Somewhere", degree="PhD", year_to=2010)
     )
-    outcome = eligibility.assess_academic_age(senior, policy, 2026)
+    outcome = eligibility.seniority(
+        CandidateRecord(person=senior, now_year=2026), constraint
+    )
     assert outcome.passed
-    assert outcome.facts["academic_age_value"] == 16
+    assert outcome.facts["seniority_years"] == 16
+    assert outcome.facts["seniority_basis"] == "doctorate"
 
     unknown = Person(person_id="p-unknown", display_name="Unknown")
-    outcome = eligibility.assess_academic_age(unknown, policy, 2026)
+    outcome = eligibility.seniority(
+        CandidateRecord(person=unknown, now_year=2026), constraint
+    )
     assert eligibility.verdict_of(outcome) == "VERIFY"
-    assert outcome.facts["academic_age_known"] == 0
+    assert "seniority_years" not in outcome.facts
 
 
 def test_the_conflict_verdict_and_its_severity_are_stated():

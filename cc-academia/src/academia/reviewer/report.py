@@ -475,7 +475,9 @@ AUDIT_IDENTITY = (
 )
 
 #: Columns that state a policy threshold rather than a fact about a person.
-THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_target", "_window_years")
+#: Every rule names its thresholds with one of these endings, so a workbook can
+#: tell "3 papers required" from "3 papers found" without a list of exceptions.
+THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_window_years", "_countries")
 
 
 def render_audit(rows: list[Row]) -> str:
@@ -542,8 +544,6 @@ def render_audit(rows: list[Row]) -> str:
 
         details: list[str] = []
         for outcome in candidate.eligibility.outcomes if candidate.eligibility else []:
-            if outcome.detail == "not assessed":
-                continue
             verdict_column = f"filter_{outcome.rule}"
             record[verdict_column] = eligibility_module.verdict_of(outcome)
             if verdict_column not in seen:

@@ -82,15 +82,41 @@ editor can act on or defend.
 ## Eligibility
 
 Expertise says a candidate *could* review the manuscript. Eligibility says the
-invitation is worth sending. Four rules, all in `configs/coi.toml` and all
-overridable per journal:
+invitation is worth sending. **Eight rules, and that is all of them** — the list
+is closed, it lives in `eligibility.RULES`, and nothing outside that module may
+add a ninth. Each is in `configs/coi.toml` and overridable per journal:
 
-| Config table | Name in the notes | Default | Fires when |
-|--------------|-------------------|---------|-----------|
-| `activity` | `recent_activity` | prefer | their publication profile shows no work in the last 3 years |
+| Config table | Rule | Default | Fires when |
+|--------------|------|---------|-----------|
+| `geo.restricted` | `restricted_country` | off | the current affiliation is in a country the journal will not invite from |
+| `activity.related_journals` | `related_journals` | off | too little of the relevant record is journal work |
+| `activity.relevant` | `relevant_activity` | prefer | nothing on *this* topic in the last 3 years |
+| `activity` | `recent_activity` | prefer | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
+| `seniority` | `seniority` | prefer | fewer than 3 years into an independent career (floor), or past the journal's preferred ceiling |
 | `activity.invitations` | `invitation_response` | prefer | answered under half of the recent invitations whose outcome was recorded |
 | `activity.veteran` | `unresponsive_veteran` | require | a 10-year career, at least 2 invitations with a recorded outcome (all-time, not windowed) and none of them answered |
+
+Every rule reads its quantities off one `CandidateRecord`, built once per
+candidate. That is the point of it: `career_length` and `unresponsive_veteran`
+used to derive career length separately, one from the run's harvest and one from
+the person's profile, and on a live case they disagreed for 158 of 197
+candidates by as much as 28 years — in adjacent columns of the same
+spreadsheet. Worse, the one reading the harvest was the *preference for
+early-career reviewers*, so a 32-year veteran collected the early-career bonus
+because the search had only found his recent papers.
+
+`seniority` is one axis with a floor and a ceiling, measured in years since the
+doctorate where a doctorate year is stated and years since the first publication
+otherwise; the basis is reported, because the two are different claims. **The
+floor obeys the mode; the ceiling never excludes anybody**, whatever the mode
+says. That is not a nicety — this journal's ceiling was once `require`, which
+removed every senior researcher in the pool and left a run with nobody to
+invite.
+
+Each rule's audit columns are named after it — `seniority_years`,
+`related_journals_count` — so the workbook groups them by the rule that produced
+them instead of by a table of prefixes that goes stale.
 
 Activity is read from the candidate's own OpenAlex output per year — their
 whole record, not the papers this run harvested. The distinction is not
@@ -116,9 +142,11 @@ Each carries its own `mode`:
 blending a policy failure into a score is how somebody who does not meet the
 policy climbs back onto the shortlist on expertise alone. Only `prefer` rules
 feed the score, and they arrive in one column, `component_activity` — the
-fraction of the `prefer` rules the candidate met. It is `1.0` when no rule is in
-`prefer` mode, so an all-`require` journal hands the same 0.07 to everyone left
-standing rather than ranking them by it.
+fraction of the *judged* `prefer` rules the candidate met. A rule that abstained
+for want of evidence is not in the denominator: an abstention is the absence of
+a measurement, not a met preference. It is `1.0` when nothing was judged, so an
+all-`require` journal hands the same 0.07 to everyone left standing rather than
+ranking them by it.
 
 `activity` overlaps on purpose with `recent_expertise` and `reviewer_history`,
 which read the same records from a different angle: those two ask how recent and
@@ -152,8 +180,14 @@ recent_years = 5
 mode = "off"
 ```
 
-`[seniority]`'s `min_academic_age` and `max_academic_age` sit next to these but
-behave differently: they only add a note, and never exclude anybody.
+A rule set to `off` contributes no outcome and therefore no column, so a run
+under a different policy produces a differently shaped file rather than a file
+with columns of blanks that read like rules which found nothing wrong.
+
+There is no separate `academic_age` rule any more. It was a floor in years
+since the doctorate sitting beside a ceiling in years of publishing, and
+whenever a doctorate year was known the two measured the same quantity from
+different sources. One axis is one rule.
 
 One thing is deliberately not configurable: a doctoral candidate whose enrolment
 year is nowhere stated is always kept and marked. Turning that gap into an

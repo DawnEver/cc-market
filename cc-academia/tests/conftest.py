@@ -70,3 +70,23 @@ def isolated_facts(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("ACADEMIA_FACTS_DIR", str(tmp_path_factory.mktemp("facts")))
     monkeypatch.delenv("ACADEMIA_FACTS_SYNC", raising=False)
     monkeypatch.setenv("ACADEMIA_DEVICE", "test-device")
+
+
+def assess(conn, person, policy, *, now_year, relevant_papers=None):
+    """Run the eligibility rules against one person.
+
+    The rules take a :class:`CandidateRecord` — one derivation of each quantity,
+    shared by every rule — so a test that wants to exercise a rule builds the
+    record the pipeline builds. This is that one line, not a compatibility
+    shim: passing a connection and a person straight to ``assess`` is what let
+    two rules each fetch their own idea of a career length.
+    """
+    from academia.reviewer.eligibility import assess as run_rules
+    from academia.reviewer.record import CandidateRecord
+
+    return run_rules(
+        CandidateRecord.build(
+            conn, person, relevant_papers=relevant_papers, now_year=now_year
+        ),
+        policy,
+    )

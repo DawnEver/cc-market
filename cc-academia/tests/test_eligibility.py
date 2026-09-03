@@ -16,8 +16,10 @@ from academia.core.errors import UsageError
 from academia.core.models import Author, Education, Paper, Person
 from academia.reviewer import eligibility, rank
 from academia.reviewer.policy import Constraint, Policy, load_policy
+from academia.reviewer.record import CandidateRecord
 from academia.store import db
 from academia.store import repository as repo
+from conftest import assess
 
 NOW = 2026
 
@@ -76,14 +78,14 @@ def doctoral(person: Person, *, start: int | None) -> Person:
 
 def test_recent_publications_pass_the_activity_window(conn, policy):
     person = author_with_papers(conn, 2024, 2025, name="Active")
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
     assert assessment.score == 1.0
 
 
 def test_a_dormant_author_is_flagged_under_prefer_but_kept(conn, policy):
     person = author_with_papers(conn, 2011, 2012, name="Dormant")
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
     assert assessment.score < 1.0
     assert any("last published 2012" in note for note in assessment.notes())
@@ -92,7 +94,7 @@ def test_a_dormant_author_is_flagged_under_prefer_but_kept(conn, policy):
 def test_the_activity_window_can_be_made_a_hard_requirement(conn, policy):
     person = author_with_papers(conn, 2015, name="Dormant2")
     strict = tuned(policy, activity={**policy.data["activity"], "mode": "require"})
-    assessment = eligibility.assess(conn, person, strict, now_year=NOW)
+    assessment = assess(conn, person, strict, now_year=NOW)
     assert assessment.excluded
     assert "last published 2015" in assessment.reason
 
@@ -100,13 +102,13 @@ def test_the_activity_window_can_be_made_a_hard_requirement(conn, policy):
 def test_no_publication_years_never_excludes_anybody(conn, policy):
     person = author_with_papers(conn, name="Unknown")
     strict = tuned(policy, activity={**policy.data["activity"], "mode": "require"})
-    assert not eligibility.assess(conn, person, strict, now_year=NOW).excluded
+    assert not assess(conn, person, strict, now_year=NOW).excluded
 
 
 def test_the_window_is_configurable(conn, policy):
     person = author_with_papers(conn, 2019, name="Older")
     wide = tuned(policy, activity={**policy.data["activity"], "mode": "require", "recent_years": 10})
-    assert not eligibility.assess(conn, person, wide, now_year=NOW).excluded
+    assert not assess(conn, person, wide, now_year=NOW).excluded
 
 
 def test_a_long_career_is_noted_under_tte_and_excludes_nobody(conn):
@@ -122,40 +124,109 @@ def test_a_long_career_is_noted_under_tte_and_excludes_nobody(conn):
         Education(inst_id="i1", institution="Some Uni", degree="PhD", year_to=2015)
     )
 
-    assessment = eligibility.assess(conn, person, load_policy("tte"), now_year=NOW)
+    assessment = assess(conn, person, load_policy("tte"), now_year=NOW)
 
     assert not assessment.excluded
-    assert any("exceeds maximum of 10 years" in note for note in assessment.notes())
+    assert any("above the preferred 10" in note for note in assessment.notes())
+    assert any("since doctorate" in note for note in assessment.notes())
 
 
 def test_a_long_publication_career_is_noted_rather_than_excluded(conn):
     person = author_with_papers(conn, 2015, 2025, name="LongCareer")
 
-    assessment = eligibility.assess(conn, person, load_policy("tte"), now_year=NOW)
+    assessment = assess(conn, person, load_policy("tte"), now_year=NOW)
 
     assert not assessment.excluded
-    assert any("publication career" in note for note in assessment.notes())
+    # No doctorate year on record, so the axis falls back to the first paper —
+    # and says so, because "12 years since the doctorate" would be a different
+    # and unevidenced claim.
+    assert any("since first publication (2015)" in note for note in assessment.notes())
 
 
-def test_a_career_ceiling_still_excludes_where_a_journal_requires_it(conn):
-    """The mechanism is intact — TTE simply does not use it."""
-    from academia.reviewer.policy import Constraint
+def test_the_seniority_ceiling_cannot_exclude_even_under_require(conn):
+    """A ceiling that excludes is not a policy an editor may state by accident.
 
+    It was stateable, and stated: this journal once required a ten-year
+    maximum, which removed every senior researcher in the pool and left a run
+    with nobody to invite. The floor obeys the mode; the ceiling never does.
+    """
     person = author_with_papers(conn, 2015, 2025, name="LongCareer")
-    required = Constraint(name="career", mode="require", settings={"max_years": 10})
-    outcome = eligibility._career(person, [2015, 2025], required, NOW)
+    required = tuned(
+        load_policy(), seniority={"mode": "require", "min_years": 3, "max_years": 10}
+    )
 
-    assert outcome.excluded
+    assessment = assess(conn, person, required, now_year=NOW)
+    outcome = next(o for o in assessment.outcomes if o.rule == "seniority")
+
+    assert not outcome.passed
+    assert not outcome.excluded
+    assert not assessment.excluded
 
 
-def test_tte_requires_a_relevant_paper_in_the_last_three_years():
-    constraint = load_policy("tte").relevant_activity
+def test_the_seniority_floor_does_obey_require(conn):
+    """The floor is the half of the axis that is allowed to bite."""
+    person = author_with_papers(conn, 2025, name="Fresh")
+    required = tuned(
+        load_policy(), seniority={"mode": "require", "min_years": 3, "max_years": 0}
+    )
 
-    stale = eligibility.assess_relevant_activity([2020, 2022], constraint, now_year=NOW)
-    current = eligibility.assess_relevant_activity([2022, 2025], constraint, now_year=NOW)
+    assert assess(conn, person, required, now_year=NOW).excluded
 
-    assert stale.excluded
-    assert not current.excluded
+
+def test_one_career_length_is_shared_by_every_rule_that_reads_one(conn, policy):
+    """Two rules used to derive this, from two different sources.
+
+    ``career_length`` read the papers this run harvested and
+    ``unresponsive_veteran`` read the person's own profile, so the same
+    candidate carried two career lengths in adjacent audit columns — on a live
+    case they disagreed for 158 of 197 people, by as much as 28 years.
+    """
+    person = author_with_papers(conn, 2015, 2025, name="OneCareer")
+    person.works_by_year = {1994: 2, 2025: 3}
+    strict = tuned(
+        policy,
+        seniority={**policy.data["seniority"], "max_years": 10},
+        activity={
+            **policy.data["activity"],
+            "veteran": {**policy.data["activity"]["veteran"], "mode": "require"},
+        },
+    )
+
+    facts = {o.rule: o.facts for o in assess(conn, person, strict, now_year=NOW).outcomes}
+
+    # The profile wins over the harvest, and the veteran gate reads the same
+    # figure rather than deriving a second one: it publishes no career column
+    # of its own, because there is only one career length.
+    assert facts["seniority"]["seniority_years"] == NOW - 1994 + 1
+    assert not [k for k in facts["unresponsive_veteran"] if k.endswith("career_years")]
+    veteran = next(
+        o for o in assess(conn, person, strict, now_year=NOW).outcomes
+        if o.rule == "unresponsive_veteran"
+    )
+    assert f"{NOW - 1994 + 1} year(s) since first publication" in veteran.detail
+
+
+def test_tte_requires_a_relevant_paper_in_the_last_three_years(conn):
+    tte = load_policy("tte")
+    person = author_with_papers(conn, 2020, name="Whoever")
+
+    def outcome(*years):
+        papers = [
+            rank.Evidence(
+                paper_id=f"p{y}", title="t", year=y, position="first",
+                position_weight=1.0, similarity=0.5, venue_type="article",
+            )
+            for y in years
+        ]
+        record = CandidateRecord.build(conn, person, relevant_papers=papers, now_year=NOW)
+        return next(
+            o
+            for o in eligibility.assess(record, tte).outcomes
+            if o.rule == "relevant_activity"
+        )
+
+    assert outcome(2020, 2022).excluded
+    assert not outcome(2022, 2025).excluded
 
 
 # ------------------------------------------------------------- doctoral ----
@@ -163,20 +234,20 @@ def test_tte_requires_a_relevant_paper_in_the_last_three_years():
 
 def test_a_first_year_doctoral_candidate_is_excluded_by_default(conn, policy):
     person = doctoral(author_with_papers(conn, 2025, name="Fresher"), start=2025)
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert assessment.excluded
     assert "below the journal floor of year 3" in assessment.reason
 
 
 def test_a_third_year_doctoral_candidate_passes_and_is_still_flagged(conn, policy):
     person = doctoral(author_with_papers(conn, 2025, name="Senior"), start=2024)
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
 
 
 def test_an_unstated_year_of_study_keeps_the_candidate(conn, policy):
     person = doctoral(author_with_papers(conn, 2025, name="Undated"), start=None)
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
     assert any("not stated" in o.detail for o in assessment.outcomes)
 
@@ -187,13 +258,13 @@ def test_the_doctoral_floor_is_configurable(conn, policy):
         policy,
         seniority={**policy.data["seniority"], "doctoral": {"mode": "off", "min_year": 3}},
     )
-    assert not eligibility.assess(conn, person, lenient, now_year=NOW).excluded
+    assert not assess(conn, person, lenient, now_year=NOW).excluded
 
 
 def test_a_professor_is_not_measured_against_the_doctoral_floor(conn, policy):
     person = author_with_papers(conn, 2025, name="Prof")
     person.stated_rank = "professor"
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
 
 
@@ -206,7 +277,7 @@ def test_recent_silence_is_flagged_once_there_is_enough_history(conn, policy):
         repo.record_invitation(
             conn, person.person_id, f"ms-{index}", invited_at="2025-01-01", responded=False
         )
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded  # prefer, not require
     assert any("responded to only 0%" in note for note in assessment.notes())
 
@@ -221,7 +292,7 @@ def test_old_invitations_fall_outside_the_response_window(conn, policy):
             "invitations": {**policy.data["activity"]["invitations"], "mode": "require"},
         },
     )
-    assert not eligibility.assess(conn, person, strict, now_year=NOW).excluded
+    assert not assess(conn, person, strict, now_year=NOW).excluded
 
 
 def test_an_empty_invitation_history_is_neutral(conn, policy):
@@ -233,7 +304,7 @@ def test_an_empty_invitation_history_is_neutral(conn, policy):
             "invitations": {**policy.data["activity"]["invitations"], "mode": "require"},
         },
     )
-    assert not eligibility.assess(conn, person, strict, now_year=NOW).excluded
+    assert not assess(conn, person, strict, now_year=NOW).excluded
 
 
 # --------------------------------------------------------------- veteran ---
@@ -245,14 +316,14 @@ def test_a_long_career_with_no_response_is_excluded(conn, policy):
         repo.record_invitation(
             conn, person.person_id, f"ms-v{index}", invited_at="2024-01-01", responded=False
         )
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert assessment.excluded
     assert "stopped accepting review work" in assessment.reason
 
 
 def test_a_long_career_alone_is_never_a_reason(conn, policy):
     person = author_with_papers(conn, 2000, 2025, name="Elder")
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
 
 
@@ -260,7 +331,7 @@ def test_a_veteran_who_does_respond_stays(conn, policy):
     person = author_with_papers(conn, 2005, 2025, name="Willing")
     repo.record_invitation(conn, person.person_id, "ms-a", invited_at="2024-01-01", responded=True)
     repo.record_invitation(conn, person.person_id, "ms-b", invited_at="2025-01-01", responded=False)
-    assert not eligibility.assess(conn, person, policy, now_year=NOW).excluded
+    assert not assess(conn, person, policy, now_year=NOW).excluded
 
 
 def test_the_career_length_is_configurable(conn, policy):
@@ -276,8 +347,8 @@ def test_the_career_length_is_configurable(conn, policy):
             "veteran": {**policy.data["activity"]["veteran"], "career_years": 5},
         },
     )
-    assert eligibility.assess(conn, person, strict, now_year=NOW).excluded
-    assert not eligibility.assess(conn, person, policy, now_year=NOW).excluded
+    assert assess(conn, person, strict, now_year=NOW).excluded
+    assert not assess(conn, person, policy, now_year=NOW).excluded
 
 
 # ----------------------------------------------------------------- wiring --
@@ -289,12 +360,17 @@ def test_every_rule_off_leaves_the_score_untouched(conn, policy):
         policy,
         activity={
             "mode": "off",
+            "relevant": {**policy.data["activity"]["relevant"], "mode": "off"},
             "invitations": {**policy.data["activity"]["invitations"], "mode": "off"},
             "veteran": {**policy.data["activity"]["veteran"], "mode": "off"},
         },
-        seniority={**policy.data["seniority"], "doctoral": {"mode": "off", "min_year": 3}},
+        seniority={
+            **policy.data["seniority"],
+            "mode": "off",
+            "doctoral": {"mode": "off", "min_year": 3},
+        },
     )
-    assessment = eligibility.assess(conn, person, off, now_year=NOW)
+    assessment = assess(conn, person, off, now_year=NOW)
     assert assessment.score == 1.0
     assert not assessment.outcomes
 
@@ -319,7 +395,9 @@ def test_scoring_excludes_a_failing_candidate_the_way_a_conflict_does(conn, poli
 
 
 def test_an_eligible_candidate_carries_an_activity_component(conn, policy):
-    person = author_with_papers(conn, 2025, name="Scored")
+    # Far enough into a career to clear the seniority floor, which is one of
+    # the preferences this component is the fraction of.
+    person = author_with_papers(conn, 2015, 2025, name="Scored")
     scored = rank.score_candidate(
         conn,
         rank.Candidate(person=person),
@@ -339,7 +417,7 @@ def test_recording_an_invitation_feeds_the_responsiveness_rules(conn, policy):
     from academia.cli import dispatch
 
     person = author_with_papers(conn, 2005, 2025, name="Recorded")
-    assert not eligibility.assess(conn, person, policy, now_year=NOW).excluded
+    assert not assess(conn, person, policy, now_year=NOW).excluded
 
     for index in range(2):
         repo.record_invitation(
@@ -349,7 +427,7 @@ def test_recording_an_invitation_feeds_the_responsiveness_rules(conn, policy):
             invited_at="2024-01-01",
             responded=False,
         )
-    assert eligibility.assess(conn, person, policy, now_year=NOW).excluded
+    assert assess(conn, person, policy, now_year=NOW).excluded
     assert "invite" in dispatch.build_rev_disc_parser().format_help()
 
 
@@ -359,7 +437,7 @@ def test_an_unresolved_outcome_is_not_a_silence(conn, policy):
         repo.record_invitation(
             conn, person.person_id, f"ms-p{index}", invited_at="2025-01-01", responded=None
         )
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
     assert not any("responded to only" in note for note in assessment.notes())
 
@@ -380,7 +458,7 @@ def test_several_papers_in_one_year_count_separately(conn, policy):
     demanding = tuned(
         policy, activity={**policy.data["activity"], "mode": "require", "min_recent_papers": 3}
     )
-    assert not eligibility.assess(conn, person, demanding, now_year=NOW).excluded
+    assert not assess(conn, person, demanding, now_year=NOW).excluded
 
 
 def test_an_invalid_mode_is_rejected_when_the_policy_loads(tmp_path, monkeypatch):
@@ -407,7 +485,7 @@ def with_output(conn, person: Person, works_by_year: dict[int, int]) -> Person:
 def test_the_profile_record_beats_the_papers_this_run_happened_to_harvest(conn, policy):
     """A prolific author whose recent work is off-topic is not dormant."""
     person = with_output(conn, author_with_papers(conn, 2018, name="Prolific2"), {2025: 12, 2024: 9})
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
     assert assessment.score == 1.0
     assert not any("only 0 paper" in note for note in assessment.notes())
@@ -415,13 +493,13 @@ def test_the_profile_record_beats_the_papers_this_run_happened_to_harvest(conn, 
 
 def test_a_genuinely_dormant_profile_still_fails(conn, policy):
     person = with_output(conn, author_with_papers(conn, 2012, name="Retired"), {2012: 4, 2013: 1})
-    assessment = eligibility.assess(conn, person, policy, now_year=NOW)
+    assessment = assess(conn, person, policy, now_year=NOW)
     assert any("last published 2013" in note for note in assessment.notes())
 
 
 def test_the_fallback_says_which_evidence_it_used(conn, policy):
     person = author_with_papers(conn, 2012, name="StoreOnly")
-    notes = eligibility.assess(conn, person, policy, now_year=NOW).notes()
+    notes = assess(conn, person, policy, now_year=NOW).notes()
     assert any("harvested papers only" in note for note in notes)
 
 
@@ -432,7 +510,7 @@ def test_career_length_comes_from_the_profile_when_it_is_known(conn, policy):
         repo.record_invitation(
             conn, person.person_id, f"ms-l{index}", invited_at="2025-01-01", responded=False
         )
-    assert eligibility.assess(conn, person, policy, now_year=NOW).excluded
+    assert assess(conn, person, policy, now_year=NOW).excluded
 
 
 def test_a_verified_affiliation_outranks_a_bibliographic_guess(conn, policy):

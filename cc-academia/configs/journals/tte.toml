@@ -8,12 +8,12 @@ journal = "IEEE Transactions on Transportation Electrification"
 # narrower window has to state a reason next to it, and a test refuses a
 # silent one.
 
-# Career length is a preference, not a bar. This was `require` with a ten-year
-# maximum, which excluded every senior researcher in the pool — the people an
-# editor most wants a report from — and left a run with nobody to invite. Under
-# `prefer` an early-career candidate still scores higher and a long career only
-# shows up in the audit.
-[seniority.career]
+# A ten-year ceiling on the seniority axis: an early-career candidate scores
+# higher, and a long career only shows up in the audit. It cannot exclude
+# anybody — the rule enforces that regardless of the mode here — which is the
+# lesson of the run where this was `require` and removed every senior
+# researcher in the pool, leaving nobody to invite.
+[seniority]
 mode = "prefer"
 max_years = 10
 

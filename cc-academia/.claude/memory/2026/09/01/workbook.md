@@ -140,13 +140,49 @@ All four made a rule look like it had cleared somebody it never examined.
    three was unsatisfiable by construction. `Candidate.relevant_papers` carries
    the whole relevant record and the counting rules read that.
 4. **`academic_age` only ever spoke when it had a complaint**, so nothing could
-   verify it had run. It is a `RuleOutcome` now, abstaining where no doctorate
-   year is on record.
+   verify it had run. It has since been merged into `seniority` (below).
 
 Policy fixes that came with them: TTE no longer narrows `coauthor_years` to 4
 (it was *looser* than the default, and a test now refuses a silent narrowing),
-and `[seniority.career]` is `prefer` rather than a hard ten-year ceiling that
+and the seniority ceiling is `prefer` rather than a hard ten-year bar that
 excluded 64 senior candidates and left the run with nobody to invite.
+
+## The rule layer, rebuilt
+
+Eight rules, one registry (`eligibility.RULES`), one derivation of each
+quantity (`reviewer/record.py`), and nothing appended by a caller. What forced
+it, in the order it was found:
+
+- **Career length was derived twice.** `_career` read `publication_years` (the
+  run's harvest) and `_veteran` read `works_by_year` (the person's profile).
+  On tte-2026-08-2978 they disagreed for **158 of 197** candidates, by up to 28
+  years, in adjacent audit columns. And `career_length` was the *preference for
+  early-career reviewers*, so Deqiang He — 32 years published — scored as a
+  4-year researcher because the search had only found his recent work.
+- **`academic_age` and `career_length` were one axis.** A floor in years since
+  the doctorate and a ceiling in years of publishing, which coincide whenever a
+  doctorate year is stated. Now one `seniority` rule, basis reported. The floor
+  obeys the mode; the ceiling never excludes, and that is enforced in the rule
+  rather than left to the config, because a `require` ceiling emptied a
+  shortlist once already.
+- **Three rules were assembled by their caller.** `rank` appended
+  `relevant_activity`, `academic_age` and `related_journals` *after*
+  `assess()` had computed `Assessment.score` — a plain field. So a `prefer`
+  rule appended there fed nothing. `score` is a property now.
+- **Abstention was not uniform.** `_activity` and `assess_relevant_activity`
+  returned a plain pass when they had no record, printing "Pass" for a rule
+  that never ran.
+- **Fact names crossed their rules.** Rule `recent_activity` emitted
+  `activity_*` while `recent_relevant_activity` emitted `recent_*`, so the
+  workbook's hand-kept prefix table grouped invitation counts under topic
+  activity. Facts are now `<rule>_<fact>` and `dimension_of` reads the rule off
+  the column.
+- **`*_known` and `*_gap` columns were redundant** — the VERIFY verdict already
+  says "not judged", and a value beside its threshold already says how far
+  short it fell. 75 audit columns → 55.
+
+The veteran rule publishes **no** career column: it is the same number
+`seniority_years` holds, and its sentence states the figure it used.
 
 ## What the tte-2026-08-2905 run says after all that
 

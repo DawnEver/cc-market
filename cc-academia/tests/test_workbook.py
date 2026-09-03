@@ -8,6 +8,7 @@ into the code.
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import openpyxl
@@ -15,6 +16,8 @@ import pytest
 
 from academia.reviewer import workbook as script
 
+#: The audit CSV as a run writes it: identity, the decision, then one verdict
+#: column per rule with that rule's own facts named after it.
 HEADER = [
     "rank",
     "reviewer",
@@ -27,10 +30,11 @@ HEADER = [
     "filter_coi",
     "filter_coi_severity",
     "filter_restricted_country",
-    "filter_restricted_country_is_restricted",
-    "filter_related_journal_publications",
-    "filter_related_journal_count",
-    "filter_related_journal_minimum",
+    "filter_restricted_country_current",
+    "filter_restricted_country_countries",
+    "filter_related_journals",
+    "filter_related_journals_count",
+    "filter_related_journals_minimum",
     "filter_details",
 ]
 
@@ -48,7 +52,8 @@ def row(country: str, banned: str, coi: str, journals: str) -> list[str]:
         coi,
         {"CLEAR": "0", "REVIEW": "1"}.get(coi, "2"),
         "FILTERED" if banned == "1" else "PASS",
-        banned,
+        country,
+        "IN, IR",
         "PASS" if int(journals) >= 3 else "FILTERED",
         journals,
         "3",
@@ -65,9 +70,26 @@ def write_csv(tmp_path: Path, *rows: list[str], slug: str = "tte") -> Path:
     shortlist = case / "5-shortlist"
     shortlist.mkdir()
     src = shortlist / "contact-list-audit.csv"
-    lines = [",".join(HEADER)] + [",".join(r) for r in rows]
-    src.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+    # Written through csv, because a run does: the restricted-country list is
+    # a single cell holding "IN, IR", and joining on commas silently shifted
+    # every column after it.
+    with src.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle, lineterminator=chr(10))
+        writer.writerow(HEADER)
+        writer.writerows(rows)
     return src
+
+
+def retune(src: Path, **columns) -> None:
+    """Rewrite a column in every row, the way a different policy would."""
+    with src.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    for name, values in columns.items():
+        at = rows[0].index(name)
+        for line, value in zip(rows[1:], values, strict=True):
+            line[at] = value
+    with src.open("w", encoding="utf-8-sig", newline="") as handle:
+        csv.writer(handle, lineterminator=chr(10)).writerows(rows)
 
 
 def test_the_restricted_list_comes_from_the_journal_policy(tmp_path):
@@ -92,8 +114,7 @@ def test_a_csv_that_contradicts_the_policy_is_refused(tmp_path):
 
 def test_the_threshold_in_a_heading_is_read_from_the_run(tmp_path):
     src = write_csv(tmp_path, row("CN", "0", "CLEAR", "4"))
-    raw = src.read_text(encoding="utf-8-sig").replace(",3,a sentence", ",5,a sentence")
-    src.write_text(raw, encoding="utf-8-sig")
+    retune(src, filter_related_journals_minimum=["5"])
 
     script.build(src, src.with_suffix(".xlsx"))
     heading = [c.value for c in openpyxl.load_workbook(src.with_suffix(".xlsx"))["decision"][1]]
@@ -105,11 +126,9 @@ def test_a_heading_never_renders_an_unresolved_placeholder(tmp_path):
     src = write_csv(tmp_path, row("CN", "0", "CLEAR", "4"), row("CN", "0", "CLEAR", "2"))
     # Two different minima: the column is no longer a constant, so no threshold
     # can be quoted and the run must stop rather than print "{...}" in a heading.
-    raw = src.read_text(encoding="utf-8-sig").splitlines()
-    raw[2] = raw[2].replace(",3,a sentence", ",4,a sentence")
-    src.write_text("\n".join(raw) + "\n", encoding="utf-8-sig")
+    retune(src, filter_related_journals_minimum=["3", "4"])
 
-    with pytest.raises(SystemExit, match="related_journal_minimum"):
+    with pytest.raises(SystemExit, match="related_journals_minimum"):
         script.build(src, src.with_suffix(".xlsx"))
 
 
@@ -159,9 +178,7 @@ def test_the_link_column_is_clickable_and_only_where_there_is_a_link(tmp_path):
     src = write_csv(tmp_path, row("CN", "0", "CLEAR", "4"), row("CN", "0", "CLEAR", "4"))
     # Nobody's link resolved on the second row: an empty cell, not a hyperlink
     # to the empty string.
-    lines = src.read_text(encoding="utf-8-sig").splitlines()
-    lines[2] = lines[2].replace("https://orcid.org/0000-0002-1825-0097", "")
-    src.write_text(chr(10).join(lines) + chr(10), encoding="utf-8-sig")
+    retune(src, profile_url=["https://orcid.org/0000-0002-1825-0097", ""])
 
     script.build(src, src.with_suffix(".xlsx"))
     sheet = openpyxl.load_workbook(src.with_suffix(".xlsx"))["decision"]
@@ -174,8 +191,7 @@ def test_the_link_column_is_clickable_and_only_where_there_is_a_link(tmp_path):
 def test_building_twice_does_not_carry_the_first_policy_into_the_second(tmp_path):
     first = write_csv(tmp_path / "a", row("CN", "0", "CLEAR", "4"))
     second = write_csv(tmp_path / "b", row("CN", "0", "CLEAR", "9"))
-    raw = second.read_text(encoding="utf-8-sig").replace(",3,a sentence", ",7,a sentence")
-    second.write_text(raw, encoding="utf-8-sig")
+    retune(second, filter_related_journals_minimum=["7"])
 
     script.build(first, first.with_suffix(".xlsx"))
     script.build(second, second.with_suffix(".xlsx"))
@@ -197,3 +213,17 @@ def test_a_conflict_marked_for_review_is_not_a_blocking_reason(tmp_path):
 
     assert sheet.cell(row=2, column=at).value is None
     assert sheet.cell(row=3, column=at).value == "Conflict of interest with the authors"
+
+
+def test_each_rule_gets_exactly_one_verdict_column(tmp_path):
+    """The decision sheet lists rules, and a rule appears once.
+
+    The conflict rule was named both on its own and again as the head of the
+    rule order, so the sheet carried two identical headings.
+    """
+    src = write_csv(tmp_path, row("CN", "0", "CLEAR", "4"))
+
+    script.build(src, src.with_suffix(".xlsx"))
+    heading = [c.value for c in openpyxl.load_workbook(src.with_suffix(".xlsx"))["decision"][1]]
+
+    assert len(heading) == len(set(heading))

@@ -23,6 +23,7 @@ from academia.core.models import Person
 from academia.core.text import recency_score, word_overlap
 from academia.reviewer import coi as coi_module
 from academia.reviewer import eligibility as eligibility_module
+from academia.reviewer import record as record_module
 from academia.reviewer.geo import GeoAssessment
 from academia.reviewer.policy import Policy
 from academia.store import repository as repo
@@ -205,30 +206,21 @@ def score_candidate(
     # failure removes the candidate the same way a conflict does, so nobody
     # climbs back onto the shortlist on expertise alone; under ``prefer`` it
     # only feeds a component and leaves its reason in the notes.
-    assessment = eligibility_module.assess(conn, candidate.person, policy, now_year=now_year)
-    candidate.eligibility = assessment
-    # The whole relevant record again, not the top few papers: "has this person
-    # published on the topic lately" is a question about their record, and the
-    # evidence list is capped by how many papers the run kept overall.
-    relevant = eligibility_module.assess_relevant_activity(
-        [
-            paper.year
-            for paper in (candidate.relevant_papers or candidate.evidence)
-            if paper.year
-        ],
-        policy.relevant_activity,
+    #
+    # One record, built once, and every rule reads it. The relevant papers
+    # handed over are the *whole* relevant corpus rather than the top few the
+    # report shows: the shown evidence is capped by how many papers the run kept
+    # overall, so a floor counted against it would be unsatisfiable by
+    # construction. Nothing is appended to the assessment afterwards — three
+    # rules used to be, by which time the score had already been computed.
+    record = record_module.CandidateRecord.build(
+        conn,
+        candidate.person,
+        relevant_papers=candidate.relevant_papers or candidate.evidence,
         now_year=now_year,
     )
-    assessment.outcomes.append(relevant)
-    assessment.outcomes.append(
-        eligibility_module.assess_academic_age(candidate.person, policy, now_year)
-    )
-    assessment.outcomes.append(
-        eligibility_module.assess_related_journals(
-            candidate.relevant_papers or candidate.evidence,
-            policy.related_journals,
-        )
-    )
+    assessment = eligibility_module.assess(record, policy)
+    candidate.eligibility = assessment
     if assessment.excluded:
         candidate.score = BLOCKED_SCORE
         candidate.components = {}

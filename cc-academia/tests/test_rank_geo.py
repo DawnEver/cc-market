@@ -233,13 +233,21 @@ def test_low_identity_confidence_is_surfaced_not_hidden(conn, policy):
 
 
 def test_seniority_is_noted_but_never_excludes(conn, policy):
+    """A doctorate last year is below the floor, and says so without excluding.
+
+    The floor is a preference under the default policy, and the note names the
+    basis it used — a stated doctorate year here, the first publication where
+    there is none. It used to read "academic age 1", a figure whose meaning
+    depended on which of two rules had produced it.
+    """
     person = person_in("GB")
     person.education.append(Education(inst_id="i", degree="PhD", year_to=2025, source="orcid"))
     scored = rank.score_candidate(
         conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=policy, now_year=2026
     )
     assert scored.score > -math.inf
-    assert any("academic age" in n for n in scored.notes)
+    assert any("below the floor of 3" in n for n in scored.notes)
+    assert any("since doctorate (2025)" in n for n in scored.notes)
 
 
 def test_score_components_are_all_reported(conn, policy):

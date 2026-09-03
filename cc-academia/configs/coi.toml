@@ -63,15 +63,20 @@ bonus = 0.08
 mode = "off"                   # off | prefer | require
 countries = []                 # two-letter ISO codes, e.g. ["IN", "IR"]
 
+# One seniority axis, one rule: how far past the start of an independent career
+# somebody is. Measured in years since the doctorate where a doctorate year is
+# stated, and in years since the first publication otherwise; whichever was
+# used is reported. This was two rules measuring the same thing from two
+# different sources, disagreeing by up to 28 years in adjacent audit columns.
+#
+# The floor obeys the mode. The ceiling never excludes anybody whatever the
+# mode says — refusing a reviewer for being too experienced is not a policy an
+# editor should be able to state by accident, and a `require` ceiling once
+# emptied a live shortlist of every senior name in it.
 [seniority]
-# Years since the doctorate. Unknown never excludes anybody — ORCID fills the
-# education section for roughly 30% of researchers in this field.
-min_academic_age = 3
-max_academic_age = 0           # 0 means no upper bound
-
-[seniority.career]
-mode = "off"
-max_years = 10
+mode = "prefer"
+min_years = 3
+max_years = 0                  # 0 means no ceiling
 
 # Doctoral candidates. The pool is harvested from authorship, so it contains
 # students by construction, and a late-stage one can be the right reviewer on a
@@ -97,6 +102,9 @@ mode = "prefer"
 recent_years = 3
 min_recent_papers = 1
 
+# The same window, asked of the manuscript's own topic rather than of
+# everything: counted over the relevant evidence this run gathered, because
+# only the run can say what is relevant to this submission.
 [activity.relevant]
 mode = "prefer"
 recent_years = 3
