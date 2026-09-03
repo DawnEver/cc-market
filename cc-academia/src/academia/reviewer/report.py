@@ -31,7 +31,7 @@ from academia.reviewer.rank import Candidate
 from academia.store import repository as repo
 
 EXPORT_COLUMNS = (
-    "rank", "reviewer", "person_id", "orcid", "openalex_id", "ieee_author_id",
+    "rank", "reviewer", "person_id", "profile_url", "orcid", "openalex_id", "ieee_author_id",
     "identity_method", "identity_confidence", "position", "position_source",
     "current_institution", "current_country", "current_year_from", "current_year_to",
     "current_source", "current_source_url", "historical_institution_count",
@@ -296,6 +296,7 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "rank": row.rank,
         "reviewer": person.display_name,
         "person_id": person.person_id,
+        "profile_url": profile_url(candidate),
         "orcid": person.orcid,
         "openalex_id": person.openalex_id,
         "ieee_author_id": person.ieee_author_id,
@@ -394,6 +395,34 @@ def email_affiliation_domain(person, email: str) -> str:
     return "mismatch"
 
 
+def profile_url(candidate: Candidate) -> str:
+    """One link that answers "who is this person?", or nothing.
+
+    Preference is by how much the page says about the *person* rather than about
+    one piece of their work: an ORCID record carries employment and education,
+    a publication profile carries their output, a single paper carries neither
+    but does at least show the work that qualified them here. The paper chosen
+    is the closest to the manuscript, which is the one an editor would read
+    first anyway.
+
+    Every candidate is a URL that already exists. Nothing here constructs a
+    search, guesses a university homepage from a name, or links a page that has
+    not been observed — a plausible-looking dead link in the only file the
+    editor receives is worse than an empty cell.
+    """
+    person = candidate.person
+    if person.orcid:
+        return f"https://orcid.org/{person.orcid}"
+    if person.openalex_id:
+        return f"https://openalex.org/{person.openalex_id}"
+    best = max(candidate.evidence, key=lambda item: item.similarity, default=None)
+    if best is None:
+        return ""
+    if best.url:
+        return best.url
+    return f"https://doi.org/{best.doi}" if best.doi else ""
+
+
 #: The three columns an editorial system asks for when an invitation goes out.
 CONTACT_COLUMNS = ("reviewer", "institution", "email", "status", "decision_reason")
 
@@ -441,7 +470,9 @@ RECOMMENDATION = {
 
 #: Identity first, then the decision, then one block per rule. Order matters
 #: only for reading: the workbook groups on these names.
-AUDIT_IDENTITY = ("rank", "reviewer", "email", "institution", "current_country")
+AUDIT_IDENTITY = (
+    "rank", "reviewer", "email", "institution", "current_country", "profile_url",
+)
 
 #: Columns that state a policy threshold rather than a fact about a person.
 THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_target", "_window_years")
@@ -480,6 +511,7 @@ def render_audit(rows: list[Row]) -> str:
             "email": row.email.email if row.email.found else "",
             "institution": row.institution,
             "current_country": person.country_code or "",
+            "profile_url": profile_url(candidate),
             "recommendation": RECOMMENDATION[decision.status],
             "filter_coi": "CLEAR" if not verdict or verdict.status == "CLEAR" else "FILTERED",
             "filter_coi_severity": {"CLEAR": 0, "REVIEW": 1, "BLOCK": 2}.get(

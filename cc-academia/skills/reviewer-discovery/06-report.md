@@ -10,6 +10,25 @@ sources, and the header summarises career-country exposure. A person may count
 in several historical countries; this is career evidence, not nationality or
 ethnicity, and it never overwrites the current-affiliation country.
 
+## The deliverable
+
+`ongoing/<slug>/<slug>.xlsx`, written beside `0-raw.pdf`. It is the only file
+that leaves the workspace, which is why it is named after the case rather than
+after its contents: mailed on, renamed by an inbox or dropped in a shared
+folder, it still says which submission it belongs to.
+
+Three sheets — `decision`, `audit`, `columns` — built from
+`contact-list-audit.csv` and documented in `academia/reviewer/workbook.py`. The
+`decision` sheet carries **Homepage or paper**: a clickable link to the ORCID
+record, else the publication profile, else the paper of theirs closest to this
+manuscript. Never a constructed search or a guessed university homepage — a
+dead link in the one file the editor receives is worse than an empty cell.
+
+## The working files
+
+Everything below stays in the workspace. It exists so a verdict can be
+disputed, and none of it is handed over.
+
 The workflow exports exactly two CSV tables. `shortlist.csv` is comprehensive:
 one row per candidate, scalar columns for sorting plus JSON cells for complete
 one-to-many history. `contact-list.csv` is deliberately minimal.
@@ -152,7 +171,8 @@ A journal that genuinely requires exclusion rather than preference sets
 
 ## Presenting it
 
-Walk the user through the top handful rather than dumping the table. For each:
+Hand over the workbook, then walk the user through the top handful rather than
+dumping the table. For each:
 
 - who they are and where
 - the two or three papers that make them a fit

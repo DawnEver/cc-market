@@ -1,23 +1,38 @@
 ---
-name: audit-xlsx
-description: The contact-list audit workbook script, and the two eligibility rules it forced into the policy
+name: workbook
+description: The reviewer-discovery deliverable workbook, and the two eligibility rules it forced into the policy
 tier: short
 created: 2026-09-01
 metadata:
   type: project
 ---
 
-# `scripts/audit_xlsx.py`, and the two rules it exposed
+# `academia/reviewer/workbook.py`, and the two rules it exposed
 
-`uv run --extra xlsx python scripts/audit_xlsx.py
-<workspace>/ongoing/<slug>/5-shortlist/contact-list-audit.csv` writes `.xlsx`
-beside the input — code here, output in the case workspace. `openpyxl` is
-declared as the optional `xlsx` extra; nothing in the pipeline itself writes a
-spreadsheet.
+The workbook is the *only* thing a discovery run hands over. `rev-disc report`
+writes it to `ongoing/<slug>/<slug>.xlsx`, beside `0-raw.pdf`; everything in
+`5-shortlist/` is working material kept so a verdict can be disputed. So
+`openpyxl` is a hard dependency — a run that cannot write a workbook has
+produced nothing to hand over — and the file is named after the case, because
+once mailed on it has to say which submission it belongs to on its own.
+
+To rebuild one from a CSV already on disk:
+`uv run python -m academia.reviewer.workbook <...>/5-shortlist/contact-list-audit.csv`.
 
 It first lived in the `reviewer-discovery` data workspace, which was wrong:
-that repo's `AGENTS.md` says the executable workflow ships in this plugin. Moved
-here, renamed to house snake_case, and this memory entry moved with it.
+that repo's `AGENTS.md` says the executable workflow ships in this plugin. It
+then spent a while as `scripts/audit_xlsx.py`, which was also wrong once the
+pipeline had to produce it unasked — a deliverable cannot be behind a manual
+script and an optional extra. Now a module in the package.
+
+## The link column
+
+`decision` carries **Homepage or paper**, a clickable link: ORCID record, else
+OpenAlex profile, else the candidate's paper closest to this manuscript. The
+order is by how much the page says about the *person*. Nothing is constructed —
+no search URL, no guessed university homepage. A plausible dead link in the one
+file the editor receives is worse than an empty cell, and `_style_links` only
+hyperlinks a cell whose value already starts `http`.
 
 ## Why three sheets
 
@@ -151,8 +166,10 @@ academic-age rows, for want of a doctorate year.
 
 ## Gotchas
 
-- Regenerating while the `.xlsx` is open in Excel fails with
-  `PermissionError: [Errno 13]`.
+- Regenerating while the `.xlsx` is open in Excel fails: Excel holds an
+  exclusive lock. `rev-disc report` catches the `PermissionError` and names the
+  file, because it is now the last step of every run rather than a manual
+  script somebody chose to invoke.
 - The suite used to write its stub people into `~/cc-academia-facts/`:
   `ACADEMIA_FACTS_SYNC` lives in a shell profile, pytest inherits it, and with
   no data root above a temporary directory `facts_dir()` fell back to home.

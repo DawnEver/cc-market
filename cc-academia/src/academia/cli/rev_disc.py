@@ -25,6 +25,7 @@ from academia.reviewer import contact as contact_module
 from academia.reviewer import discover, geo, rank, report
 from academia.reviewer import enrich as enrich_module
 from academia.reviewer import lookups as lookup_module
+from academia.reviewer import workbook as workbook_module
 from academia.reviewer.policy import load_policy
 from academia.reviewer.profile import (
     Profile,
@@ -922,6 +923,22 @@ def run_report(args: argparse.Namespace) -> int:
             if row.institution == "unknown" and not row.candidate.blocked
         ]
         written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy.sources)
+        # The one file that leaves the workspace, built from the audit CSV that
+        # was just written so the workbook cannot describe an earlier run.
+        deliverable = workspace.deliverable
+        try:
+            workbook_module.build(written["contact_list_audit"], deliverable, state.journal)
+        except PermissionError as error:
+            # Excel holds an exclusive lock on an open workbook, and this is the
+            # last step of the run: say which file and what to do about it,
+            # rather than surfacing errno 13 against a path the user has open.
+            raise UsageError(
+                f"cannot write {deliverable}: it is open in another program. "
+                "Close it and re-run `rev-disc report`."
+            ) from error
+        # Earlier versions left the workbook beside its CSV, where it read as
+        # another working file. Two copies of one deliverable is one too many.
+        (workspace.shortlist_dir / "contact-list-audit.xlsx").unlink(missing_ok=True)
         all_people = [candidate.person for candidate in all_ordered]
         resolved = {
             person.person_id for person in all_people if repo.emails_of(conn, person.person_id)
@@ -940,6 +957,7 @@ def run_report(args: argparse.Namespace) -> int:
     workspace.save_state(state)
 
     payload = {
+        "deliverable": str(deliverable),
         "shortlist": str(written["shortlist"]),
         "csv": str(written["csv"]),
         "contact_list": str(written["contact_list"]),
@@ -952,8 +970,9 @@ def run_report(args: argparse.Namespace) -> int:
     if args.json:
         log.emit(payload)
     else:
-        log.info(f"shortlist: {written['shortlist']}")
-        log.info(f"dossiers : {written['dossiers']}")
+        log.info(f"deliverable: {deliverable}")
+        log.info(f"shortlist  : {written['shortlist']}")
+        log.info(f"dossiers   : {written['dossiers']}")
         if unknown:
             log.warn(
                 f"{len(unknown)} shortlisted candidate(s) have no institution recorded: "

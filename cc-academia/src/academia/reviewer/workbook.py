@@ -1,23 +1,30 @@
-#!/usr/bin/env python3
-"""Turn a reviewer-discovery contact-list-audit.csv into a readable workbook.
+"""The workbook the editor is handed — the one deliverable of a discovery run.
 
-The CSV is one row per candidate and one column per filter *input*: the right
-shape for an audit trail, the wrong shape for a reader who does not already know
-the pipeline. Out of sixty-odd columns only eight are conclusions; the rest are
-the arithmetic behind them. So the workbook splits into three layers:
+Everything else a run writes is working material: CSVs shaped for an audit
+trail, dossiers, a reading list. They stay in ``5-shortlist/`` for anyone who
+wants to disagree with a verdict. What leaves the workspace is one file, named
+after the case and sitting beside the manuscript it is about.
+
+The audit CSV behind it is one row per candidate and one column per filter
+*input*: the right shape for a trail, the wrong shape for a reader who does not
+already know the pipeline. Out of sixty-odd columns only eight are conclusions;
+the rest are the arithmetic behind them. So the workbook splits into three
+layers:
 
 * ``decision`` — what an editor actually filters on: one verdict per dimension,
-  a single ``blocking_reason``, and the contact details. Opens first.
+  a single ``blocking_reason``, the contact details and a link to the person.
+  Opens first.
 * ``audit``    — every input, ``filter_`` prefixes dropped and the constant
   thresholds moved into the glossary, so what is left varies per person.
 * ``columns``  — how to read the thing, then a line per column.
 
-    uv run --extra xlsx python scripts/audit_xlsx.py \
-        <workspace>/ongoing/<slug>/5-shortlist/contact-list-audit.csv
+``rev-disc report`` writes it. To rebuild one by hand from a CSV that is already
+on disk:
 
-Writes <name>.xlsx beside the input, so it lands in the case workspace while
-the code stays here. Nothing in this file is confidential: it reads whatever CSV
-it is handed and never touches the manuscript.
+    uv run python -m academia.reviewer.workbook         <workspace>/ongoing/<slug>/5-shortlist/contact-list-audit.csv
+
+Nothing in this file is confidential: it reads whatever CSV it is handed and
+never touches the manuscript.
 """
 
 from __future__ import annotations
@@ -51,12 +58,18 @@ COUNTRY_NAMES = {
     "SY": "Syria",
 }
 
-WHITE_COLUMNS = ("rank", "reviewer", "email", "institution")
+WHITE_COLUMNS = ("rank", "reviewer", "email", "institution", "profile_url")
+
+#: The link column. Written as a hyperlink rather than raw text, because the
+#: workbook is the only thing the editor gets and a URL they cannot click is a
+#: URL they retype.
+LINK_COLUMN = "profile_url"
 
 #: Dimension boundaries, in sheet order. Used for the rule between blocks and to
 #: group the glossary; the header itself stays grey so the eye rests on the name.
 DIMENSIONS: list[tuple[str, tuple[str, ...]]] = [
-    ("Identity", ("rank", "reviewer", "email", "institution", "current_country")),
+    ("Identity", ("rank", "reviewer", "email", "institution", "current_country",
+                  "profile_url")),
     ("Decision", ("recommend_for_reviewer", "blocking_reason")),
     ("Conflict of interest", ("coi",)),
     ("Geography", ("author_country",)),
@@ -81,6 +94,7 @@ LABELS: dict[str, str] = {
     "email": "Email address",
     "institution": "Current institution",
     "current_country": "Current country",
+    "profile_url": "Homepage or paper",
     "recommend_for_reviewer": "Recommend as reviewer",
     "blocking_reason": "Why not recommended",
     "coi": "Rule: no conflict of interest (severity = 0)",
@@ -303,6 +317,7 @@ DECISION_COLUMNS = (
     "institution",
     "current_country",
     "email",
+    "profile_url",
     "recommend_for_reviewer",
     "blocking_reason",
     *VERDICTS_IN_ORDER,
@@ -324,11 +339,15 @@ HOW_TO_READ = [
         "The heading states the threshold, so the figure underneath answers the rule on its own and can be sorted. Its colour is the verdict: green the rule is satisfied, red the candidate is excluded by it, amber either nothing on record to judge (the rule abstains rather than guess) or a preference rather than a requirement (it excludes nobody). Where there is nothing to count, or nothing was measured for this person, the cell says Pass, Fail, No evidence or Below preference instead.",
     ),
     (
-        "4. The audit sheet is the arithmetic behind each verdict.",
+        "4. ‘Homepage or paper’ is a link, not a citation.",
+        "It opens the ORCID record or publication profile where one exists, and otherwise the paper of theirs closest to this manuscript. Read it before inviting anybody whose name you do not already know.",
+    ),
+    (
+        "5. The audit sheet is the arithmetic behind each verdict.",
         "Same rows, same order, every input the rules read. Go there to disagree with a verdict, not to make a shortlist.",
     ),
     (
-        "5. Measured numbers are coloured against their own threshold.",
+        "6. Measured numbers are coloured against their own threshold.",
         "A count or rate is green once it reaches the figure named in its own column heading and red until it does, so a number reads pass or fail without looking across at the rule column.",
     ),
     ("", ""),
@@ -365,6 +384,7 @@ GLOSSARY: dict[str, str] = {
     "email": "Best verified contact address; details/evidence records where it came from.",
     "institution": "Current affiliation.",
     "current_country": "ISO code of the current affiliation, never nationality.",
+    "profile_url": "Where to read about this person: their ORCID record, their publication profile, or failing both the closest of their papers to this manuscript. Whichever it is, it is a page that already existed — never a search built here.",
     "recommend_for_reviewer": "Recommend = every required rule passed and an address was verified against the institution. Check first = every rule passed but something still needs a human (usually the address). Do not invite = a rule excluded them.",
     "blocking_reason": "The first dimension that excluded this candidate; blank when none did. Derived here, not in the CSV.",
     "coi": "Conflict-of-interest verdict under coi.toml plus the journal overlay: CLEAR or FILTERED.",
@@ -470,6 +490,26 @@ def _style_body(ws, header: list[str], verdicts: list[list[str | None]]) -> None
                 cell.font = PASS_FONT if cell.value >= floors[position] else FAIL_FONT
 
 
+LINK_FONT = Font(color="0563C1", underline="single")
+
+
+def _style_links(ws, header: list[str]) -> None:
+    """Make the one URL column clickable, and only where there is a URL.
+
+    A cell holding the word for "nothing found" must not become a hyperlink to
+    it, so the test is the value itself rather than the column.
+    """
+    if LINK_COLUMN not in header:
+        return
+    letter = get_column_letter(header.index(LINK_COLUMN) + 1)
+    for cell in ws[letter][1:]:
+        target = str(cell.value or "")
+        if not target.startswith(("http://", "https://")):
+            continue
+        cell.hyperlink = target
+        cell.font = LINK_FONT
+
+
 def _finish(
     ws,
     header: list[str],
@@ -481,6 +521,7 @@ def _finish(
 ) -> None:
     _style_header(ws, header)
     _style_body(ws, header, verdicts)
+    _style_links(ws, header)
     ws.freeze_panes = freeze
     ws.auto_filter.ref = ws.dimensions
     ws.row_dimensions[1].height = 58
@@ -496,7 +537,10 @@ def _finish(
         # The data decides, within a range narrow enough to keep the dimensions
         # readable side by side.
         widest = max([len(str(r[column - 1])) for r in body] or [0])
-        ws.column_dimensions[letter].width = min(max(widest + 2, 8), 24)
+        # A URL truncated to 24 characters is unreadable even when it is still
+        # clickable, so the link column gets its own ceiling.
+        ceiling = 44 if name == LINK_COLUMN else 24
+        ws.column_dimensions[letter].width = min(max(widest + 2, 8), ceiling)
 
 
 def journal_of(src: Path) -> str:
@@ -542,6 +586,11 @@ def describe_countries(codes: frozenset[str]) -> str:
 
 
 def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
+    # The threshold tables are read out of the CSV, so they belong to one build.
+    # Cleared here rather than at import, so building twice in one process
+    # cannot quote the first run's policy in the second run's headings.
+    THRESHOLDS.clear()
+    THRESHOLD_NUMBERS.clear()
     with src.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.reader(handle))
     raw_header, raw_body = rows[0], rows[1:]

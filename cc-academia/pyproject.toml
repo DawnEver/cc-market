@@ -14,12 +14,13 @@ authors = [{ name = "Mingyang Bao" }]
 dependencies = [
     # Round-tripping workspace TOML: tomllib reads but cannot write.
     "rtoml>=0.11",
+    # The reviewer-discovery deliverable is a workbook, so this is not optional:
+    # a run that cannot write one has produced nothing to hand over.
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
 ai = ["litellm>=1.77"]
-# scripts/audit_xlsx.py only; the pipeline itself never writes a spreadsheet.
-xlsx = ["openpyxl>=3.1"]
 # Acquisition: HTTP first, a real browser only when a publisher demands one.
 acquire = ["requests>=2.32"]
 browser = ["playwright>=1.61", "requests>=2.32"]

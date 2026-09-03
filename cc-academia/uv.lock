@@ -196,6 +196,7 @@ wheels = [
 name = "cc-academia"
 source = { editable = "." }
 dependencies = [
+    { name = "openpyxl" },
     { name = "rtoml" },
 ]
 
@@ -220,9 +221,6 @@ pdf = [
 plot = [
     { name = "matplotlib" },
 ]
-xlsx = [
-    { name = "openpyxl" },
-]
 zotero = [
     { name = "pyzotero" },
 ]
@@ -238,7 +236,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'ai'", specifier = ">=1.77" },
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.9" },
     { name = "numpy", marker = "extra == 'embed'", specifier = ">=2.0" },
-    { name = "openpyxl", marker = "extra == 'xlsx'", specifier = ">=3.1" },
+    { name = "openpyxl", specifier = ">=3.1" },
     { name = "paper-pdf-ingest", marker = "extra == 'pdf'", git = "https://github.com/DawnEver/paper_pdf_ingest.git" },
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.61" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24" },
@@ -247,7 +245,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'browser'", specifier = ">=2.32" },
     { name = "rtoml", specifier = ">=0.11" },
 ]
-provides-extras = ["acquire", "ai", "browser", "embed", "pdf", "plot", "xlsx", "zotero"]
+provides-extras = ["acquire", "ai", "browser", "embed", "pdf", "plot", "zotero"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -124,6 +124,17 @@ class Workspace:
         return self.root / SHORTLIST_DIR
 
     @property
+    def deliverable(self) -> Path:
+        """The workbook the editor is handed, and the only file that leaves here.
+
+        Named after the case and sitting beside the manuscript it is about, so
+        that a file which has been mailed on, renamed by an inbox or dropped
+        into a shared folder still says which submission it belongs to. The
+        numbered stage directories below are working material.
+        """
+        return self.root / f"{self.slug}.xlsx"
+
+    @property
     def state_path(self) -> Path:
         return self.root / STATE_FILE
 

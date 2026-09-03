@@ -11,6 +11,7 @@ import csv
 import json
 from pathlib import Path
 
+import openpyxl
 import pytest
 
 from academia.cli import dispatch
@@ -126,6 +127,25 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     payload = json.loads(capsys.readouterr().out)
     shortlist = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo" / "5-shortlist" / "shortlist.md"
     assert shortlist.exists()
+
+    # The workbook is what the editor is handed, so the run has to produce it
+    # unasked, name it after the case, and put it beside the manuscript rather
+    # than three directories down among the working files.
+    case = shortlist.parent.parent
+    deliverable = case / "tie-demo.xlsx"
+    assert Path(payload["deliverable"]) == deliverable
+    assert deliverable.exists()
+    assert deliverable.parent == case.resolve() or deliverable.parent == case
+    decision = openpyxl.load_workbook(deliverable)["decision"]
+    heading = [cell.value for cell in decision[1]]
+    assert "Homepage or paper" in heading
+    at = heading.index("Homepage or paper") + 1
+    links = [decision.cell(row=r, column=at) for r in range(2, decision.max_row + 1)]
+    assert any(cell.hyperlink for cell in links), "nobody got a link to read about them"
+    assert all(
+        cell.hyperlink.target == cell.value for cell in links if cell.hyperlink
+    ), "a link cell must display the URL it opens"
+    assert not (case / "5-shortlist" / "contact-list-audit.xlsx").exists()
 
     text = shortlist.read_text(encoding="utf-8")
     assert "Gökhan Çakal" in text

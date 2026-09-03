@@ -6,8 +6,32 @@ build if they drift.
 
 ## [Unreleased]
 
+### Changed
+
+- **Reviewer discovery hands over one file.** `rev-disc report` now writes
+  `ongoing/<slug>/<slug>.xlsx` itself, beside the manuscript it is about, and
+  that workbook is the whole deliverable. It is named after the case rather
+  than after its contents because once it has been mailed on it has to say
+  which submission it belongs to on its own. Everything in `5-shortlist/` —
+  the two CSVs, the reading list, the dossiers — stays behind as working
+  material for disputing a verdict.
+  - `scripts/audit_xlsx.py` becomes `academia.reviewer.workbook`, and
+    `openpyxl` moves from the optional `xlsx` extra into the dependencies: a
+    run that cannot write a workbook has produced nothing to hand over. Rebuild
+    one from a CSV already on disk with
+    `python -m academia.reviewer.workbook <...>/contact-list-audit.csv`.
+  - Writing over a workbook that is open in Excel now reports which file to
+    close instead of an errno.
+
 ### Added
 
+- **Homepage-or-paper link** on the `decision` sheet and in `shortlist.csv`
+  (`profile_url`): the candidate's ORCID record, else their publication
+  profile, else the paper of theirs closest to this manuscript, whichever says
+  most about the person. Clickable, and only ever a page that was observed —
+  no constructed search, no university homepage guessed from a name. A
+  plausible dead link in the only file the editor receives is worse than an
+  empty cell.
 - **Restricted countries** (`geo.restricted` in `configs/coi.toml`). A standing
   refusal to invite from named countries, separate from the cross-region
   preference: that one spreads a review across regions, this one is a sanctions

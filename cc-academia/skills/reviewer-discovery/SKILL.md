@@ -45,7 +45,7 @@ with a rule and a citation, not an opinion.
 | 03 | `03-candidates.md` | `rev-disc candidates` | authors of the closest work |
 | 04 | `04-enrich.md` | `rev-disc enrich` | affiliation, career, public email |
 | 05 | `05-coi.md` | `rev-disc coi` | three-tier verdicts with evidence |
-| 06 | `06-report.md` | `rev-disc report` | `shortlist.md` + `.csv` + detail CSVs + `reading-list.md` + dossiers |
+| 06 | `06-report.md` | `rev-disc report` | `<slug>.xlsx` — the deliverable — plus the working files behind it |
 
 Read each step's file when you reach it. This file is the map.
 
@@ -118,6 +118,16 @@ makes someone a veteran, and how strictly each is applied (`off`, `prefer`,
 `require`). `06-report.md` has the table.
 
 Ask the user for the journal at intake if the manuscript does not say.
+
+## What is handed over
+
+One file: `ongoing/<slug>/<slug>.xlsx`, beside the manuscript it is about.
+Everything in `5-shortlist/` is working material — the audit CSVs, the reading
+list, the dossiers — kept so a verdict can be disputed, not sent to anybody.
+
+Hand over the workbook itself, and walk the user through the top handful as
+below. Do not paste a shortlist table into the conversation as a substitute:
+the workbook states the rule behind every column and a pasted table does not.
 
 ## What the shortlist means
 
