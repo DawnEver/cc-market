@@ -126,7 +126,13 @@ def invitation_readiness(candidate: Any, email: Any, *, domain_status: str) -> R
         rejected.extend(outcome.detail for outcome in assessment.outcomes if outcome.excluded)
         review.extend(outcome.detail for outcome in assessment.outcomes if outcome.manual_review)
     if not email.found:
-        rejected.append("no verified public professional email")
+        # A gap in public data, not a fact about the person, and the same rule
+        # that keeps a missing doctorate year from disqualifying anybody applies
+        # here. The editorial system can address an invitation this tool cannot,
+        # so this asks for a human rather than excluding somebody every rule
+        # cleared — which is what it used to do, to eight of ten invitable
+        # candidates on one live case.
+        review.append("no public address found — invite through the editorial system")
     person = candidate.person
     if person.resolution_method == "name_only" or person.confidence < 0.8:
         review.append(

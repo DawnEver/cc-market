@@ -133,8 +133,11 @@ reads: invitable by conflict status, then expertise, then geography; then
 everyone who was removed.
 
 **A missing fact never disqualifies anybody.** No publication years, no stated
-enrolment year, no invitation history — each of these is a gap in public data,
-not evidence about the person, and each passes. The veteran rule in particular
+enrolment year, no invitation history, **no public address** — each of these is
+a gap in public data, not evidence about the person, and each passes. A
+candidate with no address reads `check_first`, not `do_not_invite`: the
+editorial system can address an invitation this tool cannot, and structured
+sources reach only about a fifth of candidates in this field. The veteran rule in particular
 never fires on career length alone: it needs unanswered invitations recorded in
 this workspace, which the first run does not have.
 

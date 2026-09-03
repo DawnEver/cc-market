@@ -25,6 +25,14 @@ build if they drift.
 
 ### Fixed
 
+- **A candidate with no public address is no longer told not to invite them.**
+  `invitation_readiness` rejected anybody without a verified address, so the
+  workbook's headline column read "Do not invite" for people every rule had
+  cleared — eight of ten invitable candidates on one live TTE case, purely
+  because enrichment reaches only about a fifth of this field. It is now
+  `check_first`, reason "no public address found — invite through the editorial
+  system", which is what the contact list's own documentation already claimed
+  and what the project's rule that a missing fact disqualifies nobody requires.
 - **A conflict marked for review is no longer reported as a blocking reason.**
   The audit export collapsed `REVIEW` into `FILTERED`, so the workbook printed
   "Conflict of interest with the authors" in `Why not recommended` against

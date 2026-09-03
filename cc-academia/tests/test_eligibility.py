@@ -495,7 +495,10 @@ def test_contact_list_marks_every_candidate_and_explains_rejections(conn, policy
     lines = report.render_contact_list(rows).strip().split("\n")
     assert lines[0] == "reviewer,institution,email,status,decision_reason"
     assert lines[1].startswith("Invitable,Some Uni,a@uni.edu,manual_review,")
-    assert lines[2].startswith("NoAddress,Some Uni,not found,rejected,")
-    assert "no verified public professional email" in lines[2]
+    # A missing address asks for a human, and never excludes: the editorial
+    # system can address an invitation this tool cannot, and no rule found
+    # anything wrong with this candidate.
+    assert lines[2].startswith("NoAddress,Some Uni,not found,manual_review,")
+    assert "no public address found" in lines[2]
     assert lines[3].startswith("Conflicted,Some Uni,c@uni.edu,rejected,")
     assert len(lines) == 4
