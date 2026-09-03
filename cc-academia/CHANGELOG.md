@@ -6,6 +6,22 @@ build if they drift.
 
 ## [Unreleased]
 
+### Removed
+
+- **The windowed `invitation_response` rule.** It asked the veteran rule's
+  question over a shorter window, so the two agreed by construction, and on any
+  store without a long invitation history both abstained. Silence is now a
+  reason only alongside a long career. Invitation history still feeds the
+  veteran gate and the `reviewer_history` score component.
+- **`geo.bonus`.** Computed into every assessment and never read: the score uses
+  the component and `scoring.geographic`, which held the same 0.08, so tuning
+  `geo.bonus` changed nothing. The weight is stated once, where every other
+  weight lives.
+- **The second identity-confidence threshold.** 0.8 sent a candidate for
+  confirmation and a separate hardcoded 0.6 added a note saying the same thing,
+  so a candidate at 0.7 was flagged for a human without being told why. One
+  configurable `identity.min_confidence`.
+
 ### Changed
 
 - **The eligibility rule layer, rebuilt from first principles.** No

@@ -82,7 +82,7 @@ editor can act on or defend.
 ## Eligibility
 
 Expertise says a candidate *could* review the manuscript. Eligibility says the
-invitation is worth sending. **Eight rules, and that is all of them** — the list
+invitation is worth sending. **Seven rules, and that is all of them** — the list
 is closed, it lives in `eligibility.RULES`, and nothing outside that module may
 add a ninth. Each is in `configs/coi.toml` and overridable per journal:
 
@@ -94,7 +94,6 @@ add a ninth. Each is in `configs/coi.toml` and overridable per journal:
 | `activity` | `recent_activity` | prefer | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
 | `seniority` | `seniority` | prefer | fewer than 3 years into an independent career (floor), or past the journal's preferred ceiling |
-| `activity.invitations` | `invitation_response` | prefer | answered under half of the recent invitations whose outcome was recorded |
 | `activity.veteran` | `unresponsive_veteran` | require | a 10-year career, at least 2 invitations with a recorded outcome (all-time, not windowed) and none of them answered |
 
 Every rule reads its quantities off one `CandidateRecord`, built once per
@@ -114,9 +113,19 @@ says. That is not a nicety — this journal's ceiling was once `require`, which
 removed every senior researcher in the pool and left a run with nobody to
 invite.
 
+There was an eighth, a windowed "answered at least half of recent invitations".
+It is gone rather than switched off: it asked the veteran rule's question over a
+shorter window, so the two agreed by construction, and on any store without a
+long invitation history both abstained. Invitation history still feeds the
+veteran gate and the `reviewer_history` score component.
+
 Each rule's audit columns are named after it — `seniority_years`,
 `related_journals_count` — so the workbook groups them by the rule that produced
-them instead of by a table of prefixes that goes stale.
+them instead of by a table of prefixes that goes stale. The *set* of columns is
+derived from the rules that ran; what each is *called* is a table in
+`reviewer/workbook.py`, and tests run every rule over every branch to refuse a
+column with no heading, no explanation, or a heading left behind by a deleted
+rule.
 
 Activity is read from the candidate's own OpenAlex output per year — their
 whole record, not the papers this run harvested. The distinction is not
@@ -127,8 +136,8 @@ says `[harvested papers only]`, so a weaker basis is visible rather than
 implied.
 
 Only an invitation whose outcome was written down counts. Three sent and never
-followed up are three unknowns, not three silences, so neither invitation rule
-can fire on them. That history lives in the accumulating store and is read back
+followed up are three unknowns, not three silences, so the veteran rule cannot
+fire on them. That history lives in the accumulating store and is read back
 for every manuscript, not just this workspace's — excluding someone as an
 unresponsive veteran here excludes them on the next submission too.
 
@@ -194,10 +203,56 @@ year is nowhere stated is always kept and marked. Turning that gap into an
 exclusion would remove the people with the thinnest public records rather than
 the ones who are too junior.
 
+## Everything that is configurable
+
+One file, `configs/coi.toml`, overlaid table by table by
+`configs/journals/<slug>.toml` and then by a user directory via
+`ACADEMIA_CONFIG_DIR`. Nothing outside this is tunable, and nothing inside it
+is stated twice.
+
+| Table | What it sets |
+|-------|--------------|
+| `windows` | co-authorship years, dense-collaboration count, shared-doctorate overlap |
+| `rules.block` / `rules.review` | which conflict relations exclude and which are flagged |
+| `thresholds` | the heavy-citation count |
+| `geo` | `mode` — prefer cross-region, hard filter, or off |
+| `geo.restricted` | the countries a journal will not invite from |
+| `identity` | `min_confidence` before an invitation goes out unasked |
+| `seniority` | the one seniority axis: `mode`, `min_years`, `max_years` |
+| `seniority.doctoral` | the doctoral year-of-study floor |
+| `activity` | still-publishing window and minimum |
+| `activity.relevant` | same window, asked of this manuscript's topic |
+| `activity.related_journals` | the journal-work floor over the relevant record |
+| `activity.veteran` | career length, invitations and answer rate that make a veteran unresponsive |
+| `scoring` | the seven component weights, including `geographic` |
+| `retrieval` | pool size, fetch budgets, email precedence and confidence |
+
+Every eligibility table carries a `mode` of `off`, `prefer` or `require`, and
+`off` removes the rule's columns from the audit rather than filling them with
+blanks.
+
+Deliberately **not** configurable, and each for a reason:
+
+- **The ranking order.** Conflict status, then expertise, then geography. A
+  journal that could reorder this could rank a conflicted reviewer first.
+- **The seniority ceiling's power to exclude.** It can only ever cost score.
+- **A doctoral candidate with no stated enrolment year.** Always kept and
+  marked; turning that gap into an exclusion would remove the people with the
+  thinnest public records rather than the ones who are too junior.
+- **A missing fact.** No publication years, no doctorate year, no invitation
+  history, no address: each abstains. There is no switch that makes an absence
+  into evidence.
+- **The recency decay** on `recent_expertise` (ten years, linear) and the
+  neutral 0.5 for a candidate with no invitation history. These shape a
+  component rather than gate anybody, and the knob that matters is the
+  component's own weight in `scoring`.
+
 ## Geography
 
-Cross-region candidates get a small bonus by default: the submission's origin
-country against the candidate's **current affiliation country**. Nothing is
+Cross-region candidates score higher by default: the submission's origin
+country against the candidate's **current affiliation country**. How much
+higher is `scoring.geographic`, like every other component — there is no second
+key for it. Nothing is
 inferred from a name — a Chinese researcher now at Stanford counts as US, which
 is both more accurate and avoids profiling reviewers by ethnicity.
 
