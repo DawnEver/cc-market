@@ -28,3 +28,11 @@ case "$CURRENT" in
     echo "cc-market: hooks configured (core.hooksPath = $HOOKS_DIR)"
     ;;
 esac
+
+# A tag the pre-push hook creates is local-only unless git is told to push it. Without this,
+# releases are bumped and tagged here but the remote — and every installed marketplace clone
+# that pulls from it — stays on the last manually pushed tag.
+if [ "$(git config --get push.followTags || true)" != "true" ]; then
+  git config push.followTags true
+  echo "cc-market: push.followTags enabled (tags now ship with git push)"
+fi
