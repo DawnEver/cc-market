@@ -19,10 +19,15 @@ import { withLock } from '../shared/lock.mjs';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
-  scopeIndexFile as indexFile, remRulesDir, scopeMemoryDir as memoryDir,
-  scopeRoot, MAX_ENTRIES, collectMemoryFiles,
+  remRulesDir, scopeMemoryDir as memoryDir,
+  scopeRoot, catalogFilePath, CATALOG_ADVISORY_MAX, collectMemoryFiles,
   getMemoryMeta, getField, rebuildIndex, dropFromIndex, loadMemoryState,
 } from './lib.mjs';
+
+// Crystallize operates on the AUTHORITATIVE full catalog (every non-dropped entry),
+// not the injected hot view in .claude/rules/MEMORY.md — a truncated read would
+// silently consolidate only the recent set.
+const indexFile = catalogFilePath(scopeRoot);
 
 const args = process.argv.slice(2);
 const mode = args[0] || '--check';
@@ -30,16 +35,16 @@ const mode = args[0] || '--check';
 // ── --check: is crystallize needed? ──
 if (mode === '--check') {
   if (!existsSync(indexFile)) {
-    console.log('[crystallize] MEMORY.md not found — nothing to crystallize');
+    console.log('[crystallize] catalog not found — nothing to crystallize');
     process.exit(1);
   }
   const content = readFileSync(indexFile, 'utf8');
   const entryCount = content.split('\n').filter(l => /^-\s+\[/.test(l)).length;
-  if (entryCount >= MAX_ENTRIES) {
-    console.log(`[crystallize] ${entryCount} entries (≥${MAX_ENTRIES}) — crystallize needed`);
+  if (entryCount >= CATALOG_ADVISORY_MAX) {
+    console.log(`[crystallize] ${entryCount} entries (≥${CATALOG_ADVISORY_MAX}) — crystallize needed`);
     process.exit(0);
   }
-  console.log(`[crystallize] ${entryCount} entries (<${MAX_ENTRIES}) — not needed`);
+  console.log(`[crystallize] ${entryCount} entries (<${CATALOG_ADVISORY_MAX}) — not needed`);
   process.exit(1);
 }
 
@@ -72,7 +77,7 @@ if (mode === '--drift') {
 // ── --propose: list all indexed entries for user review before crystallize ──
 if (mode === '--propose') {
   if (!existsSync(indexFile)) {
-    console.log(JSON.stringify({ entryCount: 0, maxEntries: MAX_ENTRIES, entries: [] }));
+    console.log(JSON.stringify({ entryCount: 0, maxEntries: CATALOG_ADVISORY_MAX, entries: [] }));
     process.exit(0);
   }
   const content = readFileSync(indexFile, 'utf8');
@@ -107,8 +112,8 @@ if (mode === '--propose') {
 
   console.log(JSON.stringify({
     entryCount: result.length,
-    maxEntries: MAX_ENTRIES,
-    overLimit: Math.max(0, result.length - MAX_ENTRIES),
+    maxEntries: CATALOG_ADVISORY_MAX,
+    overLimit: Math.max(0, result.length - CATALOG_ADVISORY_MAX),
     entries: result,
   }, null, 2));
   process.exit(0);

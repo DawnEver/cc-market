@@ -108,9 +108,21 @@ export function findChildScopes(scopeRoot, ignore) {
 export const scopeRoot = findMemoryScope();
 export const scopeMemoryDir = join(scopeRoot, '.claude', 'memory');
 export const scopeRulesDir = join(scopeRoot, '.claude', 'rules');
+// Injected view: bounded to long-term + the newest HOT_SHORT_MAX shorts, so the
+// auto-loaded rules file stays small. The authoritative full listing lives in the
+// (non-injected) catalog file — see catalogFilePath().
 export const scopeIndexFile = join(scopeRulesDir, 'MEMORY.md');
 
-export const MAX_ENTRIES = 20;
+// Full catalog path for a scope. Placed one level under `.claude/` (NOT under
+// `.claude/rules/`, which is auto-injected, and NOT under `.claude/memory/`, which
+// is scanned as memory) so its `../memory/...` index links resolve unchanged.
+export function catalogFilePath(scopeRootArg) {
+  return join(scopeRootArg, '.claude', 'meta', 'MEMORY.full.md');
+}
+
+export const MAX_ENTRIES = 20; // legacy advisory value (no longer a hard cap) — see CATALOG_ADVISORY_MAX
+export const HOT_SHORT_MAX = 60; // newest short-term entries kept in the injected hot list
+export const CATALOG_ADVISORY_MAX = 400; // "store is large — crystallize recommended" advisory (full catalog count)
 export const STALE_DAYS = 90;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -305,6 +317,22 @@ Volatile metadata (accessed, count, tier, dropped) lives in gitignored
 
 `;
 
+// Injected view of the index — bounded so the auto-loaded rules file stays small.
+// Lists only long-term entries + the newest HOT_SHORT_MAX short-term entries. The
+// authoritative full catalog is at ../meta/MEMORY.full.md (see catalogFilePath()).
+export const HOT_INDEX_HEADER = `# Memory Index — hot set
+
+<!-- GENERATED — do not hand-edit. Injected view of the index: long-term entries plus
+     the newest ${HOT_SHORT_MAX} short-term entries, rebuilt by rebuildIndex() on each
+     session start, touch, prune, and stamp. Device-local (gitignored). -->
+
+<!-- The full catalog of EVERY non-dropped entry (newest-first) lives at
+     ../meta/MEMORY.full.md — read that to see entries older than the newest
+     ${HOT_SHORT_MAX} short-term ones, or when running crystallize. Recall reads the
+     .claude/memory/ files directly, so this hot list never gates what recall finds. -->
+
+`;
+
 function buildIndexEntries(scopeRoot, state) {
   const memDir = join(scopeRoot, '.claude', 'memory');
   const entries = [];
@@ -333,6 +361,7 @@ function buildIndexEntries(scopeRoot, state) {
       accessed: meta.accessed,
       accessedDate: parseDate(meta.accessed),
       createdDate: parseDate(created),
+      tier: meta.tier || 'short',
     });
   }
 
@@ -360,6 +389,7 @@ function buildIndexEntries(scopeRoot, state) {
       accessed: created,
       accessedDate: parseDate(created),
       createdDate: parseDate(created),
+      tier: 'short',
     });
   }
 
@@ -368,9 +398,24 @@ function buildIndexEntries(scopeRoot, state) {
   return entries;
 }
 
+function renderEntries(header, scopedSection, entries) {
+  const lines = [header.trimEnd()];
+  if (scopedSection) lines.push(scopedSection);
+  lines.push('\n## Entries');
+  if (entries.length === 0) {
+    lines.push('\n_(no entries)_');
+  } else {
+    for (const e of entries) {
+      lines.push(formatIndexEntry(e));
+    }
+  }
+  return lines.join('\n') + '\n';
+}
+
 export function rebuildIndex(scopeRoot, { onTimeout = 'proceed' } = {}) {
   const rulesDir = join(scopeRoot, '.claude', 'rules');
   const indexFile = join(rulesDir, 'MEMORY.md');
+  const catalogFile = catalogFilePath(scopeRoot);
   // Serialize index rebuilds across concurrent processes (lock is reentrant, so
   // callers that already hold the index lock — e.g. touch-memory.js — nest safely).
   withLock(indexFile, () => {
@@ -389,20 +434,25 @@ export function rebuildIndex(scopeRoot, { onTimeout = 'proceed' } = {}) {
     }
   }
 
-  // Build index
-  const lines = [INDEX_HEADER.trimEnd()];
-  if (scopedSection) lines.push(scopedSection);
-  lines.push('\n## Entries');
-  if (entries.length === 0) {
-    lines.push('\n_(no entries)_');
-  } else {
-    for (const e of entries) {
-      lines.push(formatIndexEntry(e));
-    }
+  // Full catalog (authoritative): every non-dropped entry, newest-first. Written to
+  // a NON-injected path so it may be arbitrarily large without bloating the session.
+  if (!existsSync(dirname(catalogFile))) mkdirSync(dirname(catalogFile), { recursive: true });
+  atomicWriteFile(catalogFile, renderEntries(INDEX_HEADER, scopedSection, entries));
+
+  // Injected view: bound to long-term entries + the newest HOT_SHORT_MAX shorts so
+  // the auto-loaded .claude/rules/MEMORY.md stays small. Recall never depends on it.
+  const hotPaths = new Set(entries.filter(e => e.tier === 'long').map(e => e.path));
+  let shortSeen = 0;
+  for (const e of entries) {
+    if (e.tier === 'long') continue;
+    if (shortSeen >= HOT_SHORT_MAX) break;
+    hotPaths.add(e.path);
+    shortSeen++;
   }
+  const hotEntries = entries.filter(e => hotPaths.has(e.path));
 
   if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-  atomicWriteFile(indexFile, lines.join('\n') + '\n');
+  atomicWriteFile(indexFile, renderEntries(HOT_INDEX_HEADER, scopedSection, hotEntries));
   }, { onTimeout });
 }
 

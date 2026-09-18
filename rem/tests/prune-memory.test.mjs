@@ -1,7 +1,10 @@
 /**
- * Tests for rem/scripts/prune-memory.js — type-aware retention.
- * Entries with frontmatter `metadata.type: feedback` are exempt from the
- * 90-day stale eviction but still count toward the 20-entry capacity cap.
+ * Tests for rem/scripts/prune-memory.js — time-based retention + promote-first.
+ *   - Eviction is time-based ONLY (>90d stale short-term); there is NO count
+ *     capacity cap, so an active working set is never treadmill-dropped.
+ *   - Promote-first: a short-term entry at count>=3 is upgraded to long before
+ *     stale eviction, protecting it from the 90-day window.
+ *   - `metadata.type: feedback` stays exempt from the 90-day stale eviction.
  * Run: node --test cc-market/rem/tests/prune-memory.test.mjs
  */
 
@@ -36,8 +39,8 @@ function run(...args) {
   });
 }
 
-// Write a memory file + its _meta.json record. `accessed`/`type` configurable.
-function addEntry(date, slug, { accessed, type = "project", tier = "short" } = {}) {
+// Write a memory file + its _meta.json record. `accessed`/`count`/`type` configurable.
+function addEntry(date, slug, { accessed, count = 1, type = "project", tier = "short" } = {}) {
   const [y, m, d] = date.split("-");
   const dir = path.join(tmp, ".claude", "memory", y, m, d);
   fs.mkdirSync(dir, { recursive: true });
@@ -49,7 +52,7 @@ function addEntry(date, slug, { accessed, type = "project", tier = "short" } = {
   const meta = fs.existsSync(metaFile)
     ? JSON.parse(fs.readFileSync(metaFile, "utf8"))
     : {};
-  meta[`${slug}.md`] = { accessed: accessed || date, count: 1, tier };
+  meta[`${slug}.md`] = { accessed: accessed || date, count, tier };
   fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
 }
 
@@ -88,15 +91,33 @@ describe("prune-memory type-aware retention", () => {
     assert.equal(metaOf(OLD, "old-project").dropped, "stale-90d");
   });
 
-  test("feedback entries still count toward and are dropped by the capacity cap", () => {
-    // 21 short-term entries, feedback oldest → over the 20 cap, feedback dropped first
-    addEntry(OLD, "oldest-feedback", { accessed: OLD, type: "feedback" });
-    for (let i = 0; i < 20; i++) {
+  test("no capacity cap: >20 recent shorts are all retained under --evict-stale", () => {
+    // 21 recent short-term entries, none stale — the old >20 capacity treadmill
+    // would have dropped the oldest; time-based eviction retains every one.
+    for (let i = 0; i < 21; i++) {
       addEntry(RECENT, `recent-${String(i).padStart(2, "0")}`, { accessed: RECENT });
     }
     const out = run("--evict-stale");
-    assert.match(out, /21 short-term entries, dropping 1 oldest/);
-    assert.equal(metaOf(OLD, "oldest-feedback").dropped, "over-capacity");
+    assert.match(out, /21 total \(0 long, 21 short\), 0 stale/);
+    assert.equal(metaOf(RECENT, "recent-00").dropped, undefined);
+    assert.equal(metaOf(RECENT, "recent-20").dropped, undefined);
+  });
+
+  test("promote-first: a count>=3 short is promoted to long, not stale-evicted", () => {
+    // Stale (OLD) but re-accessed on >=3 days → promoted to long before eviction,
+    // so it survives the 90-day window instead of being dropped.
+    addEntry(OLD, "worn-project", { accessed: OLD, count: 3 });
+    const out = run("--evict-stale");
+    assert.match(out, /promoting to long/);
+    assert.equal(metaOf(OLD, "worn-project").dropped, undefined);
+    assert.equal(metaOf(OLD, "worn-project").tier, "long");
+  });
+
+  test("a count<3 stale short is still stale-90d evicted", () => {
+    addEntry(OLD, "cold-project", { accessed: OLD, count: 1 });
+    const out = run("--evict-stale");
+    assert.match(out, /1 stale short-term entries/);
+    assert.equal(metaOf(OLD, "cold-project").dropped, "stale-90d");
   });
 
   test("--dry-run drops nothing", () => {
