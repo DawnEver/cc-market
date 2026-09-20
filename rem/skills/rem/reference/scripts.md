@@ -12,7 +12,7 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | `scope-split.js` | Relocate a memory cluster into a child scope (move + tombstone), user-gated | `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>` |
 | `scope-validate.mjs` | Verify scope isolation + intermediate file integrity across all scopes | `--check`, `--fix` |
 | `rem-prep.js` | Pre-REM automation: event log, batch touch, auto-promote, crystallize check | `--transcript <path>`, `--promote` |
-| `check-docs.js` | Doc freshness check at crystallize time | `--json` |
+| `check-docs.js` | Doc freshness check at crystallize time. Flags a doc only when it *references* a file that changed (by relative path or filename), and names which — not every doc that happens to be untouched | `--json` |
 | `task-engine.js` | Task CLI (`/todo`) | `report`, `add`, `remove`, `show`, `mark`, `check`, `help` |
 | `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, markFinding, groupBy* |
 | `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` (Claude Code only) | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |

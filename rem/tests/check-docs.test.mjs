@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'url';
 import {
   DOC_PATTERN, SKIP_DIRS,
-  collectDocs, crossReference, formatReport,
+  collectDocs, crossReference, formatReport, referencedChanges,
 } from '../scripts/check-docs.js';
 
 // ── collectDocs ──
@@ -145,20 +145,36 @@ describe('crossReference', () => {
     assert.equal(result.needsReview, false);
   });
 
-  test('some docs stale', () => {
-    const result = crossReference(
-      ['README.md', 'AGENTS.md', 'CLAUDE.md'],
-      ['src/index.ts'],
-    );
+  test('only docs that REFERENCE a changed file are candidates', () => {
+    const docs = { 'README.md': 'see src/index.ts for details', 'AGENTS.md': 'nothing relevant here' };
+    const result = crossReference(['README.md', 'AGENTS.md'], ['src/index.ts'], (d) => docs[d]);
     assert.deepEqual(result.modifiedDocs, []);
-    assert.deepEqual(result.staleDocs, ['README.md', 'AGENTS.md', 'CLAUDE.md']);
+    assert.deepEqual(result.staleDocs, ['README.md']);
+    assert.deepEqual(result.staleBecause['README.md'], ['src/index.ts']);
     assert.equal(result.needsReview, true);
   });
 
-  test('partial — one modified, one stale', () => {
+  // Without a reader there is no evidence either way. Reporting everything is the behaviour
+  // that made this check noise; reporting nothing is honest.
+  test('with no reader, nothing is claimed either way', () => {
+    const result = crossReference(['README.md', 'AGENTS.md'], ['src/index.ts']);
+    assert.deepEqual(result.staleDocs, []);
+    assert.equal(result.needsReview, false);
+  });
+
+  test('a filename mention counts, but only as a standalone token', () => {
+    assert.deepEqual(referencedChanges('run node scripts/check-docs.js', ['rem/scripts/check-docs.js']),
+      ['rem/scripts/check-docs.js']);
+    assert.deepEqual(referencedChanges('see bar-check-docs.js', ['rem/scripts/check-docs.js']), []);
+    assert.deepEqual(referencedChanges('nothing here', ['rem/scripts/check-docs.js']), []);
+  });
+
+  test('partial — one edited, one referencing a change', () => {
+    const docs = { 'AGENTS.md': 'documents src/index.ts' };
     const result = crossReference(
       ['README.md', 'AGENTS.md'],
       ['README.md', 'src/index.ts'],
+      (d) => docs[d] ?? '',
     );
     assert.deepEqual(result.modifiedDocs, ['README.md']);
     assert.deepEqual(result.staleDocs, ['AGENTS.md']);
@@ -171,7 +187,7 @@ describe('crossReference', () => {
       [],
     );
     assert.deepEqual(result.modifiedDocs, []);
-    assert.deepEqual(result.staleDocs, ['README.md', 'AGENTS.md']);
+    assert.deepEqual(result.staleDocs, [], 'no changes means nothing to review');
     assert.equal(result.needsReview, false);
   });
 
@@ -209,28 +225,33 @@ describe('crossReference', () => {
 // ── formatReport ──
 describe('formatReport', () => {
   test('no changes — clean report', () => {
+    // With nothing changed the new criterion yields no candidates at all, so the fixture
+    // no longer pairs "no changes" with a stale doc.
     const report = formatReport({
       changedFiles: [],
       docFiles: ['README.md'],
       modifiedDocs: [],
-      staleDocs: ['README.md'],
+      staleDocs: [],
       needsReview: false,
     });
     assert.ok(report.includes('No uncommitted changes'));
     assert.ok(report.includes('working tree clean'));
-    assert.ok(!report.includes('may be stale'));
+    assert.ok(!report.includes('references'));
   });
 
-  test('stale docs — review needed', () => {
+  // Naming the file it references is what makes the line actionable; a bare
+  // "may be stale" on every doc is what made the whole check ignorable.
+  test('stale docs — the report names what each one references', () => {
     const report = formatReport({
       changedFiles: ['src/a.ts'],
       docFiles: ['README.md'],
       modifiedDocs: [],
       staleDocs: ['README.md'],
+      staleBecause: { 'README.md': ['src/a.ts'] },
       needsReview: true,
     });
-    assert.ok(report.includes('may be stale'));
-    assert.ok(report.includes('review doc files'));
+    assert.ok(report.includes('references src/a.ts'));
+    assert.ok(report.includes('not all of them'));
   });
 
   test('all docs updated', () => {
@@ -280,17 +301,35 @@ describe('CLI', () => {
     assert.equal(result.exitCode, 0);
   });
 
-  test('uncommitted change + stale docs — exit 1', () => {
-    writeFileSync(join(repoDir, 'README.md'), '# test');
+  test('a doc that references the change — exit 1', () => {
+    writeFileSync(join(repoDir, 'README.md'), '# test\n\nSee src/index.js for details.');
     mkdirSync(join(repoDir, 'src'), { recursive: true });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// change');
     execFileSync('git', ['add', 'README.md', 'src/index.js'], { cwd: repoDir, timeout: 2000 });
     execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
-    // Make uncommitted change to src, leave README untouched
     writeFileSync(join(repoDir, 'src', 'index.js'), '// modified');
     const result = runCheckDocs(repoDir);
     assert.equal(result.exitCode, 1);
-    assert.ok(result.stdout.includes('may be stale'));
+    assert.ok(result.stdout.includes('references src/index.js'),
+      'the report must name what the doc references, not just flag it');
+  });
+
+  // The behaviour this change is about: a doc that says nothing about the changed file is
+  // not a candidate. Before, every untouched doc was flagged on any change, which is how a
+  // dozen standing warnings become invisible.
+  test('a doc that does not reference the change — exit 0', () => {
+    writeFileSync(join(repoDir, 'README.md'), '# test\n\nNothing about source files here.');
+    mkdirSync(join(repoDir, 'src'), { recursive: true });
+    writeFileSync(join(repoDir, 'src', 'index.js'), '// change');
+    execFileSync('git', ['add', 'README.md', 'src/index.js'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
+    writeFileSync(join(repoDir, 'src', 'index.js'), '// modified');
+    const result = runCheckDocs(repoDir);
+    assert.equal(result.exitCode, 0);
+    // Match the marker, not the bare word — the summary line legitimately says
+    // "No doc references anything that changed".
+    assert.ok(!result.stdout.includes('— references'),
+      'an unrelated doc must not be flagged');
   });
 
   test('uncommitted change + doc also changed — exit 0', () => {
