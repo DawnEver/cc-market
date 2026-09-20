@@ -2,7 +2,7 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -78,6 +78,17 @@ describe('isMain', async () => {
   it('returns false when importMeta is null/undefined', () => {
     assert.equal(isMain(null), false);
     assert.equal(isMain(undefined), false);
+    assert.equal(isMain({}), false);
+    assert.equal(isMain(''), false);
+  });
+
+  // Two spellings of this helper exist across the two repos — one takes a url string, one
+  // takes the meta object. Calling one with the other's argument used to fail silently to
+  // false, which is indistinguishable from "not the entry point".
+  it('accepts either import.meta or a bare url string', () => {
+    process.argv[1] = fileURLToPath(import.meta.url);
+    assert.equal(isMain({ url: import.meta.url }), true, 'meta object form');
+    assert.equal(isMain(import.meta.url), true, 'url string form');
   });
 
   it('returns true when run directly', () => {
@@ -88,10 +99,36 @@ describe('isMain', async () => {
     assert.equal(isMain(meta), true);
   });
 
+  // The reason this helper exists. Node realpaths a module but not argv[1], so the naive
+  // comparison is false for anything reached through a link — a hook then exits 0 having
+  // done nothing, which is indistinguishable from a clean run.
+  it('returns true when argv[1] reaches the module through a symlink', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'cc-market-ismain-'));
+    const link = join(tmp, 'link.mjs');
+    try {
+      symlinkSync(fileURLToPath(import.meta.url), link);
+    } catch {
+      return; // symlink privilege unavailable (unprivileged Windows) — nothing to assert
+    }
+    try {
+      process.argv[1] = link;
+      assert.equal(isMain({ url: import.meta.url }), true,
+        'a module invoked through a link must still recognise itself');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('returns false when argv[1] differs', () => {
     process.argv[1] = '/some/other/file.js';
     const meta = { url: import.meta.url };
     assert.equal(isMain(meta), false);
+  });
+
+  // A path that does not exist must not throw, and must not be treated as main.
+  it('returns false for an unreadable entry path', () => {
+    process.argv[1] = '/definitely/not/here.mjs';
+    assert.equal(isMain({ url: import.meta.url }), false);
   });
 
   it('returns false when process.argv[1] is missing', () => {

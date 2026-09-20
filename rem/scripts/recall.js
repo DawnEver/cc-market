@@ -22,10 +22,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { fileURLToPath } from "node:url";
 
 import { loadMemoryState } from "./lib.mjs";
-import { parseFrontmatter } from "../shared/lib.mjs";
+import { parseFrontmatter, isMain } from "../shared/lib.mjs";
 import { isCodexHost } from "./inject-rules.js";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
@@ -387,7 +386,7 @@ function main() {
   );
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   try {
     main();
   } catch {

@@ -2,7 +2,7 @@
 // No plugin-specific imports; safe to import from any plugin.
 // No project-specific data — only reusable functions.
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, realpathSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -23,9 +23,33 @@ export function findProjectRoot(startDir) {
 
 // ── isMain: reliable is-main guard ──
 
+/**
+ * True when this module is the entry point of the running process.
+ *
+ * Realpath BOTH sides. The obvious spelling — comparing `fileURLToPath(importMeta.url)`
+ * against `process.argv[1]` — is wrong, and wrong silently: Node resolves a module through
+ * symlinks to its real path, but leaves `argv[1]` as it was given. Any entry point reached
+ * through a symlink or junction therefore compares unequal, its body never runs, and the
+ * process exits 0 having done nothing — indistinguishable from "nothing to report".
+ *
+ * Latent here rather than live, because plugin hooks are launched from the real cache path
+ * (CLAUDE_PLUGIN_ROOT) rather than through a link. It bites the moment anyone runs a
+ * plugin script from a symlinked checkout, a synced workspace, or a relocated install.
+ */
 export function isMain(importMeta) {
-  if (!importMeta || !process.argv[1]) return false;
-  return fileURLToPath(importMeta.url).replace(/\\/g, '/') === process.argv[1].replace(/\\/g, '/');
+  // Accepts either `import.meta` or the url string. Two spellings of this helper exist in
+  // this codebase — the config repo's is-main.mjs takes a url, this one historically took
+  // the meta object — and calling one with the other's argument fails silently to `false`,
+  // which looks exactly like "not the entry point". Normalising here removes the trap.
+  const url = typeof importMeta === 'string' ? importMeta : importMeta?.url;
+  if (!url || !process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(url));
+  } catch {
+    // Entry path vanished or is unreadable — never claim to be main, so a library import
+    // can never accidentally execute a CLI body.
+    return false;
+  }
 }
 
 // ── readStdinJSON: parse stdin as JSON with BOM handling ──

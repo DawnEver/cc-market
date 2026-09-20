@@ -14,7 +14,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { isMain } from "../shared/lib.mjs";
 
 /**
  * Detect whether we are running under Codex. The resolved ${CLAUDE_PLUGIN_ROOT}
@@ -177,6 +177,6 @@ function main() {
   );
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   main();
 }

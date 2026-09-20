@@ -19,7 +19,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMain } from "../shared/lib.mjs";
 
 // texcount 3.x subcount line: "  7+1+0 (1/0/0/0) Section: Abstract" — and the trailing
 // per-file summary (chapter-style docs, e.g. \input'd sections):
@@ -188,6 +188,6 @@ function fail(code, message) {
   return code;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }

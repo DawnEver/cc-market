@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMain } from "../shared/lib.mjs";
 
 // Keys Codex's plugin validator accepts; everything else is dropped from the manifest.
 // NOTE `commands` is intentionally absent: Codex has no plugin slash-command concept (its
@@ -205,7 +206,7 @@ export function generate(repoRoot, { write = true } = {}) {
 }
 
 // CLI entry
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const repoRoot = process.argv[2] || join(dirname(fileURLToPath(import.meta.url)), '..');
   const { written, warnings } = generate(repoRoot);
   for (const f of written) console.log('wrote', f);

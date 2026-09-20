@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadState as loadSharedState, saveState as saveSharedState } from '../shared/state.mjs';
-import { parseFindingsFromMarkdown, dateToPath } from '../shared/lib.mjs';
+import { parseFindingsFromMarkdown, dateToPath, isMain } from '../shared/lib.mjs';
 import { route as routeAttention } from '../shared/attention.mjs';
 
 const STATE_FILE = '.claude/.rem-state.json';
@@ -346,6 +346,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('evolve.mjs')) {
+if (isMain(import.meta.url)) {
   main();
 }

@@ -51,6 +51,7 @@ import { localStatus } from "../engine/sysinfo.mjs";
 import { fmtUptime, fmtMem, fmtAgo } from "./lib/format.mjs";
 import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind, viewSession, attachSession, viewRemoteSession, resolveSessionDefaults } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
+import { isMain } from "../shared/lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginJson = JSON.parse(readFileSync(join(__dirname, "..", ".claude-plugin", "plugin.json"), "utf8"));
@@ -946,7 +947,7 @@ export const send = rpc.send;
 export const handleRpcRequest = rpc.handleRpcRequest;
 export { encodeRpcMessage };
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   // Sessions spawned from here are held by THIS process; the journal records that so the
   // layer above can route a close/ping to the daemon that owns the handle (SR-045). Set
   // only when RUNNING as the server — an importer of this module is not that daemon.

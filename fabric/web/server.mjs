@@ -17,6 +17,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createWebApi } from "./api.mjs";
+import { isMain } from "../shared/lib.mjs";
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "public");
 // The scripts/lib/format.mjs formatters are the ONE display-formatting source — the
@@ -97,7 +98,7 @@ export async function consoleAlreadyServing(port) {
 }
 
 // ── CLI ──
-if (process.argv[1] && import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   const args = process.argv.slice(2);
   const pf = args.indexOf("--port");
   const port = pf !== -1 ? Number(args[pf + 1]) : 7678;

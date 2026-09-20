@@ -28,9 +28,9 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { join, resolve } from 'path';
-import { fileURLToPath } from 'url';
 import { atomicWriteFile } from '../shared/stamp.mjs';
 import { findMemoryScope, isInsideDir } from './lib.mjs';
+import { isMain } from "../shared/lib.mjs";
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -219,6 +219,6 @@ function main() {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   main();
 }
