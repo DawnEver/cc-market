@@ -21,11 +21,33 @@ bump_json() { # $1 = path to a JSON file with a semver "version" field
   " "$1"
 }
 
+# Does this plugin's own code import from shared/? Mirrors usesShared() in
+# tests/bundle-integrity.test.mjs on purpose: the two used to disagree, and the gap was
+# invisible. Bundling into a plugin that never imports shared/ leaves .mjs files that
+# nothing reads AND that the integrity test excludes from verification — dead weight, and
+# the one place a shared-helper change could land unchecked.
+uses_shared() { # $1 = plugin name
+  grep -rqE "from[[:space:]]+['\"][^'\"]*shared/[^'\"]+['\"]" \
+    --include='*.mjs' --include='*.js' \
+    --exclude-dir=tests --exclude-dir=shared --exclude-dir=node_modules \
+    "$REPO_ROOT/$1" 2>/dev/null
+}
+
 bundle_shared() { # $1 = plugin name
   local src="$REPO_ROOT/shared"
   local dest="$REPO_ROOT/$1/shared"
-  local tmp
   [ -d "$src" ] || return 0
+
+  if ! uses_shared "$1"; then
+    # Clean up a copy an older bundler left behind, so the plugin converges rather than
+    # keeping stale files forever.
+    if [ -d "$dest" ]; then
+      git -C "$REPO_ROOT" rm -rq --ignore-unmatch "$dest"
+      echo "pre-push: $1 does not import shared/ — removed its stale bundled copy" >&2
+    fi
+    return 0
+  fi
+
   # Atomic: copy to tmp first, then replace — avoids empty dest if cp fails
   # Recursive (shared/codex/ etc.), excluding shared/tests/
   tmp="$(mktemp -d)"

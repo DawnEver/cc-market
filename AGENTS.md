@@ -37,10 +37,24 @@ to **all** plugins. A commit touching no test-bearing dir (e.g. only root docs) 
 To run every JS suite manually:
 
 ```shell
-node --test cc-market/fabric/tests/*.test.mjs cc-market/rem/tests/*.test.mjs cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs cc-market/traceme/tests/*.test.mjs cc-market/tests/gen-codex.test.mjs
+node --test cc-market/fabric/tests/*.test.mjs cc-market/rem/tests/*.test.mjs \
+  cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs \
+  cc-market/traceme/tests/*.test.mjs cc-market/cc-latex/tests/*.test.mjs \
+  cc-market/shared/tests/*.test.mjs cc-market/tests/*.test.mjs
 ```
 
+That list is the complete JS suite — it previously omitted `cc-latex/`, `shared/`, and two of
+the three files under `tests/`, so "run every JS suite manually" did not.
+
 See each plugin's AGENTS.md § Testing for per-suite coverage.
+
+**Not wired to anything: `cc-academia/tests/**`.** It holds ~36 pytest files and a
+`pyproject.toml` pytest config, and its own AGENTS.md documents a test policy — but no hook or
+documented command reaches them, and the pre-commit hook's Python block is hardcoded to
+`watch/tests/`. Wiring them in is not a one-liner: unlike `watch` (stdlib `unittest`, no
+dependencies) cc-academia needs its `.venv` populated, so a broken venv would block every
+commit that touches the plugin. Left as a known gap rather than fixed in passing; the plugin is
+dormant in this fleet, so nothing depends on it today.
 
 Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised
 by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`fabric`,
@@ -50,19 +64,18 @@ MCP server) but is not yet covered by the e2e script.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
-### Known gap: `shared/` is bundled into plugins that never import it
+### `shared/` is bundled only into plugins that import it
 
-`scripts/git-hooks/pre-push` bundles `shared/` into **every** plugin with a
-`.claude-plugin/plugin.json`, but `tests/bundle-integrity.test.mjs` only *verifies* the
-plugins whose code actually imports it (`usesShared()`). The two criteria disagree, so
-`cc-academia/shared/` and `cc-latex/shared/` hold 12 `.mjs` files that nothing imports, are
-excluded from the integrity check, and are re-created on every push — maintained dead
-weight, and the one place a shared-helper change can land unverified.
+`scripts/git-hooks/pre-push` and `tests/bundle-integrity.test.mjs` used to disagree:
+the bundler copied `shared/` into **every** plugin with a `.claude-plugin/plugin.json`,
+while the test only verified the plugins whose code actually imports it (`usesShared()`).
+A plugin on the wrong side of that gap carried `.mjs` files that nothing read and that
+nothing checked — the one place a shared-helper change could land unverified. `cc-academia`
+was in exactly that state.
 
-The fix is to give the hook the same criterion the test uses: skip plugins that do not
-import `shared/`. Not done here because the hook also bumps versions and tags releases, and
-a mistake in it is not caught by the test suite — worth doing as its own change with a full
-push cycle to verify.
+Both sides now use the same criterion (`uses_shared()` in the hook, `usesShared()` in the
+test), and the hook removes a stale copy when it finds one, so plugins converge. A test
+asserts the two cannot drift apart again.
 
 ## Migrating `.claude/` Project Files
 

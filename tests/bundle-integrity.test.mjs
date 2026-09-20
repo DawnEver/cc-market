@@ -111,3 +111,22 @@ describe('import paths', () => {
     });
   }
 });
+
+// The bundler and this test disagreed about which plugins need a copy: pre-push bundled
+// shared/ into EVERY plugin with a plugin.json, while the loop above only verifies the ones
+// that import it. A plugin on the wrong side of that gap carries .mjs files that nothing
+// imports AND that this suite never checks — the one place a shared-helper change could land
+// unverified. Assert the two criteria agree.
+describe('no plugin carries a bundled copy it does not use', () => {
+  for (const name of ALL_PLUGINS) {
+    it(name, () => {
+      const bundled = join(ROOT, name, 'shared');
+      if (!existsSync(bundled)) return;                  // nothing bundled, nothing to check
+      assert.ok(
+        usesShared(join(ROOT, name)),
+        `${name}/shared/ exists but no file in ${name}/ imports from shared/ — ` +
+        'the pre-push bundler should skip this plugin (see scripts/git-hooks/pre-push)',
+      );
+    });
+  }
+});
