@@ -20,9 +20,8 @@ Most plugins run on **both** hosts. What each does and where it runs:
 
 | Plugin | What it gives you | Claude Code | Codex |
 |---|---|---|---|
-| [`takeover`](takeover/README.md) | Delegate tasks and planning to DeepSeek, OpenAI, or any Anthropic-compatible provider | yes | yes |
 | [`rem`](rem/README.md) | Memory pruning, session summarization, crystallization, automatic eviction | yes | yes (SessionStart hook injects `.claude/rules`) |
-| [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 3 parallel reviewers, task sync | yes | yes |
+| [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync | yes | yes |
 | [`evolve`](evolve/README.md) | Iterative review→fix loop (depends on `sharp-review` + `rem`) | yes | yes |
 | [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |
 | [`traceme`](traceme/README.md) | Personal observability: token/cost reports, multi-device encrypted sync | yes | **no** (reads Claude transcript JSONL only) |
@@ -47,7 +46,7 @@ does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionS
 ```shell
 node scripts/gen-codex.mjs .          # refresh .codex-plugin/ + .agents/plugins/
 codex plugin marketplace add <path-to-cc-market>
-codex plugin add takeover@cc-market   # then rem / sharp-review / evolve / watch / fabric
+codex plugin add fabric@cc-market     # then rem / sharp-review / evolve / watch
 ```
 
 `traceme` is Claude-only; do not `codex plugin add traceme`. See the host table above.
@@ -55,7 +54,7 @@ codex plugin add takeover@cc-market   # then rem / sharp-review / evolve / watch
 ## Install
 
 ```shell
-/plugin install takeover@cc-market
+/plugin install fabric@cc-market
 /plugin install rem@cc-market
 /plugin install sharp-review@cc-market
 /plugin install traceme@cc-market

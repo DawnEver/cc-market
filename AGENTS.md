@@ -21,11 +21,11 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
 | [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |
+| [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript review, citation and contact discovery |
 
 Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
 ## Tests & Git Hooks
-
 The pre-commit hook (`scripts/git-hooks/pre-commit`, wired via `core.hooksPath`) runs **only
 the tests for plugins whose files are staged** — committing a fabric-only change runs just
 `fabric/tests/*.test.mjs` (plus the cross-cutting `tests/bundle-integrity.test.mjs`). It
@@ -50,6 +50,20 @@ MCP server) but is not yet covered by the e2e script.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
+### Known gap: `shared/` is bundled into plugins that never import it
+
+`scripts/git-hooks/pre-push` bundles `shared/` into **every** plugin with a
+`.claude-plugin/plugin.json`, but `tests/bundle-integrity.test.mjs` only *verifies* the
+plugins whose code actually imports it (`usesShared()`). The two criteria disagree, so
+`cc-academia/shared/` and `cc-latex/shared/` hold 12 `.mjs` files that nothing imports, are
+excluded from the integrity check, and are re-created on every push — maintained dead
+weight, and the one place a shared-helper change can land unverified.
+
+The fix is to give the hook the same criterion the test uses: skip plugins that do not
+import `shared/`. Not done here because the hook also bumps versions and tags releases, and
+a mistake in it is not caught by the test suite — worth doing as its own change with a full
+push cycle to verify.
+
 ## Migrating `.claude/` Project Files
 
 Backward compatibility for `.claude/` data formats is not a concern (see Standard below) — but when a breaking format change ships, existing projects need a path to the new format. Each plugin owns this via an optional `migrations/migrate.mjs`:
@@ -63,7 +77,7 @@ export async function migrate(projectRoot) {
 }
 ```
 
-The root repo's `node scripts/setup/migrate.js` (`npm run migrate`) discovers every `<plugin>@cc-market` entry relevant to the current project (via `~/.claude/plugins/installed_plugins.json`) and calls `migrate(projectRoot)` if `migrations/migrate.mjs` exists. "Migrate to latest only" — no version-range bookkeeping; each migration is self-detecting and additive (fold new format changes into the same file rather than chaining versioned steps). Plugins with nothing to migrate simply omit `migrations/`.
+The root repo's `/migrate` skill (`node ~/.claude/skills/migrate/migrate.js`, or `npm run migrate` from the config repo) scans `<cc-config>/cc-market/*/migrations/migrate.mjs` and calls each with the current project as `projectRoot`. Discovery is by directory — it does **not** consult `~/.claude/plugins/installed_plugins.json`, so a plugin's migration runs for every project regardless of whether that plugin is installed there. "Migrate to latest only" — no version-range bookkeeping; each migration is self-detecting and additive (fold new format changes into the same file rather than chaining versioned steps). Plugins with nothing to migrate simply omit `migrations/`.
 
 ## Adding a Plugin
 
