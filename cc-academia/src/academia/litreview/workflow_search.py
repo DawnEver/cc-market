@@ -56,9 +56,10 @@ def run_search(
 
     Args:
         topic_dir: Path to ongoing/<slug>/
-        provider: Provider name(s) (e.g. 'ieee', 'semantic_scholar', or ['ieee', 'arxiv']).
-                  If None, reads providers from workspace.toml, falling back
-                  to ['ieee_xplore'] when the file is absent.
+        provider: Provider name(s) (e.g. 'openalex', 'semantic_scholar', or
+                  ['openalex', 'ieee']). If None, reads providers from
+                  workspace.toml, falling back to ['openalex'] when the file is
+                  absent.
         max_pages: Maximum pages per query for full search
         probe_only: If True, stop after probe (for query adjustment)
         skip_probe: If True, skip probe and go straight to full search
@@ -66,23 +67,26 @@ def run_search(
     Returns:
         Dict with keys: queries_path, probe_results, candidates_count, screening_packet_path
     """
+    from academia.core.errors import EXIT_SOURCE, SourceError
     from academia.litreview.schema import load_data
     from academia.litreview.screen import write_screening_packet
-    from academia.litreview.search import run_dedupe_rank, run_probe
+    from academia.litreview.search import failure_reasons, run_dedupe_rank, run_probe
     from academia.litreview.search import run_search as _run_search
     from academia.sources import get_source
     from academia.sources.base import PaperSource
 
     mark_step(topic_dir, "search", "in_progress")
 
-    # Resolve providers: explicit arg > workspace.toml > default ['ieee']
+    # Resolve providers: explicit arg > workspace.toml > default ['openalex'].
+    # The fallback matches Workspace.providers; see the note there for why it is
+    # OpenAlex and not IEEE.
     if provider is None:
         ws_path = topic_dir / "workspace.toml"
         if ws_path.exists():
             from academia.litreview.models import Workspace
             provider = Workspace.from_dict(load_data(ws_path)).providers
         else:
-            provider = ["ieee_xplore"]
+            provider = ["openalex"]
     if isinstance(provider, str):
         provider = [provider]
 
@@ -117,6 +121,10 @@ def run_search(
         result["failures"].append({"provider": provider_name, "stage": stage, "error": str(error)})
         print(f"    {stage} failed [{provider_name}]: {error}")
 
+    #: Providers whose account-level failure means the full search can only
+    #: repeat it. Filled by the probe, read by the search below.
+    aborted: set[str] = set()
+
     # --- Probe (each provider) ---
     if not skip_probe:
         print("=== Probe ===")
@@ -124,7 +132,7 @@ def run_search(
         for prov in prov_instances:
             print(f"  Provider: {prov.name}")
             try:
-                _ = run_probe(
+                code = run_probe(
                     queries_path=queries_path,
                     out_dir=search_dir,
                     provider=prov,
@@ -132,6 +140,17 @@ def run_search(
                 )
             except Exception as exc:
                 _record_failure(prov.name, "probe", exc)
+                continue
+            if code == 0:
+                continue
+            reasons = failure_reasons(probe_dir / prov.name / "probe_results.jsonl")
+            _record_failure(
+                prov.name,
+                "probe",
+                SourceError(reasons[0] if reasons else f"probe exited {code}", prov.name),
+            )
+            if code == EXIT_SOURCE:
+                aborted.add(prov.name)
         result["probe_results"] = str(probe_dir)
 
         if probe_only:
@@ -165,6 +184,9 @@ def run_search(
     all_candidates: list[dict[str, Any]] = []
 
     for prov in prov_instances:
+        if prov.name in aborted:
+            print(f"  Provider: {prov.name} — skipped, the probe found the account unusable")
+            continue
         print(f"  Provider: {prov.name}")
         try:
             code, records = _run_search(
@@ -177,8 +199,18 @@ def run_search(
                 allow_unapproved_plan=True,
             )
             if code != 0:
-                _record_failure(prov.name, "search",
-                                RuntimeError("one or more queries failed (see audit log)"))
+                # Name the reason the run actually recorded. A generic message
+                # here is what turned a spent API quota into "the literature is
+                # thin" for anyone reading the failure list.
+                reasons = failure_reasons(search_dir / "search" / f"search_audit_{prov.name}.log")
+                _record_failure(
+                    prov.name,
+                    "search",
+                    SourceError(
+                        reasons[0] if reasons else "one or more queries failed (see audit log)",
+                        prov.name,
+                    ),
+                )
             all_candidates.extend(records)
         except Exception as exc:
             _record_failure(prov.name, "search", exc)
@@ -201,6 +233,18 @@ def run_search(
     if records_path.exists():
         write_screening_packet(records_path, screening_dir)
         result["screening_packet_path"] = str(screening_dir / "screening_packet.jsonl")
+
+    # A run that produced nothing *because the account was refused* is not a run
+    # that found nothing. Stamping the step "done" would make the workspace look
+    # searched, and every later reader — including the resume hint — would take
+    # the empty candidate list at face value.
+    if not result["candidates_count"] and aborted:
+        mark_step(topic_dir, "search", "failed",
+                  candidates_count=result["candidates_count"],
+                  screening_packet_path=result["screening_packet_path"],
+                  providers_used=result["providers_used"],
+                  failures=result["failures"])
+        return result
 
     mark_step(topic_dir, "search", "done",
               candidates_count=result["candidates_count"],

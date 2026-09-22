@@ -14,6 +14,7 @@ Abstracts arrive as an inverted index and are reconstructed on the way in.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from academia.core.http import build_url, get_json
@@ -41,7 +42,7 @@ def resolve_open_access_pdfs(dois: list[str], *, timeout: int = 60) -> dict[str,
         data = get_json(
             build_url(
                 WORKS_URL,
-                _polite(
+                _identified(
                     {
                         "filter": "doi:" + "|".join(batch),
                         "per-page": 50,
@@ -78,7 +79,7 @@ def recent_works_for_author(
     data = get_json(
         build_url(
             WORKS_URL,
-            _polite(
+            _identified(
                 {
                     "filter": f"author.id:{_short_id(openalex_id)},from_publication_date:{year_from}-01-01",
                     "sort": "publication_date:desc",
@@ -115,7 +116,7 @@ def recent_corresponding_works(
         data = get_json(
             build_url(
                 WORKS_URL,
-                _polite(
+                _identified(
                     {
                         "filter": ",".join(filters),
                         "sort": "publication_date:desc",
@@ -151,10 +152,29 @@ def _short_id(value: Any) -> str:
     return text.rsplit("/", 1)[-1] if text else ""
 
 
-def _polite(params: dict[str, Any]) -> dict[str, Any]:
+def api_key() -> str:
+    return os.environ.get("OPENALEX_API_KEY", "").strip()
+
+
+def _identified(params: dict[str, Any]) -> dict[str, Any]:
+    """Attach the credentials OpenAlex keys its rate limit on.
+
+    Two independent mechanisms, and both are worth sending: ``mailto`` puts the
+    request in the polite pool, while ``api_key`` raises the daily budget from
+    1000 credits (about 100 requests, at 10 credits each) to 10000. The
+    anonymous budget does not survive one multi-query review, and a spent budget
+    answers 429 — which, if it reaches the caller unlabelled, is
+    indistinguishable from "no such work exists".
+
+    Read at call time rather than import time so a test can set the variable
+    after the module is loaded.
+    """
     contact = contact_email()
     if contact:
         params["mailto"] = contact
+    key = api_key()
+    if key:
+        params["api_key"] = key
     return params
 
 
@@ -338,7 +358,7 @@ class OpenAlex(PaperSource, AuthorSource):
 
         url = build_url(
             WORKS_URL,
-            _polite(
+            _identified(
                 {
                     "search": self.adapt_expression(expression),
                     "per-page": min(per_page, 200),
@@ -361,7 +381,7 @@ class OpenAlex(PaperSource, AuthorSource):
 
     def get_author(self, author_id: str, *, timeout: int = 30) -> Person | None:
         url = build_url(
-            f"{AUTHORS_URL}/{_short_id(author_id)}", _polite({"select": self.AUTHOR_SELECT})
+            f"{AUTHORS_URL}/{_short_id(author_id)}", _identified({"select": self.AUTHOR_SELECT})
         )
         from academia.core.errors import SourceError
 
@@ -381,7 +401,7 @@ class OpenAlex(PaperSource, AuthorSource):
     def get_author_papers(self, author_id: str, *, limit: int = 50, timeout: int = 30) -> list[Paper]:
         url = build_url(
             WORKS_URL,
-            _polite(
+            _identified(
                 {
                     "filter": f"author.id:{_short_id(author_id)}",
                     "per-page": min(limit, 200),

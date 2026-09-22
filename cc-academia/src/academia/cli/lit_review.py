@@ -195,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("probe", help="[Advanced] Probe queries against a provider.")
     p.add_argument("--queries", required=True)
     p.add_argument("--out", required=True)
-    p.add_argument("--provider", default="ieee")
+    p.add_argument("--provider", default="openalex")
     p.add_argument("--query-id")
 
     p = sub.add_parser("dedupe-rank", help="[Advanced] Deduplicate and rank candidate JSONL files.")
@@ -232,7 +232,7 @@ def _handle_init(args: argparse.Namespace) -> int:
         f'created_at = "{datetime.now(UTC).isoformat()}"\n'
         f'\n'
         f'lenses = []\n'
-        f'providers = ["ieee_xplore"]\n'
+        f'providers = ["openalex"]\n'
         f'pdf_store = ""\n'
         f'parent = ""\n'
         f'\n'

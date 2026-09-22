@@ -26,6 +26,22 @@ def _configure_standard_streams() -> None:
             reconfigure(encoding="utf-8")
 
 
+def _load_environment() -> None:
+    """Read the ``.env`` files that apply, before any command body runs.
+
+    Every console script reaches its handler through :func:`_dispatch`, so one
+    call here covers all of them and a new one cannot forget it. Until it
+    existed, only the Zotero and AI helpers loaded an env file, and they looked
+    under the plugin root — which in an installed plugin holds no ``.env``. The
+    documented location, the research tree's own file, was never read, so an
+    operator could set a key there and be told by the API it was missing.
+    """
+    from academia.core import paths
+
+    for candidate in paths.env_file_candidates():
+        paths.load_env_file(candidate)
+
+
 def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON on stdout.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose progress on stderr.")
@@ -64,6 +80,7 @@ def build_academia_parser() -> argparse.ArgumentParser:
 
 
 def _dispatch(parser: argparse.ArgumentParser, handlers: dict[str, Handler], argv: list[str]) -> int:
+    _load_environment()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
         parser.print_help()

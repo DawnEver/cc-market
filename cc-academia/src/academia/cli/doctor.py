@@ -51,6 +51,7 @@ def collect() -> dict:
         "contact_email": paths.contact_email() or None,
         "extras": {name: _installed(mod) for name, mod in OPTIONAL_MODULES.items()},
         "s2_api_key": bool(os.environ.get("S2_API_KEY")),
+        "openalex_api_key": bool(os.environ.get("OPENALEX_API_KEY")),
     }
 
 
@@ -92,6 +93,12 @@ def run(args: argparse.Namespace) -> int:
         log.warn("ACADEMIA_CONTACT is unset — OpenAlex/ORCID polite pools give lower rate limits.")
     if not report["s2_api_key"]:
         log.detail("S2_API_KEY unset — Semantic Scholar author endpoints stay disabled.")
+    if not report["openalex_api_key"]:
+        log.detail(
+            "OPENALEX_API_KEY unset — OpenAlex allows about 100 requests a day, "
+            "which one review can exhaust; a free key at openalex.org raises the "
+            "daily limit to 10000 credits, about 1000 requests."
+        )
     return EXIT_OK
 
 

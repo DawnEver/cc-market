@@ -17,12 +17,33 @@ lives in ``litreview.acquire``, not on a search interface.
 
 from __future__ import annotations
 
+import inspect
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
 from academia.core.models import Paper, Person
+
+
+def accepted_search_kwargs(source: PaperSource) -> frozenset[str] | None:
+    """The keyword names ``source.search`` accepts; ``None`` means "anything".
+
+    Read from the real signature because the bug this serves *is* drift between
+    a generic caller and five concrete signatures: the caller forwarded
+    ``content_types`` to every provider, and the three that never declared it
+    raised ``TypeError`` on every query that carried one. A hand-kept list of
+    accepted names is a second copy of the signature, and it goes stale the
+    first time someone adds a parameter.
+
+    ``None`` and ``frozenset()`` mean different things and must not be
+    conflated: the first is "accepts anything" (a ``**kwargs`` source), the
+    second would be "accepts nothing".
+    """
+    parameters = inspect.signature(source.search).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return None
+    return frozenset(parameters)
 
 
 @dataclass(frozen=True)
@@ -46,7 +67,21 @@ class Probe:
     total_count: int
     sample_titles: list[str]
     failure_reason: str | None = None
+    failure_status: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_account_failure(self) -> bool:
+        """Whether this failure will repeat for every remaining query.
+
+        The distinction that changes what a run should do. ``is_transient``
+        answers a different question — "would retrying this help?" — and 429 is
+        transient by that measure, which is exactly why its answer must not be
+        reused here: a spent quota is a wall, not a burst.
+        """
+        from academia.core.http import ACCOUNT_STATUSES
+
+        return self.failure_status in ACCOUNT_STATUSES
 
 
 class PaperSource(ABC):
@@ -83,13 +118,32 @@ class PaperSource(ABC):
         return expression
 
     def probe(self, expression: str, query_id: str, **kwargs: Any) -> Probe:
-        """Default probe: a single small page. Sources with a count-only endpoint override."""
-        from academia.core.errors import SourceError
+        """Default probe: a single small page. Sources with a count-only endpoint override.
 
+        A failure comes back as a value, not an exception: judging a query
+        against a dead source is still an answer about the query. The caller is
+        then responsible for recording *which* answer it got — a probe that
+        reports ``total_count=0`` without its ``failure_reason`` is
+        indistinguishable from a query that genuinely matched nothing.
+        """
+        from academia.core.errors import SourceError
+        from academia.core.http import error_status
+
+        # Deliberately not wrapped in with_retries, unlike search_pages. A probe
+        # is one small page, and the failure it most often reports is an
+        # exhausted quota, which is persistent: retrying it three times per
+        # query across a fifty-query plan spends the budget it just ran out of.
         try:
             page = self.search(expression, query_id, page=1, per_page=5, **kwargs)
         except SourceError as error:
-            return Probe(self.name, query_id, 0, [], failure_reason=error.reason)
+            return Probe(
+                self.name,
+                query_id,
+                0,
+                [],
+                failure_reason=error.reason,
+                failure_status=error_status(error),
+            )
         return Probe(
             source=self.name,
             query_id=query_id,

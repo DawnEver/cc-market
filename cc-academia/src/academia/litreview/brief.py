@@ -27,6 +27,45 @@ def load_brief(path: Path) -> dict[str, Any]:
     return data
 
 
+def resolve_brief_path(queries_path: Path, plan: dict[str, Any]) -> Path | None:
+    """Where the plan's brief lives, or ``None`` when the plan names none.
+
+    One rule, shared by the approval gate and by the search that needs the
+    brief's constraints. The path is relative to the plan and must stay inside
+    the run directory, so a plan cannot aim a review at a file elsewhere.
+    """
+    brief_ref = plan.get("brief_ref")
+    if not isinstance(brief_ref, dict):
+        return None
+    if queries_path is None:
+        raise ValueError("queries path is required to validate the approved research brief")
+
+    run_dir = queries_path.resolve().parent
+    candidate = (run_dir / str(brief_ref.get("path") or "research_brief.toml")).resolve()
+    try:
+        candidate.relative_to(run_dir)
+    except ValueError as error:
+        raise ValueError(
+            "research brief path must stay inside the run directory"
+        ) from error
+    return candidate
+
+
+def brief_constraints(queries_path: Path, plan: dict[str, Any]) -> dict[str, Any]:
+    """The brief's ``[constraints]`` table, or ``{}`` when there is none.
+
+    Deliberately not gated on the brief being approved. The search workflow runs
+    with ``allow_unapproved_plan`` because a plan is confirmed after the probe
+    has been looked at, and a year range that silently does not apply until
+    then is how every date bound in a brief became decoration.
+    """
+    path = resolve_brief_path(queries_path, plan)
+    if path is None or not path.is_file():
+        return {}
+    constraints = load_brief(path).get("constraints")
+    return constraints if isinstance(constraints, dict) else {}
+
+
 def scope_payload(brief: dict[str, Any]) -> dict[str, Any]:
     """Return only user-reviewable scope fields used by the approval digest."""
     payload = {field: deepcopy(brief.get(field)) for field in SCOPE_FIELDS}

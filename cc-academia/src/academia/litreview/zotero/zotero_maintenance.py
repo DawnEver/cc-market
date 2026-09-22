@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import urllib.error
 import urllib.parse
@@ -213,16 +212,16 @@ def _request(
 
 
 def load_dotenv(path: Path | None = None) -> None:
-    """Populate os.environ from the project .env (like the MCP launcher)."""
-    env_path = path or Path(__file__).resolve().parent.parent.parent / ".env"
-    if not env_path.exists():
-        return
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+    """Populate os.environ from the project .env (like the MCP launcher).
+
+    The parsing lives in :func:`academia.core.paths.load_env_file` so this
+    module and the CLI cannot disagree about what a ``.env`` means. The default
+    path is kept for callers that predate it; the CLI reads the wider set from
+    :func:`academia.core.paths.env_file_candidates`.
+    """
+    from academia.core.paths import load_env_file
+
+    load_env_file(path or Path(__file__).resolve().parent.parent.parent / ".env")
 
 
 def _library_base(library_id: str, library_type: str) -> str:

@@ -143,7 +143,13 @@ class Workspace(Serde):
     zotero: ZoteroBinding = field(default_factory=ZoteroBinding)
     defaults: WorkspaceConstraints = field(default_factory=WorkspaceConstraints)
     lenses: list[str] = field(default_factory=list)
-    providers: list[str] = field(default_factory=lambda: ["ieee_xplore"])
+    # OpenAlex, not IEEE: it is the only source that both searches and enriches,
+    # it needs no session, and its CC0 licence is what the accumulating store is
+    # built on. IEEE is a supplement — its search endpoint ignores its own
+    # payload and answers with front matter, and its records carry neither
+    # affiliations nor index terms — so a workspace that defaults to IEEE alone
+    # can return no candidates for reasons unrelated to the literature.
+    providers: list[str] = field(default_factory=lambda: ["openalex"])
     pdf_store: str = ""
     parent: str = ""
 

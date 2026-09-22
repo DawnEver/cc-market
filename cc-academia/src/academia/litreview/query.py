@@ -12,7 +12,12 @@ from typing import Any
 
 import rtoml
 
-from academia.litreview.brief import assert_approved, load_brief, scope_sha256
+from academia.litreview.brief import (
+    assert_approved,
+    load_brief,
+    resolve_brief_path,
+    scope_sha256,
+)
 from academia.litreview.models import Concept
 from academia.litreview.schema import load_data, require_keys
 
@@ -65,22 +70,11 @@ def require_approved_plan(plan: dict[str, Any], queries_path: Path | None = None
         raise ValueError("query plan changed after approval; run confirm-queries again")
 
     # Cross-validate against the linked research brief when present.
-    brief_ref = plan.get("brief_ref")
-    if not isinstance(brief_ref, dict):
+    brief_path = resolve_brief_path(queries_path, plan)
+    if brief_path is None:
         return
-    if queries_path is None:
-        raise ValueError("queries path is required to validate the approved research brief")
-
-    relative = str(brief_ref.get("path") or "research_brief.toml")
-    brief_path = (queries_path.resolve().parent / relative).resolve()
-    try:
-        brief_path.relative_to(queries_path.resolve().parent)
-    except ValueError as error:
-        raise ValueError(
-            "research brief path must stay inside the run directory"
-        ) from error
     brief = load_brief(brief_path)
-    expected = brief_ref.get("research_scope_sha256")
+    expected = plan["brief_ref"].get("research_scope_sha256")
     current_scope = scope_sha256(brief)
     brief_ok = brief.get("approval", {})
     if (

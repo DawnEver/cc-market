@@ -28,6 +28,13 @@ from academia.core.paths import contact_email
 #: burn three backoff sleeps on a deterministic error.
 TRANSIENT_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
+#: Statuses that describe the *account*, not the query: a rejected key, an
+#: exhausted plan, a rate limit that is a wall rather than a burst. Retrying
+#: one of these is right for a single page and wrong for a run — repeating it
+#: once per query spends the budget whose loss it is reporting. A caller that
+#: finds this status must stop and say so, never record "no results".
+ACCOUNT_STATUSES = frozenset({401, 402, 403, 429})
+
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -313,10 +320,20 @@ def post_json_list(
     return data
 
 
+def error_status(error: Exception) -> int | None:
+    """The HTTP status a failure carries, when it has one.
+
+    One parser for ``details["status"]``, shared by :func:`is_transient` and by
+    the callers that need to tell a query problem from an account problem.
+    """
+    if not isinstance(error, SourceError):
+        return None
+    status = error.details.get("status")
+    return status if isinstance(status, int) else None
+
+
 def is_transient(error: Exception) -> bool:
-    status = None
-    if isinstance(error, SourceError):
-        status = error.details.get("status")
+    status = error_status(error)
     if status is not None:
         return status in TRANSIENT_STATUSES
     if isinstance(error, SourceError):

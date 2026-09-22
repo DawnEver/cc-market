@@ -271,6 +271,45 @@ def contact_email() -> str:
     return os.environ.get(ENV_CONTACT, "").strip()
 
 
+def load_env_file(path: Path) -> bool:
+    """Populate ``os.environ`` from a ``.env`` file; report whether it existed.
+
+    ``setdefault``, so anything already exported in the shell wins. A file is a
+    fallback for the machine's defaults, never an override of the person running
+    the command — and it means loading a file can never surprise a caller who
+    set the variable deliberately.
+    """
+    if not path.is_file():
+        return False
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    return True
+
+
+def env_file_candidates() -> list[Path]:
+    """Every ``.env`` an operator could reasonably have edited, most specific first.
+
+    Each workflow keeps one beside its data — that is the file the workspace
+    README tells an operator to put API keys in — and the installation keeps one
+    of its own. All of them are read, because a settings file that is silently
+    ignored is worse than one that is missing: the operator believes the key is
+    configured and only finds out otherwise when the API refuses the request.
+
+    Order matters: :func:`load_env_file` never overwrites, so the first file to
+    name a variable wins.
+    """
+    candidates: list[Path] = [data_root() / workflow / ".env" for workflow in WORKFLOWS]
+    override = _env_path(ENV_CONFIG_DIR)
+    if override is not None:
+        candidates.append(override / ".env")
+    candidates.append(plugin_root() / ".env")
+    return candidates
+
+
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path

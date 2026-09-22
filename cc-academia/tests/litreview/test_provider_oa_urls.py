@@ -1,4 +1,9 @@
-"""Providers must not discard OA PDF links they were already given."""
+"""OpenAlex request URLs must carry what the caller configured.
+
+Two concerns share the file because both are assertions about the URL this
+source builds: OA PDF links it was already handed, and the credentials the
+request is identified by.
+"""
 
 from __future__ import annotations
 
@@ -120,3 +125,84 @@ def test_openalex_batches_recent_corresponding_works(monkeypatch):
     assert source.recent_corresponding_works(["A123", "A456"], year_from=2023) == []
     assert "corresponding_author_ids%3AA123%7CA456" in seen["url"]
     assert "from_publication_date%3A2023-01-01" in seen["url"]
+
+
+# ---------------------------------------------------------------------------
+# OpenAlex credentials
+# ---------------------------------------------------------------------------
+#
+# Anonymous access is metered at 1000 credits/day and a request costs 10, so a
+# single multi-query review exhausts the day. A key raises the daily limit to
+# 10000, and it is invisible when it fails to travel: the API simply starts
+# answering 429.
+
+#: Obviously fake, and it must stay that way: CI runs gitleaks over the tree.
+FAKE_OA_KEY = "TEST-KEY-NOT-A-SECRET"
+
+
+def _capture_url(monkeypatch) -> dict:
+    from academia.sources import openalex as source
+
+    seen: dict = {}
+
+    def get(url, name, **kwargs):
+        seen["url"] = url
+        return {"results": []}
+
+    monkeypatch.setattr(source, "get_json", get)
+    return seen
+
+
+def test_openalex_api_key_is_sent_when_set(monkeypatch):
+    from academia.sources import openalex as source
+
+    # delenv first: the developer's own shell may export the variable, and
+    # pytest inherits it, so this test would otherwise pass for the wrong reason.
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    monkeypatch.setenv("OPENALEX_API_KEY", FAKE_OA_KEY)
+    seen = _capture_url(monkeypatch)
+
+    source.resolve_open_access_pdfs(["10.1/a"])
+
+    assert f"api_key={FAKE_OA_KEY}" in seen["url"]
+
+
+def test_openalex_api_key_is_absent_when_unset(monkeypatch):
+    from academia.sources import openalex as source
+
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    seen = _capture_url(monkeypatch)
+
+    source.resolve_open_access_pdfs(["10.1/a"])
+
+    assert "api_key" not in seen["url"]
+    assert "mailto" in seen["url"], "the polite-pool contact is independent of the key"
+
+
+def test_openalex_api_key_is_read_at_call_time_not_import_time(monkeypatch):
+    """An operator may export the key between two commands in one session."""
+    from academia.sources import openalex as source
+
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    seen = _capture_url(monkeypatch)
+
+    source.resolve_open_access_pdfs(["10.1/a"])
+    assert "api_key" not in seen["url"]
+
+    monkeypatch.setenv("OPENALEX_API_KEY", FAKE_OA_KEY)
+    source.resolve_open_access_pdfs(["10.1/a"])
+    assert f"api_key={FAKE_OA_KEY}" in seen["url"]
+
+
+def test_openalex_search_carries_both_identities(monkeypatch):
+    """The search path is the one that actually spends the budget."""
+    from academia.sources import openalex as source
+
+    monkeypatch.setenv("ACADEMIA_CONTACT", "someone@example.com")
+    monkeypatch.setenv("OPENALEX_API_KEY", FAKE_OA_KEY)
+    seen = _capture_url(monkeypatch)
+
+    source.OpenAlex().search("topology optimization", "Q1")
+
+    assert "mailto=someone%40example.com" in seen["url"]
+    assert f"api_key={FAKE_OA_KEY}" in seen["url"]
