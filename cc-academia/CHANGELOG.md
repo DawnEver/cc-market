@@ -118,6 +118,43 @@ build if they drift.
     fails, not only when it is missing. Installing the `pdf` extra could
     previously make a PDF unreadable that had been readable without it.
 
+- **A query that could not be asked is no longer recorded as a query that found
+  nothing.** Four defects, one shape — a failure reported as an empty result,
+  which in a novelty search is the most expensive misreading available.
+
+  - `run_probe` wrote `"status": "success"` as a literal that no data could
+    contradict. `PaperSource.probe` returns a dead source as a *value*
+    (`failure_reason="http_429"`) rather than raising, so the status has to be
+    derived from the probe, not from having reached the next line; an exception
+    path wrote the integer `0` into the same field. One vocabulary now
+    (`success` / `failed` / `not_probed`), and every artifact carries the reason
+    and the HTTP status.
+  - An account-level failure (401/402/403/429) stops the run and records the
+    remaining queries as `not_probed`, instead of repeating a wall once per
+    query. `ACCOUNT_STATUSES` is a second question beside `TRANSIENT_STATUSES`:
+    a 429 is worth retrying per page and is a wall per run, and reusing the
+    first answer for the second is what made the misreading possible. `probe()`
+    is deliberately still outside `with_retries`, with a comment saying why.
+  - `failure_reasons()` reads the reason back out of the artifact, so it
+    outlives the process that found it; the workflow no longer replaces it with
+    "one or more queries failed (see audit log)" — a message pointing at a file
+    that was written *empty* whenever every query failed.
+  - The research brief's `[constraints]` reach the provider. They never did:
+    the year range was read from the query dict alone, so every date bound in
+    every brief was decoration, and nothing said so. Layering is now
+    `query > queries.toml [constraints] > brief [constraints] > workspace.toml
+    [defaults]`, and options a provider's signature does not name are dropped
+    and **reported** rather than raising `TypeError` — which is what forwarding
+    `content_types` did on three of five sources, booking the crash as a query
+    failure that looked exactly like a query that matched nothing.
+  - New workspaces default to `openalex` rather than a source whose search
+    endpoint answers with front matter whatever it is asked.
+
+  `run_probe`'s artifacts had no test coverage at all, which is how the
+  mislabelling survived; `tests/litreview/test_probe_artifacts.py` and
+  `test_query_kwargs.py` now pin the verdict, the reason, the HTTP status, the
+  exit code and the abort.
+
 ### Added
 
 - **Homepage-or-paper link** on the `decision` sheet and in `shortlist.csv`
@@ -196,6 +233,26 @@ build if they drift.
   split.
 - **literature-review** and **manuscript-review** migrated in, sharing the same
   library, the same PDF ingest and the same store.
+
+- **`OPENALEX_API_KEY`, and the `.env` files that were documented but never
+  read.** Anonymous OpenAlex access is metered at 1000 credits a day and a
+  request costs 10, so about 100 requests — fewer than one multi-query review,
+  after which every call answers 429. A key raises the daily limit to 10000
+  credits (about 1000 requests). `_polite()` became `_identified()`, since it
+  now carries a credential and not only the polite-pool contact, and the
+  fixture recorder calls it rather than composing its own parameter set — a
+  recorder that builds its own request is a fixture of a request the code no
+  longer makes.
+
+  The `.env` half is the part worth naming: the workspace README tells an
+  operator where to put API keys, and **nothing on the search path read that
+  file**. Only the Zotero and AI helpers loaded one, and they looked under the
+  plugin root, which in an installed plugin holds no `.env` at all. So an
+  operator could set a key in the documented place and be told by the API it was
+  missing. Every console script now reads the applicable files at startup, from
+  the one place all of them pass through, so a new script cannot forget to;
+  `os.environ.setdefault` means the shell still wins. `academia doctor` reports
+  whether the key is present.
 
 ### Changed
 

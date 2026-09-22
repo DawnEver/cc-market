@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -228,7 +228,10 @@ def evaluate_queries(
                 samples.get(query_id, ""),
                 _norm(probe.get("first_titles", [])),
             ]).strip(),
-            "failure_reason": failure,
+            # Empty string, not None: TOML has no null, so a null round-trips
+            # into the artifact as the *string* "null" — which is truthy, and
+            # would read as a failure to anything that checks it.
+            "failure_reason": failure or "",
         })
 
     # Write outputs
@@ -236,8 +239,18 @@ def evaluate_queries(
     _write_evaluation_md(out_dir, evaluations, min_total, max_total)
     _write_evaluation_artifact(out_dir, evaluations, min_total, max_total, plan)
 
-    blocked = sum(1 for e in evaluations if not e["eligible_for_full_search"])
-    print(f"evaluated={len(evaluations)}; blocked_from_full_search={blocked}")
+    # Report the reasons separately. The old line called everything ineligible
+    # "blocked", so a set of merely broad queries read as forty dead ones — and
+    # "blocked" is the word that means the source refused us, which is the one
+    # thing a reader must not confuse with a query that needs narrowing.
+    counts = Counter(e["classification"] for e in evaluations)
+    print(
+        f"evaluated={len(evaluations)}"
+        f"; good={counts['good']}"
+        f"; too_broad={counts['too_broad']}"
+        f"; too_narrow={counts['too_narrow']}"
+        f"; blocked={counts['blocked']}"
+    )
     return 0
 
 
