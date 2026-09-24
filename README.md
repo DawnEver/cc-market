@@ -1,5 +1,7 @@
 # cc-market
 
+The original code and documentation in this repository are licensed under MIT (see `LICENSE`). Separately obtained third-party tools and dependencies retain their own licences.
+
 A community marketplace of plugins for **both Claude Code and Codex**.
 
 Plugins are authored once against the Claude Code format (the source of truth) and the Codex
