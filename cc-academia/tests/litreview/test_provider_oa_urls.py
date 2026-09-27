@@ -171,6 +171,7 @@ def test_openalex_api_key_is_absent_when_unset(monkeypatch):
     from academia.sources import openalex as source
 
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    monkeypatch.setenv("ACADEMIA_CONTACT", "someone@example.com")
     seen = _capture_url(monkeypatch)
 
     source.resolve_open_access_pdfs(["10.1/a"])

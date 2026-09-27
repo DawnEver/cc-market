@@ -136,7 +136,7 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
   throw new Error(`anthropic-http: retries exhausted${lastError ? `: ${lastError.message}` : ""}`);
 }
 
-// Read an SSE body with an idle watchdog: each reader.read() races an unref'd
+// Read an SSE body with an idle watchdog: each reader.read() races a live
 // timer (reset per chunk) so a server that stalls mid-stream can't hang the
 // call forever, plus an optional caller abort signal. On stall/abort the
 // reader is cancelled and a descriptive error thrown — callAnthropicAPI's
@@ -160,7 +160,9 @@ export async function parseSSEStream(body, { idleTimeoutMs = 300000, signal = nu
       cleanup();
       reject(new Error(`SSE stream stalled after ${idleTimeoutMs}ms`));
     }, idleTimeoutMs);
-    timerId.unref?.();
+    // Keep this timer referenced: a pending stream read may be the process's
+    // only active handle, and exiting before the watchdog rejects loses the
+    // fallback/error path entirely.
     if (signal) {
       onAbort = () => { cleanup(); reject(new Error("Request aborted during SSE stream")); };
       if (signal.aborted) return onAbort();
