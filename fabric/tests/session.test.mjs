@@ -316,7 +316,7 @@ test('a write session spawns resolveClaudeExe(), not a .cmd shim', async () => {
   const { openProviderSession } = await import('../engine/session.mjs');
   const { resolveClaudeExe } = await import('../engine/spawn-child.mjs');
   const rec = { spawns: 0 };
-  const s = await openProviderSession({ provider: 'deepseek', write: true, _spawn: makeStreamJsonSpawn(rec) });
+  const s = await openProviderSession({ provider: 'claude', write: true, _spawn: makeStreamJsonSpawn(rec) });
   await s.send('hi');
   await s.close();
   assert.equal(rec.bin, resolveClaudeExe());
@@ -328,7 +328,7 @@ test('a write session spawns resolveClaudeExe(), not a .cmd shim', async () => {
 test('write sessions are persistent: one spawn for many turns, no prompt in argv', async () => {
   const { openProviderSession } = await import('../engine/session.mjs');
   const rec = { spawns: 0 };
-  const s = await openProviderSession({ provider: 'deepseek', write: true, _spawn: makeStreamJsonSpawn(rec) });
+  const s = await openProviderSession({ provider: 'claude', write: true, _spawn: makeStreamJsonSpawn(rec) });
   const t1 = await s.send('first');
   const t2 = await s.send('second');
   assert.equal(t1.text, 'ok1');
@@ -345,7 +345,7 @@ test('a profiled write session uses the profile policy, never bypassPermissions'
   const { openProviderSession } = await import('../engine/session.mjs');
   const rec = { spawns: 0 };
   const s = await openProviderSession({
-    provider: 'deepseek', write: true, _spawn: makeStreamJsonSpawn(rec),
+    provider: 'claude', write: true, _spawn: makeStreamJsonSpawn(rec),
     profile: { allowedTools: 'Read,Grep' },
   });
   assert.equal(lastFlag(rec.args, '--allowedTools'), 'Read,Grep');
@@ -415,7 +415,7 @@ test('registry records cwd; attachSession registers a remote handle', async () =
   assert.equal(listSessions()[0].nativeId, 'n1');
   await closeSession(d.id);
   const fakeAttach = async () => ({ id: 'remote-9', send: async (t) => ({ text: `r:${t}`, turn: 1 }), close: async () => 0 });
-  const a = await attachSession({ node: 'WS1', remoteId: 'remote-9' }, fakeAttach);
+  const a = await attachSession({ node: { host: 'WS1', port: 1, token: 'test' }, remoteId: 'remote-9' }, fakeAttach);
   assert.equal((await sendToSession(a.id, 'ping')).text, 'r:ping');
   assert.equal(listSessions()[0].node, 'WS1');
   await closeSession(a.id);
@@ -433,7 +433,8 @@ test('attachSession pulls the remote identity; a peer on old code degrades to nu
       cwd: 'D:/motronics-studio', turns: 12, pid: 42, usage: { context_tokens: 100 }, compacted: 1 }),
     send: async () => ({ text: 'x', turn: 1 }), close: async () => 0,
   });
-  const a = await attachSession({ node: 'WS1', remoteId: 'peer-sess-1' }, richAttach);
+  const node = { host: 'WS1', port: 1, token: 'test' };
+  const a = await attachSession({ node, remoteId: 'peer-sess-1' }, richAttach);
   const row = listSessions().find((s) => s.id === a.id);
   assert.equal(row.model, 'deepseek-v4-flash[1m]');
   assert.equal(row.effort, 'max');
@@ -447,7 +448,7 @@ test('attachSession pulls the remote identity; a peer on old code degrades to nu
 
   // A handle with no view() (older peer) → identity stays null, never fabricated.
   const blindAttach = async () => ({ id: 'peer-sess-2', send: async () => ({ text: 'x', turn: 1 }), close: async () => 0 });
-  const b = await attachSession({ node: 'WS1', remoteId: 'peer-sess-2' }, blindAttach);
+  const b = await attachSession({ node, remoteId: 'peer-sess-2' }, blindAttach);
   const brow = listSessions().find((s) => s.id === b.id);
   assert.equal(brow.model, null);
   assert.equal(brow.project, null);
@@ -461,7 +462,7 @@ test('an un-pinged attached handle reports alive:null, not dead', async () => {
   const { listSessions, attachSession, closeSession, _resetRegistry } = await import('../engine/session.mjs');
   _resetRegistry();
   const attach = async () => ({ id: 'r1', send: async () => ({ text: 'x', turn: 1 }), close: async () => 0 });
-  const a = await attachSession({ node: 'WS1', remoteId: 'r1' }, attach);
+  const a = await attachSession({ node: { host: 'WS1', port: 1, token: 'test' }, remoteId: 'r1' }, attach);
   const row = listSessions().find((s) => s.id === a.id);
   assert.equal(row.alive, null, 'never pinged → unknown, NOT dead');
   await closeSession(a.id);
@@ -488,7 +489,7 @@ test('attached sessions refresh turns/usage/alive from the peer on a cadence', a
     };
     return handle;
   };
-  const a = await attachSession({ node: 'WS1', remoteId: 'r1' }, attach);
+  const a = await attachSession({ node: { host: 'WS1', port: 1, token: 'test' }, remoteId: 'r1' }, attach);
   assert.equal(listSessions().find((s) => s.id === a.id).turns, 0, 'attach-time snapshot first');
   await new Promise((r) => setTimeout(r, 70)); // let a few 20ms ticks land
   const row = listSessions().find((s) => s.id === a.id);
