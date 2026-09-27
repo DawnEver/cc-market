@@ -426,7 +426,8 @@ while ($true) {
         resolve({ text: last, turn: turnCount, turns: results.length, state });
       };
       hard = setTimeout(() => finish('timeout'), timeoutMs);
-      hard.unref?.();
+      // goalRun() is awaited; keep its hard deadline alive even when a test
+      // double or dead child exposes no process/socket handle.
       const instruct = (body) =>
         `${body}\n\nWork autonomously toward the goal: ${goalCondition}. Do not pause to ask for confirmation. When the goal is complete, end your final reply with exactly the marker ${GOAL_MARKER}.`;
       const attempt = (i) => {

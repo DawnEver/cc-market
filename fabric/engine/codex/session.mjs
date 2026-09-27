@@ -81,7 +81,8 @@ export async function openCodexSession(opts = {}) {
       client.onNotification("context_compacted", onCompacted);
       client.onNotification("item/completed", onItem);
       timer = setTimeout(() => finish(resolve, { compacted: true, confirmed: false }), compactConfirmTimeoutMs);
-      timer.unref?.();
+      // compact() is an awaited operation; its honest unconfirmed result must
+      // still be delivered when the client exposes no other active handles.
       client.send("thread/compact/start", { threadId }).catch((e) => { finish(reject, e); });
     });
     chain = chain.then(run, run);
