@@ -90,7 +90,7 @@ After installation, `/rem` is available as a slash command. It triggers automati
 
 Three-tier memory system (rules / long-term / short-term) and promotion rules → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
 
-Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading — the SessionStart/PostCompact `list --hook` surfaces what is still valid right after a compaction dropped the excerpts. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
+Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading — the SessionStart/PostCompact `list --hook` surfaces what is still valid right after a compaction dropped the excerpts. On Codex, SessionStart emits structured JSON (or stays silent when empty); PostCompact emits empty JSON because Codex does not accept session-start context for that event. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
 
 ## Skills
 

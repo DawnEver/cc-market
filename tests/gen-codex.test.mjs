@@ -86,6 +86,7 @@ test('transpileMcpManifest makes plugin-root paths Codex-local without touching 
       takeover: {
         command: 'node',
         args: [
+          '${CLAUDE_PLUGIN_ROOT}',
           '${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs',
           '${PLUGIN_ROOT}\\bin\\helper.mjs',
           'C:\\Tools\\node\\node.exe',
@@ -98,6 +99,7 @@ test('transpileMcpManifest makes plugin-root paths Codex-local without touching 
       takeover: {
         command: 'node',
         args: [
+          '.',
           './scripts/mcp-server.mjs',
           './bin/helper.mjs',
           'C:\\Tools\\node\\node.exe',
@@ -149,6 +151,11 @@ test('generate writes manifests + marketplace and is idempotent', () => {
   const rerun = readFileSync(join(root, 'takeover', '.codex-plugin', 'plugin.json'), 'utf8');
   assert.equal(before, rerun, 'generate must be idempotent');
   assert.ok(r1.written.length >= 2);
+
+  rmSync(join(root, 'takeover', '.mcp.json'));
+  generate(root);
+  assert.equal(existsSync(join(root, 'takeover', '.codex-plugin', 'mcp.json')), false,
+    'removing the Claude MCP source must remove the stale generated Codex artifact');
 });
 
 test('buildInterface falls back to a non-empty defaultPrompt when overrides clamp to empty', () => {
@@ -173,16 +180,16 @@ test('unsupportedHookEvents flags Codex-incompatible hook events', () => {
   assert.deepEqual(unsupportedHookEvents(mkTmp('gcnohooks-')), []);
 });
 
-test('unsupportedHookEvents tolerates malformed hooks.json (non-object .hooks / bad JSON)', () => {
+test('unsupportedHookEvents rejects malformed hooks.json (non-object .hooks / bad JSON)', () => {
   for (const bad of ['{"hooks":"oops"}', '{"hooks":[1,2]}', '{"hooks":123}', 'not json', '{}']) {
     const dir = mkTmp('gcbad-');
     mkdirSync(join(dir, 'hooks'), { recursive: true });
     writeFileSync(join(dir, 'hooks', 'hooks.json'), bad);
-    assert.deepEqual(unsupportedHookEvents(dir), [], `should no-op for: ${bad}`);
+    assert.throws(() => unsupportedHookEvents(dir), /invalid JSON|must be an object/);
   }
 });
 
-test('generate collects hook-compat warnings without failing', () => {
+test('generate requires an explicit allowlist for unsupported hooks and warns when declared', () => {
   const root = mkTmp('gcwarn-');
   mkdirSync(join(root, '.claude-plugin'), { recursive: true });
   writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({
@@ -194,20 +201,39 @@ test('generate collects hook-compat warnings without failing', () => {
   }));
   mkdirSync(join(root, 'w', 'hooks'), { recursive: true });
   writeFileSync(join(root, 'w', 'hooks', 'hooks.json'), JSON.stringify({ hooks: { Notification: [], Stop: [] } }));
+  assert.throws(() => generate(root), /undeclared: Notification/);
+  const market = JSON.parse(readFileSync(join(root, '.claude-plugin', 'marketplace.json'), 'utf8'));
+  market.plugins[0].codexUnsupportedHooks = ['Notification'];
+  writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify(market));
   const { warnings } = generate(root);
   assert.ok(warnings.some((m) => m.includes('Notification') && m.includes('w')));
 });
 
-test('generate silently skips marketplace entries with no .claude-plugin/plugin.json', () => {
+test('generate rejects marketplace entries with no .claude-plugin/plugin.json', () => {
   const root = mkTmp('gcskip-');
   mkdirSync(join(root, '.claude-plugin'), { recursive: true });
   writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({
     name: 'cc-market', plugins: [{ name: 'ghost', category: 'productivity' }], // no plugin dir on disk
   }));
-  const { written } = generate(root);
+  assert.throws(() => generate(root), /ghost: marketplace entry has no/);
   assert.ok(!existsSync(join(root, 'ghost', '.codex-plugin', 'plugin.json')), 'no manifest for missing plugin');
-  // The marketplace is still emitted even when every entry is skipped.
-  assert.ok(written.some((p) => p.endsWith(join('.agents', 'plugins', 'marketplace.json'))));
+});
+
+test('generate rejects duplicated marketplace versions and manifest-name drift', () => {
+  const root = mkTmp('gcidentity-');
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  mkdirSync(join(root, 'p', '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, 'p', '.claude-plugin', 'plugin.json'), JSON.stringify({
+    name: 'wrong', version: '1.0.0', description: 'd', author: { name: 'x' },
+  }));
+  writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), JSON.stringify({
+    name: 'm', plugins: [{ name: 'p', version: '0.9.0' }],
+  }));
+  assert.throws(() => generate(root), /manifest name/);
+  const manifest = JSON.parse(readFileSync(join(root, 'p', '.claude-plugin', 'plugin.json')));
+  manifest.name = 'p';
+  writeFileSync(join(root, 'p', '.claude-plugin', 'plugin.json'), JSON.stringify(manifest));
+  assert.throws(() => generate(root), /must not duplicate manifest version/);
 });
 
 test('generate excludes codex:false plugins and removes stale Codex artifacts', () => {

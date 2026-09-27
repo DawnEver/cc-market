@@ -23,7 +23,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |
 | [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript review, citation and contact discovery |
 
-Each plugin has its own `AGENTS.md` and `.claude/rules/invariants.md` for progressive disclosure. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
+Each plugin has its own `AGENTS.md`; plugin-specific `.claude/rules/` are optional. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
 ## Tests & Git Hooks
 The pre-commit hook (`scripts/git-hooks/pre-commit`, wired via `core.hooksPath`) runs **only
@@ -48,25 +48,21 @@ the three files under `tests/`, so "run every JS suite manually" did not.
 
 See each plugin's AGENTS.md § Testing for per-suite coverage.
 
-**Not wired to anything: `cc-academia/tests/**`.** It holds ~36 pytest files and a
-`pyproject.toml` pytest config, and its own AGENTS.md documents a test policy — but no hook or
-documented command reaches them, and the pre-commit hook's Python block is hardcoded to
-`watch/tests/`. Wiring them in is not a one-liner: unlike `watch` (stdlib `unittest`, no
-dependencies) cc-academia needs its `.venv` populated, so a broken venv would block every
-commit that touches the plugin. Left as a known gap rather than fixed in passing; the plugin is
-dormant in this fleet, so nothing depends on it today.
+`cc-academia/tests/**` runs in its dedicated GitHub Actions workflow with the uv-managed
+environment. It is intentionally not run by the lightweight local pre-commit hook: unlike
+`watch` (stdlib `unittest`, no dependencies), academia needs its full Python environment.
 
 Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised
 by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`fabric`,
 `rem`, `sharp-review`, `evolve`) into the real `~/.codex`, then probes hooks, `.claude/rules`
-injection, MCP exposure, and skill ingestion. `fabric` is also Codex-capable (consumed via its
-MCP server) but is not yet covered by the e2e script.
+injection, MCP exposure, and skill ingestion. `watch`, `cc-latex`, and Claude-only plugins are
+not yet covered by that live test.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
 ### `shared/` is bundled only into plugins that import it
 
-`scripts/git-hooks/pre-push` and `tests/bundle-integrity.test.mjs` used to disagree:
+`scripts/release.sh` and `tests/bundle-integrity.test.mjs` used to disagree:
 the bundler copied `shared/` into **every** plugin with a `.claude-plugin/plugin.json`,
 while the test only verified the plugins whose code actually imports it (`usesShared()`).
 A plugin on the wrong side of that gap carried `.mjs` files that nothing read and that
@@ -95,13 +91,23 @@ The root repo's `/migrate` skill (`node ~/.claude/skills/migrate/migrate.js`, or
 ## Adding a Plugin
 
 1. Create `<plugin-name>/` with `.claude-plugin/plugin.json` (include a `"version"` field)
-2. Add `AGENTS.md`, `CLAUDE.md`, and `.claude/rules/` for progressive disclosure
+2. Add `AGENTS.md` and `CLAUDE.md`; add `.claude/rules/` only when the plugin needs project rules
 3. Add `README.md` for user-facing install/usage docs
 4. Add tests in `<plugin-name>/tests/` using `node:test`
 5. Add entry to `.claude-plugin/marketplace.json`
 6. Update this file's plugin table
+7. Declare `codex: false` when the host cannot preserve the plugin's security contract; for an
+   intentional unsupported hook degradation, list the exact events in `codexUnsupportedHooks`
+8. Update the README host-support table and install examples, and ensure CI/pre-commit maps the tests
 
-Versioning is automatic: the `pre-push` hook (`scripts/git-hooks/pre-push`, wired via `core.hooksPath`) bumps the patch version of **every changed plugin's** `plugin.json` plus the marketplace manifest on each push, then **regenerates the Codex artifacts** (`node scripts/gen-codex.mjs .`) so `.codex-plugin/` stays in version-lockstep with `.claude-plugin/`, amends the commit, and tags the release. No per-plugin bump script needed, and no manual `gen-codex` run is required before push. Both settings this depends on — `core.hooksPath` and `push.followTags` — live in per-clone `.git/config`, so a fresh clone has neither: run `bash scripts/setup.sh` once (the cc-config `setup.js` also applies both on every run). Without `core.hooksPath` nothing bumps or tags; without `push.followTags` the tag stays local and the installed marketplace clone never sees the release. The generated `.codex-plugin/`/`.agents/` files are committed artifacts — never hand-edit them (regenerate via `gen-codex.mjs`); override the synthesized Codex `interface` via an optional `codexInterface` block in a plugin's `.claude-plugin/plugin.json`.
+Releases are explicit and fail closed: run `bash scripts/release.sh` from a clean tree. It
+detects changed plugins, bundles shared code, bumps their Claude manifests and the marketplace,
+regenerates Codex artifacts, runs the full JS suite, then creates a release commit and annotated
+tag. Review them and push normally; `push.followTags=true` publishes the tag. The read-only
+pre-push hook rejects untagged plugin changes but never amends history. Run `bash scripts/setup.sh`
+once per clone (the parent cc-config setup also does this) to install the relative hooks path and
+`push.followTags`. Generated `.codex-plugin/` and `.agents/` files are committed artifacts; never
+hand-edit them. Use `codexInterface` in the Claude manifest for interface overrides.
 
 ## Standard
 

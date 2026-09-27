@@ -12,7 +12,7 @@ fi
 # core.hooksPath MUST stay relative. This repo is synced (e.g. via OneDrive) across
 # machines with different user dirs, and the value lives in per-clone .git/config — an
 # absolute path points at one machine's path and silently disables all hooks on the others
-# (no pre-commit tests, no pre-push version bump/tag). Detect drift and reset, idempotently.
+# (no pre-commit tests or read-only pre-push release guard). Detect drift and reset.
 CURRENT="$(git config --get core.hooksPath || true)"
 
 case "$CURRENT" in
@@ -29,9 +29,7 @@ case "$CURRENT" in
     ;;
 esac
 
-# A tag the pre-push hook creates is local-only unless git is told to push it. Without this,
-# releases are bumped and tagged here but the remote — and every installed marketplace clone
-# that pulls from it — stays on the last manually pushed tag.
+# Explicit releases create a local tag; publish it with the following ordinary push.
 if [ "$(git config --get push.followTags || true)" != "true" ]; then
   git config push.followTags true
   echo "cc-market: push.followTags enabled (tags now ship with git push)"

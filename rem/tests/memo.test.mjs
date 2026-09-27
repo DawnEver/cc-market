@@ -146,6 +146,30 @@ describe("cli", () => {
     assert.match(run(["list"]).stdout, /band\s+STALE \(1 source\(s\) moved\)/);
   });
 
+  test("Codex hook listing emits valid SessionStart JSON, never bracket-prefixed prose", () => {
+    const codexEnv = { ...process.env, CLAUDE_PROJECT_DIR: repo, CODEX_HOME: path.join(repo, ".codex") };
+    const empty = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
+      cwd: repo, encoding: "utf8", env: codexEnv,
+    });
+    assert.equal(empty.status, 0);
+    assert.equal(empty.stdout, "");
+    writeFile("src.py", "l1\n");
+    run(["save", "band", "--file", "src.py"]);
+    const listed = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: codexEnv,
+    });
+    assert.equal(listed.status, 0);
+    const output = JSON.parse(listed.stdout);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
+    assert.match(output.hookSpecificOutput.additionalContext, /band\s+FRESH/);
+    const compact = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
+      cwd: repo, encoding: "utf8", env: codexEnv, input: '{"hook_event_name":"PostCompact"}',
+    });
+    assert.deepEqual(JSON.parse(compact.stdout), {});
+  });
+
   test("get of an unknown memo exits 1", () => {
     const get = run(["get", "ghost"]);
     assert.equal(get.status, 1);

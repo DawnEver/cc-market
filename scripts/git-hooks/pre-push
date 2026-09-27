@@ -1,130 +1,41 @@
 #!/usr/bin/env bash
-# Pre-push: auto-bump the patch version of every changed plugin's plugin.json,
-# then bump the marketplace manifest, amend the commit, and tag the release.
-set -e
+# Read-only release guard. A push hook must never rewrite history or create tags.
+set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-
-# Already on a tagged release? Nothing to do.
-if git describe --exact-match HEAD 2>/dev/null; then
-  exit 0
-fi
-
-bump_json() { # $1 = path to a JSON file with a semver "version" field
-  node -e "
-    var fs=require('fs'),p=process.argv[1];
-    var pkg=JSON.parse(fs.readFileSync(p,'utf8'));
-    var v=pkg.version.split('.').map(Number);
-    pkg.version=[v[0],v[1],v[2]+1].join('.');
-    fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');
-    process.stdout.write(pkg.version);
-  " "$1"
-}
-
-# Does this plugin's own code import from shared/? Mirrors usesShared() in
-# tests/bundle-integrity.test.mjs on purpose: the two used to disagree, and the gap was
-# invisible. Bundling into a plugin that never imports shared/ leaves .mjs files that
-# nothing reads AND that the integrity test excludes from verification — dead weight, and
-# the one place a shared-helper change could land unchecked.
-uses_shared() { # $1 = plugin name
-  grep -rqE "from[[:space:]]+['\"][^'\"]*shared/[^'\"]+['\"]" \
-    --include='*.mjs' --include='*.js' \
-    --exclude-dir=tests --exclude-dir=shared --exclude-dir=node_modules \
-    "$REPO_ROOT/$1" 2>/dev/null
-}
-
-bundle_shared() { # $1 = plugin name
-  local src="$REPO_ROOT/shared"
-  local dest="$REPO_ROOT/$1/shared"
-  [ -d "$src" ] || return 0
-
-  if ! uses_shared "$1"; then
-    # Clean up a copy an older bundler left behind, so the plugin converges rather than
-    # keeping stale files forever.
-    if [ -d "$dest" ]; then
-      git -C "$REPO_ROOT" rm -rq --ignore-unmatch "$dest"
-      echo "pre-push: $1 does not import shared/ — removed its stale bundled copy" >&2
-    fi
-    return 0
-  fi
-
-  # Atomic: copy to tmp first, then replace — avoids empty dest if cp fails
-  # Recursive (shared/codex/ etc.), excluding shared/tests/
-  tmp="$(mktemp -d)"
-  if ! (cd "$src" && find . -name tests -prune -o -name '*.mjs' -print0 \
-        | tar --null -T - -cf - | tar -C "$tmp" -xf -); then
-    rm -rf "$tmp"
-    echo "pre-push: bundle_shared failed for $1 — no .mjs files in shared/" >&2
-    return 1
-  fi
-  rm -rf "$dest"
-  mv "$tmp" "$dest"
-  git -C "$REPO_ROOT" add "$dest"
-  echo "pre-push: bundled shared → $1/shared/" >&2
-}
-
-CHANGED=""
-SHARED_CHANGED=0
+need_release=0
+remote_name="${1:-origin}"
 while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
-
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-    # New branch — always re-bundle; can't reliably compute range from root
-    SHARED_CHANGED=1
-    range="$(git rev-list --max-parents=0 "$local_sha" 2>/dev/null || echo "")..$local_sha"
-  else
-    range="$remote_sha..$local_sha"
-  fi
-
-  # If shared/ itself changed, all plugins need re-bundling
-  if [ -n "$(git diff --name-only "$range" -- "shared/")" ]; then
-    SHARED_CHANGED=1
-  fi
-
-  for plugin_dir in "$REPO_ROOT"/*/; do
-    name="$(basename "$plugin_dir")"
-    [ -f "$plugin_dir/.claude-plugin/plugin.json" ] || continue
-    if [ -n "$(git diff --name-only "$range" -- "$name/")" ]; then
-      CHANGED="$CHANGED$name"$'\n'
+    remote_default="refs/remotes/$remote_name/main"
+    if git rev-parse --verify "$remote_default" >/dev/null 2>&1; then
+      base="$(git merge-base "$local_sha" "$remote_default")"
+    else
+      base="$(git hash-object -t tree /dev/null)"
     fi
-  done
+  else
+    base="$remote_sha"
+  fi
+  changed="$(git diff --name-only "$base..$local_sha")"
+  releasable=0
+  printf '%s\n' "$changed" | grep -q '^shared/' && releasable=1 || true
+  while IFS= read -r path; do
+    top="${path%%/*}"
+    [ "$top" != "$path" ] || continue
+    if git cat-file -e "$local_sha:$top/.claude-plugin/plugin.json" 2>/dev/null; then
+      releasable=1
+      break
+    fi
+  done <<< "$changed"
+  if [ "$releasable" -eq 1 ]; then
+    version="$(git show "$local_sha:.claude-plugin/marketplace.json" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).version))" 2>/dev/null || true)"
+    [ -n "$version" ] && git tag --points-at "$local_sha" | grep -Fxq "v$version" || need_release=1
+  fi
 done
 
-# If shared/ changed, mark all plugins as changed so they get re-bundled + re-versioned
-if [ "$SHARED_CHANGED" = "1" ]; then
-  for plugin_dir in "$REPO_ROOT"/*/; do
-    name="$(basename "$plugin_dir")"
-    [ -f "$plugin_dir/.claude-plugin/plugin.json" ] || continue
-    CHANGED="$CHANGED$name"$'\n'
-  done
+if [ "$need_release" -eq 1 ]; then
+  echo "pre-push: releasable plugin changes are not tagged." >&2
+  echo "Run 'bash scripts/release.sh', review its release commit, then push again." >&2
+  exit 1
 fi
-
-CHANGED="$(printf '%s' "$CHANGED" | sort -u | sed '/^$/d')"
-[ -z "$CHANGED" ] && exit 0
-
-# Bundle shared into each changed plugin, then bump version
-while IFS= read -r name; do
-  [ -z "$name" ] && continue
-  bundle_shared "$name"
-  pj="$REPO_ROOT/$name/.claude-plugin/plugin.json"
-  nv="$(bump_json "$pj")"
-  git -C "$REPO_ROOT" add "$pj"
-  echo "pre-push: $name v${nv}" >&2
-done <<< "$CHANGED"
-
-mv="$(bump_json "$REPO_ROOT/.claude-plugin/marketplace.json")"
-git -C "$REPO_ROOT" add "$REPO_ROOT/.claude-plugin/marketplace.json"
-
-# Regenerate Codex artifacts from the freshly-bumped Claude sources so .codex-plugin/ versions
-# stay in lockstep with .claude-plugin/ (otherwise the two manifests drift on every release).
-if [ -f "$REPO_ROOT/scripts/gen-codex.mjs" ]; then
-  node "$REPO_ROOT/scripts/gen-codex.mjs" "$REPO_ROOT" >/dev/null
-  git -C "$REPO_ROOT" add "$REPO_ROOT"/*/.codex-plugin/plugin.json "$REPO_ROOT/.agents/plugins/marketplace.json"
-  echo "pre-push: regenerated Codex artifacts" >&2
-fi
-
-git commit --amend --no-edit --no-verify -q
-git tag -a "v${mv}" -m "Release v${mv}"
-echo "pre-push: marketplace v${mv} tagged" >&2
-
-exit 0

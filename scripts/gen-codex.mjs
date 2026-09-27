@@ -35,9 +35,11 @@ export function unsupportedHookEvents(pluginDir) {
   if (!existsSync(hooksPath)) return [];
   let hooks;
   try { hooks = JSON.parse(readFileSync(hooksPath, 'utf8')).hooks; }
-  catch { return []; }
+  catch (error) { throw new Error(`${hooksPath}: invalid JSON: ${error.message}`); }
   // Only a plain object maps event names → handlers; a string/array/number is malformed.
-  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) return [];
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) {
+    throw new Error(`${hooksPath}: "hooks" must be an object`);
+  }
   return Object.keys(hooks).filter((e) => !CODEX_HOOK_EVENTS.has(e));
 }
 
@@ -101,6 +103,8 @@ export function transpileManifest(manifest, { marketEntry = {}, pluginDir = null
 }
 
 function normalizePluginRootPath(value) {
+  const pluginRoot = /^\$\{(?:CLAUDE_)?PLUGIN_ROOT\}$/;
+  if (pluginRoot.test(value)) return '.';
   const pluginRootPrefix = /^\$\{(?:CLAUDE_)?PLUGIN_ROOT\}[\\/]/;
   if (!pluginRootPrefix.test(value)) return value;
   return `./${value.replace(pluginRootPrefix, '').replaceAll('\\', '/')}`;
@@ -171,14 +175,22 @@ export function generate(repoRoot, { write = true } = {}) {
 
   for (const entry of market.plugins) {
     const pluginDir = join(repoRoot, entry.name);
+    const srcManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
+    if (!existsSync(srcManifestPath)) {
+      throw new Error(`${entry.name}: marketplace entry has no .claude-plugin/plugin.json`);
+    }
+    const manifest = readJSON(srcManifestPath);
+    if (manifest.name !== entry.name) {
+      throw new Error(`${entry.name}: manifest name is ${JSON.stringify(manifest.name)}`);
+    }
+    if (entry.version !== undefined) {
+      throw new Error(`${entry.name}: marketplace entries must not duplicate manifest version`);
+    }
     if (!isCodexSupported(entry)) {
       if (write) rmSync(join(pluginDir, '.codex-plugin'), { recursive: true, force: true });
       warnings.push(`${entry.name}: skipped Codex artifacts because marketplace entry has codex:false`);
       continue;
     }
-    const srcManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
-    if (!existsSync(srcManifestPath)) continue;
-    const manifest = readJSON(srcManifestPath);
     const codexManifest = transpileManifest(manifest, { marketEntry: entry, pluginDir });
     const dest = join(pluginDir, '.codex-plugin', 'plugin.json');
     if (write) writeJSON(dest, codexManifest);
@@ -189,11 +201,23 @@ export function generate(repoRoot, { write = true } = {}) {
       const mcpDest = join(pluginDir, '.codex-plugin', 'mcp.json');
       if (write) writeJSON(mcpDest, transpileMcpManifest(readJSON(srcMcpPath)));
       written.push(mcpDest);
+    } else if (write) {
+      rmSync(join(pluginDir, '.codex-plugin', 'mcp.json'), { force: true });
     }
 
     const badEvents = unsupportedHookEvents(pluginDir);
+    const allowedBadEvents = entry.codexUnsupportedHooks || [];
+    if (!Array.isArray(allowedBadEvents) || allowedBadEvents.some((event) => typeof event !== 'string')) {
+      throw new Error(`${entry.name}: codexUnsupportedHooks must be an array of event names`);
+    }
+    const undeclared = badEvents.filter((event) => !allowedBadEvents.includes(event));
+    const stale = allowedBadEvents.filter((event) => !badEvents.includes(event));
+    if (undeclared.length || stale.length) {
+      throw new Error(`${entry.name}: Codex hook compatibility declaration is out of sync (` +
+        `undeclared: ${undeclared.join(', ') || 'none'}; stale: ${stale.join(', ') || 'none'})`);
+    }
     if (badEvents.length) {
-      warnings.push(`${entry.name}: hook event(s) ${badEvents.join(', ')} are not supported on Codex and will not fire`);
+      warnings.push(`${entry.name}: explicitly allowed Codex degradation: hook event(s) ${badEvents.join(', ')} will not fire`);
     }
   }
 

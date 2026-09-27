@@ -1,8 +1,6 @@
 ---
 name: workbook
 description: The reviewer-discovery deliverable workbook, and the two eligibility rules it forced into the policy
-tier: short
-created: 2026-09-01
 metadata:
   type: project
 ---

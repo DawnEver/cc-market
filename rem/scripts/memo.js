@@ -31,6 +31,7 @@ import { join, resolve } from 'path';
 import { atomicWriteFile } from '../shared/stamp.mjs';
 import { findMemoryScope, isInsideDir } from './lib.mjs';
 import { isMain } from "../shared/lib.mjs";
+import { isCodexHost } from './inject-rules.js';
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -48,7 +49,7 @@ export function storeDir(scopeRoot = findMemoryScope()) {
  *  produces false STALEs. */
 export function blobHash(path) {
   if (!existsSync(path)) return null;
-  const out = spawnSync(GIT, ['hash-object', '--', path], { encoding: 'utf8' });
+  const out = spawnSync(GIT, ['hash-object', '--', path], { encoding: 'utf8', windowsHide: true });
   if (out.status !== 0) return null;
   return out.stdout.trim() || null;
 }
@@ -170,25 +171,45 @@ function cmdGet(name, rest) {
   return changed.length && !refresh ? 2 : 0;
 }
 
-function cmdList() {
+function hookEventName() {
+  try {
+    const input = JSON.parse(readFileSync(0, 'utf8'));
+    return input.hook_event_name || input.hookEventName || 'SessionStart';
+  } catch {
+    return 'SessionStart';
+  }
+}
+
+function cmdList({ hook = false } = {}) {
+  // PostCompact accepts common JSON fields but not SessionStart-specific context.
+  if (hook && isCodexHost() && hookEventName() === 'PostCompact') {
+    process.stdout.write('{}');
+    return 0;
+  }
   const store = storeDir();
   if (!existsSync(store)) {
-    console.log('[memo] nothing saved');
+    if (!hook || !isCodexHost()) console.log('[memo] nothing saved');
     return 0;
   }
   const files = readdirSync(store).filter((f) => f.endsWith('.json')).sort();
   if (!files.length) {
-    console.log('[memo] nothing saved');
+    if (!hook || !isCodexHost()) console.log('[memo] nothing saved');
     return 0;
   }
+  const lines = [];
   for (const f of files) {
     const memo = JSON.parse(readFileSync(join(store, f), 'utf8'));
     const changed = drift(memo);
     const age = (Date.now() / 1000 - (memo.saved_at || 0)) / 60;
     const state = changed.length ? `STALE (${changed.length} source(s) moved)` : 'FRESH';
-    console.log(
-      `${memo.name.padEnd(24)} ${state.padEnd(28)} ${String(Math.round(age)).padStart(6)} min  ${memo.value.length} chars`,
-    );
+    lines.push(`${memo.name.padEnd(24)} ${state.padEnd(28)} ${String(Math.round(age)).padStart(6)} min  ${memo.value.length} chars`);
+  }
+  if (hook && isCodexHost()) {
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: {
+      hookEventName: 'SessionStart', additionalContext: lines.join('\n'),
+    } }));
+  } else {
+    console.log(lines.join('\n'));
   }
   return 0;
 }
@@ -210,7 +231,7 @@ function main() {
       if (!name) usage('get needs a memo name');
       process.exit(cmdGet(name, rest));
     }
-    if (action === 'list') process.exit(cmdList());
+    if (action === 'list') process.exit(cmdList({ hook }));
     usage(`unknown action: ${action || '(missing)'}`);
   } catch (err) {
     if (!hook) throw err;

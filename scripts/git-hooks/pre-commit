@@ -56,6 +56,9 @@ else
     has "$p" && node_tests+=("$p") && run_bundle=1
   done
   has watch && { run_python=1; run_bundle=1; }
+  # Academia's dependency-heavy pytest remains a CI gate, but its manifest/host policy
+  # changes must still receive the fast generated-artifact checks locally.
+  has cc-academia && run_bundle=1
 fi
 
 if [ "${#node_tests[@]}" -eq 0 ] && [ "$run_python" -eq 0 ] && [ "$run_bundle" -eq 0 ]; then
@@ -64,7 +67,9 @@ if [ "${#node_tests[@]}" -eq 0 ] && [ "$run_python" -eq 0 ] && [ "$run_bundle" -
 fi
 
 selected=()
-[ "$run_bundle" -eq 1 ] && selected+=("tests/bundle-integrity.test.mjs")
+if [ "$run_bundle" -eq 1 ]; then
+  selected+=("tests/bundle-integrity.test.mjs" "tests/gen-codex.test.mjs")
+fi
 # shared/ owns the canonical modules bundled into every plugin — run its own suite when touched.
 { has shared || has tests; } && selected+=("shared/tests/*.test.mjs")
 if [ "${#node_tests[@]}" -gt 0 ]; then

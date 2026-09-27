@@ -208,8 +208,10 @@ playbook resolves `<plugin-root>` from the loaded skill path; no host-specific
 environment variable participates. Genuine host differences are collected in
 `skills/_shared/host-adapters.md`.
 
-Manifest versions are kept in step by `scripts/release.py`, guarded by
-`tests/test_manifests.py`. Never hand-edit a version.
+The repository-level `scripts/release.sh` is the only version writer: it bumps the
+Claude manifest and regenerates the Codex artifact. This plugin's
+`scripts/release.py --check` and `tests/test_manifests.py` are read-only drift guards.
+Never hand-edit a version.
 
 ## Agent naming
 

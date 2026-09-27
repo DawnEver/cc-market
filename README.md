@@ -29,6 +29,7 @@ Most plugins run on **both** hosts. What each does and where it runs:
 | [`traceme`](traceme/README.md) | Personal observability: token/cost reports, multi-device encrypted sync | yes | **no** (reads Claude transcript JSONL only) |
 | [`fabric`](fabric/README.md) | Spawn & observe isolated child agent sessions of any provider | yes | yes |
 | [`cc-latex`](cc-latex/README.md) | LaTeX writing: compile workflow, academic writing style, word counting | yes | yes |
+| [`cc-academia`](cc-academia/README.md) | Literature review, manuscript review, citation and reviewer discovery | yes | yes (CLI-enforced confidential-manuscript boundary; Claude adds a second hook guard) |
 
 **What Codex consumes:** skills, hooks, and `mcpServers`, but **not** plugin slash-commands
 (those are Claude Code-only; the underlying capability is still reachable via the plugin's
@@ -48,10 +49,12 @@ does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionS
 ```shell
 node scripts/gen-codex.mjs .          # refresh .codex-plugin/ + .agents/plugins/
 codex plugin marketplace add <path-to-cc-market>
-codex plugin add fabric@cc-market     # then rem / sharp-review / evolve / watch
+codex plugin add fabric@cc-market     # then rem / sharp-review / evolve / watch / cc-latex / cc-academia
 ```
 
-`traceme` is Claude-only; do not `codex plugin add traceme`. See the host table above.
+`traceme` is Claude-only; do not install it in Codex. `cc-academia` supports both hosts:
+its CLI exposes only the sanitized manuscript record downstream, while Claude Code adds an
+extra file-tool guard that Codex does not guarantee. See the host table above.
 
 ## Install
 
@@ -61,7 +64,9 @@ codex plugin add fabric@cc-market     # then rem / sharp-review / evolve / watch
 /plugin install sharp-review@cc-market
 /plugin install traceme@cc-market
 /plugin install watch@cc-market
-/plugin install fabric@cc-market
+/plugin install evolve@cc-market
+/plugin install cc-latex@cc-market
+/plugin install cc-academia@cc-market
 ```
 
 See each plugin's README for detailed usage, configuration, and API reference.

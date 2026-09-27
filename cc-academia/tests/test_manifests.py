@@ -2,8 +2,8 @@
 
 cc-academia ships as one plugin inside the cc-market marketplace, so four files
 carry facts about it: this plugin's two host manifests, and the marketplace's two.
-`scripts/release.py` writes the versions; this test is the guard that stops a
-hand-edit from shipping a split-brain release.
+The root release script writes the versions; this test is the guard that stops a
+hand-edit or stale generated artifact from shipping a split-brain release.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ MARKETPLACES = {
 
 
 def _authoritative_version() -> str:
-    """cc-market's pre-push hook bumps plugin.json, so that file leads."""
+    """The root explicit release workflow bumps plugin.json, so that file leads."""
     return json.loads((PLUGIN_MANIFESTS["claude"]).read_text(encoding="utf-8"))["version"]
 
 

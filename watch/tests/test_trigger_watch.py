@@ -16,10 +16,9 @@ sys.path.insert(0, str(_PLUGIN_ROOT / 'scripts'))
 
 # trigger-watch.py does `import bootstrap; bootstrap.ensure()`, which re-execs the
 # process into a managed venv — not appropriate inside a test runner. Stub it out.
-if 'bootstrap' not in sys.modules:
-    _fake_bootstrap = types.ModuleType('bootstrap')
-    setattr(_fake_bootstrap, 'ensure', lambda: None)
-    sys.modules['bootstrap'] = _fake_bootstrap
+_fake_bootstrap = types.ModuleType('bootstrap')
+setattr(_fake_bootstrap, 'ensure', lambda: None)
+sys.modules['bootstrap'] = _fake_bootstrap
 
 from core.config import load_config  # noqa: E402
 
