@@ -17,6 +17,10 @@ function findBash() {
   const candidates = [
     resolve(dirname(gitExe), '..', 'bin', 'bash.exe'),
     resolve(dirname(gitExe), '..', 'usr', 'bin', 'bash.exe'),
+    // `where git` may resolve Git for Windows' native executable under
+    // <Git>/mingw64/bin rather than the cmd shim under <Git>/cmd.
+    resolve(dirname(gitExe), '..', '..', 'bin', 'bash.exe'),
+    resolve(dirname(gitExe), '..', '..', 'usr', 'bin', 'bash.exe'),
   ];
   const bash = candidates.find(existsSync);
   assert.ok(bash, `Git Bash not found beside ${gitExe}`);
