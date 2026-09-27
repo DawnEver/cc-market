@@ -57,7 +57,10 @@ export function resolveSystemPromptFile(promptFile, configPath) {
   if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) {
     p = path.join(os.homedir(), p.slice(2));
   }
-  if (path.isAbsolute(p)) return p;
+  // Shared config can be inspected on an OS different from the one that owns
+  // an explicit override. Recognize both path grammars instead of interpreting
+  // a Windows drive path as POSIX-relative (or vice versa).
+  if (path.posix.isAbsolute(p) || path.win32.isAbsolute(p)) return p;
   try { return path.resolve(path.dirname(fs.realpathSync(configPath)), p); }
   catch { return path.resolve(path.dirname(configPath), p); }
 }
