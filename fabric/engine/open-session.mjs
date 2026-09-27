@@ -373,7 +373,9 @@ while ($true) {
           try { child.kill?.('SIGKILL'); } catch { /* already gone */ }
           slot.reject(e);
         }, timeoutMs);
-        timer.unref?.();
+        // A timed send is an active operation. Keep its deadline referenced so
+        // a silent child cannot let the process exit before TURN_TIMEOUT is
+        // delivered and the session is killed.
       }
       lastActivity = Date.now();
       // The transcript is ALWAYS recorded (not just for visible/interactive sessions):
