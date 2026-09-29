@@ -56,7 +56,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" check
 node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" remove MANUAL-20260620-001
 ```
 
-Deletes a `MANUAL-*` task line from `manual.md`; for an `SR-*` id it sets the finding's
+Closes a `MANUAL-*` task in place (`- [ ]` → `- [x]`, its text kept); for an `SR-*` id it sets the finding's
 `**Status:**` to `CLOSED` (findings are append-only, never deleted). Aliases: `rm`, `-r`.
 
 ### `/todo mark <id> <open|fixed|closed>` — Set a finding's status
@@ -83,7 +83,7 @@ behavior confirmed) — don't leave it for the next review to rediscover.
   ├── /todo add      → task-engine.js add --summary "..." (writes manual.md)
   ├── /todo show     → task-engine.js show <id>   (full finding/task detail)
   ├── /todo mark     → task-engine.js mark <id> <open|fixed|closed>
-  └── /todo remove   → task-engine.js remove <id> (delete MANUAL / close SR)
+  └── /todo remove   → task-engine.js remove <id> (close MANUAL / close SR, never delete)
 ```
 
 **Rem** owns the task engine: report, add, check, show, mark, remove.

@@ -53,7 +53,7 @@ node --test cc-market/rem/tests/*.test.mjs
 
 Pre-commit hook runs rem tests when rem files are staged. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`, `recall.test.mjs`, `remember.test.mjs`, `memo.test.mjs`, `crystallize.test.mjs`, `prune-memory.test.mjs`.
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`, `recall.test.mjs`, `remember.test.mjs`, `memo.test.mjs`, `crystallize.test.mjs`, `prune-memory.test.mjs`, `merge-memory.test.mjs`.
 
 ## Standard
 

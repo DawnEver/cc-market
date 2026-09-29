@@ -8,7 +8,7 @@
 //
 // Writes .claude/memory/YYYY/MM/DD/<slug>.md with generated frontmatter (volatile
 // fields forbidden — enforced), creates the _meta.json entry, and upserts the
-// MEMORY.md index. Refuses to overwrite a different-bodied file without --update.
+// MEMORY.md index. Refuses a different-bodied file without --update, which APPENDS (never drops).
 // Prints the created/updated file path.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -87,9 +87,11 @@ const desc = description
 // metadata.type is nested YAML — prune-memory.js and recall.js read it via the
 // structured parser as metadata.type. A flat dotted key would be invisible to
 // them (feedback entries would lose their eviction exemption and recall weight).
-const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\nmetadata:\n  type: ${type}\n---\n\n${body}`;
+let content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\nmetadata:\n  type: ${type}\n---\n\n${body}`;
 
 // ── Overwrite guard ──
+// Memory keeps everything: --update never drops prior text. A body that already contains the
+// old body is written as-is; any other revision is APPENDED under a dated heading.
 if (existsSync(file)) {
   const existing = readFileSync(file, 'utf8');
   if (existing === content) {
@@ -98,9 +100,11 @@ if (existsSync(file)) {
   }
   if (!update) {
     console.error(`[remember] file exists with different content: ${file}`);
-    console.error('[remember] re-run with --update to overwrite');
+    console.error('[remember] re-run with --update to append the revision');
     process.exit(1);
   }
+  const oldBody = existing.replace(/^---\n[\s\S]*?\n---\n\n?/, '').trim();
+  if (!body.includes(oldBody)) content = `${existing.trimEnd()}\n\n## Update ${date}\n\n${body}`;
 }
 
 // Snapshot state BEFORE writing — loadMemoryState backfills on-disk files, so a

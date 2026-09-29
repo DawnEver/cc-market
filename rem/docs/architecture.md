@@ -67,7 +67,7 @@ excerpts the saved facts were paid for.
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js
-├── scripts/        lib.mjs, stamp-memory.js, remember.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
+├── scripts/        lib.mjs, stamp-memory.js, remember.js, merge-memory.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, task-engine.js, task-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── tests/          *.test.mjs (see AGENTS.md § Testing)

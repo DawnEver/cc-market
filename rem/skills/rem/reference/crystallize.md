@@ -18,9 +18,13 @@ operation — present the proposal before acting.
    grep for the functions, flags, and paths it mentions; check recent `git log` for
    the files it references. Then:
    - **Still accurate** → proceed with it as a normal crystallize candidate below.
-   - **Contradicted but fixable** → correct the memory file in place (edit the body;
-     the file itself is never deleted) and treat the corrected version as the candidate.
-   - **Contradicted and no longer useful** → propose dropping it in the same
+   - **Contradicted but fixable** → APPEND a dated `## Correction <date>` section stating what
+     changed and why; never edit or delete the original text (every measurement, number and
+     quote stays). Treat the corrected entry as the candidate.
+   - **Duplicates another entry** → fold it with
+     `node ${CLAUDE_PLUGIN_ROOT}/scripts/merge-memory.js --into <live.md> --from <dup.md>`
+     (verbatim append + `merged_from:` + `merged→` tombstone; the source file is kept).
+   - **Contradicted and no longer useful** → append the correction first, then propose dropping it in the same
      user-confirmed step below (step 4), marked as drifted rather than rule-worthy.
      When the user confirms a drift-drop, tombstone it with reason `'drifted'`
      (distinct from `'crystallized'`, which `crystallize.js --execute` writes for
@@ -74,6 +78,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --validate
 **Namespace rule (enforced by crystallize.js):**
 - Hand-written rules (one-off, project-specific) → `.claude/rules/<topic>.md`
 - Crystallized rules (from memory consolidation) → `.claude/rules/rem/<topic>.md`
-- `.claude/memory/` is append-only — crystallize.js verifies no files were deleted
+- `.claude/memory/` is append-only — crystallize.js verifies no files were deleted; redundancy is
+  removed by MERGING (`merge-memory.js`), never by deleting or shrinking an entry
 
 Then continue with the standard REM session.

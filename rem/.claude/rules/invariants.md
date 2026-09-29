@@ -13,6 +13,10 @@ tombstone in the parent's `_meta.json` so the move is traceable and history is n
 lost. `scope-validate.mjs` flags dangling `migrated→` tombstones whose child scope is missing.
 This is a structural relocation, not an eviction — never treat it as license to delete memory.
 
+No script SHRINKS a memory file either (user ruling 2026-09-27: memory keeps everything, redundancy
+is removed by MERGING). `merge-memory.js` folds duplicates verbatim into one live entry carrying
+`merged_from:`; `remember.js --update` appends; `task-engine.js remove` closes a task in place.
+
 ## Hook pending-work gate
 
 `rem-hook.js` gates Stop-hook state advancement on `hasPendingWork` (background tasks or

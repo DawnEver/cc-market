@@ -127,8 +127,11 @@ e.g. each `cc-market/<plugin>/` alongside the repo root.
 - Needs 2 inactive prune cycles to fully evict (demote → wait 90d → evict)
 - Promoted back via `touch-memory.js --promote` when accessed again
 
-**Safe to drop:**
-- If content was extracted to a `.claude/rules/` file, the memory entry can be removed
+**Never shrink, only merge** (user ruling 2026-09-27: memory keeps everything):
+- Duplicates on one topic → `merge-memory.js --into <live> --from <dups>`: the live entry gains every
+  source line verbatim plus a `merged_from:` list; sources leave the index only as `merged→<live>`.
+- A correction is APPENDED under a dated heading; the original text, numbers and quotes stay.
+- Content distilled into `.claude/rules/` leaves the index, but its memory file is kept unchanged.
 
 ## Rules vs Memory boundary
 - **Rule** = what the model MUST do every session. Short, actionable.

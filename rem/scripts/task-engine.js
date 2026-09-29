@@ -123,20 +123,10 @@ function handleRemove(id) {
         if (entry.name !== 'manual.md') continue;
         let content = readFileSync(full, 'utf8');
         if (!content.includes(id)) continue;
-        const lines = content.split('\n');
-        const filtered = [];
-        let skip = false;
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes(`- [ ] ${id}`) || lines[i].includes(`- [x] ${id}`)) {
-            skip = true;
-            continue;
-          }
-          if (skip && /^\s{6}module:/.test(lines[i])) { skip = false; continue; }
-          skip = false;
-          filtered.push(lines[i]);
-        }
-        writeFileSync(full, filtered.join('\n'), 'utf8');
-        console.log(`${PREFIX} Removed: ${id} from memory/${relative(memDir, full).replace(/\\/g, '/')}`);
+        // Memory keeps everything: a removed task is CLOSED in place, never cut from the file.
+        content = content.replace(`- [ ] ${id}`, `- [x] ${id}`);
+        writeFileSync(full, content, 'utf8');
+        console.log(`${PREFIX} Closed: ${id} in memory/${relative(memDir, full).replace(/\\/g, '/')}`);
         found = true;
         return;
       }
@@ -281,7 +271,7 @@ Usage:
        --module name                (default 'manual')
        --scope path                 target scope (default: auto-detect from cwd)
   todo show <id>            Show full detail of a finding/task
-  todo remove, rm, -r <id>  Remove manual task or close SR finding
+  todo remove, rm, -r <id>  Close a manual task or SR finding in place (never deleted)
   todo mark <id> <status>   Set status: open | fixed | closed (aliases: done, resolved)
   todo help                 Show this help`);
 }

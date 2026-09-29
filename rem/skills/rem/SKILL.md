@@ -52,7 +52,8 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/prune-memory.js --evict-stale
 ```
-This removes >90d stale entries and keeps the index at ≤20 before you add new entries.
+This tombstones >90d stale entries OUT OF THE INDEX only — every memory file stays on disk; memory
+keeps everything. Redundant entries are folded with `merge-memory.js`, never deleted.
 
 ---
 

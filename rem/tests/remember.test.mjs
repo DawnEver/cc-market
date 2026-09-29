@@ -148,12 +148,22 @@ describe("remember.js", () => {
     assert.equal(meta["no-force-push.md"].count, 1);
   });
 
-  test("--update overwrites and preserves existing meta", () => {
+  test("--update appends the revision, keeps the prior body, and preserves meta", () => {
     run(...BASE);
     run("--name", "no-force-push", "--type", "feedback", "--body", "Revised rule.", "--update");
-    assert.match(fs.readFileSync(memoryFile("no-force-push"), "utf8"), /Revised rule\./);
+    const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
+    assert.match(text, /Never force-push shared branches\./);
+    assert.match(text, /## Update \d{4}-\d{2}-\d{2}\n\nRevised rule\./);
     const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
     assert.equal(meta["no-force-push.md"].count, 1);
+  });
+
+  test("--update with a superset body writes it once, no duplicate section", () => {
+    run(...BASE);
+    run("--name", "no-force-push", "--type", "feedback", "--body", "Never force-push shared branches.\nAlso tags.", "--update");
+    const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
+    assert.equal(text.match(/^Never force-push/gm).length, 1);
+    assert.doesNotMatch(text, /## Update/);
   });
 
   test("--scope <dir> writes into the given scope", () => {

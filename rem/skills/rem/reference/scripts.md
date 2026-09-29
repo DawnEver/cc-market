@@ -5,8 +5,9 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | Script | Usage | Key Flags |
 |---|---|---|
 | `stamp-memory.js` | Create dirs, warn on missing `name:` frontmatter, rebuild MEMORY.md index | (none, idempotent) |
-| `remember.js` | Immediate save for explicit "remember this" requests: write dated memory file + `_meta.json` entry + index upsert | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` |
+| `remember.js` | Immediate save for explicit "remember this" requests: write dated memory file + `_meta.json` entry + index upsert | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` (appends a dated `## Update` section unless the new body contains the old; never drops text) |
 | `prune-memory.js` | Enforce 20-entry cap + 90d eviction (short-term only, long-term protected; `feedback`-type entries are exempt from the 90d stale eviction but still count toward the cap) | `--evict-stale`, `--dry-run` |
+| `merge-memory.js` | Fold duplicate entries into ONE live entry: sources appended verbatim under `## Merged from <path>`, listed in its `merged_from:` frontmatter, tombstoned `merged→<live>` in the index; source files kept on disk | `--into <live.md>`, `--from <a.md,b.md>`, `--dry-run` |
 | `touch-memory.js <path>` | Bump `accessed` to today | `--promote` (upgrade `tier: short` → `long`) |
 | `crystallize.js` | Orchestrate crystallize mode: distill memory into `.claude/rules/rem/` | `--check`, `--drift`, `--propose`, `--execute --distilled <paths>`, `--validate` |
 | `scope-split.js` | Relocate a memory cluster into a child scope (move + tombstone), user-gated | `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>` |

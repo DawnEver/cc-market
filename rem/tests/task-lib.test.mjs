@@ -559,11 +559,13 @@ describe("task-engine show / remove (integration)", () => {
     assert.match(out, /module: docs/);
   });
 
-  test("remove via -r short flag deletes the manual task", () => {
+  test("remove via -r short flag closes the manual task in place, keeping its text", () => {
     const file = writeManual();
     const out = run("-r", "MANUAL-20260609-001");
-    assert.match(out, /Removed: MANUAL-20260609-001/);
-    assert.doesNotMatch(fs.readFileSync(file, "utf8"), /MANUAL-20260609-001/);
+    assert.match(out, /Closed: MANUAL-20260609-001/);
+    const text = fs.readFileSync(file, "utf8");
+    assert.match(text, /- \[x\] MANUAL-20260609-001 .*Write docs/);
+    assert.match(text, /module: docs/);
   });
 });
 
