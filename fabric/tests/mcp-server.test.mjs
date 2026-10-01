@@ -1,10 +1,8 @@
 // Tests for the fabric MCP server — unified `call` primitive (ex takeover call_model ∪ fabric
-// run_task), persistent-session tools, and provider introspection. No real claude/codex/
+// run_task), fan_out, and provider introspection. No real claude/codex/
 // network: `call` dispatch is validated via schema + routing + <command> parsing + injected
-// fakes; sessions via injected registry deps.
+// fakes.
 
-// Isolate the session journal: registry events must never pollute the user's real ~/.fabric.
-process.env.FABRIC_JOURNAL_DIR = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'fj-test-'));
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -80,9 +78,7 @@ function runServer(input) {
 describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
-      ["attach_session", "call", "codex_status", "fan_out", "list_nodes", "list_providers", "list_sessions",
-       "resolve_model", "session_close", "session_compact", "session_goal", "session_send", "session_view", "spawn_session",
-       "team_close", "team_send", "team_spawn", "team_status", "team_synthesize"]);
+      ["call", "codex_status", "fan_out", "list_providers", "resolve_model"]);
   });
 
   test("call schema: prompt required, mode enum, options present", () => {
@@ -244,182 +240,3 @@ describe("introspection tools", () => {
   });
 });
 
-// ── persistent session tools (injected registry) ─────────────────────
-
-describe("session tools", () => {
-  test("spawn_session creates + returns descriptor; provider may be omitted (defaults resolve downstream)", async () => {
-    let seen = null;
-    const fakeCreate = async (opts) => { seen = opts; return { id: "sess-1", provider: opts.provider || "deepseek", nativeId: "thread-1" }; };
-    const res = await handleToolCall("spawn_session", { provider: "codex", write: true, cwd: "/repo" }, { createSession: fakeCreate });
-    assert.equal(seen.provider, "codex");
-    assert.equal(seen.write, true);
-    assert.deepEqual(JSON.parse(text(res)), { id: "sess-1", provider: "codex", nativeId: "thread-1" });
-    // Provider omitted → passed through as undefined; the session opener applies
-    // sessionDefaults (the fake reports the resolved provider).
-    const res2 = await handleToolCall("spawn_session", {}, { createSession: fakeCreate });
-    assert.equal(JSON.parse(text(res2)).provider, "deepseek");
-  });
-
-  test("spawn_session forwards shared (the cross-machine attach convention)", async () => {
-    let seen = null;
-    const fakeCreate = async (opts) => { seen = opts; return { id: "sess-1", provider: "codex" }; };
-    await handleToolCall("spawn_session", { provider: "codex", node: "WS1", shared: true }, { createSession: fakeCreate });
-    assert.equal(seen.node, "WS1");
-    assert.equal(seen.shared, true, "shared must reach the session opener");
-    await handleToolCall("spawn_session", { provider: "codex" }, { createSession: fakeCreate });
-    assert.equal(seen.shared, false, "default: private, not shared");
-  });
-
-  test("session_compact routes to compactSession; requires id", async () => {
-    const fakeCompact = async (id) => ({ id, provider: "codex", compacted: true, confirmed: true });
-    const res = await handleToolCall("session_compact", { id: "sess-1" }, { compactSession: fakeCompact });
-    assert.deepEqual(JSON.parse(text(res)), { id: "sess-1", provider: "codex", compacted: true, confirmed: true });
-    await assert.rejects(() => handleToolCall("session_compact", {}), /id is required/);
-  });
-
-  test("session_goal sets the condition, or runs the loop when prompt is given", async () => {
-    const fakeSet = async (id, condition) => ({ id, provider: "deepseek", condition, active: true });
-    const fakeRun = async (id, opts) => ({ id, provider: "deepseek", text: `ran:${opts.prompt}`, turns: 3, state: "met" });
-    const set = await handleToolCall("session_goal", { id: "sess-1", condition: "done when tests pass" }, { setSessionGoal: fakeSet });
-    assert.equal(JSON.parse(text(set)).active, true);
-    const run = await handleToolCall("session_goal", { id: "sess-1", condition: "c", prompt: "go", maxTurns: 4 }, { goalRunSession: fakeRun });
-    assert.equal(JSON.parse(text(run)).text, "ran:go");
-    await assert.rejects(() => handleToolCall("session_goal", { id: "x" }), /condition/);
-  });
-
-  test("session_send routes to registry, returns reply; requires id+prompt", async () => {
-    const fakeSend = async (id, prompt) => ({ text: `${id}:${prompt}`, turn: 3 });
-    const res = await handleToolCall("session_send", { id: "sess-1", prompt: "go" }, { sendToSession: fakeSend });
-    assert.equal(text(res), "sess-1:go");
-    await assert.rejects(() => handleToolCall("session_send", { id: "x" }), /required/);
-  });
-
-  test("session_close + list_sessions", async () => {
-    const res = await handleToolCall("session_close", { id: "sess-1" }, { closeSession: async (id) => ({ id, exitCode: 0, turns: 2 }) });
-    assert.equal(JSON.parse(text(res)).exitCode, 0);
-    const listed = await handleToolCall("list_sessions", {}, { listSessions: () => [{ id: "sess-1", provider: "codex", turns: 2, createdAt: 0 }] });
-    assert.equal(JSON.parse(text(listed))[0].id, "sess-1");
-  });
-
-  test("session_view by registry id routes to viewSession; requires id or node+remoteId", async () => {
-    const fakeView = async (id, o) => ({ id, provider: "deepseek", kind: "child", content: `tail:${id}`, alive: true, turns: 1 });
-    const res = await handleToolCall("session_view", { id: "sess-1", tailChars: 500 }, { viewSession: fakeView });
-    assert.match(JSON.parse(text(res)).content, /tail:sess-1/);
-    await assert.rejects(() => handleToolCall("session_view", {}, {}), /id \(or node \+ remoteId\)/);
-  });
-
-  test("session_view by node+remoteId probes the peer directly (no attach needed)", async () => {
-    const fakeRemote = async (n, o) => ({ id: n.remoteId, provider: "deepseek", content: `remote:${n.node}`, alive: true });
-    const res = await handleToolCall("session_view", { node: "WS1", remoteId: "sess-b1" }, { viewRemoteSession: fakeRemote });
-    const parsed = JSON.parse(text(res));
-    assert.equal(parsed.id, "sess-b1");
-    assert.equal(parsed.content, "remote:WS1");
-  });
-
-  test("attach_session adopts a shared remote session for driving", async () => {
-    const fakeAttach = async (n) => ({ id: "sess-attached", provider: "attached", nativeId: n.remoteId, pid: null });
-    const res = await handleToolCall("attach_session", { node: "WS1", remoteId: "sess-b1" }, { attachSession: fakeAttach });
-    assert.equal(JSON.parse(text(res)).id, "sess-attached");
-    await assert.rejects(() => handleToolCall("attach_session", { node: "WS1" }, {}), /node and remoteId are required/);
-  });
-
-  test("list_nodes renders the fleet dashboard (this machine + probed nodes + sessions)", async () => {
-    const res = await handleToolCall("list_nodes", {}, {
-      localStatus: async () => ({ hostname: "G", uptime_s: 90061, cpu: 32, cpu_busy_pct: 19.2, mem_available_mb: 6800, mem_total_mb: 32488 }),
-      pingNodes: async () => [
-        { name: "WS1", alive: true, version: "0.1.9", uptime_s: 3661, cpu: 24, cpu_busy_pct: 12.5, mem_available_mb: 8192, mem_total_mb: 32768, tags: ["femm"], sessions: [{ id: "sess-b1", provider: "deepseek", project: "repo", shared: true, alive: true, turns: 11 }] },
-        { name: "WS2", alive: false, error: "connect ECONNREFUSED 192.168.1.5:7677" },
-      ],
-      listSessions: () => [{ id: "sess-a1", provider: "codex", alive: true, turns: 5 }],
-    });
-    const out = text(res);
-    assert.match(out, /2\/3 machines alive/);
-    assert.match(out, /\[this machine\] ALIVE v/);
-    assert.match(out, /cpu 19\.2% \(32 cores\)/);
-    assert.match(out, /up 1d 1h 1m/);   // uptime rendered as days/hours/minutes
-    assert.match(out, /8\.0G free \/ 32\.0G total/); // memory free/total, labeled
-    assert.match(out, /WS1 ALIVE v0\.1\.9/);
-    assert.match(out, /sess-b1 deepseek project=repo shared alive turns=11/);
-    assert.match(out, /WS2 DEAD: connect ECONNREFUSED/);
-  });
-
-  test("list_nodes dedupes an attached session to its native copy and annotates it (SR-056)", async () => {
-    const res = await handleToolCall("list_nodes", {}, {
-      localStatus: async () => ({ hostname: "G", uptime_s: 10, cpu: 8, cpu_busy_pct: 5, mem_available_mb: 8000, mem_total_mb: 16000 }),
-      pingNodes: async () => [
-        { name: "WS1", alive: true, version: "0.1.9", uptime_s: 100, cpu: 8, cpu_busy_pct: 10, mem_available_mb: 8000, mem_total_mb: 16000, sessions: [
-          { id: "sess-4-msp7rsdw", provider: "claude", alive: true, turns: 3, nativeId: "sess-4-msp7rsdw" },
-          { id: "sess-2-msp7rk89", provider: "claude", alive: false, turns: 1, nativeId: "sess-2-msp7rk89" },
-          { id: "sess-5-orphan", provider: "claude", alive: null, turns: 0, nativeId: "sess-5-orphan" },
-        ] },
-      ],
-      // G holds attach handles onto two of the three WS1 sessions — ONE conversation each.
-      listSessions: () => [
-        { id: "sess-1-msp7u3fs", provider: "attached", alive: true, turns: 3, nativeId: "sess-4-msp7rsdw" },
-        { id: "sess-2-msp7utf3", provider: "attached", alive: true, turns: 1, nativeId: "sess-2-msp7rk89" },
-      ],
-    });
-    const out = text(res);
-    // attach rows are hidden (their native copy renders) → no duplicate "same-name" rows
-    assert.doesNotMatch(out, /sess-1-msp7u3fs/, 'attach row hidden — its native copy is shown instead');
-    assert.doesNotMatch(out, /sess-2-msp7utf3/);
-    // the native copies carry who holds a drivable attach, and liveness is three-state
-    assert.match(out, /sess-4-msp7rsdw claude \[attached@\[this machine\]\] alive turns=3/);
-    assert.match(out, /sess-2-msp7rk89 claude \[attached@\[this machine\]\] dead turns=1/);
-    assert.match(out, /sess-5-orphan claude unknown/, 'un-pinged liveness renders unknown, not alive/dead');
-  });
-});
-
-// ── team tools (injected fakes) ──────────────────────────────────────
-
-describe("team tools", () => {
-  test("team_spawn requires workers array", async () => {
-    await assert.rejects(() => handleToolCall("team_spawn", {}), /workers array is required/);
-    await assert.rejects(() => handleToolCall("team_spawn", { workers: [] }), /workers array is required/);
-  });
-
-  test("team_spawn creates team, returns descriptor", async () => {
-    const fakeCreateTeam = async (workers) => ({
-      teamId: "team-1",
-      workers: workers.map(w => ({ id: w.id, sessionId: `sess-${w.id}`, provider: w.provider, write: !!w.write })),
-    });
-    const res = await handleToolCall("team_spawn", {
-      workers: [
-        { id: "auth", provider: "deepseek" },
-        { id: "fix", provider: "codex", write: true },
-      ],
-    }, { createTeam: fakeCreateTeam });
-    const parsed = JSON.parse(text(res));
-    assert.equal(parsed.teamId, "team-1");
-    assert.equal(parsed.workers.length, 2);
-    assert.equal(parsed.workers[0].id, "auth");
-    assert.equal(parsed.workers[1].write, true);
-  });
-
-  test("team_send routes to worker, returns summarized reply", async () => {
-    const fakeSend = async (_teamId, workerId, prompt) => ({ text: `${workerId}: ${prompt}`, turn: 3 });
-    const fakeStatus = () => [{ id: "auth", sessionId: "sess-auth", provider: "deepseek", turns: 3 }];
-    const res = await handleToolCall("team_send", {
-      teamId: "team-1", workerId: "auth", prompt: "review this",
-    }, { sendToTeamWorker: fakeSend, getTeamStatus: fakeStatus });
-    assert.match(text(res), /auth:/);
-  });
-
-  test("team_status returns worker list", async () => {
-    const fakeStatus = () => [
-      { id: "auth", provider: "deepseek", sessionId: "s-a", turns: 3 },
-      { id: "fix", provider: "codex", sessionId: "s-f", turns: 1 },
-    ];
-    const res = await handleToolCall("team_status", { teamId: "team-1" }, { getTeamStatus: fakeStatus });
-    const parsed = JSON.parse(text(res));
-    assert.equal(parsed.length, 2);
-    assert.equal(parsed[0].id, "auth");
-  });
-
-  test("team_close closes all workers", async () => {
-    const fakeClose = async () => [{ id: "s-a", exitCode: 0 }, { id: "s-f", exitCode: 0 }];
-    const res = await handleToolCall("team_close", { teamId: "team-1" }, { closeTeam: fakeClose });
-    const parsed = JSON.parse(text(res));
-    assert.equal(parsed.length, 2);
-  });
-});

@@ -10,14 +10,13 @@
 //                   what makes DeepSeek traffic capturable despite Foundry.
 //
 // Headless (child_process, no PTY) is deliberate: it's the clean orchestration path from
-// the design (structured I/O, no TTY question-guessing). Persistent interactive PTY
-// sessions are a separate subsystem (see fabric/README roadmap).
+// the design (structured I/O, no TTY question-guessing).
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId, PROVIDER_ENV_KEYS } from './providers.mjs';
-import { loadFabricConfig } from './node-config.mjs';
+import { loadFabricConfig } from './fabric-config.mjs';
 import { resolveStyleFile } from './style-resolve.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { buildUserContent } from './anthropic-http.mjs';
@@ -241,22 +240,20 @@ export async function spawnChild(opts) {
     }
 
     const bin = _bin || resolveClaudeExe();
-    // Platform default system prompt (fabric.systemPromptFile) — same cache-key layer
-    // as the persistent-session path; an explicit systemPromptFile wins; `style`
+    // Platform default system prompt (fabric.systemPromptFile) — an explicit systemPromptFile wins; `style`
     // resolves to a built dist file (auto-built when stale) from the platform dir.
     const cfgSysFile = loadFabricConfig(configPath).systemPromptFile ?? null;
     const sysFile = systemPromptFile ?? (style && cfgSysFile ? resolveStyleFile(style, cfgSysFile) : null) ?? cfgSysFile;
     // A MISSING file is skipped with a warning (a policy layer, never a reason to refuse
-    // the call) — same rule as the persistent-session path; the CLI exits 1 on a
-    // nonexistent --system-prompt-file, which bricked every session on an unsynced peer.
+    // the call): the CLI exits 1 on a nonexistent --system-prompt-file, which bricked
+    // every session on an unsynced peer.
     if (sysFile && !fs.existsSync(sysFile)) {
       process.stderr.write(`fabric: system prompt file not found (skipping --system-prompt-file): ${sysFile}\n`);
     }
     const sysArgs = sysFile && fs.existsSync(sysFile) ? ['--system-prompt-file', sysFile] : [];
     // Both modes emit stream-json on stdout so usage parsing + onText streaming are
     // universal; argv mode just keeps the prompt on the command line. --verbose is
-    // REQUIRED by the CLI for --print + stream-json (exit 1 without — the same
-    // requirement open-session.mjs documents); its extra system events on stdout
+    // REQUIRED by the CLI for --print + stream-json (exit 1 without); its extra system events on stdout
     // are skipped by parseStreamJsonOutput/emitLine.
     const args = useStdin
       ? ['-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json', ...modelArgs, ...sysArgs, ...hookFreeArgs(extraArgs), ...extraArgs]

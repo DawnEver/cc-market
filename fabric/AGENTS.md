@@ -1,6 +1,6 @@
 # Fabric Plugin — AGENTS.md
 
-Multi-provider agent **session fabric**: any agent (Claude / Codex / …) invoking,
+Multi-provider agent **fabric**: any agent (Claude / Codex / …) invoking,
 orchestrating, and handing off to models of any provider. Absorbed the former `takeover`
 plugin — its policy (modes, prompts, handoff UX) is now the L1/L2 layers on fabric's one
 call primitive. Dual-form: an importable library (`shared/`) and an MCP server
@@ -24,8 +24,8 @@ L2 ERGONOMICS     commands (/continue /models /handoff), the `takeover` handoff 
 L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
                   scripts/codex (review, image) + prompts/ — mode dispatch matrix
 L0 MECHANISM      engine/ (fabric-owned, canonical): providers routing · spawn-child ·
-                  anthropic-http · codex/{app-server,task,session} · session registry ·
-                  observe proxy. (shared/ now holds only cross-plugin generic utils)
+                  anthropic-http · codex/{app-server,task} · observe proxy.
+                  (shared/ now holds only cross-plugin generic utils)
 ```
 
 ## Orientation
@@ -33,33 +33,18 @@ L0 MECHANISM      engine/ (fabric-owned, canonical): providers routing · spawn-
 Progressive disclosure — this file is the entry point; load `docs/architecture.md` for the
 deep detail when a task reaches into that area.
 
-- **File structure** map (every module, the console, `scripts/serve.*` flags) →
+- **File structure** map (every module) →
   `docs/architecture.md` § File Structure.
-- **MCP server** full tool table + the `mode` dispatch matrix + "the server IS the daemon"
-  → `docs/architecture.md` § MCP Server.
-- **LAN node fabric** (TLS-PSK protocol, per-node tokens, ownership/trust, connection pool,
-  async ack+poll send, `fabric` config block) → `docs/architecture.md` § LAN node fabric.
-- **Dev invariants** (edit `engine/` not `shared/`, windowsHide, per-session serialization,
-  atomic spawn admission, observe asymmetry) → `.claude/rules/invariants.md`.
+- **MCP server** full tool table + the `mode` dispatch matrix → `docs/architecture.md` § MCP Server.
+- **Dev invariants** (edit `engine/` not `shared/`, windowsHide, observe asymmetry,
+  codex stays native) → `.claude/rules/invariants.md`.
 
 ## MCP Server — at a glance
 
 `mcp-server.mjs` implements JSON-RPC 2.0 over stdio (line + Content-Length framed, needed
-for Codex MCP startup). One `call` primitive (task/review/agent/image-*) + persistent
-session tools (`spawn_session` / `session_send` / `session_view` / `attach_session` /
-`session_compact` / `session_goal` / `session_close`) + fleet (`list_nodes`) + providers
-(`list_providers` / `resolve_model` / `codex_status`). Full table and dispatch matrix →
+for Codex MCP startup). One `call` primitive (task/review/agent/image-*) + `fan_out` (parallel calls) +
+providers (`list_providers` / `resolve_model` / `codex_status`). Full table and dispatch matrix →
 `docs/architecture.md` § MCP Server.
-
-## LAN node fabric — at a glance
-
-Peers are **message-passing teammates**, never a filesystem you reach into. One node server
-(`scripts/serve.*`, TLS-PSK, also starts the management console; `--no-console` for the
-node alone) exposes `node/spawn|send|turn|view|compact|goal|close|status|ping`; the client
-(`engine/node-client.mjs`) pools connections and returns uniform `{id, send, close}` handles,
-so a remote session is indistinguishable from a local one above the opener. A remote `send()`
-is async ack + poll (`node/turn`), so a long turn no longer trips the 120s deadline. Full
-protocol / config → `docs/architecture.md` § LAN node fabric.
 
 ## Testing
 

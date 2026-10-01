@@ -1,8 +1,8 @@
 # Fabric
 
-Multi-provider agent **session fabric** — the shared layer for any agent (`claude` /
-`codex` / …) orchestrating many independent child sessions of any provider. The orchestrator
-and its children can each be any provider. Dual-form: an importable library **and** an MCP
+Multi-provider agent **fabric** — the shared layer for any agent (`claude` / `codex` / …)
+invoking and orchestrating one-shot child agents of any provider. The orchestrator and its
+children can each be any provider. Dual-form: an importable library **and** an MCP
 server.
 
 ## Install
@@ -38,24 +38,16 @@ selects policy: task/review/agent/image-generate/image-edit):
   "write": true, "cwd": "/path/to/repo" }
 ```
 
-For a real multi-turn handoff (context retained across turns) use `spawn_session` /
-`session_send` / `session_close` instead of repeated `call`s. The `/continue` command
-drives the `takeover` handoff subagent over this surface.
+The `/continue` command drives the `takeover` handoff subagent over this surface.
 
 Library import — the same engines, directly:
 
 ```js
 import { spawnChild } from './engine/spawn-child.mjs';
-import { openSession } from './engine/open-session.mjs';
 import { startObserveProxy } from './engine/observe-proxy.mjs';
 
 // one-shot
 const res = await spawnChild({ provider: 'deepseek', prompt: 'hello', observe: true, runDir });
-
-// persistent multi-turn
-const s = await openSession({ provider: 'claude' });
-const { text } = await s.send('What did we decide last turn?');
-await s.close();
 
 // observe proxy on its own
 const proxy = await startObserveProxy({ provider: 'deepseek', runDir });
@@ -98,10 +90,6 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 - `spawnChild({provider, prompt, observe, runDir, model})` — headless one-shot child.
   `buildChildEnv` is the observe switch (Foundry-strip vs proxy).
-- `openSession({provider, observe, runDir, model})` — **persistent multi-turn** child
-  (library-level, no daemon). Holds one long-lived `claude` stream-json process; `send(text)`
-  returns each turn's text, context retained across turns. Turns/tool/question events arrive
-  as structured JSON, not TTY. Open many concurrently for stateful fan-out.
 - `startObserveProxy({provider, runDir})` — the observe proxy.
 - `loadRows` / `mainTurns` / `summarize` (`engine/observe-reader.mjs`) — read the capture.
 
@@ -116,151 +104,22 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 - `list_providers` — dump the provider registry + model aliases.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
 - `codex_status` — codex CLI install / version / auth check.
-- `spawn_session` / `session_send` / `session_view` / `session_close` / `list_sessions` —
-  **persistent multi-turn** sessions over MCP. `spawn_session` returns an id (provider/
-  model/effort may be omitted — they fall back to `fabric.sessionDefaults`); each
-  `session_send` is one turn with context retained from earlier turns; `session_view`
-  shows a session's transcript tail + liveness; `session_close` frees the child. Works for
-  codex (app-server thread), claude, and API providers alike. Example:
+- `fan_out` — run N `call`s in parallel; returns compact JSON (per-task summary, est.
+  tokens, duration) plus an optional synthesis.
 
-  ```json
-  { "tool": "spawn_session", "arguments": { "provider": "codex", "cwd": "/repo", "write": true } }
-  → { "id": "sess-1-...", "provider": "codex", "nativeId": "thread-abc" }
-  { "tool": "session_send", "arguments": { "id": "sess-1-...", "prompt": "Investigate the failing test." } }
-  { "tool": "session_send", "arguments": { "id": "sess-1-...", "prompt": "Now fix it." } }   // remembers the investigation
-  { "tool": "session_close", "arguments": { "id": "sess-1-..." } }
-  ```
+## Config
 
-  No separate daemon: the MCP stdio server is itself long-lived, so it holds the live session
-  handles in an in-process registry across discrete tool calls.
+The `fabric` block of `~/.claude/claude_env_settings.json` (synced; per-machine overrides go
+in `~/.claude/claude_env_settings.local.json`, deep-merged over it):
 
-## LAN nodes — sessions on other machines
+```json
+"fabric": {
+  "systemPromptFile": "~/.claude/system-prompt/claude-base.md",
+  "sessionDefaults": { "provider": "deepseek", "model": "deepseek-v4-flash[1m]" }
+}
+```
 
-Fabric nodes let sessions run on peer machines, teammate-style: pure message-passing, no
-shared filesystem. The remote session runs in the remote machine's own project directory
-(referenced by an alias registered there) with its own credentials; only text travels.
-Transport is TLS-PSK: the shared token doubles as the pre-shared key, so all traffic is
-encrypted and mutually authenticated with zero certificates — a wrong token fails the
-handshake itself.
-
-1. Configure the `fabric` block in `~/.claude/claude_env_settings.json` (synced to all
-   machines). For per-machine secrets — a machine's own `fabric.token`, or its API keys —
-   put the override in `~/.claude/claude_env_settings.local.json` (machine-local, deep-merged
-   over the shared file; `loadFabricConfig` and `readRegistry` both apply it):
-
-   ```json
-   "fabric": {
-     "token": "a-shared-secret",
-     "sessionDefaults": { "provider": "deepseek", "model": "deepseek-v4-flash[1m]", "effort": "max" },
-     "nodes": { "desktop": { "host": "my-desktop.example.corp", "port": 7677 } },
-     "serve": {
-       "port": 7677,
-       "projects": { "thesis": "C:/work/thesis" },
-       "byHost": { "my-desktop": { "projects": { "thesis": "D:/repos/thesis" } } }
-     }
-   }
-   ```
-
-   `sessionDefaults` is the device's **default session** — a provider/model/effort bundle
-   used whenever `spawn_session`/`call` omit them (an explicit provider opts out of the
-   default's model/effort). `host` may be an IP or DNS name. Because the file is synced to
-   every machine, `serve` is shared — `serve.byHost` holds per-machine overrides keyed by
-   hostname (case-insensitive, FQDN or short name); `projects` maps merge, override winning
-   per alias.
-
-2. On each peer machine, bring fabric up in a terminal you keep open. **`scripts\serve.cmd`
-   / `scripts/serve.ps1` / `scripts/serve.sh` is THE start command** — it runs the LAN node
-   server AND the management console in one process (both idempotent: an already-running
-   instance is detected and skipped). Console: http://127.0.0.1:7678 — three views that
-   follow the operator's funnel: **Fleet** (a needs-attention list — dead peers, hot
-   machines/sessions, orphans — plus a grid of every machine), **Sessions** (browse by
-   machine → project, dense one-line rows, spawn drawer), **Chat** (full-width focus
-   with a breadcrumb bar; the header health dot keeps fleet awareness). Flags: `--port N`,
-   `--console-port N`, `--no-console` (node only), `--status` (report and exit).
-   Session-bound on purpose — never run as a background service; closing the terminal stops both AND reaps every session child it spawned (graceful close, then hard kill) — session children are hidden windows, so nothing may outlive the serve invisibly.
-3. **Open the firewall for inbound 7677** — once per machine. Windows blocks inbound Node by
-   default (the serve log looks healthy while every peer times out; measured 2026-08-09).
-   Admin PowerShell:
-
-   ```powershell
-   New-NetFirewallRule -DisplayName "fabric node 7677" -Direction Inbound -Protocol TCP -LocalPort 7677 -Action Allow
-   ```
-
-   Verify from any other machine: `node scripts/ping.mjs <name>` → `ALIVE` with capacity facts.
-4. From any session, spawn remotely — same tools, plus `node`/`project`:
-
-   ```json
-   { "tool": "spawn_session", "arguments": { "provider": "codex", "node": "desktop", "project": "thesis", "write": true } }
-   ```
-
-   `team_spawn` workers accept `node`/`project` too, so a team can mix local and remote
-   workers. `list_nodes` is a **live fleet dashboard**: this machine + every peer, each
-   with `ALIVE`/`DEAD`, version, uptime (days/hours/minutes), CPU busy %, memory
-   free/total, and the sessions running there — the "processes" you can manage.
-
-5. **Cross-machine driving — the shared+attach convention.** A session is OWNED by the
-   connection that spawned it: only that connection can `session_send`/`session_close` it,
-   and its disconnect reaps the session. To make a remote session drivable from ANY
-   machine (the "operate another workstation's session from G" case), spawn it
-   `shared: true` — shared sessions accept any accepted token-holder's send/close/compact
-   and survive the spawner's disconnect. On the management console, clicking a shared
-   session's row opens its chat: the console attaches on demand and drives the session
-   from there (`POST /api/attach`). The console's chat renders the session's own TRANSCRIPT
-   (`/view` — claude/API always record one; codex honestly reports `content:null` and the
-   console falls back to its local log, labelled). Non-shared foreign sessions are
-   readable read-only (`/view` is visibility, not acting) with the reason stated on the
-   card and the composer disabled — click any foreign session to OBSERVE it.
-   Convention: **if a session may need to be driven from another machine, spawn it
-   shared from the start** — shared-ness cannot be added later. `attach_session {node,
-   remoteId}` adopts a shared remote session from MCP so you can send to / close it —
-   attach is **idempotent**: re-attaching the same `(node, remoteId)` returns the
-   existing handle (`existing: true`), never a duplicate. `session_view` shows a session's content — `{id}` for a local/owned one (forwards to
-   its node), or `{node, remoteId}` to inspect a peer session directly (viewing is
-   read-only visibility, never owner-gated).
-6. **Compact a long session in place** — `session_compact {id}` (MCP), `node/compact`
-   (peer protocol, same ownership gate as send/close), or the compact button on the
-   console's chat view. Both major backends compact NATIVELY: codex via
-   `thread/compact/start` (the app-server summarizes and trims the thread), claude/API
-   via the CLI's own manual compaction (a `/compact` user message; the session emits
-   `compact_boundary` with `trigger: "manual"` — probed live 2026-08-10: 30.8k → 1.2k
-   tokens). The same session id keeps answering after compaction. `list_sessions` reports
-   `compactable` per session, and a backend with no native compact answers
-   `COMPACT_UNSUPPORTED` rather than pretending.
-7. **Give a session a goal and let it work autonomously** — `session_goal {id,
-   condition, prompt?}` (MCP; console: goal box above the composer; peer: `node/goal`).
-   One interaction replaces many: with a goal active, a send is a GOAL RUN — fabric
-   sends the trigger with a completion-marker protocol ("work autonomously toward the
-   goal; when done, end your final reply with exactly `<<GOAL_COMPLETE>>`"), and
-   iterates until the marker appears (or the caps hit), returning the final outcome.
-   Probed live 2026-08-10: `state: 'met'`, one turn, the condition satisfied. Why not
-   the CLI's native `/goal <condition>`: it requires hooks enabled, and fabric's child
-   architecture is hook-free by policy — verified that under `disableAllHooks` /goal
-   refuses, and enabling hooks on an isolated config dir hangs the CLI at startup.
-   Safety caps: `maxTurns` (default 20) and `timeoutMs` (default 30 min) — the loop
-   does not self-terminate while unmet, so caps are mandatory; the result reports
-   `state: 'met' | 'capped' | 'timeout'` honestly ('timeout' leaves the session alive
-   and the loop in place). claude/API children only (`GOAL_UNSUPPORTED` otherwise);
-   `list_sessions` reports the active goal. Mid-run interjections are refused — the
-   loop owns the conversation while it runs. This is enforced UNIFORMLY at the registry
-   (every mutating per-session op serializes through one per-id chain and gates on
-   `closing`/`goalRunning`); `session_close` is the kill switch that always interrupts.
-   `list_sessions` reports a `working` liveness fact — true while a session has a turn
-   streaming **or** a goal loop in flight. The console surfaces it as a pulsing amber dot
-   on the session row and a `working… / idle` readout in the chat header, so "is it still
-   outputting / still working" is answered at a glance across the fleet.
-8. **Crash recovery: decide what happens to sessions that survive a serve restart.**
-   The journal records every spawn (incl. the CLI's own session id), so a killed serve
-   leaves its story behind: `serve` prints a reminder at startup listing survivors
-   (`alive` / `alive UNKNOWN (remote)` / `resumable`), and the console's orphans panel
-   offers the decision per session: **continue (resume)** — spawns a new child with
-   `--resume <session_id>` so the conversation restores from the CLI's session store —
-   or **kill** (provably-alive pids only), or **clear record** (tombstone a dead one).
-   Remote orphans must be decided on their owning peer. The journal is append-only and
-   keeps the lineage either way. **The journal is bounded, no timer needed**: the live
-   file rotates past ~1 MiB (each process's hot file never grows unbounded), and every
-   serve start folds the history — settled sessions (spawn with a matching close/loss)
-   are dropped, leaving O(open sessions) of records. Folding only happens at boot, so
-   it never races a live writer.
+`sessionDefaults` supplies provider/model when `call` omits a provider.
 
 ## Auth note
 

@@ -136,14 +136,14 @@ test("main clamps an invalid maxConcurrency instead of deadlocking", async () =>
 });
 
 // SR-050: cheap ops must not queue behind wedged model turns. A saturated
-// heavyweight pool is the normal state under fan-out; if session_close sits in that
-// same queue you cannot cancel your way out of a hang — a liveness problem, not latency.
+// heavyweight pool is the normal state under fan-out; if introspection sits in that
+// same queue a hang blinds the caller too — a liveness problem, not latency.
 test("a saturated heavy pool still lets a lightweight tool run", async () => {
   const wedge = deferred();
   const ran = [];
   const handleToolCall = async (name) => {
     ran.push(name);
-    if (name === "session_send") await wedge.promise;
+    if (name === "call") await wedge.promise;
     return { content: [{ type: "text", text: "ok" }] };
   };
   const out = { write: () => true };
@@ -151,14 +151,14 @@ test("a saturated heavy pool still lets a lightweight tool run", async () => {
     serverInfo: { name: "t", version: "9" }, tools: [], handleToolCall, out, maxConcurrency: 1,
   });
   const stream = (async function* () {
-    yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "session_send", arguments: {} } }) + "\n");
-    yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "session_close", arguments: {} } }) + "\n");
+    yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "call", arguments: {} } }) + "\n");
+    yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "codex_status", arguments: {} } }) + "\n");
     await wedge.promise;
   })();
   const done = rpc.main(stream);
-  // Let the close land while the single heavy slot is still held by the wedged send.
+  // Let the light call land while the single heavy slot is still held by the wedged call.
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  assert.deepEqual(ran, ["session_send", "session_close"], "session_close must not queue behind a wedged send");
+  assert.deepEqual(ran, ["call", "codex_status"], "codex_status must not queue behind a wedged call");
   wedge.resolve();
   await done;
 });
@@ -174,7 +174,7 @@ test("lightweight tools have their own bound, and heavy tools keep theirs", asyn
   });
   const stream = (async function* () {
     for (let i = 1; i <= 3; i++) {
-      yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "list_sessions", arguments: {} } }) + "\n");
+      yield Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "list_providers", arguments: {} } }) + "\n");
     }
     await gate.promise;
   })();

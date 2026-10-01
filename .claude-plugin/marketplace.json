@@ -96,7 +96,7 @@
       "name": "fabric",
       "source": "./fabric",
       "displayName": "Fabric",
-      "description": "Multi-provider agent session fabric — any agent (claude / codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), persistent multi-turn sessions, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
+      "description": "Multi-provider agent fabric — any agent (claude / codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), parallel fan_out, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -108,7 +108,6 @@
         "orchestration",
         "handoff",
         "takeover",
-        "session",
         "review",
         "proxy",
         "observe",

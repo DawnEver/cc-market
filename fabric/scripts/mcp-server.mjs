@@ -8,14 +8,11 @@
 //                      were once takeover's `call_model` and fabric's `run_task` — "one task"
 //                      is one call; "many" is the caller making N calls (fan-out is the
 //                      orchestrator's job, not a tool's).
-//   - spawn_session / session_send / session_close / list_sessions : PERSISTENT multi-turn
-//                      sessions. This long-lived stdio server IS the handle-holding daemon —
-//                      it holds live session handles in an in-process registry
-//                      (engine/session.mjs) across discrete tool calls. codex + claude + API.
+//   - fan_out        : N calls in parallel, compact JSON + optional synthesis.
 //   - list_providers / resolve_model / codex_status : introspection.
 //
 // Layering: L0 mechanism = shared/ engines (providers, spawn-child, anthropic-http, codex,
-// session, observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
+// observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
 // shaping, <command> parsing, result/usage shaping, traceme). L2 ergonomics = commands/
 // skills/agents. This file wires L1 onto L0.
 
@@ -43,13 +40,9 @@ import {
 } from "./lib.mjs";
 import { withPooledClient, poolStats } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
-import { loadFabricConfig } from "../engine/node-config.mjs";
+import { loadFabricConfig } from "../engine/fabric-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
-import { pingNodes } from "../engine/node-probe.mjs";
-import { localStatus } from "../engine/sysinfo.mjs";
-import { fmtUptime, fmtMem, fmtAgo } from "./lib/format.mjs";
-import { createSession, sendToSession, closeSession, compactSession, setSessionGoal, goalRunSession, listSessions, getSessionProvider, createTeam, sendToTeamWorker, getTeamStatus, closeTeam, setJournalOwnerKind, viewSession, attachSession, viewRemoteSession, resolveSessionDefaults } from "../engine/session.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 import { isMain } from "../shared/lib.mjs";
 
@@ -65,7 +58,7 @@ const textResult = (s) => ({ content: [{ type: "text", text: s }] });
 export const TOOLS = [
   {
     name: "call",
-    description: "Invoke a model. <command> block flags in prompt override params. For persistent multi-turn use spawn_session.",
+    description: "Invoke a model. <command> block flags in prompt override params.",
     inputSchema: {
       type: "object",
       properties: {
@@ -103,176 +96,6 @@ export const TOOLS = [
       },
       required: ["prompt"],
     },
-  },
-  {
-    name: "spawn_session",
-    description: "Open a persistent multi-turn session. Drive with session_send, close with session_close. Omitted provider/model/effort fall back to fabric.sessionDefaults (e.g. deepseek + deepseek-v4-flash[1m] + max).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        provider: { type: "string", description: "codex|claude|deepseek|… (defaults to fabric.sessionDefaults.provider)" },
-        model: { type: "string", description: "Model override" },
-        write: { type: "boolean", description: "Allow file writes" },
-        cwd: { type: "string", description: "Working dir" },
-        observe: { type: "boolean", description: "Capture HTTP traffic" },
-        node: { type: "string", description: "Peer fabric node name — run the session on that machine (message-passing only)" },
-        project: { type: "string", description: "Remote node's project alias (with node)" },
-        profile: { type: "string", description: "Named spawn profile from fabric.profiles (tool/permission/env policy; remote spawns resolve the name on the peer)" },
-        visible: { type: "boolean", description: "Show a live transcript terminal on the machine running the session (default hidden)" },
-        interactive: { type: "boolean", description: "Also open an input terminal there — a human can interject into the live session (implies visible)" },
-        effort: { type: "string", description: "Thinking effort: low|medium|high|max or a MAX_THINKING_TOKENS number" },
-        shared: { type: "boolean", description: "Remote only: drivable by ANY token-holder (other machines' consoles can attach), never reaped when the spawner disconnects" },
-      },
-    },
-  },
-  {
-    name: "session_view",
-    description: "View a session's content — the tail of its conversation transcript plus liveness facts (alive, pid, turns, lastActivity). Pass `id` for a session in the local registry (forwards to the node it runs on), or `node` + `remoteId` to view a peer session directly. A codex session reports content:null honestly (no local transcript).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Session id in the local registry" },
-        node: { type: "string", description: "Peer node name (with remoteId) — view that session directly, no attach needed" },
-        remoteId: { type: "string", description: "Session id as shown by list_nodes on that node (with node)" },
-        tailChars: { type: "number", description: "Max chars of transcript tail to return (default 8000)" },
-      },
-    },
-  },
-  {
-    name: "attach_session",
-    description: "Adopt an EXISTING remote session (spawned `shared:true` on a peer) so this console can send to and close it. Returns a local session id for session_send/session_close. A peer session that was NOT spawned shared is viewable but not drivable (by design).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        node: { type: "string", description: "Peer node name" },
-        remoteId: { type: "string", description: "Session id on that node (as shown by list_nodes)" },
-      },
-      required: ["node", "remoteId"],
-    },
-  },
-  {
-    name: "session_send",
-    description: "Send a turn to a session. Context retained across turns.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Session id" },
-        prompt: { type: "string", description: "Turn text" },
-        resultMode: { type: "string", enum: ["summary", "full", "truncate"], description: "Default: summary" },
-      },
-      required: ["id", "prompt"],
-    },
-  },
-  {
-    name: "session_close",
-    description: "Close a session and free its process.",
-    inputSchema: {
-      type: "object",
-      properties: { id: { type: "string", description: "Session id" } },
-      required: ["id"],
-    },
-  },
-  {
-    name: "session_compact",
-    description: "Compact a persistent session's context natively (codex: thread/compact/start). Same session id continues. Fails with COMPACT_UNSUPPORTED for backends without a native compact.",
-    inputSchema: {
-      type: "object",
-      properties: { id: { type: "string", description: "Session id" } },
-      required: ["id"],
-    },
-  },
-  {
-    name: "session_goal",
-    description: "Set a native goal on a claude/API session (/goal <condition>): the CLI then auto-continues turns until the condition is met. With prompt, runs the loop NOW and returns the final outcome (drained, capped by maxTurns/timeout, state met|capped|timeout). Fails with GOAL_UNSUPPORTED for backends without one.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Session id" },
-        condition: { type: "string", description: "The goal condition, e.g. 'finished when all tests pass'" },
-        prompt: { type: "string", description: "Optional trigger prompt to start the autonomous run (otherwise just sets the goal; the next session_send runs it)" },
-        maxTurns: { type: "number", description: "Cap on autonomous loop iterations (default 20)" },
-        timeoutMs: { type: "number", description: "Wall-clock cap for the run (default 30 min)" },
-      },
-      required: ["id", "condition"],
-    },
-  },
-  {
-    name: "list_sessions",
-    description: "List open sessions (id, provider, turn count).",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "team_spawn",
-    description: "Create a fleet of workers. Drive with team_send, close with team_close.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        workers: {
-          type: "array",
-          description: "Worker specs",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string", description: "Worker name" },
-              provider: { type: "string" },
-              model: { type: "string", description: "Model override" },
-              write: { type: "boolean", description: "Allow file writes" },
-              cwd: { type: "string", description: "Working dir" },
-              node: { type: "string", description: "Peer fabric node name — worker runs on that machine" },
-              project: { type: "string", description: "Remote node's project alias (with node)" },
-              profile: { type: "string", description: "Named spawn profile from fabric.profiles — the worker's tool/permission/env policy" },
-            },
-            required: ["id", "provider"],
-          },
-        },
-      },
-      required: ["workers"],
-    },
-  },
-  {
-    name: "team_send",
-    description: "Send a turn to a team worker.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        teamId: { type: "string", description: "Team id" },
-        workerId: { type: "string", description: "Worker id" },
-        prompt: { type: "string", description: "Turn text" },
-      },
-      required: ["teamId", "workerId", "prompt"],
-    },
-  },
-  {
-    name: "team_status",
-    description: "Get status of all workers in a team.",
-    inputSchema: {
-      type: "object",
-      properties: { teamId: { type: "string", description: "Team id" } },
-      required: ["teamId"],
-    },
-  },
-  {
-    name: "team_synthesize",
-    description: "Synthesize all worker contexts into a summary.",
-    inputSchema: {
-      type: "object",
-      properties: { teamId: { type: "string", description: "Team id" } },
-      required: ["teamId"],
-    },
-  },
-  {
-    name: "team_close",
-    description: "Close all team sessions and free resources.",
-    inputSchema: {
-      type: "object",
-      properties: { teamId: { type: "string", description: "Team id" } },
-      required: ["teamId"],
-    },
-  },
-  {
-    name: "list_nodes",
-    description: "Fleet dashboard: this machine plus every configured peer fabric node, with ALIVE/DEAD, version, uptime (d/h/m), CPU busy %, memory free/total, and each node's sessions (the processes you can manage — id, provider, project, shared, alive, turns). Probing is concurrent with per-node deadlines.",
-    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_providers",
@@ -540,8 +363,7 @@ export async function handleCall(args, deps = {}) {
   userPrompt = parsed.cleanPrompt;
   if (parsed.flags.write && write === undefined) write = true;
 
-  // A provider omitted everywhere falls back to fabric.sessionDefaults (same default the
-  // session opener uses) — an explicit <command> flag still wins above.
+  // A provider omitted everywhere falls back to fabric.sessionDefaults — an explicit <command> flag still wins above.
   if (!provider) {
     const sd = loadFabricConfig().sessionDefaults || {};
     provider = sd.provider || null;
@@ -699,214 +521,11 @@ export async function handleFanOut(args, deps) {
 // ── Tool dispatch ─────────────────────────────────────────────────
 
 export async function handleToolCall(name, args = {}, deps = {}) {
-  const _createSession = deps.createSession || createSession;
-  const _sendToSession = deps.sendToSession || sendToSession;
-  const _closeSession = deps.closeSession || closeSession;
-  const _compactSession = deps.compactSession || compactSession;
-  const _setSessionGoal = deps.setSessionGoal || setSessionGoal;
-  const _goalRunSession = deps.goalRunSession || goalRunSession;
-  const _listSessions = deps.listSessions || listSessions;
-  const _viewSession = deps.viewSession || viewSession;
-  const _viewRemote = deps.viewRemoteSession || viewRemoteSession;
-  const _attachSession = deps.attachSession || attachSession;
-  const _pingNodes = deps.pingNodes || pingNodes;
-  const _localStatus = deps.localStatus || localStatus;
-  const _createTeam = deps.createTeam || createTeam;
-  const _sendToTeamWorker = deps.sendToTeamWorker || sendToTeamWorker;
-  const _getTeamStatus = deps.getTeamStatus || getTeamStatus;
-  const _closeTeam = deps.closeTeam || closeTeam;
   switch (name) {
     case "call":
       return await handleCall(args, deps);
     case "fan_out":
       return await handleFanOut(args, deps);
-    case "spawn_session": {
-      // provider/model/effort may be omitted — the session opener resolves fabric.sessionDefaults.
-      const desc = await _createSession({
-        provider: args.provider, model: args.model, write: !!args.write,
-        cwd: args.cwd || process.cwd(), observe: !!args.observe,
-        node: args.node, project: args.project, profile: args.profile, visible: !!args.visible, interactive: !!args.interactive, effort: args.effort, shared: !!args.shared,
-      });
-      return textResult(JSON.stringify(desc));
-    }
-    case "session_compact": {
-      if (!args.id) throw new Error("session_compact: id is required");
-      return textResult(JSON.stringify(await _compactSession(args.id)));
-    }
-    case "session_goal": {
-      if (!args.id || !args.condition) throw new Error("session_goal: id and condition are required");
-      if (args.prompt != null) {
-        return textResult(JSON.stringify(await _goalRunSession(args.id, {
-          prompt: String(args.prompt), maxTurns: args.maxTurns, timeoutMs: args.timeoutMs,
-        })));
-      }
-      return textResult(JSON.stringify(await _setSessionGoal(args.id, String(args.condition))));
-    }
-    case "session_send": {
-      if (!args.id || !args.prompt) throw new Error("session_send: id and prompt are required");
-      const res = await _sendToSession(args.id, args.prompt);
-      const fullText = res.text || "(no output)";
-      const resultMode = args.resultMode || "summary";
-      let resultText;
-      if (resultMode === "full") {
-        resultText = fullText;
-      } else if (resultMode === "truncate") {
-        resultText = truncateText(fullText, 2000);
-      } else {
-        const sessionProvider = getSessionProvider(args.id);
-        if (sessionProvider) {
-          try {
-            const cfg = loadProviderConfig(sessionProvider);
-            resultText = await summarizeOutput(fullText, cfg, sessionProvider);
-          } catch { resultText = truncateText(fullText, 4000); }
-        } else {
-          resultText = truncateText(fullText, 4000);
-        }
-      }
-      return textResult(resultText);
-    }
-    case "session_close": {
-      if (!args.id) throw new Error("session_close: id is required");
-      return textResult(JSON.stringify(await _closeSession(args.id)));
-    }
-    case "session_view": {
-      // `node` + `remoteId` views a peer session directly (no attach needed — read-only);
-      // `id` views a session in the local registry (forwards to the node it runs on).
-      if (args.node && args.remoteId) {
-        return textResult(JSON.stringify(await _viewRemote({ node: args.node, remoteId: args.remoteId }, { tailChars: args.tailChars })));
-      }
-      if (!args.id) throw new Error("session_view: id (or node + remoteId) is required");
-      return textResult(JSON.stringify(await _viewSession(args.id, { tailChars: args.tailChars })));
-    }
-    case "attach_session": {
-      if (!args.node || !args.remoteId) throw new Error("attach_session: node and remoteId are required");
-      return textResult(JSON.stringify(await _attachSession({ node: args.node, remoteId: args.remoteId })));
-    }
-    case "team_spawn": {
-      if (!args.workers || !args.workers.length) throw new Error("team_spawn: workers array is required");
-      const desc = await _createTeam(args.workers);
-      return textResult(JSON.stringify(desc));
-    }
-    case "team_send": {
-      if (!args.teamId || !args.workerId || !args.prompt) throw new Error("team_send: teamId, workerId, and prompt are required");
-      const res = await _sendToTeamWorker(args.teamId, args.workerId, args.prompt);
-      const fullText = res.text || "(no output)";
-      const resultMode = args.resultMode || "summary";
-      let resultText;
-      if (resultMode === "full") {
-        resultText = fullText;
-      } else if (resultMode === "truncate") {
-        resultText = truncateText(fullText, 2000);
-      } else {
-        const worker = _getTeamStatus(args.teamId).find(w => w.id === args.workerId);
-        const workerProvider = worker ? getSessionProvider(worker.sessionId) : null;
-        if (workerProvider) {
-          try {
-            const cfg = loadProviderConfig(workerProvider);
-            resultText = await summarizeOutput(fullText, cfg, workerProvider);
-          } catch { resultText = truncateText(fullText, 4000); }
-        } else {
-          resultText = truncateText(fullText, 4000);
-        }
-      }
-      return textResult(resultText);
-    }
-    case "team_status": {
-      if (!args.teamId) throw new Error("team_status: teamId is required");
-      return textResult(JSON.stringify(_getTeamStatus(args.teamId)));
-    }
-    case "team_synthesize": {
-      if (!args.teamId) throw new Error("team_synthesize: teamId is required");
-      const status = _getTeamStatus(args.teamId);
-      // Summarize from status only (no full-turn fetch — lightweight)
-      const summary = status.map(w => `[${w.id}] provider=${w.provider} turns=${w.turns}`).join("\n");
-      let synthesis = null;
-      try {
-        const dsConfig = loadProviderConfig("deepseek");
-        if (dsConfig.baseUrl) {
-          const data = await callAnthropicAPI(
-            dsConfig, dsConfig.defaultHaiku || dsConfig.defaultSonnet,
-            "Synthesize this team status into a 2-3 sentence view for the orchestrator. Note worker activity levels and any patterns.",
-            summary, null, true,
-          );
-          synthesis = extractText(data);
-        }
-      } catch { /* best-effort */ }
-      return textResult(JSON.stringify({ teamId: args.teamId, workers: status, synthesis }));
-    }
-    case "team_close": {
-      if (!args.teamId) throw new Error("team_close: teamId is required");
-      return textResult(JSON.stringify(await _closeTeam(args.teamId)));
-    }
-    case "list_sessions":
-      return textResult(JSON.stringify(_listSessions()));
-    case "list_nodes": {
-      const memStr = (av, tot) => (tot ? `${fmtMem(av)} free / ${fmtMem(tot)} total` : `${fmtMem(av)} free`);
-      const machineLine = (m, name) => `${name} · up ${fmtUptime(m.uptime_s ?? 0)} · cpu ${m.cpu_busy_pct ?? "?"}% (${m.cpu ?? "?"} cores) · mem ${memStr(m.mem_available_mb, m.mem_total_mb)}`;
-      // Three-state liveness: `alive: null` means "not yet observed" (a remote/attached
-      // handle before its first ping) — that is NOT dead. Only a reported false is dead.
-      const aliveLabel = (s) => (s.alive === false ? "dead" : s.alive === true ? "alive" : "unknown");
-
-      const local = await _localStatus();
-      const localSessions = _listSessions();
-      const probed = await _pingNodes({ detail: "full" });
-
-      // Cross-machine dedupe: an attached session is a handle on a PEER's native session
-      // — ONE conversation that otherwise appears TWICE (the attach row + the native row,
-      // which reads as "duplicate same-name sessions" on the fleet view). Show each
-      // conversation once: prefer the native copy and annotate it with which machines hold
-      // a drivable attach; keep an attach row only when its native copy is not rendered
-      // (peer down / unknown).
-      const fleet = [
-        { name: "[this machine]", sessions: localSessions },
-        ...probed.filter((m) => m.alive).map((m) => ({ name: m.name, sessions: m.sessions ?? [] })),
-      ];
-      const nativeByKey = new Map();   // nativeId → the machine rendering the native copy
-      const attachedByKey = new Map(); // nativeId → machines holding an attach handle to it
-      for (const m of fleet) for (const s of m.sessions) {
-        const k = s.nativeId ?? s.id;
-        if (!k) continue;
-        if (s.provider === "attached") {
-          attachedByKey.set(k, [...(attachedByKey.get(k) ?? []), m.name]);
-        } else if (!nativeByKey.has(k)) {
-          nativeByKey.set(k, m.name);
-        }
-      }
-      const attachDedup = (s) => s.provider !== "attached" || !nativeByKey.has(s.nativeId);
-      const sessionLine = (s) => [
-        s.id, s.provider ?? "?",
-        s.provider === "attached" ? `native=${s.nativeId}` : null,
-        s.provider !== "attached" && s.nativeId && attachedByKey.has(s.nativeId)
-          ? `[attached@${attachedByKey.get(s.nativeId).join(",")}]` : null,
-        s.project ? `project=${s.project}` : null,
-        s.shared ? "shared" : null,
-        aliveLabel(s),
-        s.turns != null ? `turns=${s.turns}` : null,
-        s.pid ? `pid=${s.pid}` : null,
-        s.lastActivity ? `last=${fmtAgo(s.lastActivity)}` : null,
-      ].filter(Boolean).join(" ");
-
-      const lines = [];
-      lines.push(`[this machine] ${machineLine(local, `ALIVE v${SERVER_VERSION}`)}`);
-      const localShown = localSessions.filter(attachDedup);
-      lines.push(...(localShown.length
-        ? localShown.map((s) => `    ${sessionLine(s)}`)
-        : ["    (no sessions on this machine)"]));
-      if (!probed.length) {
-        lines.push('No fabric nodes configured. Add a "fabric" block (token + nodes) to claude_env_settings.json; run `node scripts/serve.mjs` on each peer machine.');
-      }
-      for (const m of probed) {
-        if (m.alive) {
-          lines.push(`${m.name} ${machineLine(m, `ALIVE v${m.version ?? "?"}`)}${m.tags?.length ? ` · tags=${m.tags.join(",")}` : ""}`);
-          const ss = (m.sessions ?? []).filter(attachDedup);
-          lines.push(...(ss.length ? ss.map((s) => `    ${sessionLine(s)}`) : ["    (no sessions)"]));
-        } else {
-          lines.push(`${m.name} DEAD: ${m.error ?? "unreachable"}`);
-        }
-      }
-      const aliveCount = 1 + probed.filter((m) => m.alive).length;
-      return textResult(`fabric fleet: ${aliveCount}/${probed.length + 1} machines alive\n` + lines.join("\n"));
-    }
     case "list_providers":
       return textResult(listModels());
     case "resolve_model": {
@@ -948,10 +567,6 @@ export const handleRpcRequest = rpc.handleRpcRequest;
 export { encodeRpcMessage };
 
 if (isMain(import.meta.url)) {
-  // Sessions spawned from here are held by THIS process; the journal records that so the
-  // layer above can route a close/ping to the daemon that owns the handle (SR-045). Set
-  // only when RUNNING as the server — an importer of this module is not that daemon.
-  setJournalOwnerKind("mcp");
   rpc.main().catch((error) => {
     process.stderr.write(`fabric-mcp fatal: ${error.message}\n`);
     process.exitCode = 1;

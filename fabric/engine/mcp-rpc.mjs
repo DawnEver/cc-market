@@ -59,13 +59,11 @@ const DEFAULT_MAX_CONCURRENCY = sanitizeConcurrency(process.env.FABRIC_MCP_MAX_C
 const DEFAULT_MAX_LIGHT_CONCURRENCY = sanitizeConcurrency(process.env.FABRIC_MCP_LIGHT_CONCURRENCY, 8);
 
 // Two pools, because the calls have two cost classes. Everything that drives a model —
-// call, fan_out, a session turn, a spawn, a team op — is minutes long and belongs in the
-// bounded heavyweight pool. Everything that only reads or frees registry state is
-// microseconds and gets its own pool, so `session_close` can never sit in the queue
-// behind the wedged `session_send` it exists to cancel (sharp-review SR-050).
+// call, fan_out — is minutes long and belongs in the bounded heavyweight pool. Pure
+// introspection is microseconds and gets its own pool, so it can never sit in the queue
+// behind a wedged model call (sharp-review SR-050).
 export const LIGHTWEIGHT_TOOLS = new Set([
-  "list_sessions", "list_nodes", "list_providers", "resolve_model", "codex_status",
-  "session_close", "session_ping",
+  "list_providers", "resolve_model", "codex_status",
 ]);
 
 /**
