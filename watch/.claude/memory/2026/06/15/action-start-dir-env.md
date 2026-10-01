@@ -9,7 +9,7 @@ watch **v1.0.40**. 延续 [[action-forms-and-core-dedup]](managed kill_port/star
 
 ### 动机
 managed 形式的 `start_dir` 是静态相对 project-dir 的路径,**表达不了运行期才知道的 cwd**
-(部署门禁导出动态 staging 路径到 env)。消费方(wdg-lab)因此被迫给 test-instance action
+(部署门禁导出动态 staging 路径到 env)。消费方(<project>)因此被迫给 test-instance action
 保留内联 `python -c "...glob(start-server.py)...Popen(...)"`,既难测又会在 Windows 漏开终端窗口。
 
 ### 改动

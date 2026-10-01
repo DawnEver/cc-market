@@ -24,8 +24,8 @@ export const CONFIG_CACHE_TTL_MS = 2000;
  *   - RELATIVE    → resolve against the config file's REAL dir (the repo root, via the
  *                   ~/.claude/claude_env_settings.json symlink) — a fallback that works
  *                   even on a machine that has not run setup yet
- * The fleet has mixed usernames (linxu vs ezxmb14); baking one box's absolute path into
- * the file made every session on the other box exit 1 at startup (reproduced on WS1).
+ * The fleet has mixed usernames (`<user-a>` vs `<user-b>`); baking one box's absolute path into
+ * the file made every session on the other box exit 1 at startup (reproduced on host-b).
  */
 export function resolveSystemPromptFile(promptFile, configPath) {
   if (!promptFile) return null;

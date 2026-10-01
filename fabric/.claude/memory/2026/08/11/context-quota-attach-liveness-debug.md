@@ -5,9 +5,9 @@ name: context-quota-attach-liveness-debug
 # Debug session: context quota "full in two rounds" + attached sessions shown dead/duplicated
 
 User-reported (2026-08-11): fabric persistent sessions show context 100% after ~2 rounds;
-and the fleet dashboard lists multiple "same-name" sessions across G and WS1, with attached
-sessions marked `dead`. Diagnosis below is from LIVE data (sessions `sess-1-msp7u3fs` on G /
-`sess-4-msp7rsdw` on WS1, the motronics integration task). **All four findings fixed in the
+and the fleet dashboard lists multiple "same-name" sessions across host-a and host-b, with attached
+sessions marked `dead`. Diagnosis below is from LIVE data (sessions `sess-1-msp7u3fs` on host-a /
+`sess-4-msp7rsdw` on host-b, the <project> integration task). **All four findings fixed in the
 same session (SR-055 context, SR-056 attach); uncommitted at time of writing.**
 
 ## How context quota is supposed to work
@@ -61,7 +61,7 @@ whole prompt either way). Live case drops 932k → ~73k (37% of 200k). `total_in
 
 ## Bug 2 (confirmed) — attached sessions show `dead` + stale turns
 
-On G, both attached sessions render `attached dead turns=2`/`turns=1`; the underlying WS1
+On host-a, both attached sessions render `attached dead turns=2`/`turns=1`; the underlying host-b
 sessions are `alive` with `turns=3`/`turns=1`.
 
 - `engine/session.mjs:384-386` `observedAlive`: `'alive' in handle ? !!handle.alive : null`.
@@ -86,9 +86,9 @@ sessions are `alive` with `turns=3`/`turns=1`.
 
 ## "Duplicate same-name sessions" — attach convention + a raw-dashboard gap (fixed)
 
-- G's `sess-1-msp7u3fs` / `sess-2-msp7utf3` are ATTACH handles to WS1's
+- host-a's `sess-1-msp7u3fs` / `sess-2-msp7utf3` are ATTACH handles to host-b's
   `sess-4-msp7rsdw` / `sess-2-msp7rk89` — ONE conversation, two references (attach
-  convention: adopt a remote session so G can drive it). Web console dedups across
+  convention: adopt a remote session so host-a can drive it). Web console dedups across
   machines by nativeId (`state.js:61-79` uniqueSessions; `state.js:98-103` sessionsOf).
 - FIXED (SR-056): the RAW `list_nodes` MCP tool now dedupes too — an attached row whose
   nativeId matches a rendered native copy is dropped, and the native copy is annotated
@@ -106,7 +106,7 @@ sessions are `alive` with `turns=3`/`turns=1`.
 2. `session_view {node, remoteId}` on the attach id → returns the PEER session's real
    id/pid/turns/content. Confirms attach→native mapping (sess-1-msp7u3fs → sess-4-msp7rsdw).
 3. Read `~/.fabric/journal.jsonl` (this machine) — spawn events carry local id +
-   `nativeId` + node (e.g. `sess-b-msp7rjie → sess-2-msp7rk89 @ WS1`). Other processes
+   `nativeId` + node (e.g. `sess-b-msp7rjie → sess-2-msp7rk89 @ host-b`). Other processes
    write `journal-<pid>.jsonl` / `journal-compact.jsonl`.
 4. `contextStatus(session)` in `web/public/state.js` — the used/limit/pct derivation.
 5. For attach identity, note the registry entry snapshot vs the peer's live node/view.

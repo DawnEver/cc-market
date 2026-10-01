@@ -26,5 +26,5 @@ anomaly alike and got drowned by `cron_stale`-type anomalies that always exist b
 136/136 pass (test_anomalies.py new; test_daemon/test_trigger_emit extended). Plugin
 commits on main: code + version bump 1.0.22→1.0.23. Runtime is the cache mirror
 `~/.claude/plugins/cache/cc-market/watch/<ver>` — was hand-mirrored to 1.0.23 +
-installed_plugins.json repointed for wdg-lab. NOTE: 1.0.23 commits are NOT pushed to the
+installed_plugins.json repointed for <project>. NOTE: 1.0.23 commits are NOT pushed to the
 `DawnEver/cc-market` remote yet, so a future `/plugin update` will overwrite the mirror.

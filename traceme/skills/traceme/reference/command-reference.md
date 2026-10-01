@@ -107,7 +107,7 @@ traceme stats --project my-app          # Quick summary, filtered
 traceme status                          # Database health & sync status
 traceme status --sync                   # Full sync diagnostics
 traceme sync status                     # Alias for `status --sync`
-traceme sync forget linxu-win           # Remove device from sync
+traceme sync forget alice-win           # Remove device from sync
 traceme sync rebuild                    # Reset sync repo from local data
 traceme export today                    # Export daily summary as JSON
 traceme export today --csv              # Export daily summary as CSV

@@ -23,8 +23,8 @@ running and finishing. The wall existed only on the REMOTE path; the local `open
   dead peer → `CONNECTION_LOST`. `{text, turn}` handle contract unchanged, so
   sendToSession/MCP/console all inherit the fix.
 
-**Deploy + verify (2026-08-15):** pushed; WS2 updated to v0.2.5 and restarted. Cross-machine
-E2E from dev client → WS2 new server: quick PONG roundtrip 4.1s, and a 152.8s turn returned
+**Deploy + verify (2026-08-15):** pushed; host-c updated to v0.2.5 and restarted. Cross-machine
+E2E from dev client → host-c new server: quick PONG roundtrip 4.1s, and a 152.8s turn returned
 `LONG_DONE` with no timeout (the old code would have failed at 120s).
 
 **Caveat:** new client needs new server (`node/turn`); old fleet peers report `Method not

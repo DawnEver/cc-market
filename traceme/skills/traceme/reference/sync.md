@@ -18,18 +18,18 @@ All devices push per-device `.enc` files directly to `main`. Only `.enc` files (
 touch the remote repo. The sync repo is separate from the config repo.
 
 ```
-Device A (linxu-win)             GitHub (traceme-history)         Device B (linxu-mac)
+Device A (alice-win)             GitHub (traceme-history)         Device B (alice-mac)
      |                                |                                |
      | traceme sync push             |                                |
      | → dump SQLite → JSON          |                                |
      | → age encrypt                 |                                |
      | → push main:YYYY/MM/DD/       |                                |
-     |        linxu-win.enc          |                                |
+     |        alice-win.enc          |                                |
      |──────────────────────────────>|                                |
      |                                |                                |
      |                                |     traceme sync pull         |
      |                                |     → fetch main               |
-     |                                |     → decrypt linxu-win.enc    |
+     |                                |     → decrypt alice-win.enc    |
      |                                |     → merge into SQLite        |
      |                                |<───────────────────────────────|
 ```
@@ -42,11 +42,11 @@ device:
 ```
 main:
   2026/06/09/
-    linxu-win.enc
-    linxu-mac.enc
+    alice-win.enc
+    alice-mac.enc
   2026/06/10/
-    linxu-win.enc
-    linxu-mac.enc
+    alice-win.enc
+    alice-mac.enc
 ```
 
 ## Sync Data Model (what gets synced)

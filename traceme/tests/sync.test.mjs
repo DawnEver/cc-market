@@ -140,7 +140,7 @@ describe('Sync Data Dump/Import', () => {
     const foreignData = {
       version: 1,
       date: '2026-06-09',
-      device: 'linxu-mac',
+      device: 'alice-mac',
       generated_at: '2026-06-09T23:00:00Z',
       daily_summary: [
         { project: 'my-project', repo_origin: 'github.com/user/my-project', session_count: 2, prompt_count: 8, total_tokens: 30000, total_cost: 0.12, top_model: 'claude-opus-4' },
@@ -175,7 +175,7 @@ describe('Sync Data Dump/Import', () => {
   it('should be idempotent — repeated import never mutates local totals', async () => {
     const { importDailyData } = await import('../scripts/sync.mjs');
     const sameData = {
-      version: 1, date: '2026-06-09', device: 'linxu-mac',
+      version: 1, date: '2026-06-09', device: 'alice-mac',
       daily_summary: [{ project: 'other-project', repo_origin: 'github.com/other/other-project', session_count: 1, prompt_count: 3, total_tokens: 10000, total_cost: 0.04, top_model: 'claude-sonnet-4' }],
       sessions: [{ id: 'sess-m1', project: 'my-project', repo_origin: 'github.com/user/my-project', branch: 'feat/x', started_at: '2026-06-09T14:00:00Z', prompt_count: 4, total_tokens: 15000, total_cost: 0.06 }],
       tool_usage: [],

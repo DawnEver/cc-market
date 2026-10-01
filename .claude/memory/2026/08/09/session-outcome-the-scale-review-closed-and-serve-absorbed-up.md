@@ -28,7 +28,7 @@ Shape changes a future session must know:
   ONE pooled TLS connection per peer with keepalive + heartbeat.
 - **`serve.maxSessions`** (default 64) refuses spawns with `CAPACITY_CEILING` — a static
   operator invariant; dynamic admission stays in the swarm layer by the approved
-  architecture (motronics:
+  architecture (<project>:
   `design-final-architecture-collaboration-and-test-system-unified.md`).
 - **Operator fact:** serve's session children do not die with serve — orphans by design;
   clean by CommandLine-matched Stop-Process, then clear records in the console. Candidate

@@ -38,7 +38,7 @@ that breaks one is wrong even if it improves a metric.
 
 1. **Reviewers are discovered as authors of related work, never by asking a model
    for names.** No phase here introduces model-generated candidates.
-2. **No address is ever constructed from a pattern.** `first.last@uni.edu` is a
+2. **No address is ever constructed from a pattern.** `first.last@uni.example.edu` is a
    guess that either bounces or reaches a stranger. Missing is `not_found`.
 3. **A model never decides a conflict of interest.** COI verdicts stay
    deterministic, with a rule and a citation.
@@ -186,7 +186,7 @@ reviewer-discovery registry (`cli/rev_disc.py:80` `_sources`) is
 `institutional_profile` unconditionally. A footnote proves the address was theirs
 when the paper shipped; it necessarily predates any move since. Observed: Zaixin
 Song offered a stale CityU address while at PolyU; Hang Zhao offered
-`hangzhao5-c@my.cityu.edu.hk`, a *student* address at the university he left.
+`student123@my.uni.example.edu`, a *student* address at the university he left.
 
 A first mitigation shipped in `5d01dec`: every address found is stored, and
 `shortlist.csv` carries `email_alternate` + source, so the editor sees both. That

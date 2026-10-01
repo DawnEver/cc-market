@@ -29,7 +29,7 @@ def candidate(person_id="p1", name="Candidate One", **kwargs) -> Candidate:
     return Candidate(person=Person(person_id=person_id, display_name=name), **kwargs)
 
 
-def row(cand: Candidate, rank: int = 1, email: str = "a@b.edu") -> report.Row:
+def row(cand: Candidate, rank: int = 1, email: str = "a@b.edu.example") -> report.Row:
     return report.Row(
         rank=rank, candidate=cand, email=EmailFinding(email=email, source="test")
     )
@@ -165,8 +165,8 @@ def test_the_conflict_verdict_and_its_severity_are_stated():
 def test_a_missing_address_leaves_the_cell_empty_rather_than_guessing(found):
     cand = candidate()
     cand.eligibility = eligibility.Assessment()
-    _, rows = read(report.render_audit([row(cand, email="a@b.edu" if found else "")], load_policy()))
-    assert rows[0]["email"] == ("a@b.edu" if found else "")
+    _, rows = read(report.render_audit([row(cand, email="a@b.edu.example" if found else "")], load_policy()))
+    assert rows[0]["email"] == ("a@b.edu.example" if found else "")
 
 
 def test_the_recommendation_column_keeps_all_three_states():

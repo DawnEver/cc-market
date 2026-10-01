@@ -65,7 +65,7 @@ describe('Report Generator', () => {
 
   it('should prefer merged cross-device data when available', () => {
     const merged = {
-      devices: ['linxu-win', 'linxu-mac'],
+      devices: ['alice-win', 'alice-mac'],
       aggregated_at: '2026-06-09T23:00:00Z',
       daily_summary: [
         { project: 'my-project', repo_origin: 'github.com/user/my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
@@ -77,7 +77,7 @@ describe('Report Generator', () => {
     };
 
     const report = generateReport('2026-06-09', { mergedSnapshot: merged });
-    assert.ok(report.includes('Aggregated across 2 device(s): linxu-win, linxu-mac'));
+    assert.ok(report.includes('Aggregated across 2 device(s): alice-win, alice-mac'));
     assert.ok(report.includes('other-project'));
     assert.ok(report.includes('37.0K'), `Total tokens not found. Report: ${report.slice(0, 600)}`);
     assert.ok(report.includes('$0.1450'), `Total cost not found. Report: ${report.slice(0, 600)}`);
@@ -93,7 +93,7 @@ describe('Report Generator', () => {
 
   it('should show cross-device stats when merged data is available', () => {
     const merged = {
-      devices: ['linxu-win', 'linxu-mac'],
+      devices: ['alice-win', 'alice-mac'],
       aggregated_at: '2026-06-09T23:00:00Z',
       daily_summary: [
         { project: 'my-project', repo_origin: 'github.com/user/my-project', session_count: 3, prompt_count: 6, total_tokens: 27000, total_cost: 0.105, top_model: 'claude-sonnet-4' },
@@ -106,7 +106,7 @@ describe('Report Generator', () => {
     const stats = generateStats({ mergedSnapshot: merged });
     assert.ok(stats.includes('TraceMe Stats'));
     assert.ok(stats.includes('cross-device'));
-    assert.ok(stats.includes('2 device(s): linxu-win, linxu-mac'));
+    assert.ok(stats.includes('2 device(s): alice-win, alice-mac'));
     assert.ok(stats.includes('3 sessions'));
   });
 });

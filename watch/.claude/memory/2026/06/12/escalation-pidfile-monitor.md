@@ -47,5 +47,5 @@ long-lived process with no re-exec.
 `trigger-watch.jsonl` shows only ONE line — `append_report(..., max_entries=0)` truncates to the
 latest entry; a lone "Initial mtime" line means healthy & sleeping, not dead.
 
-Downstream consumer wdg-lab keeps project-specific launch tooling (`start-watch.ps1` /
+Downstream consumer <project> keeps project-specific launch tooling (`start-watch.ps1` /
 `stop-watch.ps1`) in its own repo; this entry is the plugin-general knowledge.

@@ -123,7 +123,6 @@ def test_the_store_defaults_to_local_state_not_a_synced_folder(monkeypatch, tmp_
     assert path.name == "academia.db"
     assert paths.APP_DIRNAME in path.parts
     assert "Documents" not in path.parts
-    assert "PEMC" not in path.parts
     assert not any("onedrive" in part.lower() for part in path.parts)
 
 

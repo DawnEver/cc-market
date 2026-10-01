@@ -1,6 +1,6 @@
 ---
 name: cc-latex-plugin-extraction
-description: "cc-latex plugin: LaTeX writing assistant extracted from the PEMC report_latex project"
+description: "cc-latex plugin: LaTeX writing assistant extracted from a private report_latex project"
 metadata:
   type: reference
 ---
@@ -8,7 +8,7 @@ metadata:
 # cc-latex plugin extraction
 
 On 2026-08-05, created the `cc-latex` plugin in cc-market, extracted from
-`PEMC/251001-Faculty_of_Engineering/260701_Annual_Report/report_latex`
+`<project>/report_latex`
 (CLAUDE.md/AGENTS.md conventions + the count_tex skill).
 
 ## What shipped

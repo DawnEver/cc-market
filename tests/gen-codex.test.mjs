@@ -28,10 +28,10 @@ function mkTmp(prefix) {
 after(() => { for (const d of tmpDirs) { try { rmSync(d, { recursive: true, force: true }); } catch {} } });
 
 test('buildInterface synthesizes all required fields', () => {
-  const iface = buildInterface({ name: 'takeover', description: 'Hand off tasks.', author: { name: 'Mingyang Bao' } }, { displayName: 'Takeover', category: 'productivity' });
+  const iface = buildInterface({ name: 'takeover', description: 'Hand off tasks.', author: { name: 'Example Author' } }, { displayName: 'Takeover', category: 'productivity' });
   for (const f of REQUIRED_INTERFACE) assert.ok(iface[f] !== undefined && iface[f] !== '', `missing ${f}`);
   assert.equal(iface.displayName, 'Takeover');
-  assert.equal(iface.developerName, 'Mingyang Bao');
+  assert.equal(iface.developerName, 'Example Author');
   assert.equal(iface.category, 'Productivity'); // title-cased
   assert.ok(Array.isArray(iface.capabilities));
   assert.ok(Array.isArray(iface.defaultPrompt) && iface.defaultPrompt.length <= 3);

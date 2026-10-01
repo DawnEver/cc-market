@@ -6,7 +6,7 @@ name: fleet-dashboard-and-remote-session-management
 
 User directives (2026-08-11): (1) show each online device with CPU busy %, mem free/total,
 uptime in d/h/m; (2) from device A manage device B's sessions — view content, converse,
-kill; (3) default session config `deepseek-v4-flash max`; (4) live-test whether WS1/WS2
+kill; (3) default session config `deepseek-v4-flash max`; (4) live-test whether host-b/host-c
 can spawn new sessions.
 
 ## What shipped
@@ -35,15 +35,15 @@ ride a claude session). Resolved in `resolveSessionDefaults` (openProviderSessio
 `call`), and peer-side in `node/spawn` (serve.mjs passes it). Live config set to
 `{deepseek, deepseek-v4-flash[1m], max}`; web console spawn form preselects it.
 
-## Live finding: WS1 could NOT spawn — hardcoded OneDrive path in shared config
+## Live finding: host-b could NOT spawn — hardcoded OneDrive path in shared config
 
-WS2 spawned+sent+closed cleanly (`WS2-OK`). WS1's child exited 1 at startup:
-`System prompt file not found: C:\Users\linxu\OneDrive - The University of Nottingham\Sync\claude\system-prompt\claude-base.md`.
-The synced `fabric.systemPromptFile` had baked in G's absolute OneDrive path. WS1's user is
-**ezxmb14** (not linxu) — the file DID exist on WS1 at `C:\Users\ezxmb14\...\claude-base.md`,
-but the config pointed at the linxu path. The CLI exits 1 on a nonexistent
+host-c spawned+sent+closed cleanly (`host-c-OK`). host-b's child exited 1 at startup:
+`System prompt file not found: C:\Users\<user>\OneDrive - <Org>\Sync\claude\system-prompt\claude-base.md`.
+The synced `fabric.systemPromptFile` had baked in host-a's absolute OneDrive path. host-b's user is
+**<user-b>** (not <user-a>) — the file DID exist on host-b at `C:\Users\<user-b>\...\claude-base.md`,
+but the config pointed at the <user-a> path. The CLI exits 1 on a nonexistent
 `--system-prompt-file`, bricking EVERY session on a peer with a different username.
-`codex_config.toml` had the SAME hardcoded linxu path for `model_instructions_file`.
+`codex_config.toml` had the SAME hardcoded <user-a> path for `model_instructions_file`.
 
 ## First-principles redesign (2026-08-11): symlink-based platform prompts
 
@@ -63,9 +63,9 @@ junctions), so prompt files are referenced by their symlink path:
 
 **Version honesty:** `pluginVersion()` is now MEMOIZED at first read — node/status reports
 the version of the CODE actually running, not a plugin.json auto-updated on disk after
-start (WS2's banner said v0.1.14 while status reported v0.1.19, observed live).
+start (host-c's banner said v0.1.14 while status reported v0.1.19, observed live).
 
-**Operational:** WS1/WS2 each need `npm run setup` (creates the system-prompt junctions)
+**Operational:** host-b/host-c each need `npm run setup` (creates the system-prompt junctions)
 + a serve restart with the new code. `node/view` is UNSUPPORTED on both peers until their
 serves run the new version — the feature set lands via the normal plugin update cycle.
 

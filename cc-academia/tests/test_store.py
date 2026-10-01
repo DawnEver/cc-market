@@ -154,7 +154,7 @@ def test_affiliation_and_country_round_trip(conn):
     repo.store_institution_for(
         conn,
         person_id,
-        name="University of Nottingham",
+        name="University of Exampleton",
         ror_id="https://ror.org/01ee9ar58",
         country_code="GB",
         year_from=2020,
@@ -163,7 +163,7 @@ def test_affiliation_and_country_round_trip(conn):
     person = repo.load_person(conn, person_id)
     assert person is not None
     assert person.country_code == "GB"
-    assert person.current_affiliation.institution == "University of Nottingham"
+    assert person.current_affiliation.institution == "University of Exampleton"
 
 
 def test_education_without_a_source_url_is_refused(conn):
@@ -228,8 +228,8 @@ def test_phd_year_and_academic_age(conn):
 
 def test_email_keeps_the_highest_confidence_source(conn):
     person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
-    repo.record_email(conn, person_id, "a@uni.edu", source="lab_homepage", confidence=0.6)
-    repo.record_email(conn, person_id, "a@uni.edu", source="published_corresponding", confidence=0.95)
+    repo.record_email(conn, person_id, "a@uni.edu.example", source="lab_homepage", confidence=0.6)
+    repo.record_email(conn, person_id, "a@uni.edu.example", source="published_corresponding", confidence=0.95)
     row = repo.emails_of(conn, person_id)[0]
     assert row["source"] == "published_corresponding"
     assert row["confidence"] == pytest.approx(0.95)

@@ -136,21 +136,21 @@ def test_decomposition_refuses_without_the_optional_extra(tmp_path, monkeypatch)
 
 
 def test_role_addresses_are_not_treated_as_personal():
-    found = enrich.extract_emails("Contact info@uni.edu or grace.expert@uni.edu")
-    assert "info@uni.edu" not in found
-    assert "grace.expert@uni.edu" in found
+    found = enrich.extract_emails("Contact info@uni.edu.example or grace.expert@uni.edu.example")
+    assert "info@uni.edu.example" not in found
+    assert "grace.expert@uni.edu.example" in found
 
 
 def test_an_address_must_match_the_person_to_be_used():
     person = Person(person_id="p", display_name="Grace Expert")
-    emails = ["someone.else@uni.edu", "g.expert@uni.edu"]
-    assert enrich.match_email_to_person(emails, person) == "g.expert@uni.edu"
+    emails = ["someone.else@uni.edu.example", "g.expert@uni.edu.example"]
+    assert enrich.match_email_to_person(emails, person) == "g.expert@uni.edu.example"
 
 
 def test_an_unrelated_departmental_address_is_rejected():
     """Otherwise the invitation reaches whoever appeared first on the page."""
     person = Person(person_id="p", display_name="Grace Expert")
-    assert enrich.match_email_to_person(["postgrad.office@uni.edu"], person) == ""
+    assert enrich.match_email_to_person(["postgrad.office@uni.edu.example"], person) == ""
 
 
 def test_no_address_is_ever_generated_from_a_pattern(conn):
@@ -165,11 +165,11 @@ def test_a_found_address_records_where_it_came_from(conn):
     person_id = repo.upsert_person(conn, Author(name="Grace Expert", idx=0, openalex_id="A1"))
     person = repo.load_person(conn, person_id)
 
-    pages = {"https://www.uni.ac.uk/people/grace": "Email: grace.expert@uni.ac.uk"}
+    pages = {"https://www.uni.ac.uk/people/grace": "Email: grace.expert@uni.ac.uk.example"}
     finding = enrich.find_email(
         conn, person, page_fetcher=pages.get, homepage_urls=list(pages)
     )
-    assert finding.email == "grace.expert@uni.ac.uk"
+    assert finding.email == "grace.expert@uni.ac.uk.example"
     assert finding.source == "institutional_profile"
     assert finding.source_url.startswith("https://www.uni.ac.uk")
     assert finding.confidence >= 0.9
@@ -198,7 +198,7 @@ def test_a_blocked_page_is_skipped_rather_than_retried(conn):
 def test_a_stored_address_is_reused_without_fetching(conn):
     person_id = repo.upsert_person(conn, Author(name="Grace Expert", idx=0, openalex_id="A1"))
     repo.record_email(
-        conn, person_id, "grace@uni.edu", source="published_corresponding",
+        conn, person_id, "grace@uni.edu.example", source="published_corresponding",
         source_url="https://doi.org/10.1/x", confidence=0.95,
     )
     person = repo.load_person(conn, person_id)
@@ -207,7 +207,7 @@ def test_a_stored_address_is_reused_without_fetching(conn):
         raise AssertionError("must not fetch when an address is already known")
 
     finding = enrich.find_email(conn, person, page_fetcher=explode, homepage_urls=["https://x/"])
-    assert finding.email == "grace@uni.edu"
+    assert finding.email == "grace@uni.edu.example"
     assert finding.source == "published_corresponding"
 
 
@@ -258,7 +258,7 @@ def test_a_title_with_a_comma_is_not_mistaken_for_an_author_list():
 ORCID_EMAIL_PAYLOAD = {
     "email": [
         {"email": "private@example.org", "visibility": "LIMITED"},
-        {"email": "ada.researcher@uni.edu", "visibility": "PUBLIC"},
+        {"email": "ada.researcher@uni.edu.example", "visibility": "PUBLIC"},
     ]
 }
 
@@ -290,7 +290,7 @@ def test_orcid_contact_reads_only_public_addresses():
     client._fetch = StubOrcidContact(ORCID_EMAIL_PAYLOAD, ORCID_URLS_PAYLOAD)._fetch
     contact = client.get_contact("0000-0002-1825-0097")
 
-    assert contact.emails == ["ada.researcher@uni.edu"]
+    assert contact.emails == ["ada.researcher@uni.edu.example"]
     assert contact.urls == ["https://lab.example.org/ada", "https://www.uni.edu/staff/ada"]
 
 
@@ -357,7 +357,7 @@ def test_page_fetcher_uses_transport_rescue_before_browser():
 
     def rescue(url, source, timeout=0):
         calls.append("rescue")
-        return b"sabir@iba-suk.edu.pk", "text/html", url
+        return b"sabir@iba-suk.edu.pk.example", "text/html", url
 
     fetcher = PageFetcher(
         getter=failing,
@@ -366,7 +366,7 @@ def test_page_fetcher_uses_transport_rescue_before_browser():
         delay=0.0,
     )
 
-    assert fetcher("https://university.example/profile") == "sabir@iba-suk.edu.pk"
+    assert fetcher("https://university.example/profile") == "sabir@iba-suk.edu.pk.example"
     assert calls == ["rescue"]
 
 
@@ -381,16 +381,16 @@ def test_email_discovery_prefers_an_institutional_page_over_public_orcid(conn):
     )
 
     pages = {
-        "https://www.uni.edu/staff/ada": "Contact a.researcher@uni.edu for enquiries",
+        "https://www.uni.edu/staff/ada": "Contact a.researcher@uni.edu.example for enquiries",
     }
     finding = enrich_module.discover_email(
         conn,
         person,
-        contact=enrich_module.Contact(emails=["ada@gmail.com"], urls=list(pages)),
+        contact=enrich_module.Contact(emails=["ada@gmail.com.example"], urls=list(pages)),
         fetcher=lambda url: pages.get(url, ""),
     )
 
-    assert finding.email == "a.researcher@uni.edu"
+    assert finding.email == "a.researcher@uni.edu.example"
     assert finding.source == "institutional_profile"
     assert finding.source_url == "https://www.uni.edu/staff/ada"
 
@@ -406,11 +406,11 @@ def test_email_discovery_falls_back_to_a_public_orcid_address(conn):
     finding = enrich_module.discover_email(
         conn,
         person,
-        contact=enrich_module.Contact(emails=["ada.researcher@uni.edu"], urls=[]),
+        contact=enrich_module.Contact(emails=["ada.researcher@uni.edu.example"], urls=[]),
         fetcher=None,
     )
 
-    assert finding.email == "ada.researcher@uni.edu"
+    assert finding.email == "ada.researcher@uni.edu.example"
     assert finding.source == "orcid_public"
     assert finding.confidence == enrich_module.EMAIL_CONFIDENCE["orcid_public"]
 
@@ -426,7 +426,7 @@ def test_email_discovery_never_generates_an_address(conn):
         conn,
         person,
         contact=enrich_module.Contact(emails=[], urls=["https://www.uni.edu/staff/other"]),
-        fetcher=lambda url: "Contact bob.other@uni.edu",
+        fetcher=lambda url: "Contact bob.other@uni.edu.example",
     )
 
     assert finding.email == ""

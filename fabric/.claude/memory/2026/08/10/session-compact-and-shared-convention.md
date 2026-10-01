@@ -1,10 +1,10 @@
 ---
-description: native session compaction for codex AND claude, the shared+attach cross-machine convention, and the answer to "why can't I drive other workstations' sessions from G" — session ownership is per-connection by design
+description: native session compaction for codex AND claude, the shared+attach cross-machine convention, and the answer to "why can't I drive other workstations' sessions from host-a" — session ownership is per-connection by design
 ---
 
 # Session compact + the shared+attach convention (2026-08-10)
 
-## The "why can't G drive WS1/WS2 sessions" answer
+## The "why can't host-a drive host-b/host-c sessions" answer
 
 By design, not a bug. Three layers: (1) a session lives in the registry of the PROCESS
 that spawned it (engine/session.mjs in-process Map — MCP server and serve have separate

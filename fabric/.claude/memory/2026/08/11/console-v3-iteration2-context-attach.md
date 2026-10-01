@@ -70,4 +70,4 @@ usage.context_tokens). Suite 398, 397 pass, 0 fail (1 pre-existing win32 skip).
 
 **Operational:** the running serve loads engine modules at startup — ctx% / attached
 identity / node/view identity need a **serve restart** (frontend static files only need a
-hard refresh). Peers (WS1/WS2) show ctx tokens without % until their serves update.
+hard refresh). Peers (host-b/host-c) show ctx tokens without % until their serves update.

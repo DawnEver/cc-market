@@ -60,6 +60,16 @@ not yet covered by that live test.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
 
+### Public hygiene
+
+This repo is published. `scripts/check-public-hygiene.mjs` fails on absolute home paths that
+name a real user, personal emails (fixtures use `example.com`/`*.example`/`*.test`), `-100…`
+Telegram chat ids, `OneDrive - <Org>`, and any entry of the optional machine-local denylist
+`~/.claude/private-markers` (one case-insensitive literal or `/regex/` per line; never
+committed). Manifest author names are the one deliberate exemption. Pre-commit runs it on
+staged files; `tests/public-hygiene.test.mjs` (part of the release suite) runs it over every
+tracked file. Use placeholders: `<machine>`, `<user>`, `<project>`, `~/...`, `host-a`.
+
 ### `shared/` is bundled only into plugins that import it
 
 `scripts/release.sh` and `tests/bundle-integrity.test.mjs` used to disagree:

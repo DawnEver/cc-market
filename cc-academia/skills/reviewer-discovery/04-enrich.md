@@ -201,7 +201,7 @@ not to every author on the paper.
 
 ## Rules that are not negotiable
 
-- **No address is ever generated from a pattern.** `firstname.lastname@uni.edu`
+- **No address is ever generated from a pattern.** `firstname.lastname@uni.example.edu`
   is a guess that either bounces or reaches a stranger, and the editor cannot
   tell which. Missing is recorded as `not_found`.
 - **Unknown stays unknown.** An empty education section is a gap in public data,

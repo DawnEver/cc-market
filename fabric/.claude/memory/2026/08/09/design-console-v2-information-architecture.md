@@ -10,7 +10,7 @@ shape. Derived not from features but from the five questions an operator actuall
 ## The five questions, and what each demands
 
 **Q1 "我的算力在哪、状态如何?"** → A FLEET of MACHINES, not "nodes + local". This
-machine IS one of the machines; today it appears twice ("local" spawn target + node G
+machine IS one of the machines; today it appears twice ("local" spawn target + node host-a
 card). v2 unifies: the console detects which configured node is THIS box (hostname match
 against serve.byHost, else a loopback status probe) and renders ONE card badged
 `this machine`. Spawn target "local" disappears — you always pick a machine, and the
@@ -30,7 +30,7 @@ still shows, with zero sessions).
 must state IDENTITY, not aliases:
 - **claude** → probe `claude --version`; auth identity read from the CLI's stored
   credentials/config (subscription type + account email when available). Label:
-  `claude 2.x — Max subscription (linxu@…)`, not just "claude".
+  `claude 2.x — Max subscription (user@…)`, not just "claude".
 - **codex** → `checkCodexStatus()` (exists): version + authenticated. VERIFIED live
   today: one-shot CODEX-OK and a persistent session CODEX-SESSION-OK.
 - **API providers** → the config already IS the truth: render the alias→actual mapping
@@ -58,8 +58,8 @@ with a "clear record" action for dead ones.
 ```
 ┌ header: fleet totals (machines alive, sessions, $ today) · catalogue age · ⟳ ┐
 │ LEFT: machines        │ MIDDLE: Project → Session tree │ RIGHT: chat /       │
-│  [G · this machine]   │  (filtered by left selection;  │  observe detail /   │
-│  [WS1] [WS2]          │   default = all; orphans       │  spawn drawer       │
+│  [host-a · this machine]   │  (filtered by left selection;  │  observe detail /   │
+│  [host-b] [host-c]          │   default = all; orphans       │  spawn drawer       │
 │  click = filter       │   inline under their machine)  │                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```

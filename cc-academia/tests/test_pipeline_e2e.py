@@ -535,13 +535,13 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
 
     connection = db.connect(paths.database_path())
     repo.record_email(
-        connection, person_id, "old.address@previous.edu",
+        connection, person_id, "old.address@previous.edu.example",
         source="published_corresponding", source_url="https://doi.example/paper",
         confidence=0.95,
     )
     repo.record_email(
-        connection, person_id, "current.address@now.edu",
-        source="institutional_profile", source_url="https://now.edu/staff/x",
+        connection, person_id, "current.address@now.edu.example",
+        source="institutional_profile", source_url="https://now.edu.example/staff/x",
         confidence=0.9,
     )
     repo.store_institution_for(
@@ -551,7 +551,7 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
         country_code="GB",
         is_current=True,
         source="agent_lookup",
-        source_url="https://now.edu/staff/x",
+        source_url="https://now.edu.example/staff/x",
     )
     connection.commit()
     connection.close()
@@ -563,7 +563,7 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
             "person_id": person_id,
             "name": rows[0].get("name", ""),
             "email": {
-                "email": "old.address@previous.edu",
+                "email": "old.address@previous.edu.example",
                 "source": "published_corresponding",
                 "source_url": "https://doi.example/paper",
                 "confidence": 0.95,
@@ -578,16 +578,16 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
         exported = {row["person_id"]: row for row in csv.DictReader(handle)}
 
     row = exported[person_id]
-    assert row["email"] == "old.address@previous.edu"
-    assert row["email_alternate"] == "current.address@now.edu"
+    assert row["email"] == "old.address@previous.edu.example"
+    assert row["email_alternate"] == "current.address@now.edu.example"
     assert row["email_alternate_source"] == "institutional_profile"
-    assert row["email_alternate_source_url"] == "https://now.edu/staff/x"
+    assert row["email_alternate_source_url"] == "https://now.edu.example/staff/x"
     assert row["email_affiliation_domain"] == "mismatch"
 
     emails = json.loads(row["emails_json"])
     assert {item["email"] for item in emails} == {
-        "old.address@previous.edu",
-        "current.address@now.edu",
+        "old.address@previous.edu.example",
+        "current.address@now.edu.example",
     }
     assert {item["affiliation_domain"] for item in emails} == {"match", "mismatch"}
     assert not (workspace.shortlist_dir / "emails.csv").exists()

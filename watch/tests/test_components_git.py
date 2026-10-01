@@ -46,7 +46,7 @@ class _OneRepoFixture(unittest.TestCase):
         self.work = root / 'work'          # main tree (path ".")
         self.work.mkdir()
         _git(self.work, 'init', '-b', 'main')
-        _git(self.work, 'config', 'user.email', 't@e.com')
+        _git(self.work, 'config', 'user.email', 't@example.com')
         _git(self.work, 'config', 'user.name', 'T')
         (self.work / 'f.txt').write_text('A\n', encoding='utf-8')
         _git(self.work, 'add', '.'); _git(self.work, 'commit', '-m', 'A')

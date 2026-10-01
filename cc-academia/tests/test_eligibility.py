@@ -523,18 +523,18 @@ def test_contact_list_marks_every_candidate_and_explains_rejections(conn, policy
         return candidate
 
     rows = [
-        row(1, "Invitable", False, EmailFinding(email="a@uni.edu", source="orcid_public")),
+        row(1, "Invitable", False, EmailFinding(email="a@uni.edu.example", source="orcid_public")),
         row(2, "NoAddress", False, EmailFinding()),
-        row(3, "Conflicted", True, EmailFinding(email="c@uni.edu", source="orcid_public")),
+        row(3, "Conflicted", True, EmailFinding(email="c@uni.edu.example", source="orcid_public")),
     ]
 
     lines = report.render_contact_list(rows, load_policy()).strip().split("\n")
     assert lines[0] == "reviewer,institution,email,status,decision_reason"
-    assert lines[1].startswith("Invitable,Some Uni,a@uni.edu,manual_review,")
+    assert lines[1].startswith("Invitable,Some Uni,a@uni.edu.example,manual_review,")
     # A missing address asks for a human, and never excludes: the editorial
     # system can address an invitation this tool cannot, and no rule found
     # anything wrong with this candidate.
     assert lines[2].startswith("NoAddress,Some Uni,not found,manual_review,")
     assert "no public address found" in lines[2]
-    assert lines[3].startswith("Conflicted,Some Uni,c@uni.edu,rejected,")
+    assert lines[3].startswith("Conflicted,Some Uni,c@uni.edu.example,rejected,")
     assert len(lines) == 4

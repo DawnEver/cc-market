@@ -8,7 +8,7 @@ For detailed paywall methodology → see `03-acquire-paywall.md` (progressive di
 解析 DOI(Unpaywall/OpenAlex/SS)后,按此优先级找 PDF:
 
 1. **University repository** — `repo.uni-hannover.de`, `acris.aalto.fi`,
-   `nottingham-repository.worktribe.com`, etc. 无 Cloudflare,HTTP 快路径。
+   `<institution>-repository.worktribe.com`, etc. 无 Cloudflare,HTTP 快路径。
 2. **Preprint servers** — arXiv, techrxiv。直接 PDF。
 3. **ResearchGate** — author-uploaded PDF,付费墙常可拿。由
    `literature_review/acquire/researchgate.py` 处理三跳(search → publication → /download)。
@@ -82,7 +82,7 @@ paywalls will silently fail (the browser has no auth cookies).
    |----------|-----------|--------|
    | **arXiv preprint** | `arxiv_id` in provider_raw | Direct HTTP download |
    | **Open Access** | OpenAlex `is_oa=true` | Download from `oa_url` |
-   | **Campus IP** | `128.243.*` or `*.nottingham.ac.uk` | Direct HTTP for OA; publisher PDF endpoints still need a session → `--profile` |
+   | **Campus IP** | institution IP range or `*.<institution-domain>` | Direct HTTP for OA; publisher PDF endpoints still need a session → `--profile` |
    | **VPN** | User says VPN is on | Same as campus IP |
    | **Off-campus / paywall** | OA check fails + no campus IP | `uv run --project "<plugin-root>" lit-review login --profile <name>` then `acquire --profile <name>` |
    | **CAPTCHA wall** | Page body has "captcha" / "verify you are human" | Real Chrome via a saved `--profile` session |

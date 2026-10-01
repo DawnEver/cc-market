@@ -11,8 +11,8 @@ server, teams) inherits the guarantee. 6 new tests; suite 414, 0 fail.
 ## The five
 
 1. **Duplicate attach** — attaching the same remote session twice stacked two registry
-   entries (the console double-counted/double-warned; seen live as "G · sess-X" AND
-   "WS2 · sess-X" attention rows for one conversation). `attachSession` is now
+   entries (the console double-counted/double-warned; seen live as "host-a · sess-X" AND
+   "host-c · sess-X" attention rows for one conversation). `attachSession` is now
    idempotent: registry scan on the EXACT registration key `(nodeName, handle.id)` →
    `existing: true`, and `attachInflight` shares simultaneous attaches so the handle
    factory runs once. nodeName normalization must equal the registration line (a name

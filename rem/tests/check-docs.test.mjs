@@ -273,7 +273,7 @@ describe('CLI', () => {
   beforeEach(() => {
     repoDir = mkdtempSync(join(tmpdir(), 'check-docs-repo-'));
     execFileSync('git', ['init'], { cwd: repoDir, timeout: 5000 });
-    execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir, timeout: 2000 });
     execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir, timeout: 2000 });
   });
 

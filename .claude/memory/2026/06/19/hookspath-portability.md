@@ -8,7 +8,7 @@ metadata:
 # core.hooksPath must be relative, not absolute
 
 The cc-market repo is synced via OneDrive across machines with different user folders
-(`linxu`, `ezxmb14`). `core.hooksPath` lives in `.git/config`; if set to an **absolute**
+(`<user-a>`, `<user-b>`). `core.hooksPath` lives in `.git/config`; if set to an **absolute**
 path it points at one machine's user dir and silently fails on the other — git runs **no
 hooks**, so pre-commit (scoped tests) and pre-push (version bump + tag) never fire. Symptom
 seen: a pushed commit had no plugin version bump and no release tag.

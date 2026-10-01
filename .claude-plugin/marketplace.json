@@ -4,8 +4,7 @@
   "version": "2.5.65",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
-    "name": "Mingyang Bao",
-    "email": "mingyangbob@gmail.com"
+    "name": "Mingyang Bao"
   },
   "metadata": {
     "pluginRoot": "."

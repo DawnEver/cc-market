@@ -26,7 +26,7 @@ def conn(tmp_path):
 
 SPRINGER_PAGE = """
 <html><body>
- <p>Correspondence to <a href="mailto:g.liu@ujs.edu.cn">Guohai Liu</a>.</p>
+ <p>Correspondence to <a href="mailto:g.liu@ujs.edu.cn.example">Guohai Liu</a>.</p>
  <a href="mailto:journalpermissions@springernature.com">Permissions</a>
 </body></html>
 """
@@ -35,7 +35,7 @@ SPRINGER_PAGE = """
 def test_publisher_boilerplate_is_not_a_reviewer_address():
     """A landing page carries the journal's own addresses beside the author's."""
     found = contact.extract_page_emails(SPRINGER_PAGE)
-    assert "g.liu@ujs.edu.cn" in found
+    assert "g.liu@ujs.edu.cn.example" in found
     assert "journalpermissions@springernature.com" not in found
 
 
@@ -53,26 +53,26 @@ def test_known_publisher_domains_are_rejected(address):
 
 
 def test_a_university_address_is_not_rejected():
-    assert not contact.is_publisher_address("g.liu@ujs.edu.cn")
+    assert not contact.is_publisher_address("g.liu@ujs.edu.cn.example")
 
 
 def test_grouped_pdf_addresses_are_expanded_before_matching():
     from academia.reviewer.enrich import extract_emails
 
-    text = "Email: {justin.j.scheidler, thomas.tallerico, aaron.d.anderson-1}@nasa.gov"
+    text = "Email: {justin.j.scheidler, thomas.tallerico, aaron.d.anderson-1}@nasa.gov.example"
 
     assert extract_emails(text) == [
-        "justin.j.scheidler@nasa.gov",
-        "thomas.tallerico@nasa.gov",
-        "aaron.d.anderson-1@nasa.gov",
+        "justin.j.scheidler@nasa.gov.example",
+        "thomas.tallerico@nasa.gov.example",
+        "aaron.d.anderson-1@nasa.gov.example",
     ]
 
 
 def test_common_public_address_obfuscation_is_normalized():
     from academia.reviewer.enrich import extract_emails
 
-    assert extract_emails("gabriel.weissitsch(at)jku.at") == [
-        "gabriel.weissitsch@jku.at"
+    assert extract_emails("gabriel.weissitsch(at)jku.at.example") == [
+        "gabriel.weissitsch@jku.at.example"
     ]
 
 
@@ -132,7 +132,7 @@ def test_email_is_taken_from_the_candidates_own_paper(conn):
         conn, person, fetcher=lambda url: SPRINGER_PAGE
     )
 
-    assert finding.email == "g.liu@ujs.edu.cn"
+    assert finding.email == "g.liu@ujs.edu.cn.example"
     assert finding.source == "published_corresponding"
     assert finding.source_url == "https://doi.org/10.1/x"
 
@@ -160,10 +160,10 @@ def test_named_non_corresponding_author_address_has_its_own_source(conn):
     )
 
     finding = contact.email_from_publications(
-        conn, person, fetcher=lambda url: "yanglu@bjtu.edu.cn"
+        conn, person, fetcher=lambda url: "yanglu@bjtu.edu.cn.example"
     )
 
-    assert finding.email == "yanglu@bjtu.edu.cn"
+    assert finding.email == "yanglu@bjtu.edu.cn.example"
     assert finding.source == "published_author"
 
 
@@ -189,10 +189,10 @@ def test_unique_given_name_student_id_is_attributed_to_paper_author(conn):
     )
 
     finding = contact.email_from_publications(
-        conn, person, fetcher=lambda url: "isiaka_22000514@utp.edu.my"
+        conn, person, fetcher=lambda url: "isiaka_22000514@utp.edu.my.example"
     )
 
-    assert finding.email == "isiaka_22000514@utp.edu.my"
+    assert finding.email == "isiaka_22000514@utp.edu.my.example"
     assert finding.source == "published_author"
 
 
@@ -218,10 +218,10 @@ def test_unique_one_character_full_name_typo_is_attributed(conn):
     )
 
     finding = contact.email_from_publications(
-        conn, person, fetcher=lambda url: "weiwng@qti.qualcomm.com"
+        conn, person, fetcher=lambda url: "weiwng@qti.qualcomm.com.example"
     )
 
-    assert finding.email == "weiwng@qti.qualcomm.com"
+    assert finding.email == "weiwng@qti.qualcomm.com.example"
     assert finding.source == "published_author"
 
 
@@ -253,7 +253,7 @@ def test_a_sole_address_is_not_assigned_to_the_wrong_co_corresponding_author(con
     finding = contact.email_from_publications(
         conn,
         person,
-        fetcher=lambda url: "Contact: rundhuang2@cityu.edu.hk",
+        fetcher=lambda url: "Contact: rundhuang2@cityu.edu.hk.example",
     )
 
     assert finding.email == ""
@@ -399,8 +399,8 @@ def test_initials_plus_surname_is_a_strong_match():
     from academia.reviewer.enrich import match_strength
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    assert match_strength("ghliu@ujs.edu.cn", person) == 2
-    assert match_strength("guohai.liu@ujs.edu.cn", person) == 2
+    assert match_strength("ghliu@ujs.edu.cn.example", person) == 2
+    assert match_strength("guohai.liu@ujs.edu.cn.example", person) == 2
 
 
 def test_two_letter_surname_and_punctuated_variants_are_normalized():
@@ -409,16 +409,16 @@ def test_two_letter_surname_and_punctuated_variants_are_normalized():
     yang_lu = Person(person_id="lu", display_name="Yang Lu", names=["Lu, Yang"])
     qiang_li = Person(person_id="li", display_name="Qiang Li", names=["Li Qiang"])
 
-    assert match_strength("yanglu@bjtu.edu.cn", yang_lu) == 2
-    assert match_strength("liqiang@njust.edu.cn", qiang_li) == 2
+    assert match_strength("yanglu@bjtu.edu.cn.example", yang_lu) == 2
+    assert match_strength("liqiang@njust.edu.cn.example", qiang_li) == 2
 
 
 def test_a_bare_surname_is_only_a_weak_match():
     from academia.reviewer.enrich import match_strength
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    assert match_strength("wei.liu@ujs.edu.cn", person) == 1
-    assert match_strength("zhang@ujs.edu.cn", person) == 0
+    assert match_strength("wei.liu@ujs.edu.cn.example", person) == 1
+    assert match_strength("zhang@ujs.edu.cn.example", person) == 0
 
 
 def test_a_directory_page_does_not_attribute_a_namesakes_address():
@@ -429,7 +429,7 @@ def test_a_directory_page_does_not_attribute_a_namesakes_address():
     from academia.reviewer.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    directory = ["wei.liu@ujs.edu.cn", "hui.liu@ujs.edu.cn", "zhang@ujs.edu.cn"]
+    directory = ["wei.liu@ujs.edu.cn.example", "hui.liu@ujs.edu.cn.example", "zhang@ujs.edu.cn.example"]
 
     assert match_email_to_person(directory, person) == ""
 
@@ -438,9 +438,9 @@ def test_the_right_person_is_still_found_on_a_directory_page():
     from academia.reviewer.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    directory = ["wei.liu@ujs.edu.cn", "ghliu@ujs.edu.cn", "zhang@ujs.edu.cn"]
+    directory = ["wei.liu@ujs.edu.cn.example", "ghliu@ujs.edu.cn.example", "zhang@ujs.edu.cn.example"]
 
-    assert match_email_to_person(directory, person) == "ghliu@ujs.edu.cn"
+    assert match_email_to_person(directory, person) == "ghliu@ujs.edu.cn.example"
 
 
 def test_a_sole_weak_match_on_a_personal_page_is_accepted():
@@ -448,7 +448,7 @@ def test_a_sole_weak_match_on_a_personal_page_is_accepted():
     from academia.reviewer.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    assert match_email_to_person(["liu@ujs.edu.cn"], person) == "liu@ujs.edu.cn"
+    assert match_email_to_person(["liu@ujs.edu.cn.example"], person) == "liu@ujs.edu.cn.example"
 
 
 def test_a_sole_surname_match_is_not_attributed_on_a_coauthored_paper():
@@ -465,11 +465,11 @@ def test_a_page_on_the_institutions_own_domain_is_an_institutional_profile():
     from academia.reviewer.enrich import email_source_for
 
     assert (
-        email_source_for("https://www.eng.mcmaster.ca/ece/faculty/x", "bilginb@mcmaster.ca")
+        email_source_for("https://www.eng.mcmaster.ca.example/ece/faculty/x", "bilginb@mcmaster.ca.example")
         == "institutional_profile"
     )
     assert (
-        email_source_for("https://somelab.example.org/team", "person@gmail.com")
+        email_source_for("https://somelab.example.org/team", "person@gmail.com.example")
         == "lab_homepage"
     )
 
@@ -490,9 +490,9 @@ def test_lookups_accept_a_rank_with_its_source(tmp_path):
         json.dumps(
             {
                 "person-1": {
-                    "urls": ["https://www.eng.mcmaster.ca/ece/faculty/dr-berker-bilgin/"],
+                    "urls": ["https://www.eng.mcmaster.ca.example/ece/faculty/dr-berker-bilgin/"],
                     "rank": "associate_professor",
-                    "rank_source": "https://www.eng.mcmaster.ca/ece/faculty/dr-berker-bilgin/",
+                    "rank_source": "https://www.eng.mcmaster.ca.example/ece/faculty/dr-berker-bilgin/",
                 },
                 "person-2": "https://a.edu/x",
             }
@@ -503,7 +503,7 @@ def test_lookups_accept_a_rank_with_its_source(tmp_path):
     lookups = contact.read_lookups(path)
 
     assert lookups.urls["person-1"] == [
-        "https://www.eng.mcmaster.ca/ece/faculty/dr-berker-bilgin/"
+        "https://www.eng.mcmaster.ca.example/ece/faculty/dr-berker-bilgin/"
     ]
     assert lookups.urls["person-2"] == ["https://a.edu/x"]
     assert lookups.ranks["person-1"][0] == "associate_professor"
@@ -669,10 +669,10 @@ def _three_page_pdf(*texts: str) -> bytes:
 
 def test_a_footnote_printed_only_in_the_pdf_is_still_found():
     """Publishers render some author blocks nowhere but the PDF itself."""
-    body = _one_page_pdf("L. Author is with Some Uni (e-mail: l.author@some.edu).")
+    body = _one_page_pdf("L. Author is with Some Uni (e-mail: l.author@some.edu.example).")
 
     assert contact.looks_like_pdf(body)
-    assert "l.author@some.edu" in contact.extract_page_emails(contact.pdf_text(body))
+    assert "l.author@some.edu.example" in contact.extract_page_emails(contact.pdf_text(body))
 
 
 def test_publication_lookup_honours_the_configured_paper_budget(conn):
@@ -725,15 +725,15 @@ def test_corresponding_author_accepts_the_sole_opaque_address(conn):
 
 def test_pdf_ingest_reads_front_matter_and_end_biographies():
     body = _three_page_pdf(
-        "front matter front@uni.edu",
-        "manuscript body body@uni.edu",
-        "author biography back@uni.edu",
+        "front matter front@uni.edu.example",
+        "manuscript body body@uni.edu.example",
+        "author biography back@uni.edu.example",
     )
 
     text = contact.pdf_text(body)
 
-    assert "front@uni.edu" in text
-    assert "back@uni.edu" in text
+    assert "front@uni.edu.example" in text
+    assert "back@uni.edu.example" in text
 
 
 def test_html_bytes_are_not_mistaken_for_a_pdf():
@@ -747,16 +747,16 @@ def test_a_url_ending_in_pdf_is_treated_as_one_even_without_a_content_type():
 def test_the_fetcher_decodes_html_and_extracts_pdfs():
     from academia.reviewer.enrich import PageFetcher
 
-    pdf = _one_page_pdf("contact: someone@uni.edu")
+    pdf = _one_page_pdf("contact: someone@uni.edu.example")
     fetcher = PageFetcher(
         getter=lambda url, source, timeout=15: (pdf, "application/pdf", url), delay=0
     )
-    assert "someone@uni.edu" in fetcher("https://repo.example/p.pdf")
+    assert "someone@uni.edu.example" in fetcher("https://repo.example/p.pdf")
 
     html = PageFetcher(
-        getter=lambda url, source, timeout=15: (b"<p>a@b.edu</p>", "text/html", url), delay=0
+        getter=lambda url, source, timeout=15: (b"<p>a@b.edu.example</p>", "text/html", url), delay=0
     )
-    assert "a@b.edu" in html("https://example.edu/staff")
+    assert "a@b.edu.example" in html("https://example.edu/staff")
 
 
 def test_an_all_initials_local_part_is_a_weak_match():
@@ -772,17 +772,17 @@ def test_an_all_initials_local_part_is_a_weak_match():
     from academia.reviewer.enrich import match_strength
 
     geng = Person(person_id="p", display_name="Weiwei Geng")
-    assert match_strength("gww@njust.edu.cn", geng) == 1
+    assert match_strength("gww@njust.edu.cn.example", geng) == 1
 
     sozer = Person(person_id="p", display_name="Yilmaz Sozer")
-    assert match_strength("ys@uakron.edu", sozer) == 1
+    assert match_strength("ys@uakron.edu.example", sozer) == 1
 
 
 def test_initials_belonging_to_someone_else_are_not_a_match():
     from academia.reviewer.enrich import match_strength
 
     geng = Person(person_id="p", display_name="Weiwei Geng")
-    assert match_strength("apsc-zzr@nuaa.edu.cn", geng) == 0
+    assert match_strength("apsc-zzr@nuaa.edu.cn.example", geng) == 0
     assert match_strength("gg@example.edu", geng) == 0
 
 
@@ -790,9 +790,9 @@ def test_a_sole_initials_address_on_a_staff_page_is_accepted():
     from academia.reviewer.enrich import match_email_to_person
 
     geng = Person(person_id="p", display_name="Weiwei Geng")
-    page = ["apsc-zzr@nuaa.edu.cn", "gww@njust.edu.cn"]
+    page = ["apsc-zzr@nuaa.edu.cn.example", "gww@njust.edu.cn.example"]
 
-    assert match_email_to_person(page, geng) == "gww@njust.edu.cn"
+    assert match_email_to_person(page, geng) == "gww@njust.edu.cn.example"
 
 
 def test_a_package_version_is_not_an_address():
@@ -803,9 +803,9 @@ def test_a_package_version_is_not_an_address():
     """
     from academia.reviewer.enrich import extract_emails
 
-    page = "bootstrap@5.1.3 jquery-ui@6.0 ys@uakron.edu"
+    page = "bootstrap@5.1.3 jquery-ui@6.0 ys@uakron.edu.example"
 
-    assert extract_emails(page) == ["ys@uakron.edu"]
+    assert extract_emails(page) == ["ys@uakron.edu.example"]
 
 
 def test_oa_pdf_urls_are_hydrated_in_one_batch(tmp_path):
@@ -867,17 +867,17 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
     )
     person = Person(person_id=person_id, display_name="Zaixin Song")
     repo.record_email(
-        conn, person_id, "zaixisong2@cityu.edu.hk",
+        conn, person_id, "zaixisong2@cityu.edu.hk.example",
         source="orcid_public", confidence=0.7,
     )
 
     finding = discover_email(
         conn, person,
-        fetcher=lambda url: "zaixin.song@polyu.edu.hk",
+        fetcher=lambda url: "zaixin.song@polyu.edu.hk.example",
         extra_urls=["https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/"],
     )
 
-    assert finding.email == "zaixin.song@polyu.edu.hk"
+    assert finding.email == "zaixin.song@polyu.edu.hk.example"
     assert finding.source == "institutional_profile"
 
 
@@ -905,14 +905,14 @@ def test_targeted_enrichment_preserves_other_people():
     from academia.cli.rev_disc import _merge_person_rows
 
     existing = [
-        {"person_id": "person-a", "email": {"email": "old@a.edu"}},
-        {"person_id": "person-b", "email": {"email": "b@b.edu"}},
+        {"person_id": "person-a", "email": {"email": "old@a.edu.example"}},
+        {"person_id": "person-b", "email": {"email": "b@b.edu.example"}},
     ]
-    updates = [{"person_id": "person-a", "email": {"email": "new@a.edu"}}]
+    updates = [{"person_id": "person-a", "email": {"email": "new@a.edu.example"}}]
 
     assert _merge_person_rows(existing, updates) == [
-        {"person_id": "person-a", "email": {"email": "new@a.edu"}},
-        {"person_id": "person-b", "email": {"email": "b@b.edu"}},
+        {"person_id": "person-a", "email": {"email": "new@a.edu.example"}},
+        {"person_id": "person-b", "email": {"email": "b@b.edu.example"}},
     ]
 
 
@@ -925,10 +925,10 @@ def test_author_proximity_uses_visible_html_not_markup():
     page = (
         '<section><h2>Syed Sabir Hussain Bukhari</h2>'
         f'<div data-layout="{markup}" class="contact">'
-        '<span>Email</span>: sabir@iba-suk.edu.pk</div></section>'
+        '<span>Email</span>: sabir@iba-suk.edu.pk.example</div></section>'
     )
 
-    assert match_email_in_text(page, person) == "sabir@iba-suk.edu.pk"
+    assert match_email_in_text(page, person) == "sabir@iba-suk.edu.pk.example"
 
 
 def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
@@ -942,7 +942,7 @@ def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
     class PublicOrcid:
         def get_contact(self, orcid):
             assert orcid == "0000-0002-7590-1028"
-            return Contact(emails=["hotattwei@utp.edu.my"])
+            return Contact(emails=["hotattwei@utp.edu.my.example"])
 
     finding = discover_email(
         conn,
@@ -951,7 +951,7 @@ def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
         orcid=PublicOrcid(),
     )
 
-    assert finding.email == "hotattwei@utp.edu.my"
+    assert finding.email == "hotattwei@utp.edu.my.example"
     assert finding.source == "orcid_public"
 
 
@@ -962,7 +962,7 @@ def test_an_opaque_email_is_attributed_from_a_unique_nearby_full_name(conn):
 
     person_id = repo.upsert_person(conn, Author(name="Lianjie Ma", idx=0))
     person = Person(person_id=person_id, display_name="Lianjie Ma")
-    page = "Contact: Lianjie Ma E-mail: mlj@mail.neu.edu.cn"
+    page = "Contact: Lianjie Ma E-mail: mlj@mail.neu.edu.cn.example"
 
     finding = discover_email(
         conn,
@@ -971,14 +971,14 @@ def test_an_opaque_email_is_attributed_from_a_unique_nearby_full_name(conn):
         extra_urls=["https://example.edu/profile"],
     )
 
-    assert finding.email == "mlj@mail.neu.edu.cn"
+    assert finding.email == "mlj@mail.neu.edu.cn.example"
 
 
 def test_proximity_does_not_choose_between_multiple_nearby_addresses(conn):
     from academia.reviewer.enrich import match_email_in_text
 
     person = Person(person_id="p", display_name="Ada Expert")
-    text = "Ada Expert; lab@uni.edu; assistant@uni.edu"
+    text = "Ada Expert; lab@uni.edu.example; assistant@uni.edu.example"
 
     assert match_email_in_text(text, person) == ""
 
@@ -1004,15 +1004,15 @@ def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
     person = Person(person_id=person_id, display_name="Zaixin Song")
 
     pages = {
-        "https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/": "zaixin.song@polyu.edu.hk",
-        "https://songlab.example.org/team": "zaixisong2@cityu.edu.hk",
+        "https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/": "zaixin.song@polyu.edu.hk.example",
+        "https://songlab.example.org/team": "zaixisong2@cityu.edu.hk.example",
     }
     discover_email(
         conn, person, fetcher=pages.get, extra_urls=list(pages),
     )
 
     stored = {row["email"] for row in repo.emails_of(conn, person_id)}
-    assert stored == {"zaixin.song@polyu.edu.hk", "zaixisong2@cityu.edu.hk"}
+    assert stored == {"zaixin.song@polyu.edu.hk.example", "zaixisong2@cityu.edu.hk.example"}
 
 
 def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
@@ -1034,7 +1034,7 @@ def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
     )
     person = Person(person_id=person_id, display_name="Ada Researcher")
     repo.record_email(
-        conn, person_id, "ada@uni.edu",
+        conn, person_id, "ada@uni.edu.example",
         source="institutional_profile", source_url="https://uni.edu/ada", confidence=0.9,
     )
 
@@ -1045,7 +1045,7 @@ def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
 
     finding = discover_email(conn, person, fetcher=lambda url: "")
 
-    assert finding.email == "ada@uni.edu"
+    assert finding.email == "ada@uni.edu.example"
 
 
 def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
@@ -1062,7 +1062,7 @@ def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
     )
     person = Person(person_id=person_id, display_name="Zaixin Song")
     repo.record_email(
-        conn, person_id, "zaixisong2@cityu.edu.hk", source="orcid_public", confidence=0.7,
+        conn, person_id, "zaixisong2@cityu.edu.hk.example", source="orcid_public", confidence=0.7,
     )
     monkeypatch.setattr(
         contact_module,
@@ -1072,11 +1072,11 @@ def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
 
     finding = discover_email(
         conn, person,
-        fetcher=lambda url: "zaixin.song@polyu.edu.hk",
+        fetcher=lambda url: "zaixin.song@polyu.edu.hk.example",
         extra_urls=["https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/"],
     )
 
-    assert finding.email == "zaixin.song@polyu.edu.hk"
+    assert finding.email == "zaixin.song@polyu.edu.hk.example"
 
 
 def test_pdf_text_falls_back_when_the_layout_reader_is_absent(monkeypatch):
@@ -1098,4 +1098,4 @@ def test_pdf_text_falls_back_when_the_layout_reader_is_absent(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", without_ingest)
 
-    assert "fallback@uni.edu" in contact.pdf_text(_one_page_pdf("write to fallback@uni.edu"))
+    assert "fallback@uni.edu.example" in contact.pdf_text(_one_page_pdf("write to fallback@uni.edu.example"))

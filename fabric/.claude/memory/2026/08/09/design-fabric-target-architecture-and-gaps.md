@@ -5,11 +5,11 @@ description: first-principles gap analysis and target architecture for fabric as
 # Design: fabric's gaps and target architecture (for review, 2026-08-09)
 
 Context: fabric is L0 of the three-layer stack (fabric → swarm → project; see
-motronics-studio `design-three-layer-decoupling-fabric-framework-project.md`). Its ONE
+<project> `design-three-layer-decoupling-fabric-framework-project.md`). Its ONE
 question: *"how do I hold a conversation with a model process, here or on a peer box?"*
 Everything below is derived from four properties that question demands, checked against
 the code and a live probe (2026-08-09: providers OK; TLS node RPC OK; `spawn_session`
-EINVAL local AND remote on Windows; WS1/WS2 servers not running).
+EINVAL local AND remote on Windows; host-b/host-c servers not running).
 
 ## The four first principles
 
@@ -86,7 +86,7 @@ step 1, or step 1's fix is unguarded.
 5. **G2**: spawn profiles. Acceptance: a `no-main-token` profile provably lacks the env
    var and the denied tools, asserted by the child itself in a test.
 6. **G6** (ops half, REVISED by user directive 2026-08-09): serve is SESSION-BOUND like
-   motronics' ci_loop — **never a background service, no autostart, on purpose** (an
+   <project>'s ci_loop — **never a background service, no autostart, on purpose** (an
    operator terminal owns it; closing the window stops it). Deliverable instead:
    `serve.ps1` / `serve.cmd` / `serve.sh` quick-start scripts + `serve --status`.
 7. **G7**: usage facts on handles and in the journal.
@@ -100,7 +100,7 @@ with one revision: serve is session-bound like ci_loop, never a background servi
 
 | step | commit | acceptance evidence |
 |---|---|---|
-| 1 G0+G8 | `aa4849a` | two defects: `.cmd` spawn (2 sites → resolveClaudeExe) AND missing `--verbose` (latent on every OS — sessions had NEVER worked on this CLI); live local FABRIC-SESSION-OK + remote FABRIC-REMOTE-OK via node G |
+| 1 G0+G8 | `aa4849a` | two defects: `.cmd` spawn (2 sites → resolveClaudeExe) AND missing `--verbose` (latent on every OS — sessions had NEVER worked on this CLI); live local FABRIC-SESSION-OK + remote FABRIC-REMOTE-OK via node host-a |
 | 2 G3+G5 | `df46eb5` | pid/alive/lastActivity + stderr tail in mid-turn errors (the bare "exit 1" had hidden the --verbose root cause); pingSession, node/ping, CONNECTION_LOST code |
 | 3 G1+G6 | `bf59306` | node/status {version,uptime,cpu,mem,tags}; scripts/ping.mjs (probe promoted to built-in); serve --status; live: ALIVE v0.1.9 cpu=32 |
 | 4 G4 | `cdb978b` | ~/.fabric/journal.jsonl spawn/close/loss; reconcile() with pid liveness; tests isolate the dir |
@@ -109,9 +109,9 @@ with one revision: serve is session-bound like ci_loop, never a background servi
 
 Suite: 237 tests, 0 fail.
 
-**Fleet first-light (same day):** all three nodes ALIVE at once — G cpu=32, WS1 cpu=32,
-WS2 cpu=24/30GB free — `ping.mjs` exit 0, and live remote round trips on BOTH peers
-(FABRIC-WS1-OK pid 1568, FABRIC-WS2-OK pid 35592). One operational lesson recorded in
+**Fleet first-light (same day):** all three nodes ALIVE at once — host-a cpu=32, host-b cpu=32,
+host-c cpu=24/30GB free — `ping.mjs` exit 0, and live remote round trips on BOTH peers
+(FABRIC-host-b-OK pid 1568, FABRIC-host-c-OK pid 35592). One operational lesson recorded in
 README setup: Windows blocks inbound 7677 by default and the symptom is deceptive (serve
 log healthy, every peer times out); the New-NetFirewallRule step is now step 3 of setup.
 

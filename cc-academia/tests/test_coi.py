@@ -157,7 +157,7 @@ def test_same_department_blocks_but_same_institution_only_flags(conn, policy):
     field turns the richness of one person's record into a conflict finding: the
     submitting author's department was never consulted, so nothing was compared.
     """
-    shared = "University of Nottingham"
+    shared = "University of Exampleton"
     department = "Electrical Engineering"
 
     same_dept = make_person(person_id="p-dept")

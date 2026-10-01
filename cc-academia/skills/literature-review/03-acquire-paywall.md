@@ -25,7 +25,7 @@ Paper needs PDF
   │
   └─ 4. Publisher-specific acquisition
         │
-        ├─ Campus IP (128.243.* / *.nottingham.ac.uk)?
+        ├─ Campus IP (your institution's range / *.<institution-domain>)?
         │     └─ Headed Chrome with auto-click (channel="chrome")
         │
         ├─ Off-campus with institutional access?
@@ -40,7 +40,7 @@ Paper needs PDF
 ## Network Scenarios
 
 ### Campus IP (current)
-- Detection: IP starts with `128.243` or hostname ends with `.nottingham.ac.uk`
+- Detection: IP is in your institution's range or hostname ends with `.<institution-domain>` (ask the user once)
 - Method: real Chrome with auto-click on PDF buttons
 - Profile: `channel="chrome"` uses existing Chrome sessions
 - Issue: Elsevier may still CAPTCHA if profile is empty temp dir
@@ -52,12 +52,12 @@ Paper needs PDF
 
 ### Off-campus with EZProxy
 - Pattern: `https://ezproxy.{inst}.ac.uk/login?url={publisher_url}`
-- University of Nottingham EZProxy hostname varies by department
-- Common patterns: `ezproxy.nottingham.ac.uk`, `login.ezproxy.nottingham.ac.uk`
+- The EZProxy hostname varies by institution (and sometimes by department)
+- Common patterns: `ezproxy.<institution-domain>`, `login.ezproxy.<institution-domain>`
 
 ### Off-campus with OpenAthens
 - Pattern: `https://go.openathens.net/redirector/{institution}?url={publisher_url}`
-- Institution ID for Nottingham: `nottingham.ac.uk`
+- Institution ID is usually the institution domain, e.g. `<institution-domain>`
 - Requires Shibboleth login → browser-based auth
 
 ### No institutional access

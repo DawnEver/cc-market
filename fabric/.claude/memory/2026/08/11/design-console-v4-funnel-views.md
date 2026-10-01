@@ -134,5 +134,5 @@ duplication** — an ATTACHED session appears on two machines (the console's dri
 handle + the peer's native entry), so it double-counted in the header and warned twice
 in the attention list. New `uniqueSessions(fleet)` (keyed `nativeId ?? id`, first copy
 wins — fleet order puts the drivable handle first) backs both `aggregateFleet` and the
-per-session attention loop. First dogfood: G flagged itself "mem 0% free" (94 MB of
+per-session attention loop. First dogfood: host-a flagged itself "mem 0% free" (94 MB of
 32 GB) — the attention model works.

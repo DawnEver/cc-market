@@ -10,6 +10,10 @@ cd "$repo_root"
 # Top-level dirs touched in the staged change set.
 changed_dirs="$(git diff --cached --name-only | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u)"
 
+# Public-hygiene guard: this repo is published — staged files must not carry machine-local
+# or personal data (home paths, personal emails, chat ids, ~/.claude/private-markers).
+node scripts/check-public-hygiene.mjs --staged
+
 # Runtime self-containment lint: runtime-delivered markdown (skills/*/SKILL.md,
 # skills/*/reference/*.md, commands/*, prompts/*, agents/*) must NOT defer to the plugin's
 # own dev-only docs. AGENTS.md and .claude/rules are injected only in the DEV repo — when a

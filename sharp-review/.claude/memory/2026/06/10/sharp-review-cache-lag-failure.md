@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-`/sharp-review` ran via `Workflow({scriptPath: "C:\Users\linxu\.claude\plugins\cache\cc-market\sharp-review\1.1.5\scripts\sharp-review-workflow.js", ...})` and failed:
+`/sharp-review` ran via `Workflow({scriptPath: "C:\Users\<user>\.claude\plugins\cache\cc-market\sharp-review\1.1.5\scripts\sharp-review-workflow.js", ...})` and failed:
 `Error: undefined is not an object (evaluating 'args.stats.files')` at workflow.js:150.
 
 The dev repo (`Sync\claude\cc-market\sharp-review\scripts\sharp-review-workflow.js`) already

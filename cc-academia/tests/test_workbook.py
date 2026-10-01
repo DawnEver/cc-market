@@ -44,7 +44,7 @@ def row(country: str, banned: str, coi: str, journals: str) -> list[str]:
         "1",
         "A Reviewer",
         "person-1",
-        "a@uni.edu",
+        "a@uni.edu.example",
         "Some Uni",
         country,
         "https://orcid.org/0000-0002-1825-0097",

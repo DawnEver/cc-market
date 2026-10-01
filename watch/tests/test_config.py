@@ -69,9 +69,9 @@ class TestEnvOverride(unittest.TestCase):
         self.assertEqual(c['instance']['name'], 'env-server')
 
     def test_env_override_nested_key(self):
-        os.environ['WATCH_ALERTS_EMAIL_TO'] = 'ops@test.com'
+        os.environ['WATCH_ALERTS_EMAIL_TO'] = 'ops@test.example.com'
         c = _env_override({'alerts': {'email': {'to': ''}}})
-        self.assertEqual(c['alerts']['email']['to'], 'ops@test.com')
+        self.assertEqual(c['alerts']['email']['to'], 'ops@test.example.com')
 
 
 class TestLocalConfig(unittest.TestCase):
@@ -87,13 +87,13 @@ class TestLocalConfig(unittest.TestCase):
             })
             _write_yaml(wd / 'config.local.yaml', {
                 'alerts': {
-                    'email': {'enabled': True, 'from': 'Admin<admin@corp.com>', 'to': 'ops@corp.com'},
+                    'email': {'enabled': True, 'from': 'Admin<admin@corp.example.com>', 'to': 'ops@corp.example.com'},
                 },
             })
             c = load_config(d)
             self.assertEqual(c['instance']['name'], 'main-server')
-            self.assertEqual(c['alerts']['email']['from'], 'Admin<admin@corp.com>')
-            self.assertEqual(c['alerts']['email']['to'], 'ops@corp.com')
+            self.assertEqual(c['alerts']['email']['from'], 'Admin<admin@corp.example.com>')
+            self.assertEqual(c['alerts']['email']['to'], 'ops@corp.example.com')
             self.assertTrue(c['thresholds'][0]['critical'], 95)
 
     def test_local_only_no_main(self):
@@ -101,10 +101,10 @@ class TestLocalConfig(unittest.TestCase):
             wd = Path(d) / '.claude' / 'watch'
             wd.mkdir(parents=True)
             _write_yaml(wd / 'config.local.yaml', {
-                'alerts': {'email': {'to': 'no-config@test.com'}},
+                'alerts': {'email': {'to': 'no-config@test.example.com'}},
             })
             c = load_config(d)
-            self.assertEqual(c['alerts']['email']['to'], 'no-config@test.com')
+            self.assertEqual(c['alerts']['email']['to'], 'no-config@test.example.com')
             self.assertEqual(c['instance']['name'], 'unknown')
 
     def test_env_overrides_local(self):
@@ -112,12 +112,12 @@ class TestLocalConfig(unittest.TestCase):
             wd = Path(d) / '.claude' / 'watch'
             wd.mkdir(parents=True)
             _write_yaml(wd / 'config.local.yaml', {
-                'alerts': {'email': {'to': 'local@test.com'}},
+                'alerts': {'email': {'to': 'local@test.example.com'}},
             })
-            os.environ['WATCH_ALERTS_EMAIL_TO'] = 'env@test.com'
+            os.environ['WATCH_ALERTS_EMAIL_TO'] = 'env@test.example.com'
             try:
                 c = load_config(d)
-                self.assertEqual(c['alerts']['email']['to'], 'env@test.com')
+                self.assertEqual(c['alerts']['email']['to'], 'env@test.example.com')
             finally:
                 del os.environ['WATCH_ALERTS_EMAIL_TO']
 
