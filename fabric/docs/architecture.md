@@ -16,7 +16,6 @@ fabric/
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
 │   ├── fabric-config.mjs    The `fabric` config block (systemPromptFile, sessionDefaults)
-│   ├── style-resolve.mjs    Output-style → built system-prompt file
 │   └── codex/               app-server client · task · discovery
 ├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
