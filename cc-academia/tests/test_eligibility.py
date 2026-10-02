@@ -19,7 +19,7 @@ from academia.reviewer.policy import Constraint, Policy, load_policy
 from academia.reviewer.record import CandidateRecord
 from academia.store import db
 from academia.store import repository as repo
-from conftest import assess
+from conftest import assess, neutral
 
 NOW = 2026
 
@@ -84,8 +84,11 @@ def test_recent_publications_pass_the_activity_window(conn, policy):
 
 
 def test_a_dormant_author_is_flagged_under_prefer_but_kept(conn, policy):
+    # The shipped policy makes this a requirement, so the subject here is the
+    # mode rather than whatever the default happens to be this month.
     person = author_with_papers(conn, 2011, 2012, name="Dormant")
-    assessment = assess(conn, person, policy, now_year=NOW)
+    lenient = tuned(policy, activity={**policy.data["activity"], "mode": "prefer"})
+    assessment = assess(conn, person, lenient, now_year=NOW)
     assert not assessment.excluded
     assert assessment.score < 1.0
     assert any("last published 2012" in note for note in assessment.notes())
@@ -327,12 +330,17 @@ def test_every_rule_off_leaves_the_score_untouched(conn, policy):
         activity={
             "mode": "off",
             "relevant": {**policy.data["activity"]["relevant"], "mode": "off"},
+            "related_journals": {
+                **policy.data["activity"]["related_journals"],
+                "mode": "off",
+            },
         },
         seniority={
             **policy.data["seniority"],
             "mode": "off",
             "doctoral": {"mode": "off", "min_year": 3},
         },
+        geo={**policy.data["geo"], "restricted": {"mode": "off", "countries": []}},
     )
     assessment = assess(conn, person, off, now_year=NOW)
     assert assessment.score == 1.0
@@ -359,15 +367,26 @@ def test_scoring_excludes_a_failing_candidate_the_way_a_conflict_does(conn, poli
 
 
 def test_an_eligible_candidate_carries_an_activity_component(conn, policy):
-    # Far enough into a career to clear the seniority floor, which is one of
-    # the preferences this component is the fraction of.
+    # This component is the fraction of the preferences a candidate satisfies,
+    # so what it reads has to be preferences. With no topics the relevant half
+    # has nothing to measure, and the shipped `require` would score that silence
+    # as a failure rather than the abstention it is.
     person = author_with_papers(conn, 2015, 2025, name="Scored")
+    lenient = neutral(
+        tuned(
+            policy,
+            activity={
+                "mode": "prefer",
+                "relevant": {**policy.data["activity"]["relevant"], "mode": "prefer"},
+            },
+        )
+    )
     scored = rank.score_candidate(
         conn,
         rank.Candidate(person=person),
         profile_topics=[],
         profile_methods=[],
-        policy=policy,
+        policy=lenient,
         now_year=NOW,
     )
     assert scored.components["activity"] == 1.0

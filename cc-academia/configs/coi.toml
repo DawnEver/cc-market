@@ -1,4 +1,11 @@
-# Default conflict-of-interest policy.
+# Conflict-of-interest and eligibility policy — one set for every IEEE journal.
+#
+# There is a single policy, not one per journal. The shipped IEEE journals have
+# the same reviewer pool and the same editorial rules, so a per-journal copy of
+# these numbers was four places to change one decision, and a run could inherit
+# a window nobody meant to set. configs/journals/<slug>.toml still exists and
+# still wins, but it is now the place to record a *deliberate* deviation and the
+# reason for it, not a second copy of the defaults.
 #
 # The engine that reads this file is purely deterministic: no model decides
 # whether a conflict exists. A journal may override any key by dropping a file
@@ -46,6 +53,20 @@ review = [
 # References to a candidate's work above this count suggest closeness worth noting.
 heavily_cited_by_manuscript = 3
 
+# Contact coverage a finished run is judged by, per recommendation class. An
+# editor cannot invite somebody they cannot address, so the classes that can
+# still be invited are held to the higher bar and the ones already set aside to
+# a lower one. Two numbers rather than one because the run cannot tell which of
+# the missing names is the person the editor most wanted.
+#
+# Policy, not constants in the code. The pipeline reaches about a fifth of
+# candidates from structured sources; the rest is lookup work, and these are the
+# numbers that say when it is done — or that it is not, which a run reports
+# rather than hides.
+[coverage]
+invitable_email = 0.90         # recommend and check_first, pooled
+other_email = 0.60             # do_not_invite
+
 [geo]
 # Cross-region preference operates on the candidate's *current affiliation
 # country*, never on nationality or on any inference from a name.
@@ -54,16 +75,17 @@ heavily_cited_by_manuscript = 3
 # read it, so tuning it changed nothing.
 mode = "prefer_cross_region"   # or "hard_filter" or "off"
 
-# Countries the journal will not invite from at all — a sanctions regime or a
-# publisher instruction, not a preference. Off by default and deliberately
-# unpopulated: refusing a whole country is a decision an editor has to make
-# explicitly, in a journal file, where it is reviewable. A switched-on rule with
-# an empty list is rejected at load time rather than silently passing everybody.
-# Read from the current affiliation, never from nationality or from a name; an
-# unknown affiliation is flagged for manual confirmation rather than guessed.
+# Countries no IEEE journal will invite from at all — a sanctions regime or a
+# publisher instruction, not a preference. Refusing a whole country is a
+# decision an editor has to make explicitly, which is why the list is stated
+# here once rather than defaulted to empty and left to each journal file. A
+# switched-on rule with an empty list is rejected at load time rather than
+# silently passing everybody. Read from the current affiliation, never from
+# nationality or from a name; an unknown affiliation is flagged for manual
+# confirmation rather than guessed.
 [geo.restricted]
-mode = "off"                   # off | prefer | require
-countries = []                 # two-letter ISO codes, e.g. ["IN", "IR"]
+mode = "require"               # off | prefer | require
+countries = ["IN", "IR"]       # two-letter ISO codes
 
 # One seniority axis, one rule: how far past the start of an independent career
 # somebody is. Measured in years since the doctorate where a doctorate year is
@@ -85,10 +107,16 @@ countries = []                 # two-letter ISO codes, e.g. ["IN", "IR"]
 [identity]
 min_confidence = 0.8
 
+# No floor, and a ceiling that is a preference. The floor used to be three
+# years, for "too soon after the doctorate"; the case it guards against is
+# already a hard gate elsewhere — [seniority.doctoral] excludes a PhD student
+# before their third year outright — and a floor that only costs score cannot
+# add to that. Stating both bounds also put "between 3 and 10 years" on the
+# workbook heading, which is not the rule an editor set.
 [seniority]
 mode = "prefer"
-min_years = 3
-max_years = 0                  # 0 means no ceiling
+min_years = 0
+max_years = 10                 # preferred ceiling; never excludes
 
 # Doctoral candidates. The pool is harvested from authorship, so it contains
 # students by construction, and a late-stage one can be the right reviewer on a
@@ -110,7 +138,7 @@ min_year = 3
 # bibliographic profile rather than from the papers this run harvested. Counting
 # the harvest would ask a different question and call a prolific author dormant
 # because their latest work is not on this manuscript's topic.
-mode = "prefer"
+mode = "require"
 recent_years = 3
 min_recent_papers = 1
 
@@ -118,7 +146,7 @@ min_recent_papers = 1
 # everything: counted over the relevant evidence this run gathered, because
 # only the run can say what is relevant to this submission.
 [activity.relevant]
-mode = "prefer"
+mode = "require"
 recent_years = 3
 min_recent_papers = 1
 
@@ -129,8 +157,16 @@ min_recent_papers = 1
 # *this*" and not "how much". Papers whose venue type no source stated are
 # reported rather than counted, and a candidate who would clear the floor if
 # only those were resolved is flagged for manual review instead of failed.
+# Three journal papers on the manuscript's topic. This is the floor that does
+# most of the work on a run: the pool is harvested from a literature search, so
+# almost everyone in it is relevant, and what separates a reviewer from a name
+# on a conference paper is having carried the topic through peer review.
+#
+# Worth knowing when it looks too strict: it counts journal papers among the
+# evidence *this run* harvested for that person, which is bounded by the search
+# corpus, not by their actual record. On a narrow topic nobody may reach three.
 [activity.related_journals]
-mode = "off"                   # off | prefer | require
+mode = "require"
 min_publications = 3
 
 # Nothing judges whether an invitation was answered. Two rules did — a

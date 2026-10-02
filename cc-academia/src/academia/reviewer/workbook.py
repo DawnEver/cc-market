@@ -375,7 +375,7 @@ GLOSSARY: dict[str, str] = {
     "email": "Best verified contact address. Blank means none was found in public data, which is a gap in the sources and never a mark against the person — such a candidate reads Check first, and the editorial system can address the invitation.",
     "institution": "Current affiliation.",
     "current_country": "ISO code of the current affiliation, never nationality.",
-    "profile_url": "Where to read about this person: their ORCID record, their publication profile, or failing both the closest of their papers to this manuscript. Whichever it is, it is a page that already existed — never a search built here.",
+    "profile_url": "Where to read about this person: their IEEE Xplore author page where IEEE states one, else their ORCID record, else their publication profile, else the closest of their papers to this manuscript. Whichever it is, it is a page that already existed — never a search built here.",
     "recommend_for_reviewer": "Recommend = every required rule passed and an address was verified against the institution. Check first = every rule passed but something still needs a human (usually the address). Do not invite = a rule excluded them.",
     "blocking_reason": "The first rule that excluded this candidate; blank when none did, including when the only flag is a conflict marked for review. Derived here, not in the CSV.",
     "coi": "Conflict-of-interest verdict under coi.toml plus the journal overlay. Three states: clear, review-level (asks for a human, excludes nobody), blocking.",

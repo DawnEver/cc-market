@@ -115,6 +115,18 @@ def _request_resolved(
         raise SourceError(f"network_error: {exc.reason}", source) from exc
     except TimeoutError as exc:
         raise SourceError("timeout", source) from exc
+    except OSError as exc:
+        # Everything the socket layer does that urllib does not wrap. A
+        # connection reset mid-body (WinError 10054) arrives as a bare
+        # ConnectionResetError: it is raised *after* urlopen has returned the
+        # response object, so there is no URLError around it. Uncaught, it
+        # escaped every caller's handling and took a whole enrich run down,
+        # losing the work already done — an expensive way to lose one
+        # unreachable host, which is all this ever is.
+        #
+        # URLError and TimeoutError are OSError subclasses, so this arm is
+        # reached only by what the three above do not already claim.
+        raise SourceError(f"network_error: {exc}", source) from exc
 
 
 def _parse_json(text: str, source: str) -> dict[str, Any]:
@@ -200,6 +212,18 @@ def get_body_resolved(
         raise SourceError(f"network_error: {exc.reason}", source) from exc
     except TimeoutError as exc:
         raise SourceError("timeout", source) from exc
+    except OSError as exc:
+        # Everything the socket layer does that urllib does not wrap. A
+        # connection reset mid-body (WinError 10054) arrives as a bare
+        # ConnectionResetError: it is raised *after* urlopen has returned the
+        # response object, so there is no URLError around it. Uncaught, it
+        # escaped every caller's handling and took a whole enrich run down,
+        # losing the work already done — an expensive way to lose one
+        # unreachable host, which is all this ever is.
+        #
+        # URLError and TimeoutError are OSError subclasses, so this arm is
+        # reached only by what the three above do not already claim.
+        raise SourceError(f"network_error: {exc}", source) from exc
 
 
 def get_body_via_curl(

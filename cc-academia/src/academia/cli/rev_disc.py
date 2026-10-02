@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import math
 import os
 import shutil
 from datetime import datetime
@@ -907,6 +908,7 @@ def run_report(args: argparse.Namespace) -> int:
                 break
 
         rows = report.build_rows(ordered, emails, alternates)
+        coverage = report.email_coverage(rows, policy)
 
         # candidate_scores is the ranking table, and a blocked candidate has no
         # ranking — score_candidate leaves its components empty by design. The
@@ -964,6 +966,7 @@ def run_report(args: argparse.Namespace) -> int:
         "dossiers": str(written["dossiers"]),
         "candidates": len(rows),
         "without_affiliation": unknown,
+        "email_coverage": coverage,
         "lookup_coverage": lookup_coverage,
         "lookup_coverage_file": str(coverage_path),
     }
@@ -984,6 +987,21 @@ def run_report(args: argparse.Namespace) -> int:
                 f"contact coverage is not final: {lookup_coverage['never_searched']} "
                 "candidate(s) with missing data were never searched"
             )
+        for name, label in (("invitable", "recommend + check first"), ("other", "do not invite")):
+            part = coverage[name]
+            line = (
+                f"address coverage, {label}: {part['with_address']}/{part['total']} "
+                f"({part['rate']:.1%}), required {part['required']:.0%}"
+            )
+            if part["met"]:
+                log.info(line)
+            else:
+                log.warn(
+                    f"{line} — SHORT by "
+                    f"{max(0, math.ceil(part['required'] * part['total']) - part['with_address'])} "
+                    "address(es). Run `rev-disc contacts`, look the names up, feed them "
+                    "back with `enrich --homepages`, then re-run report."
+                )
     return EXIT_OK
 
 

@@ -37,7 +37,37 @@ build if they drift.
   so a candidate at 0.7 was flagged for a human without being told why. One
   configurable `identity.min_confidence`.
 
+### Fixed
+
+- **A socket error mid-response no longer kills a whole step.** `http`'s two
+  request paths caught `HTTPError`, `URLError` and `TimeoutError`, which left
+  the socket layer's own errors unconverted — and a `ConnectionResetError`
+  (WinError 10054) is raised *after* `urlopen` has returned the response object,
+  so urllib never wraps it in a `URLError` either. It escaped the callers'
+  `except SourceError`, which exist precisely to record one unreachable host and
+  carry on, and took an entire `enrich` run down with it — discarding the
+  candidates already done. A catch-all `OSError` arm now converts them, which is
+  what `is_transient` already expected to be handed.
+
 ### Changed
+
+- **One policy for every IEEE journal.** `configs/coi.toml` is now the policy
+  an IEEE run actually gets, rather than a permissive base that each journal
+  file partially restated. TTE's file had carried its own copy of the activity,
+  journal-floor, seniority and restricted-country rules — four numbers in two
+  places — and the copy had already drifted: it narrowed the co-authorship
+  window to four years, making TTE *more* permissive than the default and
+  letting a collaborator from five years ago through unflagged. Journal files
+  are now a registry of slugs plus the place to record a deliberate deviation
+  and its reason; a file that states nothing changes nothing, and a test
+  compares the resolved policy across `tie`, `tii`, `tte` and `tec` key by key.
+  - `tie.toml`'s `min_academic_age = 5` is gone: the key had been removed from
+    the code and nothing read it.
+  - `tec.toml` is added.
+  - Tests that used the bare `load_policy()` as a neutral baseline now say
+    `neutral(load_policy())` — the shipped policy is a real editorial stance,
+    and borrowing it made those tests assert the stance rather than the
+    mechanism under test.
 
 - **The eligibility rule layer, rebuilt from first principles.** No
   compatibility kept: `eligibility.assess` takes a `CandidateRecord` and the

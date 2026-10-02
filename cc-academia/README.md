@@ -56,12 +56,17 @@ construction. A position is stated by a source or left unknown.
 
 Alongside the conflict rules there is a second, configurable gate: whether the
 invitation is worth sending at all. Recent publication activity, a doctoral
-year-of-study floor, responsiveness to past invitations, and the long-career
-name who no longer answers any. Each rule is `off`, `prefer` or `require` in the
-journal's config, and `require` removes a candidate the way a conflict does —
+year-of-study floor, seniority, and related-journal evidence. Each rule is
+`off`, `prefer` or `require` in the policy, and `require` removes a candidate the way a conflict does —
 they stay on the list with the reason. Missing evidence always passes: an
-unstated enrolment year or an empty invitation history is a gap in public data,
+unstated enrolment year is a gap in public data,
 not a fact about the person.
+
+TIE, TII, TTE and TEC share the shipped IEEE policy in `configs/coi.toml`.
+Personal overrides use `ACADEMIA_CONFIG_DIR`. Reports measure address coverage
+per class: the default targets are 90% for `recommend` + `check_first` and 60%
+for other candidates, configurable under `[coverage]`. Identity links prefer
+IEEE Xplore author profiles when an IEEE author identifier is available.
 
 ## Working across machines
 

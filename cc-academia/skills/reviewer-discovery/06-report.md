@@ -84,16 +84,19 @@ editor can act on or defend.
 Expertise says a candidate *could* review the manuscript. Eligibility says the
 invitation is worth sending. **Six rules, and that is all of them** — the list
 is closed, it lives in `eligibility.RULES`, and nothing outside that module may
-add a ninth. Each is in `configs/coi.toml` and overridable per journal:
+add a ninth. Each is in `configs/coi.toml` — **one set of rules for every IEEE
+journal**, since they share a reviewer pool and an editorial policy. A file in
+`configs/journals/` is where a journal records a deliberate deviation and its
+reason, not a second copy of these numbers:
 
-| Config table | Rule | Default | Fires when |
+| Config table | Rule | Shipped | Fires when |
 |--------------|------|---------|-----------|
-| `geo.restricted` | `restricted_country` | off | the current affiliation is in a country the journal will not invite from |
-| `activity.related_journals` | `related_journals` | off | too little of the relevant record is journal work |
-| `activity.relevant` | `relevant_activity` | prefer | nothing on *this* topic in the last 3 years |
-| `activity` | `recent_activity` | prefer | their publication profile shows no work at all in the last 3 years |
+| `geo.restricted` | `restricted_country` | require (IN, IR) | the current affiliation is in a country the journal will not invite from |
+| `activity.related_journals` | `related_journals` | require (3) | too little of the relevant record is journal work |
+| `activity.relevant` | `relevant_activity` | require | nothing on *this* topic in the last 3 years |
+| `activity` | `recent_activity` | require | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
-| `seniority` | `seniority` | prefer | outside the journal's band — a floor, a preferred ceiling, or both. TTE sets `min_years = 0`, `max_years = 10`: under ten years, no floor |
+| `seniority` | `seniority` | prefer | outside the band — a floor, a preferred ceiling, or both. `min_years = 0`, `max_years = 10`: under ten years, no floor |
 
 Every rule reads its quantities off one `CandidateRecord`, built once per
 candidate. That is the point of it: `career_length` and `unresponsive_veteran`
@@ -132,9 +135,10 @@ bounds **actually in force**: "at least 3 years", "under 10 years" or "between
 reason for setting the rule was a ten-year ceiling got a column headed with the
 inherited default instead of the rule it had set.
 
-TTE drops the floor, because the case a floor guards against is already a hard
-gate elsewhere: `[seniority.doctoral]` excludes a PhD student before their third
-year outright, and a floor that can only cost score adds nothing to that.
+The shipped policy sets no floor, because the case a floor guards against is
+already a hard gate elsewhere: `[seniority.doctoral]` excludes a PhD student
+before their third year outright, and a floor that can only cost score adds
+nothing to that.
 
 Each rule's audit columns are named after it — `seniority_years`,
 `related_journals_count` — so the workbook groups them by the rule that produced

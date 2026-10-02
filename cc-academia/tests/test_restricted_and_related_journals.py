@@ -196,8 +196,18 @@ def test_under_prefer_a_thin_journal_record_annotates_but_keeps():
     assert not outcome.excluded
 
 
-def test_the_rule_is_off_by_default():
-    assert load_policy().constraint("related_journals").off
+def test_the_journal_floor_is_on_wherever_a_journal_is_named():
+    """One policy for every IEEE journal, so the floor is not per-journal.
+
+    It was `off` in the shared default and `require` only in TTE's own file,
+    which meant the floor depended on which file happened to carry it.
+    """
+    for journal in ("tie", "tii", "tte", "tec"):
+        assert load_policy(journal).constraint("related_journals").excluding, journal
+
+
+def test_the_rule_can_still_be_switched_off():
+    assert related("off").constraint("related_journals").off
 
 
 def test_a_candidate_with_no_relevant_papers_abstains_rather_than_passing():

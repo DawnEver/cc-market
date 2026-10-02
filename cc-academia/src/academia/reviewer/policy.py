@@ -138,6 +138,17 @@ class Policy:
     def heavy_citation_threshold(self) -> int:
         return int(self.data["thresholds"]["heavily_cited_by_manuscript"])
 
+    # -- coverage --------------------------------------------------------
+    def coverage(self, name: str, default: float) -> float:
+        """A share a finished run is judged by, from ``[coverage]``.
+
+        A threshold an editor sets rather than a constant in the code, for the
+        same reason as every other number here: what counts as enough contact
+        coverage is an editorial decision, and it is the number that says when
+        the lookup work is done.
+        """
+        return float(self.data.get("coverage", {}).get(name, default))
+
     # -- geography -------------------------------------------------------
     @property
     def geo_mode(self) -> str:

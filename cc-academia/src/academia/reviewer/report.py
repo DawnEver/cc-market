@@ -20,6 +20,7 @@ import sqlite3
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from academia.reviewer import eligibility as eligibility_module
 from academia.reviewer import trajectory
@@ -398,19 +399,25 @@ def email_affiliation_domain(person, email: str) -> str:
 def profile_url(candidate: Candidate) -> str:
     """One link that answers "who is this person?", or nothing.
 
-    Preference is by how much the page says about the *person* rather than about
-    one piece of their work: an ORCID record carries employment and education,
-    a publication profile carries their output, a single paper carries neither
-    but does at least show the work that qualified them here. The paper chosen
-    is the closest to the manuscript, which is the one an editor would read
-    first anyway.
+    An IEEE Xplore author page comes first where we have one. For an IEEE
+    submission it is the page the editor already has open, it lists the person's
+    work in the venue being reviewed, and it is the only one of these that the
+    publisher maintains — so it stays right when an ORCID record goes stale.
+    ORCID follows: employment and education, and the one identifier that
+    resolves a name with certainty. Then the publication profile, then a single
+    paper, which carries neither but does at least show the work that qualified
+    them here. The paper chosen is the closest to the manuscript, which is the
+    one an editor would read first anyway.
 
     Every candidate is a URL that already exists. Nothing here constructs a
     search, guesses a university homepage from a name, or links a page that has
     not been observed — a plausible-looking dead link in the only file the
-    editor receives is worse than an empty cell.
+    editor receives is worse than an empty cell. The Xplore author id is one
+    IEEE stated for this person, so the page it names is one they have.
     """
     person = candidate.person
+    if person.ieee_author_id:
+        return f"https://ieeexplore.ieee.org/author/{person.ieee_author_id}"
     if person.orcid:
         return f"https://orcid.org/{person.orcid}"
     if person.openalex_id:
@@ -467,6 +474,57 @@ RECOMMENDATION = {
     "manual_review": "check_first",
     "rejected": "do_not_invite",
 }
+
+#: The classes an invitation can still go to. Everything else has been excluded
+#: by a rule, so a missing address there does not block the run.
+INVITABLE = ("recommend", "check_first")
+
+#: Coverage a run is judged by when the policy states no number. The gap between
+#: them is the point: an address the editor cannot find is a reason to look
+#: harder for somebody they can invite, and merely a note for somebody a rule
+#: already removed.
+DEFAULT_COVERAGE = {"invitable_email": 0.90, "other_email": 0.60}
+
+
+def email_coverage(rows: list[Row], policy: Policy) -> dict[str, Any]:
+    """The share of each recommendation class that carries an address.
+
+    Two bars rather than one. A shortlist that is 90% reachable overall and
+    missing the single candidate the editor most wanted is not covered, and
+    nothing in an aggregate rate says which name that would have been — so the
+    classes that can still be invited carry the higher bar.
+
+    What the numbers are is policy (``[coverage]``), not a constant here. The
+    run reports the rate it reached against the rate it was held to; it does not
+    decide that a shortfall is acceptable.
+    """
+    classes: dict[str, list[bool]] = {name: [] for name in ("invitable", "other")}
+    for row in rows:
+        decision = invitation_readiness(
+            row.candidate,
+            row.email,
+            domain_status=email_affiliation_domain(row.candidate.person, row.email.email),
+            min_confidence=policy.min_identity_confidence,
+        )
+        label = RECOMMENDATION[decision.status]
+        classes["invitable" if label in INVITABLE else "other"].append(row.email.found)
+
+    summary: dict[str, Any] = {}
+    for name, found in classes.items():
+        total = len(found)
+        with_address = sum(found)
+        # No candidates in a class is not a failure: nothing was missed.
+        rate = (with_address / total) if total else 1.0
+        required = policy.coverage(f"{name}_email", DEFAULT_COVERAGE[f"{name}_email"])
+        summary[name] = {
+            "with_address": with_address,
+            "total": total,
+            "rate": round(rate, 4),
+            "required": required,
+            "met": rate >= required,
+        }
+    summary["met"] = all(summary[name]["met"] for name in ("invitable", "other"))
+    return summary
 
 
 #: Identity first, then the decision, then one block per rule. Order matters
