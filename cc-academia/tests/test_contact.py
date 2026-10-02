@@ -101,6 +101,33 @@ def test_email_split_across_html_elements_is_joined():
     ]
 
 
+def test_email_fragments_do_not_join_the_next_block_heading():
+    from academia.reviewer.enrich import extract_emails
+
+    page = '<div><span>jad23</span><span>@example.edu</span></div><h2>Masters</h2>'
+    assert extract_emails(page) == ["jad23@example.edu"]
+
+
+def test_visible_email_fragments_are_normalized_after_markup_removal():
+    from academia.reviewer.enrich import extract_emails
+
+    page = '<div>jad23</div><div>[at]</div><div>example.edu</div><h2>Masters</h2>'
+    assert extract_emails(page) == ["jad23@example.edu"]
+
+
+def test_numbered_initials_are_weak_and_ambiguous_matches_stay_blank():
+    from academia.reviewer.enrich import match_email_to_person, match_strength
+
+    person = Person(person_id="p", display_name="Jane Ann Doe")
+    assert match_strength("jad23@example.edu", person) == 1
+    assert match_strength("jadx23@example.edu", person) == 0
+    assert match_strength("ja23@example.edu", person) == 0
+    assert match_email_to_person(["jad23@example.edu"], person) == "jad23@example.edu"
+    assert match_email_to_person(["jad23@example.edu", "jad24@example.edu"], person) == ""
+    short_given = Person(person_id="p2", display_name="Sa Ann Doe")
+    assert match_strength("dsa23@example.edu", short_given) == 1
+
+
 def test_percent_encoded_mailto_is_decoded():
     assert contact.extract_page_emails('<a href="mailto:alice.smith%40example.edu">') == [
         "alice.smith@example.edu"

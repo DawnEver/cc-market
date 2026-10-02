@@ -68,6 +68,10 @@ per class: the default targets are 90% for `recommend` + `check_first` and 60%
 for other candidates, configurable under `[coverage]`. Identity links prefer
 IEEE Xplore author profiles when an IEEE author identifier is available.
 
+Contact extraction preserves HTML block boundaries and reads fragmented or
+obfuscated addresses as displayed. Initials-based accounts, including numeric
+suffixes, remain weak matches and are accepted only when unambiguous.
+
 ## Working across machines
 
 The SQLite store stays on local disk — syncing a WAL-mode database through

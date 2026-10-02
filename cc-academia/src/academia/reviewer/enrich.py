@@ -124,10 +124,14 @@ def extract_emails(text: str) -> list[str]:
     # or insert an HTML comment inside the address. The rendered text is still
     # public, so scan that representation as well as the source markup.
     rendered = visible_text(source)
-    source = re.sub(r"\s*[\[(]\s*at\s*[\])]\s*", "@", source, flags=re.IGNORECASE)
-    source = re.sub(r"\s*[\[(]\s*dot\s*[\])]\s*", ".", source, flags=re.IGNORECASE)
-    source = re.sub(r"(?<=[A-Za-z0-9._%+-])\s*@\s*(?=[A-Za-z0-9])", "@", source)
-    source = re.sub(r"(?<=[A-Za-z0-9])\s*\.\s*(?=[A-Za-z]{2,}\b)", ".", source)
+    def normalize(value: str) -> str:
+        value = re.sub(r"\s*[\[(]\s*at\s*[\])]\s*", "@", value, flags=re.IGNORECASE)
+        value = re.sub(r"\s*[\[(]\s*dot\s*[\])]\s*", ".", value, flags=re.IGNORECASE)
+        value = re.sub(r"(?<=[A-Za-z0-9._%+-])\s*@\s*(?=[A-Za-z0-9])", "@", value)
+        return re.sub(r"(?<=[A-Za-z0-9])\s*\.\s*(?=[A-Za-z]{2,}\b)", ".", value)
+
+    source = normalize(source)
+    rendered = normalize(rendered)
     matches = [*_EMAIL_PATTERN.findall(source), *_EMAIL_PATTERN.findall(rendered), *cloudflare]
     for local_parts, domain in _GROUPED_EMAIL_PATTERN.findall(source):
         matches.extend(
@@ -148,7 +152,16 @@ def extract_emails(text: str) -> list[str]:
 
 def visible_text(text: str) -> str:
     """Return what a person sees, without HTML attributes inflating distance."""
-    without_markup = re.sub(r"<[^>]*>", "", html.unescape(text or ""))
+    source = html.unescape(text or "")
+    # Block boundaries separate visible fields; inline spans may split a single
+    # address and must remain joined.
+    source = re.sub(
+        r"</?(?:div|p|h[1-6]|li|tr|td|th|section|article|br|hr)\b[^>]*>",
+        " ",
+        source,
+        flags=re.IGNORECASE,
+    )
+    without_markup = re.sub(r"<[^>]*>", "", source)
     return " ".join(without_markup.split())
 
 
@@ -166,13 +179,13 @@ def _name_tokens(person: Person) -> list[str]:
     return list(dict.fromkeys(tokens))
 
 
-#: An initials-only local part is at most this long. "gww" and "ys" are the
-#: ordinary forms; past four characters a local part is a word, not initials.
+#: At most this many letters may form initials; an optional numeric account
+#: suffix does not count toward the limit.
 MAX_INITIALS_LOCAL = 4
 
 
 def _initials_strength(local: str, person: Person) -> int:
-    """Whether a local part is this person's initials and nothing else.
+    """Whether a local part carries only this person's initials and optional digits.
 
     ``gww`` is Geng Wei Wei and ``ys`` is Yilmaz Sozer: the address carries the
     name, but not as a substring, so the token test above cannot see it. A
@@ -186,8 +199,10 @@ def _initials_strength(local: str, person: Person) -> int:
     share initials as readily as they share a surname, so the caller's
     sole-match rule still decides whether the address is used.
     """
-    if not (2 <= len(local) <= MAX_INITIALS_LOCAL) or not local.isalpha():
+    match = re.fullmatch(rf"([a-z]{{2,{MAX_INITIALS_LOCAL}}})\d*", local)
+    if match is None:
         return 0
+    local = match.group(1)
     for name in [person.display_name, *person.names]:
         parts = _name_parts(name)
         initials = {part[0] for part in parts}
@@ -226,7 +241,7 @@ def match_strength(email: str, person: Person) -> int:
     # A weak match means surname only, not any single name fragment. Given-name
     # fragments can occur accidentally inside another person's local part
     # (e.g. ``hua`` in ``rundhuang``).
-    return 1 if hit == surname else 0
+    return 1 if hit == surname else _initials_strength(local, person)
 
 
 def match_email_to_person(

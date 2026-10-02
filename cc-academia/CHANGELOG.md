@@ -6,6 +6,12 @@ build if they drift.
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve HTML block boundaries when extracting fragmented contact addresses,
+  and normalize obfuscation after markup removal. Recognize numbered initials
+  accounts only as unique weak matches, including short given-name overlaps.
+
 ### Removed
 
 - **Everything that judged whether an invitation was answered.** Two rules and

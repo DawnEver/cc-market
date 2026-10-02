@@ -186,6 +186,9 @@ gone stale cannot become an invitation.
 
 ## A blank field beats a confident wrong one
 
+Repairing page rendering must not relax attribution: initials-based contact
+matches stay weak, and multiple matching addresses stay unresolved.
+
 Academic rank is stated by a source or left `unknown`. It is never inferred from
 a publication record, and it is not scraped out of arbitrary HTML: reading it
 from the text around a name on a staff page was implemented and then removed,
