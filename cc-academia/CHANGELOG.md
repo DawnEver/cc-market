@@ -9,7 +9,8 @@ build if they drift.
 ### Fixed
 
 - Preserve HTML block boundaries when extracting fragmented contact addresses,
-  and normalize obfuscation after markup removal. Recognize numbered initials
+  without absorbing following headings into domains; normalize obfuscation
+  after markup removal. Recognize numbered initials
   accounts only as unique weak matches, including short given-name overlaps.
 
 ### Removed

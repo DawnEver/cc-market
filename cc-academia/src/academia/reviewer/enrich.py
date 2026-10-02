@@ -128,7 +128,7 @@ def extract_emails(text: str) -> list[str]:
         value = re.sub(r"\s*[\[(]\s*at\s*[\])]\s*", "@", value, flags=re.IGNORECASE)
         value = re.sub(r"\s*[\[(]\s*dot\s*[\])]\s*", ".", value, flags=re.IGNORECASE)
         value = re.sub(r"(?<=[A-Za-z0-9._%+-])\s*@\s*(?=[A-Za-z0-9])", "@", value)
-        return re.sub(r"(?<=[A-Za-z0-9])\s*\.\s*(?=[A-Za-z]{2,}\b)", ".", value)
+        return re.sub(r"(?<=[A-Za-z0-9])[ \t]*\.[ \t]*(?=[A-Za-z]{2,}\b)", ".", value)
 
     source = normalize(source)
     rendered = normalize(rendered)
@@ -157,12 +157,12 @@ def visible_text(text: str) -> str:
     # address and must remain joined.
     source = re.sub(
         r"</?(?:div|p|h[1-6]|li|tr|td|th|section|article|br|hr)\b[^>]*>",
-        " ",
+        "\n",
         source,
         flags=re.IGNORECASE,
     )
     without_markup = re.sub(r"<[^>]*>", "", source)
-    return " ".join(without_markup.split())
+    return "\n".join(" ".join(line.split()) for line in without_markup.splitlines()).strip()
 
 
 def _name_parts(name: str) -> list[str]:

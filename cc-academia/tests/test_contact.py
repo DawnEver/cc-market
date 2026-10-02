@@ -115,6 +115,13 @@ def test_visible_email_fragments_are_normalized_after_markup_removal():
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
+def test_sentence_punctuation_does_not_turn_a_heading_into_a_domain():
+    from academia.reviewer.enrich import extract_emails
+
+    page = '<p>jad23@example.edu.</p><h2>Masters</h2>'
+    assert extract_emails(page) == ["jad23@example.edu"]
+
+
 def test_numbered_initials_are_weak_and_ambiguous_matches_stay_blank():
     from academia.reviewer.enrich import match_email_to_person, match_strength
 
