@@ -1,87 +1,55 @@
 ---
-name: watch
-description: "Run the supervision loop — health checks, anomaly detection, auto-repair, alerts"
-argument-hint: "[--interval-normal 12h] [--config .claude/watch/config.yaml]"
+description: Supervise a target — read the state, apply the remedies the config declares, escalate.
+argument-hint: "[--project DIR] [--config PATH]"
 ---
 
-# /watch:watch — Run the supervision loop
+# /watch:watch
 
-Load config from `.claude/watch/config.yaml`, run the health monitor, apply remedies for any anomalies, and schedule the next check via CronCreate (durable, survives restarts, self-refreshes to reset 7-day TTL).
+The AI decision layer over `lab_commons.supervise`. The measurement, the remedy chains, the alert
+transport and the escalation rules all live in the library; this command reads what they produced
+and decides what a person should hear about.
 
-## Execution Steps
+**It decides nothing about the target.** Which checks run, what a failure means and what a remedy
+does are all in the target's `deploy/supervise.toml`. If this command and the config disagree, the
+config is right — a second copy of a rule here would be the drift the library was extracted to
+remove.
 
-### Step 1: Run the monitor
+## Steps
 
-```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
-  --project-dir ${CLAUDE_PROJECT_DIR} \
-  --json
-```
+1. **Read the state.**
 
-Parse the JSON output. Key fields: `status`, `anomalies`, `endpoints`, `processes`, `probes`, `version`.
+   ```bash
+   python -m lab_commons.supervise check \
+     --project "${CLAUDE_PROJECT_DIR}" \
+     --config "${CLAUDE_PROJECT_DIR}/deploy/supervise.toml"
+   ```
 
-### Step 2: Decision Tree
+2. **Branch on the status.**
+   - `HEALTHY` — report the one line and stop. Nothing to do.
+   - `COMPLETE` — report it. A finished task is good news, not a fault, and it never escalates.
+   - `DEGRADED` — continue.
 
-> The authoritative, report-driven decision tree lives in `skills/watch/SKILL.md`.
-> The summary below is a quick reference; prefer SKILL.md when they diverge.
+3. **Report what is wrong, and what was already done about it.** The remedies ran *inside* the
+   cycle: `N remedies ran, M held by a gate` is the summary's way of saying so. Do not re-run them
+   — they are idempotent, but re-running a deployment because a report mentioned it is how a
+   supervisor becomes the outage.
 
-**If `status == "healthy"`:**
-- Check version_tracking: if known-good commit is older than `auto_update_interval_hours`, update it:
-  ```bash
-  python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --action update_known_good \
-    --project-dir ${CLAUDE_PROJECT_DIR}
-  ```
-- Report: all clear.
-- CronCreate: refresh the durable cron for `check_interval_normal` (see SKILL.md Step 5).
+4. **Say what a person needs to decide.** For each anomaly, the useful question is not "what is
+   wrong" — the check already said that — but *whether this needs a human*:
+   - A remedy that ran and failed needs a human.
+   - A step a gate held needs the gate explained, not the step re-run.
+   - Drift (`drifted`) is somebody working in a checkout. **Never repair it.** Report it and stop.
+   - `release_failing` past its tolerance means the same release has failed repeatedly. It is still
+     retried every cycle, deliberately; what the count buys is the alert saying how many times.
 
-**If `status == "complete"`:**
-A monitored task finished (`report.completions` lists the finished tasks; e.g. a
-`progress_tracker` reached its `total_ops`). This is terminal success, not a
-problem — do NOT apply remedies or escalate.
-- Report the completion(s) to the user (`report.summary` starts with `COMPLETE`).
-- **Stop the recurring schedule** instead of refreshing it: delete the durable
-  cron (`CronDelete`) so the loop doesn't keep polling a finished task. (If you
-  want a low-frequency idle check afterwards, recreate a daily cron instead.)
-- Optionally run a configured `task_done` action and clear/rename
-  `.claude/watch/active-run.json` so subsequent manual checks go quiet.
+## Escalation
 
-**If `status == "degraded"` or `status == "unreachable"`:**
+Alerts are suppressed by the library's own rules — an unchanged signature, a cooldown, a write-off
+after so many identical cycles. Do not add a second throttle here. If a notice must go out anyway,
+the config's chain already has a `notify` step for it.
 
-For each anomaly in `report.anomalies`:
-  1. Look up `config.remedies[anomaly.type]`. If not found, use `[{action: "log"}]`.
-  2. For each remedy step (in order):
-     - Skip if `step.on` is set and doesn't match `anomaly.severity`.
-     - Skip if `step.if` condition evaluates to false (evaluate with context vars like `$new_commits`).
-     - Execute the action:
-       ```
-       python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py \
-         --project-dir ${CLAUDE_PROJECT_DIR} \
-         --action <step.action>
-       ```
-     - If `step.max_attempts` is set and action failed, retry up to that count.
-     - If action succeeded, move to next anomaly (remedies for this one are done).
-  3. If `step.escalate_after` is set, check `.claude/watch/state/monitor.json` for consecutive anomaly count. If threshold reached → send alert.
+## What is NOT here
 
-After all remedies applied: wait 10 seconds, re-run monitor to verify. If still degraded → send alert. CronCreate: refresh the durable cron for `check_interval_anomaly` (default 1800).
-
-### Step 3: Alert (if needed)
-
-When escalating, send alert:
-```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/send_alert.py \
-  --config .claude/watch/config.yaml \
-  --subject "Anomaly detected: <type>" \
-  --body "$(python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --project-dir ${CLAUDE_PROJECT_DIR} --json)"
-```
-
-## Context Variables
-
-The action executor (`core/actions.py`, driven by `scripts/cli/watch.py --action`) maintains a context dict for condition evaluation:
-- `$new_commits` — set by `check_commits` action (count of commits since known-good)
-- Variables from `reduce_parallelism` etc. are interpolated into command strings
-
-## State File
-
-`.claude/watch/state/monitor.json` persists across wakeups:
-- `_probe_state` — for delta/staleness detection
-- `consecutive_anomalies` — `{anomaly_type: count}` for escalation tracking
+The daemon, the timer and the process manager. Supervision runs under systemd on the target, not
+under a Claude session; this command is what a session adds when a person is watching. A deployment
+in flight is not something to start from a chat window.
