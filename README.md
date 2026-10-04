@@ -26,7 +26,7 @@ Most plugins run on **both** hosts. What each does and where it runs:
 | [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync | yes | yes |
 | [`evolve`](evolve/README.md) | Iterative review→fix loop (depends on `sharp-review` + `rem`) | yes | yes |
 | [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |
-| [`traceme`](traceme/README.md) | Personal observability: token/cost reports, multi-device encrypted sync | yes | **no** (reads Claude transcript JSONL only) |
+| [`traceme`](traceme/README.md) | **Archived** — kept in the repo, not maintained or installed by default. Personal observability: token/cost reports, multi-device encrypted sync | yes | **no** (reads Claude transcript JSONL only) |
 | [`fabric`](fabric/README.md) | Invoke & observe child agents of any provider (`call`, `fan_out`) | yes | yes |
 | [`cc-latex`](cc-latex/README.md) | LaTeX writing: compile workflow, academic writing style, word counting | yes | yes |
 | [`cc-academia`](cc-academia/README.md) | Literature review, manuscript review, citation and reviewer discovery | yes | yes (CLI-enforced confidential-manuscript boundary; Claude adds a second hook guard) |
@@ -62,7 +62,6 @@ extra file-tool guard that Codex does not guarantee. See the host table above.
 /plugin install fabric@cc-market
 /plugin install rem@cc-market
 /plugin install sharp-review@cc-market
-/plugin install traceme@cc-market
 /plugin install watch@cc-market
 /plugin install evolve@cc-market
 /plugin install cc-latex@cc-market

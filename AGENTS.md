@@ -19,7 +19,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, crystallization, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
-| [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
+| [`traceme`](traceme/README.md) | `traceme/` | **Archived** (unmaintained, not installed by default; tests still run). Personal observability: token/cost reports, multi-device encrypted sync |
 | [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |
 | [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript review, citation and contact discovery |
 

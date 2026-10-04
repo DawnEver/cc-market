@@ -116,7 +116,7 @@
       "source": "./traceme",
       "codex": false,
       "displayName": "TraceMe",
-      "description": "Local-first personal observability for Claude Code — token usage, cost, tool usage, daily reports. Hooks capture session/tool/prompt data, transcript parser extracts token/cost.",
+      "description": "[Archived] Local-first personal observability for Claude Code — token usage, cost, tool usage, daily reports. Hooks capture session/tool/prompt data, transcript parser extracts token/cost.",
       "author": {
         "name": "linxu"
       },

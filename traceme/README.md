@@ -1,5 +1,8 @@
 # traceme
 
+> **Archived (2026-10-04).** Not maintained and not installed by default. The code and tests stay
+> so it can be re-enabled with `/plugin install traceme@cc-market`.
+
 Local-first personal observability for Claude Code — daily token/cost reports, tool & skill
 usage stats, per-project breakdowns, and encrypted multi-device sync.
 
