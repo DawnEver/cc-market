@@ -1,7 +1,7 @@
 {
   "name": "watch",
   "version": "1.0.66",
-  "description": "Unattended server & long-running task supervision — health checks, anomaly detection, auto-repair, multi-channel alerting. One YAML config per project, zero code changes to adopt.",
+  "description": "Unattended server & long-running task supervision — the Claude front end over lab_commons.supervise. Health checks, anomaly detection, auto-repair and multi-channel alerting, config-driven, with the machinery in the shared library.",
   "author": {
     "name": "Mingyang Bao"
   },

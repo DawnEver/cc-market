@@ -1,58 +1,52 @@
-# watch — Plugin Architecture
+# watch — the Claude adapter over `lab_commons.supervise`
 
-A generic Claude Code plugin for unattended supervision of servers and long-running tasks.
-Single YAML config per project. Pluggable components. Isolated uv venv.
+This plugin is a **front end**. The machinery it used to carry — config, state, the supervision
+loop, remedy chains, alert transport, health probes, the deployment engine, the process manager —
+now lives in `lab_commons.supervise`, a tier-2 subpackage of the family's shared library.
 
-## Layers
+## The layering, and why it is this way
 
 ```
-watchd (Python daemon, runs 24/7)
-  │  Every poll: git fetch + health ping + disk + process checks
-  │  Zero AI tokens. Only wakes AI on anomaly.
-  │  On fail_threshold exceeded → writes trigger.json
-  │
-  ▼
-trigger-watch.py (standalone poller, always-on terminal)
-  │  Polls trigger.json every 15s. On change → runs watch.py directly.
-  │  No Claude Code dependency. Survives session restarts.
-  │
-  ▼
-/watch:watch (Claude Code AI loop, on-demand or in-session)
-  │  Full component check + anomaly detection
-  │  Remedies: restart, rollback, worktree deploy
-  │  Alert escalation: email/webhook
-  │
-  ▼
-alert-hook.js (Claude Code hook)
-  │  Notification + Stop events → fail streak detection → email
+project            deploy/supervise.toml, systemd units        the target's own facts
+cc-market/watch    commands/, skills/, plugin.json             THIS — Claude-only, zero logic
+lab_commons        supervise/                                  the machine
+lab_commons        log, paths, proc, liveness, resources       the foundation
 ```
 
-## Orientation
+**Only two of the four things this plugin used to do were ever Claude-specific.** The AI decision
+tree and the session alert hook needed Claude. `watchd` said so itself in its own docstring — *"No
+Claude Code dependency, survives session restarts"* — and the whole of `core/` was infrastructure
+with no Claude and no domain in it. That machinery was trapped in a plugin distribution channel: a
+server could only get it by unsupported means, its state/lock/log conventions diverged from the
+family's, and it admitted three separate state stores with two spellings of the same counter.
 
-Progressive disclosure — this file is the entry point; load `docs/architecture.md` for the
-deep detail when a task reaches into that area.
+## What is here now
 
-- **File structure** map (every module) → `docs/architecture.md` § File Structure.
-- **Component interface** (the `Component` ABC; `CheckResult`/`Anomaly`/`RemedyStep`/
-  `Action` model; the daemon reuses `check()` via the same registry) →
-  `docs/architecture.md` § Component Interface.
-- **Per-project layout** (`watchd:` config schema, the `trigger.json`/`trigger-watch.py`
-  escalation mechanism) → `skills/watch/reference/project-layout.md` and
-  `skills/watch/reference/trigger-watch.md`.
+| Path | What |
+|---|---|
+| `commands/{check,watch,setup}.md` | The three user-facing verbs |
+| `skills/watch/SKILL.md` | The decision tree over the library's output |
+| `.claude-plugin/plugin.json` | Plugin manifest |
 
-## Testing
+**Nothing here computes.** Every command shells out to `python -m lab_commons.supervise`, which
+means what a session sees and what a server does are the same code path. That was not true before:
+the daemon and the AI loop each carried their own copy of the remedy chain.
 
-```shell
-python -m unittest discover watch/tests/
-```
+## What was removed, and why
 
-Pre-commit hook runs the Python suite when `watch/` files are staged (skipped if `python`
-is absent).
+| Removed | Why |
+|---|---|
+| `core/` | Config, state, loop, remedies, alerting, logging, pidfile — all generic, all now in the library |
+| `components/` | Health, resource, versioning and progress probes — now `lab_commons.supervise.components` |
+| `scripts/` | Entry points and helpers superseded by `python -m lab_commons.supervise` |
+| `hooks/` | The session-health alert hook. Confirmed for removal 2026-10-03 |
+| `tests/` | They tested the code above |
+| `requirements*.txt` | This plugin ships no Python |
+| `migrations/` | It migrated adopter config between the old YAML shapes; the format is TOML now |
+| `docs/`, `shared/` | Reference for internals that are gone, and the JS utilities its hooks used |
 
-## Standard
+## Invariants
 
-- Use `${CLAUDE_PLUGIN_ROOT}` for intra-plugin paths.
-- Use `${CLAUDE_PROJECT_DIR}` for project paths.
-- All Python except `hooks/alert-hook.js` (Claude Code requires standalone hooks).
-- `bootstrap.py` ensures `~/.local/share/claude/watch/venv/` exists at first run.
-- Plugin has zero dependency on host project packages.
+- **Config decides, not the command.** A rule restated in a `commands/*.md` is a second copy of it.
+- **`config/` is gitignored in this family.** A target's supervision config goes in `deploy/`.
+- **Nothing here starts a daemon.** Supervision runs under systemd on the target's host.
