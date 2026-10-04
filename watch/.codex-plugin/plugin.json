@@ -1,6 +1,6 @@
 {
   "name": "watch",
-  "version": "1.0.66",
+  "version": "1.0.67",
   "description": "Unattended server & long-running task supervision — the Claude front end over lab_commons.supervise. Health checks, anomaly detection, auto-repair and multi-channel alerting, config-driven, with the machinery in the shared library.",
   "author": {
     "name": "Mingyang Bao"
