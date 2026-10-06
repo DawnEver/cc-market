@@ -19,7 +19,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, crystallization, eviction |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
-| [`traceme`](traceme/README.md) | `traceme/` | Personal observability: token/cost reports, multi-device encrypted sync |
+| [`traceme`](traceme/README.md) | `traceme/` | **Archived** (unmaintained, not installed by default; tests still run). Personal observability: token/cost reports, multi-device encrypted sync |
 | [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |
 | [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript review, citation and contact discovery |
 
@@ -29,8 +29,7 @@ Each plugin has its own `AGENTS.md`; plugin-specific `.claude/rules/` are option
 The pre-commit hook (`scripts/git-hooks/pre-commit`, wired via `core.hooksPath`) runs **only
 the tests for plugins whose files are staged** — committing a fabric-only change runs just
 `fabric/tests/*.test.mjs` (plus the cross-cutting `tests/bundle-integrity.test.mjs`). It
-maps each changed top-level dir to its tests; `watch/` changes run the Python tests
-(`python -m unittest discover watch/tests/`, skipped if `python` is absent). Because `shared/`
+maps each changed top-level dir to its tests. Because `shared/`
 is bundled into every plugin, staging anything under `shared/` (or the root `tests/`) fans out
 to **all** plugins. A commit touching no test-bearing dir (e.g. only root docs) skips tests.
 
@@ -49,8 +48,7 @@ the three files under `tests/`, so "run every JS suite manually" did not.
 See each plugin's AGENTS.md § Testing for per-suite coverage.
 
 `cc-academia/tests/**` runs in its dedicated GitHub Actions workflow with the uv-managed
-environment. It is intentionally not run by the lightweight local pre-commit hook: unlike
-`watch` (stdlib `unittest`, no dependencies), academia needs its full Python environment.
+environment. It is intentionally not run by the lightweight local pre-commit hook: academia needs its full Python environment.
 
 Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised
 by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`fabric`,
@@ -58,7 +56,7 @@ by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`f
 injection, MCP exposure, and skill ingestion. `watch`, `cc-latex`, and Claude-only plugins are
 not yet covered by that live test.
 
-JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`). Python tests: `python -m unittest discover watch/tests/`.
+JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`).
 
 ### Public hygiene
 

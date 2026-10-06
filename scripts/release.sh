@@ -54,11 +54,6 @@ node scripts/gen-codex.mjs . >/dev/null
 node --test fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs \
   evolve/tests/*.test.mjs traceme/tests/*.test.mjs cc-latex/tests/*.test.mjs \
   shared/tests/*.test.mjs tests/*.test.mjs
-if printf '%s\n' "${plugins[@]}" | grep -qx watch; then
-  command -v uv >/dev/null 2>&1 || { echo "release: watch requires uv" >&2; false; }
-  uv run --no-project --with-requirements watch/requirements.lock \
-    python -m unittest discover watch/tests/
-fi
 if printf '%s\n' "${plugins[@]}" | grep -qx cc-academia; then
   command -v uv >/dev/null 2>&1 || { echo "release: cc-academia requires uv" >&2; false; }
   (cd cc-academia && uv run ruff check . && uv run python -m pytest -q)

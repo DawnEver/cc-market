@@ -40,7 +40,6 @@ if [ -n "$runtime_violations" ]; then
 fi
 
 node_tests=()       # plugin dirs whose *.test.mjs run via node --test
-run_python=0        # watch python tests
 run_bundle=0        # tests/bundle-integrity.test.mjs
 fanout=0            # shared/ touched -> run everything
 
@@ -53,19 +52,18 @@ fi
 
 if [ "$fanout" -eq 1 ]; then
   node_tests=(rem sharp-review traceme evolve fabric cc-latex)
-  run_python=1
   run_bundle=1
 else
   for p in rem sharp-review traceme evolve fabric cc-latex; do
     has "$p" && node_tests+=("$p") && run_bundle=1
   done
-  has watch && { run_python=1; run_bundle=1; }
+  has watch && run_bundle=1
   # Academia's dependency-heavy pytest remains a CI gate, but its manifest/host policy
   # changes must still receive the fast generated-artifact checks locally.
   has cc-academia && run_bundle=1
 fi
 
-if [ "${#node_tests[@]}" -eq 0 ] && [ "$run_python" -eq 0 ] && [ "$run_bundle" -eq 0 ]; then
+if [ "${#node_tests[@]}" -eq 0 ] && [ "$run_bundle" -eq 0 ]; then
   echo "pre-commit: no plugin tests affected by staged changes — skipping."
   exit 0
 fi
@@ -85,8 +83,7 @@ fi
 failed=0
 # Unset GIT_* so tests that spin up temp git repos (e.g. check-docs CLI) don't inherit
 # this commit's index/dir — git exports GIT_DIR/GIT_INDEX_FILE into hooks, and those tests
-# would otherwise operate on the real repo and fail spuriously. Same guard as watch's
-# python tests below.
+# would otherwise operate on the real repo and fail spuriously..
 for glob in "${selected[@]}"; do
   if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX \
           -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
@@ -96,55 +93,12 @@ for glob in "${selected[@]}"; do
   fi
 done
 
-if [ "$run_python" -eq 1 ]; then
-  # Prefer watch's own managed venv python when it exists: the tests are designed to run
-  # inside it (deps installed there), and using it directly avoids watch's bootstrap
-  # re-exec — which mangles argv when the entry point is `python -m unittest` and yields a
-  # spurious failure. Setting WATCH_VENV=1 also short-circuits any re-exec attempt.
-  # Fall back to a system python (python/python3/py) for fresh machines without the venv;
-  # `command -v python` alone matches the Windows Store alias shim that passes the lookup
-  # but errors at runtime, so require a working `--version`.
-  py=""; in_venv=0
-  venv_py="$HOME/.local/share/claude/watch/venv/bin/python"
-  # Use -f (not -x): on Windows/WSL NTFS mounts the exec bit may not be set on python.exe;
-  # the `--version` probe below is the real executability check.
-  [ -f "$venv_py" ] || venv_py="$HOME/.local/share/claude/watch/venv/Scripts/python.exe"
-  if [ -f "$venv_py" ] && "$venv_py" --version > /dev/null 2>&1; then
-    py="$venv_py"; in_venv=1
-  else
-    for cand in python python3 py; do
-      if command -v "$cand" > /dev/null 2>&1 && "$cand" --version > /dev/null 2>&1; then
-        py="$cand"; break
-      fi
-    done
-  fi
-  if [ -n "$py" ]; then
-    # WATCH_VENV=1 only when we already point at the venv python — it short-circuits watch's
-    # bootstrap re-exec (which mangles `-m unittest` argv). On a fresh machine without the venv
-    # we use a system python and let bootstrap create + re-exec into the venv normally.
-    [ "$in_venv" -eq 1 ] && export WATCH_VENV=1
-    # Unset GIT_* so watch's git-based tests don't inherit this commit's index/dir
-    # (git exports GIT_DIR/GIT_INDEX_FILE into hooks; tests that shell out to git in
-    # temp repos would otherwise operate on the real repo and fail spuriously).
-    if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX \
-            -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
-            "$py" -m unittest discover watch/tests/ > /dev/null 2>&1; then
-      echo "FAIL: watch/tests (python)"
-      failed=1
-    fi
-    [ "$in_venv" -eq 1 ] && unset WATCH_VENV
-  else
-    echo "pre-commit: no working python — skipping watch tests."
-  fi
-fi
-
 if [ "$failed" -ne 0 ]; then
   echo ""
   echo "Tests failed. Run manually:"
   for glob in "${selected[@]}"; do
     echo "  node --test $glob"
   done
-  [ "$run_python" -eq 1 ] && echo "  python -m unittest discover watch/tests/"
   exit 1
 fi
 

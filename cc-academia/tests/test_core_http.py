@@ -29,6 +29,39 @@ def test_network_errors_are_transient():
     assert not http.is_transient(SourceError("non_json_response", "test"))
 
 
+@pytest.mark.parametrize(
+    "raised",
+    [
+        ConnectionResetError(10054, "An existing connection was forcibly closed by the remote host"),
+        ConnectionAbortedError(10053, "An established connection was aborted by the software"),
+        BrokenPipeError(32, "Broken pipe"),
+        # No errno: CPython re-dispatches OSError by errno, so a bare
+        # OSError(10060) *is* a TimeoutError and takes the arm above it. The
+        # catch-all still has to exist for what maps to nothing.
+        OSError("socket closed unexpectedly"),
+    ],
+)
+def test_a_socket_failure_mid_body_becomes_a_source_error(monkeypatch, raised):
+    """The socket layer's own errors are the sources' errors too.
+
+    A reset arrives *after* urlopen has handed back the response object, so
+    urllib never wraps it in a URLError and no caller's ``except SourceError``
+    sees it. It escaped the whole way out of an enrich run and killed it,
+    discarding the candidates already done — so the one thing this must do is
+    convert, not propagate.
+    """
+    def boom(*args, **kwargs):
+        raise raised
+
+    monkeypatch.setattr(http, "urlopen", boom)
+
+    with pytest.raises(SourceError) as caught:
+        http.get_text("https://example.edu/staff", "test")
+
+    assert caught.value.reason.startswith("network_error")
+    assert http.is_transient(caught.value)
+
+
 def test_with_retries_gives_up_immediately_on_permanent_failure(monkeypatch):
     calls = []
 

@@ -89,6 +89,40 @@ def isolated_facts(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("ACADEMIA_DEVICE", "test-device")
 
 
+def neutral(policy):
+    """The same policy with every eligibility rule switched off.
+
+    Tests of scoring, ordering and column layout want to watch one mechanism at
+    a time. The shipped policy states a real editorial stance — activity and the
+    journal floor are ``require`` — so borrowing it as a neutral baseline made
+    those tests assert the stance rather than the mechanism they are named for.
+    Stating "nothing switched on" here keeps that decision in one place.
+    """
+    from academia.reviewer.policy import Policy
+
+    data = policy.data
+    activity = data["activity"]
+    return Policy(
+        data={
+            **data,
+            "activity": {
+                **activity,
+                "mode": "off",
+                "relevant": {**activity["relevant"], "mode": "off"},
+                "related_journals": {**activity["related_journals"], "mode": "off"},
+            },
+            "seniority": {
+                **data["seniority"],
+                "mode": "off",
+                "doctoral": {**data["seniority"]["doctoral"], "mode": "off"},
+            },
+            "geo": {**data["geo"], "restricted": {"mode": "off", "countries": []}},
+        },
+        sources=policy.sources,
+        journal=policy.journal,
+    )
+
+
 def assess(conn, person, policy, *, now_year, relevant_papers=None):
     """Run the eligibility rules against one person.
 

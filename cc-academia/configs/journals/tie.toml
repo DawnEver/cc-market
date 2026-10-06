@@ -1,6 +1,6 @@
 # IEEE Transactions on Industrial Electronics.
-# Only the keys that differ from configs/coi.toml need to appear here.
+#
+# No overrides. `min_academic_age = 5` used to sit here: the key had been
+# removed from the code and nothing read it, so it was a number that looked like
+# a rule and changed no run.
 journal = "IEEE Transactions on Industrial Electronics"
-
-[seniority]
-min_academic_age = 5

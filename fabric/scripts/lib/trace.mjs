@@ -8,7 +8,6 @@ import process from "node:process";
 // ── TraceMe integration (NDJSON contract, no code dependency) ───────────────
 
 const TRACEME_DIR = path.join(os.homedir(), '.claude', 'traceme');
-const FABRIC_TRACES_FILE = path.join(TRACEME_DIR, 'fabric_traces.jsonl');
 
 function parseTokenCount(s) {
   const t = String(s).trim().toLowerCase();
@@ -22,10 +21,12 @@ export function extractUsageFromStderr(stderr) {
   return { input_tokens: parseTokenCount(m[1]), output_tokens: parseTokenCount(m[2]) };
 }
 
-export function emitProviderTrace(entry) {
+// traceme is optional (archived by default): write only where it already keeps its data,
+// otherwise the file grows forever with no reader.
+export function emitProviderTrace(entry, dir = TRACEME_DIR) {
   try {
-    if (!fs.existsSync(TRACEME_DIR)) fs.mkdirSync(TRACEME_DIR, { recursive: true });
-    fs.appendFileSync(FABRIC_TRACES_FILE, JSON.stringify(entry) + '\n');
+    if (!fs.existsSync(dir)) return;
+    fs.appendFileSync(path.join(dir, 'fabric_traces.jsonl'), JSON.stringify(entry) + '\n');
   } catch {}
 }
 

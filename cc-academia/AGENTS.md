@@ -138,11 +138,17 @@ sending are separate questions, and they are answered separately: expertise is a
 score, eligibility is a gate.
 
 Every eligibility rule — the activity window, the doctoral year-of-study floor,
-invitation responsiveness, the unresponsive long-career expert — is a key in
+the seniority floor and related-journal evidence — is a key in
 `configs/coi.toml` with its own `off` / `prefer` / `require` mode. A `require`
 failure sets the score to negative infinity for the same reason a `BLOCK` does.
 A `prefer` failure only annotates and feeds one score component, so an editor
 can see it and disagree.
+
+IEEE journals share one shipped policy in `configs/coi.toml`; their journal
+files identify the venue rather than duplicate thresholds. Personal exceptions
+belong in the user's configuration overlay, not in the shipped policy.
+Address coverage is measured separately for invitable and excluded candidates,
+with configurable targets; pooled coverage cannot establish shortlist readiness.
 
 Missing evidence always passes. No publication years, no stated enrolment year,
 no invitation history — each is a gap in public data. A rule that fired on
@@ -206,6 +212,9 @@ generated" holds even with a model in the loop, and a search snippet that has
 gone stale cannot become an invitation.
 
 ## A blank field beats a confident wrong one
+
+Repairing page rendering must not relax attribution: initials-based contact
+matches stay weak, and multiple matching addresses stay unresolved.
 
 Academic rank is stated by a source or left `unknown`. It is never inferred from
 a publication record, and it is not scraped out of arbitrary HTML: reading it

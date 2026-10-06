@@ -1,152 +1,96 @@
 ---
-name: setup
-description: "Scaffold a .claude/watch/config.yaml config file with annotated defaults for this project"
-argument-hint: "[--template http|process|full]"
+description: Write the supervision config for this project — one TOML file, no daemon spawned from here.
+argument-hint: "[--template http|process|deploy|full]"
 ---
 
-# /watch:setup — Generate watch config for this project
+# /watch:setup
 
-Scaffold a `.claude/watch/config.yaml` in `${CLAUDE_PROJECT_DIR}/.claude/` with all fields documented as comments.
+Scaffold `deploy/supervise.toml` for this project. **This command does not start anything.** The
+daemon is a systemd unit and the schedule is a timer; both are installed on the host that runs the
+target, and a Claude session is the wrong place to start either.
 
-## Execution
+## Where the file goes, and why not `config/`
 
-1. Check if `.claude/watch/config.yaml` already exists → ask before overwriting.
-2. Determine template based on `--template` arg or auto-detect:
-   - **http**: HTTP server monitoring (endpoints + thresholds). Default for projects with a web server.
-   - **process**: Long-running process monitoring (processes + probes + delta).
-   - **full**: All sections enabled, everything commented.
-3. Write the config file with the project name from git or directory name as `instance.name`.
-   When scaffolding the `actions:` section, use one of the three documented forms (see
-   README "Actions"): **shell** (`kill`/`start`/`wait`), **managed-service**
-   (`kill_port`/`kill_pattern`/`start_cmd`/`start_dir`/`start_log`/`wait`), or
-   **composition** (`steps: [...]`). Named actions are run by the supervision loop and can
-   also be invoked directly with
-   `python ${CLAUDE_PLUGIN_ROOT}/scripts/cli/watch.py --action <name> --project-dir ${CLAUDE_PROJECT_DIR}`.
-4. Remind about Python dependencies:
-   - `pip install pyyaml` (required)
-   - `pip install psutil` (only if using process_monitor component)
-   - `pip install resend` (only if using Resend email alerts)
-5. **Start the watchd daemon:**
-   - Check if watchd is already running by reading `.claude/watch/logs/daemon.jsonl` — if the last entry timestamp is within 600 seconds (2 × 300s default interval), the daemon is alive.
-   - If NOT running, spawn it detached:
-     ```
-     python ${CLAUDE_PLUGIN_ROOT}/scripts/helpers/start-server.py \
-       --project-dir ${CLAUDE_PROJECT_DIR} \
-       --cmd "python ${CLAUDE_PLUGIN_ROOT}/scripts/daemon/daemon.py --project-dir ${CLAUDE_PROJECT_DIR}"
-     ```
-   - Wait 2 seconds, then verify `daemon.jsonl` has a new entry with a recent timestamp.
-   - Report: "watchd daemon is running (PID from heartbeat)" or "WARNING: watchd failed to start — check Python and venv."
-6. **Create the interval cron:**
-   - Read the configured `check_interval_normal` from config (default 43200 = 12h).
-   - Convert to a cron expression using off-peak minutes:
-     - 12h → `57 <hour>,<hour+12> * * *` (pick the current hour and its 12h counterpart, e.g. `57 8,20 * * *` for 8:57 AM/PM)
-     - 6h → `7 */6 * * *`
-     - 4h → `7 */4 * * *`
-     - 1h → `7 * * * *`
-   - CronCreate with:
-     - `cron`: the expression
-     - `prompt`: `/watch:watch`
-     - `recurring`: true
-     - `durable`: true
-   - This creates `.claude/scheduled_tasks.json` — survives restarts. The watch skill refreshes the cron on each run to reset the 7-day TTL.
-7. Print next steps: "Watchd is running. Cron scheduled for <interval>. Edit .claude/watch/config.yaml to adjust thresholds, then run /watch:watch to verify."
+Write it to `deploy/supervise.toml`, beside the units that read it.
 
-## Template: http
+**Do not put it under `config/`.** That directory is gitignored in this family — it holds the
+user-writable `config.toml` a checkout reads when run from its own root — so a config placed there
+is never versioned at all. The whole point of the file is that what runs on a server is reviewable
+in git; the `.gitignore` is rendered from the family base and hand-editing it reds a guard.
 
-```yaml
-# watch.yaml — Unattended supervision config for <project-name>
-# Docs: /watch:check
+## What to write
 
-instance:
-  name: "<project-name>"
-  check_interval_normal: 43200   # 12 hours
-  check_interval_anomaly: 1800   # 30 minutes
+1. **`[target]`** — a name. It keys the seat a cycle takes, so two targets on one host need two.
+2. **`[process] manager`** — `systemd` for a host that has it.
+3. **`[cycle] interval`** — how often a cycle runs. Below 5s the loop floors it: a supervisor that
+   polls faster than the service can answer is competing with what it supervises.
+4. **Components.** Each is a table under `[components.<name>]`; a shipped component is enabled
+   unless its own table says `enabled = false`.
+5. **`[remedies]`** — only where the default chain is wrong for this target.
+6. **Secrets never.**
 
-# HTTP endpoints to monitor
-endpoints:
-  - name: backend
-    url: "http://127.0.0.1:8000"
-    health_path: "/health/"
-    version_path: "/version/"
-    timeout: 5
-    # optional: false               # set true for non-critical endpoints
+## Templates
 
-# Metric thresholds (JSONPath source from health endpoint response)
-thresholds:
-  - name: cpu
-    source: endpoint.backend.$.system.cpu_percent
-    warning: 80
-    critical: 95
-    unit: "%"
-  - name: ram
-    source: endpoint.backend.$.system.ram_percent
-    warning: 80
-    critical: 95
-    unit: "%"
-  - name: error_rate
-    source: endpoint.backend.$.requests.error_rate
-    critical: 0.20
-    unit: "ratio"
-  - name: response_time
-    source: endpoint.backend.$.requests.avg_response_time_ms
-    critical: 5000
-    unit: "ms"
+**`http`** — watching a web service:
 
-actions:
-  restart:
-    kill: ""                        # e.g. "pkill -f uvicorn"
-    start: ""                       # e.g. "python -m my_server"
-    wait: 3
+```toml
+[components.http_health]
+enabled = true
 
-components:
-  watchd_heartbeat:
-    enabled: true
-    max_age_seconds: 600
+[[components.http_health.endpoints]]
+name = "api"
+url = "http://127.0.0.1:8000/health/"
 
-  # Track a long-running task's progress file and signal completion.
-  # progress_tracker:
-  #   enabled: true
-  #   progress_file: "${OUTPUT_DIR}/timing.json"  # ${OUTPUT_DIR} <- active-run.json
-  #   count_path: "models"        # dot-path to the per-unit count map
-  #   combine: "sum"              # sum|min|max|first across units
-  #   total_ops_path: ".claude/watch/active-run.json"
-  #   total_ops_key: "total_ops"
-  #   stale_threshold: 5          # unchanged polls before STALLED
-  #   active_run_file: ".claude/watch/active-run.json"  # source of ${OUTPUT_DIR};
-  #                               # override to run two configs side-by-side.
-  # When ops_done >= total_ops the run reports first-class status `complete`
-  # (terminal success — never `degraded`, never escalated). /watch:watch stops
-  # the recurring cron on `complete` instead of refreshing it.
-
-remedies:
-  high_cpu:       [{action: restart}]
-  high_memory:    [{action: restart}]
-  high_error_rate: [{action: restart}]
-  slow_response:  [{action: restart}]
-  unreachable:    [{action: restart, max_attempts: 3}]
-
-# alerts:
-#   email:
-#     enabled: false
-#     method: "resend"              # "resend" (needs RESEND_API_KEY) or "smtp"
-#     from: "Name<no-reply@domain.com>"
-#     to: "admin@example.com"
-#     subject_prefix: "[my-project]"
-#     cooldown_minutes: 10
-
-# version_tracking:
-#   enabled: true
-#   known_good_file: ".claude/watch/known-good.json"
-#   auto_update_after_checks: 2    # consecutive clean checks before trusting version
-#   repositories:                   # multi-repo: record version combination
-#     - name: "main"
-#       path: "."
-#       remote: "origin"
-#       branch: "main"
-#     # - name: "submodule-1"
-#     #   path: "lib/submodule-1"
+[components.http_health.endpoints.expect]
+status = "healthy"
 ```
 
-## Template: process
+**`process`** — watching a long-running job:
 
-Same structure but with `processes` and `probes` sections instead of `endpoints`.
+```toml
+[components.process_monitor]
+enabled = true
+
+[[components.process_monitor.processes]]
+name = "worker"
+match = "my_worker"
+min_count = 1
+max_rss_mb = 400
+```
+
+**`deploy`** — deploying a release only after proving it in isolation:
+
+```toml
+[components.deploy]
+enabled = true
+unit = "my-service"
+health = "http://127.0.0.1:8000/health/"
+install = "make install-web"
+run = "{python} -m my_app --home {home} --port {port}"
+probe = ["http://127.0.0.1:{port}/health/"]
+candidate_port = 8001
+
+[components.deploy.repositories]
+main = "/srv/my-service"
+```
+
+A deployment with no `install`, `run`, `probe`, `unit` or `health` is refused rather than run:
+every phase would be skipped, every step would pass, and it would report deploying nothing at all.
+
+## Secrets
+
+Not in this file. They arrive through the environment — `systemd`'s `EnvironmentFile=` pointing at
+a mode-600 file outside the repo — as `SUPERVISE_...` variables. **A double underscore separates the
+levels**: `SUPERVISE_ALERTS__EMAIL__RECIPIENTS` sets `alerts.email.recipients`, while a single
+underscore stays part of a key name, so `SUPERVISE_CYCLE__CHECK_TIMEOUT` addresses `check_timeout`
+rather than inventing a `check.timeout` beside it.
+
+## After writing it
+
+```bash
+python -m lab_commons.supervise check --project . --config deploy/supervise.toml
+```
+
+A first run against a target with no verified release reports `no_verified_release`. That is the
+honest warning that the first deployment is the one with nowhere to roll back to, not a fault to
+silence.

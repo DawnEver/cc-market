@@ -12,6 +12,7 @@ from academia.reviewer import coi, geo, rank
 from academia.reviewer.policy import Policy, load_policy
 from academia.store import db
 from academia.store import repository as repo
+from conftest import neutral
 
 
 @pytest.fixture()
@@ -23,7 +24,9 @@ def conn(tmp_path):
 
 @pytest.fixture()
 def policy():
-    return load_policy()
+    """Neutral: the shipped policy's eligibility rules would exclude or block
+    the stub candidates these tests rank, which is not what they measure."""
+    return neutral(load_policy())
 
 
 def person_in(country: str, *, topics=None, person_id="p1", confidence=0.99) -> Person:
@@ -42,7 +45,7 @@ def person_in(country: str, *, topics=None, person_id="p1", confidence=0.99) -> 
 
 
 def hard_policy() -> Policy:
-    base = load_policy()
+    base = neutral(load_policy())
     data = {**base.data, "geo": {**base.data["geo"], "mode": "hard_filter"}}
     return Policy(data=data, sources=base.sources, journal=base.journal)
 
@@ -246,15 +249,24 @@ def test_low_identity_confidence_is_surfaced_not_hidden(conn, policy):
 def test_seniority_is_noted_but_never_excludes(conn, policy):
     """A doctorate last year is below the floor, and says so without excluding.
 
-    The floor is a preference under the default policy, and the note names the
-    basis it used — a stated doctorate year here, the first publication where
-    there is none. It used to read "academic age 1", a figure whose meaning
-    depended on which of two rules had produced it.
+    The shipped policy sets no floor, so the test states the one it exercises:
+    the subject is the note and the absence of an exclusion, not the shipped
+    number. The note names the basis it used — a stated doctorate year here, the
+    first publication where there is none. It used to read "academic age 1", a
+    figure whose meaning depended on which of two rules had produced it.
     """
+    floored = Policy(
+        data={
+            **policy.data,
+            "seniority": {**policy.data["seniority"], "mode": "prefer", "min_years": 3},
+        },
+        sources=policy.sources,
+        journal=policy.journal,
+    )
     person = person_in("GB")
     person.education.append(Education(inst_id="i", degree="PhD", year_to=2025, source="orcid"))
     scored = rank.score_candidate(
-        conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=policy, now_year=2026
+        conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=floored, now_year=2026
     )
     assert scored.score > -math.inf
     assert any("below the floor of 3" in n for n in scored.notes)

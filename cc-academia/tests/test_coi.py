@@ -290,8 +290,23 @@ def test_a_clean_verdict_still_leaves_an_audit_record(conn, policy):
     assert "no detected conflict" in rows[0]["evidence_json"]
 
 
-def test_policy_fingerprint_changes_with_the_journal():
-    assert load_policy().fingerprint() != load_policy("tte").fingerprint()
+def test_every_ieee_journal_resolves_to_the_one_policy():
+    """One set of rules, however the journal slug is spelled.
+
+    The shipped IEEE journals used to each carry a partial copy of the shared
+    numbers, so the same decision lived in four files and could drift between
+    them. A journal file that states nothing now changes nothing. Compared over
+    every key rather than the handful a test would think to name; the one key
+    that still differs is the journal's own name, which is documentation that no
+    rule reads.
+    """
+
+    def rules(policy):
+        return {key: value for key, value in policy.data.items() if key != "journal"}
+
+    base = rules(load_policy())
+    for journal in ("tie", "tii", "tte", "tec"):
+        assert rules(load_policy(journal)) == base, journal
 
 
 def test_unknown_journal_is_refused_rather_than_silently_defaulted():
