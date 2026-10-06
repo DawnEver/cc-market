@@ -61,6 +61,12 @@ def _orcid() -> AuthorSource:
     return Orcid()
 
 
+def _scopus() -> PaperSource:
+    from academia.sources.scopus import Scopus
+
+    return Scopus()
+
+
 #: Canonical name -> factory. Aliases resolve separately so this stays a clean
 #: list of the sources that actually exist.
 SOURCE_FACTORIES: dict[str, Callable[[], PaperSource]] = {
@@ -69,10 +75,16 @@ SOURCE_FACTORIES: dict[str, Callable[[], PaperSource]] = {
     "semantic_scholar": _semantic_scholar,
     "arxiv": _arxiv,
     "dblp": _dblp,
+    "scopus": _scopus,
 }
 
 #: Search order for a multi-source run: richest metadata first.
-SOURCE_NAMES = tuple(SOURCE_FACTORIES)
+#:
+#: Scopus is deliberately absent despite being registered above. It needs a key
+#: and answers from a weekly quota, so a run that reached it by default would
+#: spend a budget the caller never agreed to, on a source that returns neither
+#: abstracts nor index terms. A caller that wants it names it.
+SOURCE_NAMES = tuple(name for name in SOURCE_FACTORIES if name != "scopus")
 
 #: Author-capable sources. Semantic Scholar is deliberately absent — its author
 #: endpoints answer an unauthenticated request with HTTP 429, so it cannot be a
@@ -80,6 +92,7 @@ SOURCE_NAMES = tuple(SOURCE_FACTORIES)
 AUTHOR_SOURCE_FACTORIES: dict[str, Callable[[], AuthorSource]] = {
     "openalex": _openalex,  # type: ignore[dict-item]
     "orcid": _orcid,
+    "scopus": _scopus,  # type: ignore[dict-item]
 }
 
 _ALIASES = {
@@ -87,6 +100,7 @@ _ALIASES = {
     "ieee_xplore": "ieee",
     "s2": "semantic_scholar",
     "semanticscholar": "semantic_scholar",
+    "elsevier": "scopus",
 }
 
 

@@ -4,7 +4,7 @@ Most of the database is a cache. Papers, authorships, resolved identities,
 OpenAlex affiliations and yearly output all come back by re-running the
 pipeline, and a lost store costs a few minutes and a few API calls.
 
-Five things do not come back, because a person paid to establish each one:
+Six things do not come back, because a person paid to establish each one:
 
 * **invitations** — who was asked, and how they answered if anybody wrote it
   down. No rule reads it: the two that judged responsiveness were removed. It
@@ -15,8 +15,12 @@ Five things do not come back, because a person paid to establish each one:
   footnote, with the page.
 * **verified affiliations** — a correction to where someone actually works.
 * **verified education** — the doctorate years the doctoral-year floor needs.
+* **verified profiles** — an author profile someone confirmed belongs to a
+  person, when a search could not settle it: two profiles supported equally, or
+  none. A matched profile is *not* here — re-running the match brings it back —
+  so only the ones a person decided travel.
 
-Those five are exported here as line-oriented JSON, one directory per device, so
+Those six are exported here as line-oriented JSON, one directory per device, so
 that a folder sync can carry them between machines. **The database itself is
 never synced**: it is SQLite in WAL mode, whose consistency depends on the
 ``-wal`` sidecar matching the main file, and a file-level syncer uploads the two
@@ -49,7 +53,7 @@ from academia.core.models import Institution
 #: OpenAlex affiliation is re-derivable and would just bloat the file.
 VERIFIED_SOURCES = ("agent_lookup", "editor_attestation")
 
-TABLES = ("invitations", "ranks", "emails", "affiliations", "education")
+TABLES = ("invitations", "ranks", "emails", "affiliations", "education", "profiles")
 
 
 @dataclass(frozen=True)
@@ -173,12 +177,31 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         )
     ]
 
+    profiles = [
+        _identity(r)
+        | {
+            "system": r["system"],
+            "profile_id": r["profile_id"],
+            "source": r["source"],
+            "source_url": r["source_url"] or "",
+            "verified_at": r["verified_at"],
+        }
+        for r in _rows(
+            conn,
+            f"SELECT f.*, p.orcid, p.openalex_id, p.display_name "
+            f"FROM person_profiles f {_PERSON_JOIN} "
+            f"WHERE f.source IN ({verified}) ORDER BY f.person_id, f.system",
+            VERIFIED_SOURCES,
+        )
+    ]
+
     return {
         "invitations": invitations,
         "ranks": ranks,
         "emails": emails,
         "affiliations": affiliations,
         "education": education,
+        "profiles": profiles,
     }
 
 
@@ -235,20 +258,34 @@ def _resolve_person(conn: sqlite3.Connection, record: dict[str, Any]) -> str | N
     """Find the local person for a fact, creating a stub only when identified.
 
     Identity precedence is the store's, not this file's: ORCID, then the
-    OpenAlex id, then an id that already exists locally. A fact about a person
-    resolved by name alone is dropped rather than guessed onto a namesake —
-    inviting the wrong person is worse than not inviting anyone.
+    OpenAlex id, then a profile id the record itself states, then an id that
+    already exists locally. A fact about a person resolved by name alone is
+    dropped rather than guessed onto a namesake — inviting the wrong person is
+    worse than not inviting anyone.
+
+    A stated profile id counts as identification, which is what makes a
+    correction usable at all: the store that needs it is by definition the one
+    where the search could not settle the profile, so it may hold no person row
+    and no ORCID to attach the fact to. The id is a persistent identifier, not
+    a name, and ``person_id`` is derived from it — so creating the row here
+    cannot land the fact on a namesake, which is the only thing the gate exists
+    to prevent.
     """
+    from academia.store import repository
+
     orcid = (record.get("orcid") or "").strip()
     openalex_id = (record.get("openalex_id") or "").strip()
     person_id = (record.get("person_id") or "").strip()
+    profile_id = str(record.get("profile_id") or "").strip()
+    column = repository.PROFILE_COLUMNS.get((record.get("system") or "").strip().lower())
 
-    for column, value in (("orcid", orcid), ("openalex_id", openalex_id)):
+    lookups = [("orcid", orcid), ("openalex_id", openalex_id)]
+    if column and profile_id:
+        lookups.append((column, profile_id))
+    for name, value in lookups:
         if not value:
             continue
-        row = conn.execute(
-            f"SELECT person_id FROM persons WHERE {column} = ?", (value,)
-        ).fetchone()
+        row = conn.execute(f"SELECT person_id FROM persons WHERE {name} = ?", (value,)).fetchone()
         if row:
             return row["person_id"]
 
@@ -259,15 +296,16 @@ def _resolve_person(conn: sqlite3.Connection, record: dict[str, Any]) -> str | N
         if row:
             return row["person_id"]
 
-    if not (orcid or openalex_id) or not person_id:
+    identified = bool(orcid or openalex_id or (column and profile_id))
+    if not identified or not person_id:
         return None
 
     now = _now()
     conn.execute(
         """
-        INSERT INTO persons (person_id, display_name, orcid, openalex_id, confidence,
-                             resolution_method, first_seen, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO persons (person_id, display_name, orcid, openalex_id, scopus_id,
+                             confidence, resolution_method, first_seen, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(person_id) DO NOTHING
         """,
         (
@@ -275,8 +313,9 @@ def _resolve_person(conn: sqlite3.Connection, record: dict[str, Any]) -> str | N
             record.get("display_name") or "unknown",
             orcid or None,
             openalex_id or None,
-            0.99 if orcid else 0.9,
-            "orcid" if orcid else "openalex_id",
+            profile_id if column == "scopus" else None,
+            0.99 if orcid else (0.9 if openalex_id else 0.85),
+            "orcid" if orcid else ("openalex_id" if openalex_id else "scopus_id"),
             now,
             now,
         ),
@@ -377,6 +416,42 @@ def _apply(conn: sqlite3.Connection, table: str, record: dict[str, Any], person_
                 source=record.get("source") or "agent_lookup",
                 source_url=record.get("source_url") or "",
             ),
+        )
+    elif table == "profiles":
+        from academia.store import repository
+
+        system = (record.get("system") or "").strip().lower()
+        profile_id = str(record.get("profile_id") or "").strip()
+        column = repository.PROFILE_COLUMNS.get(system)
+        if not column or not profile_id:
+            # A KeyError here is the import's existing "skip and count" path,
+            # which is right: a correction the store cannot apply must not be
+            # recorded as applied.
+            raise KeyError("profiles: unknown system or missing profile_id")
+        conn.execute(
+            """
+            INSERT INTO person_profiles
+                (person_id, system, profile_id, source, source_url, verified_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(person_id, system) DO UPDATE SET
+                profile_id  = excluded.profile_id,
+                source      = excluded.source,
+                source_url  = coalesce(nullif(excluded.source_url, ''), person_profiles.source_url)
+            """,
+            (
+                person_id,
+                system,
+                profile_id,
+                record.get("source") or "editor_attestation",
+                record.get("source_url") or None,
+                record.get("verified_at") or _now(),
+            ),
+        )
+        # The provenance row is what makes the fact portable; this is what makes
+        # it take effect, because every identity lookup reads `persons`.
+        conn.execute(
+            f"UPDATE persons SET {column} = ? WHERE person_id = ?",
+            (profile_id, person_id),
         )
     elif table == "education":
         inst_id = _institution_id(conn, record.get("institution", ""))

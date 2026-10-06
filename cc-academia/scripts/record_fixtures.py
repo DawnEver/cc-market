@@ -145,8 +145,78 @@ def record_orcid() -> None:
     print("no ORCID with a populated education section found in this sample", file=sys.stderr)
 
 
+def record_scopus() -> None:
+    """Three shapes: a document, an author search, an author profile.
+
+    Everything recorded is public paper metadata and a long-published
+    professor's public profile. No thesis record and no graduate's name is
+    captured, because a fixture in a public repository is the wrong place for
+    a person's link to an institution they have left.
+
+    Needs SCOPUS_API_KEY in the environment or in a discoverable ``.env``.
+    """
+    from academia.sources.scopus import AUTHOR_URL, JOURNAL_QUERY, SOURCE, _headers
+
+    documents = get_json(
+        build_url(
+            "https://api.elsevier.com/content/search/scopus",
+            {
+                "query": f'TITLE-ABS-KEY("permanent magnet synchronous motor torque ripple")'
+                f" AND {JOURNAL_QUERY}",
+                "count": 3,
+                "view": "COMPLETE",
+                "httpAccept": "application/json",
+            },
+        ),
+        SOURCE,
+        headers=_headers(),
+    )
+    results = documents.get("search-results") or {}
+    entry = results.get("entry") or []
+    if isinstance(entry, dict):
+        entry = [entry]
+    results["entry"] = entry[:3]
+    write("scopus_documents.json", documents)
+
+    authors = get_json(
+        build_url(
+            "https://api.elsevier.com/content/search/author",
+            {
+                "query": 'AUTHLAST("kolar") AND AUTHFIRST("johann")',
+                "count": 3,
+                "httpAccept": "application/json",
+            },
+        ),
+        SOURCE,
+        headers=_headers(),
+    )
+    found = authors.get("search-results") or {}
+    entries = found.get("entry") or []
+    if isinstance(entries, dict):
+        entries = [entries]
+    found["entry"] = [e for e in entries if not e.get("error")][:3]
+    write("scopus_authors.json", authors)
+
+    scopus_id = ""
+    for first in found["entry"]:
+        scopus_id = str(first.get("dc:identifier") or "").rsplit(":", 1)[-1]
+        if scopus_id:
+            break
+    if not scopus_id:
+        print("no author profile returned; skipped scopus_author.json", file=sys.stderr)
+        return
+    profile = get_json(
+        build_url(f"{AUTHOR_URL}/{scopus_id}", {"view": "ENHANCED", "httpAccept": "application/json"}),
+        SOURCE,
+        headers=_headers(),
+    )
+    write("scopus_author.json", profile)
+
+
 if __name__ == "__main__":
-    which = sys.argv[1:] or ["ieee", "openalex", "orcid"]
+    which = sys.argv[1:] or ["ieee", "openalex", "orcid", "scopus"]
+    if "scopus" in which:
+        record_scopus()
     if "ieee" in which:
         record_ieee()
     if "openalex" in which:

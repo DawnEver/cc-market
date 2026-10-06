@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS persons (
     orcid             TEXT,
     openalex_id       TEXT,
     ieee_author_id    TEXT,
+    scopus_id         TEXT,
     s2_id             TEXT,
     confidence        REAL NOT NULL DEFAULT 0.0,
     resolution_method TEXT NOT NULL DEFAULT 'unresolved',
@@ -95,6 +96,22 @@ CREATE TABLE IF NOT EXISTS persons (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_orcid ON persons(orcid) WHERE orcid IS NOT NULL AND orcid <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_openalex ON persons(openalex_id) WHERE openalex_id IS NOT NULL AND openalex_id <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_ieee ON persons(ieee_author_id) WHERE ieee_author_id IS NOT NULL AND ieee_author_id <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_scopus ON persons(scopus_id) WHERE scopus_id IS NOT NULL AND scopus_id <> '';
+
+-- A profile id someone stated, as opposed to one a search proposed. Kept apart
+-- from `persons.scopus_id`, which records the identity the store resolved:
+-- this records who said so and where, which is what makes a hand correction
+-- portable while a matched id — re-derivable by re-running the match — is not.
+CREATE TABLE IF NOT EXISTS person_profiles (
+    person_id   TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
+    system      TEXT NOT NULL,
+    profile_id  TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    source_url  TEXT,
+    verified_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, system)
+);
+CREATE INDEX IF NOT EXISTS idx_person_profiles_id ON person_profiles(system, profile_id);
 
 -- How many works a person published in a given year, as their bibliographic
 -- profile reports it. Kept apart from `papers`, which only ever holds the works

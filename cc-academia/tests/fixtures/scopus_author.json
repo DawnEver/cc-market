@@ -1,0 +1,1547 @@
+{
+  "author-retrieval-response": [
+    {
+      "@status": "found",
+      "@_fa": "true",
+      "coredata": {
+        "prism:url": "http://api.elsevier.com/content/author/author_id/27170969600",
+        "dc:identifier": "AUTHOR_ID:27170969600",
+        "eid": "9-s2.0-27170969600",
+        "document-count": "947",
+        "cited-by-count": "32159",
+        "citation-count": "52551",
+        "link": [
+          {
+            "@href": "https://www.scopus.com/authid/detail.uri?partnerID=HzOxMe3b&authorId=27170969600&origin=inward",
+            "@rel": "scopus-author",
+            "@_fa": "true"
+          },
+          {
+            "@href": "http://api.elsevier.com/content/author/author_id/27170969600",
+            "@rel": "self",
+            "@_fa": "true"
+          },
+          {
+            "@href": "http://api.elsevier.com/content/search/scopus?query=au-id%2827170969600%29",
+            "@rel": "search",
+            "@_fa": "true"
+          },
+          {
+            "@href": "http://api.elsevier.com/content/search/author?co-author=27170969600",
+            "@rel": "coauthor-search",
+            "@_fa": "true"
+          }
+        ]
+      },
+      "h-index": "114",
+      "coauthor-count": "610",
+      "affiliation-current": {
+        "@id": "132566572",
+        "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/132566572"
+      },
+      "affiliation-history": {
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "@id": "60025858",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/60025858"
+          },
+          {
+            "@_fa": "true",
+            "@id": "60018163",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/60018163"
+          },
+          {
+            "@_fa": "true",
+            "@id": "60028186",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/60028186"
+          },
+          {
+            "@_fa": "true",
+            "@id": "60015138",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/60015138"
+          },
+          {
+            "@_fa": "true",
+            "@id": "101476681",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/101476681"
+          },
+          {
+            "@_fa": "true",
+            "@id": "107803445",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/107803445"
+          },
+          {
+            "@_fa": "true",
+            "@id": "101751072",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/101751072"
+          },
+          {
+            "@_fa": "true",
+            "@id": "60000251",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/60000251"
+          },
+          {
+            "@_fa": "true",
+            "@id": "112727087",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/112727087"
+          },
+          {
+            "@_fa": "true",
+            "@id": "100585549",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/100585549"
+          },
+          {
+            "@_fa": "true",
+            "@id": "100748731",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/100748731"
+          },
+          {
+            "@_fa": "true",
+            "@id": "60029445",
+            "@href": "http://api.elsevier.com/content/affiliation/affiliation_id/60029445"
+          }
+        ]
+      },
+      "subject-areas": {
+        "subject-area": [
+          {
+            "@_fa": "true",
+            "@abbrev": "MEDI",
+            "@code": "2740",
+            "$": "Pulmonary and Respiratory Medicine"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2206",
+            "$": "Computational Mechanics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "PHYS",
+            "@code": "3104",
+            "$": "Condensed Matter Physics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1706",
+            "$": "Computer Science Applications"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATE",
+            "@code": "2505",
+            "$": "Materials Chemistry"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1700",
+            "$": "Computer Science (all)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1707",
+            "$": "Computer Vision and Pattern Recognition"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "CENG",
+            "@code": "1502",
+            "$": "Bioengineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "BIOC",
+            "@code": "1304",
+            "$": "Biophysics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2203",
+            "$": "Automotive Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATE",
+            "@code": "2502",
+            "$": "Biomaterials"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2213",
+            "$": "Safety, Risk, Reliability and Quality"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENER",
+            "@code": "2102",
+            "$": "Energy Engineering and Power Technology"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "SOCI",
+            "@code": "3313",
+            "$": "Transportation"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENER",
+            "@code": "2105",
+            "$": "Renewable Energy, Sustainability and the Environment"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1703",
+            "$": "Computational Theory and Mathematics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MEDI",
+            "@code": "2700",
+            "$": "Medicine (all)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2209",
+            "$": "Industrial and Manufacturing Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2200",
+            "$": "Engineering (all)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "CENG",
+            "@code": "1508",
+            "$": "Process Chemistry and Technology"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENER",
+            "@code": "2103",
+            "$": "Fuel Technology"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2208",
+            "$": "Electrical and Electronic Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2204",
+            "$": "Biomedical Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "SOCI",
+            "@code": "3304",
+            "$": "Education"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2211",
+            "$": "Mechanics of Materials"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2210",
+            "$": "Mechanical Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATH",
+            "@code": "2604",
+            "$": "Applied Mathematics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "PHYS",
+            "@code": "3105",
+            "$": "Instrumentation"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2201",
+            "$": "Engineering (miscellaneous)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "PHYS",
+            "@code": "3106",
+            "$": "Nuclear and High Energy Physics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1702",
+            "$": "Artificial Intelligence"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENER",
+            "@code": "2100",
+            "$": "Energy (all)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "PHYS",
+            "@code": "3102",
+            "$": "Acoustics and Ultrasonics"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENER",
+            "@code": "2104",
+            "$": "Nuclear Energy and Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1705",
+            "$": "Computer Networks and Communications"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATH",
+            "@code": "2606",
+            "$": "Control and Optimization"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATE",
+            "@code": "2500",
+            "$": "Materials Science (all)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MEDI",
+            "@code": "2705",
+            "$": "Cardiology and Cardiovascular Medicine"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1712",
+            "$": "Software"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENER",
+            "@code": "2101",
+            "$": "Energy (miscellaneous)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATH",
+            "@code": "2611",
+            "$": "Modeling and Simulation"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "DECI",
+            "@code": "1802",
+            "$": "Information Systems and Management"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MULT",
+            "@code": "1000",
+            "$": "Multidisciplinary"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2207",
+            "$": "Control and Systems Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1708",
+            "$": "Hardware and Architecture"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "PHYS",
+            "@code": "3100",
+            "$": "Physics and Astronomy (all)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MEDI",
+            "@code": "2746",
+            "$": "Surgery"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1701",
+            "$": "Computer Science (miscellaneous)"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATE",
+            "@code": "2504",
+            "$": "Electronic, Optical and Magnetic Materials"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "COMP",
+            "@code": "1711",
+            "$": "Signal Processing"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "ENGI",
+            "@code": "2202",
+            "$": "Aerospace Engineering"
+          },
+          {
+            "@_fa": "true",
+            "@abbrev": "MATE",
+            "@code": "2508",
+            "$": "Surfaces, Coatings and Films"
+          }
+        ]
+      },
+      "author-profile": {
+        "status": "update",
+        "date-created": {
+          "@day": "20",
+          "@month": "07",
+          "@year": "2009"
+        },
+        "preferred-name": {
+          "@date-locked": "2019-05-02T21:35:08.748-04:00",
+          "@source": "corrapi-external",
+          "initials": "J.W.",
+          "indexed-name": "Kolar J.",
+          "surname": "Kolar",
+          "given-name": "Johann Walter"
+        },
+        "name-variant": [
+          {
+            "@doc-count": "14",
+            "@source": "internal-ani",
+            "initials": "J.",
+            "indexed-name": "Kolar J.",
+            "surname": "Kolar",
+            "given-name": "J."
+          },
+          {
+            "@doc-count": "6",
+            "@source": "internal-ani",
+            "initials": "J.",
+            "indexed-name": "Kolar J.",
+            "surname": "Kolar",
+            "given-name": "Johann"
+          },
+          {
+            "@doc-count": "1",
+            "@source": "internal-ani",
+            "initials": "J.W.",
+            "indexed-name": "Kolar J.",
+            "surname": "Kolar",
+            "given-name": "Johann Walker"
+          },
+          {
+            "@doc-count": "1",
+            "@source": "internal-ani",
+            "initials": "W.J.",
+            "indexed-name": "Kolar W.",
+            "surname": "Kolar",
+            "given-name": "Walter Johann"
+          },
+          {
+            "@doc-count": "630",
+            "@source": "internal-ani",
+            "initials": "J.W.",
+            "indexed-name": "Kolar J.",
+            "surname": "Kolar",
+            "given-name": "Johann W."
+          },
+          {
+            "@doc-count": "255",
+            "@source": "internal-ani",
+            "initials": "J.W.",
+            "indexed-name": "Kolar J.",
+            "surname": "Kolar",
+            "given-name": "J. W."
+          },
+          {
+            "@doc-count": "1",
+            "@source": "internal-ani",
+            "initials": "J.W.",
+            "indexed-name": "Kolar J.",
+            "surname": "Kolar",
+            "given-name": "Johan W."
+          }
+        ],
+        "classificationgroup": {
+          "classifications": {
+            "@type": "ASJC",
+            "classification": [
+              {
+                "@frequency": "1",
+                "$": "2740"
+              },
+              {
+                "@frequency": "1",
+                "$": "2206"
+              },
+              {
+                "@frequency": "16",
+                "$": "3104"
+              },
+              {
+                "@frequency": "53",
+                "$": "1706"
+              },
+              {
+                "@frequency": "2",
+                "$": "2505"
+              },
+              {
+                "@frequency": "8",
+                "$": "1700"
+              },
+              {
+                "@frequency": "5",
+                "$": "1707"
+              },
+              {
+                "@frequency": "1",
+                "$": "1502"
+              },
+              {
+                "@frequency": "1",
+                "$": "1304"
+              },
+              {
+                "@frequency": "14",
+                "$": "2203"
+              },
+              {
+                "@frequency": "1",
+                "$": "2502"
+              },
+              {
+                "@frequency": "26",
+                "$": "2213"
+              },
+              {
+                "@frequency": "287",
+                "$": "2102"
+              },
+              {
+                "@frequency": "7",
+                "$": "3313"
+              },
+              {
+                "@frequency": "44",
+                "$": "2105"
+              },
+              {
+                "@frequency": "1",
+                "$": "1703"
+              },
+              {
+                "@frequency": "7",
+                "$": "2700"
+              },
+              {
+                "@frequency": "58",
+                "$": "2209"
+              },
+              {
+                "@frequency": "20",
+                "$": "2200"
+              },
+              {
+                "@frequency": "3",
+                "$": "1508"
+              },
+              {
+                "@frequency": "18",
+                "$": "2103"
+              },
+              {
+                "@frequency": "880",
+                "$": "2208"
+              },
+              {
+                "@frequency": "4",
+                "$": "2204"
+              },
+              {
+                "@frequency": "1",
+                "$": "3304"
+              },
+              {
+                "@frequency": "3",
+                "$": "2211"
+              },
+              {
+                "@frequency": "37",
+                "$": "2210"
+              },
+              {
+                "@frequency": "4",
+                "$": "2604"
+              },
+              {
+                "@frequency": "31",
+                "$": "3105"
+              },
+              {
+                "@frequency": "6",
+                "$": "2201"
+              },
+              {
+                "@frequency": "7",
+                "$": "3106"
+              },
+              {
+                "@frequency": "9",
+                "$": "1702"
+              },
+              {
+                "@frequency": "12",
+                "$": "2100"
+              },
+              {
+                "@frequency": "4",
+                "$": "3102"
+              },
+              {
+                "@frequency": "3",
+                "$": "2104"
+              },
+              {
+                "@frequency": "20",
+                "$": "1705"
+              },
+              {
+                "@frequency": "75",
+                "$": "2606"
+              },
+              {
+                "@frequency": "10",
+                "$": "2500"
+              },
+              {
+                "@frequency": "1",
+                "$": "2705"
+              },
+              {
+                "@frequency": "2",
+                "$": "1712"
+              },
+              {
+                "@frequency": "1",
+                "$": "2101"
+              },
+              {
+                "@frequency": "25",
+                "$": "2611"
+              },
+              {
+                "@frequency": "3",
+                "$": "1802"
+              },
+              {
+                "@frequency": "1",
+                "$": "1000"
+              },
+              {
+                "@frequency": "195",
+                "$": "2207"
+              },
+              {
+                "@frequency": "15",
+                "$": "1708"
+              },
+              {
+                "@frequency": "1",
+                "$": "3100"
+              },
+              {
+                "@frequency": "1",
+                "$": "2746"
+              },
+              {
+                "@frequency": "3",
+                "$": "1701"
+              },
+              {
+                "@frequency": "17",
+                "$": "2504"
+              },
+              {
+                "@frequency": "9",
+                "$": "1711"
+              },
+              {
+                "@frequency": "6",
+                "$": "2202"
+              },
+              {
+                "@frequency": "1",
+                "$": "2508"
+              }
+            ]
+          }
+        },
+        "publication-range": {
+          "@end": "2026",
+          "@start": "1984"
+        },
+        "affiliation-current": {
+          "affiliation": {
+            "@affiliation-id": "132566572",
+            "@parent": "60025858",
+            "@source": "internal-ani",
+            "ip-doc": {
+              "@id": "132566572",
+              "@type": "dept",
+              "@relationship": "author",
+              "afdispname": "ETH Zürich, Advanced Mechatronic Systems Group",
+              "preferred-name": {
+                "@source": "internal-ani",
+                "$": "Advanced Mechatronic Systems Group"
+              },
+              "parent-preferred-name": {
+                "@source": "internal-ani",
+                "$": "ETH Zürich"
+              },
+              "sort-name": "Advanced Mechatronic Systems Group",
+              "address": {
+                "@country": "che",
+                "address-part": "Ramistrasse 101",
+                "city": "Zurich",
+                "state": "ZH",
+                "postal-code": "8092",
+                "country": "Switzerland"
+              },
+              "org-domain": "ethz.ch",
+              "org-URL": "https://ethz.ch/en.html"
+            }
+          }
+        },
+        "affiliation-history": {
+          "affiliation": [
+            {
+              "@affiliation-id": "132566572",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "132566572",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Advanced Mechatronic Systems Group",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Advanced Mechatronic Systems Group"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Advanced Mechatronic Systems Group",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "60025858",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "ETH Zürich#60025858",
+                "afdispname": "ETH Zürich",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Swiss Federal Institute of Technology, Zurich",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "60018163",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "TU Wien#60018163",
+                "afdispname": "TU Wien",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Vienna University of Technology",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "133105568",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "133105568",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Mechatronics and Power Electronics Institute",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Mechatronics and Power Electronics Institute"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Mechatronics and Power Electronics Institute",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "126584720",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "126584720",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Institute of Electronics",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Institute of Electronics"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Institute of Electronics",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "133960142",
+              "@parent": "60004680",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "133960142",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "Nagasaki Institute of Applied Science, EE&I Department / New Technology Innovation",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "EE&I Department / New Technology Innovation"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Nagasaki Institute of Applied Science"
+                },
+                "sort-name": "EE&I Department / New Technology Innovation",
+                "address": {
+                  "@country": "jpn",
+                  "address-part": "536 Abamachi",
+                  "city": "Nagasaki",
+                  "state": "Nagasaki",
+                  "postal-code": "851-0193",
+                  "country": "Japan"
+                },
+                "org-domain": "nias.ac.jp",
+                "org-URL": "https://nias.ac.jp/95_English/index.html"
+              }
+            },
+            {
+              "@affiliation-id": "103061433",
+              "@parent": "60000481",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "103061433",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "Università degli Studi di Padova, Department of Management and Engineering",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Department of Management and Engineering"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Università degli Studi di Padova"
+                },
+                "sort-name": "Department of Management and Engineering",
+                "address": {
+                  "@country": "ita",
+                  "address-part": "Via 8 Febbraio, 2",
+                  "city": "Padua",
+                  "state": "PD",
+                  "postal-code": "35122",
+                  "country": "Italy"
+                },
+                "org-domain": "unipd.it",
+                "org-URL": "https://www.unipd.it/en/"
+              }
+            },
+            {
+              "@affiliation-id": "104313471",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "104313471",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Power Electronic Systems Laboratory",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Power Electronic Systems Laboratory"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Power Electronic Systems Laboratory",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "104313486",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "104313486",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Department of Information Technology and Electrical Engineering",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Department of Information Technology and Electrical Engineering"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Department of Information Technology and Electrical Engineering",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "60028186",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "60028186",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "École Polytechnique Fédérale de Lausanne#60028186",
+                "afdispname": "École Polytechnique Fédérale de Lausanne",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "École Polytechnique Fédérale de Lausanne"
+                },
+                "sort-name": "Swiss Federal Institute of Technology Lausanne",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Route Cantonale",
+                  "city": "Lausanne",
+                  "postal-code": "1015",
+                  "country": "Switzerland"
+                },
+                "org-domain": "epfl.ch",
+                "org-URL": "https://www.epfl.ch/en/"
+              }
+            },
+            {
+              "@affiliation-id": "60015138",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "60015138",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "University of Nottingham#60015138",
+                "afdispname": "University of Nottingham",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "University of Nottingham"
+                },
+                "sort-name": "Nottingham, University of",
+                "address": {
+                  "@country": "gbr",
+                  "address-part": "University Park",
+                  "city": "Nottingham",
+                  "state": "Nottinghamshire",
+                  "postal-code": "NG7 2RD",
+                  "country": "United Kingdom"
+                },
+                "org-domain": "nottingham.ac.uk",
+                "org-URL": "https://www.nottingham.ac.uk/"
+              }
+            },
+            {
+              "@affiliation-id": "110947423",
+              "@parent": "60015138",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "110947423",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "University of Nottingham, Department of Electrical and Electronic Engineering",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Department of Electrical and Electronic Engineering"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "University of Nottingham"
+                },
+                "sort-name": "Department of Electrical and Electronic Engineering",
+                "address": {
+                  "@country": "gbr",
+                  "address-part": "University Park",
+                  "city": "Nottingham",
+                  "state": "Nottinghamshire",
+                  "postal-code": "NG7 2RD",
+                  "country": "United Kingdom"
+                },
+                "org-domain": "nottingham.ac.uk",
+                "org-URL": "https://www.nottingham.ac.uk/"
+              }
+            },
+            {
+              "@affiliation-id": "112362628",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "112362628",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Department of Electrical Engineering",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Department of Electrical Engineering"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Department of Electrical Engineering",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "101476681",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "101476681",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "Electronics Laboratory#101476681",
+                "afdispname": "Electronics Laboratory",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Electronics Laboratory"
+                },
+                "sort-name": "Electronics Laboratory",
+                "address": {
+                  "@country": "che",
+                  "address-part": "ETZ H 90, Gloriastrasse 35",
+                  "city": "Zurich",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                }
+              }
+            },
+            {
+              "@affiliation-id": "118434507",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "118434507",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Head of the Power Electronic Systems Laboratory (PES)",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Head of the Power Electronic Systems Laboratory (PES)"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Head of the Power Electronic Systems Laboratory (PES)",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "107803445",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "107803445",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "Power Electronic Systems Laboratory#107803445",
+                "afdispname": "Power Electronic Systems Laboratory",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Power Electronic Systems Laboratory"
+                },
+                "sort-name": "Power Electronic Systems Laboratory",
+                "address": {
+                  "@country": "che",
+                  "address-part": "ELH Zurich",
+                  "city": "Zurich",
+                  "postal-code": "CH-8092",
+                  "country": "Switzerland"
+                }
+              }
+            },
+            {
+              "@affiliation-id": "101751072",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "101751072",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "Technical Program Committees of Numerous International Conferences#101751072",
+                "afdispname": "Technical Program Committees of Numerous International Conferences",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Technical Program Committees of Numerous International Conferences"
+                },
+                "sort-name": "Technical Program Committees of Numerous International Conferences",
+                "address": {
+                  "@country": "che",
+                  "country": "Switzerland"
+                }
+              }
+            },
+            {
+              "@affiliation-id": "60000251",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "60000251",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "IEEE#60000251",
+                "afdispname": "IEEE",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "IEEE"
+                },
+                "sort-name": "IEEE",
+                "address": {
+                  "@country": "usa",
+                  "address-part": "17th Floor, 3 Park Avenue",
+                  "city": "New York",
+                  "state": "NY",
+                  "postal-code": "10016-5997",
+                  "country": "United States"
+                },
+                "org-domain": "ieee.org",
+                "org-URL": "https://www.ieee.org/"
+              }
+            },
+            {
+              "@affiliation-id": "112727087",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "112727087",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "Power Quality Branch#112727087",
+                "afdispname": "Power Quality Branch",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Power Quality Branch"
+                },
+                "sort-name": "Power Quality Branch",
+                "address": {
+                  "@country": "che",
+                  "country": "Switzerland"
+                }
+              }
+            },
+            {
+              "@affiliation-id": "100585549",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "100585549",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "IEEJ#100585549",
+                "afdispname": "IEEJ",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "IEEJ"
+                },
+                "sort-name": "IEEJ",
+                "address": {
+                  "@country": "jpn",
+                  "address-part": "Soc. Instr. Contr. Eng.",
+                  "city": "Shizuoka",
+                  "country": "Japan"
+                }
+              }
+            },
+            {
+              "@affiliation-id": "104314866",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "104314866",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Laboratory ETL H23",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Laboratory ETL H23"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Laboratory ETL H23",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "104314451",
+              "@parent": "60025858",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "104314451",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "ETH Zürich, Pwr. Electronic Systems Laboratory",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Pwr. Electronic Systems Laboratory"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "ETH Zürich"
+                },
+                "sort-name": "Pwr. Electronic Systems Laboratory",
+                "address": {
+                  "@country": "che",
+                  "address-part": "Ramistrasse 101",
+                  "city": "Zurich",
+                  "state": "ZH",
+                  "postal-code": "8092",
+                  "country": "Switzerland"
+                },
+                "org-domain": "ethz.ch",
+                "org-URL": "https://ethz.ch/en.html"
+              }
+            },
+            {
+              "@affiliation-id": "100748731",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "100748731",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "EGSTON GmbH#100748731",
+                "afdispname": "EGSTON GmbH",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "EGSTON GmbH"
+                },
+                "sort-name": "EGSTON GmbH",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Grafenbergerstrasse 37, A-3730 Eggenburg",
+                  "country": "Austria"
+                }
+              }
+            },
+            {
+              "@affiliation-id": "103930899",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "103930899",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Dept. of El. Drives and Machines",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Dept. of El. Drives and Machines"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Dept. of El. Drives and Machines",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "103930691",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "103930691",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Institute of Electrical Drives and Machines",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Institute of Electrical Drives and Machines"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Institute of Electrical Drives and Machines",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "103931054",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "103931054",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Power Electronics Section 359.5",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Power Electronics Section 359.5"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Power Electronics Section 359.5",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "103930815",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "103930815",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Power Electronics Section",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Power Electronics Section"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Power Electronics Section",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            },
+            {
+              "@affiliation-id": "60029445",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "60029445",
+                "@type": "parent",
+                "@relationship": "author",
+                "afnameid": "University of Minnesota Twin Cities#60029445",
+                "afdispname": "University of Minnesota Twin Cities",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "University of Minnesota Twin Cities"
+                },
+                "sort-name": "Minnesota Twin Cities, University of",
+                "address": {
+                  "@country": "usa",
+                  "address-part": "Morrill Hall, 100 Church St. S.E.",
+                  "city": "Minneapolis",
+                  "state": "MN",
+                  "postal-code": "55455-0149",
+                  "country": "United States"
+                },
+                "org-domain": "twin-cities.umn.edu",
+                "org-URL": "https://twin-cities.umn.edu/"
+              }
+            },
+            {
+              "@affiliation-id": "126592427",
+              "@parent": "60018163",
+              "@source": "internal-ani",
+              "ip-doc": {
+                "@id": "126592427",
+                "@type": "dept",
+                "@relationship": "author",
+                "afdispname": "TU Wien, Inst. 359.5",
+                "preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "Inst. 359.5"
+                },
+                "parent-preferred-name": {
+                  "@source": "internal-ani",
+                  "$": "TU Wien"
+                },
+                "sort-name": "Inst. 359.5",
+                "address": {
+                  "@country": "aut",
+                  "address-part": "Campus Karlsplatz, Karlsplatz 13",
+                  "city": "Vienna",
+                  "state": "Vienna",
+                  "postal-code": "1040",
+                  "country": "Austria"
+                },
+                "org-domain": "tuwien.ac.at",
+                "org-URL": "https://www.tuwien.at/en/"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

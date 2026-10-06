@@ -52,6 +52,7 @@ def collect() -> dict:
         "extras": {name: _installed(mod) for name, mod in OPTIONAL_MODULES.items()},
         "s2_api_key": bool(os.environ.get("S2_API_KEY")),
         "openalex_api_key": bool(os.environ.get("OPENALEX_API_KEY")),
+        "scopus_api_key": bool(os.environ.get("SCOPUS_API_KEY")),
     }
 
 
@@ -98,6 +99,12 @@ def run(args: argparse.Namespace) -> int:
             "OPENALEX_API_KEY unset — OpenAlex allows about 100 requests a day, "
             "which one review can exhaust; a free key at openalex.org raises the "
             "daily limit to 10000 credits, about 1000 requests."
+        )
+    if not report["scopus_api_key"]:
+        log.detail(
+            "SCOPUS_API_KEY unset — Scopus stays unavailable. It is the only "
+            "source here that states author position, so first-author counts "
+            "cannot be produced without it. Everything else works."
         )
     return EXIT_OK
 

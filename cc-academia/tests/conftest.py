@@ -45,6 +45,23 @@ def orcid_employments() -> dict:
     return load_fixture("orcid_employments.json")
 
 
+@pytest.fixture()
+def scopus_documents() -> dict:
+    """A journal-article search in COMPLETE view — the shape that carries authors."""
+    return load_fixture("scopus_documents.json")
+
+
+@pytest.fixture()
+def scopus_authors() -> dict:
+    return load_fixture("scopus_authors.json")
+
+
+@pytest.fixture()
+def scopus_author() -> dict:
+    """An author-retrieval response, which arrives wrapped in a one-item list."""
+    return load_fixture("scopus_author.json")
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """Fail loudly if a test tries to open a socket."""

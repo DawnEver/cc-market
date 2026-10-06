@@ -24,6 +24,13 @@ from academia.core.models import (
 )
 from academia.core.text import normalize_name, normalize_orcid, normalize_title
 
+#: Profile system -> the identifier column it settles, for a correction someone
+#: stated. A system absent here cannot be applied, and the portable layer skips
+#: such a fact rather than storing one that changes nothing. It lives with the
+#: columns it names: the store knows its own schema, and the portable layer
+#: consults it rather than keeping a second copy that can go stale.
+PROFILE_COLUMNS = {"scopus": "scopus_id"}
+
 # --------------------------------------------------------------------- papers
 
 
@@ -101,11 +108,17 @@ def _find_person_id(conn: sqlite3.Connection, author: Author) -> str | None:
     ORCID first (89% coverage in the target domain), then persistent source ids.
     Name matching is never used here — a live probe for a common name returned a
     researcher from an unrelated field.
+
+    A Scopus author id counts as a persistent id like the others. It is not
+    always *reached* by one: a bibliometric match may propose it from a name,
+    but the proposal is admitted only on corroborating evidence, and what gets
+    stored and looked up here is the id.
     """
     for column, value in (
         ("orcid", normalize_orcid(author.orcid)),
         ("openalex_id", author.openalex_id),
         ("ieee_author_id", author.ieee_author_id),
+        ("scopus_id", author.scopus_id),
         ("s2_id", author.s2_id),
     ):
         if not value:
@@ -119,12 +132,22 @@ def _find_person_id(conn: sqlite3.Connection, author: Author) -> str | None:
 
 
 def _resolution_for(author: Author) -> tuple[str, float]:
+    """The confidence ladder. An identifier is an identity; a name never is.
+
+    ``scopus_id`` scores what ``ieee_author_id`` scores: both are persistent
+    source ids of the same kind, and Scopus has the extra property that its
+    id is only recorded once corroborating evidence supported it, so it is if
+    anything the better established of the two. Neither outranks an ORCID,
+    which the person controls and which no matching can get wrong.
+    """
     if normalize_orcid(author.orcid):
         return "orcid", 0.99
     if author.openalex_id:
         return "openalex_id", 0.9
     if author.ieee_author_id:
         return "ieee_author_id", 0.85
+    if author.scopus_id:
+        return "scopus_id", 0.85
     if author.s2_id:
         return "s2_id", 0.8
     return "name_only", 0.3
@@ -141,6 +164,7 @@ def upsert_person(conn: sqlite3.Connection, author: Author) -> str:
             normalize_orcid(author.orcid)
             or author.openalex_id
             or author.ieee_author_id
+            or author.scopus_id
             or author.s2_id
             or f"name:{author.name_key}"
         )
@@ -148,8 +172,9 @@ def upsert_person(conn: sqlite3.Connection, author: Author) -> str:
         conn.execute(
             """
             INSERT INTO persons (person_id, display_name, orcid, openalex_id, ieee_author_id,
-                                 s2_id, confidence, resolution_method, first_seen, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 scopus_id, s2_id, confidence, resolution_method,
+                                 first_seen, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(person_id) DO UPDATE SET last_seen = excluded.last_seen
             """,
             (
@@ -158,6 +183,7 @@ def upsert_person(conn: sqlite3.Connection, author: Author) -> str:
                 normalize_orcid(author.orcid) or None,
                 author.openalex_id or None,
                 author.ieee_author_id or None,
+                author.scopus_id or None,
                 author.s2_id or None,
                 confidence,
                 method,
@@ -173,6 +199,7 @@ def upsert_person(conn: sqlite3.Connection, author: Author) -> str:
                 orcid             = coalesce(nullif(?, ''), orcid),
                 openalex_id       = coalesce(nullif(?, ''), openalex_id),
                 ieee_author_id    = coalesce(nullif(?, ''), ieee_author_id),
+                scopus_id         = coalesce(nullif(?, ''), scopus_id),
                 s2_id             = coalesce(nullif(?, ''), s2_id),
                 confidence        = max(confidence, ?),
                 resolution_method = CASE WHEN ? > confidence THEN ? ELSE resolution_method END,
@@ -183,6 +210,7 @@ def upsert_person(conn: sqlite3.Connection, author: Author) -> str:
                 normalize_orcid(author.orcid),
                 author.openalex_id,
                 author.ieee_author_id,
+                author.scopus_id,
                 author.s2_id,
                 confidence,
                 confidence,
@@ -537,6 +565,40 @@ def set_stated_rank(
     )
 
 
+def record_profile(
+    conn: sqlite3.Connection,
+    person_id: str,
+    profile_id: str,
+    *,
+    system: str = "scopus",
+    source: str = "editor_attestation",
+    source_url: str = "",
+) -> None:
+    """Record a profile someone confirmed, and make it the person's identity.
+
+    Two writes, and both are load-bearing: the provenance row is what travels
+    between machines (see ``store.facts``), while the identifier column is what
+    every identity lookup reads. Writing only the first would produce a
+    correction that is faithfully synced and never applied.
+    """
+    column = PROFILE_COLUMNS.get(system)
+    if column is None or not profile_id:
+        raise ValueError(f"cannot record a {system!r} profile id: {profile_id!r}")
+    conn.execute(
+        """
+        INSERT INTO person_profiles
+            (person_id, system, profile_id, source, source_url, verified_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(person_id, system) DO UPDATE SET
+            profile_id  = excluded.profile_id,
+            source      = excluded.source,
+            source_url  = coalesce(nullif(excluded.source_url, ''), person_profiles.source_url)
+        """,
+        (person_id, system, profile_id, source, source_url or None, utcnow()),
+    )
+    conn.execute(f"UPDATE persons SET {column} = ? WHERE person_id = ?", (profile_id, person_id))
+
+
 def load_person(conn: sqlite3.Connection, person_id: str) -> Person | None:
     """Rehydrate a full Person, including career history."""
     row = get_person(conn, person_id)
@@ -549,6 +611,7 @@ def load_person(conn: sqlite3.Connection, person_id: str) -> Person | None:
         orcid=row["orcid"] or "",
         openalex_id=row["openalex_id"] or "",
         ieee_author_id=row["ieee_author_id"] or "",
+        scopus_id=row["scopus_id"] or "",
         s2_id=row["s2_id"] or "",
         confidence=row["confidence"],
         resolution_method=row["resolution_method"],

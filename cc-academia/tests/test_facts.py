@@ -63,6 +63,13 @@ def with_facts(connection, person_id: str) -> None:
         source="agent_lookup",
         source_url="https://uni.example/staff/x",
     )
+    repo.record_profile(
+        connection,
+        person_id,
+        "7001234567",
+        source="editor_attestation",
+        source_url="https://www.scopus.com/authid/detail.uri?authorId=7001234567",
+    )
     built = Institution.build(name="Doctorate Uni")
     repo.upsert_institution(connection, built)
     repo.record_education(
@@ -94,6 +101,7 @@ def test_a_second_machine_gains_every_non_derivable_fact(conn, other, tmp_path):
         "emails": 1,
         "affiliations": 1,
         "education": 1,
+        "profiles": 1,
     }
 
     person = repo.load_person(other, person_id)
@@ -102,6 +110,7 @@ def test_a_second_machine_gains_every_non_derivable_fact(conn, other, tmp_path):
     assert person.rank_source.endswith("/staff/x")
     assert person.country_code == "GB"
     assert person.phd_year == 2015
+    assert person.scopus_id == "7001234567"
     assert repo.emails_of(other, person_id)[0]["email"] == "x@uni.example"
     assert len(repo.invitation_history(other, person_id)) == 1
 
@@ -315,3 +324,86 @@ def test_the_resting_place_stays_the_home_directory(tmp_path, monkeypatch):
     monkeypatch.delenv(paths.ENV_FACTS_DIR, raising=False)
     assert paths.facts_dir() == Path.home() / paths.FACTS_DIRNAME
     assert paths.export_facts_dir() is None
+
+
+# ------------------------------------------------------- verified profiles
+
+
+def test_a_matched_profile_does_not_travel_but_a_stated_one_does(conn, tmp_path):
+    """A matched id comes back by re-running the match; a correction does not.
+
+    ``upsert_person`` writes the identifier column on its own, so a profile a
+    search settled has no provenance row and stays out of the portable set. Only
+    a profile somebody decided travels — which is the whole point of the set.
+    """
+    matched = repo.upsert_person(conn, Author(name="Matched", idx=0, scopus_id="111"))
+    stated = repo.upsert_person(conn, Author(name="Stated", idx=1, orcid="0000-0002-1825-0097"))
+    repo.record_profile(conn, stated, "222")
+
+    facts.export(conn, tmp_path / "shared")
+    written = (tmp_path / "shared" / paths.device_id() / "profiles.jsonl").read_text("utf-8")
+
+    assert json.loads(written.strip())["profile_id"] == "222"
+    assert repo.load_person(conn, matched).scopus_id == "111"
+    assert "111" not in written
+
+
+def test_a_correction_overrides_a_profile_a_search_had_settled(conn, tmp_path):
+    person_id = repo.upsert_person(conn, Author(name="Person", idx=0, scopus_id="111"))
+    repo.record_profile(conn, person_id, "222", source_url="https://www.scopus.com/authid/222")
+    assert repo.load_person(conn, person_id).scopus_id == "222"
+
+    facts.export(conn, tmp_path / "shared")
+    other = db.connect(tmp_path / "b.db")
+    try:
+        facts.import_(other, tmp_path / "shared")
+        assert repo.load_person(other, person_id).scopus_id == "222"
+    finally:
+        other.close()
+
+
+def test_a_profile_for_a_system_the_store_cannot_apply_is_skipped(other, tmp_path):
+    """Storing it would look like a correction while changing nothing."""
+    device = tmp_path / "shared" / "some-device"
+    device.mkdir(parents=True)
+    (device / "profiles.jsonl").write_text(
+        json.dumps(
+            {
+                "person_id": "person-x",
+                "orcid": "0000-0002-1825-0097",
+                "openalex_id": "",
+                "display_name": "Someone",
+                "system": "researchgate",
+                "profile_id": "RG-1",
+                "source": "editor_attestation",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    counts, skipped = facts.import_(other, tmp_path / "shared")
+    assert counts["profiles"] == 0
+    assert skipped == 1
+
+
+def test_a_profile_fact_about_an_unidentifiable_person_is_skipped(other, tmp_path):
+    device = tmp_path / "shared" / "some-device"
+    device.mkdir(parents=True)
+    (device / "profiles.jsonl").write_text(
+        json.dumps(
+            {
+                "person_id": "",
+                "orcid": "",
+                "openalex_id": "",
+                "display_name": "Just A Name",
+                "system": "scopus",
+                "profile_id": "333",
+                "source": "editor_attestation",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    counts, skipped = facts.import_(other, tmp_path / "shared")
+    assert counts["profiles"] == 0
+    assert skipped == 1

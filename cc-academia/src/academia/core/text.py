@@ -71,6 +71,90 @@ def normalize_name(value: Any) -> str:
     return text
 
 
+_TITLES = re.compile(r"\b(dr|prof|professor|mr|mrs|ms|miss)\b\.?", re.IGNORECASE)
+_PARENTHETICAL = re.compile(r"\(.*?\)")
+
+
+def _fold(value: Any) -> str:
+    """Lowercase, accent-folded, punctuation-free words. Idempotent."""
+    text = unicodedata.normalize("NFKD", as_text(value).lower())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(_NON_ALNUM.sub(" ", text).split())
+
+
+def split_person_name(value: Any) -> tuple[str, str]:
+    """Split a personal name into ``(surname, given)``, both folded.
+
+    Repositories and author lists write names every way there is — "Zhu,
+    Zi-Qiang", "ZHU Z.Q.", "Gerada, C.", a title in front, a parenthetical
+    former name in the middle — so neither a comma nor a word order may be
+    assumed. Titles and parentheticals go first, and a full stop becomes a
+    space, which is what lets "ZHU Z.Q." and "Zhu, Zi-Qiang" fold to the same
+    surname and the same given-name initial.
+
+    Without a comma the first word is taken as the surname, which fits
+    "Surname Initials" — how repositories write supervisors — and misfits a
+    western name in the other order. That ambiguity is not resolvable from the
+    string, so callers that must not lose matches should compare over
+    :func:`name_variants` instead of a single reading.
+    """
+    text = _PARENTHETICAL.sub(" ", as_text(value))
+    text = _TITLES.sub(" ", text).replace(".", " ")
+    surname, comma, given = text.partition(",")
+    if not comma:
+        parts = text.split()
+        surname, given = (parts[0], " ".join(parts[1:])) if parts else ("", "")
+    return _fold(surname), _fold(given)
+
+
+def person_name_readings(value: Any) -> list[tuple[str, str]]:
+    """Every ``(surname, given)`` reading a name could have, both folded.
+
+    A comma settles the order and yields one reading; without one the string is
+    genuinely undecidable and yields two. Callers that need the whole given name
+    — to compare against a list of given-name prefixes, say — want this rather
+    than :func:`name_keys`, which keeps only the initial.
+    """
+    surname, given = split_person_name(value)
+    if not surname or not given or "," in as_text(value):
+        return [(surname, given)]
+    return [(surname, given), (given, surname)]
+
+
+def name_keys(value: Any) -> set[tuple[str, str]]:
+    """Every key a name could yield, as a set of possibilities.
+
+    A comma settles the word order; without one it is genuinely undecidable,
+    and "Geraint Jewell" and "Zhu Zi-Qiang" have the same shape and opposite
+    orders. Both spellings occur in the thesis repositories, so a comparison
+    that insisted on one reading would silently lose half the matches it
+    exists to find. Two names match when their sets intersect::
+
+        name_keys("Jewell, Geraint") & name_keys("Geraint Jewell")  # non-empty
+
+    Returning a set rather than a single value is the honest shape — the
+    string does not determine the answer, so neither does this function.
+    """
+    return {person_name_key(*reading) for reading in person_name_readings(value)}
+
+
+def person_name_key(surname: Any, given: Any) -> tuple[str, str]:
+    """Surname plus the initial of the given names.
+
+    A filter for narrowing a candidate list, never an identity: it separates
+    "Wang, Bo" from "Wang, Bei" and does nothing at all about the dozens of
+    researchers who share both. A match is a question to answer with evidence.
+
+    The surname is taken as given rather than re-split, because a source that
+    separates it must not be second-guessed: Scopus reports
+    ``surname="Donoso Merlet"``, and passing that through
+    :func:`split_person_name` would take "Donoso" for the surname and lose the
+    person entirely.
+    """
+    folded = _fold(given)
+    return _fold(surname), folded[:1]
+
+
 def tokenize(text: str) -> list[str]:
     """Lowercase content words, stop words removed."""
     return [w for w in _WORD.findall(as_text(text).lower()) if w not in STOP_WORDS and len(w) > 1]

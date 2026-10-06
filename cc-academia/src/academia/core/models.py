@@ -135,6 +135,7 @@ class Author:
     orcid: str = ""
     openalex_id: str = ""
     ieee_author_id: str = ""
+    scopus_id: str = ""
     s2_id: str = ""
     raw_affiliation: str = ""
     country_code: str = ""
@@ -232,6 +233,7 @@ class Person:
     orcid: str = ""
     openalex_id: str = ""
     ieee_author_id: str = ""
+    scopus_id: str = ""
     s2_id: str = ""
     confidence: float = 0.0
     resolution_method: str = "unresolved"

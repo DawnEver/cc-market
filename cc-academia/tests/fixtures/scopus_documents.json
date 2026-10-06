@@ -1,0 +1,484 @@
+{
+  "search-results": {
+    "opensearch:totalResults": "3",
+    "opensearch:startIndex": "0",
+    "opensearch:itemsPerPage": "3",
+    "opensearch:Query": {
+      "@role": "request",
+      "@searchTerms": "TITLE-ABS-KEY(\"permanent magnet synchronous motor torque ripple\") AND SRCTYPE(j) AND (DOCTYPE(ar) OR DOCTYPE(re))",
+      "@startPage": "0"
+    },
+    "link": [
+      {
+        "@_fa": "true",
+        "@ref": "self",
+        "@href": "https://api.elsevier.com/content/search/scopus?start=0&count=3&query=TITLE-ABS-KEY%28%22permanent+magnet+synchronous+motor+torque+ripple%22%29+AND+SRCTYPE%28j%29+AND+%28DOCTYPE%28ar%29+OR+DOCTYPE%28re%29%29&view=COMPLETE&httpAccept=application%2Fjson",
+        "@type": "application/json"
+      },
+      {
+        "@_fa": "true",
+        "@ref": "first",
+        "@href": "https://api.elsevier.com/content/search/scopus?start=0&count=3&query=TITLE-ABS-KEY%28%22permanent+magnet+synchronous+motor+torque+ripple%22%29+AND+SRCTYPE%28j%29+AND+%28DOCTYPE%28ar%29+OR+DOCTYPE%28re%29%29&view=COMPLETE&httpAccept=application%2Fjson",
+        "@type": "application/json"
+      },
+      {
+        "@_fa": "true",
+        "@ref": "last",
+        "@href": "https://api.elsevier.com/content/search/scopus?start=0&count=3&query=TITLE-ABS-KEY%28%22permanent+magnet+synchronous+motor+torque+ripple%22%29+AND+SRCTYPE%28j%29+AND+%28DOCTYPE%28ar%29+OR+DOCTYPE%28re%29%29&view=COMPLETE&httpAccept=application%2Fjson",
+        "@type": "application/json"
+      }
+    ],
+    "entry": [
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/85165615464"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/85165615464?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=85165615464&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=85165615464&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/85165615464",
+        "dc:identifier": "SCOPUS_ID:85165615464",
+        "eid": "2-s2.0-85165615464",
+        "dc:title": "PERMANENT MAGNET SYNCHRONOUS MOTOR TORQUE RIPPLE REDUCTION USING PREDICTIVE TORQUE CONTROL",
+        "dc:creator": "Bahar S.T.",
+        "prism:publicationName": "Journal of Engineering and Sustainable Development",
+        "prism:issn": "25200917",
+        "prism:eIssn": "25200925",
+        "prism:volume": "27",
+        "prism:issueIdentifier": "3",
+        "prism:pageRange": "394-406",
+        "prism:coverDate": "2023-05-01",
+        "prism:coverDisplayDate": "1 May 2023",
+        "prism:doi": "10.31272/jeasd.27.3.9",
+        "dc:description": "The control a permanent magnet synchronous motors is the subject of this study and the torque ripple reduction in these motors is the main goal of this work. Torque and flux are controlled using a predictive model and vector control. Because it is commonly employed in regulating electric motors. Space vector control and predictive torque control are two permanent magnet synchronous motor control approaches used in this study. Predictive control was determined to be more effective in terms of response and action after a Mat lab simulation of the two approaches. Predictive torque control covers all potential switching states that decrease actual torque and flux ripples as well as total harmonic distortion. The benefits of predictive torque control include simple principles, an easy-to-use console, and the ability to implement limits quickly. However, there are some drawbacks to this technique, including the requirement for bigger accounts and faster machines. The fundamental principles of the control techniques discussed are provided. A permanent magnet synchronous motor powered by a two-level power converter is then used to simulate the control approaches. Their performance in comparison is based on the obtained results. An analytical model of the predictive torque control is presented utilizing SIMULINK to explain the operation.",
+        "citedby-count": "9",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60071164",
+            "afid": "60071164",
+            "affilname": "Mustansiriyah University",
+            "affiliation-city": "Baghdad",
+            "affiliation-country": "Iraq"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "author-count": {
+          "@limit": "100",
+          "$": "2"
+        },
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57929434300",
+            "authid": "57929434300",
+            "authname": "Bahar S.T.",
+            "surname": "Bahar",
+            "given-name": "Saif T.",
+            "initials": "S.T.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60071164"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57212544305",
+            "authid": "57212544305",
+            "authname": "Omar R.G.",
+            "surname": "Omar",
+            "given-name": "Riyadh G.",
+            "initials": "R.G.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60071164"
+              }
+            ]
+          }
+        ],
+        "authkeywords": "Current ripple | predictive torque control | torque ripple",
+        "source-id": "21101166946",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfullgold"
+            },
+            {
+              "$": "repository"
+            },
+            {
+              "$": "repositoryam"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Gold"
+            },
+            {
+              "$": "Green"
+            }
+          ]
+        }
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/85128619172"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/85128619172?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=85128619172&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=85128619172&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/85128619172",
+        "dc:identifier": "SCOPUS_ID:85128619172",
+        "eid": "2-s2.0-85128619172",
+        "dc:title": "PMSM Torque Ripple Minimization Based on Novel Low Carrier Ratio PWM Technique",
+        "dc:creator": "Yi P.",
+        "prism:publicationName": "IEEE Transactions on Power Electronics",
+        "prism:issn": "08858993",
+        "prism:eIssn": "19410107",
+        "prism:volume": "37",
+        "prism:issueIdentifier": "9",
+        "prism:pageRange": "11071-11084",
+        "prism:coverDate": "2022-09-01",
+        "prism:coverDisplayDate": "1 September 2022",
+        "prism:doi": "10.1109/TPEL.2022.3168891",
+        "dc:description": "Harmonic injection is commonly used in permanent magnet synchronous motor torque ripple minimization (TRM) of electric vehicle. Traditional inverter switching frequency limits TRM application at high speed due to harmonic modulation accuracy and inverter loss. To achieve TRM in the whole speed range and reduce inverter loss, a novel online calculated low carrier ratio pulsewidth modulation (LCRPWM) is proposed in this article. The carrier ratio determining regular according to the injected harmonics is established first. The relationship between injected harmonics and LCRPWM switching angle is revealed and a set of nonlinear equations is established. Thus, the problem is transformed from solving nonlinear equations into optimization by establishing a cost function. The analytical solutions of nonlinear equations are obtained, which avoids iterative operation and plunging into local minimum. Therefore, the switch angle solution method is suitable for online calculation. The LCRPWM is verified in simulation compared with the traditional regularly sampled space vector PWM, which achieves better results in voltage harmonic injection and flux tracking at a much lower switching frequency. At last, the LCRPWM is used in a test bench experiment that shows good TRM effects. The influence of sideband harmonics on torque ripple is analyzed.",
+        "citedby-count": "26",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60073652",
+            "afid": "60073652",
+            "affilname": "Tongji University",
+            "affiliation-city": "Shanghai",
+            "affiliation-country": "China"
+          },
+          {
+            "@_fa": "true",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60030434",
+            "afid": "60030434",
+            "affilname": "Qingdao University",
+            "affiliation-city": "Qingdao",
+            "affiliation-country": "China"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "author-count": {
+          "@limit": "100",
+          "$": "7"
+        },
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55440463400",
+            "authid": "55440463400",
+            "orcid": "0000-0002-4883-144X",
+            "authname": "Yi P.",
+            "surname": "Yi",
+            "given-name": "Peng",
+            "initials": "P.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60030434"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57608077700",
+            "authid": "57608077700",
+            "authname": "Yin Y.",
+            "surname": "Yin",
+            "given-name": "Yongchao",
+            "initials": "Y.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60030434"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "author-url": "https://api.elsevier.com/content/author/author_id/14053184800",
+            "authid": "14053184800",
+            "orcid": "0000-0001-7435-3165",
+            "authname": "Wang X.",
+            "surname": "Wang",
+            "given-name": "Xinjian",
+            "initials": "X.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60073652"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "4",
+            "author-url": "https://api.elsevier.com/content/author/author_id/54796711400",
+            "authid": "54796711400",
+            "orcid": "0000-0002-1320-231X",
+            "authname": "Li X.",
+            "surname": "Li",
+            "given-name": "Xianglin",
+            "initials": "X.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60030434"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "5",
+            "author-url": "https://api.elsevier.com/content/author/author_id/7405455948",
+            "authid": "7405455948",
+            "orcid": "0000-0001-5098-291X",
+            "authname": "Chen D.",
+            "surname": "Chen",
+            "given-name": "Daolian",
+            "initials": "D.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60030434"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "6",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57607010000",
+            "authid": "57607010000",
+            "orcid": "0000-0003-2535-6727",
+            "authname": "Hu Y.",
+            "surname": "Hu",
+            "given-name": "Yu",
+            "initials": "Y.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60073652"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "7",
+            "author-url": "https://api.elsevier.com/content/author/author_id/57213003465",
+            "authid": "57213003465",
+            "authname": "Ruan W.",
+            "surname": "Ruan",
+            "given-name": "Wenjin",
+            "initials": "W.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60073652"
+              }
+            ]
+          }
+        ],
+        "authkeywords": "Harmonic injection | low carrier ratio pulsewidth modulation (LCRPWM) | online calculation | torque ripple minimization (TRM)",
+        "source-id": "26055",
+        "fund-acr": "NSFC",
+        "fund-no": "51877215",
+        "fund-sponsor": "National Natural Science Foundation of China",
+        "openaccess": "0",
+        "openaccessFlag": false
+      },
+      {
+        "@_fa": "true",
+        "link": [
+          {
+            "@_fa": "true",
+            "@ref": "self",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/85079496771"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "author-affiliation",
+            "@href": "https://api.elsevier.com/content/abstract/scopus_id/85079496771?field=author,affiliation"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus",
+            "@href": "https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=85079496771&origin=inward"
+          },
+          {
+            "@_fa": "true",
+            "@ref": "scopus-citedby",
+            "@href": "https://www.scopus.com/inward/citedby.uri?partnerID=HzOxMe3b&scp=85079496771&origin=inward"
+          }
+        ],
+        "prism:url": "https://api.elsevier.com/content/abstract/scopus_id/85079496771",
+        "dc:identifier": "SCOPUS_ID:85079496771",
+        "eid": "2-s2.0-85079496771",
+        "dc:title": "Interior permanent magnet synchronous motor minimum current harmonics torque ripple suppression strategy based on magnetic co-energy model",
+        "dc:creator": "Yi P.",
+        "prism:publicationName": "Iet Electric Power Applications",
+        "prism:issn": "17518660",
+        "prism:eIssn": "17518679",
+        "prism:volume": "14",
+        "prism:issueIdentifier": "2",
+        "prism:pageRange": "234-244",
+        "prism:coverDate": "2020-02-01",
+        "prism:coverDisplayDate": "1 February 2020",
+        "prism:doi": "10.1049/iet-epa.2019.0276",
+        "dc:description": "Permanent magnet synchronous motors are widely used in electric vehicles. The permanent magnet synchronous motor torque ripple suppression is a research hotspot at present. This study adopts the torque ripple equation based on magnetic co-energy. Two novel minimum current harmonics torque ripple suppression strategies based on the magnetic co-energy are proposed. Both methods are suitable for whole current map calculation. One is based on dq-axis model, which makes the dq-axis current harmonics fluctuate along gradient direction of the torque equation to dq-axis currents. The other one is based on the newly proposed torque-current coupling model. The minimum current harmonics obtained by the two methods are basically the same. At last, finite element method and test bench experiment are used to verify the two methods. Both of them can effectively suppress torque ripple.",
+        "citedby-count": "22",
+        "affiliation": [
+          {
+            "@_fa": "true",
+            "affiliation-url": "https://api.elsevier.com/content/affiliation/affiliation_id/60073652",
+            "afid": "60073652",
+            "affilname": "Tongji University",
+            "affiliation-city": "Shanghai",
+            "affiliation-country": "China"
+          }
+        ],
+        "prism:aggregationType": "Journal",
+        "subtype": "ar",
+        "subtypeDescription": "Article",
+        "author-count": {
+          "@limit": "100",
+          "$": "3"
+        },
+        "author": [
+          {
+            "@_fa": "true",
+            "@seq": "1",
+            "author-url": "https://api.elsevier.com/content/author/author_id/55440463400",
+            "authid": "55440463400",
+            "authname": "Yi P.",
+            "surname": "Yi",
+            "given-name": "Peng",
+            "initials": "P.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60073652"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "2",
+            "author-url": "https://api.elsevier.com/content/author/author_id/14053184800",
+            "authid": "14053184800",
+            "authname": "Wang X.",
+            "surname": "Wang",
+            "given-name": "Xinjian",
+            "initials": "X.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60073652"
+              }
+            ]
+          },
+          {
+            "@_fa": "true",
+            "@seq": "3",
+            "author-url": "https://api.elsevier.com/content/author/author_id/12240763300",
+            "authid": "12240763300",
+            "authname": "Sun Z.",
+            "surname": "Sun",
+            "given-name": "Zechang",
+            "initials": "Z.",
+            "afid": [
+              {
+                "@_fa": "true",
+                "$": "60073652"
+              }
+            ]
+          }
+        ],
+        "source-id": "5100155084",
+        "fund-no": "U1564207",
+        "fund-sponsor": "Tongji University",
+        "openaccess": "1",
+        "openaccessFlag": true,
+        "freetoread": {
+          "value": [
+            {
+              "$": "all"
+            },
+            {
+              "$": "publisherfree2read"
+            }
+          ]
+        },
+        "freetoreadLabel": {
+          "value": [
+            {
+              "$": "All Open Access"
+            },
+            {
+              "$": "Bronze"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

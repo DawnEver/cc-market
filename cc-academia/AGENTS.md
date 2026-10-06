@@ -72,6 +72,7 @@ A file present in the override directory wins; anything absent falls back here.
 | Degrees and alma mater | ORCID | the only structured source, filled for roughly 30% of this field |
 | Open-access PDF links | Semantic Scholar, arXiv | S2 needs a key; arXiv links are the most reliable |
 | CS venue coverage | DBLP | complete, metadata only |
+| Journal articles per year, and the author position on each | Scopus | the only source that returns the **ordered** author list, which makes "first-author papers" a count rather than an estimate. Keyed and quota-limited, and it carries neither abstracts nor index terms, so it is named explicitly and never joins a default multi-source run |
 
 Two findings that shaped the design:
 
@@ -87,9 +88,35 @@ recording step rather than the build.
 ## Identity — never by name
 
 Researchers are resolved by ORCID, then OpenAlex id, then IEEE author id, then
-Semantic Scholar id. Name matching is banned as an identity mechanism: a live
-probe for a common name returned a researcher from an unrelated field. Where
-confidence is low it is carried into the output and marked, not hidden.
+Scopus author id, then Semantic Scholar id. Name matching is banned as an
+identity mechanism: a live probe for a common name returned a researcher from an
+unrelated field. Where confidence is low it is carried into the output and
+marked, not hidden.
+
+### A name may propose an id; it can never be one
+
+Bibliometric work has to attach a publication record to a person a *record*
+names — a thesis repository offers a name, a graduation year and a supervisor,
+and nothing else. That does not reopen the rule above, because what gets stored
+and matched is still an id.
+
+A Scopus author id is a persistent identifier of the same kind as an IEEE one.
+Searching a name is how a candidate is *found*; **accepting** it requires stated
+corroboration — a document shared with someone the record itself names, such as
+that supervisor. A profile no corroboration supports is not a candidate. Two
+supported equally are refused rather than ranked, and the caller reports
+*ambiguous*, because guessing attaches one person's publication record to
+another, and a missing count is recoverable in a way a wrong one is not.
+
+An uncorroborated profile enters at the `name_only` rung — the same
+low-confidence rung the store already uses — so nothing on this path can mint
+identity from a name. `sources/scopus.py::admit_candidate` is the one place a
+proposal becomes a belief.
+
+Where even that cannot settle it, a person decides, and the decision is a
+*stated fact* that travels like the others (see `store/facts.py`): a machine
+that never saw the search inherits the answer instead of re-guessing it. Only
+the decided ones travel — a matched profile comes back by re-running the match.
 
 ## Conflicts of interest are decided by code
 

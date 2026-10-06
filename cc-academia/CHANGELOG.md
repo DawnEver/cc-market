@@ -157,6 +157,62 @@ build if they drift.
 
 ### Added
 
+- **Scopus as a source** (`sources/scopus.py`), for the two things no other
+  source here states: journal articles and reviews counted per year, and the
+  **author position** on each of them. `view=COMPLETE` returns the ordered
+  author list with a 1-based `@seq`, so "first-author papers" is a count rather
+  than an estimate. Registered in both factory tables and reachable as `scopus`
+  or `elsevier`, but deliberately **not** in `SOURCE_NAMES`: it needs a key,
+  answers from a weekly quota, and returns neither abstracts nor index terms, so
+  a default multi-source run must not drift into it.
+
+  Four properties of the API cost live debugging and are recorded in the module
+  docstring, because each fails silently or misleadingly: `AUTHLAST()` is an
+  author-search field and a 400 in a document search; two bare `AUTH()` terms
+  ANDed together return *unrelated* documents rather than an intersection; a
+  search finding one result returns an object where a list is expected, and one
+  finding none returns a single entry carrying `error`; and the page size is 25
+  because the service level rejects 100 and 200.
+
+- **Corroborated profile matching** (`find_author_candidates`,
+  `admit_candidate`). A name proposes candidate author ids; accepting one
+  requires a document shared with someone the *record* names — a doctoral
+  supervisor. A profile no corroboration supports is not returned, two supported
+  equally are refused rather than ranked, and an uncorroborated profile enters at
+  the `name_only` rung. A graduate whose only output is a conference paper is
+  still that person and counts as zero journal articles: corroboration is tested
+  on every document type, while the count is journal articles only.
+
+- **`scopus_id` as an identity.** A column on `persons` with the usual partial
+  unique index, a rung on the confidence ladder at 0.85 alongside
+  `ieee_author_id`, and a place in `_find_person_id`'s precedence. Added through
+  `db._ADDED_COLUMNS`, so an existing store gains the column rather than being
+  rebuilt — `persons` holds facts a person paid to establish.
+
+- **`profiles`, a sixth portable fact** — a person→profile mapping somebody
+  confirmed, for the cases the evidence could not settle. Only the decided ones
+  travel; a matched profile comes back by re-running the match. It rides the
+  existing transport and identity gate, with one addition: a stated profile id
+  now counts as identification, because the store that needs the correction is
+  by definition the one whose search failed, and so may hold no person row and
+  no ORCID to attach the fact to. The id is a persistent identifier and
+  `person_id` is derived from it, so this cannot land a fact on a namesake.
+
+- **`person_profiles`**, recording *who* stated a profile id and *where*, kept
+  apart from `persons.scopus_id`, which records what the store resolved. That
+  provenance is what makes a correction portable while a matched id is not.
+
+- **`split_person_name`, `person_name_key` and `name_keys`** in `core/text.py`.
+  The stores write "Zhu, Zi-Qiang", "ZHU Z.Q." and "Donoso Merlet, Felipe" for
+  the same kinds of thing, and a key built from one spelling has to equal the key
+  built from the others. `name_keys` returns a *set*: without a comma the word
+  order is genuinely undecidable — "Geraint Jewell" and "Zhu Zi-Qiang" have one
+  shape and opposite orders — so the honest answer is every reading, and two
+  names match when their sets intersect.
+
+- **`SCOPUS_API_KEY`** in `.env.template`, and a `scopus_api_key` line in
+  `academia doctor` beside the OpenAlex and Semantic Scholar booleans.
+
 - **Homepage-or-paper link** on the `decision` sheet and in `shortlist.csv`
   (`profile_url`): the candidate's ORCID record, else their publication
   profile, else the paper of theirs closest to this manuscript, whichever says

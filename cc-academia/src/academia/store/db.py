@@ -29,6 +29,7 @@ TABLES = (
     "person_names",
     "person_topics",
     "person_ranks",
+    "person_profiles",
     "person_output",
     "authorships",
     "institutions",
@@ -83,9 +84,12 @@ def _drop_outdated_derived_tables(connection: sqlite3.Connection) -> None:
 #: Columns added to tables that must never be dropped. ``papers`` is the
 #: accumulated corpus — the reason a second manuscript in the same field starts
 #: with most of the work done — and dropping it would cascade through
-#: authorships, terms and references. Added, not rebuilt.
+#: authorships, terms and references. Added, not rebuilt. ``persons`` holds the
+#: facts a person paid to establish, so a rebuild would lose work rather than
+#: time.
 _ADDED_COLUMNS = {
     "papers": (("pdf_url", "TEXT"), ("landing_page_url", "TEXT")),
+    "persons": (("scopus_id", "TEXT"),),
 }
 
 

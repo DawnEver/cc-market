@@ -133,3 +133,90 @@ def test_word_overlap_is_zero_when_either_side_is_empty():
 
     assert word_overlap([], ["axial flux"]) == 0.0
     assert word_overlap(["axial flux"], []) == 0.0
+
+
+# ------------------------------------------------------- personal names
+#
+# These exist for matching a thesis record to an author profile, where a name
+# is the only search key available. Every case below is one a live harvest hit.
+
+
+def test_split_person_name_keeps_a_two_word_surname_together():
+    """A compound surname is one word to its owner and two to a tokeniser.
+
+    "Donoso Merlet, Felipe Octavio" taken by first token becomes "Donoso" and
+    the person is never found again. The comma is what says the surname runs
+    to it.
+    """
+    assert text.split_person_name("Donoso Merlet, Felipe Octavio") == (
+        "donoso merlet",
+        "felipe octavio",
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["Zhu, Zi-Qiang", "ZHU Z.Q.", "zhu  z.q.", "Prof. Zhu, Zi-Qiang", "Zhu, Zi Qiang (née Wu)"],
+)
+def test_every_spelling_of_a_name_folds_to_one_key(raw):
+    """Repositories and author lists punctuate the same person differently.
+
+    A key built from one spelling has to equal the key built from the others,
+    or a supervisor match silently fails depending on which record was read.
+    """
+    surname, given = text.split_person_name(raw)
+    assert text.person_name_key(surname, given) == ("zhu", "z")
+
+
+def test_split_person_name_drops_a_title_and_a_parenthetical():
+    assert text.split_person_name("Dr. Gerada, Chris") == ("gerada", "chris")
+    assert text.split_person_name("Al-Lehaby (Mohammed), Ibrahim Khalaf") == (
+        "al lehaby",
+        "ibrahim khalaf",
+    )
+
+
+def test_person_name_key_separates_initials_and_nothing_finer():
+    """The key is a filter, so its looseness is part of the contract.
+
+    It separates "Wang, Bo" from "Wang, Ci" and deliberately does *not*
+    separate "Bo" from "Bei": dozens of researchers share a surname and an
+    initial, and a key that pretended otherwise would be making a claim it
+    cannot support. Evidence decides between them, never the key.
+    """
+    assert text.person_name_key("Wang", "Bo") != text.person_name_key("Wang", "Ci")
+    assert text.person_name_key("Wang", "Bo") == text.person_name_key("Wang", "Bei")
+    assert text.person_name_key("Wang", "Bo") == text.person_name_key("Wang", "B.")
+
+
+def test_person_name_key_does_not_re_split_a_surname_a_source_already_gave():
+    """The trap that lost a live match: Scopus says ``surname="Donoso Merlet"``.
+
+    Running that through ``split_person_name`` would find no comma and take
+    "Donoso" for the surname, so the profile that was already identified by id
+    stopped matching the roster.
+    """
+    assert text.person_name_key("Donoso Merlet", "Felipe") == ("donoso merlet", "f")
+
+
+def test_name_keys_holds_both_readings_only_when_the_order_is_unknown():
+    """"Geraint Jewell" and "Zhu Zi-Qiang" are one shape and two orders.
+
+    Both spellings occur in the repositories, so the comparison has to hold
+    both readings. A comma settles the order, and then there is only one.
+    """
+    assert text.name_keys("Jewell, Geraint") == {("jewell", "g")}
+    assert text.name_keys("Geraint Jewell") == {("jewell", "g"), ("geraint", "j")}
+
+
+def test_name_keys_connect_the_spellings_a_repository_actually_writes():
+    """The comparison is set intersection, so either signature suffices.
+
+    "Geraint Jewell" and "Jewell, Geraint" are the same person written by two
+    repositories; "Zhu, Zi-Qiang" and "ZHU Z.Q." are that person written twice
+    by one. Both pairs have to intersect or the match is lost on punctuation.
+    """
+    assert text.name_keys("Geraint Jewell") & text.name_keys("Jewell, Geraint")
+    assert text.name_keys("Zhu, Zi-Qiang") & text.name_keys("ZHU Z.Q.")
+    # and the intersections must not swallow unrelated people
+    assert not text.name_keys("Wang, Bo") & text.name_keys("Wang, Ci")
