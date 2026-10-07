@@ -27,30 +27,21 @@ const REG = {
       claudePath: '/anthropic',
       claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
       apiKey: 'sk-test',
-      claudeExtras: {
-        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1m]',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1m]',
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
-      },
+      models: { base: 'deepseek-v4-flash', opus: 'deepseek-v4-pro[1m]', sonnet: 'deepseek-v4-pro[1m]' },
     },
     vanilla: {
       url: 'https://example.test',
       claudePath: '/v1/',
       claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN',
       apiKey: 'tok-abc',
-      claudeExtras: {
-        ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-model',
-      },
+      models: { base: 'big-model' },
     },
     kimi: {
       url: 'https://api.kimi.com',
       claudePath: '/coding/',
       claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
       apiKey: 'sk-kimi-test',
-      claudeExtras: {
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'k3-256k',
-        ANTHROPIC_DEFAULT_FABLE_MODEL: 'k3[1m]',
-      },
+      models: { base: 'k3-256k', fable: 'k3[1m]' },
     },
   },
 };
@@ -142,7 +133,7 @@ test('machine-local secrets overlay: local file deep-merges over the shared regi
         url: 'https://api.deepseek.com',
         claudePath: '/anthropic',
         claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
-        claudeModel: 'deepseek-v4-flash[1m]',
+        models: { base: 'deepseek-v4-flash[1m]' },
         // apiKey is NOT in the shared file — it comes from the local overlay
       },
     },
@@ -179,7 +170,7 @@ test('loadProviderConfig returns a clear error when apiKey is missing from local
         url: 'https://api.deepseek.com',
         claudePath: '/anthropic',
         claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
-        claudeModel: 'deepseek-v4-flash[1m]',
+        models: { base: 'deepseek-v4-flash[1m]' },
       },
     },
   }));
@@ -199,4 +190,10 @@ test('anthropicEndpoint builds the /v1/messages URL Claude Code itself hits', ()
     'https://example.test/v1/messages');
   assert.equal(anthropicEndpoint('https://api.anthropic.com', '/v1/messages'),
     'https://api.anthropic.com/v1/messages');
+});
+
+test('models map projects like cc-launcher: role keys override, the rest fall back to base', () => {
+  const cfg = loadProviderConfig('kimi', fixture(REG));
+  assert.deepEqual([cfg.defaultSonnet, cfg.defaultFable, cfg.defaultOpus, cfg.subagent], ['k3-256k', 'k3[1m]', 'k3-256k', 'k3-256k']);
+  assert.equal(loadProviderEnv('kimi', fixture(REG)).ANTHROPIC_MODEL, 'k3-256k');
 });

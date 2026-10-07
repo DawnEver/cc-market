@@ -18,10 +18,7 @@ const REG = {
       claudePath: '/anthropic',
       claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
       apiKey: 'sk-real',
-      claudeExtras: {
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
-        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1m]',
-      },
+      models: { base: 'deepseek-v4-flash', opus: 'deepseek-v4-pro[1m]' },
     },
   },
 };
@@ -345,7 +342,7 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
   const upstream = http.createServer((_, r) => r.end()).listen(0, '127.0.0.1');
   await new Promise((r) => upstream.once('listening', r));
   const port = upstream.address().port;
-  const cfg = fixture({ providers: { deepseek: { url: `http://127.0.0.1:${port}`, claudePath: '', claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN', apiKey: 'sk-real', claudeExtras: { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash' } } } });
+  const cfg = fixture({ providers: { deepseek: { url: `http://127.0.0.1:${port}`, claudePath: '', claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN', apiKey: 'sk-real', models: { base: 'deepseek-v4-flash' } } } });
   const sink = {};
   const runDir = mkdtempSync(join(tmpdir(), 'sc-obs-'));
   try {
@@ -472,4 +469,21 @@ test('spawnChild MULTILINE prompt goes via stdin even when short (argv -p trunca
   assert.ok(sink.args.includes('--input-format'), 'short multiline prompt must switch to stdin mode');
   assert.ok(!sink.args.includes(multi), 'the prompt must NOT appear in argv');
   assert.equal(JSON.parse(sink.stdinWritten).message.content, multi, 'the FULL multiline prompt reaches stdin');
+});
+
+test('resolveClaudeExe finds a native install: claude.exe itself on PATH, no npm prefix', (t) => {
+  if (process.platform !== 'win32') return t.skip('win32 only');
+  const dir = mkdtempSync(join(tmpdir(), 'native-claude-'));
+  writeFileSync(join(dir, 'claude.exe'), '');
+  const saved = { cli: process.env.CLAUDE_CLI_PATH, path: process.env.PATH };
+  delete process.env.CLAUDE_CLI_PATH;
+  process.env.PATH = dir;
+  clearClaudeExeCache();
+  try {
+    assert.equal(resolveClaudeExe(), join(dir, 'claude.exe'));
+  } finally {
+    process.env.PATH = saved.path;
+    if (saved.cli !== undefined) process.env.CLAUDE_CLI_PATH = saved.cli;
+    clearClaudeExeCache();
+  }
 });

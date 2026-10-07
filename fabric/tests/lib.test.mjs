@@ -57,7 +57,7 @@ describe("loadProviderConfig", () => {
           claudePath: "/anthropic",
           claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
           apiKey: "tok",
-          claudeExtras: { ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash" },
+          models: { base: "deepseek-v4-flash" },
         },
       },
     });
@@ -514,7 +514,7 @@ describe("loadProviderEnv", () => {
       claudePath: "",
       claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
       apiKey: "sk-test",
-      claudeExtras: { ANTHROPIC_DEFAULT_SONNET_MODEL: "test-sonnet" },
+      models: { base: "test-sonnet" },
     }}});
 
     try {

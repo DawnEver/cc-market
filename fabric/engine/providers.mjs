@@ -7,9 +7,9 @@
 // takeover share one implementation instead of two.
 //
 // The config file declares providers as `providers.<name>` blocks (one per upstream). Each
-// block has `url` + per-host fields: `claudeApiKeyEnv`/`claudePath`/`claudeModel`/
-// `claudeExtras` (Anthropic-compatible side) and `codexApiKeyEnv`/`codexPath`/`codexModel`
-// (codex side, used by the `codex` provider only). The `apiKey` value is sourced from
+// block has `url`, a `models` map (`base` plus optional fable/opus/sonnet/haiku/subagent role
+// overrides) and per-host fields: `claudeApiKeyEnv`/`claudePath` (Anthropic-compatible side)
+// and `codexApiKeyEnv`/`codexPath` (codex side, used by the `codex` provider only). The `apiKey` value is sourced from
 // the machine-local overlay (~/.claude/claude_env_settings.local.json) and projected into
 // the named env var when spawning a child.
 //
@@ -89,13 +89,26 @@ function projectProviderEnv(profile) {
   const env = {};
   env[profile.claudeApiKeyEnv] = profile.apiKey;
   if (profile.url) env.ANTHROPIC_BASE_URL = profile.url + (profile.claudePath ?? '');
-  if (profile.claudeModel) env.ANTHROPIC_MODEL = profile.claudeModel;
-  if (profile.claudeExtras && typeof profile.claudeExtras === 'object') {
-    for (const [k, v] of Object.entries(profile.claudeExtras)) {
-      if (typeof v === 'string') env[k] = v;
-    }
-  }
+  Object.assign(env, modelEnv(profile.models));
   return { env, error: null };
+}
+
+/**
+ * The Claude model env vars of a `models` map — the same projection as the root repo's
+ * cc-launcher.mjs: `base` -> ANTHROPIC_MODEL, each role key overrides its class default,
+ * falling back to `base`. No `base`: no model vars.
+ */
+export function modelEnv(models) {
+  const m = models || {};
+  if (!m.base) return {};
+  return {
+    ANTHROPIC_MODEL: m.base,
+    ANTHROPIC_DEFAULT_FABLE_MODEL: m.fable ?? m.base,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: m.opus ?? m.base,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: m.sonnet ?? m.base,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: m.haiku ?? m.base,
+    CLAUDE_CODE_SUBAGENT_MODEL: m.subagent ?? m.base,
+  };
 }
 
 /**
@@ -153,13 +166,14 @@ export function loadProviderConfig(provider, configPath = getConfigPath()) {
   if (!baseUrl) throw new Error(`Provider "${provider}" is missing url/claudePath in ${configPath}.`);
   if (!profile.apiKey) throw new Error(`Provider "${provider}" is missing apiKey in ~/.claude/claude_env_settings.local.json (under providers.${provider}).`);
 
+  const m = modelEnv(profile.models);
   const result = {
     native: false, baseUrl, token: profile.apiKey, tokenStyle,
-    defaultSonnet: profile.claudeExtras?.ANTHROPIC_DEFAULT_SONNET_MODEL,
-    defaultOpus: profile.claudeExtras?.ANTHROPIC_DEFAULT_OPUS_MODEL,
-    defaultHaiku: profile.claudeExtras?.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-    defaultFable: profile.claudeExtras?.ANTHROPIC_DEFAULT_FABLE_MODEL,
-    subagent: profile.claudeExtras?.CLAUDE_CODE_SUBAGENT_MODEL,
+    defaultSonnet: m.ANTHROPIC_DEFAULT_SONNET_MODEL,
+    defaultOpus: m.ANTHROPIC_DEFAULT_OPUS_MODEL,
+    defaultHaiku: m.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+    defaultFable: m.ANTHROPIC_DEFAULT_FABLE_MODEL,
+    subagent: m.CLAUDE_CODE_SUBAGENT_MODEL,
   };
   _configCache.set(`${provider}:${configPath}`, { config: result, ts: Date.now() });
   return result;
@@ -239,11 +253,10 @@ export function listModels(configPath = getConfigPath()) {
   for (const name of apiProviders) {
     const p = config.providers[name];
     const baseUrl = p.url + (p.claudePath ?? '');
-    const models = [];
-    if (p.claudeExtras?.ANTHROPIC_DEFAULT_HAIKU_MODEL) models.push(`haiku=${p.claudeExtras.ANTHROPIC_DEFAULT_HAIKU_MODEL}`);
-    if (p.claudeExtras?.ANTHROPIC_DEFAULT_FABLE_MODEL) models.push(`fable=${p.claudeExtras.ANTHROPIC_DEFAULT_FABLE_MODEL}`);
-    if (p.claudeExtras?.ANTHROPIC_DEFAULT_SONNET_MODEL) models.push(`sonnet=${p.claudeExtras.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
-    if (p.claudeExtras?.ANTHROPIC_DEFAULT_OPUS_MODEL) models.push(`opus=${p.claudeExtras.ANTHROPIC_DEFAULT_OPUS_MODEL}`);
+    const m = modelEnv(p.models);
+    const models = [['haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['fable', 'ANTHROPIC_DEFAULT_FABLE_MODEL'],
+      ['sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL']]
+      .filter(([, k]) => m[k]).map(([role, k]) => `${role}=${m[k]}`);
     lines.push(`${name.padEnd(8)} → ${baseUrl}  [${models.length ? models.join(", ") : "no defaults set"}]`);
   }
   return lines.join("\n");

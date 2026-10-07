@@ -54,10 +54,7 @@ function fixtureFor(port, { basePath = '', env = {} } = {}) {
         claudePath: '',
         claudeApiKeyEnv: apiKeyEnv,
         apiKey,
-        claudeExtras: {
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'fake-flash',
-          ANTHROPIC_DEFAULT_OPUS_MODEL: 'fake-pro',
-        },
+        models: { base: 'fake-flash', opus: 'fake-pro' },
       },
     },
   }));

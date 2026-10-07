@@ -29,7 +29,8 @@ import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 // prefix is install-specific (nvm4w → D:\nvm4w\nodejs, plain npm → ~\nodejs),
 // so it cannot be hardcoded. Resolve it dynamically:
 //   1. CLAUDE_CLI_PATH override (escape hatch)
-//   2. derive from the launcher shim found on PATH
+//   2. derive from the launcher shim found on PATH; a native install (no npm prefix)
+//      puts claude.exe itself on PATH, e.g. ~/.local/bin/claude.exe
 //   3. legacy ~/nodejs fallback
 const CLAUDE_EXE_REL = path.join('node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
 
@@ -59,6 +60,7 @@ function computeClaudeExe(override) {
       if (fs.existsSync(path.join(dir, shim))) {
         const exe = path.join(dir, CLAUDE_EXE_REL);
         if (fs.existsSync(exe)) return exe;
+        if (shim === 'claude.exe') return path.join(dir, shim);
       }
     }
   }

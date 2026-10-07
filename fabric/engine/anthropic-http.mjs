@@ -31,7 +31,7 @@ export function buildUserContent(prompt, images) {
 }
 
 export async function callAnthropicAPI(providerConfig, model, systemPrompt, userPrompt, images = null, stream = false, signal = null, { sseIdleTimeoutMs = 300000, systemPromptFile = null } = {}) {
-  if (!model) throw new Error(`No model resolved for provider. Set ANTHROPIC_DEFAULT_SONNET_MODEL in ${getConfigPath()}.`);
+  if (!model) throw new Error(`No model resolved for provider. Set providers.<name>.models.base (or models.sonnet) in ${getConfigPath()}.`);
 
   // Same URL Claude Code itself hits: ANTHROPIC_BASE_URL + '/v1/messages'
   // (deduped when the base already ends in /v1).

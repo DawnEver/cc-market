@@ -44,9 +44,7 @@ const DEEPSEEK_FIXTURE = {
       claudePath: "",
       claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
       apiKey: "sk-fake",
-      claudeExtras: {
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-flash",
-      },
+      models: { base: "deepseek-v4-flash" },
     },
   },
 };
