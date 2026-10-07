@@ -175,8 +175,8 @@ def test_an_affiliation_narrowing_that_finds_nobody_widens_in_stages(searches):
     corroboration query.
     """
     calls, _answers = searches
-    scopus.find_author_candidates("Wang, Peng", affiliation="Nottingham")
-    assert "AFFIL(Nottingham)" in calls["authors"][0]
+    scopus.find_author_candidates("Wang, Peng", affiliation="Exampleton")
+    assert "AFFIL(Exampleton)" in calls["authors"][0]
     assert calls["authors"][1] == 'AUTHLAST("wang") AND AUTHFIRST("peng")'
     assert calls["authors"][2] == 'AUTHLAST("wang")'
 

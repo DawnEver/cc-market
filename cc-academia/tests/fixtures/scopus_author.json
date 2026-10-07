@@ -1039,23 +1039,23 @@
                 "@id": "60015138",
                 "@type": "parent",
                 "@relationship": "author",
-                "afnameid": "University of Nottingham#60015138",
-                "afdispname": "University of Nottingham",
+                "afnameid": "Example University#60015138",
+                "afdispname": "Example University",
                 "preferred-name": {
                   "@source": "internal-ani",
-                  "$": "University of Nottingham"
+                  "$": "Example University"
                 },
-                "sort-name": "Nottingham, University of",
+                "sort-name": "Example University",
                 "address": {
                   "@country": "gbr",
                   "address-part": "University Park",
-                  "city": "Nottingham",
-                  "state": "Nottinghamshire",
+                  "city": "Exampleton",
+                  "state": "Exampleshire",
                   "postal-code": "NG7 2RD",
                   "country": "United Kingdom"
                 },
-                "org-domain": "nottingham.ac.uk",
-                "org-URL": "https://www.nottingham.ac.uk/"
+                "org-domain": "example.ac.uk",
+                "org-URL": "https://www.example.ac.uk/"
               }
             },
             {
@@ -1066,26 +1066,26 @@
                 "@id": "110947423",
                 "@type": "dept",
                 "@relationship": "author",
-                "afdispname": "University of Nottingham, Department of Electrical and Electronic Engineering",
+                "afdispname": "Example University, Department of Electrical and Electronic Engineering",
                 "preferred-name": {
                   "@source": "internal-ani",
                   "$": "Department of Electrical and Electronic Engineering"
                 },
                 "parent-preferred-name": {
                   "@source": "internal-ani",
-                  "$": "University of Nottingham"
+                  "$": "Example University"
                 },
                 "sort-name": "Department of Electrical and Electronic Engineering",
                 "address": {
                   "@country": "gbr",
                   "address-part": "University Park",
-                  "city": "Nottingham",
-                  "state": "Nottinghamshire",
+                  "city": "Exampleton",
+                  "state": "Exampleshire",
                   "postal-code": "NG7 2RD",
                   "country": "United Kingdom"
                 },
-                "org-domain": "nottingham.ac.uk",
-                "org-URL": "https://www.nottingham.ac.uk/"
+                "org-domain": "example.ac.uk",
+                "org-URL": "https://www.example.ac.uk/"
               }
             },
             {

@@ -27,13 +27,13 @@ so no re-harvest was needed:
 
 | Group | Graduates | Matched | PhD+2 ρ (all / first / co) |
 |---|---|---|---|
-| Nottingham PEMC | 201 | 151 | +0.25 / +0.22 / +0.21 |
+| Home lab | 201 | 151 | +0.25 / +0.22 / +0.21 |
 | Sheffield EMD | 199 | 66 | −0.06 / −0.05 / −0.01 |
 | Virginia Tech CPES | 130 | 74 | +0.15 / +0.17 / +0.07 |
 | Aalborg AAU Energy | 218 | 114 | +0.04 / +0.16 / −0.05 |
 
-PEMC is unchanged on every figure from before the move. The conclusion the study
-exists to test — that PEMC per-graduate journal output has *not* fallen, in the
+The home lab is unchanged on every figure from before the move. The conclusion the study
+exists to test — that the home lab's per-graduate journal output has *not* fallen, in the
 aggregate or in the first-author subset — is unaffected.
 
 ## Deviations from the plan, recorded
