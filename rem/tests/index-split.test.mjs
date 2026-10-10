@@ -73,6 +73,10 @@ afterEach(() => {
 });
 
 describe("rebuildIndex hot injected view + full catalog", () => {
+  test("hot set keeps at most fifteen short-term entries", () => {
+    assert.equal(HOT_SHORT_MAX, 15);
+  });
+
   test("injected file is bounded to longs + newest HOT_SHORT_MAX shorts", () => {
     const root = tmpScope();
     // 1 long + HOT_SHORT_MAX+3 shorts (all non-dropped). Inject more than the bound.

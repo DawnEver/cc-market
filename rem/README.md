@@ -2,6 +2,9 @@
 
 REM sleep for Claude sessions — prune stale memory, consolidate learnings, maintain `.claude/memory/` with timestamps and automatic eviction.
 
+The injected memory index contains long-term entries plus the newest 15 short-term
+entries. The full catalog and original memory files remain available for recall.
+
 ## Install
 
 ```shell

@@ -121,7 +121,7 @@ export function catalogFilePath(scopeRootArg) {
 }
 
 export const MAX_ENTRIES = 20; // legacy advisory value (no longer a hard cap) — see CATALOG_ADVISORY_MAX
-export const HOT_SHORT_MAX = 60; // newest short-term entries kept in the injected hot list
+export const HOT_SHORT_MAX = 15; // newest short-term entries kept in the injected hot list
 export const CATALOG_ADVISORY_MAX = 400; // "store is large — crystallize recommended" advisory (full catalog count)
 export const STALE_DAYS = 90;
 export const DAY_MS = 24 * 60 * 60 * 1000;
