@@ -30,7 +30,7 @@ test('PROFILES — source field on existing + new profiles', () => {
   assert.equal(PROFILES.architecture.source, 'codebase');
 
   // Specialist profiles in the default rotation with their own weights.
-  const expectedWeights = { security: 0.05, docs: 0.1, deps: 0.05, adversarial: 0.1 };
+  const expectedWeights = { security: 0.05, docs: 0.1, deps: 0.05, adversarial: 0.2 };
   for (const key of ['security', 'docs', 'deps', 'adversarial']) {
     assert.ok(PROFILES[key], `profile ${key} must exist`);
     assert.equal(PROFILES[key].weight, expectedWeights[key], `${key} default weight`);
@@ -55,10 +55,10 @@ test('PROFILES — source field on existing + new profiles', () => {
 
 test('all six profiles are in the default rotation', () => {
   const w = resolveWeights(null);
-  assert.equal(w.diff, 0.5);
+  assert.equal(w.diff, 0.4);
   assert.equal(w.architecture, 0.2);
   assert.equal(w.security, 0.05);
-  assert.equal(w.adversarial, 0.1);
+  assert.equal(w.adversarial, 0.2);
   assert.equal(w.docs, 0.1);
   assert.equal(w.deps, 0.05);
 });
@@ -66,19 +66,19 @@ test('all six profiles are in the default rotation', () => {
 test('eligibleWeights — filters by source, no orphan mass', () => {
   // diff source fired → eligible {diff, security, adversarial} with their exact global weights.
   const w = eligibleWeights(['diff'], null);
-  assert.ok(close(w.diff, 0.5), `diff keeps its own weight (got ${w.diff})`);
+  assert.ok(close(w.diff, 0.4), `diff keeps its own weight (got ${w.diff})`);
   assert.ok(close(w.security, 0.05), 'security keeps its exact global weight');
-  assert.ok(close(w.adversarial, 0.1), 'adversarial keeps its exact global weight');
+  assert.ok(close(w.adversarial, 0.2), 'adversarial keeps its exact global weight');
   assert.equal(w.architecture, undefined);
   assert.equal(w.docs, undefined);
   assert.equal(w.deps, undefined);
 
   // diff + docs fired → diff, security, adversarial, docs all eligible at their own weights.
   const w2 = eligibleWeights(['diff', 'docs'], null);
-  assert.ok(close(w2.diff, 0.5));
+  assert.ok(close(w2.diff, 0.4));
   assert.ok(close(w2.docs, 0.1));
   assert.ok(close(w2.security, 0.05));
-  assert.ok(close(w2.adversarial, 0.1));
+  assert.ok(close(w2.adversarial, 0.2));
   assert.equal(w2.architecture, undefined);
 
   // codebase only → only architecture eligible.
@@ -136,7 +136,7 @@ test('resolveProfile — known keys and fallback', () => {
 
 test('resolveWeights — defaults and per-project override', () => {
   const def = resolveWeights(null);
-  assert.equal(def.diff, 0.5);
+  assert.equal(def.diff, 0.4);
   assert.equal(def.architecture, 0.2);
 
   const over = resolveWeights({ diff: 0.5, architecture: 0.5 });
@@ -145,14 +145,14 @@ test('resolveWeights — defaults and per-project override', () => {
 
   // Partial override keeps the un-overridden default.
   const partial = resolveWeights({ architecture: 0.4 });
-  assert.equal(partial.diff, 0.5);
+  assert.equal(partial.diff, 0.4);
   assert.equal(partial.architecture, 0.4);
 
   // Garbage / non-positive weights are dropped, unknown keys ignored.
   const cleaned = resolveWeights({ architecture: 0, bogus: 1 });
   assert.equal(cleaned.architecture, undefined);
   assert.equal(cleaned.bogus, undefined);
-  assert.equal(cleaned.diff, 0.5);
+  assert.equal(cleaned.diff, 0.4);
 });
 
 test('pickProfileKey — deterministic cumulative bands', () => {
@@ -273,4 +273,13 @@ test('custom profile participates in source-gated selection', () => {
   const keys = pickNProfileKeys(w, 2, [0.0, 0.999]);
   assert.ok(keys.includes('arch-hygiene') || keys.includes('architecture'));
   assert.equal(keys.length, 2);
+});
+
+test('adversarial demands concrete counterexamples and the missing test', () => {
+  const { framing, reviewScope } = PROFILES.adversarial;
+  assert.match(framing, /counterexample/);
+  assert.match(framing, /test case/);
+  assert.match(framing, /no style notes/);
+  for (const facet of ['Boundary values', 'Control-flow holes', 'Unchecked assumptions', 'State and time', 'Contract drift', 'Test gaps'])
+    assert.ok(reviewScope.includes(facet), facet);
 });

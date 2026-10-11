@@ -56,10 +56,10 @@ specific reviewer model.
 
 | Profile | Source | Weight | Mode | Reviews |
 |---|---|---|---|---|
-| `diff` | `diff` | 0.5 | honors diff-manifest | the git diff — bugs & cleanup (default) |
+| `diff` | `diff` | 0.4 | honors diff-manifest | the git diff — bugs & cleanup (default) |
 | `architecture` (架构锐评) | `codebase` | 0.2 | agent | whole codebase architecture |
 | `security` (安全锐评) | `diff` | 0.05 | honors diff-manifest | the diff for security vulnerabilities |
-| `adversarial` (对抗性审查) | `diff` | 0.1 | honors diff-manifest | blind spots, edge cases, implicit assumptions |
+| `adversarial` (对抗性审查) | `diff` | 0.2 | honors diff-manifest | breaks the change: each finding is a concrete input → wrong outcome plus the test that would catch it (boundaries, error paths, unchecked assumptions, state/time, contract drift, test gaps) |
 | `docs` (文档锐评) | `docs` | 0.1 | agent | docs vs. current code |
 | `deps` (依赖锐评) | `deps` | 0.05 | agent | dependency risk (CVEs, licenses) |
 

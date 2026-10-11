@@ -18,7 +18,7 @@ export const PROFILES = {
     key: 'diff',
     label: 'diff review',
     source: 'diff',
-    weight: 0.5,            // default probability
+    weight: 0.4,            // default probability
     mode: null,             // null = honor diff-manifest's decided mode (review/agent/empty)
     promptKind: 'diff',
     framing: null,          // null = workflow's existing default intro
@@ -65,19 +65,18 @@ export const PROFILES = {
     key: 'adversarial',
     label: 'adversarial review (对抗性审查)',
     source: 'diff',
-    weight: 0.1,           // competes with diff + security when the diff source fires
+    weight: 0.2,           // competes with diff + security when the diff source fires
     mode: null,            // honor diff-manifest's decided mode
     promptKind: 'diff',
-    framing: '对抗性审查: actively hunt for blind spots and assumptions the developer is unconsciously avoiding. Be the adversary — try to break the code, find what was NOT thought about.',
+    framing: '对抗性审查: try to break the changed code. Every finding must be a concrete counterexample — a specific input or state, the wrong result or crash it produces, and the test case that would catch it (summary = scenario → wrong outcome; suggestion = the test to add, then the fix). Read the surrounding code and existing tests before claiming; drop anything you cannot make concrete — no style notes, no speculation.',
     reviewScope: [
-      'Blind spots — what edge cases, failure modes, or risks did the developer unconsciously avoid thinking about?',
-      'Implicit assumptions — what does this code assume that is never checked, validated, or enforced?',
-      'Extreme-case validation — how does this code behave under worst-case inputs, concurrency stress, resource exhaustion, or malformed data?',
-      'Wishful thinking — where does the code "hope" nothing goes wrong instead of handling failure explicitly?',
-      'Silent tradeoffs — what was sacrificed without acknowledgement, and was the wrong choice made?',
-      'Missing negation — what test cases, error paths, or validation checks are conspicuously absent?',
-      'Overconfidence — where does the code assume external systems, user input, or internal state will always be well-behaved?',
-    ].join(', '),
+      'Boundary values: empty / null / undefined / zero / negative / NaN, off-by-one, first and last element, max length, unicode and whitespace, case, paths with spaces or separators of the other OS',
+      'Control-flow holes: unhandled branches, early returns that skip cleanup, exceptions swallowed or turned into a silent default, error paths that leave partial state',
+      'Unchecked assumptions: inputs, config, files, env, or external responses taken to be present, well-formed, unique, ordered, or stable without a check',
+      'State and time: ordering, re-entry, concurrent or repeated calls, idempotency, stale caches, retries, timeouts, clock and timezone',
+      'Contract drift: callers, docs, or other modules still relying on the old behavior or shape the diff changed',
+      'Test gaps: the changed behavior an existing test never exercises — name the missing case; flag tests that assert the implementation instead of the behavior or would pass with the change reverted',
+    ].join('; '),
   },
   docs: {
     key: 'docs',
