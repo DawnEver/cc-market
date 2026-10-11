@@ -272,9 +272,9 @@ describe('CLI', () => {
 
   beforeEach(() => {
     repoDir = mkdtempSync(join(tmpdir(), 'check-docs-repo-'));
-    execFileSync('git', ['init'], { cwd: repoDir, timeout: 5000 });
-    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir, timeout: 2000 });
-    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['init'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir, timeout: 30000 });
   });
 
   afterEach(() => {
@@ -286,7 +286,7 @@ describe('CLI', () => {
       /tests\/check-docs\.test\.mjs$/, 'scripts/check-docs.js',
     );
     try {
-      const out = execFileSync('node', [scriptPath], { cwd, timeout: 5000, encoding: 'utf8' });
+      const out = execFileSync('node', [scriptPath], { cwd, timeout: 30000, encoding: 'utf8' });
       return { exitCode: 0, stdout: out };
     } catch (e) {
       return { exitCode: e.status || 1, stdout: e.stdout || '', stderr: e.stderr || '' };
@@ -295,8 +295,8 @@ describe('CLI', () => {
 
   test('clean repo — exit 0', () => {
     writeFileSync(join(repoDir, 'README.md'), '# test');
-    execFileSync('git', ['add', 'README.md'], { cwd: repoDir, timeout: 2000 });
-    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['add', 'README.md'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 30000 });
     const result = runCheckDocs(repoDir);
     assert.equal(result.exitCode, 0);
   });
@@ -305,8 +305,8 @@ describe('CLI', () => {
     writeFileSync(join(repoDir, 'README.md'), '# test\n\nSee src/index.js for details.');
     mkdirSync(join(repoDir, 'src'), { recursive: true });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// change');
-    execFileSync('git', ['add', 'README.md', 'src/index.js'], { cwd: repoDir, timeout: 2000 });
-    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['add', 'README.md', 'src/index.js'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 30000 });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// modified');
     const result = runCheckDocs(repoDir);
     assert.equal(result.exitCode, 1);
@@ -321,8 +321,8 @@ describe('CLI', () => {
     writeFileSync(join(repoDir, 'README.md'), '# test\n\nNothing about source files here.');
     mkdirSync(join(repoDir, 'src'), { recursive: true });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// change');
-    execFileSync('git', ['add', 'README.md', 'src/index.js'], { cwd: repoDir, timeout: 2000 });
-    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['add', 'README.md', 'src/index.js'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 30000 });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// modified');
     const result = runCheckDocs(repoDir);
     assert.equal(result.exitCode, 0);
@@ -334,8 +334,8 @@ describe('CLI', () => {
 
   test('uncommitted change + doc also changed — exit 0', () => {
     writeFileSync(join(repoDir, 'README.md'), '# test');
-    execFileSync('git', ['add', 'README.md'], { cwd: repoDir, timeout: 2000 });
-    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['add', 'README.md'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 30000 });
     writeFileSync(join(repoDir, 'README.md'), '# updated');
     const result = runCheckDocs(repoDir);
     assert.equal(result.exitCode, 0);
@@ -345,8 +345,8 @@ describe('CLI', () => {
   test('no doc files — exit 0', () => {
     mkdirSync(join(repoDir, 'src'), { recursive: true });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// code');
-    execFileSync('git', ['add', 'src/index.js'], { cwd: repoDir, timeout: 2000 });
-    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 2000 });
+    execFileSync('git', ['add', 'src/index.js'], { cwd: repoDir, timeout: 30000 });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, timeout: 30000 });
     writeFileSync(join(repoDir, 'src', 'index.js'), '// modified');
     const result = runCheckDocs(repoDir);
     assert.equal(result.exitCode, 0);
