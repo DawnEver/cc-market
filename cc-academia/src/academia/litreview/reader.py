@@ -9,6 +9,7 @@ import json
 import re
 from typing import Any
 
+from academia.litreview.language import language_instruction
 from academia.litreview.models import Evidence, PaperCard, ResearchBrief, ResearchUse
 
 _SYSTEM_PROMPT = """\
@@ -77,6 +78,7 @@ def review_paper(
     model_spec: str | None = None,
     candidate_id: str = "",
     title: str = "",
+    language: str = "en",
 ) -> PaperCard:
     """Deep-read a single paper and return a structured PaperCard.
 
@@ -86,6 +88,7 @@ def review_paper(
         model_spec: Model registry key (defaults to 'gemini-2.5-flash').
         candidate_id: Optional candidate identifier.
         title: Optional paper title.
+        language: Output language for free-text values (BCP 47 tag, default "en").
 
     Returns:
         PaperCard with structured review output.
@@ -94,7 +97,7 @@ def review_paper(
 
     model_key = model_spec or "gemini-2.5-flash"
     prompt = _build_user_prompt(paper_text, brief)
-    raw = chat_structured(model_key, system=_SYSTEM_PROMPT, prompt=prompt)
+    raw = chat_structured(model_key, system=_SYSTEM_PROMPT + language_instruction(language, json_output=True), prompt=prompt)
     data = _parse_json_response(raw)
 
     def _str_list(items: Any) -> list[str]:

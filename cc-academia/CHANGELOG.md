@@ -6,6 +6,13 @@ build if they drift.
 
 ## [Unreleased]
 
+### Added
+
+- Literature review: workspace output language (`[output] language`, `lit-review init
+  --language`). Human-readable prose — briefs, screening explanations, paper cards,
+  synthesis — follows it on both the agent/fabric and CLI/litellm paths; keys, enums
+  and bibliographic metadata stay unchanged. Default remains English (#2).
+
 ### Fixed
 
 - Preserve HTML block boundaries when extracting fragmented contact addresses,

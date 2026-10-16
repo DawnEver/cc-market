@@ -86,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     # === Pipeline: init ===
     p = sub.add_parser("init", help="Create a new workspace for a topic.")
     p.add_argument("topic", help="Topic name or slug.")
+    p.add_argument("--language", default="en", help='Output language for human-readable artifacts (BCP 47, e.g. "zh-CN"; default: en).')
 
     # === Pipeline: search ===
     p = sub.add_parser("search", help="End-to-end: queries -> probe -> search -> dedupe -> screening packet.")
@@ -235,6 +236,11 @@ def _handle_init(args: argparse.Namespace) -> int:
         f'providers = ["openalex"]\n'
         f'pdf_store = ""\n'
         f'parent = ""\n'
+        f'\n'
+        f'# Language of human-readable outputs (briefs, screening notes, cards, synthesis).\n'
+        f'# BCP 47 tag, e.g. "zh-CN". Keys, enums, titles, authors and DOIs never change.\n'
+        f'[output]\n'
+        f'language = "{args.language}"\n'
         f'\n'
         f'# Zotero: one flat collection per workspace — no nested subcollections.\n'
         f'# The workspace slug IS the collection name.\n'

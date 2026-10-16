@@ -38,6 +38,21 @@ files remain the single source of truth for both hosts.
 - **Cache everything**: already-searched, downloaded, or decomposed content is never re-processed without asking.
 - **Single state file**: `run_state.json` tracks progress — one file to check for resume.
 
+## Output language
+
+`ongoing/<slug>/workspace.toml` → `[output] language` (BCP 47, default `en`; e.g. `zh-CN`)
+is chosen once in step 01 and governs every **human-readable** artifact: brief prose and
+screening explanations, the options menu dialogue, paper cards (`reading/*.md`),
+`notes/synthesis.md`, narrative reports and Markdown exports. Before writing any of them,
+read it and write the prose in that language. The CLI `read`/`synthesize` apply it
+automatically.
+
+Never translated, in any language: TOML/JSON keys, enum values (`verdict`, `role`,
+`research_use.type`, ...), database fields, CLI arguments, template headings/field labels,
+paper titles, author names, venues, DOIs, ShortRefs and `candidate_id`s. Search queries
+stay in English for international databases unless the user asks otherwise. A missing
+`[output]` table means `en`.
+
 ## Resume
 
 Re-invoking `/literature-review <topic>` checks `ongoing/<slug>/run_state.json`:

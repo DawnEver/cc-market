@@ -21,6 +21,10 @@ manifest refers to the other installation.
 | Manuscript review | `/cc-academia:manuscript-review <pdf>` | invoke `manuscript-review` with `<pdf>` |
 | Reviewer discovery | `/cc-academia:reviewer-discovery <pdf>` | invoke `reviewer-discovery` with `<pdf>` |
 
+Literature review asks once for an output language (`workspace.toml` → `[output]
+language`, e.g. `"zh-CN"`, default `"en"`). Briefs, screening explanations, paper cards
+and synthesis are written in it; keys, enums, titles, authors and DOIs never change.
+
 ## Architecture
 
 - **Package:** skills, deterministic Python code, default policy and both native

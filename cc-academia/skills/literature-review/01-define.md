@@ -6,27 +6,32 @@
 
 1. **Derive slug** from topic name (lowercase, non-alphanum → `-`).
 
-2. **Create workspace**:
+2. **Ask the output language** (`AskUserQuestion`; Codex: ask in chat): English (default)
+   or 简体中文 (`zh-CN`); any other BCP 47 tag is accepted. If the user already wrote the
+   request in Chinese, still ask — do not infer. See `SKILL.md` § Output language.
+
+3. **Create workspace**:
    ```bash
-   uv run --project "<plugin-root>" lit-review init "<topic>"
+   uv run --project "<plugin-root>" lit-review init "<topic>" --language <tag>
    ```
    Creates `ongoing/<slug>/` with `workspace.toml` and all subdirectories.
 
-3. **Agent helps user define the research brief**. Work through interactively:
+4. **Agent helps user define the research brief**. Work through interactively:
    - `original_request` — the user's question in their own words
+   - Free-text fields (`research_objective`, criteria, `rationale`) in the output language; `concept_id`, `role` and search `term`/`synonyms` stay English
    - `research_objective` — focused, answerable statement
    - `inclusion_criteria` — what makes a paper eligible
    - `exclusion_criteria` — what disqualifies a paper
    - `constraints` (year range, content types — agent proposes reasonable defaults)
    - `concepts` — taxonomy table. Each: `concept_id`, `role`, `term`, `synonyms`, `rationale`, `source`, `selected`
 
-4. **Show concept table** as keyword grid. Let user edit. Iterate until satisfied.
+5. **Show concept table** as keyword grid. Let user edit. Iterate until satisfied.
 
-5. **Write** `ongoing/<slug>/research_brief.toml`.
+6. **Write** `ongoing/<slug>/research_brief.toml`.
 
-6. **User confirms** the brief. Verbal OK is sufficient — no crypto ceremony.
+7. **User confirms** the brief. Verbal OK is sufficient — no crypto ceremony.
 
-7. Proceed to step 02 (search).
+8. Proceed to step 02 (search).
 
 ## Existing workspace
 

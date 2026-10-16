@@ -28,6 +28,7 @@ AI 生成查询 → CLI 执行检索 → AI 批量筛选摘要。
 6. **AI screens all abstracts** in batches using the canonical prompt in
    `.claude/agents/abstract-screener.md`:
    - Use the screening packets emitted by the CLI; never invent or drop candidates. Process independent packets in parallel when the host supports it.
+   - Pass the workspace output language (`SKILL.md` § Output language) with each packet: free-text reasons/explanations in that language, every JSONL key and decision enum unchanged.
    - **Claude Code:** invoke one `literature-abstract-screener` named agent per packet.
    - **Codex:** read the canonical prompt and spawn one collaboration subagent per packet, subject to the available concurrency limit. If collaboration tools are unavailable, process packets sequentially in the current model with the same prompt.
    - Save each response as JSONL. Validate through `uv run --project "<plugin-root>" lit-review import-screening`, whose canonical validator checks JSONL shape, field values, duplicate/unknown IDs, and exact candidate coverage before writing merged output. Retry an invalid packet once with the reported validation errors; if it remains invalid, stop and report it rather than partially importing results.

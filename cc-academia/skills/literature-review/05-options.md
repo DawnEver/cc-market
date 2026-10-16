@@ -14,6 +14,9 @@
 
 调用结果直接由 orchestrator 落盘（写 `reading/*.md`、`notes/*.md` 等）。
 
+**输出语言**：每次 fabric 调用前读 `workspace.toml` → `[output] language`（缺省 `en`）。非 `en` 时在 prompt 末尾追加：
+"Write all prose in <language>. Keep JSON keys, enum values, template headings, paper titles, author names, venues, DOIs and citation identifiers in their original form." 规则详见 `SKILL.md` § Output language。
+
 ## 论文引用规范（建立后永久遵守）
 
 **报告/卡片一律用 ShortRef（作者+年份），禁用 hash。**

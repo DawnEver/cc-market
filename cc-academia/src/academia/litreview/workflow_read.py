@@ -12,6 +12,15 @@ if TYPE_CHECKING:
     pass
 
 
+def output_language(topic_dir: Path) -> str:
+    """The workspace's ``[output] language`` (BCP 47 tag); ``"en"`` when unset."""
+    from academia.litreview.schema import load_data
+
+    ws_path = topic_dir / "workspace.toml"
+    ws = load_data(ws_path) if ws_path.exists() else {}
+    return str((ws.get("output") or {}).get("language") or "en")
+
+
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
@@ -117,6 +126,7 @@ def run_read(
         model_spec=model,
         candidate_id=candidate_id,
         title="",  # Will be extracted from paper.md
+        language=output_language(topic_dir),
     )
 
     # Write output
@@ -159,7 +169,7 @@ def run_synthesize(
     if not cards:
         raise ValueError("No paper cards found. Deep-read some papers first.")
 
-    synthesis = compare_papers(cards, model_spec=model)
+    synthesis = compare_papers(cards, model_spec=model, language=output_language(topic_dir))
 
     # Write output
     notes_dir = _ensure(topic_dir / "notes")

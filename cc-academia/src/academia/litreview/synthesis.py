@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from academia.litreview.language import language_instruction
 from academia.litreview.models import PaperCard
 
 _SYNTHESIS_SYSTEM = """\
@@ -13,12 +14,13 @@ You are a research synthesizer. Compare the provided paper summaries and identif
 Write a concise synthesis (3-5 paragraphs). Be specific; reference individual papers by title."""
 
 
-def compare_papers(cards: list[PaperCard], model_spec: str | None = None) -> str:
+def compare_papers(cards: list[PaperCard], model_spec: str | None = None, language: str = "en") -> str:
     """Identify themes, contradictions, and gaps across a set of papers.
 
     Args:
         cards: List of PaperCard objects from deep reading.
         model_spec: Optional model key (defaults to 'gemini-2.5-flash').
+        language: Output language (BCP 47 tag, default "en").
 
     Returns:
         A synthesis string in natural language.
@@ -41,7 +43,7 @@ def compare_papers(cards: list[PaperCard], model_spec: str | None = None) -> str
     prompt = "## Paper Summaries\n\n" + "\n\n".join(summaries)
     model_key = model_spec or "gemini-2.5-flash"
     from academia.core.ai import chat_structured
-    result = chat_structured(model_key, system=_SYNTHESIS_SYSTEM, prompt=prompt)
+    result = chat_structured(model_key, system=_SYNTHESIS_SYSTEM + language_instruction(language), prompt=prompt)
     return result or "Synthesis failed."
 
 
