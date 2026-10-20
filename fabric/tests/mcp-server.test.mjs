@@ -14,7 +14,10 @@ import {
   TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
   API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
 } from "../scripts/mcp-server.mjs";
-import { providerCacheFixture } from "./fixtures/provider-cache.mjs";
+import { providerCacheFixture, fixtureKeySource } from "./fixtures/provider-cache.mjs";
+import { _setKeySource } from "../engine/providers.mjs";
+
+_setKeySource(fixtureKeySource());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.join(__dirname, "..", "scripts", "mcp-server.mjs");
@@ -29,7 +32,7 @@ function withConfigFixture(registry, fn) {
   return Promise.resolve().then(fn).finally(() => { process.env.CC_MARKET_CONFIG_PATH = prev; });
 }
 
-const ACME_FIXTURE = { providers: { acme: { claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "sk-fake" } } };
+const ACME_FIXTURE = { providers: { acme: { claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN" } } };
 
 function parseFramedMessage(output) {
   const headerEnd = output.indexOf("\r\n\r\n");
@@ -238,13 +241,14 @@ describe("call options reach every path", () => {
     });
   }
 
-  test("API agent: cwd and timeoutMs reach the child", async () => {
+  test("API agent: cwd, timeoutMs and the key task reach the child", async () => {
     const seen = {};
     await withConfigFixture(ACME_FIXTURE, () =>
-      handleCall({ provider: "acme", mode: "agent", prompt: "p", cwd: "C:/work", timeoutMs: 99, resultMode: "full" },
+      handleCall({ provider: "acme", mode: "agent", task: "pr-review", prompt: "p", cwd: "C:/work", timeoutMs: 99, resultMode: "full" },
         { spawnChild: fakeSpawnChild(seen) }));
     assert.equal(seen.cwd, "C:/work");
     assert.equal(seen.timeoutMs, 99);
+    assert.equal(seen.task, "pr-review");
   });
 
   test("API task: timeoutMs bounds the HTTP call as kind timeout", async () => {

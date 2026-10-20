@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startObserveProxy } from '../engine/observe-proxy.mjs';
 import { providerCacheFixture, row } from './fixtures/provider-cache.mjs';
+import { _setKeySource } from '../engine/providers.mjs';
 
 // A fake Anthropic-compatible upstream: captures the request, streams SSE back slowly.
 function startFakeUpstream() {
@@ -44,9 +45,10 @@ function fixtureFor(port, { basePath = '', env = {} } = {}) {
   // `Authorization: Bearer`; 'ANTHROPIC_API_KEY' -> `x-api-key`.
   const apiKeyEnv = env.ANTHROPIC_AUTH_TOKEN != null ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
   const apiKey = env.ANTHROPIC_AUTH_TOKEN ?? env.ANTHROPIC_API_KEY ?? 'sk-fake-key';
+  _setKeySource(() => apiKey); // the credential store holds this one key
   const { dir, configPath } = providerCacheFixture({
     providers: { fake: row({ endpoints: { anthropic: `http://127.0.0.1:${port}${basePath}` }, models: { base: 'fake-flash', opus: 'fake-pro' } }) },
-    registry: { providers: { fake: { claudeApiKeyEnv: apiKeyEnv, apiKey } } },
+    registry: { providers: { fake: { claudeApiKeyEnv: apiKeyEnv } } },
   });
   return { dir, cfgPath: configPath };
 }

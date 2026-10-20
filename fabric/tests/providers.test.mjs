@@ -7,14 +7,17 @@ import { writeFileSync, unlinkSync } from 'node:fs';
 import {
   loadProviderConfig, loadProviderEnv, resolveModel, resolveModelFromId,
   resolveUpstream, anthropicEndpoint, readCatalogue, listModels, SETUP_REMEDY,
+  gitCredentialKey, _setKeySource,
 } from '../engine/providers.mjs';
-import { providerCacheFixture } from './fixtures/provider-cache.mjs';
+import { providerCacheFixture, fixtureKeySource } from './fixtures/provider-cache.mjs';
+
+_setKeySource(fixtureKeySource());
 
 const REGISTRY = {
   providers: {
-    acme: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'sk-test' },
-    plain: { claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN', apiKey: 'tok-abc' },
-    tiered: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'sk-tiered' },
+    acme: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY' },
+    plain: { claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN' },
+    tiered: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY' },
   },
 };
 const fixture = (opts = {}) => providerCacheFixture({ registry: REGISTRY, ...opts }).configPath;
@@ -131,4 +134,40 @@ test('listModels lists the host rows then the catalogue, or the refusal', () => 
 test('anthropicEndpoint builds the /v1/messages URL Claude Code itself hits', () => {
   assert.equal(anthropicEndpoint('https://api.tiered.test/coding/', '/v1/messages'), 'https://api.tiered.test/coding/v1/messages');
   assert.equal(anthropicEndpoint('https://example.test/v1/', '/v1/messages'), 'https://example.test/v1/messages');
+});
+
+test('the key comes from the credential store under the row host and the task username', () => {
+  assert.equal(loadProviderEnv('acme', fixture()).ANTHROPIC_API_KEY, 'sk-test');
+  assert.equal(loadProviderEnv('acme', fixture(), { task: 'pr-review' }).ANTHROPIC_API_KEY, 'sk-acme-review');
+  assert.equal(resolveUpstream('plain', fixture()).token, 'tok-abc');
+});
+
+test('a key in the registry file is never read', () => {
+  const configPath = fixture({ registry: { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'sk-plaintext' } } } });
+  assert.equal(loadProviderEnv('acme', configPath).ANTHROPIC_API_KEY, 'sk-test');
+});
+
+test('no stored key is auth, naming the login command; an undeclared task is unsupported', () => {
+  assert.throws(() => loadProviderEnv('acme', fixture(), { task: 'nosuch' }), (e) => e.kind === 'unsupported' && /declared: default, pr-review/.test(e.message));
+  const restore = _setKeySource(() => null);
+  try {
+    assert.throws(() => loadProviderEnv('acme', fixture(), { task: 'pr-review' }),
+      (e) => e.kind === 'auth' && e.message.includes('python -m ai_lab.auth login acme --task pr-review') && !e.message.includes('sk-'));
+  } finally { restore(); }
+});
+
+test('gitCredentialKey asks git credential fill with prompts off and reads the password', () => {
+  let seen;
+  const key = gitCredentialKey('api.acme.test', 'api-key', { _spawnSync: (cmd, args, opts) => { seen = { cmd, args, opts }; return { status: 0, stdout: 'protocol=https\nhost=api.acme.test\nusername=api-key\npassword=sk-x\n' }; } });
+  assert.equal(key, 'sk-x');
+  assert.equal(seen.cmd, 'git');
+  assert.deepEqual(seen.args, ['-c', 'credential.interactive=false', 'credential', 'fill']);
+  assert.equal(seen.opts.input, 'protocol=https\nhost=api.acme.test\nusername=api-key\n\n');
+  assert.equal(seen.opts.env.GIT_TERMINAL_PROMPT, '0');
+  assert.equal(gitCredentialKey('h', 'u', { _spawnSync: () => ({ status: 128, stdout: '' }) }), null);
+});
+
+test('planted: no git is unsupported by name', () => {
+  assert.throws(() => gitCredentialKey('h', 'u', { _spawnSync: () => ({ error: Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }) }) }),
+    (e) => e.kind === 'unsupported' && /git is not installed/.test(e.message));
 });

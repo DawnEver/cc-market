@@ -50,16 +50,12 @@ export function resolveSystemPromptFile(promptFile, configPath) {
 export function loadFabricConfig(configPath = getConfigPath(), { ttlMs = CONFIG_CACHE_TTL_MS } = {}) {
   try {
     const { mtimeMs } = fs.statSync(configPath);
-    // readRegistry merges the machine-local secrets overlay (claude_env_settings.local.json,
-    // next to the config); track ITS mtime too so a local edit invalidates this cache.
-    const localPath = path.join(path.dirname(configPath), "claude_env_settings.local.json");
-    const localMtime = fs.existsSync(localPath) ? fs.statSync(localPath).mtimeMs : -1;
     const hit = _fabricCache.get(configPath);
-    if (hit && hit.mtimeMs === mtimeMs && hit.localMtime === localMtime && Date.now() - hit.readAt < ttlMs) return hit.fabric;
+    if (hit && hit.mtimeMs === mtimeMs && Date.now() - hit.readAt < ttlMs) return hit.fabric;
     const fabric = readRegistry(configPath).fabric || {};
     // Resolve BEFORE caching so every consumer (spawn-child, the MCP API path) reads the machine-correct absolute path from the shared config.
     if (fabric.systemPromptFile) fabric.systemPromptFile = resolveSystemPromptFile(fabric.systemPromptFile, configPath);
-    _fabricCache.set(configPath, { mtimeMs, localMtime, readAt: Date.now(), fabric });
+    _fabricCache.set(configPath, { mtimeMs, readAt: Date.now(), fabric });
     return fabric;
   } catch {
     return {};

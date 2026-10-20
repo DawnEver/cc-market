@@ -109,8 +109,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Config
 
-The `fabric` block of `~/.claude/claude_env_settings.json` (synced; per-machine overrides go
-in `~/.claude/claude_env_settings.local.json`, deep-merged over it):
+The `fabric` block of `~/.claude/claude_env_settings.json`:
 
 ```json
 "fabric": {
@@ -128,8 +127,11 @@ explicit `summary` or `synthesize: true` without its helper is refused by name.
 
 ## Auth note
 
-Static-key providers get the token injected in the header style matching the env var that
-supplied it: `ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` (and
-Foundry keys, e.g. DeepSeek/Kimi) → `x-api-key`. OAuth providers (`claude`) must
+An API provider's key is never in a file: it is read from the git credential store
+(`git credential fill`, prompts off) under the catalogue row's host and the caller's key
+task (`call`'s `task`, default `default`; the row's `key_usernames` names the credential).
+No git is `unsupported`; no stored key is `auth`, naming `python -m ai_lab.auth login`.
+The observe proxy injects it in the header style `claudeApiKeyEnv` names:
+`ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` → `x-api-key`. OAuth providers (`claude`) must
 use `passthroughAuth: true` — the proxy forwards the child's own refreshing token rather
 than holding credentials.

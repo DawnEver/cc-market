@@ -64,6 +64,7 @@ export const TOOLS = [
       properties: {
         provider: { type: "string", description: "claude, codex, deepseek, or key from claude_env_settings.json" },
         model: { type: "string", description: "Model override" },
+        task: { type: "string", description: "Key task of an API provider (its credential: api-key-<task>). Default: default" },
         mode: {
           type: "string",
           enum: ["task", "review", "agent", "image-generate", "image-edit"],
@@ -139,6 +140,7 @@ export const TOOLS = [
               mode: { type: "string", enum: ["task", "review", "agent"] },
               write: { type: "boolean" },
               model: { type: "string" },
+              task: { type: "string", description: "Key task" },
               cwd: { type: "string", description: "Working dir" },
               timeoutMs: { type: "number", description: "Kill after N ms" },
             },
@@ -279,9 +281,9 @@ const CODEX_DISPATCH = {
   "image-edit": dispatchCodexImageEdit,
 };
 
-// The child options every claude -p path forwards: model, cwd, timeoutMs, signal.
-const childOpts = ({ systemPrompt, model, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
-  systemPrompt, model: model || null, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
+// The child options every claude -p path forwards: model, key task, cwd, timeoutMs, signal.
+const childOpts = ({ systemPrompt, model, task, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
+  systemPrompt, model: model || null, task, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
 });
 
 async function dispatchClaudeTask(ctx) {
@@ -346,7 +348,7 @@ async function runObserved(args, _spawnChild) {
   const runDir = args.runDir || join(tmpdir(), `fabric-call-${Date.now()}`);
   const res = await _spawnChild({
     provider: args.provider, prompt: args.prompt, model: args.model,
-    observe: true, passthroughAuth: args.passthroughAuth, runDir, cwd: args.cwd, timeoutMs: args.timeoutMs,
+    observe: true, passthroughAuth: args.passthroughAuth, task: args.task, runDir, cwd: args.cwd, timeoutMs: args.timeoutMs,
   });
   const parts = [res.stdout?.trim() || "(no output)"];
   if (res.jsonlPath) parts.push("", `--- observe capture: ${res.jsonlPath} ---`, JSON.stringify(summarizeFile(res.jsonlPath)));
@@ -403,7 +405,7 @@ export async function handleCall(args, deps = {}) {
 
   const effectiveMode = mode || "task";
   const common = {
-    userPrompt, systemPrompt, provider, model, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
+    userPrompt, systemPrompt, provider, model, task: args.task, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
     spawnChild: deps.spawnChild, withCodexClient: deps.withCodexClient || withPooledClient,
   };
   let dispatchMap, dispatchContext;
@@ -492,6 +494,7 @@ export async function handleFanOut(args, deps) {
           mode: task.mode || "task",
           write: !!task.write,
           model: task.model,
+          task: task.task,
           observe: task.observe,
           cwd: task.cwd,
           timeoutMs: task.timeoutMs,

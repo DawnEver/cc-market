@@ -8,6 +8,8 @@
 //
 // The registry (`claude_env_settings.json`) keeps only host projection rules: per provider,
 // `claudeApiKeyEnv` (which env var a `claude` child reads the key from), plus the `fabric` block.
+// A key is never in a file: it is read from the git credential store (`git credential fill`, the
+// primitive ai-lab stores it with) under the row's host and the caller's task's username.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -15,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { ProviderError } from "./errors.mjs";
+import { spawnSync } from "../shared/spawn.mjs";
 
 const defaultConfigPath = path.join(os.homedir(), ".claude", "claude_env_settings.json");
 export const getConfigPath = () => process.env.CC_MARKET_CONFIG_PATH || defaultConfigPath;
@@ -111,10 +114,41 @@ export function catalogueRow(provider, configPath = getConfigPath()) {
   return row;
 }
 
-// The key a provider's API takes, for the given task. Interim: the registry's apiKey field.
-function apiKey(provider, configPath) {
-  const key = readRegistry(configPath).providers?.[provider]?.apiKey;
-  if (!key) throw new ProviderError("auth", `no key for provider "${provider}"`);
+/** The default task: the key a caller that names no task uses. */
+export const DEFAULT_TASK = "default";
+
+/**
+ * The key stored for *host* under *username*, from the git credential store; null when none.
+ * Prompts are off. Missing git is unsupported by name: there is no other source of a key.
+ */
+export function gitCredentialKey(host, username, { _spawnSync = spawnSync } = {}) {
+  const res = _spawnSync("git", ["-c", "credential.interactive=false", "credential", "fill"], {
+    input: `protocol=https\nhost=${host}\nusername=${username}\n\n`,
+    encoding: "utf8",
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" },
+  });
+  if (res.error?.code === "ENOENT") throw new ProviderError("unsupported", "git is not installed, so no key can be read from the credential store");
+  if (res.status !== 0) return null;
+  const line = String(res.stdout).split(/\r?\n/).find((l) => l.startsWith("password="));
+  return line ? line.slice("password=".length) : null;
+}
+
+let keySource = gitCredentialKey;
+/** Test seam: replace the credential-store reader; returns the restore function. */
+export function _setKeySource(fn) { const prev = keySource; keySource = fn; return () => { keySource = prev; }; }
+
+// The key a provider's API takes for *task*: the row names the credential username per task.
+function apiKey(provider, cfg, task = DEFAULT_TASK) {
+  const username = cfg.row.key_usernames?.[task];
+  if (!username) {
+    const declared = Object.keys(cfg.row.key_usernames || {}).join(", ");
+    throw new ProviderError("unsupported", `task "${task}" has no key of provider "${provider}" (declared: ${declared})`);
+  }
+  const key = keySource(cfg.row.host, username);
+  if (!key) {
+    const login = `python -m ai_lab.auth login ${provider}${task === DEFAULT_TASK ? "" : ` --task ${task}`}`;
+    throw new ProviderError("auth", `no key for provider "${provider}" (${username}@${cfg.row.host}) in the credential store; store one with \`${login}\``);
+  }
   return key;
 }
 
@@ -155,14 +189,14 @@ function requireAnthropic(cfg, use) {
  * Full child-process env for a `claude` child on a provider: strips provider keys, overlays
  * the anthropic endpoint, the key and the model pins. Host CLIs get the bare env.
  */
-export function loadProviderEnv(provider, configPath = getConfigPath()) {
+export function loadProviderEnv(provider, configPath = getConfigPath(), { task } = {}) {
   const env = { ...process.env };
   for (const key of PROVIDER_ENV_KEYS) delete env[key];
   const cfg = loadProviderConfig(provider, configPath);
   if (cfg.native) return env;
   // Claude Code appends /v1/messages to ANTHROPIC_BASE_URL itself.
   env.ANTHROPIC_BASE_URL = requireAnthropic(cfg, "run a claude child").replace(/\/v1$/, "");
-  env[cfg.keyEnv] = apiKey(provider, configPath);
+  env[cfg.keyEnv] = apiKey(provider, cfg, task);
   Object.assign(env, modelEnv(cfg.row.models));
   return env;
 }
@@ -202,12 +236,12 @@ export function resolveModelFromId(providerConfig, fullId) {
 }
 
 /** `{ baseUrl, token, tokenStyle, resolveModel }` for the observe proxy; refuses host CLIs. */
-export function resolveUpstream(provider, configPath = getConfigPath()) {
+export function resolveUpstream(provider, configPath = getConfigPath(), { task } = {}) {
   const cfg = loadProviderConfig(provider, configPath);
   if (cfg.native) throw new Error(`Provider "${provider}" is native (${provider}) — not routable through the observe proxy.`);
   return {
     baseUrl: requireAnthropic(cfg, "be observed"),
-    token: apiKey(provider, configPath),
+    token: apiKey(provider, cfg, task),
     tokenStyle: cfg.tokenStyle,
     resolveModel: (fullId) => resolveModelFromId(cfg, fullId),
   };

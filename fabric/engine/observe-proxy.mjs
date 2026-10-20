@@ -32,8 +32,8 @@ import { resolveUpstream, anthropicEndpoint } from './providers.mjs';
  * @param {string}  [opts.configPath]      override registry path (tests)
  * @returns {Promise<{url, port, jsonlPath, close}>}
  */
-export async function startObserveProxy({ provider, runDir, passthroughAuth = false, configPath }) {
-  const { baseUrl, token, tokenStyle, resolveModel } = resolveUpstream(provider, configPath);
+export async function startObserveProxy({ provider, runDir, passthroughAuth = false, configPath, task }) {
+  const { baseUrl, token, tokenStyle, resolveModel } = resolveUpstream(provider, configPath, { task });
   const upstream = new URL(baseUrl);
   const isHttps = upstream.protocol === 'https:';
   const agent = isHttps ? https : http;

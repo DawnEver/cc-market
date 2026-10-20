@@ -39,3 +39,12 @@ export function providerCacheFixture({ providers = FIXTURE_PROVIDERS, registry =
   writeFileSync(configPath, JSON.stringify(registry));
   return { configPath, dir, packaged, cachePath: join(dir, "provider-cache.json") };
 }
+
+// Keys the fixtures' credential store holds, `<username>@<host>` -> key.
+export const FIXTURE_KEYS = {
+  "api-key@api.acme.test": "sk-test",
+  "api-key-pr-review@api.acme.test": "sk-acme-review",
+  "api-key@api.plain.test": "tok-abc",
+  "api-key@api.tiered.test": "sk-tiered",
+};
+export const fixtureKeySource = (keys = FIXTURE_KEYS) => (host, username) => keys[`${username}@${host}`] ?? null;

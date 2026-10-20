@@ -69,10 +69,7 @@ hermetic tests.
 `claude_env_settings.json`: `sessionDefaults` (`{provider, model}` used when `call` omits a
 provider) and `systemPromptFile` (claude/API platform prompt — a
 `~/.claude/system-prompt/...` path resolved via the per-machine symlink setup.js creates;
-**never a machine-specific OneDrive path**). `readRegistry` (providers.mjs) and
-`loadFabricConfig` both deep-merge the machine-local `~/.claude/claude_env_settings.local.json`
-over the shared file (override wins). Codex's platform prompt comes from `codex_config.toml`
-`model_instructions_file = "~/.codex/system-prompt/codex-base.md"`. Cached by mtime (of both
-the shared file AND the local overlay) AND a 2s TTL, because mtime alone has 1-second
+**never a machine-specific OneDrive path**). There is no machine-local overlay: keys live in the git credential store. Codex's platform prompt comes from `codex_config.toml`
+`model_instructions_file = "~/.codex/system-prompt/codex-base.md"`. Cached by mtime AND a 2s TTL, because mtime alone has 1-second
 granularity on Windows and a same-second edit would otherwise stay invisible to the
 long-lived MCP server.

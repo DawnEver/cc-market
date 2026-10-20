@@ -9,17 +9,20 @@ import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildChildEnv, spawnChild, resolveClaudeExe, clearClaudeExeCache } from '../engine/spawn-child.mjs';
-import { providerCacheFixture, FIXTURE_PROVIDERS, row } from './fixtures/provider-cache.mjs';
+import { providerCacheFixture, FIXTURE_PROVIDERS, row, fixtureKeySource } from './fixtures/provider-cache.mjs';
+import { _setKeySource } from '../engine/providers.mjs';
 
-const REGISTRY = { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY', apiKey: 'sk-real' } } };
+_setKeySource(fixtureKeySource());
+
+const REGISTRY = { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY' } } };
 function fixture({ providers = FIXTURE_PROVIDERS, registry = REGISTRY } = {}) {
   return providerCacheFixture({ providers, registry }).configPath;
 }
 
-test('buildChildEnv normal mode projects url+claudePath into ANTHROPIC_BASE_URL, apiKey into the named env', () => {
+test('buildChildEnv normal mode projects the catalogue endpoint into ANTHROPIC_BASE_URL, the stored key into the named env', () => {
   const env = buildChildEnv({ provider: 'acme', observe: false, configPath: fixture() });
   assert.equal(env.ANTHROPIC_BASE_URL, 'https://api.acme.test/anthropic');
-  assert.equal(env.ANTHROPIC_API_KEY, 'sk-real');
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-test');
   assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'acme-flash');
   assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'acme-pro[1m]');
 });
@@ -72,7 +75,7 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   assert.equal(sink.env.ANTHROPIC_MODEL, 'acme-flash');
   assert.ok(!sink.args.includes('--model'));
   assert.ok(sink.env.CLAUDE_CONFIG_DIR.includes('config'), 'isolated config dir set');
-  assert.equal(sink.env.ANTHROPIC_API_KEY, 'sk-real', 'normal mode = direct API-key auth');
+  assert.equal(sink.env.ANTHROPIC_API_KEY, 'sk-test', 'normal mode = direct API-key auth');
   assert.equal(sink.env.ANTHROPIC_BASE_URL, 'https://api.acme.test/anthropic', 'normal mode = direct-connect base URL');
 });
 
@@ -329,7 +332,7 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
   const upstream = http.createServer((_, r) => r.end()).listen(0, '127.0.0.1');
   await new Promise((r) => upstream.once('listening', r));
   const port = upstream.address().port;
-  const cfg = fixture({ providers: { acme: row({ endpoints: { anthropic: `http://127.0.0.1:${port}` }, models: { base: 'acme-flash' } }) }, registry: { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN', apiKey: 'sk-real' } } } });
+  const cfg = fixture({ providers: { acme: row({ host: 'api.acme.test', endpoints: { anthropic: `http://127.0.0.1:${port}` }, models: { base: 'acme-flash' } }) }, registry: { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN' } } } });
   const sink = {};
   const runDir = mkdtempSync(join(tmpdir(), 'sc-obs-'));
   try {
