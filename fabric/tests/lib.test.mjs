@@ -10,8 +10,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  loadProviderConfig,
-  clearConfigCache,
   getConfigPath,
   resolveModel,
   buildPrompt,
@@ -19,7 +17,6 @@ import {
   truncateText,
   parseCommandBlock,
   callAnthropicAPI,
-  loadProviderEnv,
   logProviderRequest,
   ConfigError,
   ProviderError,
@@ -31,96 +28,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function makeTempSettings(obj) {
-  const tmp = path.join(__dirname, `_tmp_settings_${Date.now()}.json`);
-  fs.writeFileSync(tmp, JSON.stringify(obj));
-  return tmp;
-}
-
-// ── loadProviderConfig ────────────────────────────────────────────────────────
-
-describe("loadProviderConfig", () => {
-  test("returns native codex config without reading config file", () => {
-    assert.deepEqual(loadProviderConfig("codex", "/nonexistent"), { native: true, provider: "codex" });
-  });
-
-  test("returns native claude config without reading config file", () => {
-    assert.deepEqual(loadProviderConfig("claude", "/nonexistent"), { native: true, provider: "claude" });
-  });
-
-  test("returns API config for deepseek provider", () => {
-    const p = makeTempSettings({
-      providers: {
-        deepseek: {
-          url: "https://api.deepseek.com",
-          claudePath: "/anthropic",
-          claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
-          apiKey: "tok",
-          models: { base: "deepseek-v4-flash" },
-        },
-      },
-    });
-    try {
-      const result = loadProviderConfig("deepseek", p);
-      assert.equal(result.native, false);
-      assert.equal(result.token, "tok");
-      assert.equal(result.baseUrl, "https://api.deepseek.com/anthropic");
-      assert.equal(result.defaultSonnet, "deepseek-v4-flash");
-    } finally {
-      fs.unlinkSync(p);
-    }
-  });
-
-  test("accepts ANTHROPIC_API_KEY as the token (direct Anthropic-compatible providers)", () => {
-    const p = makeTempSettings({
-      providers: {
-        kimi: {
-          url: "https://api.moonshot.cn",
-          claudePath: "/anthropic",
-          claudeApiKeyEnv: "ANTHROPIC_API_KEY",
-          apiKey: "sk-key",
-        },
-      },
-    });
-    try {
-      const result = loadProviderConfig("kimi", p);
-      assert.equal(result.token, "sk-key");
-    } finally {
-      fs.unlinkSync(p);
-    }
-  });
-
-  test("throws when config file does not exist", () => {
-    assert.throws(() => loadProviderConfig("deepseek", "/nonexistent/path.json"), /Config file not found/);
-  });
-
-  test("throws for unknown provider", () => {
-    const p = makeTempSettings({});
-    try {
-      assert.throws(() => loadProviderConfig("unknown", p), /Provider "unknown" not found/);
-    } finally {
-      fs.unlinkSync(p);
-    }
-  });
-
-  test("throws when url/claudePath is missing", () => {
-    const p = makeTempSettings({ providers: { x: { claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "tok" } } });
-    try {
-      assert.throws(() => loadProviderConfig("x", p), /missing url\/claudePath/);
-    } finally {
-      fs.unlinkSync(p);
-    }
-  });
-
-  test("throws when apiKey is missing from local overlay", () => {
-    const p = makeTempSettings({ providers: { x: { url: "https://x.com", claudePath: "", claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN" } } });
-    try {
-      assert.throws(() => loadProviderConfig("x", p), /missing apiKey/);
-    } finally {
-      fs.unlinkSync(p);
-    }
-  });
-});
 
 // ── resolveModel ──────────────────────────────────────────────────────────────
 
@@ -138,15 +45,15 @@ describe("resolveModel", () => {
   });
 
   test("maps 'sonnet' tier name to provider's defaultSonnet", () => {
-    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash" }, "sonnet"), "deepseek-v4-flash");
+    assert.equal(resolveModel({ defaultSonnet: "acme-flash" }, "sonnet"), "acme-flash");
   });
 
   test("maps 'opus' tier name to provider's defaultOpus", () => {
-    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash", defaultOpus: "deepseek-v4-pro" }, "opus"), "deepseek-v4-pro");
+    assert.equal(resolveModel({ defaultSonnet: "acme-flash", defaultOpus: "acme-pro" }, "opus"), "acme-pro");
   });
 
   test("maps 'opus' to defaultSonnet when defaultOpus absent", () => {
-    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash" }, "opus"), "deepseek-v4-flash");
+    assert.equal(resolveModel({ defaultSonnet: "acme-flash" }, "opus"), "acme-flash");
   });
 
   test("maps 'haiku' tier name to provider's defaultHaiku", () => {
@@ -154,7 +61,7 @@ describe("resolveModel", () => {
   });
 
   test("passes through non-tier model names unchanged", () => {
-    assert.equal(resolveModel({ defaultSonnet: "deepseek-v4-flash" }, "deepseek-v4-pro"), "deepseek-v4-pro");
+    assert.equal(resolveModel({ defaultSonnet: "acme-flash" }, "acme-pro"), "acme-pro");
   });
 });
 
@@ -233,14 +140,14 @@ describe("truncateText", () => {
 describe("parseCommandBlock", () => {
   test("extracts --provider and --model from command block", () => {
     const prompt = `<command>
---provider deepseek --model deepseek-v4-pro review the sharp review skill
+--provider acme --model acme-pro review the sharp review skill
 </command>
 
 <context>
 some diff output
 </context>`;
     const result = parseCommandBlock(prompt);
-    assert.deepEqual(result.flags, { provider: "deepseek", model: "deepseek-v4-pro" });
+    assert.deepEqual(result.flags, { provider: "acme", model: "acme-pro" });
     assert.ok(!result.cleanPrompt.includes("<command>"), "command block must be stripped");
     assert.ok(result.cleanPrompt.includes("<context>"), "context must be preserved");
     assert.ok(result.cleanPrompt.includes("some diff output"), "content must be preserved");
@@ -259,12 +166,12 @@ some diff output
 
   test("extracts only --model when --provider absent", () => {
     const prompt = `<command>
---model deepseek-v4-pro do something
+--model acme-pro do something
 </command>
 
 <context>x</context>`;
     const result = parseCommandBlock(prompt);
-    assert.deepEqual(result.flags, { model: "deepseek-v4-pro" });
+    assert.deepEqual(result.flags, { model: "acme-pro" });
     assert.equal("provider" in result.flags, false);
   });
 
@@ -276,16 +183,16 @@ some diff output
   });
 
   test("handles compact single-line command block", () => {
-    const prompt = "<command>--provider deepseek --model x task here</command>\n\n<context>ctx</context>";
+    const prompt = "<command>--provider acme --model x task here</command>\n\n<context>ctx</context>";
     const result = parseCommandBlock(prompt);
-    assert.deepEqual(result.flags, { provider: "deepseek", model: "x" });
+    assert.deepEqual(result.flags, { provider: "acme", model: "x" });
     assert.ok(!result.cleanPrompt.includes("<command>"));
   });
 
   test("preserves text after command block even without <context> tags", () => {
-    const prompt = "<command>\n--provider deepseek review this\n</command>\n\nPlease analyze the code.";
+    const prompt = "<command>\n--provider acme review this\n</command>\n\nPlease analyze the code.";
     const result = parseCommandBlock(prompt);
-    assert.deepEqual(result.flags, { provider: "deepseek" });
+    assert.deepEqual(result.flags, { provider: "acme" });
     assert.ok(result.cleanPrompt.includes("Please analyze the code"));
   });
 });
@@ -310,9 +217,9 @@ describe("parseCommandBlock mode flags", () => {
   });
 
   test("no mode flag defaults to undefined", () => {
-    const { flags } = parseCommandBlock("<command>\n--provider deepseek\n</command>\nreview this PR");
+    const { flags } = parseCommandBlock("<command>\n--provider acme\n</command>\nreview this PR");
     assert.equal(flags.mode, undefined);
-    assert.equal(flags.provider, "deepseek");
+    assert.equal(flags.provider, "acme");
   });
 
   test("--review combined with --model", () => {
@@ -500,57 +407,6 @@ describe("callAnthropicAPI", () => {
   });
 });
 
-// ── loadProviderEnv ─────────────────────────────────────────────────────────
-
-describe("loadProviderEnv", () => {
-  test("clears all provider keys for non-claude provider", () => {
-    // Set known provider keys in process.env
-    process.env.ANTHROPIC_BASE_URL = 'https://original.example.com';
-    process.env.ANTHROPIC_AUTH_TOKEN = 'orig-token';
-
-    const tmp = makeTempSettings({ providers: { test: {
-      url: "https://test.example.com",
-      claudePath: "",
-      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
-      apiKey: "sk-test",
-      models: { base: "test-sonnet" },
-    }}});
-
-    try {
-      const env = loadProviderEnv("test", tmp);
-      assert.equal(env.ANTHROPIC_BASE_URL, "https://test.example.com");
-      assert.equal(env.ANTHROPIC_AUTH_TOKEN, "sk-test");
-      assert.equal(env.ANTHROPIC_DEFAULT_SONNET_MODEL, "test-sonnet");
-    } finally {
-      delete process.env.ANTHROPIC_BASE_URL;
-      delete process.env.ANTHROPIC_AUTH_TOKEN;
-      fs.unlinkSync(tmp);
-    }
-  });
-
-  test("returns empty env for claude provider (OAuth/Pro)", () => {
-    process.env.ANTHROPIC_BASE_URL = 'https://stale.example.com';
-    try {
-      const env = loadProviderEnv("claude");
-      assert.equal(env.ANTHROPIC_BASE_URL, undefined);
-    } finally {
-      delete process.env.ANTHROPIC_BASE_URL;
-    }
-  });
-
-  test("throws for unknown provider", () => {
-    const tmp = makeTempSettings({ providers: { known: { url: "u", claudePath: "", claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "t" } } });
-    try {
-      assert.throws(
-        () => loadProviderEnv("unknown", tmp),
-        /Provider "unknown" not found/
-      );
-    } finally {
-      fs.unlinkSync(tmp);
-    }
-  });
-});
-
 // ── PROVIDER_ENV_KEYS ───────────────────────────────────────────────────────
 
 describe("PROVIDER_ENV_KEYS", () => {
@@ -609,68 +465,21 @@ describe("resolveClaudeExe", () => {
   });
 });
 
-// ── Config caching ──────────────────────────────────────────────────────────
-
-describe("loadProviderConfig caching", () => {
-  test("returns cached result on second call within TTL", () => {
-    clearConfigCache();
-    const tmp = makeTempSettings({ providers: { cachetest: {
-      url: "https://cache.example.com",
-      claudePath: "",
-      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
-      apiKey: "sk-cache",
-    }}});
-    try {
-      const r1 = loadProviderConfig("cachetest", tmp);
-      const r2 = loadProviderConfig("cachetest", tmp);
-      assert.equal(r2.baseUrl, "https://cache.example.com");
-      assert.equal(r2.token, "sk-cache");
-    } finally {
-      clearConfigCache();
-      fs.unlinkSync(tmp);
-    }
-  });
-
-  test("clearConfigCache forces re-read", () => {
-    clearConfigCache();
-    const tmp = makeTempSettings({ providers: { cachetest2: {
-      url: "https://first.example.com",
-      claudePath: "",
-      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
-      apiKey: "sk-first",
-    }}});
-    try {
-      const r1 = loadProviderConfig("cachetest2", tmp);
-      assert.equal(r1.baseUrl, "https://first.example.com");
-      clearConfigCache();
-      // Modify config file and re-read
-      fs.writeFileSync(tmp, JSON.stringify({ providers: { cachetest2: {
-        url: "https://second.example.com", claudePath: "",
-        claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "sk-second"
-      }}}));
-      const r2 = loadProviderConfig("cachetest2", tmp);
-      assert.equal(r2.baseUrl, "https://second.example.com");
-    } finally {
-      clearConfigCache();
-      fs.unlinkSync(tmp);
-    }
-  });
-});
 
 // ── getConfigPath ────────────────────────────────────────────────────────────
 
 describe("getConfigPath", () => {
-  test("evaluates TAKEOVER_CONFIG_PATH at call time", () => {
+  test("evaluates CC_MARKET_CONFIG_PATH at call time", () => {
     // Default path
     const defaultPath = getConfigPath();
     assert.ok(defaultPath.includes("claude_env_settings.json"));
 
     // Override via env
-    process.env.TAKEOVER_CONFIG_PATH = "/custom/path/config.json";
+    process.env.CC_MARKET_CONFIG_PATH = "/custom/path/config.json";
     try {
       assert.equal(getConfigPath(), "/custom/path/config.json");
     } finally {
-      delete process.env.TAKEOVER_CONFIG_PATH;
+      delete process.env.CC_MARKET_CONFIG_PATH;
     }
 
     // After clearing, returns to default
@@ -735,10 +544,10 @@ describe("logProviderRequest", () => {
     const orig = process.stderr.write;
     process.stderr.write = (data) => { captured = data; return true; };
     try {
-      logProviderRequest("2026-06-12T10:00:00Z", "deepseek", "sonnet", "task", "ok", { durationMs: 1234, inputTokens: 500, outputTokens: 300 });
+      logProviderRequest("2026-06-12T10:00:00Z", "acme", "sonnet", "task", "ok", { durationMs: 1234, inputTokens: 500, outputTokens: 300 });
       assert.ok(captured, "should emit a log line");
       const entry = JSON.parse(captured);
-      assert.equal(entry.provider, "deepseek");
+      assert.equal(entry.provider, "acme");
       assert.equal(entry.model, "sonnet");
       assert.equal(entry.mode, "task");
       assert.equal(entry.status, "ok");

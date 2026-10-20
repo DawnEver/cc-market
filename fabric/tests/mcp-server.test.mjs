@@ -14,40 +14,22 @@ import {
   TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
   API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
 } from "../scripts/mcp-server.mjs";
-import { clearConfigCache } from "../engine/providers.mjs";
+import { providerCacheFixture } from "./fixtures/provider-cache.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.join(__dirname, "..", "scripts", "mcp-server.mjs");
 const text = (r) => r.content[0].text;
 
-// Hermetic provider registry: point CC_MARKET_CONFIG_PATH at a temp fixture so tests
-// never depend on the host's ~/.claude/claude_env_settings.json.
-function withConfigFixture(obj, fn) {
-  const p = path.join(os.tmpdir(), `fabric-test-settings-${process.pid}-${Date.now()}.json`);
-  fs.writeFileSync(p, JSON.stringify(obj));
+// Hermetic registry + provider cache: CC_MARKET_CONFIG_PATH points at a temp fixture for the
+// whole file, so no test reads the host's ~/.claude; withConfigFixture swaps in a registry.
+process.env.CC_MARKET_CONFIG_PATH = providerCacheFixture().configPath;
+function withConfigFixture(registry, fn) {
   const prev = process.env.CC_MARKET_CONFIG_PATH;
-  process.env.CC_MARKET_CONFIG_PATH = p;
-  clearConfigCache();
-  return Promise.resolve()
-    .then(fn)
-    .finally(() => {
-      if (prev === undefined) delete process.env.CC_MARKET_CONFIG_PATH; else process.env.CC_MARKET_CONFIG_PATH = prev;
-      clearConfigCache();
-      fs.unlinkSync(p);
-    });
+  process.env.CC_MARKET_CONFIG_PATH = providerCacheFixture({ registry }).configPath;
+  return Promise.resolve().then(fn).finally(() => { process.env.CC_MARKET_CONFIG_PATH = prev; });
 }
 
-const DEEPSEEK_FIXTURE = {
-  providers: {
-    deepseek: {
-      url: "http://127.0.0.1:1",
-      claudePath: "",
-      claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN",
-      apiKey: "sk-fake",
-      models: { base: "deepseek-v4-flash" },
-    },
-  },
-};
+const ACME_FIXTURE = { providers: { acme: { claudeApiKeyEnv: "ANTHROPIC_AUTH_TOKEN", apiKey: "sk-fake" } } };
 
 function parseFramedMessage(output) {
   const headerEnd = output.indexOf("\r\n\r\n");
@@ -128,12 +110,12 @@ describe("call primitive", () => {
 
   test("throws when provider missing and no sessionDefaults are configured", async () => {
     // Fixture WITHOUT a fabric block → no default provider → the required-error fires.
-    await withConfigFixture({ ...DEEPSEEK_FIXTURE }, () =>
+    await withConfigFixture({ ...ACME_FIXTURE }, () =>
       assert.rejects(() => handleCall({ prompt: "hi" }), /provider is required/));
   });
 
   test("call falls back to fabric.sessionDefaults for provider/model", async () => {
-    await withConfigFixture({ ...DEEPSEEK_FIXTURE, fabric: { sessionDefaults: { provider: "deepseek", model: "deepseek-v4-flash" } } }, () =>
+    await withConfigFixture({ ...ACME_FIXTURE, fabric: { sessionDefaults: { provider: "acme", model: "acme-flash" } } }, () =>
       // The default provider is applied, so the call gets PAST the provider check and
       // fails on the fixture's dead base URL — anything but "provider is required".
       assert.rejects(() => handleCall({ prompt: "hi" }), (e) => !/provider is required/.test(String(e.message))));
@@ -143,8 +125,8 @@ describe("call primitive", () => {
     await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }),
       (e) => e.kind === "unsupported" && /not supported for provider/.test(e.message));
     // API provider: fixture keeps this hermetic (no host claude_env_settings.json needed).
-    await withConfigFixture(DEEPSEEK_FIXTURE, () =>
-      assert.rejects(() => handleCall({ provider: "deepseek", prompt: "x", mode: "image-generate" }), /not supported for provider/));
+    await withConfigFixture(ACME_FIXTURE, () =>
+      assert.rejects(() => handleCall({ provider: "acme", prompt: "x", mode: "image-generate" }), /not supported for provider/));
   });
 
   test("review mode is available for non-codex providers (sharp-review regression)", () => {
@@ -167,9 +149,9 @@ describe("call primitive", () => {
   test("observe:true (non-codex) routes to the observe/spawnChild path, not dispatch", async () => {
     let seen = null;
     const fakeSpawnChild = async (opts) => { seen = opts; return { code: 0, stdout: "captured", stderr: "", jsonlPath: null }; };
-    const res = await handleCall({ provider: "deepseek", prompt: "trace me", observe: true }, { spawnChild: fakeSpawnChild });
+    const res = await handleCall({ provider: "acme", prompt: "trace me", observe: true }, { spawnChild: fakeSpawnChild });
     assert.equal(seen.observe, true);
-    assert.equal(seen.provider, "deepseek");
+    assert.equal(seen.provider, "acme");
     assert.match(text(res), /captured/);
   });
 });
@@ -185,8 +167,8 @@ describe("fan_out", () => {
   test("runs tasks concurrently, returns structured JSON", async () => {
     const res = await handleFanOut({
       tasks: [
-        { id: "t1", provider: "deepseek", prompt: "task one" },
-        { id: "t2", provider: "deepseek", prompt: "task two" },
+        { id: "t1", provider: "acme", prompt: "task one" },
+        { id: "t2", provider: "acme", prompt: "task two" },
       ],
       synthesize: false,
     });
@@ -203,7 +185,7 @@ describe("fan_out", () => {
     const fakeSpawnChild = async () => ({ code: 0, stdout: "done", stderr: "", jsonlPath: null });
     const res = await handleFanOut({
       tasks: [
-        { provider: "deepseek", prompt: "ok task", observe: true },
+        { provider: "acme", prompt: "ok task", observe: true },
         { provider: "nonexistent", prompt: "bad provider" },
       ],
       synthesize: false,
@@ -217,7 +199,7 @@ describe("fan_out", () => {
 
   test("fan_out tool routes through handleToolCall", async () => {
     const res = await handleToolCall("fan_out", {
-      tasks: [{ provider: "deepseek", prompt: "test" }],
+      tasks: [{ provider: "acme", prompt: "test" }],
       synthesize: false,
     });
     const parsed = JSON.parse(text(res));
@@ -258,8 +240,8 @@ describe("call options reach every path", () => {
 
   test("API agent: cwd and timeoutMs reach the child", async () => {
     const seen = {};
-    await withConfigFixture(DEEPSEEK_FIXTURE, () =>
-      handleCall({ provider: "deepseek", mode: "agent", prompt: "p", cwd: "C:/work", timeoutMs: 99, resultMode: "full" },
+    await withConfigFixture(ACME_FIXTURE, () =>
+      handleCall({ provider: "acme", mode: "agent", prompt: "p", cwd: "C:/work", timeoutMs: 99, resultMode: "full" },
         { spawnChild: fakeSpawnChild(seen) }));
     assert.equal(seen.cwd, "C:/work");
     assert.equal(seen.timeoutMs, 99);
@@ -269,8 +251,8 @@ describe("call options reach every path", () => {
     const prev = globalThis.fetch;
     globalThis.fetch = (url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
     try {
-      await withConfigFixture(DEEPSEEK_FIXTURE, () =>
-        assert.rejects(handleCall({ provider: "deepseek", prompt: "p", timeoutMs: 30, resultMode: "full" }),
+      await withConfigFixture(ACME_FIXTURE, () =>
+        assert.rejects(handleCall({ provider: "acme", prompt: "p", timeoutMs: 30, resultMode: "full" }),
           (e) => e.kind === "timeout"));
     } finally {
       globalThis.fetch = prev;

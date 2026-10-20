@@ -1,15 +1,15 @@
 // Hermetic tests for the observe proxy — no network, no API key. A fake local upstream
-// stands in for DeepSeek: it echoes the received model (proving in-body rewrite) and
+// stands in for an API provider: it echoes the received model (proving in-body rewrite) and
 // emits a chunked SSE stream with a delay between chunks (proving non-buffered passthrough).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { writeFileSync, mkdtempSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startObserveProxy } from '../engine/observe-proxy.mjs';
-import { clearConfigCache } from '../engine/providers.mjs';
+import { providerCacheFixture, row } from './fixtures/provider-cache.mjs';
 
 // A fake Anthropic-compatible upstream: captures the request, streams SSE back slowly.
 function startFakeUpstream() {
@@ -40,26 +40,15 @@ function startFakeUpstream() {
 }
 
 function fixtureFor(port, { basePath = '', env = {} } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'obsproxy-'));
-  const cfgPath = join(dir, 'reg.json');
-  // `env` lets a test override the auth token source: when `claudeApiKeyEnv` is
-  // 'ANTHROPIC_AUTH_TOKEN', the proxy should send `Authorization: Bearer`;
-  // 'ANTHROPIC_API_KEY' → `x-api-key`.
+  // `env` picks the projection rule: claudeApiKeyEnv 'ANTHROPIC_AUTH_TOKEN' -> the proxy sends
+  // `Authorization: Bearer`; 'ANTHROPIC_API_KEY' -> `x-api-key`.
   const apiKeyEnv = env.ANTHROPIC_AUTH_TOKEN != null ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
   const apiKey = env.ANTHROPIC_AUTH_TOKEN ?? env.ANTHROPIC_API_KEY ?? 'sk-fake-key';
-  writeFileSync(cfgPath, JSON.stringify({
-    providers: {
-      fake: {
-        url: `http://127.0.0.1:${port}${basePath}`,
-        claudePath: '',
-        claudeApiKeyEnv: apiKeyEnv,
-        apiKey,
-        models: { base: 'fake-flash', opus: 'fake-pro' },
-      },
-    },
-  }));
-  clearConfigCache();
-  return { dir, cfgPath };
+  const { dir, configPath } = providerCacheFixture({
+    providers: { fake: row({ endpoints: { anthropic: `http://127.0.0.1:${port}${basePath}` }, models: { base: 'fake-flash', opus: 'fake-pro' } }) },
+    registry: { providers: { fake: { claudeApiKeyEnv: apiKeyEnv, apiKey } } },
+  });
+  return { dir, cfgPath: configPath };
 }
 
 test('proxy rewrites model, injects key, streams SSE unbuffered, captures jsonl', async () => {

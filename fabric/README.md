@@ -76,8 +76,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Layers
 
-- **L0 provider routing** — `engine/providers.mjs` (fabric-owned, canonical). Reads `~/.claude/claude_env_settings.json` plus the machine-local `claude_env_settings.local.json` overlay (deep-merged by `readRegistry`, override wins — the synced file carries base URLs/models, never keys), normalizes vanilla/Foundry,
-  resolves model aliases.
+- **L0 provider routing** — `engine/providers.mjs`. Reads the provider catalogue from `~/.claude/provider-cache.json` (ai-lab's `python -m ai_lab.providers --json`, copied by setup; stale/absent is refused as `unsupported` naming the remedy) and the host projection rules (`claudeApiKeyEnv`) from `~/.claude/claude_env_settings.json`; resolves model aliases.
 - **L1 engines** — `engine/spawn-child.mjs` (the claude child engine: exe resolution,
   provider env, optional config isolation, stream-json/images), `engine/anthropic-http.mjs`
   (raw single-turn HTTP, retry + SSE), `engine/codex/` (codex app-server client + task

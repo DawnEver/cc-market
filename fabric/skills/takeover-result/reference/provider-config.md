@@ -1,34 +1,24 @@
 # Provider Config Shape
 
-Providers other than `claude`/`codex` are configured in `~/.claude/claude_env_settings.json`
-(overridable via `TAKEOVER_CONFIG_PATH` / `CC_MARKET_CONFIG_PATH`). The shared file syncs
-across machines (OneDrive), so it must NOT carry secrets — each machine keeps its own keys
-in `~/.claude/claude_env_settings.local.json`, which `readRegistry()` deep-merges over the
-shared file (override wins). Shared file keeps base URLs / model pins:
+The provider CATALOGUE (endpoints, models, key credential usernames) is ai-lab's
+(`python -m ai_lab.providers --json`). Setup copies it into `~/.claude/provider-cache.json`,
+next to `~/.claude/claude_env_settings.json` (both move together with `CC_MARKET_CONFIG_PATH`).
+fabric only reads that cache: an absent cache, one older than 7 days, one of another
+`schema_version`, or one whose recorded catalogue inputs changed on disk is refused as
+`unsupported`, naming the remedy (`node scripts/setup/setup.js`). There is no fallback.
+
+`claude` and `codex` are host CLIs (their own sign-in), not catalogue rows.
+
+`claude_env_settings.json` keeps only host projection rules, per provider:
 
 ```json
-{
-  "env:deepseek": {
-    "CLAUDE_CODE_USE_FOUNDRY": "1",
-    "ANTHROPIC_FOUNDRY_BASE_URL": "https://api.deepseek.com/anthropic",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash"
-  }
-}
+{ "providers": { "<provider>": { "claudeApiKeyEnv": "ANTHROPIC_AUTH_TOKEN" } } }
 ```
 
-Local file supplies the key (created on each machine by `setup.js` from the repo's
-`claude_env_settings.local.template.json`):
+`claudeApiKeyEnv` names the env var a `claude` child (agent mode) reads the key from, and so
+the header style the observe proxy sends (`ANTHROPIC_AUTH_TOKEN` -> Bearer, else `x-api-key`).
 
-```json
-{
-  "env:deepseek": { "ANTHROPIC_FOUNDRY_API_KEY": "sk-..." }
-}
-```
-
-`loadProviderConfig()` returns `{ native: true, provider: "claude"|"codex" }` for built-in
-providers, or `{ native: false, baseUrl, token, defaultSonnet, defaultOpus, defaultHaiku }`
-for API providers.
-
-If `call` errors with a config-related message, check that the `env:<provider>` block
-exists and has the required keys above — a machine without a local key fails with
-"missing ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY", the intended per-host failure mode.
+`loadProviderConfig()` returns `{ native: true, provider }` for the host CLIs, or
+`{ native: false, provider, row, baseUrl, keyEnv, tokenStyle, default<Tier> }` for a catalogue
+row; `baseUrl` is the row's anthropic-protocol endpoint (null if it has none, which refuses
+agent mode and observe on that provider as `unsupported`).
