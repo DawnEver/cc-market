@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sharp-review reviewer finding",
+  "type": "object",
+  "required": ["severity", "summary", "category"],
+  "properties": {
+    "severity": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW", "INFO"] },
+    "file": { "type": "string" },
+    "summary": { "type": "string" },
+    "category": { "type": "string", "enum": ["Bug", "Feature", "Performance"] },
+    "suggestion": { "type": "string" },
+    "detail": { "type": "string" }
+  }
+}

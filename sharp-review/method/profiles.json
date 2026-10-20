@@ -1,0 +1,98 @@
+{
+  "profiles": [
+    {
+      "key": "diff",
+      "label": "diff review",
+      "source": "diff",
+      "weight": 0.4,
+      "context": "diff",
+      "framing": null,
+      "scope": [
+        "Bad architectural or design decisions",
+        "Redundant / dead code",
+        "Anything simpler, faster or more idiomatic",
+        "Missed edge cases or silent failures",
+        "Code files > 300 lines warrant scrutiny; > 600 lines should be split"
+      ]
+    },
+    {
+      "key": "architecture",
+      "label": "architecture survey (架构锐评)",
+      "source": "codebase",
+      "weight": 0.2,
+      "context": "explore",
+      "framing": "架构锐评: survey the CURRENT codebase architecture as a whole — this is NOT a diff review.",
+      "scope": [
+        "Module boundaries and layering violations",
+        "Import architecture — map the import graph: circular imports, barrel (lib.mjs / index) re-export cycles, imports reaching across module or plugin boundaries into another module's internals, and import direction contradicting the documented layering",
+        "Coupling / cohesion problems and circular dependencies",
+        "Duplication and missing abstractions across the codebase",
+        "File size — code files > 300 lines warrant scrutiny; > 600 lines MUST be split into smaller modules",
+        "Doc size — any single SKILL.md / AGENTS.md / CLAUDE.md > 100 lines warrants scrutiny: push mechanism, schemas, and edge-cases into reference/* (progressive disclosure), keeping runtime docs to the execution path",
+        "Rules-vs-memory boundary — AGENTS.md and every scope .claude/rules/*.md hold ONLY core development principles: flag always-loaded docs bloated with mechanism, schemas, edge-cases, or one-off decisions that belong in .claude/memory/ (progressive disclosure); a bloated rule set is a per-session context tax",
+        "Suppression abuse — flag # noqa / type: ignore / eslint-disable / @ts-ignore / pylint|ruff|mypy disable used to escape a check rather than fix a real defect: broad or disable-all suppressions, the same suppression repeated across lines for one defect, and suppressions silencing the very errors the repo checks exist to catch",
+        "Inconsistent patterns, dead subsystems, scalability / extensibility limits"
+      ]
+    },
+    {
+      "key": "security",
+      "label": "security audit (安全锐评)",
+      "source": "diff",
+      "weight": 0.05,
+      "context": "diff",
+      "framing": "安全锐评: audit the diff for security vulnerabilities — focus on exploitable defects, not style.",
+      "scope": [
+        "Authorization / access-control gaps and missing authentication",
+        "Injection (SQL, command, template, XSS) and unsafe input handling",
+        "Hardcoded secrets / credentials / tokens",
+        "SSRF and path traversal",
+        "Unsafe deserialization",
+        "Crypto misuse (weak algorithms, static IVs, predictable randomness)"
+      ]
+    },
+    {
+      "key": "adversarial",
+      "label": "adversarial review (对抗性审查)",
+      "source": "diff",
+      "weight": 0.2,
+      "context": "diff",
+      "framing": "对抗性审查: try to break the changed code. Every finding must be a concrete counterexample — a specific input or state, the wrong result or crash it produces, and the test case that would catch it (summary = scenario → wrong outcome; suggestion = the test to add, then the fix). Read the surrounding code and existing tests before claiming; drop anything you cannot make concrete — no style notes, no speculation.",
+      "scope": [
+        "Boundary values: empty / null / undefined / zero / negative / NaN, off-by-one, first and last element, max length, unicode and whitespace, case, paths with spaces or separators of the other OS",
+        "Control-flow holes: unhandled branches, early returns that skip cleanup, exceptions swallowed or turned into a silent default, error paths that leave partial state",
+        "Unchecked assumptions: inputs, config, files, env, or external responses taken to be present, well-formed, unique, ordered, or stable without a check",
+        "State and time: ordering, re-entry, concurrent or repeated calls, idempotency, stale caches, retries, timeouts, clock and timezone",
+        "Contract drift: callers, docs, or other modules still relying on the old behavior or shape the diff changed",
+        "Test gaps: the changed behavior an existing test never exercises — name the missing case; flag tests that assert the implementation instead of the behavior or would pass with the change reverted"
+      ]
+    },
+    {
+      "key": "docs",
+      "label": "docs review (文档锐评)",
+      "source": "docs",
+      "weight": 0.1,
+      "context": "explore",
+      "framing": "文档锐评: review the documentation against the current code — this is NOT a diff review.",
+      "scope": [
+        "Accuracy vs. the actual code (claims that no longer hold)",
+        "Staleness — outdated instructions, removed features still documented",
+        "Broken links / references / anchors",
+        "Missing or contradictory setup/usage instructions"
+      ]
+    },
+    {
+      "key": "deps",
+      "label": "dependency review (依赖锐评)",
+      "source": "deps",
+      "weight": 0.05,
+      "context": "explore",
+      "framing": "依赖锐评: review the project dependencies for risk — this is NOT a diff review.",
+      "scope": [
+        "Known CVEs / security advisories in pinned versions",
+        "Outdated major versions and unmaintained packages",
+        "License issues / incompatibilities",
+        "Unused or duplicate dependencies"
+      ]
+    }
+  ]
+}
