@@ -29,3 +29,31 @@ for (const kind of KINDS) {
     });
   }
 }
+
+// ── The Node executor against the fixtures ──
+import { mergeRun } from '../scripts/lib/merge.mjs';
+import { pickProfiles } from '../scripts/lib/pick.mjs';
+import { renderTemplate, renderReviewerPrompt } from '../scripts/lib/prompt.mjs';
+
+for (const fx of fixtures('merge')) {
+  test(`node executor: ${fx.file}`, () => {
+    assert.deepEqual(mergeRun(fx.input, method), fx.expected);
+  });
+}
+
+for (const fx of fixtures('pick')) {
+  test(`node executor: ${fx.file}`, () => {
+    const { weights, count, rands } = fx.input;
+    assert.deepEqual(pickProfiles(weights, count, rands, method), fx.expected);
+  });
+}
+
+for (const fx of fixtures('prompt')) {
+  test(`node executor: ${fx.file}`, () => {
+    const { template, vars, profile, manifest } = fx.input;
+    const actual = template !== undefined
+      ? renderTemplate(template, vars, method)
+      : renderReviewerPrompt(method.profiles[profile], manifest, method);
+    assert.deepEqual(actual, fx.expected);
+  });
+}

@@ -1,0 +1,16 @@
+{
+  "description": "A diff-context profile on an inline (review-mode) manifest renders prompts/diff.md with the profile's framing and scope, the manifest's range, excluded summary and diff, and the output_contract partial carrying the finding schema as compact JSON.",
+  "input": {
+    "profile": "security",
+    "manifest": {
+      "mode": "review",
+      "range": "main...HEAD",
+      "excludedSummary": "1 files excluded: 1 lockfile",
+      "diff": "+const key = 'abc';"
+    }
+  },
+  "expected": {
+    "call_mode": "review",
+    "prompt": "安全锐评: audit the diff for security vulnerabilities — focus on exploitable defects, not style.\n\nRange: main...HEAD. 1 files excluded: 1 lockfile\n\nReview the following git diff. Be BLUNT. Praise nothing that does not deserve it. Judge it against the repository's own principles where you can see them (its CLAUDE.md, AGENTS.md and .claude/rules/).\n\nScope: Authorization / access-control gaps and missing authentication; Injection (SQL, command, template, XSS) and unsafe input handling; Hardcoded secrets / credentials / tokens; SSRF and path traversal; Unsafe deserialization; Crypto misuse (weak algorithms, static IVs, predictable randomness)\n\nRespond with ONLY a JSON object { \"findings\": [...] }; an empty array means you found nothing. Each finding is one object conforming to this JSON Schema:\n{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"sharp-review reviewer finding\",\"type\":\"object\",\"required\":[\"severity\",\"summary\",\"category\"],\"properties\":{\"severity\":{\"type\":\"string\",\"enum\":[\"HIGH\",\"MEDIUM\",\"LOW\",\"INFO\"]},\"file\":{\"type\":\"string\"},\"summary\":{\"type\":\"string\"},\"category\":{\"type\":\"string\",\"enum\":[\"Bug\",\"Feature\",\"Performance\"]},\"suggestion\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\"}}}\n\nGit diff:\n```diff\n+const key = 'abc';\n```"
+  }
+}

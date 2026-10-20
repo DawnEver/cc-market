@@ -1,0 +1,5 @@
+{
+  "description": "A diff-context profile on an empty manifest renders nothing and is skipped.",
+  "input": { "profile": "diff", "manifest": { "mode": "empty", "range": "HEAD", "excludedSummary": "2 files excluded: 2 binary" } },
+  "expected": { "status": "skipped" }
+}

@@ -1,0 +1,15 @@
+{
+  "description": "An explore-context profile is always an agent call with no diff, whatever the manifest mode.",
+  "input": {
+    "profile": "deps",
+    "manifest": {
+      "mode": "empty",
+      "range": "HEAD",
+      "excludedSummary": ""
+    }
+  },
+  "expected": {
+    "call_mode": "agent",
+    "prompt": "依赖锐评: review the project dependencies for risk — this is NOT a diff review.\n\nExplore the repository yourself; there is no diff payload. Read the repository's own principles first (its CLAUDE.md, AGENTS.md and .claude/rules/) and judge the code against them. Be BLUNT. Praise nothing that does not deserve it.\n\nScope: Known CVEs / security advisories in pinned versions; Outdated major versions and unmaintained packages; License issues / incompatibilities; Unused or duplicate dependencies\n\nRespond with ONLY a JSON object { \"findings\": [...] }; an empty array means you found nothing. Each finding is one object conforming to this JSON Schema:\n{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"sharp-review reviewer finding\",\"type\":\"object\",\"required\":[\"severity\",\"summary\",\"category\"],\"properties\":{\"severity\":{\"type\":\"string\",\"enum\":[\"HIGH\",\"MEDIUM\",\"LOW\",\"INFO\"]},\"file\":{\"type\":\"string\"},\"summary\":{\"type\":\"string\"},\"category\":{\"type\":\"string\",\"enum\":[\"Bug\",\"Feature\",\"Performance\"]},\"suggestion\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\"}}}"
+  }
+}

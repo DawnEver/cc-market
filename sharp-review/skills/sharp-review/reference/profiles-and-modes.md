@@ -1,21 +1,26 @@
 # Sharp Review — profiles, modes & gating (reference)
 
-On-demand detail behind the lean Step 1/2 commands in `SKILL.md`. Read this when you need the
-*why* — the selection math, the mode internals, or the per-project config keys. The skill's
-happy path only needs the commands and their JSON output, not this file.
+On-demand detail behind SKILL.md. The METHOD itself is data in `<root>/method/` — read the
+files there for the actual values; this page explains how they are used.
+
+| file | holds |
+|---|---|
+| `method/method.json` | `schema_version`; pick rule; contexts → template + call mode; run modes (providers, models, synthesis, sink); reviewer-status rules; merge and id spec |
+| `method/profiles.json` | every built-in profile: `key`, `label`, `source`, `weight`, `context`, `framing`, `scope` |
+| `method/prompts/*.md` | the prompt templates (`{{name}}` placeholders) |
+| `method/finding.schema.json` | what each reviewer finding must satisfy |
+| `method/conformance/` | inputs paired with expected outputs; every executor is tested against them |
 
 ## Configuration file (`.claude/sharp-review.json`)
 
-All static, per-project review config lives in a **tracked, committed** `.claude/sharp-review.json`
-— so a repo's tuning ("this codebase leans on architecture surveys", custom review templates)
-travels with it, the same for everyone. Do NOT put it in `.claude/.rem-state.json`: that file is
-gitignored runtime state (sessionId, wave, lastReviewRef …) and would make the config device-local.
+Static, per-project config lives in a **tracked, committed** `.claude/sharp-review.json` so it
+travels with the repo. Do NOT put it in `.claude/.rem-state.json` (gitignored runtime state).
+Every key is optional:
 
-Every key is optional (defaults apply when absent):
 ```json
 {
   "profileWeights":      { "architecture": 0.35, "diff": 0.45 },
-  "customProfiles":      [ /* see "Custom profiles" below */ ],
+  "customProfiles":      [ /* see "Custom profiles" */ ],
   "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
   "inlineDiffLimit":     20000,
   "docsThreshold":       3,
@@ -25,134 +30,57 @@ Every key is optional (defaults apply when absent):
 
 ## Wave Gate (trigger thresholds)
 
-The skill is normally invoked *by* the Stop hook (`sharp-review-hook.js`) after enough change
-accumulates; a manual `/sharp-review` bypasses the gate entirely. Gate logic, for reference:
+The Stop hook (`sharp-review-hook.js`) invokes the skill once enough change accumulates; a
+manual `/sharp-review` bypasses the gate.
 
-- **Wave 0** (new commit): triggers at ≥300 lines changed OR ≥5 files — catch issues early.
-- **Wave 1+** (same ref already reviewed): ≥1000 lines OR ≥15 files — only re-trigger after
-  substantial new changes.
-- Wave resets to 0 when HEAD moves to a new commit. Skipped sessions keep accumulating.
+- **Wave 0** (new commit): ≥300 lines OR ≥5 files. **Wave 1+** (same ref already reviewed):
+  ≥1000 lines OR ≥15 files. The wave resets when HEAD moves; skipped sessions accumulate.
+- `lastReviewRef` / `lastReviewDiff` in `reviewGate` make a same-ref check compare only the
+  delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD~1`.
 
-Config — `.claude/sharp-review.json` → `thresholds` (see the config file section above).
+## Sources and profile selection
 
-### Implementation: delta comparison
+A *source* is a trigger: `diff` = the wave gate; `codebase` = time since the last review
+(`codebaseIntervalMin`); `docs` = ≥`docsThreshold` doc files changed; `deps` = a lockfile
+changed. A *profile* names the source it reacts to. Each run draws `pick.count` profiles by
+weighted draw without replacement among the profiles whose source fired (all of them on a
+manual run); the draw order is then shuffled against the provider order. Set a weight to 0 in
+`profileWeights` to opt a profile out.
 
-The hook's `reviewGate` state prevents the "one more file re-triggers" problem:
-
-- `lastReviewRef` — the commit last reviewed. Skipped sessions do NOT update it; changes keep
-  accumulating until the threshold is crossed.
-- `lastReviewDiff` — the diff stat at the time of the last review. On same-ref checks, only the
-  **delta** (current diff minus last reviewed diff) is compared against the threshold.
-- Ref vanished (rebase/gc): falls back to `HEAD~1`.
-
-## Profile selection (weighting math)
-
-A *profile* is the unit of selection; a *source* is the named trigger it reacts to (diff and
-security share the `diff` trigger). Each round picks **2 profiles** via weighted random draw
-**without replacement** from the profiles whose source fired. Each profile stands on its own
-weight — no orphan-mass folding. Provider selection is unaffected; profiles never bind a
-provider. Reviewer-to-profile assignment is shuffled so no profile is predictably bound to a
-specific reviewer model.
-
-| Profile | Source | Weight | Mode | Reviews |
-|---|---|---|---|---|
-| `diff` | `diff` | 0.4 | honors diff-manifest | the git diff — bugs & cleanup (default) |
-| `architecture` (架构锐评) | `codebase` | 0.2 | agent | whole codebase architecture |
-| `security` (安全锐评) | `diff` | 0.05 | honors diff-manifest | the diff for security vulnerabilities |
-| `adversarial` (对抗性审查) | `diff` | 0.2 | honors diff-manifest | breaks the change: each finding is a concrete input → wrong outcome plus the test that would catch it (boundaries, error paths, unchecked assumptions, state/time, contract drift, test gaps) |
-| `docs` (文档锐评) | `docs` | 0.1 | agent | docs vs. current code |
-| `deps` (依赖锐评) | `deps` | 0.05 | agent | dependency risk (CVEs, licenses) |
-
-If fewer than 2 profiles are eligible (e.g. only `codebase` source fires → only `architecture`),
-the round runs with a single profile. Set a weight to 0 in `profileWeights` to opt a profile out.
-Each reviewer receives its own profile's framing and scope — two reviewers review through two
-different lenses, producing complementary (not cross-validated) findings.
-
-**File-size convention** (built into the `architecture` profile's scope, every repo): code files
-> 300 lines warrant scrutiny and > 600 lines **must** be split; a single SKILL.md / AGENTS.md /
-CLAUDE.md > 100 lines warrants scrutiny — push mechanism into `reference/*` (progressive disclosure).
-
-Sources fire on: `diff` = wave gate; `codebase` = time interval; `docs` = ≥N doc files changed;
-`deps` = a lockfile changed. `architecture`/`docs`/`deps` run in **agent mode** with no diff
-payload — reviewers explore the repo. `profileWeights`, `docsThreshold`, `codebaseIntervalMin`
-all live in `.claude/sharp-review.json` (config file section above).
+A profile's `context` decides its prompt: `diff` profiles review the diff (inline when it fits
+`inlineDiffLimit`, else a manifest the reviewer explores, skipped when nothing reviewable is
+left); `explore` profiles (`architecture`, `docs`, `deps`) explore the repo with no diff. Every
+prompt tells the reviewer to judge against the repository's own CLAUDE.md / AGENTS.md /
+`.claude/rules/` — the plugin carries no project principles of its own.
 
 ### Custom profiles
 
-A repo can add its own review templates in `customProfiles` (array) without touching plugin code
-— `pick-profile.js` merges them into the registry so they compete on weight like any built-in.
-Each entry attaches its framing/scope to an existing `source` trigger (usually `codebase`, agent
-mode):
+`customProfiles` entries have the `method/profiles.json` shape and add to (or replace, by
+`key`) the built-in set. `key`, `source`, `context` and `scope` are required — an entry lacking
+one is refused by name; `label` defaults to the key, `weight` to 0.1, `framing` to none.
 
 ```json
-{
-  "key": "arch-hygiene",          // required; unique (reusing a built-in key overrides it)
-  "source": "codebase",           // required; a known trigger: diff | codebase | docs | deps
-  "weight": 0.3,                  // default 0.1
-  "mode": "agent",                // "agent" (default) | "review" | null (honor diff-manifest)
-  "promptKind": "architecture",   // "architecture" (default, explore — no diff) | "diff"
-  "framing": "…one-line intent…",
-  "reviewScope": ["bullet a", "bullet b"],  // string or string[]; keep it TIGHT — verbose framing wastes reviewer attention
-  "label": "整洁锐评"
-}
+{ "key": "arch-hygiene", "source": "codebase", "context": "explore", "weight": 0.3,
+  "framing": "…one-line intent…", "scope": ["bullet a", "bullet b"], "label": "整洁锐评" }
 ```
 
-Keep custom framings/scopes concise — low-signal instruction text degrades review quality.
+Keep framings and scopes tight — low-signal instruction text degrades review quality.
 
-## Dual review modes
+## Diff filtering
 
-`diff-manifest.js` picks the mode automatically from filtered diff size:
+Lockfiles, minified/sourcemap, generated/vendored paths, binaries and pure renames (R100) are
+excluded before the size decision. `inlineDiffLimit` is in chars (default 20000) because chars
+track context cost. The plan reports `stats` and `excludedSummary`.
 
-| Mode | Condition | Behavior |
-|---|---|---|
-| `review` | Filtered diff ≤ `inlineDiffLimit` chars | Full diff inlined into reviewer prompts — best signal |
-| `agent` | Filtered diff > `inlineDiffLimit` chars | Manifest only (file table + hunk headers); reviewers explore via `git diff -- <path>` |
-| `empty` | No reviewable files after filtering | Skill exits early — no review |
+## Attention boundary (Step 4, consumer-aware)
 
-**Smart filtering** (both modes): lockfiles, minified/sourcemap, generated/vendored paths,
-binary files, and pure renames (R100) are excluded so noise doesn't inflate diff size.
+- **AI consumer** (e.g. `evolve`): reads findings from the backlog; the skill never prompts.
+- **Human consumer**: findings land in `sharp-review.md` for async triage via `todo`; only the
+  one-line summary reaches chat.
 
-Config — `.claude/sharp-review.json` → `inlineDiffLimit` (chars, default 20000; chars not lines,
-because chars track context-window cost).
-
-## diff-manifest.js output payload
-
-Size-bounded by construction — every field is guaranteed under safe limits:
-```json
-{
-  "mode": "review" | "agent" | "empty",
-  "range": "HEAD",
-  "seed": 29345678,               // minutes since epoch; seeds reviewer-pair pick
-  "path": "src/components",       // only when --path is provided
-  "stats": { "files": 42, "insertions": 1234, "deletions": 567, "excluded": 9, "diffChars": 183421 },
-  "diff": "...",            // only review mode (≤ inlineDiffLimit chars)
-  "manifestText": "...",    // only agent mode (≤ 12k chars)
-  "excludedSummary": "9 files excluded: 3 lockfile, 4 generated, 2 binary"
-}
-```
-
-## Reviewer schema (what each reviewer must return)
-
-2 of N reviewers run, picked by `seed mod N` over the provider roster from fabric
-`list_providers` (alphabetical order) so same-day rounds rotate the pair — see
-`direct-fanout.md` § Reviewer rotation. Each is JSON-Schema-constrained to a finding with:
-`severity` (HIGH|MEDIUM|LOW|INFO), `file`, `summary` (one line), `category`
-(Bug|Feature|Performance), `status` (OPEN|FIXED), `suggestion` (one line).
-
-## Attention boundary (Step 6, consumer-aware)
-
-The Step 6 report **is** the attention gate, and the skill is consumer-aware by construction:
-
-- **AI consumer** (e.g. `evolve`, or any parent orchestrator): consumes findings from the
-  backlog/return programmatically. The skill **never prompts** — no human attention to protect,
-  so findings go to backlog, not chat. This is the default.
-- **Human consumer**: findings land in the `sharp-review.md` backlog for *async* triage via
-  `todo`, kept out of chat so a review never floods attention. Only the one-line `summary` reaches you.
-
-When a human wants to **triage now** (not later via `todo`), route OPEN findings through the
-shared attention gate (`shared/attention.mjs`) instead of reading them all: `route(items, {
+To **triage now**, route OPEN findings through `shared/attention.mjs`: `route(items, {
 consumer: 'human' })` compresses to *what you must decide / consequence of not deciding*,
-coalesces into one `AskUserQuestion` (≤4, highest-severity first), and defers the low-stakes
-rest. Map each finding to `{ id, title: summary, detail: 'file: summary', stakes: severity,
-reversible: !arch, default: 'defer', options: [Fix now / Won't-fix / Defer] }`. For an AI
-consumer pass `consumer: 'ai'` — resolves by policy, no prompt.
+coalesces into one `AskUserQuestion` (≤4, highest severity first) and defers the rest. Map each
+finding to `{ id, title: summary, detail: 'file: summary', stakes: severity, reversible: !arch,
+default: 'defer', options: [Fix now / Won't-fix / Defer] }`; an AI consumer passes
+`consumer: 'ai'`.

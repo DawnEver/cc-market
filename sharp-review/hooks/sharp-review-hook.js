@@ -45,7 +45,7 @@ export function buildDispatchInstruction(sources, target = resolveReviewWorkerTa
   const firedSources = sources || 'diff';
   return (
     `Dispatch ONE ${target.agentType} subagent with firedSources: ${firedSources}. ` +
-    `${target.setup}, execute Steps 1-6 directly (no Workflow tool; Step 3b fan-out), ` +
+    `${target.setup}, execute SKILL.md Steps 0-4 directly, ` +
     `and do not re-dispatch. Relay only its \`Sharp review: <summary>\` line; do not ` +
     `run the steps inline yourself.\n`
   );
@@ -317,7 +317,7 @@ async function main() {
       lastReviewRef: head,
       lastReviewDiff: stat,
       wave,
-      firedSources: fired,        // skill passes these to pick-profile --sources
+      firedSources: fired,        // the worker passes these to plan.js --sources
       firedReasons: reasons,
       memory: updatedMemory,
       // Config (thresholds / source tuning) lives in the tracked .claude/sharp-review.json —

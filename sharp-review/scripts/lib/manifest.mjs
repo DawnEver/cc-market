@@ -1,10 +1,10 @@
-// manifest.mjs — Sharp Review diff-manifest logic: low-value/doc/lockfile classification,
+// manifest.mjs — Sharp Review manifest logic (pure): low-value/doc/lockfile classification,
 // git -z parsing, manifest building, mode decision, and size-bounded rendering.
 // Re-exported via lib.mjs.
 
 // ── Diff manifest — constants ──
 
-export const INLINE_DIFF_LIMIT_DEFAULT = 20000; // chars (~5k tokens); config key reviewGate.inlineDiffLimit
+export const INLINE_DIFF_LIMIT_DEFAULT = 20000; // chars (~5k tokens); config key inlineDiffLimit
 export const MANIFEST_TEXT_BUDGET = 12000;      // manifest total budget
 export const MAX_HUNKS_PER_FILE = 10;           // each file hunk header number
 export const MAX_MANIFEST_FILES = 300;          // exceeded churn use top N
