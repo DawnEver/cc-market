@@ -299,3 +299,62 @@ describe("call options reach every path", () => {
     });
   }
 });
+
+// ── summariser / synthesiser: configuration, default NONE ───────────
+
+describe("summariser and synthesiser are configuration", () => {
+  const LONG = "x".repeat(5000);
+  const echoChild = (calls) => async (opts) => { calls.push(opts); return { code: 0, stdout: opts.prompt.includes("Condense") ? "SHORT" : LONG, stderr: "" }; };
+
+  test("no summariser configured: the default result is the full text, no other provider called", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {} }, async () => {
+      const res = await handleCall({ provider: "claude", prompt: "p" }, { spawnChild: echoChild(calls) });
+      assert.equal(text(res), LONG);
+    });
+    assert.equal(calls.length, 1);
+  });
+
+  test("resultMode summary without a configured summariser is refused by name", async () => {
+    await withConfigFixture({ providers: {} }, () =>
+      assert.rejects(handleCall({ provider: "claude", prompt: "p", resultMode: "summary" }, { spawnChild: echoChild([]) }),
+        (e) => e.name === "ConfigError" && /fabric\.summarizer/.test(e.message)));
+  });
+
+  test("a configured summariser condenses long output through the call primitive", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {}, fabric: { summarizer: { provider: "claude", model: "haiku" } } }, async () => {
+      const res = await handleCall({ provider: "claude", prompt: "p" }, { spawnChild: echoChild(calls) });
+      assert.match(text(res), /^SHORT/);
+      assert.match(text(res), /\[Full: 5000 chars/);
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].model, "haiku");
+  });
+
+  test("fan_out synthesize without a configured synthesiser is refused by name", async () => {
+    await withConfigFixture({ providers: {} }, () =>
+      assert.rejects(handleFanOut({ tasks: [{ provider: "claude", prompt: "p" }], synthesize: true }, { spawnChild: echoChild([]) }),
+        (e) => e.name === "ConfigError" && /fabric\.synthesizer/.test(e.message)));
+  });
+
+  test("fan_out does not synthesise by default", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {} }, async () => {
+      const parsed = JSON.parse(text(await handleFanOut({ tasks: [{ provider: "claude", prompt: "p" }] }, { spawnChild: echoChild(calls) })));
+      assert.equal(parsed.synthesis, undefined);
+      assert.equal(parsed.tasks[0].result.length, 400);
+    });
+    assert.equal(calls.length, 1);
+  });
+
+  test("a configured synthesiser runs once over the task results", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {}, fabric: { synthesizer: { provider: "claude", model: "sonnet" } } }, async () => {
+      const parsed = JSON.parse(text(await handleFanOut({ tasks: [{ id: "a", provider: "claude", prompt: "p" }], synthesize: true }, { spawnChild: echoChild(calls) })));
+      assert.ok(parsed.synthesis);
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].model, "sonnet");
+  });
+});

@@ -90,7 +90,7 @@ export const TOOLS = [
         resultMode: {
           type: "string",
           enum: ["summary", "full", "truncate"],
-          description: "summary|full|truncate. Default: summary",
+          description: "summary (needs fabric.summarizer)|full|truncate. Default: summary if a summarizer is configured, else full",
         },
         maxResultChars: { type: "number", description: "Cap when truncate. 0=unlimited" },
       },
@@ -124,7 +124,7 @@ export const TOOLS = [
   },
   {
     name: "fan_out",
-    description: "Run N tasks in parallel, return compact JSON. Each auto-summarized. Optional synthesis.",
+    description: "Run N tasks in parallel, return compact JSON (each result capped at 400 chars). Optional synthesis.",
     inputSchema: {
       type: "object",
       properties: {
@@ -145,7 +145,7 @@ export const TOOLS = [
             required: ["provider", "prompt"],
           },
         },
-        synthesize: { type: "boolean", description: "Synthesize results into summary. Default true" },
+        synthesize: { type: "boolean", description: "Synthesize results via the configured fabric.synthesizer (refused if none). Default false" },
       },
       required: ["tasks"],
     },
@@ -201,47 +201,33 @@ function emitTrace(data, provider, resolvedModel, mode) {
 
 // ── Result shaping: keep parent context clean ─────────────────────
 
+// Summariser and synthesiser are CONFIGURATION (fabric.summarizer / fabric.synthesizer,
+// each {provider, model?}), default NONE: fabric never picks a provider on its own. Both run
+// through the one call primitive, so they follow the same routing as any other call.
 const SUMMARIZE_PROMPT = "Condense the following into a tight summary for a parent orchestrator. Keep: key findings, decisions, file changes, errors, next steps. Drop: narration, greetings, markdown fluff, play-by-play. 3-5 sentences max.";
+const SYNTHESIZE_PROMPT = "Synthesize these N parallel task results into a 2-3 sentence summary for the orchestrator. Flag failures, patterns, and follow-ups.";
 const SUMMARY_THRESHOLD = 2000;
 
-async function summarizeOutput(fullText, providerConfig, provider) {
+function configuredHelper(key, asked) {
+  const helper = loadFabricConfig()[key];
+  if (helper?.provider) return helper;
+  throw new ConfigError(`${asked} needs a configured fabric.${key} ({provider, model?} in the fabric block of claude_env_settings.json); none is set`);
+}
+
+async function runHelper(helper, instruction, body, deps) {
+  const res = await handleCall({ provider: helper.provider, model: helper.model, prompt: `${instruction}\n\n${body}`, resultMode: "full" }, deps);
+  return res.content[0].text;
+}
+
+async function summarizeOutput(fullText, deps) {
+  const helper = configuredHelper("summarizer", 'resultMode "summary"');
   if (!fullText || fullText.length <= SUMMARY_THRESHOLD) return fullText;
-
-  // Path 1: API provider (deepseek etc.) → fast HTTP call with haiku-tier model
-  if (providerConfig.baseUrl) {
-    try {
-      const summaryModel = providerConfig.defaultHaiku || providerConfig.defaultSonnet;
-      const data = await callAnthropicAPI(providerConfig, summaryModel, SUMMARIZE_PROMPT, fullText, null, true);
-      return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
-    } catch (e) {
-      process.stderr.write(`fabric-mcp: API summary via ${provider} failed (${e.message})\n`);
-    }
+  try {
+    return (await runHelper(helper, SUMMARIZE_PROMPT, fullText, deps)) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
+  } catch (e) {
+    // The work itself succeeded; never lose it to a failed summary.
+    return `${fullText}\n\n[summary by ${helper.provider} failed: ${e.message}]`;
   }
-
-  // Path 2: codex → app-server summary task (native protocol, no HTTP needed)
-  if (provider === "codex") {
-    try {
-      const data = await withPooledClient((client) =>
-        callCodexCompanion(fullText, { systemPrompt: SUMMARIZE_PROMPT, client }));
-      return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
-    } catch (e) {
-      process.stderr.write(`fabric-mcp: codex summary failed (${e.message})\n`);
-    }
-  }
-
-  // Path 3: native claude without own API → try deepseek as backstop summarizer
-  if (!providerConfig.baseUrl && provider !== "codex") {
-    try {
-      const dsConfig = loadProviderConfig("deepseek");
-      if (dsConfig.baseUrl) {
-        const summaryModel = dsConfig.defaultHaiku || dsConfig.defaultSonnet;
-        const data = await callAnthropicAPI(dsConfig, summaryModel, SUMMARIZE_PROMPT, fullText, null, true);
-        return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
-      }
-    } catch {}
-  }
-
-  return truncateText(fullText, 4000);
 }
 
 // ── Provider dispatch (policy: mode × provider) ────────────────────
@@ -456,14 +442,14 @@ export async function handleCall(args, deps = {}) {
 
   emitTrace(data, provider, resolvedModel, effectiveMode);
   const fullText = extractText(data);
-  const resultMode = args.resultMode || "summary";
+  const resultMode = args.resultMode || (loadFabricConfig().summarizer?.provider ? "summary" : "full");
   let resultText;
   if (resultMode === "full") {
     resultText = fullText;
   } else if (resultMode === "truncate") {
     resultText = truncateText(fullText, args.maxResultChars ?? 2000);
   } else {
-    resultText = await summarizeOutput(fullText, providerConfig, provider);
+    resultText = await summarizeOutput(fullText, deps);
   }
   return { content: [{ type: "text", text: resultText }] };
 }
@@ -471,8 +457,9 @@ export async function handleCall(args, deps = {}) {
 // ── fan_out: the orchestrator's parallel-work primitive ─────────
 
 export async function handleFanOut(args, deps) {
-  const { tasks, synthesize = true } = args;
+  const { tasks, synthesize = false } = args;
   if (!tasks || !tasks.length) throw new ConfigError("fan_out: tasks array is required and must be non-empty");
+  const synthesizer = synthesize ? configuredHelper("synthesizer", "fan_out synthesize") : null;
 
   let idx = 0;
   const settled = await Promise.allSettled(
@@ -488,18 +475,17 @@ export async function handleFanOut(args, deps) {
           write: !!task.write,
           model: task.model,
           observe: task.observe,
-          resultMode: "summary",
           cwd: task.cwd,
           timeoutMs: task.timeoutMs,
         }, deps);
         const text = res.content[0].text;
         const fullMatch = text.match(/\[Full: (\d+) chars/);
-        const summary = fullMatch
+        const result = fullMatch
           ? text.slice(0, text.lastIndexOf("\n\n[Full:")).trim()
           : text;
         return {
           id, ok: true,
-          summary: summary.length > 400 ? summary.slice(0, 397) + "..." : summary,
+          result: result.length > 400 ? result.slice(0, 397) + "..." : result,
           estTokens: { in: Math.round((fullMatch ? parseInt(fullMatch[1]) : text.length) / 4), out: Math.round(text.length / 4) },
           durationMs: Date.now() - t0,
         };
@@ -512,21 +498,13 @@ export async function handleFanOut(args, deps) {
   const results = settled.map((s) => s.status === "fulfilled" ? s.value : { ok: false, error: s.reason?.message?.slice(0, 200) || "unknown error" });
 
   let synthesis = null;
-  if (synthesize) {
-    const summaryText = results.map((r) =>
-      `[${r.id}] ${r.ok ? r.summary : `FAILED: ${r.error}`}`,
-    ).join("\n");
+  if (synthesizer) {
+    const summaryText = results.map((r) => `[${r.id}] ${r.ok ? r.result : `FAILED: ${r.error}`}`).join("\n");
     try {
-      const dsConfig = loadProviderConfig("deepseek");
-      if (dsConfig.baseUrl) {
-        const data = await callAnthropicAPI(
-          dsConfig, dsConfig.defaultHaiku || dsConfig.defaultSonnet,
-          "Synthesize these N parallel task results into a 2-3 sentence summary for the orchestrator. Flag failures, patterns, and follow-ups.",
-          summaryText, null, true,
-        );
-        synthesis = extractText(data);
-      }
-    } catch { /* synthesis is best-effort */ }
+      synthesis = await runHelper(synthesizer, SYNTHESIZE_PROMPT, summaryText, deps);
+    } catch (e) {
+      synthesis = `(synthesis by ${synthesizer.provider} failed: ${e.message})`;
+    }
   }
 
   const allOk = results.every((r) => r.ok);
