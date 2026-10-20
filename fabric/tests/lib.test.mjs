@@ -231,8 +231,6 @@ describe("parseCommandBlock mode flags", () => {
 
 describe("PROVIDER_ENV_KEYS", () => {
   test("includes all cc.js provider keys", () => {
-    // The current set (Foundry keys were removed when the project migrated off
-    // Foundry mode — see providers.md § Direct Anthropic-compatible providers).
     const required = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY',
       'ANTHROPIC_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL'];
     for (const key of required) {

@@ -100,7 +100,7 @@ test('proxy rewrites model, injects key, streams SSE unbuffered, captures jsonl'
   assert.ok(resp.body.includes('message_start'));
 });
 
-test('proxy joins the upstream path prefix like Claude Code (kimi-style /coding/)', async () => {
+test('proxy joins the upstream path prefix like Claude Code (a /coding/ prefix)', async () => {
   const up = await startFakeUpstream();
   const { dir, cfgPath } = fixtureFor(up.port, { basePath: '/coding/' });
   const proxy = await startObserveProxy({ provider: 'fake', runDir: dir, configPath: cfgPath });

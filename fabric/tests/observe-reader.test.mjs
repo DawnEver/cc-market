@@ -8,13 +8,13 @@ import { tmpdir } from 'node:os';
 import { loadRows, pair, isQuotaProbe, mainTurns, summarize, summarizeFile } from '../engine/observe-reader.mjs';
 
 const ROWS = [
-  { t: 'request', id: 1, ts: 10, provider: 'deepseek', path: '/v1/messages', modelBefore: 'claude-haiku-4-5', modelAfter: 'deepseek-v4-flash', body: { messages: [{ role: 'user', content: 'hi' }] } },
+  { t: 'request', id: 1, ts: 10, provider: 'acme', path: '/v1/messages', modelBefore: 'claude-haiku-4-5', modelAfter: 'acme-flash', body: { messages: [{ role: 'user', content: 'hi' }] } },
   { t: 'response', id: 1, ts: 20, status: 200, body: 'event: message_start' },
   // quota probe — beta=true, max_tokens:1, 404
-  { t: 'request', id: 2, ts: 11, provider: 'deepseek', path: '/v1/messages?beta=true', body: { max_tokens: 1, messages: [] } },
+  { t: 'request', id: 2, ts: 11, provider: 'acme', path: '/v1/messages?beta=true', body: { max_tokens: 1, messages: [] } },
   { t: 'response', id: 2, ts: 12, status: 404, body: '' },
   // an error row
-  { t: 'request', id: 3, ts: 13, provider: 'deepseek', path: '/v1/messages', body: { messages: [] } },
+  { t: 'request', id: 3, ts: 13, provider: 'acme', path: '/v1/messages', body: { messages: [] } },
   { t: 'error', id: 3, ts: 14, message: 'upstream reset' },
 ];
 
@@ -37,7 +37,7 @@ test('mainTurns keeps only real 200 /v1/messages turns', () => {
   const turns = mainTurns(ROWS);
   assert.equal(turns.length, 1, 'probe (404) and error turn excluded');
   assert.equal(turns[0].id, 1);
-  assert.equal(turns[0].request.modelAfter, 'deepseek-v4-flash');
+  assert.equal(turns[0].request.modelAfter, 'acme-flash');
 });
 
 test('summarize rolls up counts, models, providers', () => {
@@ -45,8 +45,8 @@ test('summarize rolls up counts, models, providers', () => {
   assert.equal(s.requests, 3);
   assert.equal(s.errors, 1);
   assert.equal(s.mainTurns, 1);
-  assert.deepEqual(s.models, ['deepseek-v4-flash']);
-  assert.deepEqual(s.providers, ['deepseek']);
+  assert.deepEqual(s.models, ['acme-flash']);
+  assert.deepEqual(s.providers, ['acme']);
 });
 
 test('loadRows + summarizeFile round-trip through a file', () => {

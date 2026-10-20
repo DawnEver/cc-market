@@ -118,7 +118,7 @@ export function hookFreeArgs(extraArgs = []) {
 // Text carried by one stream-json message ('' if none) — the single extraction
 // used by both parseStreamJsonOutput and the live onText handler.
 // Duplicate rule: some providers' final `result` message repeats the full assistant
-// text verbatim (observed with DeepSeek via Foundry) — a result equal to the
+// text verbatim (observed on an Anthropic-compatible gateway) — a result equal to the
 // accumulated assistant text must be dropped, or callers see the answer twice.
 // Both consumers thread the accumulated assistant text in as `assistantAcc`.
 function extractStreamText(msg, assistantAcc = '') {

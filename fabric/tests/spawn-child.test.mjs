@@ -341,7 +341,6 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
       configPath: cfg, _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
     });
     assert.match(sink.env.ANTHROPIC_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+$/, 'child points at proxy');
-    assert.equal(sink.env.CLAUDE_CODE_USE_FOUNDRY, undefined, 'Foundry stripped in observe mode');
     assert.ok(res.jsonlPath && existsSync(res.jsonlPath), 'jsonl path returned + file exists');
   } finally {
     await new Promise((r) => upstream.close(r));

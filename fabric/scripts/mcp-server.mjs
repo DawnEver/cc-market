@@ -60,7 +60,7 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: "claude, codex, deepseek, or key from claude_env_settings.json" },
+        provider: { type: "string", description: "claude, codex, or a provider of the ai-lab catalogue (list_providers)" },
         model: { type: "string", description: "Model override" },
         task: { type: "string", description: "Key task of an API provider (its credential: api-key-<task>). Default: default" },
         mode: {

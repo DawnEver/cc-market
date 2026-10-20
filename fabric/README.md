@@ -30,7 +30,7 @@ MCP `call` — the one-shot primitive (call it N times concurrently for fan-out;
 selects policy: task/review/agent/image-generate/image-edit):
 
 ```json
-{ "provider": "deepseek", "prompt": "Summarize the failure modes in this log: ..." }
+{ "provider": "<catalogue provider>", "prompt": "Summarize the failure modes in this log: ..." }
 ```
 
 ```json
@@ -47,10 +47,10 @@ import { spawnChild } from './engine/spawn-child.mjs';
 import { startObserveProxy } from './engine/observe-proxy.mjs';
 
 // one-shot
-const res = await spawnChild({ provider: 'deepseek', prompt: 'hello', observe: true, runDir });
+const res = await spawnChild({ provider: '<catalogue provider>', prompt: 'hello', observe: true, runDir });
 
 // observe proxy on its own
-const proxy = await startObserveProxy({ provider: 'deepseek', runDir });
+const proxy = await startObserveProxy({ provider: '<catalogue provider>', runDir });
 // ... point any Anthropic-HTTP client at proxy.url; capture lands in proxy.jsonlPath
 await proxy.close();
 ```
@@ -59,20 +59,18 @@ await proxy.close();
 
 Running child model sessions has two modes:
 
-- **Normal** — the child direct-connects to its provider (DeepSeek via Foundry env). No
+- **Normal** — the child direct-connects to its provider (its anthropic endpoint, key and model pins in the env). No
   overhead.
 - **Observe/debug** — you want to capture the child's API traffic.
 
-`claude-tap` only intercepts vanilla `ANTHROPIC_BASE_URL`, which **conflicts** with
-Foundry routing (DeepSeek). Fabric resolves this with a minimal own proxy:
+Fabric captures it with a minimal own proxy:
 
 ```
 child --ANTHROPIC_BASE_URL=http://127.0.0.1:PORT--> observe-proxy --> real upstream
 ```
 
 The child always speaks vanilla Anthropic HTTP; the proxy alone owns the provider's
-endpoint, auth, and model alias. `observe` becomes a single boolean — vanilla+proxy vs
-Foundry direct — and the same proxy works for any Anthropic-compatible provider.
+endpoint, auth, and model alias. `observe` is a single boolean — proxy vs direct — and the same proxy works for any Anthropic-compatible provider.
 
 ## Layers
 
@@ -88,7 +86,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 ## Library (dual-form)
 
 - `spawnChild({provider, prompt, observe, runDir, model})` — headless one-shot child.
-  `buildChildEnv` is the observe switch (Foundry-strip vs proxy).
+  `buildChildEnv` is the observe switch (direct vs proxy).
 - `startObserveProxy({provider, runDir})` — the observe proxy.
 - `loadRows` / `mainTurns` / `summarize` (`engine/observe-reader.mjs`) — read the capture.
 
@@ -115,7 +113,7 @@ The `fabric` block of `~/.claude/claude_env_settings.json`:
 ```json
 "fabric": {
   "systemPromptFile": "~/.claude/system-prompt/claude-base.md",
-  "sessionDefaults": { "provider": "deepseek", "model": "deepseek-v4-flash[1m]" }
+  "sessionDefaults": { "provider": "<catalogue provider>", "model": "<model id or tier word>" }
 }
 ```
 

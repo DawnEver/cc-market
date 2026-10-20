@@ -13,6 +13,6 @@ $ARGUMENTS
 
 Execution rules:
 - Default to foreground execution.
-- Default provider is `deepseek` unless the user specifies `--provider <name>`.
+- The provider is the user's `--provider <name>`, else `fabric.sessionDefaults.provider`; with neither, ask (call `list_providers`).
 - Return the agent output verbatim — no paraphrasing, no commentary.
 - If the user did not supply a request, ask what should be handed off.

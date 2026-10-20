@@ -5,8 +5,8 @@
 //   child (any provider) --ANTHROPIC_BASE_URL=http://127.0.0.1:PORT--> proxy --> real upstream
 //
 // so the child always speaks vanilla Anthropic HTTP and the proxy alone owns the
-// provider's endpoint + auth + model alias. This dissolves the Foundry-vs-tap conflict:
-// observe mode = vanilla+proxy (no Foundry env); normal mode = Foundry direct-connect.
+// provider's endpoint + auth + model alias: observe mode = vanilla+proxy; normal mode =
+// direct-connect.
 //
 // Core structural asymmetry:
 //   REQUEST  — buffered, parsed, model-remapped in-body (small, non-stream).
@@ -26,7 +26,7 @@ import { resolveUpstream, anthropicEndpoint } from './providers.mjs';
 
 /**
  * @param {object} opts
- * @param {string}  opts.provider          registry key ('deepseek', ...)
+ * @param {string}  opts.provider          catalogue provider
  * @param {string}  opts.runDir            dir to append http.jsonl into
  * @param {boolean} [opts.passthroughAuth] forward child's Authorization instead of injecting a key
  * @param {string}  [opts.configPath]      override registry path (tests)
@@ -79,12 +79,12 @@ export async function startObserveProxy({ provider, runDir, passthroughAuth = fa
       headers['content-length'] = Buffer.byteLength(body);
       if (!passthroughAuth && token) {
         // Header style matches the env var that supplied the token (providers.mjs):
-        // AUTH_TOKEN → Bearer, API_KEY/Foundry → x-api-key (DeepSeek/Kimi path).
+        // AUTH_TOKEN → Bearer, API_KEY → x-api-key.
         if (tokenStyle === 'bearer') {
           headers['authorization'] = `Bearer ${token}`;
           delete headers['x-api-key'];
         } else {
-          headers['x-api-key'] = token; // Anthropic-compatible gateways (incl. DeepSeek)
+          headers['x-api-key'] = token; // Anthropic-compatible gateways
           delete headers['authorization'];
         }
       }
