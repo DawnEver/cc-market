@@ -44,7 +44,7 @@ transport — framed needed for Codex MCP startup). Tools:
 
 | Tool | Input | Routes to |
 |---|---|---|
-| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
+| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. `cwd` and `timeoutMs` reach every path (child cwd / codex thread cwd; child kill / turn wait / HTTP abort, all kind `timeout`); `model` reaches every claude path. |
 | `fan_out` | `tasks[]` (`provider`, `prompt`, `id?`, `mode?`, `write?`, `model?`, `cwd?`), `synthesize?` | N `handleCall`s in parallel → compact JSON (per-task summary, est. tokens, duration) + optional deepseek synthesis |
 | `list_providers` | (none) | `listModels()` |
 | `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native: no remapping) |

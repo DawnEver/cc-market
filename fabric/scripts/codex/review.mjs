@@ -28,16 +28,14 @@ Report only material findings. Do not include style feedback, naming feedback, o
 For each finding include: severity (critical/high/medium/low), title, description, file path, and recommendation. Be concrete — cite specific lines where possible.`;
 }
 
-const REVIEW_TIMEOUT_MS = 600000;
-
 // review/start (app-server v2) takes {threadId, target, delivery} — no model, and the
 // `custom` target has ONE field, `instructions`; the model goes on thread/start and the
 // diff inside the instructions. The verdict arrives as an `exitedReviewMode` item's
 // `review` text; agentMessage text is the fallback.
-export async function runCodexReview(diff, model, context, cwd, client = null) {
+export async function runCodexReview(diff, { model, context, cwd, client = null, timeoutMs = 600000 } = {}) {
   const ownClient = !client;
   if (ownClient) {
-    client = new CodexAppServerClient({ timeout: REVIEW_TIMEOUT_MS });
+    client = new CodexAppServerClient({ timeout: timeoutMs });
     await client.start();
   } else {
     client.clearNotifications("item/completed");
@@ -61,7 +59,7 @@ ${context}`;
     else if (item.type !== "enteredReviewMode") messages += extractItemText(item);
   });
 
-  const turn = watchTurn(client, { timeoutMs: REVIEW_TIMEOUT_MS, label: "review" });
+  const turn = watchTurn(client, { timeoutMs, label: "review" });
   try {
     const threadParams = { cwd: cwd || process.cwd() };
     if (model) threadParams.model = model;

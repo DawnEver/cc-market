@@ -239,3 +239,63 @@ describe("introspection tools", () => {
   });
 });
 
+
+// ── every path honours cwd / timeoutMs / model ──────────────────────
+
+describe("call options reach every path", () => {
+  const fakeSpawnChild = (sink) => async (opts) => { Object.assign(sink, opts); return { code: 0, stdout: "ok", stderr: "", usage: null }; };
+
+  for (const mode of ["task", "review", "agent"]) {
+    test(`claude ${mode}: model, cwd and timeoutMs reach the child`, async () => {
+      const seen = {};
+      await handleCall({ provider: "claude", mode, model: "opus", prompt: "p", cwd: "C:/work", timeoutMs: 1234, resultMode: "full" },
+        { spawnChild: fakeSpawnChild(seen) });
+      assert.equal(seen.model, "opus");
+      assert.equal(seen.cwd, "C:/work");
+      assert.equal(seen.timeoutMs, 1234);
+    });
+  }
+
+  test("API agent: cwd and timeoutMs reach the child", async () => {
+    const seen = {};
+    await withConfigFixture(DEEPSEEK_FIXTURE, () =>
+      handleCall({ provider: "deepseek", mode: "agent", prompt: "p", cwd: "C:/work", timeoutMs: 99, resultMode: "full" },
+        { spawnChild: fakeSpawnChild(seen) }));
+    assert.equal(seen.cwd, "C:/work");
+    assert.equal(seen.timeoutMs, 99);
+  });
+
+  test("API task: timeoutMs bounds the HTTP call as kind timeout", async () => {
+    const prev = globalThis.fetch;
+    globalThis.fetch = (url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+    try {
+      await withConfigFixture(DEEPSEEK_FIXTURE, () =>
+        assert.rejects(handleCall({ provider: "deepseek", prompt: "p", timeoutMs: 30, resultMode: "full" }),
+          (e) => e.kind === "timeout"));
+    } finally {
+      globalThis.fetch = prev;
+    }
+  });
+
+  for (const mode of ["task", "review"]) {
+    test(`codex ${mode}: cwd and timeoutMs reach the app-server turn`, async () => {
+      const requests = [];
+      const handlers = new Map();
+      const client = {
+        onNotification(m, h) { (handlers.get(m) || handlers.set(m, []).get(m)).push(h); },
+        removeNotificationHandler() {},
+        clearNotifications() {},
+        async send(method, params) {
+          requests.push({ method, params });
+          if (method === "thread/start") return { thread: { id: "th" } };
+          return { turn: { id: "tu" } }; // never completes -> the timeout must fire
+        },
+      };
+      await assert.rejects(
+        handleCall({ provider: "codex", mode, prompt: "p", cwd: "C:/work", timeoutMs: 30, resultMode: "full" },
+          { withCodexClient: (fn) => fn(client) }),
+        (e) => e.kind === "timeout" && /30ms/.test(e.message));
+      assert.equal(requests.find((r) => r.method === "thread/start").params.cwd, "C:/work");
+    });
+  }
+});

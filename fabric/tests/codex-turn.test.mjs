@@ -69,13 +69,13 @@ describe("runCodexTask", () => {
       ["error", { threadId: "th1", turnId: "tu1", willRetry: false, error: { message: "You've hit your usage limit", codexErrorInfo: "usageLimitExceeded" } }],
       failedTurn("usageLimitExceeded", "You've hit your usage limit"),
     ], "turn/start");
-    await assert.rejects(runCodexTask("hi", null, null, false, ".", null, null, client),
+    await assert.rejects(runCodexTask("hi", { cwd: ".", client }),
       (e) => e.kind === "exhausted" && /usage limit/.test(e.message));
   });
 
   it("an auth failure is `auth`", async () => {
     const client = new FakeClient([failedTurn("unauthorized", "401 Unauthorized")], "turn/start");
-    await assert.rejects(runCodexTask("hi", null, null, false, ".", null, null, client), (e) => e.kind === "auth");
+    await assert.rejects(runCodexTask("hi", { cwd: ".", client }), (e) => e.kind === "auth");
   });
 
   it("a failed turn without a classified error is `failed`, using the last non-retried error", async () => {
@@ -84,13 +84,13 @@ describe("runCodexTask", () => {
       ["error", { threadId: "th1", turnId: "tu1", willRetry: false, error: { message: "stream gone", codexErrorInfo: "other" } }],
       ["turn/completed", { threadId: "th1", turn: { id: "tu1", items: [], status: "failed", error: null } }],
     ], "turn/start");
-    await assert.rejects(runCodexTask("hi", null, null, false, ".", null, null, client),
+    await assert.rejects(runCodexTask("hi", { cwd: ".", client }),
       (e) => e.kind === "failed" && /stream gone/.test(e.message));
   });
 
   it("an interrupted turn is `failed`", async () => {
     const client = new FakeClient([["turn/completed", { threadId: "th1", turn: { id: "tu1", items: [], status: "interrupted", error: null } }]], "turn/start");
-    await assert.rejects(runCodexTask("hi", null, null, false, ".", null, null, client),
+    await assert.rejects(runCodexTask("hi", { cwd: ".", client }),
       (e) => e.kind === "failed" && /interrupted/.test(e.message));
   });
 
@@ -99,7 +99,7 @@ describe("runCodexTask", () => {
       ["item/completed", { item: { type: "agentMessage", id: "i1", text: "answer" } }],
       completedTurn,
     ], "turn/start");
-    const res = await runCodexTask("hi", null, null, false, ".", null, null, client);
+    const res = await runCodexTask("hi", { cwd: ".", client });
     assert.equal(res.content[0].text, "answer");
     assert.equal(res.turnId, "tu1");
   });
@@ -108,7 +108,7 @@ describe("runCodexTask", () => {
 describe("runCodexReview", () => {
   it("a usage-limit review is `exhausted`, not (no findings ...)", async () => {
     const client = new FakeClient([failedTurn("usageLimitExceeded", "usage limit")], "review/start");
-    await assert.rejects(runCodexReview("diff --git a b", null, null, ".", client), (e) => e.kind === "exhausted");
+    await assert.rejects(runCodexReview("diff --git a b", { cwd: ".", client }), (e) => e.kind === "exhausted");
   });
 
   it("returns the review text the app-server delivers in exitedReviewMode", async () => {
@@ -117,13 +117,13 @@ describe("runCodexReview", () => {
       ["item/completed", { item: { type: "exitedReviewMode", id: "r1", review: "HIGH: race in x" } }],
       completedTurn,
     ], "review/start");
-    const res = await runCodexReview("diff --git a b", null, null, ".", client);
+    const res = await runCodexReview("diff --git a b", { cwd: ".", client });
     assert.equal(res.content[0].text, "HIGH: race in x");
   });
 
   it("sends the diff inside the custom target's instructions, the only field it has", async () => {
     const client = new FakeClient([completedTurn], "review/start");
-    await runCodexReview("DIFF-BODY", null, null, ".", client);
+    await runCodexReview("DIFF-BODY", { cwd: ".", client });
     const target = client.requests.find((r) => r.method === "review/start").params.target;
     assert.equal(target.type, "custom");
     assert.deepEqual(Object.keys(target).sort(), ["instructions", "type"]);
@@ -132,7 +132,7 @@ describe("runCodexReview", () => {
 
   it("puts the model on thread/start, since review/start takes none", async () => {
     const client = new FakeClient([completedTurn], "review/start");
-    await runCodexReview("d", "gpt-x", null, ".", client);
+    await runCodexReview("d", { model: "gpt-x", cwd: ".", client });
     assert.equal(client.requests.find((r) => r.method === "thread/start").params.model, "gpt-x");
     assert.equal(client.requests.find((r) => r.method === "review/start").params.model, undefined);
   });

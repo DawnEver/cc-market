@@ -140,6 +140,7 @@ export const TOOLS = [
               write: { type: "boolean" },
               model: { type: "string" },
               cwd: { type: "string", description: "Working dir" },
+              timeoutMs: { type: "number", description: "Kill after N ms" },
             },
             required: ["provider", "prompt"],
           },
@@ -221,7 +222,7 @@ async function summarizeOutput(fullText, providerConfig, provider) {
   if (provider === "codex") {
     try {
       const data = await withPooledClient((client) =>
-        callCodexCompanion(fullText, SUMMARIZE_PROMPT, null, false, null, client));
+        callCodexCompanion(fullText, { systemPrompt: SUMMARIZE_PROMPT, client }));
       return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
     } catch (e) {
       process.stderr.write(`fabric-mcp: codex summary failed (${e.message})\n`);
@@ -245,40 +246,42 @@ async function summarizeOutput(fullText, providerConfig, provider) {
 
 // ── Provider dispatch (policy: mode × provider) ────────────────────
 
-async function dispatchCodexTask({ userPrompt, systemPrompt, model, write, resolvedImages }) {
+async function dispatchCodexTask({ userPrompt, systemPrompt, model, write, resolvedImages, cwd, timeoutMs, withCodexClient }) {
   const hasImages = resolvedImages.length > 0;
   process.stderr.write(`fabric-mcp: calling codex (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`);
-  const data = await withPooledClient((client) =>
-    callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, hasImages ? resolvedImages : null, client));
+  const data = await withCodexClient((client) => callCodexCompanion(userPrompt, {
+    systemPrompt, model: model || null, write: !!write, images: hasImages ? resolvedImages : null, client, cwd, timeoutMs,
+  }));
   return { data, resolvedModel: model || "default" };
 }
 
-async function dispatchCodexAgent({ userPrompt, systemPrompt, model, write, resolvedImages }) {
+async function dispatchCodexAgent({ userPrompt, systemPrompt, model, write, resolvedImages, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: agent mode — provider=codex model=${model || "(none)"}\n`);
-  const data = await withPooledClient((client) =>
-    callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, resolvedImages.length > 0 ? resolvedImages : null, client));
+  const data = await withCodexClient((client) => callCodexCompanion(userPrompt, {
+    systemPrompt, model: model || null, write: !!write, images: resolvedImages.length > 0 ? resolvedImages : null, client, cwd, timeoutMs,
+  }));
   return { data, resolvedModel: model || "default" };
 }
 
-async function dispatchCodexReview({ userPrompt, model, imageURIs }) {
+async function dispatchCodexReview({ userPrompt, model, imageURIs, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: codex review (adversarial)...\n`);
   const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
   const { runCodexReview } = await import("./codex/review.mjs");
-  const data = await withPooledClient((client) => runCodexReview(promptWithImages, model || null, null, process.cwd(), client));
+  const data = await withCodexClient((client) => runCodexReview(promptWithImages, { model: model || null, cwd, client, timeoutMs }));
   return { data, resolvedModel: model || "default" };
 }
 
-async function dispatchCodexImageGenerate({ userPrompt }) {
+async function dispatchCodexImageGenerate({ userPrompt, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: codex image generate (app-server)...\n`);
   const { generateImage } = await import("./codex/image.mjs");
-  const data = await withPooledClient((client) => generateImage(userPrompt, { client }));
+  const data = await withCodexClient((client) => generateImage(userPrompt, { client, cwd, timeout: timeoutMs }));
   return { data, resolvedModel: "codex-image-gen" };
 }
 
-async function dispatchCodexImageEdit({ userPrompt, systemPrompt }) {
+async function dispatchCodexImageEdit({ userPrompt, systemPrompt, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: codex image edit (app-server)...\n`);
   const { handleImageEdit } = await import("./codex/image.mjs");
-  const data = await withPooledClient((client) => handleImageEdit(userPrompt, systemPrompt, { client }));
+  const data = await withCodexClient((client) => handleImageEdit(userPrompt, systemPrompt, { client, cwd, timeout: timeoutMs }));
   return { data, resolvedModel: "codex-image-edit" };
 }
 
@@ -290,16 +293,21 @@ const CODEX_DISPATCH = {
   "image-edit": dispatchCodexImageEdit,
 };
 
-async function dispatchClaudeTask({ userPrompt, systemPrompt, resolvedImages, signal }) {
-  process.stderr.write("fabric-mcp: calling claude (native CLI)...\n");
-  const data = await spawnClaudeP(userPrompt, { systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null, signal });
-  return { data, resolvedModel: "claude" };
+// The child options every claude -p path forwards: model, cwd, timeoutMs, signal.
+const childOpts = ({ systemPrompt, model, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
+  systemPrompt, model: model || null, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
+});
+
+async function dispatchClaudeTask(ctx) {
+  process.stderr.write(`fabric-mcp: calling claude (native CLI, model=${ctx.model || "default"})...\n`);
+  const data = await spawnClaudeP(ctx.userPrompt, childOpts(ctx));
+  return { data, resolvedModel: ctx.model || "claude" };
 }
 
-async function dispatchClaudeAgent({ userPrompt, systemPrompt, provider, model, resolvedImages, signal }) {
-  process.stderr.write(`fabric-mcp: agent mode — provider=${provider} model=${model || "(none)"}\n`);
-  const data = await spawnClaudeP(userPrompt, { provider, model: model || null, systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null, signal });
-  return { data, resolvedModel: model || "claude" };
+async function dispatchClaudeAgent(ctx) {
+  process.stderr.write(`fabric-mcp: agent mode — provider=${ctx.provider} model=${ctx.model || "(none)"}\n`);
+  const data = await spawnClaudeP(ctx.userPrompt, { provider: ctx.provider, ...childOpts(ctx) });
+  return { data, resolvedModel: ctx.model || "claude" };
 }
 
 const CLAUDE_DISPATCH = {
@@ -310,21 +318,32 @@ const CLAUDE_DISPATCH = {
   review: dispatchClaudeTask,
 };
 
-async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, signal }) {
+// cwd has no meaning for a one-shot HTTP completion (no filesystem); timeoutMs bounds the
+// whole call, retries included, and surfaces as kind `timeout`.
+async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, timeoutMs }) {
   const resolvedModel = resolveModel(providerConfig, model || null);
   process.stderr.write(`fabric-mcp: calling ${resolvedModel} (API)...\n`);
   // Platform prompt for direct-connect API providers: the same
   // fabric.systemPromptFile the claude-CLI paths inject (they have no CLI
   // --system-prompt-file, so the file is read here and set as body.system).
   const sysFile = loadFabricConfig(getConfigPath()).systemPromptFile;
-  const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, signal, { systemPromptFile: sysFile });
-  return { data, resolvedModel };
+  const ctl = timeoutMs ? new AbortController() : null;
+  const timer = ctl && setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, ctl?.signal ?? null, { systemPromptFile: sysFile });
+    return { data, resolvedModel };
+  } catch (err) {
+    if (ctl?.signal.aborted) throw new ProviderError("timeout", `${resolvedModel}: no response after ${timeoutMs}ms`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-async function dispatchAPIAgent({ userPrompt, systemPrompt, provider, model, resolvedImages, signal }) {
-  process.stderr.write(`fabric-mcp: agent mode — provider=${provider} model=${model || "(none)"}\n`);
-  const data = await spawnClaudeP(userPrompt, { provider, model: model || null, systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null, signal });
-  return { data, resolvedModel: model || provider };
+async function dispatchAPIAgent(ctx) {
+  process.stderr.write(`fabric-mcp: agent mode — provider=${ctx.provider} model=${ctx.model || "(none)"}\n`);
+  const data = await spawnClaudeP(ctx.userPrompt, { provider: ctx.provider, ...childOpts(ctx) });
+  return { data, resolvedModel: ctx.model || ctx.provider };
 }
 
 const API_DISPATCH = {
@@ -397,16 +416,20 @@ export async function handleCall(args, deps = {}) {
   checkImageSizeLimit(resolvedImages, provider, providerConfig);
 
   const effectiveMode = mode || "task";
+  const common = {
+    userPrompt, systemPrompt, provider, model, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
+    spawnChild: deps.spawnChild, withCodexClient: deps.withCodexClient || withPooledClient,
+  };
   let dispatchMap, dispatchContext;
   if (providerConfig.provider === "codex") {
     dispatchMap = CODEX_DISPATCH;
-    dispatchContext = { userPrompt, systemPrompt, provider, model, write, resolvedImages, imageURIs };
+    dispatchContext = { ...common, write, imageURIs };
   } else if (providerConfig.native) {
     dispatchMap = CLAUDE_DISPATCH;
-    dispatchContext = { userPrompt, systemPrompt, provider, model, resolvedImages };
+    dispatchContext = common;
   } else {
     dispatchMap = API_DISPATCH;
-    dispatchContext = { userPrompt, systemPrompt, provider, model, providerConfig, resolvedImages };
+    dispatchContext = { ...common, providerConfig };
   }
 
   const handler = dispatchMap[effectiveMode];
@@ -467,6 +490,7 @@ export async function handleFanOut(args, deps) {
           observe: task.observe,
           resultMode: "summary",
           cwd: task.cwd,
+          timeoutMs: task.timeoutMs,
         }, deps);
         const text = res.content[0].text;
         const fullMatch = text.match(/\[Full: (\d+) chars/);

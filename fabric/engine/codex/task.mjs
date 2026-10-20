@@ -1,12 +1,10 @@
 import { CodexAppServerClient } from "./app-server.mjs";
 import { watchTurn } from "./turn.mjs";
 
-const TURN_TIMEOUT_MS = 600000;
-
-export async function runCodexTask(prompt, systemPrompt, model, write = false, cwd, onProgress, images = null, client = null) {
+export async function runCodexTask(prompt, { systemPrompt, model, write = false, cwd, onProgress, images = null, client = null, timeoutMs = 600000 } = {}) {
   const ownClient = !client;
   if (ownClient) {
-    client = new CodexAppServerClient({ timeout: TURN_TIMEOUT_MS });
+    client = new CodexAppServerClient({ timeout: timeoutMs });
     await client.start();
   } else {
     client.clearNotifications("thread/started");
@@ -29,7 +27,7 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     if (item.usage && !result.usage) result.usage = item.usage;
   });
 
-  const turn = watchTurn(client, { timeoutMs: TURN_TIMEOUT_MS, label: "task" });
+  const turn = watchTurn(client, { timeoutMs, label: "task" });
   try {
     const threadResp = await client.send("thread/start", { cwd: cwd || process.cwd() });
     const threadId = threadResp.thread?.id || threadResp.id;
