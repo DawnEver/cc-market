@@ -86,6 +86,17 @@ test('pre-push checks a newly-created branch against remote main', () => {
   assert.equal(runHook(dir, input).status, 1);
 });
 
+test('release takes one bump level and refuses any other by name, before touching anything', () => {
+  const dir = fixture();
+  writeFileSync(join(dir, 'demo', 'scripts', 'run.mjs'), 'export const value = 4;\n');
+  git(dir, 'commit', '-qam', 'plugin change');
+  const head = git(dir, 'rev-parse', 'HEAD');
+  const result = spawnSync(BASH, ['scripts/release.sh', 'huge'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /release: bump level 'huge' is not one of patch, minor, major/);
+  assert.equal(git(dir, 'rev-parse', 'HEAD'), head);
+});
+
 test('release refuses to bump the same already-tagged HEAD twice', () => {
   const dir = fixture();
   git(dir, 'tag', 'v1.2.3');

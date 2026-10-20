@@ -64,7 +64,8 @@ function metaOf(date, slug) {
 
 // A date comfortably older than the 90-day stale window.
 const OLD = "2025-01-01";
-const RECENT = "2026-07-20";
+// Inside the 90-day window whenever the suite runs: a fixed date here expired on 2026-10-18.
+const RECENT = new Date(Date.now() - 7 * 86400e3).toISOString().slice(0, 10);
 
 describe("prune-memory type-aware retention", () => {
   test("stale non-feedback entry is evicted with --evict-stale", () => {

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Explicit, fail-closed release. Creates a commit and annotated tag, but never pushes.
+# Usage: scripts/release.sh [patch|minor|major]   (default patch; the one level bumps every version it touches)
 set -euo pipefail
+
+level="${1:-patch}"
+case "$level" in patch|minor|major) ;; *) echo "release: bump level '$level' is not one of patch, minor, major" >&2; exit 1 ;; esac
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
@@ -37,7 +41,7 @@ done
 [ "${#plugins[@]}" -gt 0 ] || { echo "release: no plugin changes since $base" >&2; exit 1; }
 
 bump_json() {
-  node -e "const fs=require('fs'),p=process.argv[1],j=JSON.parse(fs.readFileSync(p));const v=j.version.split('.').map(Number);j.version=[v[0],v[1],v[2]+1].join('.');fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');process.stdout.write(j.version)" "$1"
+  node -e "const fs=require('fs'),[p,l]=process.argv.slice(1),j=JSON.parse(fs.readFileSync(p));const [a,b,c]=j.version.split('.').map(Number);j.version=(l==='major'?[a+1,0,0]:l==='minor'?[a,b+1,0]:[a,b,c+1]).join('.');fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');process.stdout.write(j.version)" "$1" "$level"
 }
 uses_shared() { grep -rqE "from[[:space:]]+['\"][^'\"]*shared/[^'\"]+['\"]" --include='*.mjs' --include='*.js' --exclude-dir=tests --exclude-dir=shared --exclude-dir=node_modules "$1" 2>/dev/null; }
 bundle_shared() {
