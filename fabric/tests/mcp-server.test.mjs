@@ -269,15 +269,16 @@ describe("call options reach every path", () => {
     });
   }
 
-  test("planted: no Python -> an API task is unsupported by name; agent mode still runs", async () => {
+  test("planted: no Python -> an API task is unsupported by name; a host agent still runs", async () => {
     const seen = {};
-    // The file-wide fixture's cache records an interpreter that does not exist.
-    await withConfigFixture(ACME_FIXTURE, async () => {
+    const prev = process.env.CC_MARKET_CONFIG_PATH;
+    process.env.CC_MARKET_CONFIG_PATH = providerCacheFixture({ registry: ACME_FIXTURE, python: path.join(os.tmpdir(), "no-such-venv", "Scripts", "python.exe") }).configPath;
+    try {
       await assert.rejects(handleCall({ provider: "acme", prompt: "p", resultMode: "full" }),
-        (e) => e.kind === "unsupported" && /Python python-fixture/.test(e.message));
-      await handleCall({ provider: "acme", mode: "agent", prompt: "p", resultMode: "full" }, { spawnChild: fakeSpawnChild(seen) });
-    });
-    assert.equal(seen.provider, "acme");
+        (e) => e.kind === "unsupported" && e.message.includes("ai-lab (not installed) beside") && e.message.includes("no-such-venv") && e.message.includes("node scripts/setup/setup.js"));
+      await handleCall({ provider: "claude", mode: "agent", prompt: "p", resultMode: "full" }, { spawnChild: fakeSpawnChild(seen) });
+    } finally { process.env.CC_MARKET_CONFIG_PATH = prev; }
+    assert.equal(seen.provider, "claude");
   });
 
   test("API task: an ai-lab kind reaches the caller unchanged", async () => {

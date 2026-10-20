@@ -171,3 +171,13 @@ test('planted: no git is unsupported by name', () => {
   assert.throws(() => gitCredentialKey('h', 'u', { _spawnSync: () => ({ error: Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }) }) }),
     (e) => e.kind === 'unsupported' && /git is not installed/.test(e.message));
 });
+
+test('planted: the ai-lab beside the recorded python is not the recorded version -> stale, naming setup', () => {
+  refusedUnsupported(() => readCatalogue(fixture({ installed: '9.9.9' })),
+    /ai-lab 9[.]9[.]9 beside .* is not the recorded 0[.]0[.]0-fixture.*node scripts[/]setup[/]setup[.]js/);
+});
+
+test('a cache missing a field setup always writes is refused by name', () => {
+  refusedUnsupported(() => readCatalogue(fixture({ extra: { ai_lab_version: undefined } })), /is missing ai_lab_version/);
+});
+

@@ -70,8 +70,8 @@ test("timeoutMs kills the child and is kind timeout", async () => {
 });
 
 test("the interpreter is the one the provider cache pinned", () => {
-  const { configPath } = providerCacheFixture({ python: process.execPath });
-  assert.equal(aiLabPython(configPath), process.execPath);
+  const { configPath, dir } = providerCacheFixture();
+  assert.equal(aiLabPython(configPath), path.join(dir, "venv", "Scripts", "python.exe"));
 });
 
 // ── planted refusals: a one-shot call without Python or ai-lab is unsupported BY NAME ──
@@ -79,12 +79,12 @@ test("the interpreter is the one the provider cache pinned", () => {
 test("planted: the cache's Python is not installed -> unsupported naming it and the remedy", () => {
   const { configPath } = providerCacheFixture({ python: path.join(FIXTURE.dir, "no-such-python.exe") });
   assert.throws(() => aiLabPython(configPath),
-    (e) => e.kind === "unsupported" && e.message.includes("no-such-python.exe") && /is not installed/.test(e.message) && /setup/.test(e.message));
+    (e) => e.kind === "unsupported" && e.message.includes("no-such-python.exe") && e.message.includes("ai-lab (not installed)") && /setup/.test(e.message));
 });
 
 test("planted: a cache recording no Python -> unsupported naming it", () => {
   const { configPath } = providerCacheFixture({ python: null });
-  assert.throws(() => aiLabPython(configPath), (e) => e.kind === "unsupported" && /records no Python interpreter/.test(e.message));
+  assert.throws(() => aiLabPython(configPath), (e) => e.kind === "unsupported" && /is missing python/.test(e.message));
 });
 
 test("planted: the interpreter cannot be started -> unsupported naming it", async () => {

@@ -2,7 +2,7 @@
 // contract setup copies into ~/.claude/provider-cache.json), next to a registry file, in a
 // fresh temp dir. Returns the registry path: providers.mjs finds the cache beside it.
 import crypto from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -23,14 +23,31 @@ export const FIXTURE_PROVIDERS = {
   openonly: row({ host: "api.openonly.test", endpoints: { openai: "https://api.openonly.test/v1" } }),
 };
 
-export function providerCacheFixture({ providers = FIXTURE_PROVIDERS, registry = {}, generatedAt = new Date().toISOString(), python = "python-fixture", extra = {} } = {}) {
+export const FIXTURE_AI_LAB_VERSION = "0.0.0-fixture";
+
+// A venv whose site-packages holds ai_lab-<installed>.dist-info; returns its interpreter path.
+export function fakeVenv(dir, installed = FIXTURE_AI_LAB_VERSION) {
+  const python = join(dir, "venv", "Scripts", "python.exe");
+  mkdirSync(join(dir, "venv", "Scripts"), { recursive: true });
+  writeFileSync(python, "");
+  const dist = join(dir, "venv", "Lib", "site-packages", `ai_lab-${installed}.dist-info`);
+  mkdirSync(dist, { recursive: true });
+  writeFileSync(join(dist, "METADATA"), `Metadata-Version: 2.1
+Name: ai-lab
+Version: ${installed}
+`);
+  return python;
+}
+
+export function providerCacheFixture({ providers = FIXTURE_PROVIDERS, registry = {}, generatedAt = new Date().toISOString(), python, installed = FIXTURE_AI_LAB_VERSION, extra = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fabric-cache-"));
+  if (python === undefined) python = fakeVenv(dir, installed);
   const packaged = join(dir, "providers.toml");
   writeFileSync(packaged, "# fixture catalogue\n");
   const bytes = Buffer.from("# fixture catalogue\n");
   const sha = crypto.createHash("sha256").update(bytes).digest("hex");
   const doc = {
-    schema_version: 1, generated_at: generatedAt, ai_lab_version: "0.0.0-fixture", python,
+    schema_version: 1, generated_at: generatedAt, ai_lab_version: FIXTURE_AI_LAB_VERSION, python,
     inputs: [{ path: packaged, exists: true, sha256: sha }, { path: join(dir, "user-providers.toml"), exists: false, sha256: null }],
     source_sha256: sha, protocols: ["anthropic", "openai"], providers, ...extra,
   };

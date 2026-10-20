@@ -58,19 +58,44 @@ export function readRegistry(configPath = getConfigPath()) {
 const stale = (cachePath, why) =>
   new ProviderError("unsupported", `provider cache ${cachePath} ${why}; run \`${SETUP_REMEDY}\` to rebuild it`);
 
+/**
+ * The ai-lab version installed for *python*, from the `ai_lab-<v>.dist-info` of its venv
+ * (Scripts/python.exe -> Lib/site-packages; bin/python -> lib/python3.X/site-packages); null if none.
+ */
+export function aiLabVersionOnDisk(python) {
+  const root = path.dirname(path.dirname(python));
+  const sites = [path.join(root, "Lib", "site-packages")];
+  const lib = path.join(root, "lib");
+  if (fs.existsSync(lib)) for (const d of fs.readdirSync(lib)) if (d.startsWith("python")) sites.push(path.join(lib, d, "site-packages"));
+  for (const site of sites) {
+    if (!fs.existsSync(site)) continue;
+    const dist = fs.readdirSync(site).find((d) => /^ai_lab-.+\.dist-info$/.test(d));
+    if (!dist) continue;
+    const meta = path.join(site, dist, "METADATA");
+    const m = fs.existsSync(meta) && /^Version:\s*(\S+)/m.exec(fs.readFileSync(meta, "utf8"));
+    return m ? m[1] : dist.slice("ai_lab-".length, -".dist-info".length);
+  }
+  return null;
+}
+
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 
 /**
  * The provider cache, checked for expiry: schema version, age, and every recorded catalogue
- * input still matching its sha256 (so `source_sha256` still describes the files on disk).
+ * input still matching its sha256 (so `source_sha256` still describes the files on disk), and
+ * the ai-lab installed beside the recorded interpreter being the recorded version.
  * Throws ProviderError(unsupported) naming the remedy otherwise.
  */
-export function readCatalogue(configPath = getConfigPath(), { now = Date.now(), maxAgeMs = CACHE_MAX_AGE_MS } = {}) {
+export function readCatalogue(configPath = getConfigPath(), { now = Date.now(), maxAgeMs = CACHE_MAX_AGE_MS, versionOnDisk = aiLabVersionOnDisk } = {}) {
   const cachePath = cachePathFor(configPath);
   if (!fs.existsSync(cachePath)) throw stale(cachePath, "is absent");
   let doc;
   try { doc = JSON.parse(fs.readFileSync(cachePath, "utf8")); } catch (e) { throw stale(cachePath, `is unreadable (${e.message})`); }
   if (doc?.schema_version !== CACHE_SCHEMA_VERSION) throw stale(cachePath, `has schema_version ${doc?.schema_version}, expected ${CACHE_SCHEMA_VERSION}`);
+  for (const k of ["generated_at", "ai_lab_version", "python", "source_sha256"]) {
+    if (typeof doc[k] !== "string" || !doc[k]) throw stale(cachePath, `is missing ${k}`);
+  }
+  if (!Array.isArray(doc.inputs) || !doc.providers || typeof doc.providers !== "object") throw stale(cachePath, "is missing inputs or providers");
   const age = now - Date.parse(doc.generated_at);
   if (!(age <= maxAgeMs)) throw stale(cachePath, `is older than ${Math.round(maxAgeMs / 86400000)} d (generated_at ${doc.generated_at})`);
   const digest = crypto.createHash("sha256");
@@ -82,7 +107,11 @@ export function readCatalogue(configPath = getConfigPath(), { now = Date.now(), 
     if (sha256(bytes) !== input.sha256) throw stale(cachePath, `is out of date: ${input.path} changed since it was generated`);
     digest.update(bytes);
   }
-  if (doc.source_sha256 && digest.digest("hex") !== doc.source_sha256) throw stale(cachePath, "has a source_sha256 that does not match its inputs");
+  if (digest.digest("hex") !== doc.source_sha256) throw stale(cachePath, "has a source_sha256 that does not match its inputs");
+  const installed = versionOnDisk(doc.python);
+  if (installed !== doc.ai_lab_version) {
+    throw stale(cachePath, `is out of date: ai-lab ${installed ?? "(not installed)"} beside ${doc.python} is not the recorded ${doc.ai_lab_version}`);
+  }
   return doc;
 }
 
