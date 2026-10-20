@@ -15,6 +15,7 @@ fabric/
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
+│   ├── kill-tree.mjs        Kill a child's whole process tree (Windows /T, POSIX process group)
 │   ├── errors.mjs           The one error taxonomy: ProviderError.kind (ERROR_KINDS) + ConfigError
 │   ├── fabric-config.mjs    The `fabric` config block (systemPromptFile, sessionDefaults)
 │   └── codex/               app-server client · task · turn (outcome + error kind) · discovery
