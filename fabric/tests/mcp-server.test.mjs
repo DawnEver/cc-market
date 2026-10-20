@@ -251,16 +251,29 @@ describe("call options reach every path", () => {
     assert.equal(seen.task, "pr-review");
   });
 
-  test("API task: timeoutMs bounds the HTTP call as kind timeout", async () => {
-    const prev = globalThis.fetch;
-    globalThis.fetch = (url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
-    try {
-      await withConfigFixture(ACME_FIXTURE, () =>
-        assert.rejects(handleCall({ provider: "acme", prompt: "p", timeoutMs: 30, resultMode: "full" }),
-          (e) => e.kind === "timeout"));
-    } finally {
-      globalThis.fetch = prev;
-    }
+  for (const mode of ["task", "review"]) {
+    test(`API ${mode}: one ai_lab.call request carrying model, task, images and timeoutMs`, async () => {
+      let sent, sentOpts;
+      const callAiLab = async (request, o) => { sent = request; sentOpts = o; return { ok: true, result: { text: "from ai-lab" }, usage: { input_tokens: 1, output_tokens: 2 } }; };
+      const res = await withConfigFixture(ACME_FIXTURE, () =>
+        handleCall({ provider: "acme", mode, model: "opus", task: "pr-review", prompt: "p", timeoutMs: 77, resultMode: "full",
+          images: [{ data: "QUJD", media_type: "image/png" }] }, { callAiLab }));
+      assert.equal(text(res), "from ai-lab");
+      assert.equal(sent.verb, "respond");
+      assert.equal(sent.provider, "acme");
+      assert.equal(sent.model, "acme-pro[1m]", "tier word resolved through the catalogue row");
+      assert.equal(sent.task, "pr-review");
+      assert.deepEqual(sent.images, [{ mime: "image/png", data: "QUJD" }]);
+      assert.match(sent.context[0].text, /p$/);
+      assert.equal(sentOpts.timeoutMs, 77);
+    });
+  }
+
+  test("API task: an ai-lab kind reaches the caller unchanged", async () => {
+    const { ProviderError } = await import("../engine/errors.mjs");
+    await withConfigFixture(ACME_FIXTURE, () =>
+      assert.rejects(handleCall({ provider: "acme", prompt: "p", resultMode: "full" },
+        { callAiLab: async () => { throw new ProviderError("exhausted", "credit"); } }), (e) => e.kind === "exhausted"));
   });
 
   for (const mode of ["task", "review"]) {

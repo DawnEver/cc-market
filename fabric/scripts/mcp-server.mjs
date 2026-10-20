@@ -11,13 +11,13 @@
 //   - fan_out        : N calls in parallel, compact JSON + optional synthesis.
 //   - list_providers / resolve_model / codex_status : introspection.
 //
-// Layering: L0 mechanism = shared/ engines (providers, spawn-child, anthropic-http, codex,
+// Layering: L0 mechanism = engine/ (providers, spawn-child, ai-lab-call, codex,
 // observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
 // shaping, <command> parsing, result/usage shaping, traceme). L2 ergonomics = commands/
 // skills/agents. This file wires L1 onto L0.
 
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -29,7 +29,6 @@ import {
   truncateText,
   listModels,
   parseCommandBlock,
-  callAnthropicAPI,
   callCodexCompanion,
   spawnClaudeP,
   emitProviderTrace,
@@ -42,6 +41,7 @@ import { withPooledClient, poolStats } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/fabric-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
+import { callAiLab, textRequest } from "../engine/ai-lab-call.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 import { isMain } from "../shared/lib.mjs";
@@ -180,7 +180,7 @@ function resolveImages(images) {
 }
 
 function checkImageSizeLimit(resolvedImages, provider, providerConfig) {
-  if (provider === "codex" || providerConfig.baseUrl) return;
+  if (provider === "codex" || !providerConfig.native) return; // API providers: ai-lab sends structured images
   const oversized = resolvedImages.filter((img) => img.data.length > MAX_DATA_URI_BYTES);
   if (oversized.length > 0) {
     const sizes = oversized.map((img) => `${img.path || "image"} (${(img.data.length / 1024).toFixed(0)}KB)`).join(", ");
@@ -306,26 +306,20 @@ const CLAUDE_DISPATCH = {
   review: dispatchClaudeTask,
 };
 
-// cwd has no meaning for a one-shot HTTP completion (no filesystem); timeoutMs bounds the
-// whole call, retries included, and surfaces as kind `timeout`.
-async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, timeoutMs }) {
+// A one-shot API call is one `ai_lab.call` request: ai-lab holds the wire, the key (by task)
+// and the retries. cwd has no meaning for it (no filesystem); timeoutMs bounds the whole call
+// and surfaces as kind `timeout`.
+async function dispatchAPITask({ userPrompt, systemPrompt, provider, providerConfig, model, task, resolvedImages, timeoutMs, callAiLab: _callAiLab = callAiLab }) {
   const resolvedModel = resolveModel(providerConfig, model || null);
-  process.stderr.write(`fabric-mcp: calling ${resolvedModel} (API)...\n`);
-  // Platform prompt for direct-connect API providers: the same
-  // fabric.systemPromptFile the claude-CLI paths inject (they have no CLI
-  // --system-prompt-file, so the file is read here and set as body.system).
+  if (!resolvedModel) throw new ConfigError(`provider "${provider}" declares no default model; pass model`);
+  process.stderr.write(`fabric-mcp: calling ${provider}:${resolvedModel} (ai_lab.call)...\n`);
+  // Platform prompt for API providers: the same fabric.systemPromptFile the claude-CLI paths inject.
   const sysFile = loadFabricConfig(getConfigPath()).systemPromptFile;
-  const ctl = timeoutMs ? new AbortController() : null;
-  const timer = ctl && setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, ctl?.signal ?? null, { systemPromptFile: sysFile });
-    return { data, resolvedModel };
-  } catch (err) {
-    if (ctl?.signal.aborted) throw new ProviderError("timeout", `${resolvedModel}: no response after ${timeoutMs}ms`);
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+  const platform = sysFile && existsSync(sysFile) ? readFileSync(sysFile, "utf8") : "";
+  const instructions = [platform, systemPrompt].filter(Boolean).join("\n\n");
+  const reply = await _callAiLab(textRequest({ provider, model: resolvedModel, task, instructions, prompt: userPrompt, images: resolvedImages }),
+    { timeoutMs: timeoutMs || undefined });
+  return { data: { content: [{ type: "text", text: reply.result?.text ?? "" }], usage: reply.usage }, resolvedModel };
 }
 
 async function dispatchAPIAgent(ctx) {
@@ -417,7 +411,7 @@ export async function handleCall(args, deps = {}) {
     dispatchContext = common;
   } else {
     dispatchMap = API_DISPATCH;
-    dispatchContext = { ...common, providerConfig };
+    dispatchContext = { ...common, providerConfig, callAiLab: deps.callAiLab };
   }
 
   const handler = dispatchMap[effectiveMode];

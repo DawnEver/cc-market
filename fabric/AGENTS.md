@@ -24,7 +24,7 @@ L2 ERGONOMICS     commands (/continue /models /handoff), the `takeover` handoff 
 L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
                   scripts/codex (review, image) + prompts/ — mode dispatch matrix
 L0 MECHANISM      engine/ (fabric-owned, canonical): providers routing · spawn-child ·
-                  anthropic-http · codex/{app-server,task} · observe proxy.
+                  ai-lab-call (one-shot API calls via `python -m ai_lab.call`) · codex/{app-server,task} · observe proxy.
                   (shared/ now holds only cross-plugin generic utils)
 ```
 

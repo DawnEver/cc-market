@@ -3,7 +3,7 @@
  * Run: node --test cc-market/takeover/tests/companion.test.mjs
  */
 
-import { test, describe, mock } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +16,6 @@ import {
   extractText,
   truncateText,
   parseCommandBlock,
-  callAnthropicAPI,
   logProviderRequest,
   ConfigError,
   ProviderError,
@@ -229,184 +228,6 @@ describe("parseCommandBlock mode flags", () => {
   });
 });
 
-// ── callAnthropicAPI ──────────────────────────────────────────────────────────
-
-describe("callAnthropicAPI", () => {
-  test("constructs correct URL from baseUrl (strips trailing slash)", async () => {
-    const fetches = [];
-    globalThis.fetch = mock.fn(async (url, init) => {
-      fetches.push({ url, init });
-      return {
-        ok: true,
-        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
-      };
-    });
-
-    try {
-      await callAnthropicAPI(
-        { baseUrl: "https://api.example.com/anthropic/", token: "sk-test" },
-        "test-model",
-        "sys",
-        "user"
-      );
-      assert.equal(fetches.length, 1);
-      assert.equal(fetches[0].url, "https://api.example.com/anthropic/v1/messages");
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-
-  test("sends correct headers", async () => {
-    const fetches = [];
-    globalThis.fetch = mock.fn(async (url, init) => {
-      fetches.push({ url, init });
-      return {
-        ok: true,
-        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
-      };
-    });
-
-    try {
-      await callAnthropicAPI(
-        { baseUrl: "https://api.example.com", token: "sk-secret" },
-        "test-model",
-        null,
-        "user"
-      );
-      assert.equal(fetches[0].init.headers["Content-Type"], "application/json");
-      assert.equal(fetches[0].init.headers["x-api-key"], "sk-secret");
-      assert.equal(fetches[0].init.headers["anthropic-version"], "2023-06-01");
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-
-  test("includes system prompt in body when provided", async () => {
-    const fetches = [];
-    globalThis.fetch = mock.fn(async (url, init) => {
-      fetches.push({ url, init });
-      return {
-        ok: true,
-        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
-      };
-    });
-
-    try {
-      await callAnthropicAPI(
-        { baseUrl: "https://api.example.com", token: "sk-test" },
-        "test-model",
-        "you are helpful",
-        "user prompt"
-      );
-      const body = JSON.parse(fetches[0].init.body);
-      assert.equal(body.system, "you are helpful");
-      assert.equal(body.messages[0].content, "user prompt");
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-
-  test("omits system field when systemPrompt is null", async () => {
-    const fetches = [];
-    globalThis.fetch = mock.fn(async (url, init) => {
-      fetches.push({ url, init });
-      return {
-        ok: true,
-        json: async () => ({ content: [{ type: "text", text: "response" }], stop_reason: "end_turn", usage: {} }),
-      };
-    });
-
-    try {
-      await callAnthropicAPI(
-        { baseUrl: "https://api.example.com", token: "sk-test" },
-        "test-model",
-        "",
-        "user"
-      );
-      const body = JSON.parse(fetches[0].init.body);
-      assert.equal("system" in body, false);
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-
-  test("throws on non-OK response", async () => {
-    globalThis.fetch = mock.fn(async () => ({
-      ok: false,
-      status: 400,
-      text: async () => "Bad request",
-    }));
-
-    try {
-      await assert.rejects(
-        () => callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user"),
-        /API error 400/
-      );
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-
-  test("retries on 429 rate limit", async () => {
-    let callCount = 0;
-    globalThis.fetch = mock.fn(async () => {
-      callCount++;
-      if (callCount < 3) return { ok: false, status: 429, text: async () => "Rate limited" };
-      return {
-        ok: true,
-        json: async () => ({ content: [{ type: "text", text: "finally" }], stop_reason: "end_turn", usage: {} }),
-      };
-    });
-
-    try {
-      const result = await callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user");
-      assert.equal(callCount, 3);
-      assert.equal(extractText(result), "finally");
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-
-  test("retries on 502/503/504", async () => {
-    for (const status of [502, 503, 504]) {
-      let callCount = 0;
-      globalThis.fetch = mock.fn(async () => {
-        callCount++;
-        if (callCount === 1) return { ok: false, status, text: async () => "Server error" };
-        return {
-          ok: true,
-          json: async () => ({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: {} }),
-        };
-      });
-
-      try {
-        await callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user");
-        assert.equal(callCount, 2, `expected 2 calls for status ${status}, got ${callCount}`);
-      } finally {
-        globalThis.fetch = undefined;
-      }
-    }
-  });
-
-  test("does not retry on 400 client error", async () => {
-    let callCount = 0;
-    globalThis.fetch = mock.fn(async () => {
-      callCount++;
-      return { ok: false, status: 400, text: async () => "Bad request" };
-    });
-
-    try {
-      await assert.rejects(
-        () => callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user"),
-        /API error 400/
-      );
-      assert.equal(callCount, 1);
-    } finally {
-      globalThis.fetch = undefined;
-    }
-  });
-});
-
 // ── PROVIDER_ENV_KEYS ───────────────────────────────────────────────────────
 
 describe("PROVIDER_ENV_KEYS", () => {
@@ -506,17 +327,6 @@ describe("error taxonomy", () => {
     assert.equal(httpErrorKind(429), "rate_limit");
     assert.equal(httpErrorKind(400), "failed");
     assert.equal(httpErrorKind(503), "failed");
-  });
-
-  test("a non-OK API response is a classified ProviderError", async () => {
-    globalThis.fetch = mock.fn(async () => ({ ok: false, status: 401, text: async () => "invalid x-api-key" }));
-    try {
-      await assert.rejects(
-        () => callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user"),
-        (e) => e.kind === "auth" && /API error 401/.test(e.message));
-    } finally {
-      globalThis.fetch = undefined;
-    }
   });
 
   test("an undeclared kind is refused by name", () => {

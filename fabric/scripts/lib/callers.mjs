@@ -1,9 +1,5 @@
-// callers.mjs — takeover's codex companion caller. The raw Anthropic HTTP engine
-// (retry + SSE) lives in engine/anthropic-http.mjs and is re-exported here so
-// `./lib.mjs` import sites stay stable.
+// callers.mjs — the codex companion caller. Re-exported via scripts/lib.mjs.
 import process from "node:process";
-
-export { callAnthropicAPI } from "../../engine/anthropic-http.mjs";
 
 // opts: {systemPrompt, model, write, images, client, cwd, timeoutMs} — see runCodexTask.
 export async function callCodexCompanion(userPrompt, opts = {}) {

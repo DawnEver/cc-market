@@ -16,7 +16,6 @@ import path from 'node:path';
 import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId } from './providers.mjs';
 import { loadFabricConfig } from './fabric-config.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
-import { buildUserContent } from './anthropic-http.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 import { ProviderError } from './errors.mjs';
 import { killTree, treeSpawnOptions } from './kill-tree.mjs';
@@ -75,6 +74,13 @@ export function effortEnv(effort) {
   if (typeof effort === "number") return { MAX_THINKING_TOKENS: String(effort) };
   if (effort in EFFORT_LEVELS) return { MAX_THINKING_TOKENS: String(EFFORT_LEVELS[effort]) };
   throw new Error(`unknown effort "${effort}". Use ${Object.keys(EFFORT_LEVELS).join("/")} or a token number`);
+}
+
+// The stream-json user content: the prompt, then each image as a base64 block.
+function buildUserContent(prompt, images) {
+  if (!images || images.length === 0) return prompt;
+  return [{ type: 'text', text: prompt },
+    ...images.map((img) => ({ type: 'image', source: { type: 'base64', media_type: img.media_type || 'image/png', data: img.data } }))];
 }
 
 // ── Env shaping ──────────────────────────────────────────────────────────────

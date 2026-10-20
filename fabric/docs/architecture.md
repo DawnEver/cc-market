@@ -12,7 +12,7 @@ fabric/
 │   │                        Fabric-only since takeover was absorbed; no longer in shared/.
 │   ├── providers.mjs        Provider registry/routing (single source of truth)
 │   ├── spawn-child.mjs      Claude child engine: exe resolution, provider env, stream-json
-│   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
+│   ├── ai-lab-call.mjs      One-shot API calls: `python -m ai_lab.call` over stdio
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
 │   ├── kill-tree.mjs        Kill a child's whole process tree (Windows /T, POSIX process group)
@@ -44,7 +44,7 @@ transport — framed needed for Codex MCP startup). Tools:
 
 | Tool | Input | Routes to |
 |---|---|---|
-| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. `cwd` and `timeoutMs` reach every path (child cwd / codex thread cwd; child kill / turn wait / HTTP abort, all kind `timeout`); `model` reaches every claude path. |
+| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `task?` (key task), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `ai_lab.call` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. `cwd` and `timeoutMs` reach every path (child cwd / codex thread cwd; child kill / turn wait / ai_lab.call tree kill, all kind `timeout`); `model` reaches every claude path. |
 | `fan_out` | `tasks[]` (`provider`, `prompt`, `id?`, `mode?`, `write?`, `model?`, `cwd?`), `synthesize?` | N `handleCall`s in parallel, at most `fabric.fanOutConcurrency` (default 4) in flight → compact JSON (per-task summary, est. tokens, duration) + synthesis only via a configured `fabric.synthesizer` (`synthesize: true` without one is refused) |
 | `list_providers` | (none) | `listModels()` |
 | `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native: no remapping) |
@@ -58,8 +58,8 @@ hermetic tests.
 
 | mode | codex | claude (native) | API provider |
 |---|---|---|---|
-| task | app-server (`write`, images) | `claude -p` (own OAuth) | raw HTTP completion |
-| agent | app-server | `claude -p` + harness | `claude -p` + provider env (NOT raw HTTP) |
+| task | app-server (`write`, images) | `claude -p` (own OAuth) | `ai_lab.call` respond |
+| agent | app-server | `claude -p` + harness | `claude -p` + provider env (NOT ai_lab.call) |
 | review | native `review/start` | task + `review.md` prompt | task + `review.md` prompt |
 | image-generate / image-edit | app-server | — (ProviderError `unsupported`) | — |
 

@@ -78,8 +78,8 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 - **L0 provider routing** — `engine/providers.mjs`. Reads the provider catalogue from `~/.claude/provider-cache.json` (ai-lab's `python -m ai_lab.providers --json`, copied by setup; stale/absent is refused as `unsupported` naming the remedy) and the host projection rules (`claudeApiKeyEnv`) from `~/.claude/claude_env_settings.json`; resolves model aliases.
 - **L1 engines** — `engine/spawn-child.mjs` (the claude child engine: exe resolution,
-  provider env, optional config isolation, stream-json/images), `engine/anthropic-http.mjs`
-  (raw single-turn HTTP, retry + SSE), `engine/codex/` (codex app-server client + task
+  provider env, optional config isolation, stream-json/images), `engine/ai-lab-call.mjs`
+  (every one-shot API call as one `python -m ai_lab.call` request; ai-lab holds the wire, key and retries), `engine/codex/` (codex app-server client + task
   runner). One implementation each; the plugin's own L1 policy consumes them.
 - **L1 observe proxy** — `engine/observe-proxy.mjs`. `startObserveProxy({provider,
   runDir})` → `{url, port, jsonlPath, close}`. Buffers+remaps the request body, streams
@@ -96,7 +96,8 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 - `call` — the one-shot primitive: invoke a model and return its output. `mode`
   (task/review/agent/image-*) carries policy; `<command>` flags in `prompt` override params.
-  Anthropic-compatible providers (`claude` / `deepseek`) run via `claude -p` or raw HTTP;
+  `provider: "claude"` runs via `claude -p`; a catalogue provider runs task/review through
+  `ai_lab.call` and agent mode via `claude -p` on its anthropic endpoint;
   `provider: "codex"` runs via the codex app-server (native — pass `write: true` for tools,
   `cwd` for the repo). `observe: true` (non-codex) captures API traffic to the proxy jsonl.
   Call several concurrently for fan-out.

@@ -5,8 +5,8 @@
 //   - lib/trace.mjs    TraceMe NDJSON + structured request logging
 //   - lib/spawn.mjs    policy wrapper over the shared claude child engine
 //   - lib/parse.mjs    command-block flags, prompt building, text extraction
-//   - lib/callers.mjs  Codex companion (re-exports engine/anthropic-http.mjs)
-// Engines live in ../shared/ (spawn-child, anthropic-http, codex/); this
+//   - lib/callers.mjs  Codex companion
+// Engines live in ../engine/ (spawn-child, ai-lab-call, codex/); this
 // plugin only shapes prompts, picks engines per mode, and formats results.
 
 export * from "./lib/config.mjs";
