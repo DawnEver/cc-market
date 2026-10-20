@@ -51,3 +51,47 @@ test('custom profiles add to the method set and weights retune it', () => {
 test('an invalid custom profile is refused by name, not skipped', () => {
   assert.throws(() => effectiveProfiles(method, { customProfiles: [{ key: 'x', source: 'diff' }] }), /x.*lacks context, scope/);
 });
+
+// ── Provider set is config ──
+
+test('headless defaults to anthropic, diff-context profiles only, no synthesis, stdout sink', () => {
+  const p = buildPlan({ ...base, runMode: 'headless', sources: [], available: ['anthropic'] });
+  assert.ok(p.reviewers.length >= 1);
+  for (const r of p.reviewers) {
+    assert.equal(r.provider, 'anthropic');
+    assert.equal(r.status, 'pending');
+    assert.equal(method.profiles[r.name].context, 'diff');
+  }
+  assert.equal(p.run_mode, 'headless');
+  assert.equal(p.synthesis, false);
+  assert.equal(p.sink, 'stdout');
+});
+
+test('a requested provider that is not available is unavailable, never substituted', () => {
+  const p = buildPlan({ ...base, runMode: 'headless', forced: 'diff', available: ['deepseek'] });
+  assert.deepEqual(p.reviewers.map((r) => [r.provider, r.status]), [['anthropic', 'unavailable']]);
+  assert.equal(p.reviewers[0].prompt, undefined);
+});
+
+test('--providers overrides the run mode default, and the project config sits between them', () => {
+  const cfg = { providers: { headless: ['kimi'] } };
+  const fromConfig = buildPlan({ ...base, runMode: 'headless', config: cfg, forced: 'diff', available: ['kimi'] });
+  assert.equal(fromConfig.reviewers[0].provider, 'kimi');
+  const fromFlag = buildPlan({ ...base, runMode: 'headless', config: cfg, requested: ['deepseek'], forced: 'diff', available: ['kimi', 'deepseek'] });
+  assert.equal(fromFlag.reviewers[0].provider, 'deepseek');
+});
+
+test('interactive with an explicit provider list keeps it and marks the missing one unavailable', () => {
+  const p = buildPlan({ ...base, requested: ['codex', 'claude'], sources: ['diff'], available: ['claude'] });
+  assert.deepEqual(p.reviewers.map((r) => [r.provider, r.status]), [['codex', 'unavailable'], ['claude', 'pending']]);
+});
+
+test('a call mode the run mode cannot execute is unsupported', () => {
+  const big = { ...manifest, mode: 'agent', diff: undefined, manifestText: '| file |' };
+  const p = buildPlan({ ...base, runMode: 'headless', manifest: big, forced: 'diff', available: ['anthropic'] });
+  assert.equal(p.reviewers[0].status, 'unsupported');
+});
+
+test('an unknown run mode is refused by name', () => {
+  assert.throws(() => buildPlan({ ...base, runMode: 'batch', forced: 'diff' }), /unknown run mode batch/);
+});

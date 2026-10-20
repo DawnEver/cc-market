@@ -34,7 +34,9 @@ Call `mcp__plugin_fabric_fabric__list_providers` and pass its provider keys as `
 node "<root>/scripts/plan.js" --sources <firedSources> --available <key1,key2,...>
 ```
 
-Options: `--profile <key>` forces one profile; `--range "main...HEAD"` / `--path <dir>` scope
+Options: `--providers <a,b>` requests a provider set instead of the rotation (a requested
+provider that is not available is planned `unavailable`, never replaced); `--profile <key>`
+forces one profile; `--range "main...HEAD"` / `--path <dir>` scope
 the diff (default: uncommitted changes vs HEAD). Never run raw `git diff` or paste diff text —
 the plan carries the diff inside each prompt. Capture the plan JSON: `run_id`, `plan_file`,
 `profiles`, and `reviewers: [{ name, provider, status, call_mode, model?, prompt }]`.

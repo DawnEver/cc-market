@@ -65,6 +65,9 @@
       "providers": [
         "anthropic"
       ],
+      "contexts": [
+        "diff"
+      ],
       "call_modes": [
         "review"
       ],

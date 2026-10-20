@@ -24,9 +24,20 @@ Every key is optional:
   "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
   "inlineDiffLimit":     20000,
   "docsThreshold":       3,
-  "codebaseIntervalMin": 10080
+  "codebaseIntervalMin": 10080,
+  "providers":           { "interactive": ["claude", "codex"], "headless": ["anthropic"] }
 }
 ```
+
+## Run modes and providers
+
+`method.json` `run_modes` declares two: **interactive** (sessions: the providers fabric
+`list_providers` reports, alphabetical, rotated by the minute seed, two of them; memory sink)
+and **headless** (no session: `["anthropic"]`, diff-context profiles and one-shot calls only,
+findings JSON on stdout). Neither synthesises or summarises reviewer output. The provider set
+resolves `--providers` → `providers.<mode>` here → the run mode default. Reviewer *i* takes
+provider *i mod n*; a requested provider the host cannot run is `unavailable`, a call mode the
+run mode cannot execute is `unsupported` — neither is ever replaced by another provider.
 
 ## Wave Gate (trigger thresholds)
 

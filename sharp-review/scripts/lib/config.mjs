@@ -13,7 +13,8 @@
 //     "thresholds":          { "wave0": { lines, files }, "wave1": { lines, files } },
 //     "inlineDiffLimit":     number,   // chars; review→agent mode cutover
 //     "docsThreshold":       number,   // doc-file count that fires the docs source
-//     "codebaseIntervalMin": number    // minutes between codebase surveys
+//     "codebaseIntervalMin": number,   // minutes between codebase surveys
+//     "providers":           { "<run mode>": ["<provider>", ...] }  // overrides method run_modes
 //   }
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

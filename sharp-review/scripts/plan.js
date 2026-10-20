@@ -3,8 +3,13 @@
 // assign providers, render every reviewer's prompt. Writes the plan to a run-scoped file and
 // prints it as JSON; the host fans the reviewers out and hands the results to post-review.js.
 //
-//   node plan.js [--sources diff,docs] [--profile <key>] --available <p1,p2,...>
-//                [--range <git range>] [--path <subdir>] [--out <plan.json>]
+//   node plan.js --available <p1,p2,...> [--mode interactive|headless] [--providers <p1,...>]
+//                [--sources diff,docs] [--profile <key>] [--range <git range>] [--path <subdir>]
+//                [--out <plan.json>]
+//
+// --available: the providers this host can actually run. --providers: the requested set
+// (default: the project config's providers.<mode>, else method.json run_modes.<mode>); a
+// requested provider that is not available is planned as unavailable, never substituted.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,6 +44,8 @@ try {
     manifest,
     sources: list('--sources'),
     forced: arg('--profile'),
+    runMode: arg('--mode') || 'interactive',
+    requested: list('--providers'),
     available: list('--available'),
     rands: { pick: draws(method.pick.count), shuffle: draws(method.pick.count) },
     runId,
