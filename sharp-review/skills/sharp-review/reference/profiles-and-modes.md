@@ -48,6 +48,10 @@ manual `/sharp-review` bypasses the gate.
   ≥1000 lines OR ≥15 files. The wave resets when HEAD moves; skipped sessions accumulate.
 - `lastReviewRef` / `lastReviewDiff` in `reviewGate` make a same-ref check compare only the
   delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD~1`.
+- **Content-hash gate:** a fired source dispatches only when the content it reviews changed
+  since it last dispatched (`reviewGate.reviewedHashes`: sha256 over each covered file's path
+  and bytes; `codebase` hashes HEAD). Sessions sharing one checkout alternate on the same state,
+  so without it an unchanged dirty tree re-fired the same profile every turn.
 
 ## Sources and profile selection
 

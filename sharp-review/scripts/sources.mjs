@@ -96,3 +96,18 @@ export function evaluateSources(ctx) {
   }
   return { fired, reasons };
 }
+
+// The changed files whose content a source's review covers — the input of the hook's
+// content-hash gate. `codebase` covers the whole tree, which the hook hashes as HEAD instead.
+const SOURCE_FILES = {
+  diff: () => true,
+  deps: isLockfile,
+  docs: isDoc,
+  codebase: () => false,
+};
+
+export function sourceFiles(key, changedFiles) {
+  const keep = SOURCE_FILES[key];
+  if (!keep) throw new Error(`unknown source ${key}`);
+  return changedFiles.filter(keep);
+}

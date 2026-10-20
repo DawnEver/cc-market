@@ -103,3 +103,40 @@ describe("buildDispatchInstruction", () => {
     assert.doesNotMatch(text, /sharp-review:sharp-review/);
   });
 });
+
+import { contentHash, freshSources, resolvePluginRoot } from "../hooks/sharp-review-hook.js";
+
+describe("content-hash gate", () => {
+  test("contentHash is independent of entry order and sensitive to content", () => {
+    const a = contentHash([["x.lock", "d1"], ["y.lock", "d2"]]);
+    assert.equal(a, contentHash([["y.lock", "d2"], ["x.lock", "d1"]]));
+    assert.notEqual(a, contentHash([["x.lock", "d1"], ["y.lock", "d3"]]));
+  });
+
+  test("a source whose reviewed content is unchanged does not fire again", () => {
+    // 2026-10-20: the deps profile re-fired every turn on an unchanged dirty tree.
+    const hashes = { diff: "h-diff-2", deps: "h-deps" };
+    const reviewed = { diff: "h-diff-1", deps: "h-deps" };
+    assert.deepEqual(freshSources(["diff", "deps"], hashes, reviewed), ["diff"]);
+    assert.deepEqual(freshSources(["deps"], hashes, reviewed), []);
+    assert.deepEqual(freshSources(["deps"], hashes, {}), ["deps"]);
+  });
+});
+
+describe("plugin root", () => {
+  test("resolves to the directory holding method/method.json and is named in the dispatch", () => {
+    const root = resolvePluginRoot();
+    assert.ok(fs.existsSync(path.join(root, "method", "method.json")));
+    const text = buildDispatchInstruction("diff", resolveReviewWorkerTarget({}), root);
+    assert.ok(text.includes(`plugin root: ${root}`));
+  });
+
+  test("a root without the method directory is refused by name", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sr-root-"));
+    try {
+      assert.throws(() => resolvePluginRoot(tmp), /method\/method\.json/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});

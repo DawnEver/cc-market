@@ -7,7 +7,7 @@
 //
 // raw.json: { run_id, results: [{ name, findings? | text? | error_kind? }] } — `name` is the
 // plan's reviewer name; see skills/sharp-review/reference/direct-fanout.md.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown } from './lib.mjs';
@@ -93,6 +93,9 @@ if (args.includes('--rescan')) {
   if (!rawFile || !existsSync(rawFile)) fail(`--raw <raw.json> is required and must exist: ${rawFile}`);
   const plan = JSON.parse(readFileSync(planFile, 'utf8'));
   const raw = JSON.parse(readFileSync(rawFile, 'utf8'));
+  // A raw file from an earlier run (a stale TEMP leftover) must never be merged as this one's.
+  if (raw.run_id !== plan.run_id) fail(`raw.json belongs to run ${raw.run_id}, not run ${plan.run_id}`);
+  if (statSync(rawFile).mtimeMs < Date.parse(plan.started_at)) fail(`raw.json (${rawFile}) is older than the run it claims (${plan.started_at})`);
   const method = loadMethod();
   const output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results }, method);
   writeMemory(output, plan, method);

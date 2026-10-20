@@ -126,3 +126,14 @@ test('evaluateSources — none fired yields empty list', () => {
   const out = evaluateSources(ctx());
   assert.deepEqual(out.fired, []);
 });
+
+// ── What each source reviews (its content hash input) ──
+import { sourceFiles } from '../scripts/sources.mjs';
+
+test('sourceFiles names the changed files each source reviews', () => {
+  const files = ['src/a.js', 'package-lock.json', 'README.md', 'docs/x.md'];
+  assert.deepEqual(sourceFiles('diff', files), files);
+  assert.deepEqual(sourceFiles('deps', files), ['package-lock.json']);
+  assert.deepEqual(sourceFiles('docs', files), ['README.md', 'docs/x.md']);
+  assert.deepEqual(sourceFiles('codebase', files), []);
+});

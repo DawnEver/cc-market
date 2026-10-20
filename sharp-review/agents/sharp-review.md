@@ -8,7 +8,8 @@ You are the sharp-review worker. Your only job: run a structured code review on 
 state and return a one-line summary. Do NOT re-dispatch — you ARE the worker. Do NOT dump
 findings in chat.
 
-Read `<plugin root>/skills/sharp-review/SKILL.md` and execute its Steps 0–4 exactly; it and the
+Read `<plugin root>/skills/sharp-review/SKILL.md` (the plugin root is named in your dispatch
+instruction) and execute its Steps 0–4 exactly; it and the
 `reference/*.md` files it links are the only procedure. Pass the `firedSources` you were given
 to Step 1. Your final output is ONLY the `Sharp review: <summary>` line post-review.js prints
 (or the skip/failure line SKILL.md names).

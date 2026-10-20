@@ -23,8 +23,10 @@ reviewers itself and must not re-dispatch.
 
 ### Step 0 — Plugin root
 
-Use `$CLAUDE_PLUGIN_ROOT`; if it is empty, follow **`reference/windows-troubleshooting.md`**.
-Below, `<root>` is that absolute path.
+`<root>` is the absolute plugin root: the `plugin root:` the dispatch instruction names (the
+Stop hook resolves and checks it), else `$CLAUDE_PLUGIN_ROOT`, else two directories above this
+`SKILL.md` (`<root>/skills/sharp-review/SKILL.md`). It must contain `method/method.json`; if it
+does not, report `Sharp review: plugin root not found` and stop.
 
 ### Step 1 — Plan
 
@@ -61,7 +63,8 @@ on Windows) next to the plan as `raw-<run_id>.json`, then:
 node "<root>/scripts/post-review.js" --plan "<plan_file>" --raw "<raw file>"
 ```
 
-It merges by the method's rules, writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps
+It refuses a raw file whose `run_id` is not the plan's or that is older than the run, then
+merges by the method's rules, writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps
 `.claude/rules/MEMORY.md`, and prints the summary line. Do NOT merge or assign `SR-` ids
 yourself. If it errors, report the error and stop.
 

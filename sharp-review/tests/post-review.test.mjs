@@ -75,3 +75,22 @@ test('a same-day second run appends as a follow-up with renumbered ids', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a raw file from another run is refused by name', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    assert.throws(() => run(dir, plan(), { run_id: 'run-0', results: [] }), /raw\.json belongs to run run-0, not run run-1/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a raw file older than the run is refused', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    const future = new Date(Date.now() + 3600_000).toISOString();
+    assert.throws(() => run(dir, plan({ started_at: future }), { run_id: 'run-1', results: [] }), /older than the run/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
