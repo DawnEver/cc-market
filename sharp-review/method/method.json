@@ -3,6 +3,7 @@
   "files": {
     "profiles": "profiles.json",
     "finding_schema": "finding.schema.json",
+    "output_schema": "findings-output.schema.json",
     "conformance": "conformance"
   },
   "pick": {

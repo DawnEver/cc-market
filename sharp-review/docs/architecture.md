@@ -10,7 +10,7 @@ An executor reads it and does I/O; executors share NO code, only the method dire
 conformance fixtures:
 
 - **Node (this plugin)** — in-host sessions: `plan.js` → host fan-out via fabric →
-  `post-review.js` → memory sink.
+  `post-review.js` → memory sink (sessions) or stdout findings JSON.
 - **Python (headless, outside this plugin)** — reads the same `method/` directory, runs its
   reviewers through a one-shot model call, applies the same merge rules, prints the findings
   JSON. It is tested against the same `method/conformance/` fixtures.
@@ -29,6 +29,7 @@ sharp-review/
 │   ├── method.json               schema_version, pick, contexts, template, run_modes, reviewer_status, merge
 │   ├── profiles.json             Built-in profiles
 │   ├── finding.schema.json       Reviewer finding schema
+│   ├── findings-output.schema.json  The findings JSON contract (versioned by schema_version)
 │   ├── prompts/*.md              Prompt templates + output_contract partial
 │   └── conformance/{merge,pick,prompt}/*.json   input → expected, for every executor
 ├── agents/sharp-review.md        Worker subagent: reads SKILL.md and runs it

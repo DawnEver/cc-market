@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sharp-review findings JSON",
+  "description": "One review run's merged result. schema_version equals method.json's; a reader refuses a version it does not know.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "range", "profiles", "reviewers", "findings"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "range": { "type": "string" },
+    "profiles": { "type": "array", "items": { "type": "string" } },
+    "reviewers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "provider", "status", "dropped_findings"],
+        "properties": {
+          "name": { "type": "string" },
+          "provider": { "type": ["string", "null"] },
+          "status": { "enum": ["ok", "exhausted", "auth", "rate_limit", "timeout", "unsupported", "unavailable", "skipped"] },
+          "dropped_findings": { "type": "integer" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "file", "summary", "category", "status", "suggestion", "detail", "confidence", "reviewers"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^SR-\\d{8}-\\d{3,}$" },
+          "severity": { "enum": ["HIGH", "MEDIUM", "LOW", "INFO"] },
+          "file": { "type": "string" },
+          "summary": { "type": "string" },
+          "category": { "enum": ["Bug", "Feature", "Performance"] },
+          "status": { "const": "OPEN" },
+          "suggestion": { "type": "string" },
+          "detail": { "type": "string" },
+          "confidence": { "type": "string" },
+          "reviewers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "provider"],
+              "properties": { "name": { "type": "string" }, "provider": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

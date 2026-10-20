@@ -11,7 +11,7 @@ const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts
 
 export function plan(over = {}) {
   return {
-    schema_version: 1, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD',
+    schema_version: 1, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'memory',
     profiles: [{ key: 'diff', label: 'diff review' }, { key: 'adversarial', label: 'adversarial review' }],
     reviewers: [
       { name: 'diff', provider: 'codex', status: 'pending' },
@@ -90,6 +90,40 @@ test('a raw file older than the run is refused', () => {
   try {
     const future = new Date(Date.now() + 3600_000).toISOString();
     assert.throws(() => run(dir, plan({ started_at: future }), { run_id: 'run-1', results: [] }), /older than the run/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--sink stdout prints the findings JSON and writes no memory', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    const out = run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] }, ['--sink', 'stdout']);
+    const json = JSON.parse(out);
+    assert.equal(json.schema_version, 1);
+    assert.deepEqual(json.profiles, ['diff', 'adversarial']);
+    assert.deepEqual(json.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'codex', 'ok'], ['adversarial', 'deepseek', 'ok']]);
+    assert.equal(json.findings[0].id, 'SR-20260621-001');
+    assert.throws(() => readFileSync(memFile(dir)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the plan\'s own sink is the default', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    const out = run(dir, plan({ sink: 'stdout' }), { run_id: 'run-1', results: [] });
+    assert.equal(JSON.parse(out).reviewers[0].status, 'unavailable');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an unknown sink is refused by name', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    assert.throws(() => run(dir, plan(), { run_id: 'run-1', results: [] }, ['--sink', 'gitea']), /unknown sink gitea/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

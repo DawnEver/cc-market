@@ -43,6 +43,7 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 
 ## Output
 
+- `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (`skills/sharp-review/reference/findings-json.md`)
 - `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter (sole source of truth)
 - `.claude/rules/MEMORY.md` — one index entry per session (upserted in-process via the bundled shared stamp module)
 - `todo` / `todo report` — scan memory directly; no derived `tasks.md`

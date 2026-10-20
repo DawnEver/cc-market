@@ -392,5 +392,9 @@ async function main() {
 }
 
 // Only run when executed directly (not when imported for testing)
-if (isMain(import.meta)) main().catch((e) => { process.stderr.write(`[sharp-review] ${e.message}
-`); process.exit(0); });
+if (isMain(import.meta)) {
+  main().catch((e) => {
+    process.stderr.write(`[sharp-review] ${e.message}\n`);
+    process.exit(0);
+  });
+}

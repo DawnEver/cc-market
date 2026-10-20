@@ -63,6 +63,9 @@ on Windows) next to the plan as `raw-<run_id>.json`, then:
 node "<root>/scripts/post-review.js" --plan "<plan_file>" --raw "<raw file>"
 ```
 
+(`--sink stdout` prints the findings JSON instead of writing memory —
+**`reference/findings-json.md`**.)
+
 It refuses a raw file whose `run_id` is not the plan's or that is older than the run, then
 merges by the method's rules, writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps
 `.claude/rules/MEMORY.md`, and prints the summary line. Do NOT merge or assign `SR-` ids

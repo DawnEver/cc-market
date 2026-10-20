@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // post-review.js — finish a planned run: merge the reviewers' raw results by the method's
-// rules (lib/merge.mjs) and write the memory sink, .claude/memory/YYYY/MM/DD/sharp-review.md.
+// rules (lib/merge.mjs) and write one sink: `memory` (.claude/memory/YYYY/MM/DD/sharp-review.md)
+// or `stdout` (the findings JSON, method/findings-output.schema.json). Default: the plan's sink.
 //
-//   node post-review.js --plan <plan.json> --raw <raw.json>
+//   node post-review.js --plan <plan.json> --raw <raw.json> [--sink memory|stdout]
 //   node post-review.js --rescan --date <YYYY-MM-DD>     re-derive frontmatter after an edit
 //
 // raw.json: { run_id, results: [{ name, findings? | text? | error_kind? }] } — `name` is the
@@ -98,5 +99,8 @@ if (args.includes('--rescan')) {
   if (statSync(rawFile).mtimeMs < Date.parse(plan.started_at)) fail(`raw.json (${rawFile}) is older than the run it claims (${plan.started_at})`);
   const method = loadMethod();
   const output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results }, method);
-  writeMemory(output, plan, method);
+  const sink = arg('--sink') || plan.sink;
+  if (sink === 'memory') writeMemory(output, plan, method);
+  else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
+  else fail(`unknown sink ${sink}; known: memory, stdout`);
 }
