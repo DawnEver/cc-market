@@ -104,7 +104,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 - `list_providers` — dump the provider registry + model aliases.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
 - `codex_status` — codex CLI install / version / auth check.
-- `fan_out` — run N `call`s in parallel; returns compact JSON (per-task `result` capped at
+- `fan_out` — run N `call`s in parallel, at most `fabric.fanOutConcurrency` (default 4) at once; returns compact JSON (per-task `result` capped at
   400 chars, est. tokens, duration) plus a synthesis when `synthesize: true` and a
   `fabric.synthesizer` is configured (refused by name otherwise).
 

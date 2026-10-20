@@ -124,7 +124,7 @@ export const TOOLS = [
   },
   {
     name: "fan_out",
-    description: "Run N tasks in parallel, return compact JSON (each result capped at 400 chars). Optional synthesis.",
+    description: "Run N tasks in parallel (at most fabric.fanOutConcurrency at once, default 4), return compact JSON (each result capped at 400 chars). Optional synthesis.",
     inputSchema: {
       type: "object",
       properties: {
@@ -456,15 +456,33 @@ export async function handleCall(args, deps = {}) {
 
 // ── fan_out: the orchestrator's parallel-work primitive ─────────
 
+// Calls in flight at once: fabric.fanOutConcurrency, else this default. Each call may be a
+// whole claude/codex process, so an unbounded fan-out of N tasks is N processes at once.
+export const FAN_OUT_CONCURRENCY_DEFAULT = 4;
+
+function fanOutConcurrency() {
+  const v = loadFabricConfig().fanOutConcurrency;
+  if (v === undefined) return FAN_OUT_CONCURRENCY_DEFAULT;
+  if (Number.isInteger(v) && v >= 1) return v;
+  throw new ConfigError(`fabric.fanOutConcurrency must be a positive integer, got ${JSON.stringify(v)}`);
+}
+
+// Run fn over items with at most `limit` in flight; results in item order.
+async function mapLimited(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 export async function handleFanOut(args, deps) {
   const { tasks, synthesize = false } = args;
   if (!tasks || !tasks.length) throw new ConfigError("fan_out: tasks array is required and must be non-empty");
   const synthesizer = synthesize ? configuredHelper("synthesizer", "fan_out synthesize") : null;
+  const limit = fanOutConcurrency();
 
-  let idx = 0;
-  const settled = await Promise.allSettled(
-    tasks.map(async (task) => {
-      const i = idx++;
+  const results = await mapLimited(tasks, limit, async (task, i) => {
       const id = task.id || `task-${i}`;
       const t0 = Date.now();
       try {
@@ -490,12 +508,9 @@ export async function handleFanOut(args, deps) {
           durationMs: Date.now() - t0,
         };
       } catch (e) {
-        return { id, ok: false, error: e.message.slice(0, 200), durationMs: Date.now() - t0 };
+        return { id, ok: false, ...(e.kind ? { kind: e.kind } : {}), error: e.message.slice(0, 200), durationMs: Date.now() - t0 };
       }
-    }),
-  );
-
-  const results = settled.map((s) => s.status === "fulfilled" ? s.value : { ok: false, error: s.reason?.message?.slice(0, 200) || "unknown error" });
+  });
 
   let synthesis = null;
   if (synthesizer) {

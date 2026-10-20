@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
-  API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH,
+  API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
 } from "../scripts/mcp-server.mjs";
 import { clearConfigCache } from "../engine/providers.mjs";
 
@@ -356,5 +356,42 @@ describe("summariser and synthesiser are configuration", () => {
     });
     assert.equal(calls.length, 2);
     assert.equal(calls[1].model, "sonnet");
+  });
+});
+
+// ── fan_out concurrency limit ───────────────────────────────────────
+
+describe("fan_out concurrency", () => {
+  const tracking = (stats) => async () => {
+    stats.now++; stats.max = Math.max(stats.max, stats.now);
+    await new Promise((r) => setTimeout(r, 20));
+    stats.now--;
+    return { code: 0, stdout: "ok", stderr: "" };
+  };
+  const tasks = Array.from({ length: 6 }, (_, i) => ({ id: `t${i}`, provider: "claude", prompt: "p" }));
+
+  test("fabric.fanOutConcurrency bounds the calls in flight, results keep task order", async () => {
+    const stats = { now: 0, max: 0 };
+    await withConfigFixture({ providers: {}, fabric: { fanOutConcurrency: 2 } }, async () => {
+      const parsed = JSON.parse(text(await handleFanOut({ tasks }, { spawnChild: tracking(stats) })));
+      assert.deepEqual(parsed.tasks.map((t) => t.id), tasks.map((t) => t.id));
+      assert.equal(parsed.ok, true);
+    });
+    assert.equal(stats.max, 2);
+  });
+
+  test("the default limit is FAN_OUT_CONCURRENCY_DEFAULT", async () => {
+    const stats = { now: 0, max: 0 };
+    const many = Array.from({ length: FAN_OUT_CONCURRENCY_DEFAULT + 3 }, (_, i) => ({ id: `t${i}`, provider: "claude", prompt: "p" }));
+    await withConfigFixture({ providers: {} }, () => handleFanOut({ tasks: many }, { spawnChild: tracking(stats) }));
+    assert.equal(stats.max, FAN_OUT_CONCURRENCY_DEFAULT);
+  });
+
+  test("a non-positive-integer limit is refused by name", async () => {
+    for (const bad of [0, -1, 1.5, "4"]) {
+      await withConfigFixture({ providers: {}, fabric: { fanOutConcurrency: bad } }, () =>
+        assert.rejects(handleFanOut({ tasks }, { spawnChild: tracking({ now: 0, max: 0 }) }),
+          (e) => e.name === "ConfigError" && /fabric\.fanOutConcurrency/.test(e.message)));
+    }
   });
 });
