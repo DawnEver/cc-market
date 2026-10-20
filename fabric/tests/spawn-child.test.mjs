@@ -9,36 +9,26 @@ import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildChildEnv, spawnChild, resolveClaudeExe, clearClaudeExeCache } from '../engine/spawn-child.mjs';
-import { clearConfigCache } from '../engine/providers.mjs';
+import { providerCacheFixture, FIXTURE_PROVIDERS, row, fixtureKeySource } from './fixtures/provider-cache.mjs';
+import { _setKeySource } from '../engine/providers.mjs';
 
-const REG = {
-  providers: {
-    deepseek: {
-      url: 'https://api.deepseek.com',
-      claudePath: '/anthropic',
-      claudeApiKeyEnv: 'ANTHROPIC_API_KEY',
-      apiKey: 'sk-real',
-      models: { base: 'deepseek-v4-flash', opus: 'deepseek-v4-pro[1m]' },
-    },
-  },
-};
-function fixture(reg = REG) {
-  const p = join(mkdtempSync(join(tmpdir(), 'spawnchild-')), 'reg.json');
-  writeFileSync(p, JSON.stringify(reg));
-  clearConfigCache();
-  return p;
+_setKeySource(fixtureKeySource());
+
+const REGISTRY = { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_API_KEY' } } };
+function fixture({ providers = FIXTURE_PROVIDERS, registry = REGISTRY } = {}) {
+  return providerCacheFixture({ providers, registry }).configPath;
 }
 
-test('buildChildEnv normal mode projects url+claudePath into ANTHROPIC_BASE_URL, apiKey into the named env', () => {
-  const env = buildChildEnv({ provider: 'deepseek', observe: false, configPath: fixture() });
-  assert.equal(env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic');
-  assert.equal(env.ANTHROPIC_API_KEY, 'sk-real');
-  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'deepseek-v4-flash');
-  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'deepseek-v4-pro[1m]');
+test('buildChildEnv normal mode projects the catalogue endpoint into ANTHROPIC_BASE_URL, the stored key into the named env', () => {
+  const env = buildChildEnv({ provider: 'acme', observe: false, configPath: fixture() });
+  assert.equal(env.ANTHROPIC_BASE_URL, 'https://api.acme.test/anthropic');
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-test');
+  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'acme-flash');
+  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'acme-pro[1m]');
 });
 
 test('buildChildEnv observe mode strips real key, points at proxy', () => {
-  const env = buildChildEnv({ provider: 'deepseek', observe: true, proxyUrl: 'http://127.0.0.1:9', configPath: fixture() });
+  const env = buildChildEnv({ provider: 'acme', observe: true, proxyUrl: 'http://127.0.0.1:9', configPath: fixture() });
   assert.equal(env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:9');
   assert.equal(env.ANTHROPIC_API_KEY, undefined, 'real API_KEY never reaches child');
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'fabric-observe-placeholder');
@@ -49,7 +39,7 @@ test('buildChildEnv observe mode strips real key, points at proxy', () => {
 });
 
 test('buildChildEnv observe mode requires proxyUrl', () => {
-  assert.throws(() => buildChildEnv({ provider: 'deepseek', observe: true, configPath: fixture() }), /requires proxyUrl/);
+  assert.throws(() => buildChildEnv({ provider: 'acme', observe: true, configPath: fixture() }), /requires proxyUrl/);
 });
 
 // Fake spawn: records argv/env, emits stream-json stdout, closes 0.
@@ -72,7 +62,7 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   const sink = {};
   const runDir = mkdtempSync(join(tmpdir(), 'sc-run-'));
   const res = await spawnChild({
-    provider: 'deepseek', prompt: 'hello', model: 'claude-haiku-4-5', runDir,
+    provider: 'acme', prompt: 'hello', model: 'claude-haiku-4-5', runDir,
     configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
   });
   assert.equal(res.code, 0);
@@ -82,11 +72,11 @@ test('spawnChild wires env + args, isolates config dir (normal mode)', async () 
   assert.deepEqual(sink.args.slice(0, 5), ['-p', 'hello', '--verbose', '--output-format', 'stream-json']);
   // Direct-connect API provider: model pinned via env (resolveModel), not --model —
   // the CLI flag would rely on tier-alias env vars; the env pin is exact.
-  assert.equal(sink.env.ANTHROPIC_MODEL, 'deepseek-v4-flash');
+  assert.equal(sink.env.ANTHROPIC_MODEL, 'acme-flash');
   assert.ok(!sink.args.includes('--model'));
   assert.ok(sink.env.CLAUDE_CONFIG_DIR.includes('config'), 'isolated config dir set');
-  assert.equal(sink.env.ANTHROPIC_API_KEY, 'sk-real', 'normal mode = direct API-key auth');
-  assert.equal(sink.env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic', 'normal mode = direct-connect base URL');
+  assert.equal(sink.env.ANTHROPIC_API_KEY, 'sk-test', 'normal mode = direct API-key auth');
+  assert.equal(sink.env.ANTHROPIC_BASE_URL, 'https://api.acme.test/anthropic', 'normal mode = direct-connect base URL');
 });
 
 test('spawnChild native claude without runDir: no isolation, --model passthrough', async () => {
@@ -312,13 +302,13 @@ test('spawnChild observe mode defaults passthroughAuth on for native claude, for
   });
   assert.equal(proxyCalls[0].passthroughAuth, true, 'native claude defaults passthroughAuth true');
   await spawnChild({
-    provider: 'deepseek', prompt: 'hi', runDir, observe: true,
+    provider: 'acme', prompt: 'hi', runDir, observe: true,
     configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
     _startObserveProxy: fakeProxy,
   });
   assert.equal(proxyCalls[1].passthroughAuth, false, 'static-key provider defaults false');
   await spawnChild({
-    provider: 'deepseek', prompt: 'hi', runDir, observe: true, passthroughAuth: true,
+    provider: 'acme', prompt: 'hi', runDir, observe: true, passthroughAuth: true,
     configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
     _startObserveProxy: fakeProxy,
   });
@@ -342,16 +332,15 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
   const upstream = http.createServer((_, r) => r.end()).listen(0, '127.0.0.1');
   await new Promise((r) => upstream.once('listening', r));
   const port = upstream.address().port;
-  const cfg = fixture({ providers: { deepseek: { url: `http://127.0.0.1:${port}`, claudePath: '', claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN', apiKey: 'sk-real', models: { base: 'deepseek-v4-flash' } } } });
+  const cfg = fixture({ providers: { acme: row({ host: 'api.acme.test', endpoints: { anthropic: `http://127.0.0.1:${port}` }, models: { base: 'acme-flash' } }) }, registry: { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN' } } } });
   const sink = {};
   const runDir = mkdtempSync(join(tmpdir(), 'sc-obs-'));
   try {
     const res = await spawnChild({
-      provider: 'deepseek', prompt: 'hi', runDir, observe: true,
+      provider: 'acme', prompt: 'hi', runDir, observe: true,
       configPath: cfg, _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
     });
     assert.match(sink.env.ANTHROPIC_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+$/, 'child points at proxy');
-    assert.equal(sink.env.CLAUDE_CODE_USE_FOUNDRY, undefined, 'Foundry stripped in observe mode');
     assert.ok(res.jsonlPath && existsSync(res.jsonlPath), 'jsonl path returned + file exists');
   } finally {
     await new Promise((r) => upstream.close(r));
@@ -421,7 +410,7 @@ test('headless children run hook-free via --settings disableAllHooks', async () 
   // `claude -p` child alive past its timeout by injecting more turns.
   const sink = {};
   await spawnChild({
-    provider: 'deepseek', prompt: 'hello',
+    provider: 'acme', prompt: 'hello',
     configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
   });
   const i = sink.args.indexOf('--settings');
@@ -432,7 +421,7 @@ test('headless children run hook-free via --settings disableAllHooks', async () 
 test('caller-supplied --settings in extraArgs wins over the hook-free default', async () => {
   const sink = {};
   await spawnChild({
-    provider: 'deepseek', prompt: 'hello', extraArgs: ['--settings', '{"custom":true}'],
+    provider: 'acme', prompt: 'hello', extraArgs: ['--settings', '{"custom":true}'],
     configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
   });
   const occurrences = sink.args.filter((a) => a === '--settings').length;

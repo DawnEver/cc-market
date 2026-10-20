@@ -30,7 +30,7 @@ MCP `call` — the one-shot primitive (call it N times concurrently for fan-out;
 selects policy: task/review/agent/image-generate/image-edit):
 
 ```json
-{ "provider": "deepseek", "prompt": "Summarize the failure modes in this log: ..." }
+{ "provider": "<catalogue provider>", "prompt": "Summarize the failure modes in this log: ..." }
 ```
 
 ```json
@@ -47,10 +47,10 @@ import { spawnChild } from './engine/spawn-child.mjs';
 import { startObserveProxy } from './engine/observe-proxy.mjs';
 
 // one-shot
-const res = await spawnChild({ provider: 'deepseek', prompt: 'hello', observe: true, runDir });
+const res = await spawnChild({ provider: '<catalogue provider>', prompt: 'hello', observe: true, runDir });
 
 // observe proxy on its own
-const proxy = await startObserveProxy({ provider: 'deepseek', runDir });
+const proxy = await startObserveProxy({ provider: '<catalogue provider>', runDir });
 // ... point any Anthropic-HTTP client at proxy.url; capture lands in proxy.jsonlPath
 await proxy.close();
 ```
@@ -59,28 +59,25 @@ await proxy.close();
 
 Running child model sessions has two modes:
 
-- **Normal** — the child direct-connects to its provider (DeepSeek via Foundry env). No
+- **Normal** — the child direct-connects to its provider (its anthropic endpoint, key and model pins in the env). No
   overhead.
 - **Observe/debug** — you want to capture the child's API traffic.
 
-`claude-tap` only intercepts vanilla `ANTHROPIC_BASE_URL`, which **conflicts** with
-Foundry routing (DeepSeek). Fabric resolves this with a minimal own proxy:
+Fabric captures it with a minimal own proxy:
 
 ```
 child --ANTHROPIC_BASE_URL=http://127.0.0.1:PORT--> observe-proxy --> real upstream
 ```
 
 The child always speaks vanilla Anthropic HTTP; the proxy alone owns the provider's
-endpoint, auth, and model alias. `observe` becomes a single boolean — vanilla+proxy vs
-Foundry direct — and the same proxy works for any Anthropic-compatible provider.
+endpoint, auth, and model alias. `observe` is a single boolean — proxy vs direct — and the same proxy works for any Anthropic-compatible provider.
 
 ## Layers
 
-- **L0 provider routing** — `engine/providers.mjs` (fabric-owned, canonical). Reads `~/.claude/claude_env_settings.json` plus the machine-local `claude_env_settings.local.json` overlay (deep-merged by `readRegistry`, override wins — the synced file carries base URLs/models, never keys), normalizes vanilla/Foundry,
-  resolves model aliases.
+- **L0 provider routing** — `engine/providers.mjs`. Reads the provider catalogue from `~/.claude/provider-cache.json` (ai-lab's `python -m ai_lab.providers --json`, copied by setup; stale/absent is refused as `unsupported` naming the remedy) and the host projection rules (`claudeApiKeyEnv`) from `~/.claude/claude_env_settings.json`; resolves model aliases.
 - **L1 engines** — `engine/spawn-child.mjs` (the claude child engine: exe resolution,
-  provider env, optional config isolation, stream-json/images), `engine/anthropic-http.mjs`
-  (raw single-turn HTTP, retry + SSE), `engine/codex/` (codex app-server client + task
+  provider env, optional config isolation, stream-json/images), `engine/ai-lab-call.mjs`
+  (every one-shot API call as one `python -m ai_lab.call` request; ai-lab holds the wire, key and retries), `engine/codex/` (codex app-server client + task
   runner). One implementation each; the plugin's own L1 policy consumes them.
 - **L1 observe proxy** — `engine/observe-proxy.mjs`. `startObserveProxy({provider,
   runDir})` → `{url, port, jsonlPath, close}`. Buffers+remaps the request body, streams
@@ -89,7 +86,7 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 ## Library (dual-form)
 
 - `spawnChild({provider, prompt, observe, runDir, model})` — headless one-shot child.
-  `buildChildEnv` is the observe switch (Foundry-strip vs proxy).
+  `buildChildEnv` is the observe switch (direct vs proxy).
 - `startObserveProxy({provider, runDir})` — the observe proxy.
 - `loadRows` / `mainTurns` / `summarize` (`engine/observe-reader.mjs`) — read the capture.
 
@@ -97,7 +94,8 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 - `call` — the one-shot primitive: invoke a model and return its output. `mode`
   (task/review/agent/image-*) carries policy; `<command>` flags in `prompt` override params.
-  Anthropic-compatible providers (`claude` / `deepseek`) run via `claude -p` or raw HTTP;
+  `provider: "claude"` runs via `claude -p`; a catalogue provider runs task/review through
+  `ai_lab.call` and agent mode via `claude -p` on its anthropic endpoint;
   `provider: "codex"` runs via the codex app-server (native — pass `write: true` for tools,
   `cwd` for the repo). `observe: true` (non-codex) captures API traffic to the proxy jsonl.
   Call several concurrently for fan-out.
@@ -110,17 +108,21 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 
 ## Config
 
-The `fabric` block of `~/.claude/claude_env_settings.json` (synced; per-machine overrides go
-in `~/.claude/claude_env_settings.local.json`, deep-merged over it):
+The `fabric` block of `~/.claude/claude_env_settings.json`:
 
 ```json
 "fabric": {
   "systemPromptFile": "~/.claude/system-prompt/claude-base.md",
-  "sessionDefaults": { "provider": "deepseek", "model": "deepseek-v4-flash[1m]" }
+  "sessionDefaults": { "provider": "<catalogue provider>", "model": "<model id or tier word>" }
 }
 ```
 
 `sessionDefaults` supplies provider/model when `call` omits a provider.
+
+`ledger` names the ai-lab ledger (`python -m ai_lab.call --ledger`) every one-shot API call is
+recorded in, with its usage and key slot — the one usage record (default
+`~/.claude/fabric/ledger.jsonl`). The ledger also serves an identical repeated request from the
+record. fabric writes no trace of its own.
 
 Optional `summarizer` and `synthesizer` (each `{ "provider": ..., "model": ... }`) name who
 condenses a long `call` result (`resultMode: "summary"`) and who synthesises `fan_out`
@@ -129,8 +131,11 @@ explicit `summary` or `synthesize: true` without its helper is refused by name.
 
 ## Auth note
 
-Static-key providers get the token injected in the header style matching the env var that
-supplied it: `ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` (and
-Foundry keys, e.g. DeepSeek/Kimi) → `x-api-key`. OAuth providers (`claude`) must
+An API provider's key is never in a file: it is read from the git credential store
+(`git credential fill`, prompts off) under the catalogue row's host and the caller's key
+task (`call`'s `task`, default `default`; the row's `key_usernames` names the credential).
+No git is `unsupported`; no stored key is `auth`, naming `python -m ai_lab.auth login`.
+The observe proxy injects it in the header style `claudeApiKeyEnv` names:
+`ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` → `x-api-key`. OAuth providers (`claude`) must
 use `passthroughAuth: true` — the proxy forwards the child's own refreshing token rather
 than holding credentials.

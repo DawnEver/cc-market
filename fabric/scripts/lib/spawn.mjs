@@ -1,7 +1,6 @@
 // spawn.mjs — takeover policy wrapper over the shared claude child engine.
 // The engine (binary resolution, provider env, stream-json, images, timeouts)
-// lives in engine/spawn-child.mjs; this file only shapes the MCP result and
-// applies takeover's usage-extraction priority. The wrapper consumes/normalizes
+// lives in engine/spawn-child.mjs; this file only shapes the MCP result. The wrapper consumes/normalizes
 // provider (→ label, default "claude"), model, systemPrompt, images, signal, and
 // timeoutMs (default 600000); all other options pass through to spawnChild untouched
 // via rest-spread. Note: onText is always overridden by the stderr streamer, and
@@ -15,7 +14,6 @@
 import process from "node:process";
 
 import { spawnChild, resolveClaudeExe } from "../../engine/spawn-child.mjs";
-import { extractUsageFromStderr } from "./trace.mjs";
 
 export { resolveClaudeExe };
 
@@ -40,6 +38,6 @@ export async function spawnClaudeP(userPrompt, opts = {}) {
   });
 
   if (res.code !== 0) throw new Error(`claude CLI (${label}) exited ${res.code}: ${res.stderr.trim()}`);
-  const usage = extractUsageFromStderr(res.stderr) || res.usage;
-  return { content: [{ type: "text", text: res.stdout.trim() }], _usage: usage };
+  return { content: [{ type: "text", text: res.stdout.trim() }], _usage: res.usage };
 }
+

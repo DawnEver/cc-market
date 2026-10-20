@@ -1,13 +1,11 @@
 // engine/spawn-child.mjs — L1 session engine. Launch a headless child model session
 // (`claude -p`) for any provider, optionally behind the observe proxy. The single
-// implementation behind both fabric's `run_task` and takeover's claude/deepseek modes
-// (previously two forks: fabric spawnChild + takeover spawnClaudeP).
+// implementation behind every `claude -p` path of the call primitive.
 //
 // The `observe` boolean is the whole design in one switch:
-//   observe:false → provider env direct (DeepSeek via Foundry). No capture, no overhead.
+//   observe:false → provider env direct (endpoint, key, model pins). No capture, no overhead.
 //   observe:true  → strip all provider routing, point ANTHROPIC_BASE_URL at a local
-//                   observe proxy; the proxy owns the real upstream/auth/model. This is
-//                   what makes DeepSeek traffic capturable despite Foundry.
+//                   observe proxy; the proxy owns the real upstream/auth/model.
 //
 // Headless (child_process, no PTY) is deliberate: it's the clean orchestration path from
 // the design (structured I/O, no TTY question-guessing).
@@ -15,10 +13,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId, PROVIDER_ENV_KEYS } from './providers.mjs';
+import { loadProviderEnv, loadProviderConfig, resolveModel, resolveModelFromId } from './providers.mjs';
 import { loadFabricConfig } from './fabric-config.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
-import { buildUserContent } from './anthropic-http.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
 import { ProviderError } from './errors.mjs';
 import { killTree, treeSpawnOptions } from './kill-tree.mjs';
@@ -79,23 +76,29 @@ export function effortEnv(effort) {
   throw new Error(`unknown effort "${effort}". Use ${Object.keys(EFFORT_LEVELS).join("/")} or a token number`);
 }
 
+// The stream-json user content: the prompt, then each image as a base64 block.
+function buildUserContent(prompt, images) {
+  if (!images || images.length === 0) return prompt;
+  return [{ type: 'text', text: prompt },
+    ...images.map((img) => ({ type: 'image', source: { type: 'base64', media_type: img.media_type || 'image/png', data: img.data } }))];
+}
+
 // ── Env shaping ──────────────────────────────────────────────────────────────
 
 /**
  * Pure env-shaping — the error-prone core, unit-tested in isolation.
  * @returns {object} the child's environment.
  */
-export function buildChildEnv({ provider, observe, proxyUrl, configPath }) {
-  const env = loadProviderEnv(provider, configPath);
-  if (!observe) return env; // normal: direct-connect (Foundry vars intact for deepseek)
-
-  if (!proxyUrl) throw new Error('buildChildEnv: observe mode requires proxyUrl');
-  // Route through the proxy with vanilla Anthropic vars only. Strip every provider key
-  // (incl. Foundry) so nothing bypasses the proxy; the proxy injects the real upstream key.
-  for (const k of PROVIDER_ENV_KEYS) delete env[k];
-  env.ANTHROPIC_BASE_URL = proxyUrl;
-  env.ANTHROPIC_AUTH_TOKEN = 'fabric-observe-placeholder';
-  return env;
+export function buildChildEnv({ provider, observe, proxyUrl, configPath, task }) {
+  if (observe) {
+    // The proxy holds the key; the child gets none, so none is read here.
+    if (!proxyUrl) throw new Error('buildChildEnv: observe mode requires proxyUrl');
+    const env = loadProviderEnv('claude', configPath);
+    env.ANTHROPIC_BASE_URL = proxyUrl;
+    env.ANTHROPIC_AUTH_TOKEN = 'fabric-observe-placeholder';
+    return env;
+  }
+  return loadProviderEnv(provider, configPath, { task });
 }
 
 // ── Stream-json parsing (large prompts / images go via stdin) ────────────────
@@ -115,7 +118,7 @@ export function hookFreeArgs(extraArgs = []) {
 // Text carried by one stream-json message ('' if none) — the single extraction
 // used by both parseStreamJsonOutput and the live onText handler.
 // Duplicate rule: some providers' final `result` message repeats the full assistant
-// text verbatim (observed with DeepSeek via Foundry) — a result equal to the
+// text verbatim (observed on an Anthropic-compatible gateway) — a result equal to the
 // accumulated assistant text must be dropped, or callers see the answer twice.
 // Both consumers thread the accumulated assistant text in as `assistantAcc`.
 function extractStreamText(msg, assistantAcc = '') {
@@ -170,7 +173,7 @@ function armKillTimer(child, ms, onTimeout, kill) {
 /**
  * Spawn a headless child session and collect its output.
  * @param {object} opts
- * @param {string}  [opts.provider]       registry key ('deepseek', 'claude', ...); default 'claude'
+ * @param {string}  [opts.provider]       catalogue provider or 'claude'; default 'claude'
  * @param {string}  opts.prompt           the task prompt (claude -p)
  * @param {string}  [opts.systemPrompt]   prepended to the prompt ("sys\n\n---\n\nprompt")
  * @param {Array}   [opts.images]         [{media_type, data(base64)}] — forces stream-json stdin
@@ -196,7 +199,7 @@ function armKillTimer(child, ms, onTimeout, kill) {
 export async function spawnChild(opts) {
   const {
     provider = 'claude', prompt, systemPrompt, systemPromptFile, images, runDir, observe = false, model,
-    cwd, extraArgs = [], configPath, timeoutMs = 120000, signal, onText, passthroughAuth,
+    cwd, extraArgs = [], configPath, task, timeoutMs = 120000, signal, onText, passthroughAuth,
     _spawn = hiddenSpawn, _bin, _startObserveProxy = startObserveProxy, _killTree = killTree,
   } = opts;
   if (!prompt) throw new Error('spawnChild: prompt is required');
@@ -214,11 +217,11 @@ export async function spawnChild(opts) {
     // OAuth providers (native claude) have no static key to inject — the proxy must
     // forward the child's own self-refreshing Authorization header.
     const pta = passthroughAuth ?? !!loadProviderConfig(provider, configPath).native;
-    proxy = await _startObserveProxy({ provider, runDir, passthroughAuth: pta, configPath });
+    proxy = await _startObserveProxy({ provider, runDir, passthroughAuth: pta, configPath, task });
   }
 
   try {
-    const env = buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath });
+    const env = buildChildEnv({ provider, observe, proxyUrl: proxy?.url, configPath, task });
     if (configDir) env.CLAUDE_CONFIG_DIR = configDir;
 
     const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${prompt}` : prompt;

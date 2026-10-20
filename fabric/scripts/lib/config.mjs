@@ -15,7 +15,6 @@ export {
   PROVIDER_ENV_KEYS,
   loadProviderEnv,
   loadProviderConfig,
-  clearConfigCache,
   resolveModel,
   listModels,
 } from "../../engine/providers.mjs";

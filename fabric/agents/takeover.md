@@ -37,7 +37,7 @@ The remote model has NO filesystem access. Package everything inline.
 **Review mode:**
 → Read `prompts/review.md` for the adversarial review system prompt. The git diff is the primary context.
 
-- If no provider is specified and the task is ambiguous (user didn't say "use codex/claude/deepseek"):
+- If no provider is specified and the task is ambiguous (user didn't say "use codex/claude/<provider>"):
   - Call `list_providers` via MCP to list available providers.
   - Present the list to the user and ask which provider to use.
   - Do NOT proceed to Phase 3 until a provider is chosen.

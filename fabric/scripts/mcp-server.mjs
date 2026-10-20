@@ -11,13 +11,13 @@
 //   - fan_out        : N calls in parallel, compact JSON + optional synthesis.
 //   - list_providers / resolve_model / codex_status : introspection.
 //
-// Layering: L0 mechanism = shared/ engines (providers, spawn-child, anthropic-http, codex,
+// Layering: L0 mechanism = engine/ (providers, spawn-child, ai-lab-call, codex,
 // observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
-// shaping, <command> parsing, result/usage shaping, traceme). L2 ergonomics = commands/
+// shaping, <command> parsing, result shaping). L2 ergonomics = commands/
 // skills/agents. This file wires L1 onto L0.
 
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -29,12 +29,9 @@ import {
   truncateText,
   listModels,
   parseCommandBlock,
-  callAnthropicAPI,
   callCodexCompanion,
   spawnClaudeP,
-  emitProviderTrace,
   checkCodexStatus,
-  logProviderRequest,
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
@@ -42,6 +39,7 @@ import { withPooledClient, poolStats } from "../engine/codex/app-server.mjs";
 import { resolveModelFromId, getConfigPath } from "../engine/providers.mjs";
 import { loadFabricConfig } from "../engine/fabric-config.mjs";
 import { spawnChild } from "../engine/spawn-child.mjs";
+import { callAiLab, textRequest } from "../engine/ai-lab-call.mjs";
 import { summarizeFile } from "../engine/observe-reader.mjs";
 import { createStdioServer, encodeRpcMessage } from "../engine/mcp-rpc.mjs";
 import { isMain } from "../shared/lib.mjs";
@@ -62,8 +60,9 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: "claude, codex, deepseek, or key from claude_env_settings.json" },
+        provider: { type: "string", description: "claude, codex, or a provider of the ai-lab catalogue (list_providers)" },
         model: { type: "string", description: "Model override" },
+        task: { type: "string", description: "Key task of an API provider (its credential: api-key-<task>). Default: default" },
         mode: {
           type: "string",
           enum: ["task", "review", "agent", "image-generate", "image-edit"],
@@ -139,6 +138,7 @@ export const TOOLS = [
               mode: { type: "string", enum: ["task", "review", "agent"] },
               write: { type: "boolean" },
               model: { type: "string" },
+              task: { type: "string", description: "Key task" },
               cwd: { type: "string", description: "Working dir" },
               timeoutMs: { type: "number", description: "Kill after N ms" },
             },
@@ -178,7 +178,7 @@ function resolveImages(images) {
 }
 
 function checkImageSizeLimit(resolvedImages, provider, providerConfig) {
-  if (provider === "codex" || providerConfig.baseUrl) return;
+  if (provider === "codex" || !providerConfig.native) return; // API providers: ai-lab sends structured images
   const oversized = resolvedImages.filter((img) => img.data.length > MAX_DATA_URI_BYTES);
   if (oversized.length > 0) {
     const sizes = oversized.map((img) => `${img.path || "image"} (${(img.data.length / 1024).toFixed(0)}KB)`).join(", ");
@@ -189,15 +189,6 @@ function checkImageSizeLimit(resolvedImages, provider, providerConfig) {
   }
 }
 
-function emitTrace(data, provider, resolvedModel, mode) {
-  const usage = data?._usage || data?.usage || null;
-  emitProviderTrace({
-    ts: new Date().toISOString(),
-    provider, model: resolvedModel || "default", mode: mode || "task",
-    input_tokens: usage?.input_tokens || 0, output_tokens: usage?.output_tokens || 0,
-    cache_read: usage?.cache_read_input_tokens || 0, cache_write: usage?.cache_creation_input_tokens || 0,
-  });
-}
 
 // ── Result shaping: keep parent context clean ─────────────────────
 
@@ -279,9 +270,9 @@ const CODEX_DISPATCH = {
   "image-edit": dispatchCodexImageEdit,
 };
 
-// The child options every claude -p path forwards: model, cwd, timeoutMs, signal.
-const childOpts = ({ systemPrompt, model, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
-  systemPrompt, model: model || null, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
+// The child options every claude -p path forwards: model, key task, cwd, timeoutMs, signal.
+const childOpts = ({ systemPrompt, model, task, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
+  systemPrompt, model: model || null, task, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
 });
 
 async function dispatchClaudeTask(ctx) {
@@ -304,26 +295,20 @@ const CLAUDE_DISPATCH = {
   review: dispatchClaudeTask,
 };
 
-// cwd has no meaning for a one-shot HTTP completion (no filesystem); timeoutMs bounds the
-// whole call, retries included, and surfaces as kind `timeout`.
-async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, timeoutMs }) {
+// A one-shot API call is one `ai_lab.call` request: ai-lab holds the wire, the key (by task)
+// and the retries. cwd has no meaning for it (no filesystem); timeoutMs bounds the whole call
+// and surfaces as kind `timeout`.
+async function dispatchAPITask({ userPrompt, systemPrompt, provider, providerConfig, model, task, resolvedImages, timeoutMs, callAiLab: _callAiLab = callAiLab }) {
   const resolvedModel = resolveModel(providerConfig, model || null);
-  process.stderr.write(`fabric-mcp: calling ${resolvedModel} (API)...\n`);
-  // Platform prompt for direct-connect API providers: the same
-  // fabric.systemPromptFile the claude-CLI paths inject (they have no CLI
-  // --system-prompt-file, so the file is read here and set as body.system).
+  if (!resolvedModel) throw new ConfigError(`provider "${provider}" declares no default model; pass model`);
+  process.stderr.write(`fabric-mcp: calling ${provider}:${resolvedModel} (ai_lab.call)...\n`);
+  // Platform prompt for API providers: the same fabric.systemPromptFile the claude-CLI paths inject.
   const sysFile = loadFabricConfig(getConfigPath()).systemPromptFile;
-  const ctl = timeoutMs ? new AbortController() : null;
-  const timer = ctl && setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, ctl?.signal ?? null, { systemPromptFile: sysFile });
-    return { data, resolvedModel };
-  } catch (err) {
-    if (ctl?.signal.aborted) throw new ProviderError("timeout", `${resolvedModel}: no response after ${timeoutMs}ms`);
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+  const platform = sysFile && existsSync(sysFile) ? readFileSync(sysFile, "utf8") : "";
+  const instructions = [platform, systemPrompt].filter(Boolean).join("\n\n");
+  const reply = await _callAiLab(textRequest({ provider, model: resolvedModel, task, instructions, prompt: userPrompt, images: resolvedImages }),
+    { timeoutMs: timeoutMs || undefined });
+  return { data: { content: [{ type: "text", text: reply.result?.text ?? "" }], usage: reply.usage }, resolvedModel };
 }
 
 async function dispatchAPIAgent(ctx) {
@@ -346,7 +331,7 @@ async function runObserved(args, _spawnChild) {
   const runDir = args.runDir || join(tmpdir(), `fabric-call-${Date.now()}`);
   const res = await _spawnChild({
     provider: args.provider, prompt: args.prompt, model: args.model,
-    observe: true, passthroughAuth: args.passthroughAuth, runDir, cwd: args.cwd, timeoutMs: args.timeoutMs,
+    observe: true, passthroughAuth: args.passthroughAuth, task: args.task, runDir, cwd: args.cwd, timeoutMs: args.timeoutMs,
   });
   const parts = [res.stdout?.trim() || "(no output)"];
   if (res.jsonlPath) parts.push("", `--- observe capture: ${res.jsonlPath} ---`, JSON.stringify(summarizeFile(res.jsonlPath)));
@@ -358,7 +343,6 @@ async function runObserved(args, _spawnChild) {
 
 export async function handleCall(args, deps = {}) {
   let { provider, model, mode, systemPrompt: customSystem, prompt: userPrompt, write, images, observe } = args;
-  const startTs = new Date().toISOString();
 
   // <command> block flags are authoritative.
   const parsed = parseCommandBlock(userPrompt);
@@ -403,7 +387,7 @@ export async function handleCall(args, deps = {}) {
 
   const effectiveMode = mode || "task";
   const common = {
-    userPrompt, systemPrompt, provider, model, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
+    userPrompt, systemPrompt, provider, model, task: args.task, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
     spawnChild: deps.spawnChild, withCodexClient: deps.withCodexClient || withPooledClient,
   };
   let dispatchMap, dispatchContext;
@@ -415,7 +399,7 @@ export async function handleCall(args, deps = {}) {
     dispatchContext = common;
   } else {
     dispatchMap = API_DISPATCH;
-    dispatchContext = { ...common, providerConfig };
+    dispatchContext = { ...common, providerConfig, callAiLab: deps.callAiLab };
   }
 
   const handler = dispatchMap[effectiveMode];
@@ -425,22 +409,8 @@ export async function handleCall(args, deps = {}) {
     );
   }
 
-  const t0 = Date.now();
-  let data, resolvedModel;
-  try {
-    const result = await handler(dispatchContext);
-    data = result.data;
-    resolvedModel = result.resolvedModel;
-    const usage = data?._usage || data?.usage || {};
-    logProviderRequest(startTs, provider, resolvedModel, effectiveMode, "ok", {
-      durationMs: Date.now() - t0, inputTokens: usage.input_tokens || 0, outputTokens: usage.output_tokens || 0,
-    });
-  } catch (err) {
-    logProviderRequest(startTs, provider, model || "default", effectiveMode, "error", { durationMs: Date.now() - t0, error: err.message });
-    throw err;
-  }
-
-  emitTrace(data, provider, resolvedModel, effectiveMode);
+  // Usage is recorded once, by ai-lab's ledger (API calls); fabric keeps no trace of its own.
+  const { data } = await handler(dispatchContext);
   const fullText = extractText(data);
   const resultMode = args.resultMode || (loadFabricConfig().summarizer?.provider ? "summary" : "full");
   let resultText;
@@ -492,6 +462,7 @@ export async function handleFanOut(args, deps) {
           mode: task.mode || "task",
           write: !!task.write,
           model: task.model,
+          task: task.task,
           observe: task.observe,
           cwd: task.cwd,
           timeoutMs: task.timeoutMs,
