@@ -73,3 +73,27 @@ test("the interpreter is the one the provider cache pinned", () => {
   const { configPath } = providerCacheFixture({ python: process.execPath });
   assert.equal(aiLabPython(configPath), process.execPath);
 });
+
+// ── planted refusals: a one-shot call without Python or ai-lab is unsupported BY NAME ──
+
+test("planted: the cache's Python is not installed -> unsupported naming it and the remedy", () => {
+  const { configPath } = providerCacheFixture({ python: path.join(FIXTURE.dir, "no-such-python.exe") });
+  assert.throws(() => aiLabPython(configPath),
+    (e) => e.kind === "unsupported" && e.message.includes("no-such-python.exe") && /is not installed/.test(e.message) && /setup/.test(e.message));
+});
+
+test("planted: a cache recording no Python -> unsupported naming it", () => {
+  const { configPath } = providerCacheFixture({ python: null });
+  assert.throws(() => aiLabPython(configPath), (e) => e.kind === "unsupported" && /records no Python interpreter/.test(e.message));
+});
+
+test("planted: the interpreter cannot be started -> unsupported naming it", async () => {
+  const enoent = () => { const c = spawn(process.execPath, ["-e", ""], {}); setImmediate(() => c.emit("error", Object.assign(new Error("spawn py ENOENT"), { code: "ENOENT" }))); return c; };
+  await assert.rejects(callAiLab(req("acme"), { _python: "py-missing", _spawn: enoent }),
+    (e) => e.kind === "unsupported" && /Python py-missing cannot be started/.test(e.message));
+});
+
+test("planted: ai-lab is not installed in the interpreter -> unsupported naming ai-lab", async () => {
+  await assert.rejects(callAiLab(req("nomodule"), opts()),
+    (e) => e.kind === "unsupported" && /ai-lab is not installed in python-fixture/.test(e.message));
+});

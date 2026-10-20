@@ -269,6 +269,17 @@ describe("call options reach every path", () => {
     });
   }
 
+  test("planted: no Python -> an API task is unsupported by name; agent mode still runs", async () => {
+    const seen = {};
+    // The file-wide fixture's cache records an interpreter that does not exist.
+    await withConfigFixture(ACME_FIXTURE, async () => {
+      await assert.rejects(handleCall({ provider: "acme", prompt: "p", resultMode: "full" }),
+        (e) => e.kind === "unsupported" && /Python python-fixture/.test(e.message));
+      await handleCall({ provider: "acme", mode: "agent", prompt: "p", resultMode: "full" }, { spawnChild: fakeSpawnChild(seen) });
+    });
+    assert.equal(seen.provider, "acme");
+  });
+
   test("API task: an ai-lab kind reaches the caller unchanged", async () => {
     const { ProviderError } = await import("../engine/errors.mjs");
     await withConfigFixture(ACME_FIXTURE, () =>
