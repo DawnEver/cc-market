@@ -25,6 +25,11 @@ export const FIXTURE_PROVIDERS = {
 
 export const FIXTURE_AI_LAB_VERSION = "0.0.0-fixture";
 
+// The shape setup writes (cc-config scripts/shared/provider-cache.mjs copies the document
+// verbatim): top-level keys in this order, every provider row with ROW_KEYS.
+export const CACHE_KEYS = ["schema_version", "generated_at", "ai_lab_version", "python", "inputs", "source_sha256", "protocols", "providers"];
+export const ROW_KEYS = ["wire", "protocol", "url", "host", "paths", "endpoints", "auth", "key_name", "key_usernames", "vision", "vendor", "model_wires", "models"];
+
 // A venv whose site-packages holds ai_lab-<installed>.dist-info; returns its interpreter path.
 export function fakeVenv(dir, installed = FIXTURE_AI_LAB_VERSION) {
   const python = join(dir, "venv", "Scripts", "python.exe");

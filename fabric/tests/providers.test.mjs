@@ -9,7 +9,8 @@ import {
   resolveUpstream, anthropicEndpoint, readCatalogue, listModels, SETUP_REMEDY,
   gitCredentialKey, _setKeySource,
 } from '../engine/providers.mjs';
-import { providerCacheFixture, fixtureKeySource } from './fixtures/provider-cache.mjs';
+import { providerCacheFixture, fixtureKeySource, CACHE_KEYS, ROW_KEYS } from './fixtures/provider-cache.mjs';
+import { readFileSync } from 'node:fs';
 
 _setKeySource(fixtureKeySource());
 
@@ -181,3 +182,10 @@ test('a cache missing a field setup always writes is refused by name', () => {
   refusedUnsupported(() => readCatalogue(fixture({ extra: { ai_lab_version: undefined } })), /is missing ai_lab_version/);
 });
 
+test('the fixture is the shape setup writes (ai-lab document, verbatim)', () => {
+  const { cachePath } = providerCacheFixture();
+  const doc = JSON.parse(readFileSync(cachePath, 'utf8'));
+  assert.deepEqual(Object.keys(doc), CACHE_KEYS);
+  for (const row of Object.values(doc.providers)) assert.deepEqual(Object.keys(row), ROW_KEYS);
+  assert.deepEqual(Object.keys(doc.inputs[0]), ['path', 'exists', 'sha256']);
+});
