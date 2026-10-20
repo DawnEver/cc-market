@@ -1,24 +1,19 @@
 import { CodexAppServerClient } from "./app-server.mjs";
+import { watchTurn } from "./turn.mjs";
+
+const TURN_TIMEOUT_MS = 600000;
 
 export async function runCodexTask(prompt, systemPrompt, model, write = false, cwd, onProgress, images = null, client = null) {
   const ownClient = !client;
   if (ownClient) {
-    client = new CodexAppServerClient({ timeout: 600000 });
+    client = new CodexAppServerClient({ timeout: TURN_TIMEOUT_MS });
     await client.start();
   } else {
-    client.clearNotifications("turn/completed");
     client.clearNotifications("thread/started");
     client.clearNotifications("item/completed");
   }
 
   const result = { text: "", threadId: null, turnId: null, usage: null };
-
-  const turnDone = new Promise((resolve) => {
-    client.onNotification("turn/completed", (params) => {
-      result.usage = params?.usage || null;
-      resolve();
-    });
-  });
 
   client.onNotification("thread/started", (params) => {
     result.threadId = params.thread?.id;
@@ -34,9 +29,11 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     if (item.usage && !result.usage) result.usage = item.usage;
   });
 
+  const turn = watchTurn(client, { timeoutMs: TURN_TIMEOUT_MS, label: "task" });
   try {
     const threadResp = await client.send("thread/start", { cwd: cwd || process.cwd() });
     const threadId = threadResp.thread?.id || threadResp.id;
+    result.threadId ||= threadId;
 
     const input = [];
     if (systemPrompt) input.push({ type: "text", text: systemPrompt });
@@ -58,27 +55,19 @@ export async function runCodexTask(prompt, systemPrompt, model, write = false, c
     };
     if (model) turnParams.model = model;
 
-    const turn = await client.send("turn/start", turnParams);
-    result.turnId = turn.id;
-
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout waiting for turn completion")), 600000)
-    );
-    await Promise.race([turnDone, timeout]);
-  } catch (err) {
-    client.clearNotifications("turn/completed");
+    const started = await client.send("turn/start", turnParams);
+    result.turnId = started?.turn?.id ?? null;
+    const completed = await turn.done;
+    result.turnId ||= completed.id ?? null;
+  } finally {
+    turn.dispose();
     client.clearNotifications("thread/started");
     client.clearNotifications("item/completed");
     if (ownClient) await client.stop();
-    throw err;
   }
 
-  client.clearNotifications("turn/completed");
-  client.clearNotifications("thread/started");
-  client.clearNotifications("item/completed");
-  if (ownClient) await client.stop();
   return {
-    content: [{ type: "text", text: result.text.trim() || "(no output)" }],
+    content: [{ type: "text", text: result.text.trim() || "(turn completed with no text output)" }],
     threadId: result.threadId,
     turnId: result.turnId,
     _usage: result.usage ? {
@@ -104,4 +93,3 @@ export function extractItemText(item) {
   }
   return "";
 }
-

@@ -17,7 +17,7 @@ fabric/
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
 │   ├── errors.mjs           The one error taxonomy: ProviderError.kind (ERROR_KINDS) + ConfigError
 │   ├── fabric-config.mjs    The `fabric` config block (systemPromptFile, sessionDefaults)
-│   └── codex/               app-server client · task · discovery
+│   └── codex/               app-server client · task · turn (outcome + error kind) · discovery
 ├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
