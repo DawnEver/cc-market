@@ -64,7 +64,7 @@ node "<root>/scripts/post-review.js" --plan "<plan_file>" --raw "<raw file>"
 ```
 
 (`--sink stdout` prints the findings JSON instead of writing memory —
-**`reference/findings-json.md`**.)
+the contract, with its field and status meanings, is `<root>/method/findings-output.schema.json`.)
 
 It refuses a raw file whose `run_id` is not the plan's or that is older than the run, then
 merges by the method's rules, writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps

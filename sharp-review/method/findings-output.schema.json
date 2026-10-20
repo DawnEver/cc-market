@@ -1,55 +1,155 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "sharp-review findings JSON",
-  "description": "One review run's merged result. schema_version equals method.json's; a reader refuses a version it does not know.",
+  "description": "One review run's merged result: printed by post-review.js --sink stdout and produced by every executor of the method. VERSIONING: schema_version is method.json's schema_version; a reader refuses a version it does not know, by name, and never guesses. Any change a reader of the old version would misread (a renamed or removed field, a new status, a changed id format) bumps it.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "range", "profiles", "reviewers", "findings"],
+  "required": [
+    "schema_version",
+    "range",
+    "profiles",
+    "reviewers",
+    "findings"
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "range": { "type": "string" },
-    "profiles": { "type": "array", "items": { "type": "string" } },
+    "schema_version": {
+      "const": 1
+    },
+    "range": {
+      "type": "string",
+      "description": "The git range reviewed."
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The profile keys that ran, in reviewer order."
+    },
     "reviewers": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "provider", "status", "dropped_findings"],
+        "required": [
+          "name",
+          "provider",
+          "status",
+          "dropped_findings"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "provider": { "type": ["string", "null"] },
-          "status": { "enum": ["ok", "exhausted", "auth", "rate_limit", "timeout", "unsupported", "unavailable", "skipped"] },
-          "dropped_findings": { "type": "integer" }
+          "name": {
+            "type": "string",
+            "description": "The reviewer's profile key."
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The provider that ran it, or was requested and could not."
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "exhausted",
+              "auth",
+              "rate_limit",
+              "timeout",
+              "unsupported",
+              "unavailable",
+              "skipped"
+            ],
+            "description": "ok: returned a findings array ([] is a clean pass). exhausted | auth | rate_limit | timeout: the provider failed with that kind. unsupported: the run mode cannot execute this reviewer's call mode, or the provider refused the request kind. unavailable: the requested provider is not available here, no result came back, the failure had no known kind, or codex returned only its '(no findings ...)' placeholder. skipped: nothing for this profile to review (e.g. an empty diff)."
+          },
+          "dropped_findings": {
+            "type": "integer",
+            "description": "Findings this reviewer returned that failed method/finding.schema.json."
+          }
         }
-      }
+      },
+      "description": "Every planned reviewer, in plan order. Only ok reviewers contribute findings."
     },
     "findings": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "severity", "file", "summary", "category", "status", "suggestion", "detail", "confidence", "reviewers"],
+        "required": [
+          "id",
+          "severity",
+          "file",
+          "summary",
+          "category",
+          "status",
+          "suggestion",
+          "detail",
+          "confidence",
+          "reviewers"
+        ],
         "properties": {
-          "id": { "type": "string", "pattern": "^SR-\\d{8}-\\d{3,}$" },
-          "severity": { "enum": ["HIGH", "MEDIUM", "LOW", "INFO"] },
-          "file": { "type": "string" },
-          "summary": { "type": "string" },
-          "category": { "enum": ["Bug", "Feature", "Performance"] },
-          "status": { "const": "OPEN" },
-          "suggestion": { "type": "string" },
-          "detail": { "type": "string" },
-          "confidence": { "type": "string" },
+          "id": {
+            "type": "string",
+            "pattern": "^SR-\\d{8}-\\d{3,}$",
+            "description": "SR-<YYYYMMDD>-<NNN>, numbered within the run."
+          },
+          "severity": {
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW",
+              "INFO"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "Bug",
+              "Feature",
+              "Performance"
+            ]
+          },
+          "status": {
+            "const": "OPEN"
+          },
+          "suggestion": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "description": "The first method.json merge.confidence label whose min_reviewers the distinct reviewer count meets."
+          },
           "reviewers": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["name", "provider"],
-              "properties": { "name": { "type": "string" }, "provider": { "type": "string" } }
-            }
+              "required": [
+                "name",
+                "provider"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Every reviewer that reported this finding, with its provider, in first-seen order."
           }
         }
-      }
+      },
+      "description": "Deduplicated across reviewers by method.json merge.dedup_key, in first-seen order."
     }
   }
 }

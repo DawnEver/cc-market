@@ -9,7 +9,7 @@ files there for the actual values; this page explains how they are used.
 | `method/profiles.json` | every built-in profile: `key`, `label`, `source`, `weight`, `context`, `framing`, `scope` |
 | `method/prompts/*.md` | the prompt templates (`{{name}}` placeholders) |
 | `method/finding.schema.json` | what each reviewer finding must satisfy |
-| `method/findings-output.schema.json` | the merged findings JSON contract (→ `findings-json.md`) |
+| `method/findings-output.schema.json` | the merged findings JSON contract; its `description`s define every field, status and the versioning rule |
 | `method/conformance/` | inputs paired with expected outputs; every executor is tested against them |
 
 ## Configuration file (`.claude/sharp-review.json`)
