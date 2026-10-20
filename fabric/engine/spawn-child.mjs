@@ -20,6 +20,8 @@ import { loadFabricConfig } from './fabric-config.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { buildUserContent } from './anthropic-http.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
+import { ProviderError } from './errors.mjs';
+import { killTree, treeSpawnOptions } from './kill-tree.mjs';
 
 // ── Claude binary resolution (cross-platform) ───────────────────────────────
 
@@ -159,8 +161,8 @@ export function parseStreamJsonOutput(raw) {
 // spawn ENOENT Node emits 'error' but never 'exit', so its internal kill timer
 // is never cleared and keeps the event loop alive for the full timeout. This
 // timer is unref'd (never blocks process exit) and explicitly cleared.
-function armKillTimer(child, ms, onTimeout) {
-  const t = globalThis.setTimeout(() => { try { child.kill('SIGKILL'); } catch {} onTimeout(); }, ms);
+function armKillTimer(child, ms, onTimeout, kill) {
+  const t = globalThis.setTimeout(() => { try { kill(child); } catch {} onTimeout(); }, ms);
   t.unref?.();
   return t;
 }
@@ -195,7 +197,7 @@ export async function spawnChild(opts) {
   const {
     provider = 'claude', prompt, systemPrompt, systemPromptFile, images, runDir, observe = false, model,
     cwd, extraArgs = [], configPath, timeoutMs = 120000, signal, onText, passthroughAuth,
-    _spawn = hiddenSpawn, _bin, _startObserveProxy = startObserveProxy,
+    _spawn = hiddenSpawn, _bin, _startObserveProxy = startObserveProxy, _killTree = killTree,
   } = opts;
   if (!prompt) throw new Error('spawnChild: prompt is required');
   if (observe && !runDir) throw new Error('spawnChild: observe mode requires runDir');
@@ -266,13 +268,14 @@ export async function spawnChild(opts) {
         env,
         stdio: [useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
         shell: false,
+        ...treeSpawnOptions(),
       });
 
       let stdout = '', stderr = '', settled = false;
       const settle = (fn, val) => { if (!settled) { settled = true; cleanup(); fn(val); } };
-      const onAbort = () => { try { child.kill('SIGTERM'); } catch {} settle(reject, new Error('spawnChild: request cancelled')); };
+      const onAbort = () => { try { _killTree(child); } catch {} settle(reject, new Error('spawnChild: request cancelled')); };
       const killTimer = armKillTimer(child, timeoutMs, () =>
-        settle(reject, new Error(`spawnChild: timeout after ${timeoutMs}ms`)));
+        settle(reject, new ProviderError('timeout', `spawnChild: timeout after ${timeoutMs}ms`)), _killTree);
       const cleanup = () => {
         clearTimeout(killTimer);
         if (signal) signal.removeEventListener('abort', onAbort);

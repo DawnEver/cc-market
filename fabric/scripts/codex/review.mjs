@@ -1,4 +1,6 @@
 import { CodexAppServerClient } from "../../engine/codex/app-server.mjs";
+import { watchTurn } from "../../engine/codex/turn.mjs";
+import { extractItemText } from "../../engine/codex/task.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,78 +28,61 @@ Report only material findings. Do not include style feedback, naming feedback, o
 For each finding include: severity (critical/high/medium/low), title, description, file path, and recommendation. Be concrete — cite specific lines where possible.`;
 }
 
-export async function runCodexReview(diff, model, context, cwd, client = null) {
+// review/start (app-server v2) takes {threadId, target, delivery} — no model, and the
+// `custom` target has ONE field, `instructions`; the model goes on thread/start and the
+// diff inside the instructions. The verdict arrives as an `exitedReviewMode` item's
+// `review` text; agentMessage text is the fallback.
+export async function runCodexReview(diff, { model, context, cwd, client = null, timeoutMs = 600000 } = {}) {
   const ownClient = !client;
   if (ownClient) {
-    client = new CodexAppServerClient({ timeout: 600000 });
+    client = new CodexAppServerClient({ timeout: timeoutMs });
     await client.start();
   } else {
-    client.clearNotifications("turn/completed");
     client.clearNotifications("item/completed");
   }
 
   const systemPrompt = loadReviewPrompt();
   let reviewInput = diff || "";
+  if (context) reviewInput += `
 
-  if (context) reviewInput += `\n\n## Additional Context\n${context}`;
+## Additional Context
+${context}`;
 
-  let resultText = "";
+  let review = "";
+  let messages = "";
   let resultUsage = null;
 
   client.onNotification("item/completed", (params) => {
     const item = params.item || {};
     if (item.usage && !resultUsage) resultUsage = item.usage;
-    if (item.type === "userMessage") return; // skip the app-server's input echo
-    if (item.text) resultText += item.text;
-    else if (item.content) {
-      if (typeof item.content === "string") resultText += item.content;
-      else if (Array.isArray(item.content)) {
-        resultText += item.content
-          .filter((b) => b.type === "text" || b.type === "output_text")
-          .map((b) => b.text).join("\n");
-      }
-    }
+    if (item.type === "exitedReviewMode") review += item.review || "";
+    else if (item.type !== "enteredReviewMode") messages += extractItemText(item);
   });
 
-  const reviewDone = new Promise((resolve) => {
-    client.onNotification("turn/completed", (params) => {
-      if (params?.usage && !resultUsage) resultUsage = params.usage;
-      resolve();
-    });
-  });
-
+  const turn = watchTurn(client, { timeoutMs, label: "review" });
   try {
-    // Start a thread first — review/start requires threadId
-    const threadResp = await client.send("thread/start", { cwd: cwd || process.cwd() });
+    const threadParams = { cwd: cwd || process.cwd() };
+    if (model) threadParams.model = model;
+    const threadResp = await client.send("thread/start", threadParams);
     const threadId = threadResp.thread?.id || threadResp.id;
 
-    const reviewParams = {
-      threadId,
-      target: reviewInput
-        ? { type: "custom", diff: reviewInput, instructions: systemPrompt }
-        : { type: "uncommittedChanges", instructions: systemPrompt },
-    };
-    if (model) reviewParams.model = model;
+    const target = reviewInput
+      ? { type: "custom", instructions: `${systemPrompt}
 
-    await client.send("review/start", reviewParams);
-
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout waiting for review completion")), 600000)
-    );
-    await Promise.race([reviewDone, timeout]);
-  } catch (err) {
-    client.clearNotifications("turn/completed");
+## Change under review
+${reviewInput}` }
+      : { type: "uncommittedChanges" };
+    await client.send("review/start", { threadId, target });
+    await turn.done;
+  } finally {
+    turn.dispose();
     client.clearNotifications("item/completed");
     if (ownClient) await client.stop();
-    throw err;
   }
 
-  client.clearNotifications("turn/completed");
-  client.clearNotifications("item/completed");
-  if (ownClient) await client.stop();
-
+  const text = (review || messages).trim();
   return {
-    content: [{ type: "text", text: resultText.trim() || "(no findings — review may have completed without text output)" }],
+    content: [{ type: "text", text: text || "(review completed with no findings)" }],
     _usage: resultUsage ? {
       input_tokens: resultUsage.input_tokens || resultUsage.prompt_tokens || 0,
       output_tokens: resultUsage.output_tokens || resultUsage.completion_tokens || 0,

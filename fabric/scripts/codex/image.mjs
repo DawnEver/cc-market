@@ -1,5 +1,6 @@
 import path from "node:path";
 import { CodexAppServerClient } from "../../engine/codex/app-server.mjs";
+import { watchTurn } from "../../engine/codex/turn.mjs";
 
 // ── App-server image generation ─────────────────────────────────────
 
@@ -9,6 +10,7 @@ export async function generateImage(prompt, opts = {}) {
   let cl = existingClient;
 
   const result = { text: "", threadId: null, turnId: null, usage: null, savedPaths: [] };
+  let turn = null;
 
   try {
     if (ownClient) {
@@ -18,12 +20,7 @@ export async function generateImage(prompt, opts = {}) {
       clearClientNotifications(cl);
     }
 
-    const turnDone = new Promise((resolve) => {
-      cl.onNotification("turn/completed", (params) => {
-        result.usage = params?.usage || null;
-        resolve();
-      });
-    });
+    turn = watchTurn(cl, { timeoutMs: timeout, label: "image generation" });
 
     cl.onNotification("thread/started", (params) => {
       result.threadId = params.thread?.id;
@@ -54,14 +51,11 @@ export async function generateImage(prompt, opts = {}) {
     const turnParams = { threadId, input: [{ type: "text", text: instruction }] };
     if (model) turnParams.model = model;
 
-    const turn = await cl.send("turn/start", turnParams);
-    result.turnId = turn.id;
-
-    const timeoutP = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout waiting for image generation")), 600000)
-    );
-    await Promise.race([turnDone, timeoutP]);
+    const started = await cl.send("turn/start", turnParams);
+    result.turnId = started?.turn?.id ?? null;
+    await turn.done;
   } finally {
+    turn?.dispose();
     clearClientNotifications(cl);
     if (ownClient) await cl.stop();
   }
@@ -88,6 +82,7 @@ export async function editImage(prompt, imagePath, opts = {}) {
   let cl = existingClient;
 
   const result = { text: "", threadId: null, turnId: null, usage: null, savedPaths: [] };
+  let turn = null;
 
   try {
     if (ownClient) {
@@ -97,12 +92,7 @@ export async function editImage(prompt, imagePath, opts = {}) {
       clearClientNotifications(cl);
     }
 
-    const turnDone = new Promise((resolve) => {
-      cl.onNotification("turn/completed", (params) => {
-        result.usage = params?.usage || null;
-        resolve();
-      });
-    });
+    turn = watchTurn(cl, { timeoutMs: timeout, label: "image edit" });
 
     cl.onNotification("thread/started", (params) => {
       result.threadId = params.thread?.id;
@@ -137,14 +127,11 @@ export async function editImage(prompt, imagePath, opts = {}) {
     };
     if (model) turnParams.model = model;
 
-    const turn = await cl.send("turn/start", turnParams);
-    result.turnId = turn.id;
-
-    const timeoutP = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout waiting for image edit")), 600000)
-    );
-    await Promise.race([turnDone, timeoutP]);
+    const started = await cl.send("turn/start", turnParams);
+    result.turnId = started?.turn?.id ?? null;
+    await turn.done;
   } finally {
+    turn?.dispose();
     clearClientNotifications(cl);
     if (ownClient) await cl.stop();
   }

@@ -7,6 +7,7 @@ import { spawn } from "../../shared/spawn.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { findCodexBinary } from "./discovery.mjs";
+import { killTree, treeSpawnOptions } from "../kill-tree.mjs";
 
 // Walk up from startPath (default: the entry script) to the nearest
 // .claude-plugin/plugin.json and return its {name, version}.
@@ -34,6 +35,7 @@ export class CodexAppServerClient {
     this.codexPath = opts.codexPath;
     this.timeout = opts.timeout ?? 600000;
     this.clientInfo = opts.clientInfo || resolveClientInfo();
+    this._killTree = opts._killTree || killTree;
     this.child = null;
     this.nextId = 1;
     this.pending = new Map();
@@ -52,6 +54,7 @@ export class CodexAppServerClient {
       stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
       shell: process.platform === "win32",
+      ...treeSpawnOptions(),
     });
 
     this.child.on("error", (err) => {
@@ -151,7 +154,8 @@ export class CodexAppServerClient {
     }
     if (this.child) {
       if (!this.child.stdin.destroyed) this.child.stdin.end();
-      if (!this.child.killed) this.child.kill();
+      // shell:true on Windows: the root is cmd.exe; kill the tree or codex survives it.
+      this._killTree(this.child);
     }
     if (this._closeResolve) { this._closeResolve(); this._closeResolve = null; }
   }

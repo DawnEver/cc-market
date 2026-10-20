@@ -22,12 +22,12 @@ export { resolveClaudeExe };
 export async function spawnClaudeP(userPrompt, opts = {}) {
   const {
     provider, model, systemPrompt, images, signal,
-    timeoutMs = 600000, ...rest
+    timeoutMs = 600000, _spawnChild = spawnChild, ...rest
   } = opts;
   const label = provider || "claude";
   process.stderr.write(`fabric: spawning claude (provider=${label} model=${model || "default"})...\n`);
 
-  const res = await spawnChild({
+  const res = await _spawnChild({
     ...rest,
     provider: label,
     prompt: userPrompt,

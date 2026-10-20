@@ -21,11 +21,10 @@ import {
   callAnthropicAPI,
   loadProviderEnv,
   logProviderRequest,
-  TakeoverError,
   ConfigError,
   ProviderError,
-  TimeoutError,
-  AuthError,
+  ERROR_KINDS,
+  httpErrorKind,
   PROVIDER_ENV_KEYS,
   resolveClaudeExe,
 } from "../scripts/lib.mjs";
@@ -681,41 +680,50 @@ describe("getConfigPath", () => {
 
 // ── Error taxonomy ──────────────────────────────────────────────────────────
 
-describe("TakeoverError classes", () => {
-  test("ConfigError has correct code and non-retryable", () => {
+describe("error taxonomy", () => {
+  test("ProviderError carries one of the declared kinds", () => {
+    assert.deepEqual(ERROR_KINDS, ["exhausted", "auth", "rate_limit", "timeout", "unsupported", "failed"]);
+    for (const kind of ERROR_KINDS) {
+      const e = new ProviderError(kind, "boom");
+      assert.equal(e.kind, kind);
+      assert.equal(e.message, `[${kind}] boom`);
+    }
+  });
+
+  test("an HTTP status maps to its kind", () => {
+    assert.equal(httpErrorKind(401), "auth");
+    assert.equal(httpErrorKind(403), "auth");
+    assert.equal(httpErrorKind(402), "exhausted");
+    assert.equal(httpErrorKind(429), "rate_limit");
+    assert.equal(httpErrorKind(400), "failed");
+    assert.equal(httpErrorKind(503), "failed");
+  });
+
+  test("a non-OK API response is a classified ProviderError", async () => {
+    globalThis.fetch = mock.fn(async () => ({ ok: false, status: 401, text: async () => "invalid x-api-key" }));
+    try {
+      await assert.rejects(
+        () => callAnthropicAPI({ baseUrl: "https://api.example.com", token: "sk-test" }, "model", null, "user"),
+        (e) => e.kind === "auth" && /API error 401/.test(e.message));
+    } finally {
+      globalThis.fetch = undefined;
+    }
+  });
+
+  test("an undeclared kind is refused by name", () => {
+    assert.throws(() => new ProviderError("quota", "x"), /undeclared error kind "quota"/);
+  });
+
+  test("ConfigError is a caller mistake, not a provider kind", () => {
     const e = new ConfigError("bad config");
-    assert.ok(e instanceof TakeoverError);
     assert.ok(e instanceof Error);
-    assert.equal(e.code, "CONFIG_ERROR");
-    assert.equal(e.retryable, false);
+    assert.equal(e.kind, undefined);
     assert.equal(e.message, "bad config");
   });
 
-  test("ProviderError has configurable retryable", () => {
-    const e1 = new ProviderError("provider down", true);
-    assert.equal(e1.code, "PROVIDER_ERROR");
-    assert.equal(e1.retryable, true);
-
-    const e2 = new ProviderError("bad response");
-    assert.equal(e2.retryable, false);
-  });
-
-  test("TimeoutError is retryable", () => {
-    const e = new TimeoutError("timed out");
-    assert.equal(e.code, "TIMEOUT_ERROR");
-    assert.equal(e.retryable, true);
-  });
-
-  test("AuthError is non-retryable", () => {
-    const e = new AuthError("invalid key");
-    assert.equal(e.code, "AUTH_ERROR");
-    assert.equal(e.retryable, false);
-  });
-
-  test("TakeoverError base defaults", () => {
-    const e = new TakeoverError("generic");
-    assert.equal(e.code, "TAKEOVER_ERROR");
-    assert.equal(e.retryable, false);
+  test("the retired classes are gone", async () => {
+    const lib = await import("../scripts/lib.mjs");
+    for (const name of ["TakeoverError", "TimeoutError", "AuthError"]) assert.equal(lib[name], undefined, name);
   });
 });
 

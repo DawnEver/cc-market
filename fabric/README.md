@@ -104,8 +104,9 @@ Foundry direct — and the same proxy works for any Anthropic-compatible provide
 - `list_providers` — dump the provider registry + model aliases.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
 - `codex_status` — codex CLI install / version / auth check.
-- `fan_out` — run N `call`s in parallel; returns compact JSON (per-task summary, est.
-  tokens, duration) plus an optional synthesis.
+- `fan_out` — run N `call`s in parallel, at most `fabric.fanOutConcurrency` (default 4) at once; returns compact JSON (per-task `result` capped at
+  400 chars, est. tokens, duration) plus a synthesis when `synthesize: true` and a
+  `fabric.synthesizer` is configured (refused by name otherwise).
 
 ## Config
 
@@ -120,6 +121,11 @@ in `~/.claude/claude_env_settings.local.json`, deep-merged over it):
 ```
 
 `sessionDefaults` supplies provider/model when `call` omits a provider.
+
+Optional `summarizer` and `synthesizer` (each `{ "provider": ..., "model": ... }`) name who
+condenses a long `call` result (`resultMode: "summary"`) and who synthesises `fan_out`
+results. Both default to NONE: with no summarizer the default `resultMode` is `full`, and an
+explicit `summary` or `synthesize: true` without its helper is refused by name.
 
 ## Auth note
 

@@ -15,14 +15,16 @@ fabric/
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
-│   ├── fabric-config.mjs    The `fabric` config block (systemPromptFile, sessionDefaults)
-│   └── codex/               app-server client · task · discovery
+│   ├── kill-tree.mjs        Kill a child's whole process tree (Windows /T, POSIX process group)
+│   ├── errors.mjs           The one error taxonomy: ProviderError.kind (ERROR_KINDS) + ConfigError
+│   ├── fabric-config.mjs    The `fabric` config block (systemPromptFile, sessionDefaults, summarizer, synthesizer)
+│   └── codex/               app-server client · task · turn (outcome + error kind) · discovery
 ├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
 │                            DO NOT edit; edit cc-market/shared/. engine/ imports ../shared/spawn.mjs
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
-│   │                        wrapper), callers (codex/API adapters), trace, errors
+│   │                        wrapper), callers (codex/API adapters), trace
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
 ├── commands/                L2: continue.md · models.md · handoff.md
@@ -42,8 +44,8 @@ transport — framed needed for Codex MCP startup). Tools:
 
 | Tool | Input | Routes to |
 |---|---|---|
-| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. |
-| `fan_out` | `tasks[]` (`provider`, `prompt`, `id?`, `mode?`, `write?`, `model?`, `cwd?`), `synthesize?` | N `handleCall`s in parallel → compact JSON (per-task summary, est. tokens, duration) + optional deepseek synthesis |
+| `call` | `prompt`, `provider?`, `model?`, `mode?` (task/review/agent/image-generate/image-edit), `write?`, `systemPrompt?`, `images?`, `observe?`, `passthroughAuth?`, `cwd?`, `runDir?`, `timeoutMs?` | The one primitive. `<command>` flags in `prompt` are authoritative. Dispatch = (provider bucket) × mode: codex → app-server (task/agent/review/image); native claude → `spawnClaudeP`; API → `callAnthropicAPI` (task/review) or `spawnClaudeP` (agent). `observe:true` (non-codex) forces the harness engine behind the proxy + jsonl capture. `cwd` and `timeoutMs` reach every path (child cwd / codex thread cwd; child kill / turn wait / HTTP abort, all kind `timeout`); `model` reaches every claude path. |
+| `fan_out` | `tasks[]` (`provider`, `prompt`, `id?`, `mode?`, `write?`, `model?`, `cwd?`), `synthesize?` | N `handleCall`s in parallel, at most `fabric.fanOutConcurrency` (default 4) in flight → compact JSON (per-task summary, est. tokens, duration) + synthesis only via a configured `fabric.synthesizer` (`synthesize: true` without one is refused) |
 | `list_providers` | (none) | `listModels()` |
 | `resolve_model` | `provider`, `model` | `resolveModelFromId()` (native: no remapping) |
 | `codex_status` | `codexPath?` | `checkCodexStatus()` |
@@ -59,7 +61,7 @@ hermetic tests.
 | task | app-server (`write`, images) | `claude -p` (own OAuth) | raw HTTP completion |
 | agent | app-server | `claude -p` + harness | `claude -p` + provider env (NOT raw HTTP) |
 | review | native `review/start` | task + `review.md` prompt | task + `review.md` prompt |
-| image-generate / image-edit | app-server | — (ProviderError) | — |
+| image-generate / image-edit | app-server | — (ProviderError `unsupported`) | — |
 
 ## Config
 

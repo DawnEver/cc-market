@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
 
 import { getConfigPath, anthropicEndpoint } from "./providers.mjs";
+import { ProviderError, httpErrorKind } from "./errors.mjs";
 
 function isRetryable(status) {
   return status === 429 || status === 502 || status === 503 || status === 504;
@@ -122,18 +123,18 @@ export async function callAnthropicAPI(providerConfig, model, systemPrompt, user
     }
 
     const errorText = await res.text();
-    if (!isRetryable(res.status)) throw new Error(`API error ${res.status}: ${errorText}`);
+    if (!isRetryable(res.status)) throw new ProviderError(httpErrorKind(res.status), `API error ${res.status}: ${errorText}`);
     if (attempt < maxRetries) {
       const delay = Math.pow(2, attempt) * 1000;
       process.stderr.write(`anthropic-http: retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...\n`);
       await setTimeout(delay);
       continue;
     }
-    lastError = new Error(`API error ${res.status}: ${errorText}`);
+    lastError = new ProviderError(httpErrorKind(res.status), `API error ${res.status}: ${errorText}`);
   }
 
   // Backstop: no path may fall out of the loop and resolve undefined.
-  throw new Error(`anthropic-http: retries exhausted${lastError ? `: ${lastError.message}` : ""}`);
+  throw new ProviderError(lastError?.kind || "failed", `anthropic-http: retries exhausted${lastError ? `: ${lastError.message}` : ""}`);
 }
 
 // Read an SSE body with an idle watchdog: each reader.read() races a live

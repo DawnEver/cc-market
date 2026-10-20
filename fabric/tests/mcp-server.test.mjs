@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
-  API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH,
+  API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
 } from "../scripts/mcp-server.mjs";
 import { clearConfigCache } from "../engine/providers.mjs";
 
@@ -140,7 +140,8 @@ describe("call primitive", () => {
   });
 
   test("rejects image modes for non-codex providers", async () => {
-    await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }), /not supported for provider/);
+    await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }),
+      (e) => e.kind === "unsupported" && /not supported for provider/.test(e.message));
     // API provider: fixture keeps this hermetic (no host claude_env_settings.json needed).
     await withConfigFixture(DEEPSEEK_FIXTURE, () =>
       assert.rejects(() => handleCall({ provider: "deepseek", prompt: "x", mode: "image-generate" }), /not supported for provider/));
@@ -238,3 +239,159 @@ describe("introspection tools", () => {
   });
 });
 
+
+// ── every path honours cwd / timeoutMs / model ──────────────────────
+
+describe("call options reach every path", () => {
+  const fakeSpawnChild = (sink) => async (opts) => { Object.assign(sink, opts); return { code: 0, stdout: "ok", stderr: "", usage: null }; };
+
+  for (const mode of ["task", "review", "agent"]) {
+    test(`claude ${mode}: model, cwd and timeoutMs reach the child`, async () => {
+      const seen = {};
+      await handleCall({ provider: "claude", mode, model: "opus", prompt: "p", cwd: "C:/work", timeoutMs: 1234, resultMode: "full" },
+        { spawnChild: fakeSpawnChild(seen) });
+      assert.equal(seen.model, "opus");
+      assert.equal(seen.cwd, "C:/work");
+      assert.equal(seen.timeoutMs, 1234);
+    });
+  }
+
+  test("API agent: cwd and timeoutMs reach the child", async () => {
+    const seen = {};
+    await withConfigFixture(DEEPSEEK_FIXTURE, () =>
+      handleCall({ provider: "deepseek", mode: "agent", prompt: "p", cwd: "C:/work", timeoutMs: 99, resultMode: "full" },
+        { spawnChild: fakeSpawnChild(seen) }));
+    assert.equal(seen.cwd, "C:/work");
+    assert.equal(seen.timeoutMs, 99);
+  });
+
+  test("API task: timeoutMs bounds the HTTP call as kind timeout", async () => {
+    const prev = globalThis.fetch;
+    globalThis.fetch = (url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+    try {
+      await withConfigFixture(DEEPSEEK_FIXTURE, () =>
+        assert.rejects(handleCall({ provider: "deepseek", prompt: "p", timeoutMs: 30, resultMode: "full" }),
+          (e) => e.kind === "timeout"));
+    } finally {
+      globalThis.fetch = prev;
+    }
+  });
+
+  for (const mode of ["task", "review"]) {
+    test(`codex ${mode}: cwd and timeoutMs reach the app-server turn`, async () => {
+      const requests = [];
+      const handlers = new Map();
+      const client = {
+        onNotification(m, h) { (handlers.get(m) || handlers.set(m, []).get(m)).push(h); },
+        removeNotificationHandler() {},
+        clearNotifications() {},
+        async send(method, params) {
+          requests.push({ method, params });
+          if (method === "thread/start") return { thread: { id: "th" } };
+          return { turn: { id: "tu" } }; // never completes -> the timeout must fire
+        },
+      };
+      await assert.rejects(
+        handleCall({ provider: "codex", mode, prompt: "p", cwd: "C:/work", timeoutMs: 30, resultMode: "full" },
+          { withCodexClient: (fn) => fn(client) }),
+        (e) => e.kind === "timeout" && /30ms/.test(e.message));
+      assert.equal(path.resolve(requests.find((r) => r.method === "thread/start").params.cwd), path.resolve("C:/work"));
+    });
+  }
+});
+
+// ── summariser / synthesiser: configuration, default NONE ───────────
+
+describe("summariser and synthesiser are configuration", () => {
+  const LONG = "x".repeat(5000);
+  const echoChild = (calls) => async (opts) => { calls.push(opts); return { code: 0, stdout: opts.prompt.includes("Condense") ? "SHORT" : LONG, stderr: "" }; };
+
+  test("no summariser configured: the default result is the full text, no other provider called", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {} }, async () => {
+      const res = await handleCall({ provider: "claude", prompt: "p" }, { spawnChild: echoChild(calls) });
+      assert.equal(text(res), LONG);
+    });
+    assert.equal(calls.length, 1);
+  });
+
+  test("resultMode summary without a configured summariser is refused by name", async () => {
+    await withConfigFixture({ providers: {} }, () =>
+      assert.rejects(handleCall({ provider: "claude", prompt: "p", resultMode: "summary" }, { spawnChild: echoChild([]) }),
+        (e) => e.name === "ConfigError" && /fabric\.summarizer/.test(e.message)));
+  });
+
+  test("a configured summariser condenses long output through the call primitive", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {}, fabric: { summarizer: { provider: "claude", model: "haiku" } } }, async () => {
+      const res = await handleCall({ provider: "claude", prompt: "p" }, { spawnChild: echoChild(calls) });
+      assert.match(text(res), /^SHORT/);
+      assert.match(text(res), /\[Full: 5000 chars/);
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].model, "haiku");
+  });
+
+  test("fan_out synthesize without a configured synthesiser is refused by name", async () => {
+    await withConfigFixture({ providers: {} }, () =>
+      assert.rejects(handleFanOut({ tasks: [{ provider: "claude", prompt: "p" }], synthesize: true }, { spawnChild: echoChild([]) }),
+        (e) => e.name === "ConfigError" && /fabric\.synthesizer/.test(e.message)));
+  });
+
+  test("fan_out does not synthesise by default", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {} }, async () => {
+      const parsed = JSON.parse(text(await handleFanOut({ tasks: [{ provider: "claude", prompt: "p" }] }, { spawnChild: echoChild(calls) })));
+      assert.equal(parsed.synthesis, undefined);
+      assert.equal(parsed.tasks[0].result.length, 400);
+    });
+    assert.equal(calls.length, 1);
+  });
+
+  test("a configured synthesiser runs once over the task results", async () => {
+    const calls = [];
+    await withConfigFixture({ providers: {}, fabric: { synthesizer: { provider: "claude", model: "sonnet" } } }, async () => {
+      const parsed = JSON.parse(text(await handleFanOut({ tasks: [{ id: "a", provider: "claude", prompt: "p" }], synthesize: true }, { spawnChild: echoChild(calls) })));
+      assert.ok(parsed.synthesis);
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].model, "sonnet");
+  });
+});
+
+// ── fan_out concurrency limit ───────────────────────────────────────
+
+describe("fan_out concurrency", () => {
+  const tracking = (stats) => async () => {
+    stats.now++; stats.max = Math.max(stats.max, stats.now);
+    await new Promise((r) => setTimeout(r, 20));
+    stats.now--;
+    return { code: 0, stdout: "ok", stderr: "" };
+  };
+  const tasks = Array.from({ length: 6 }, (_, i) => ({ id: `t${i}`, provider: "claude", prompt: "p" }));
+
+  test("fabric.fanOutConcurrency bounds the calls in flight, results keep task order", async () => {
+    const stats = { now: 0, max: 0 };
+    await withConfigFixture({ providers: {}, fabric: { fanOutConcurrency: 2 } }, async () => {
+      const parsed = JSON.parse(text(await handleFanOut({ tasks }, { spawnChild: tracking(stats) })));
+      assert.deepEqual(parsed.tasks.map((t) => t.id), tasks.map((t) => t.id));
+      assert.equal(parsed.ok, true);
+    });
+    assert.equal(stats.max, 2);
+  });
+
+  test("the default limit is FAN_OUT_CONCURRENCY_DEFAULT", async () => {
+    const stats = { now: 0, max: 0 };
+    const many = Array.from({ length: FAN_OUT_CONCURRENCY_DEFAULT + 3 }, (_, i) => ({ id: `t${i}`, provider: "claude", prompt: "p" }));
+    await withConfigFixture({ providers: {} }, () => handleFanOut({ tasks: many }, { spawnChild: tracking(stats) }));
+    assert.equal(stats.max, FAN_OUT_CONCURRENCY_DEFAULT);
+  });
+
+  test("a non-positive-integer limit is refused by name", async () => {
+    for (const bad of [0, -1, 1.5, "4"]) {
+      await withConfigFixture({ providers: {}, fabric: { fanOutConcurrency: bad } }, () =>
+        assert.rejects(handleFanOut({ tasks }, { spawnChild: tracking({ now: 0, max: 0 }) }),
+          (e) => e.name === "ConfigError" && /fabric\.fanOutConcurrency/.test(e.message)));
+    }
+  });
+});

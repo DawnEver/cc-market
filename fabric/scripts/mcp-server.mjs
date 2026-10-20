@@ -90,7 +90,7 @@ export const TOOLS = [
         resultMode: {
           type: "string",
           enum: ["summary", "full", "truncate"],
-          description: "summary|full|truncate. Default: summary",
+          description: "summary (needs fabric.summarizer)|full|truncate. Default: summary if a summarizer is configured, else full",
         },
         maxResultChars: { type: "number", description: "Cap when truncate. 0=unlimited" },
       },
@@ -124,7 +124,7 @@ export const TOOLS = [
   },
   {
     name: "fan_out",
-    description: "Run N tasks in parallel, return compact JSON. Each auto-summarized. Optional synthesis.",
+    description: "Run N tasks in parallel (at most fabric.fanOutConcurrency at once, default 4), return compact JSON (each result capped at 400 chars). Optional synthesis.",
     inputSchema: {
       type: "object",
       properties: {
@@ -140,11 +140,12 @@ export const TOOLS = [
               write: { type: "boolean" },
               model: { type: "string" },
               cwd: { type: "string", description: "Working dir" },
+              timeoutMs: { type: "number", description: "Kill after N ms" },
             },
             required: ["provider", "prompt"],
           },
         },
-        synthesize: { type: "boolean", description: "Synthesize results into summary. Default true" },
+        synthesize: { type: "boolean", description: "Synthesize results via the configured fabric.synthesizer (refused if none). Default false" },
       },
       required: ["tasks"],
     },
@@ -200,85 +201,73 @@ function emitTrace(data, provider, resolvedModel, mode) {
 
 // ── Result shaping: keep parent context clean ─────────────────────
 
+// Summariser and synthesiser are CONFIGURATION (fabric.summarizer / fabric.synthesizer,
+// each {provider, model?}), default NONE: fabric never picks a provider on its own. Both run
+// through the one call primitive, so they follow the same routing as any other call.
 const SUMMARIZE_PROMPT = "Condense the following into a tight summary for a parent orchestrator. Keep: key findings, decisions, file changes, errors, next steps. Drop: narration, greetings, markdown fluff, play-by-play. 3-5 sentences max.";
+const SYNTHESIZE_PROMPT = "Synthesize these N parallel task results into a 2-3 sentence summary for the orchestrator. Flag failures, patterns, and follow-ups.";
 const SUMMARY_THRESHOLD = 2000;
 
-async function summarizeOutput(fullText, providerConfig, provider) {
+function configuredHelper(key, asked) {
+  const helper = loadFabricConfig()[key];
+  if (helper?.provider) return helper;
+  throw new ConfigError(`${asked} needs a configured fabric.${key} ({provider, model?} in the fabric block of claude_env_settings.json); none is set`);
+}
+
+async function runHelper(helper, instruction, body, deps) {
+  const res = await handleCall({ provider: helper.provider, model: helper.model, prompt: `${instruction}\n\n${body}`, resultMode: "full" }, deps);
+  return res.content[0].text;
+}
+
+async function summarizeOutput(fullText, deps) {
+  const helper = configuredHelper("summarizer", 'resultMode "summary"');
   if (!fullText || fullText.length <= SUMMARY_THRESHOLD) return fullText;
-
-  // Path 1: API provider (deepseek etc.) → fast HTTP call with haiku-tier model
-  if (providerConfig.baseUrl) {
-    try {
-      const summaryModel = providerConfig.defaultHaiku || providerConfig.defaultSonnet;
-      const data = await callAnthropicAPI(providerConfig, summaryModel, SUMMARIZE_PROMPT, fullText, null, true);
-      return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
-    } catch (e) {
-      process.stderr.write(`fabric-mcp: API summary via ${provider} failed (${e.message})\n`);
-    }
+  try {
+    return (await runHelper(helper, SUMMARIZE_PROMPT, fullText, deps)) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
+  } catch (e) {
+    // The work itself succeeded; never lose it to a failed summary.
+    return `${fullText}\n\n[summary by ${helper.provider} failed: ${e.message}]`;
   }
-
-  // Path 2: codex → app-server summary task (native protocol, no HTTP needed)
-  if (provider === "codex") {
-    try {
-      const data = await withPooledClient((client) =>
-        callCodexCompanion(fullText, SUMMARIZE_PROMPT, null, false, null, client));
-      return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
-    } catch (e) {
-      process.stderr.write(`fabric-mcp: codex summary failed (${e.message})\n`);
-    }
-  }
-
-  // Path 3: native claude without own API → try deepseek as backstop summarizer
-  if (!providerConfig.baseUrl && provider !== "codex") {
-    try {
-      const dsConfig = loadProviderConfig("deepseek");
-      if (dsConfig.baseUrl) {
-        const summaryModel = dsConfig.defaultHaiku || dsConfig.defaultSonnet;
-        const data = await callAnthropicAPI(dsConfig, summaryModel, SUMMARIZE_PROMPT, fullText, null, true);
-        return extractText(data) + `\n\n[Full: ${fullText.length} chars → resultMode:"full"]`;
-      }
-    } catch {}
-  }
-
-  return truncateText(fullText, 4000);
 }
 
 // ── Provider dispatch (policy: mode × provider) ────────────────────
 
-async function dispatchCodexTask({ userPrompt, systemPrompt, model, write, resolvedImages }) {
+async function dispatchCodexTask({ userPrompt, systemPrompt, model, write, resolvedImages, cwd, timeoutMs, withCodexClient }) {
   const hasImages = resolvedImages.length > 0;
   process.stderr.write(`fabric-mcp: calling codex (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`);
-  const data = await withPooledClient((client) =>
-    callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, hasImages ? resolvedImages : null, client));
+  const data = await withCodexClient((client) => callCodexCompanion(userPrompt, {
+    systemPrompt, model: model || null, write: !!write, images: hasImages ? resolvedImages : null, client, cwd, timeoutMs,
+  }));
   return { data, resolvedModel: model || "default" };
 }
 
-async function dispatchCodexAgent({ userPrompt, systemPrompt, model, write, resolvedImages }) {
+async function dispatchCodexAgent({ userPrompt, systemPrompt, model, write, resolvedImages, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: agent mode — provider=codex model=${model || "(none)"}\n`);
-  const data = await withPooledClient((client) =>
-    callCodexCompanion(userPrompt, systemPrompt, model || null, !!write, resolvedImages.length > 0 ? resolvedImages : null, client));
+  const data = await withCodexClient((client) => callCodexCompanion(userPrompt, {
+    systemPrompt, model: model || null, write: !!write, images: resolvedImages.length > 0 ? resolvedImages : null, client, cwd, timeoutMs,
+  }));
   return { data, resolvedModel: model || "default" };
 }
 
-async function dispatchCodexReview({ userPrompt, model, imageURIs }) {
+async function dispatchCodexReview({ userPrompt, model, imageURIs, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: codex review (adversarial)...\n`);
   const promptWithImages = imageURIs ? `${userPrompt}\n\n[Attached images]\n${imageURIs}` : userPrompt;
   const { runCodexReview } = await import("./codex/review.mjs");
-  const data = await withPooledClient((client) => runCodexReview(promptWithImages, model || null, null, process.cwd(), client));
+  const data = await withCodexClient((client) => runCodexReview(promptWithImages, { model: model || null, cwd, client, timeoutMs }));
   return { data, resolvedModel: model || "default" };
 }
 
-async function dispatchCodexImageGenerate({ userPrompt }) {
+async function dispatchCodexImageGenerate({ userPrompt, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: codex image generate (app-server)...\n`);
   const { generateImage } = await import("./codex/image.mjs");
-  const data = await withPooledClient((client) => generateImage(userPrompt, { client }));
+  const data = await withCodexClient((client) => generateImage(userPrompt, { client, cwd, timeout: timeoutMs }));
   return { data, resolvedModel: "codex-image-gen" };
 }
 
-async function dispatchCodexImageEdit({ userPrompt, systemPrompt }) {
+async function dispatchCodexImageEdit({ userPrompt, systemPrompt, cwd, timeoutMs, withCodexClient }) {
   process.stderr.write(`fabric-mcp: codex image edit (app-server)...\n`);
   const { handleImageEdit } = await import("./codex/image.mjs");
-  const data = await withPooledClient((client) => handleImageEdit(userPrompt, systemPrompt, { client }));
+  const data = await withCodexClient((client) => handleImageEdit(userPrompt, systemPrompt, { client, cwd, timeout: timeoutMs }));
   return { data, resolvedModel: "codex-image-edit" };
 }
 
@@ -290,16 +279,21 @@ const CODEX_DISPATCH = {
   "image-edit": dispatchCodexImageEdit,
 };
 
-async function dispatchClaudeTask({ userPrompt, systemPrompt, resolvedImages, signal }) {
-  process.stderr.write("fabric-mcp: calling claude (native CLI)...\n");
-  const data = await spawnClaudeP(userPrompt, { systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null, signal });
-  return { data, resolvedModel: "claude" };
+// The child options every claude -p path forwards: model, cwd, timeoutMs, signal.
+const childOpts = ({ systemPrompt, model, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
+  systemPrompt, model: model || null, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
+});
+
+async function dispatchClaudeTask(ctx) {
+  process.stderr.write(`fabric-mcp: calling claude (native CLI, model=${ctx.model || "default"})...\n`);
+  const data = await spawnClaudeP(ctx.userPrompt, childOpts(ctx));
+  return { data, resolvedModel: ctx.model || "claude" };
 }
 
-async function dispatchClaudeAgent({ userPrompt, systemPrompt, provider, model, resolvedImages, signal }) {
-  process.stderr.write(`fabric-mcp: agent mode — provider=${provider} model=${model || "(none)"}\n`);
-  const data = await spawnClaudeP(userPrompt, { provider, model: model || null, systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null, signal });
-  return { data, resolvedModel: model || "claude" };
+async function dispatchClaudeAgent(ctx) {
+  process.stderr.write(`fabric-mcp: agent mode — provider=${ctx.provider} model=${ctx.model || "(none)"}\n`);
+  const data = await spawnClaudeP(ctx.userPrompt, { provider: ctx.provider, ...childOpts(ctx) });
+  return { data, resolvedModel: ctx.model || "claude" };
 }
 
 const CLAUDE_DISPATCH = {
@@ -310,21 +304,32 @@ const CLAUDE_DISPATCH = {
   review: dispatchClaudeTask,
 };
 
-async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, signal }) {
+// cwd has no meaning for a one-shot HTTP completion (no filesystem); timeoutMs bounds the
+// whole call, retries included, and surfaces as kind `timeout`.
+async function dispatchAPITask({ userPrompt, systemPrompt, providerConfig, model, timeoutMs }) {
   const resolvedModel = resolveModel(providerConfig, model || null);
   process.stderr.write(`fabric-mcp: calling ${resolvedModel} (API)...\n`);
   // Platform prompt for direct-connect API providers: the same
   // fabric.systemPromptFile the claude-CLI paths inject (they have no CLI
   // --system-prompt-file, so the file is read here and set as body.system).
   const sysFile = loadFabricConfig(getConfigPath()).systemPromptFile;
-  const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, signal, { systemPromptFile: sysFile });
-  return { data, resolvedModel };
+  const ctl = timeoutMs ? new AbortController() : null;
+  const timer = ctl && setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const data = await callAnthropicAPI(providerConfig, resolvedModel, systemPrompt, userPrompt, null, true, ctl?.signal ?? null, { systemPromptFile: sysFile });
+    return { data, resolvedModel };
+  } catch (err) {
+    if (ctl?.signal.aborted) throw new ProviderError("timeout", `${resolvedModel}: no response after ${timeoutMs}ms`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-async function dispatchAPIAgent({ userPrompt, systemPrompt, provider, model, resolvedImages, signal }) {
-  process.stderr.write(`fabric-mcp: agent mode — provider=${provider} model=${model || "(none)"}\n`);
-  const data = await spawnClaudeP(userPrompt, { provider, model: model || null, systemPrompt, images: resolvedImages.length > 0 ? resolvedImages : null, signal });
-  return { data, resolvedModel: model || provider };
+async function dispatchAPIAgent(ctx) {
+  process.stderr.write(`fabric-mcp: agent mode — provider=${ctx.provider} model=${ctx.model || "(none)"}\n`);
+  const data = await spawnClaudeP(ctx.userPrompt, { provider: ctx.provider, ...childOpts(ctx) });
+  return { data, resolvedModel: ctx.model || ctx.provider };
 }
 
 const API_DISPATCH = {
@@ -397,21 +402,25 @@ export async function handleCall(args, deps = {}) {
   checkImageSizeLimit(resolvedImages, provider, providerConfig);
 
   const effectiveMode = mode || "task";
+  const common = {
+    userPrompt, systemPrompt, provider, model, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
+    spawnChild: deps.spawnChild, withCodexClient: deps.withCodexClient || withPooledClient,
+  };
   let dispatchMap, dispatchContext;
   if (providerConfig.provider === "codex") {
     dispatchMap = CODEX_DISPATCH;
-    dispatchContext = { userPrompt, systemPrompt, provider, model, write, resolvedImages, imageURIs };
+    dispatchContext = { ...common, write, imageURIs };
   } else if (providerConfig.native) {
     dispatchMap = CLAUDE_DISPATCH;
-    dispatchContext = { userPrompt, systemPrompt, provider, model, resolvedImages };
+    dispatchContext = common;
   } else {
     dispatchMap = API_DISPATCH;
-    dispatchContext = { userPrompt, systemPrompt, provider, model, providerConfig, resolvedImages };
+    dispatchContext = { ...common, providerConfig };
   }
 
   const handler = dispatchMap[effectiveMode];
   if (!handler) {
-    throw new ProviderError(
+    throw new ProviderError("unsupported",
       `Mode "${effectiveMode}" is not supported for provider "${provider}". Supported modes: ${Object.keys(dispatchMap).join(", ")}.`
     );
   }
@@ -433,28 +442,47 @@ export async function handleCall(args, deps = {}) {
 
   emitTrace(data, provider, resolvedModel, effectiveMode);
   const fullText = extractText(data);
-  const resultMode = args.resultMode || "summary";
+  const resultMode = args.resultMode || (loadFabricConfig().summarizer?.provider ? "summary" : "full");
   let resultText;
   if (resultMode === "full") {
     resultText = fullText;
   } else if (resultMode === "truncate") {
     resultText = truncateText(fullText, args.maxResultChars ?? 2000);
   } else {
-    resultText = await summarizeOutput(fullText, providerConfig, provider);
+    resultText = await summarizeOutput(fullText, deps);
   }
   return { content: [{ type: "text", text: resultText }] };
 }
 
 // ── fan_out: the orchestrator's parallel-work primitive ─────────
 
-export async function handleFanOut(args, deps) {
-  const { tasks, synthesize = true } = args;
-  if (!tasks || !tasks.length) throw new ConfigError("fan_out: tasks array is required and must be non-empty");
+// Calls in flight at once: fabric.fanOutConcurrency, else this default. Each call may be a
+// whole claude/codex process, so an unbounded fan-out of N tasks is N processes at once.
+export const FAN_OUT_CONCURRENCY_DEFAULT = 4;
 
-  let idx = 0;
-  const settled = await Promise.allSettled(
-    tasks.map(async (task) => {
-      const i = idx++;
+function fanOutConcurrency() {
+  const v = loadFabricConfig().fanOutConcurrency;
+  if (v === undefined) return FAN_OUT_CONCURRENCY_DEFAULT;
+  if (Number.isInteger(v) && v >= 1) return v;
+  throw new ConfigError(`fabric.fanOutConcurrency must be a positive integer, got ${JSON.stringify(v)}`);
+}
+
+// Run fn over items with at most `limit` in flight; results in item order.
+async function mapLimited(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+export async function handleFanOut(args, deps) {
+  const { tasks, synthesize = false } = args;
+  if (!tasks || !tasks.length) throw new ConfigError("fan_out: tasks array is required and must be non-empty");
+  const synthesizer = synthesize ? configuredHelper("synthesizer", "fan_out synthesize") : null;
+  const limit = fanOutConcurrency();
+
+  const results = await mapLimited(tasks, limit, async (task, i) => {
       const id = task.id || `task-${i}`;
       const t0 = Date.now();
       try {
@@ -465,44 +493,33 @@ export async function handleFanOut(args, deps) {
           write: !!task.write,
           model: task.model,
           observe: task.observe,
-          resultMode: "summary",
           cwd: task.cwd,
+          timeoutMs: task.timeoutMs,
         }, deps);
         const text = res.content[0].text;
         const fullMatch = text.match(/\[Full: (\d+) chars/);
-        const summary = fullMatch
+        const result = fullMatch
           ? text.slice(0, text.lastIndexOf("\n\n[Full:")).trim()
           : text;
         return {
           id, ok: true,
-          summary: summary.length > 400 ? summary.slice(0, 397) + "..." : summary,
+          result: result.length > 400 ? result.slice(0, 397) + "..." : result,
           estTokens: { in: Math.round((fullMatch ? parseInt(fullMatch[1]) : text.length) / 4), out: Math.round(text.length / 4) },
           durationMs: Date.now() - t0,
         };
       } catch (e) {
-        return { id, ok: false, error: e.message.slice(0, 200), durationMs: Date.now() - t0 };
+        return { id, ok: false, ...(e.kind ? { kind: e.kind } : {}), error: e.message.slice(0, 200), durationMs: Date.now() - t0 };
       }
-    }),
-  );
-
-  const results = settled.map((s) => s.status === "fulfilled" ? s.value : { ok: false, error: s.reason?.message?.slice(0, 200) || "unknown error" });
+  });
 
   let synthesis = null;
-  if (synthesize) {
-    const summaryText = results.map((r) =>
-      `[${r.id}] ${r.ok ? r.summary : `FAILED: ${r.error}`}`,
-    ).join("\n");
+  if (synthesizer) {
+    const summaryText = results.map((r) => `[${r.id}] ${r.ok ? r.result : `FAILED: ${r.error}`}`).join("\n");
     try {
-      const dsConfig = loadProviderConfig("deepseek");
-      if (dsConfig.baseUrl) {
-        const data = await callAnthropicAPI(
-          dsConfig, dsConfig.defaultHaiku || dsConfig.defaultSonnet,
-          "Synthesize these N parallel task results into a 2-3 sentence summary for the orchestrator. Flag failures, patterns, and follow-ups.",
-          summaryText, null, true,
-        );
-        synthesis = extractText(data);
-      }
-    } catch { /* synthesis is best-effort */ }
+      synthesis = await runHelper(synthesizer, SYNTHESIZE_PROMPT, summaryText, deps);
+    } catch (e) {
+      synthesis = `(synthesis by ${synthesizer.provider} failed: ${e.message})`;
+    }
   }
 
   const allOk = results.every((r) => r.ok);

@@ -1,6 +1,8 @@
 // engine/fabric-config.mjs — the `fabric` block of claude_env_settings.json (synced with
 // the provider env blocks). Keys read: `systemPromptFile` (platform prompt for spawned
-// children and the API path) and `sessionDefaults` ({provider, model} fallback for `call`).
+// children and the API path), `sessionDefaults` ({provider, model} fallback for `call`), and
+// `summarizer` / `synthesizer` ({provider, model?}; absent = none, never a built-in default),
+// and `fanOutConcurrency` (positive integer; calls fan_out runs at once).
 
 import fs from "node:fs";
 import os from "node:os";

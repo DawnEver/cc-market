@@ -487,3 +487,16 @@ test('resolveClaudeExe finds a native install: claude.exe itself on PATH, no npm
     clearClaudeExeCache();
   }
 });
+
+test('spawnChild timeout is a ProviderError of kind timeout', async () => {
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    return child; // never closes
+  };
+  await assert.rejects(
+    spawnChild({ provider: 'claude', prompt: 'hi', configPath: fixture(), _spawn: fakeSpawn, _bin: 'fake-claude', timeoutMs: 30 }),
+    (e) => e.kind === 'timeout' && /timeout after 30ms/.test(e.message));
+});

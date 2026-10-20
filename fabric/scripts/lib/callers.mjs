@@ -5,9 +5,11 @@ import process from "node:process";
 
 export { callAnthropicAPI } from "../../engine/anthropic-http.mjs";
 
-export async function callCodexCompanion(userPrompt, systemPrompt, model, writeMode = false, images = null, client = null) {
+// opts: {systemPrompt, model, write, images, client, cwd, timeoutMs} — see runCodexTask.
+export async function callCodexCompanion(userPrompt, opts = {}) {
   const { runCodexTask } = await import("../../engine/codex/task.mjs");
-  return runCodexTask(userPrompt, systemPrompt, model, writeMode, process.cwd(), (msg) => {
-    process.stderr.write(`fabric[codex]: ${msg.slice(0, 200)}${msg.length > 200 ? "..." : ""}\n`);
-  }, images, client);
+  return runCodexTask(userPrompt, {
+    ...opts,
+    onProgress: (msg) => process.stderr.write(`fabric[codex]: ${msg.slice(0, 200)}${msg.length > 200 ? "..." : ""}\n`),
+  });
 }
