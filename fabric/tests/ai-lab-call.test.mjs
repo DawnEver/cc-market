@@ -59,7 +59,7 @@ test("a malformed request (exit 2) is failed with ai-lab's reason", async () => 
 });
 
 test("another protocol version is refused", async () => {
-  await assert.rejects(callAiLab(req("v2"), opts()), (e) => e.kind === "failed" && /schema_version 2/.test(e.message));
+  await assert.rejects(callAiLab(req("v1"), opts()), (e) => e.kind === "failed" && /schema_version 1/.test(e.message));
 });
 
 test("timeoutMs kills the child and is kind timeout", async () => {

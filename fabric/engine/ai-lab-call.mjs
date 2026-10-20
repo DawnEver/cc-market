@@ -2,7 +2,7 @@
 //
 // fabric holds no vendor HTTP, no key and no retry loop: it spawns the interpreter the provider
 // cache recorded (setup pins it), writes one JSON request on stdin and reads one JSON reply on
-// stdout (ai-lab's versioned protocol, CALL_SCHEMA_VERSION 1). A classified provider failure is
+// stdout (ai-lab's versioned protocol, CALL_SCHEMA_VERSION 2). A classified provider failure is
 // a reply with `ok:false` and a `kind`, mapped onto ProviderError; exit 2 is a malformed request.
 // A missing interpreter or a missing ai-lab is `unsupported`, naming which. Usage is recorded
 // once per call in ai-lab's ledger (`--ledger`), the one usage record; fabric writes none.
@@ -17,7 +17,7 @@ import { killTree, treeSpawnOptions } from "./kill-tree.mjs";
 import { readCatalogue, getConfigPath, cachePathFor, SETUP_REMEDY } from "./providers.mjs";
 import { loadFabricConfig } from "./fabric-config.mjs";
 
-export const CALL_SCHEMA_VERSION = 1;
+export const CALL_SCHEMA_VERSION = 2;
 const EXIT_MALFORMED = 2;
 
 /** The interpreter the provider cache pinned; unsupported by name when absent. */
