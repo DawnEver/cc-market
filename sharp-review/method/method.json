@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "files": {
+    "profiles": "profiles.json",
+    "finding_schema": "finding.schema.json",
+    "output_schema": "findings-output.schema.json",
+    "conformance": "conformance"
+  },
+  "pick": {
+    "count": 2,
+    "algorithm": "weighted_without_replacement",
+    "eligible": "profiles whose source fired; every profile when no source is given",
+    "empty_fallback": "diff",
+    "assignment": "shuffled"
+  },
+  "contexts": {
+    "diff": {
+      "review": {
+        "template": "prompts/diff.md",
+        "call_mode": "review"
+      },
+      "agent": {
+        "template": "prompts/agent-diff.md",
+        "call_mode": "agent"
+      },
+      "empty": {
+        "status": "skipped"
+      }
+    },
+    "explore": {
+      "any": {
+        "template": "prompts/explore.md",
+        "call_mode": "agent"
+      }
+    }
+  },
+  "template": {
+    "placeholder": "{{name}}",
+    "missing": "",
+    "list_join": "; ",
+    "collapse_blank_lines": true,
+    "trim": true,
+    "partials": {
+      "output_contract": "prompts/output-contract.md"
+    }
+  },
+  "run_modes": {
+    "interactive": {
+      "providers": {
+        "from": "available",
+        "order": "alphabetical",
+        "rotate_by": "seed",
+        "count": 2
+      },
+      "call_modes": [
+        "review",
+        "agent"
+      ],
+      "models": {
+        "claude": "opus"
+      },
+      "synthesis": false,
+      "sink": "memory"
+    },
+    "headless": {
+      "providers": [
+        "anthropic"
+      ],
+      "contexts": [
+        "diff"
+      ],
+      "call_modes": [
+        "review"
+      ],
+      "models": {},
+      "synthesis": false,
+      "sink": "stdout"
+    }
+  },
+  "provider_assignment": "reviewer i takes providers[i mod len(providers)]; a requested provider absent from the available set is status unavailable, never substituted",
+  "reviewer_status": {
+    "vocabulary": [
+      "ok",
+      "exhausted",
+      "auth",
+      "rate_limit",
+      "timeout",
+      "unsupported",
+      "unavailable",
+      "skipped"
+    ],
+    "failure_kinds": [
+      "exhausted",
+      "auth",
+      "rate_limit",
+      "timeout",
+      "unsupported"
+    ],
+    "planned_final": [
+      "unavailable",
+      "skipped",
+      "unsupported"
+    ],
+    "precedence": [
+      "planned_final",
+      "missing_result:unavailable",
+      "error_kind",
+      "placeholder_reply:unavailable",
+      "findings_array:ok",
+      "otherwise:unavailable"
+    ],
+    "placeholder_replies": [
+      "^\\s*\\(no findings"
+    ]
+  },
+  "merge": {
+    "validate": "finding_schema",
+    "dedup_key": {
+      "fields": [
+        "file",
+        "summary"
+      ],
+      "lowercase": true,
+      "truncate": 60,
+      "join": "|"
+    },
+    "group_order": "first_seen",
+    "primary": "first_seen",
+    "defaults": {
+      "file": "",
+      "status": "OPEN",
+      "suggestion": "",
+      "detail": ""
+    },
+    "confidence": [
+      {
+        "min_reviewers": 2,
+        "label": "high-confidence (≥2 reviewers)"
+      },
+      {
+        "min_reviewers": 1,
+        "label": "single-reviewer"
+      }
+    ],
+    "id": {
+      "prefix": "SR",
+      "date_format": "YYYYMMDD",
+      "seq_width": 3,
+      "seq_start": 1,
+      "separator": "-"
+    }
+  }
+}

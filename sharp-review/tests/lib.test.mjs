@@ -24,7 +24,7 @@ try {
   process.on('exit', () => { try { rmSync(tmp, { recursive: true }); } catch {} });
 }
 
-const { SR_ID_RE, SR_ID_PARSE_RE, inferCategory, reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } = lib;
+const { SR_ID_RE, SR_ID_PARSE_RE, reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } = lib;
 
 describe('mergeFollowup', () => {
   const F = (id, summary) => ({ id, summary, severity: 'LOW', status: 'OPEN' });
@@ -101,26 +101,6 @@ describe('SR_ID_PARSE_RE', () => {
     assert.ok(m);
     assert.equal(m[1], '20260604');
     assert.equal(m[2], '015');
-  });
-});
-
-describe('inferCategory', () => {
-  it('detects performance from summary', () => {
-    assert.equal(inferCategory('fix slow memory leak in loop'), 'Performance');
-  });
-
-  it('detects feature from summary', () => {
-    assert.equal(inferCategory('add support for new API'), 'Feature');
-  });
-
-  it('defaults to Bug', () => {
-    assert.equal(inferCategory('fix typo'), 'Bug');
-    assert.equal(inferCategory(null), 'Bug');
-  });
-
-  it('respects explicit category', () => {
-    assert.equal(inferCategory('slow code', 'Performance'), 'Performance');
-    assert.equal(inferCategory('broken code', 'Bug'), 'Bug');
   });
 });
 

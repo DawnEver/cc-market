@@ -1,0 +1,39 @@
+{
+  "description": "Two ok reviewers; one finding reported by both (file and summary differ only in case) is high-confidence and lists both reviewers; ids run in first-seen order; optional fields take their defaults.",
+  "input": {
+    "range": "main...HEAD",
+    "date": "2026-10-20",
+    "profiles": ["diff", "adversarial"],
+    "reviewers": [
+      { "name": "diff", "provider": "claude", "status": "pending" },
+      { "name": "adversarial", "provider": "deepseek", "status": "pending" }
+    ],
+    "results": [
+      { "name": "diff", "findings": [
+        { "severity": "HIGH", "file": "src/a.js", "summary": "Null input crashes parse", "category": "Bug", "suggestion": "Guard null", "detail": "parse(null) throws" },
+        { "severity": "LOW", "file": "src/b.js", "summary": "Dead helper", "category": "Bug" }
+      ] },
+      { "name": "adversarial", "findings": [
+        { "severity": "MEDIUM", "file": "SRC/A.JS", "summary": "null input crashes PARSE", "category": "Bug" },
+        { "severity": "MEDIUM", "summary": "Quadratic loop over rows", "category": "Performance", "suggestion": "Index by id" }
+      ] }
+    ]
+  },
+  "expected": {
+    "schema_version": 1,
+    "range": "main...HEAD",
+    "profiles": ["diff", "adversarial"],
+    "reviewers": [
+      { "name": "diff", "provider": "claude", "status": "ok", "dropped_findings": 0 },
+      { "name": "adversarial", "provider": "deepseek", "status": "ok", "dropped_findings": 0 }
+    ],
+    "findings": [
+      { "id": "SR-20261020-001", "severity": "HIGH", "file": "src/a.js", "summary": "Null input crashes parse", "category": "Bug", "status": "OPEN", "suggestion": "Guard null", "detail": "parse(null) throws", "confidence": "high-confidence (≥2 reviewers)",
+        "reviewers": [ { "name": "diff", "provider": "claude" }, { "name": "adversarial", "provider": "deepseek" } ] },
+      { "id": "SR-20261020-002", "severity": "LOW", "file": "src/b.js", "summary": "Dead helper", "category": "Bug", "status": "OPEN", "suggestion": "", "detail": "", "confidence": "single-reviewer",
+        "reviewers": [ { "name": "diff", "provider": "claude" } ] },
+      { "id": "SR-20261020-003", "severity": "MEDIUM", "file": "", "summary": "Quadratic loop over rows", "category": "Performance", "status": "OPEN", "suggestion": "Index by id", "detail": "", "confidence": "single-reviewer",
+        "reviewers": [ { "name": "adversarial", "provider": "deepseek" } ] }
+    ]
+  }
+}

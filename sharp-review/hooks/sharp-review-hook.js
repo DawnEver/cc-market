@@ -11,13 +11,13 @@
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
 import path from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from "../shared/spawn.mjs";
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
-import { evaluateSources, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
+import { evaluateSources, sourceFiles, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
 import { loadReviewConfig } from '../scripts/lib/config.mjs';
 
 // Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
@@ -41,11 +41,52 @@ export function resolveReviewWorkerTarget(env = process.env) {
   };
 }
 
-export function buildDispatchInstruction(sources, target = resolveReviewWorkerTarget()) {
+// The plugin root is this file's grandparent; it must hold the method data, or nothing the
+// worker runs can work — refuse here rather than dispatch a worker that fails later.
+export function resolvePluginRoot(root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')) {
+  if (!existsSync(path.join(root, 'method', 'method.json'))) {
+    throw new Error(`sharp-review plugin root ${root} holds no method/method.json`);
+  }
+  return root;
+}
+
+// ── Content-hash gate ──
+// A source fires again only when the content it reviews changed since it last fired:
+// sessions sharing one checkout alternate on the same state, so a session-scoped gate alone
+// re-fired the deps profile every turn on an unchanged dirty tree (2026-10-20).
+export function contentHash(entries) {
+  const lines = entries.map(([p, digest]) => `${p}\0${digest}`).sort();
+  return createHash('sha256').update(lines.join('\n')).digest('hex');
+}
+
+export function freshSources(fired, hashes, reviewed) {
+  return fired.filter((key) => hashes[key] !== reviewed[key]);
+}
+
+function fileDigest(rel) {
+  try {
+    return createHash('sha256').update(readFileSync(path.join(projectDir, rel))).digest('hex');
+  } catch {
+    return 'absent';
+  }
+}
+
+function sourceHashes(fired, changedFiles, head) {
+  const hashes = {};
+  for (const key of fired) {
+    const files = sourceFiles(key, changedFiles);
+    hashes[key] = key === 'codebase'
+      ? contentHash([['HEAD', head || 'none']])
+      : contentHash(files.map((f) => [f, fileDigest(f)]));
+  }
+  return hashes;
+}
+
+export function buildDispatchInstruction(sources, target = resolveReviewWorkerTarget(), pluginRoot = resolvePluginRoot()) {
   const firedSources = sources || 'diff';
   return (
-    `Dispatch ONE ${target.agentType} subagent with firedSources: ${firedSources}. ` +
-    `${target.setup}, execute Steps 1-6 directly (no Workflow tool; Step 3b fan-out), ` +
+    `Dispatch ONE ${target.agentType} subagent with firedSources: ${firedSources} and plugin root: ${pluginRoot}. ` +
+    `${target.setup}, execute SKILL.md Steps 0-4 directly, ` +
     `and do not re-dispatch. Relay only its \`Sharp review: <summary>\` line; do not ` +
     `run the steps inline yourself.\n`
   );
@@ -279,13 +320,20 @@ async function main() {
       codebaseIntervalMin: reviewCfg.codebaseIntervalMin ?? CODEBASE_INTERVAL_MIN_DEFAULT,
     });
 
-    if (fired.length === 0) {
-      // Nothing fired — skip, preserve ref for accumulation
+    const hashes = sourceHashes(fired, changedFiles, head);
+    const reviewed = reviewGate?.reviewedHashes || {};
+    const fresh = freshSources(fired, hashes, reviewed);
+
+    if (fresh.length === 0) {
+      // Nothing fired, or only sources whose content was already reviewed — skip and
+      // preserve the ref for accumulation.
       reviewGate = {
         ...(reviewGate || {}),
         sessionId,
         mode: 'none',
-        reason: `wave-${wave} gate: ${effectiveStat.lines}L/${effectiveStat.files}F < ${threshold.lines}L/${threshold.files}F`,
+        reason: fired.length
+          ? `unchanged since last review: ${fired.join(', ')}`
+          : `wave-${wave} gate: ${effectiveStat.lines}L/${effectiveStat.files}F < ${threshold.lines}L/${threshold.files}F`,
         reviewCount: 0,
         classifiedAt: now,
       };
@@ -317,8 +365,9 @@ async function main() {
       lastReviewRef: head,
       lastReviewDiff: stat,
       wave,
-      firedSources: fired,        // skill passes these to pick-profile --sources
-      firedReasons: reasons,
+      firedSources: fresh,        // the worker passes these to plan.js --sources
+      firedReasons: Object.fromEntries(fresh.map((k) => [k, reasons[k]])),
+      reviewedHashes: { ...reviewed, ...Object.fromEntries(fresh.map((k) => [k, hashes[k]])) },
       memory: updatedMemory,
       // Config (thresholds / source tuning) lives in the tracked .claude/sharp-review.json —
       // never copied into this gitignored runtime state, so the two can't drift.
@@ -335,21 +384,17 @@ async function main() {
   reviewGate.reviewCount += 1;
   saveReviewGate(reviewGate);
 
-  // Publish plugin root so the dispatched agent can find scripts even when
-  // CLAUDE_PLUGIN_ROOT env var isn't inherited by subagent processes.
-  try {
-    const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-    const srTemp = path.join(tmpdir(), 'claude-sharp-review');
-    mkdirSync(srTemp, { recursive: true });
-    writeFileSync(path.join(srTemp, 'plugin-root.txt'), pluginRoot, 'utf8');
-  } catch {}
-
   // Delegate, don't run inline: review operates on git state, so dispatch a fresh worker
   // subagent to run the whole skill and return only its summary — keeps the main session clean.
   const sources = (reviewGate.firedSources || []).join(',') || 'diff';
-  const instruction = buildDispatchInstruction(sources, resolveReviewWorkerTarget());
+  const instruction = buildDispatchInstruction(sources, resolveReviewWorkerTarget(), resolvePluginRoot());
   process.stderr.write(instruction, () => process.exit(2));
 }
 
 // Only run when executed directly (not when imported for testing)
-if (isMain(import.meta)) main().catch(() => process.exit(0));
+if (isMain(import.meta)) {
+  main().catch((e) => {
+    process.stderr.write(`[sharp-review] ${e.message}\n`);
+    process.exit(0);
+  });
+}

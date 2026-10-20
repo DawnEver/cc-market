@@ -1,0 +1,25 @@
+{
+  "description": "Confidence counts distinct reviewers, not findings: one reviewer reporting the same finding twice stays single-reviewer and is listed once.",
+  "input": {
+    "range": "HEAD",
+    "date": "2026-10-20",
+    "profiles": ["diff"],
+    "reviewers": [ { "name": "diff", "provider": "claude", "status": "pending" } ],
+    "results": [
+      { "name": "diff", "findings": [
+        { "severity": "MEDIUM", "file": "x.py", "summary": "Retry never backs off", "category": "Bug" },
+        { "severity": "HIGH", "file": "x.py", "summary": "Retry never backs off", "category": "Bug", "detail": "second copy" }
+      ] }
+    ]
+  },
+  "expected": {
+    "schema_version": 1,
+    "range": "HEAD",
+    "profiles": ["diff"],
+    "reviewers": [ { "name": "diff", "provider": "claude", "status": "ok", "dropped_findings": 0 } ],
+    "findings": [
+      { "id": "SR-20261020-001", "severity": "MEDIUM", "file": "x.py", "summary": "Retry never backs off", "category": "Bug", "status": "OPEN", "suggestion": "", "detail": "", "confidence": "single-reviewer",
+        "reviewers": [ { "name": "diff", "provider": "claude" } ] }
+    ]
+  }
+}

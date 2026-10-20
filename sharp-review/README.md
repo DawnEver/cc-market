@@ -1,6 +1,6 @@
 # Sharp Review (锐评)
 
-Post-feature code review with independent AI reviewers (2 of N, drawn dynamically from fabric `list_providers`). Each reviewer is constrained by JSON Schema; findings are cross-checked, merged, and synced to a structured task list.
+Post-feature code review with independent AI reviewers. Each run picks review profiles, gives each to a reviewer on a provider drawn from fabric `list_providers`, and merges their schema-bound findings into a structured task list. The review method (profiles, prompts, finding schema, merge rules) is versioned data in `method/`.
 
 ## Install
 
@@ -22,8 +22,8 @@ node scripts/setup/setup.js
 
 > The standard trigger runs the **entire** review inside a dispatched worker subagent, so the
 > diff/reviewer/merge noise never touches the main session — only the one-line summary returns.
-> The worker fans out reviewers directly and feeds `post-review.js --raw` the shared
-> merge/render.
+> The worker runs `plan.js`, calls each planned reviewer, and hands the raw results to
+> `post-review.js`, which merges them by the method's rules.
 >
 > **On Codex:** install with `codex plugin add sharp-review@cc-market`. The Stop hook and the
 > review skill both run on Codex, fanning out reviewers the same way. `/sharp-review` is a
@@ -43,6 +43,7 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 
 ## Output
 
+- `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (`method/findings-output.schema.json`)
 - `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter (sole source of truth)
 - `.claude/rules/MEMORY.md` — one index entry per session (upserted in-process via the bundled shared stamp module)
 - `todo` / `todo report` — scan memory directly; no derived `tasks.md`
@@ -52,7 +53,7 @@ Run `/sharp-review` after finishing a feature. The Stop hook automatically class
 Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then rescan:
 
 ```bash
-node cc-market/sharp-review/scripts/post-review.js --date YYYY-MM-DD --rescan
+node cc-market/sharp-review/scripts/post-review.js --rescan --date YYYY-MM-DD
 ```
 
 ## How It Works

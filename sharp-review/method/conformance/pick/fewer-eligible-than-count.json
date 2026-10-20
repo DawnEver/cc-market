@@ -1,0 +1,5 @@
+{
+  "description": "With fewer eligible profiles than the count, every eligible profile is picked once.",
+  "input": { "weights": [["architecture", 0.2]], "count": 2, "rands": [0.5, 0.5] },
+  "expected": ["architecture"]
+}
