@@ -2,7 +2,8 @@
   "schema_version": 1,
   "files": {
     "profiles": "profiles.json",
-    "finding_schema": "finding.schema.json"
+    "finding_schema": "finding.schema.json",
+    "conformance": "conformance"
   },
   "pick": {
     "count": 2,

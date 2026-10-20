@@ -1,0 +1,17 @@
+{
+  "description": "An empty findings array is a clean pass: status ok, no findings.",
+  "input": {
+    "range": "HEAD",
+    "date": "2026-10-20",
+    "profiles": ["diff"],
+    "reviewers": [ { "name": "diff", "provider": "claude", "status": "pending" } ],
+    "results": [ { "name": "diff", "findings": [] } ]
+  },
+  "expected": {
+    "schema_version": 1,
+    "range": "HEAD",
+    "profiles": ["diff"],
+    "reviewers": [ { "name": "diff", "provider": "claude", "status": "ok", "dropped_findings": 0 } ],
+    "findings": []
+  }
+}

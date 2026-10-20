@@ -1,0 +1,8 @@
+{
+  "description": "{{name}} takes the variable's value; a list joins with list_join; a missing or null variable is empty; runs of three or more newlines collapse to two; the result is trimmed.",
+  "input": {
+    "template": "{{framing}}\n\nRange: {{range}}.\n\nScope: {{scope}}\n\n{{missing}}\n\nEnd",
+    "vars": { "framing": null, "range": "HEAD", "scope": ["one", "two"] }
+  },
+  "expected": "Range: HEAD.\n\nScope: one; two\n\nEnd"
+}

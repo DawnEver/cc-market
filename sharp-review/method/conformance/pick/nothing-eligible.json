@@ -1,0 +1,5 @@
+{
+  "description": "Non-positive weights are dropped; nothing eligible picks the method's empty_fallback profile.",
+  "input": { "weights": [["docs", 0], ["deps", -1]], "count": 2, "rands": [0.1, 0.1] },
+  "expected": ["diff"]
+}

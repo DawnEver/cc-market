@@ -1,0 +1,5 @@
+{
+  "description": "Each draw: threshold = clamp(rand, 0, 0.999999) * (sum of remaining weights); walk the remaining pairs in order subtracting weights; the first to drive the threshold below zero is picked and removed.",
+  "input": { "weights": [["diff", 0.4], ["security", 0.05], ["adversarial", 0.2]], "count": 2, "rands": [0.7, 0.0] },
+  "expected": ["adversarial", "diff"]
+}
