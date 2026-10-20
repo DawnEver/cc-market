@@ -121,6 +121,11 @@ The `fabric` block of `~/.claude/claude_env_settings.json`:
 
 `sessionDefaults` supplies provider/model when `call` omits a provider.
 
+`ledger` names the ai-lab ledger (`python -m ai_lab.call --ledger`) every one-shot API call is
+recorded in, with its usage and key slot — the one usage record (default
+`~/.claude/fabric/ledger.jsonl`). The ledger also serves an identical repeated request from the
+record. fabric writes no trace of its own.
+
 Optional `summarizer` and `synthesizer` (each `{ "provider": ..., "model": ... }`) name who
 condenses a long `call` result (`resultMode: "summary"`) and who synthesises `fan_out`
 results. Both default to NONE: with no summarizer the default `resultMode` is `full`, and an

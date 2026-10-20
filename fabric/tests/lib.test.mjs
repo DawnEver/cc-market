@@ -16,7 +16,6 @@ import {
   extractText,
   truncateText,
   parseCommandBlock,
-  logProviderRequest,
   ConfigError,
   ProviderError,
   ERROR_KINDS,
@@ -346,41 +345,3 @@ describe("error taxonomy", () => {
   });
 });
 
-// ── Structured logging ───────────────────────────────────────────────────────
-
-describe("logProviderRequest", () => {
-  test("emits valid ndjson to stderr", () => {
-    let captured;
-    const orig = process.stderr.write;
-    process.stderr.write = (data) => { captured = data; return true; };
-    try {
-      logProviderRequest("2026-06-12T10:00:00Z", "acme", "sonnet", "task", "ok", { durationMs: 1234, inputTokens: 500, outputTokens: 300 });
-      assert.ok(captured, "should emit a log line");
-      const entry = JSON.parse(captured);
-      assert.equal(entry.provider, "acme");
-      assert.equal(entry.model, "sonnet");
-      assert.equal(entry.mode, "task");
-      assert.equal(entry.status, "ok");
-      assert.equal(entry.duration_ms, 1234);
-      assert.equal(entry.input_tokens, 500);
-      assert.equal(entry.output_tokens, 300);
-      assert.ok(entry.request_id?.startsWith("fb-"));
-    } finally {
-      process.stderr.write = orig;
-    }
-  });
-
-  test("includes error field on error status", () => {
-    let captured;
-    const orig = process.stderr.write;
-    process.stderr.write = (data) => { captured = data; return true; };
-    try {
-      logProviderRequest("2026-06-12T10:00:00Z", "codex", "default", "review", "error", { durationMs: 5000, error: "timeout after 30s" });
-      const entry = JSON.parse(captured);
-      assert.equal(entry.status, "error");
-      assert.equal(entry.error, "timeout after 30s");
-    } finally {
-      process.stderr.write = orig;
-    }
-  });
-});

@@ -4,14 +4,18 @@
 // cache recorded (setup pins it), writes one JSON request on stdin and reads one JSON reply on
 // stdout (ai-lab's versioned protocol, CALL_SCHEMA_VERSION 1). A classified provider failure is
 // a reply with `ok:false` and a `kind`, mapped onto ProviderError; exit 2 is a malformed request.
-// A missing interpreter or a missing ai-lab is `unsupported`, naming which.
+// A missing interpreter or a missing ai-lab is `unsupported`, naming which. Usage is recorded
+// once per call in ai-lab's ledger (`--ledger`), the one usage record; fabric writes none.
 
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 import { spawn } from "../shared/spawn.mjs";
 import { ProviderError, ERROR_KINDS } from "./errors.mjs";
 import { killTree, treeSpawnOptions } from "./kill-tree.mjs";
 import { readCatalogue, getConfigPath, cachePathFor, SETUP_REMEDY } from "./providers.mjs";
+import { loadFabricConfig } from "./fabric-config.mjs";
 
 export const CALL_SCHEMA_VERSION = 1;
 const EXIT_MALFORMED = 2;
@@ -28,6 +32,11 @@ export function aiLabPython(configPath = getConfigPath()) {
   return python;
 }
 
+/** The ledger every call is recorded in: `fabric.ledger`, else ~/.claude/fabric/ledger.jsonl. */
+export function ledgerPath(configPath = getConfigPath()) {
+  return loadFabricConfig(configPath).ledger || path.join(os.homedir(), ".claude", "fabric", "ledger.jsonl");
+}
+
 /** A reply's `kind` as a ProviderError kind: '' (unclassified) is `failed`. */
 export function replyKind(kind) {
   return kind && ERROR_KINDS.includes(kind) ? kind : "failed";
@@ -37,10 +46,11 @@ export function replyKind(kind) {
  * Send one request to `ai_lab.call`; resolves the reply of a successful call, rejects with a
  * ProviderError otherwise. `timeoutMs` kills the whole process tree (kind `timeout`).
  */
-export function callAiLab(request, { configPath = getConfigPath(), ledger = null, timeoutMs = 600000, signal = null,
+export function callAiLab(request, { configPath = getConfigPath(), ledger = ledgerPath(configPath), timeoutMs = 600000, signal = null,
   _spawn = spawn, _python = null, _killTree = killTree } = {}) {
   const python = _python || aiLabPython(configPath);
-  const args = ["-m", "ai_lab.call", ...(ledger ? ["--ledger", ledger] : [])];
+  fs.mkdirSync(path.dirname(ledger), { recursive: true });
+  const args = ["-m", "ai_lab.call", "--ledger", ledger];
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error("ai_lab.call: request cancelled")); return; }
     const child = _spawn(python, args, { stdio: ["pipe", "pipe", "pipe"], shell: false, env: process.env, ...treeSpawnOptions() });

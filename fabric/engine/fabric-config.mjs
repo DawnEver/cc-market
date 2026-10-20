@@ -2,7 +2,8 @@
 // the provider env blocks). Keys read: `systemPromptFile` (platform prompt for spawned
 // children and the API path), `sessionDefaults` ({provider, model} fallback for `call`), and
 // `summarizer` / `synthesizer` ({provider, model?}; absent = none, never a built-in default),
-// and `fanOutConcurrency` (positive integer; calls fan_out runs at once).
+// `fanOutConcurrency` (positive integer; calls fan_out runs at once), and `ledger` (the ai-lab
+// ledger file every one-shot API call is recorded in).
 
 import fs from "node:fs";
 import os from "node:os";

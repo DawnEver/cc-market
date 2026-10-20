@@ -36,7 +36,8 @@ export function providerCacheFixture({ providers = FIXTURE_PROVIDERS, registry =
   };
   writeFileSync(join(dir, "provider-cache.json"), JSON.stringify(doc));
   const configPath = join(dir, "claude_env_settings.json");
-  writeFileSync(configPath, JSON.stringify(registry));
+  // The ai-lab ledger stays in the fixture dir: no test writes under the real ~/.claude.
+  writeFileSync(configPath, JSON.stringify({ ...registry, fabric: { ledger: join(dir, "ledger.jsonl"), ...registry.fabric } }));
   return { configPath, dir, packaged, cachePath: join(dir, "provider-cache.json") };
 }
 

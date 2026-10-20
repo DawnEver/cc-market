@@ -13,7 +13,7 @@
 //
 // Layering: L0 mechanism = engine/ (providers, spawn-child, ai-lab-call, codex,
 // observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
-// shaping, <command> parsing, result/usage shaping, traceme). L2 ergonomics = commands/
+// shaping, <command> parsing, result shaping). L2 ergonomics = commands/
 // skills/agents. This file wires L1 onto L0.
 
 import { fileURLToPath } from "node:url";
@@ -31,9 +31,7 @@ import {
   parseCommandBlock,
   callCodexCompanion,
   spawnClaudeP,
-  emitProviderTrace,
   checkCodexStatus,
-  logProviderRequest,
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
@@ -191,15 +189,6 @@ function checkImageSizeLimit(resolvedImages, provider, providerConfig) {
   }
 }
 
-function emitTrace(data, provider, resolvedModel, mode) {
-  const usage = data?._usage || data?.usage || null;
-  emitProviderTrace({
-    ts: new Date().toISOString(),
-    provider, model: resolvedModel || "default", mode: mode || "task",
-    input_tokens: usage?.input_tokens || 0, output_tokens: usage?.output_tokens || 0,
-    cache_read: usage?.cache_read_input_tokens || 0, cache_write: usage?.cache_creation_input_tokens || 0,
-  });
-}
 
 // ── Result shaping: keep parent context clean ─────────────────────
 
@@ -354,7 +343,6 @@ async function runObserved(args, _spawnChild) {
 
 export async function handleCall(args, deps = {}) {
   let { provider, model, mode, systemPrompt: customSystem, prompt: userPrompt, write, images, observe } = args;
-  const startTs = new Date().toISOString();
 
   // <command> block flags are authoritative.
   const parsed = parseCommandBlock(userPrompt);
@@ -421,22 +409,8 @@ export async function handleCall(args, deps = {}) {
     );
   }
 
-  const t0 = Date.now();
-  let data, resolvedModel;
-  try {
-    const result = await handler(dispatchContext);
-    data = result.data;
-    resolvedModel = result.resolvedModel;
-    const usage = data?._usage || data?.usage || {};
-    logProviderRequest(startTs, provider, resolvedModel, effectiveMode, "ok", {
-      durationMs: Date.now() - t0, inputTokens: usage.input_tokens || 0, outputTokens: usage.output_tokens || 0,
-    });
-  } catch (err) {
-    logProviderRequest(startTs, provider, model || "default", effectiveMode, "error", { durationMs: Date.now() - t0, error: err.message });
-    throw err;
-  }
-
-  emitTrace(data, provider, resolvedModel, effectiveMode);
+  // Usage is recorded once, by ai-lab's ledger (API calls); fabric keeps no trace of its own.
+  const { data } = await handler(dispatchContext);
   const fullText = extractText(data);
   const resultMode = args.resultMode || (loadFabricConfig().summarizer?.provider ? "summary" : "full");
   let resultText;

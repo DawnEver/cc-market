@@ -2,7 +2,6 @@
 // Concern modules live in ./lib/; lib.mjs re-exports them so the `./lib.mjs`
 // import sites (mcp-server, tests) stay stable:
 //   - lib/config.mjs   provider config/env (re-exports engine/providers.mjs)
-//   - lib/trace.mjs    TraceMe NDJSON + structured request logging
 //   - lib/spawn.mjs    policy wrapper over the shared claude child engine
 //   - lib/parse.mjs    command-block flags, prompt building, text extraction
 //   - lib/callers.mjs  Codex companion
@@ -11,7 +10,6 @@
 
 export * from "./lib/config.mjs";
 export * from "../engine/errors.mjs";
-export * from "./lib/trace.mjs";
 export * from "./lib/spawn.mjs";
 export * from "./lib/parse.mjs";
 export * from "./lib/callers.mjs";

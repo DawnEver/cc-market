@@ -3,11 +3,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "../shared/spawn.mjs";
-import { callAiLab, aiLabPython, replyKind, textRequest, TEXT_SCHEMA } from "../engine/ai-lab-call.mjs";
+import { callAiLab, aiLabPython, ledgerPath, replyKind, textRequest, TEXT_SCHEMA } from "../engine/ai-lab-call.mjs";
 import { providerCacheFixture } from "./fixtures/provider-cache.mjs";
+
+// Hermetic: the registry (and so the ledger path) is a temp fixture.
+const FIXTURE = providerCacheFixture();
+process.env.CC_MARKET_CONFIG_PATH = FIXTURE.configPath;
 
 const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "fake-ai-lab-call.mjs");
 // Run the fake under node whatever interpreter path the caller resolved; argv is kept so it is recorded.
@@ -21,7 +26,13 @@ test("a successful reply resolves with its result and usage, through -m ai_lab.c
   assert.equal(reply.result.text, "echo: hello");
   assert.equal(reply.usage.output_tokens, 5);
   assert.equal(seen.cmd, "python-fixture");
-  assert.deepEqual(seen.args, ["-m", "ai_lab.call"]);
+  assert.deepEqual(seen.args, ["-m", "ai_lab.call", "--ledger", path.join(FIXTURE.dir, "ledger.jsonl")]);
+});
+
+test("usage goes to the ledger fabric.ledger names, else ~/.claude/fabric/ledger.jsonl", () => {
+  assert.equal(ledgerPath(FIXTURE.configPath), path.join(FIXTURE.dir, "ledger.jsonl"));
+  const bare = providerCacheFixture({ registry: { fabric: { ledger: null } } });
+  assert.equal(ledgerPath(bare.configPath), path.join(os.homedir(), ".claude", "fabric", "ledger.jsonl"));
 });
 
 test("textRequest is a respond request with the text schema and base64 images", () => {
