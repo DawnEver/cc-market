@@ -1,5 +1,16 @@
 import { CodexAppServerClient } from "./app-server.mjs";
+import path from "node:path";
 import { watchTurn } from "./turn.mjs";
+
+// The turn's write permission, as the app-server enforces it (TurnStartParams.sandboxPolicy /
+// approvalPolicy). write=false is the readOnly sandbox; write=true may write inside cwd only.
+// approvalPolicy "never": no escalation prompt exists headless, so an escalation is denied.
+export function turnPolicy(write, cwd) {
+  return {
+    sandboxPolicy: write ? { type: "workspaceWrite", writableRoots: [path.resolve(cwd)] } : { type: "readOnly" },
+    approvalPolicy: "never",
+  };
+}
 
 export async function runCodexTask(prompt, { systemPrompt, model, write = false, cwd, onProgress, images = null, client = null, timeoutMs = 600000 } = {}) {
   const ownClient = !client;
@@ -29,7 +40,8 @@ export async function runCodexTask(prompt, { systemPrompt, model, write = false,
 
   const turn = watchTurn(client, { timeoutMs, label: "task" });
   try {
-    const threadResp = await client.send("thread/start", { cwd: cwd || process.cwd() });
+    const workDir = path.resolve(cwd || process.cwd());
+    const threadResp = await client.send("thread/start", { cwd: workDir });
     const threadId = threadResp.thread?.id || threadResp.id;
     result.threadId ||= threadId;
 
@@ -49,7 +61,8 @@ export async function runCodexTask(prompt, { systemPrompt, model, write = false,
     const turnParams = {
       threadId,
       input,
-      tools: write ? undefined : { disabled: true },
+      cwd: workDir,
+      ...turnPolicy(write, workDir),
     };
     if (model) turnParams.model = model;
 

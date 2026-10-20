@@ -5,6 +5,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { classifyTurnError } from "../engine/codex/turn.mjs";
 import { runCodexTask } from "../engine/codex/task.mjs";
@@ -136,4 +139,35 @@ describe("runCodexReview", () => {
     assert.equal(client.requests.find((r) => r.method === "thread/start").params.model, "gpt-x");
     assert.equal(client.requests.find((r) => r.method === "review/start").params.model, undefined);
   });
+});
+
+describe("codex write permission", () => {
+  it("write:false starts the turn in the readOnly sandbox, write:true in a cwd-scoped workspaceWrite", async () => {
+    for (const write of [false, true]) {
+      const client = new FakeClient([completedTurn], "turn/start");
+      await runCodexTask("hi", { cwd: ".", client, write });
+      const params = client.requests.find((r) => r.method === "turn/start").params;
+      assert.equal(params.tools, undefined, "tools is not a TurnStartParams field");
+      assert.equal(params.approvalPolicy, "never");
+      assert.equal(params.sandboxPolicy.type, write ? "workspaceWrite" : "readOnly");
+      if (write) assert.deepEqual(params.sandboxPolicy.writableRoots, [path.resolve(".")]);
+    }
+  });
+});
+
+// Planted, live: needs an installed, logged-in codex. FABRIC_LIVE_CODEX=1 runs it.
+describe("codex write permission (live)", { skip: process.env.FABRIC_LIVE_CODEX !== "1" && "set FABRIC_LIVE_CODEX=1" }, () => {
+  const ask = (file) => `Create a file named ${path.basename(file)} in the current directory containing the word planted. Use a shell command. Do nothing else.`;
+  for (const write of [false, true]) {
+    it(`write:${write} ${write ? "creates" : "leaves absent"} the requested file`, { timeout: 300000 }, async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-ro-"));
+      const file = path.join(dir, "planted.txt");
+      try {
+        await runCodexTask(ask(file), { cwd: dir, write, timeoutMs: 280000 }).catch(() => {});
+        assert.equal(fs.existsSync(file), write);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
 });

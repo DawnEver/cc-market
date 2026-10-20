@@ -295,7 +295,7 @@ describe("call options reach every path", () => {
         handleCall({ provider: "codex", mode, prompt: "p", cwd: "C:/work", timeoutMs: 30, resultMode: "full" },
           { withCodexClient: (fn) => fn(client) }),
         (e) => e.kind === "timeout" && /30ms/.test(e.message));
-      assert.equal(requests.find((r) => r.method === "thread/start").params.cwd, "C:/work");
+      assert.equal(path.resolve(requests.find((r) => r.method === "thread/start").params.cwd), path.resolve("C:/work"));
     });
   }
 });
