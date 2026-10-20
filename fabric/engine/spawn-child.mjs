@@ -20,6 +20,7 @@ import { loadFabricConfig } from './fabric-config.mjs';
 import { startObserveProxy } from './observe-proxy.mjs';
 import { buildUserContent } from './anthropic-http.mjs';
 import { spawn as hiddenSpawn } from '../shared/spawn.mjs';
+import { ProviderError } from './errors.mjs';
 
 // ── Claude binary resolution (cross-platform) ───────────────────────────────
 
@@ -272,7 +273,7 @@ export async function spawnChild(opts) {
       const settle = (fn, val) => { if (!settled) { settled = true; cleanup(); fn(val); } };
       const onAbort = () => { try { child.kill('SIGTERM'); } catch {} settle(reject, new Error('spawnChild: request cancelled')); };
       const killTimer = armKillTimer(child, timeoutMs, () =>
-        settle(reject, new Error(`spawnChild: timeout after ${timeoutMs}ms`)));
+        settle(reject, new ProviderError('timeout', `spawnChild: timeout after ${timeoutMs}ms`)));
       const cleanup = () => {
         clearTimeout(killTimer);
         if (signal) signal.removeEventListener('abort', onAbort);

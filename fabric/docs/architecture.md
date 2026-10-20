@@ -15,6 +15,7 @@ fabric/
 │   ├── anthropic-http.mjs   Raw Anthropic-compatible HTTP caller (retry + SSE)
 │   ├── observe-{proxy,reader}.mjs  Observe proxy + capture reader
 │   ├── mcp-rpc.mjs          JSON-RPC stdio transport for the MCP server
+│   ├── errors.mjs           The one error taxonomy: ProviderError.kind (ERROR_KINDS) + ConfigError
 │   ├── fabric-config.mjs    The `fabric` config block (systemPromptFile, sessionDefaults)
 │   └── codex/               app-server client · task · discovery
 ├── shared/                  Bundled generic utils only (spawn/lib/state/stamp/attention) —
@@ -22,7 +23,7 @@ fabric/
 ├── scripts/
 │   ├── mcp-server.mjs       MCP stdio server: wires L1 policy onto L0
 │   ├── lib.mjs + lib/       L1 policy: parse (<command> flags), config, spawn (claude
-│   │                        wrapper), callers (codex/API adapters), trace, errors
+│   │                        wrapper), callers (codex/API adapters), trace
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
 ├── commands/                L2: continue.md · models.md · handoff.md
@@ -59,7 +60,7 @@ hermetic tests.
 | task | app-server (`write`, images) | `claude -p` (own OAuth) | raw HTTP completion |
 | agent | app-server | `claude -p` + harness | `claude -p` + provider env (NOT raw HTTP) |
 | review | native `review/start` | task + `review.md` prompt | task + `review.md` prompt |
-| image-generate / image-edit | app-server | — (ProviderError) | — |
+| image-generate / image-edit | app-server | — (ProviderError `unsupported`) | — |
 
 ## Config
 

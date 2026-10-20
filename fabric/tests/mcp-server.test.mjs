@@ -140,7 +140,8 @@ describe("call primitive", () => {
   });
 
   test("rejects image modes for non-codex providers", async () => {
-    await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }), /not supported for provider/);
+    await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }),
+      (e) => e.kind === "unsupported" && /not supported for provider/.test(e.message));
     // API provider: fixture keeps this hermetic (no host claude_env_settings.json needed).
     await withConfigFixture(DEEPSEEK_FIXTURE, () =>
       assert.rejects(() => handleCall({ provider: "deepseek", prompt: "x", mode: "image-generate" }), /not supported for provider/));

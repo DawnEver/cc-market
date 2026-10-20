@@ -411,7 +411,7 @@ export async function handleCall(args, deps = {}) {
 
   const handler = dispatchMap[effectiveMode];
   if (!handler) {
-    throw new ProviderError(
+    throw new ProviderError("unsupported",
       `Mode "${effectiveMode}" is not supported for provider "${provider}". Supported modes: ${Object.keys(dispatchMap).join(", ")}.`
     );
   }
