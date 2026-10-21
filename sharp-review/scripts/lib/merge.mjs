@@ -2,14 +2,18 @@
 // Input is a run record, output the findings JSON (method/findings-output.schema.json);
 // method/conformance/merge pins the behaviour for every executor.
 
-// The JSON Schema subset the method uses: object, required, type string, enum.
+// The JSON Schema subset the method uses: object, required, type string | array (of items), enum.
+function validValue(v, rule) {
+  if (rule.type === 'string' && typeof v !== 'string') return false;
+  if (rule.type === 'array' && !(Array.isArray(v) && v.every((x) => validValue(x, rule.items ?? {})))) return false;
+  return !rule.enum || rule.enum.includes(v);
+}
+
 export function validFinding(f, schema) {
   if (!f || typeof f !== 'object' || Array.isArray(f)) return false;
   for (const k of schema.required) if (f[k] === undefined || f[k] === null) return false;
   for (const [k, rule] of Object.entries(schema.properties)) {
-    if (f[k] === undefined) continue;
-    if (rule.type === 'string' && typeof f[k] !== 'string') return false;
-    if (rule.enum && !rule.enum.includes(f[k])) return false;
+    if (f[k] !== undefined && !validValue(f[k], rule)) return false;
   }
   return true;
 }
@@ -81,8 +85,9 @@ export function mergeRun(run, method) {
       for (const f of result.findings) {
         if (!validFinding(f, method.findingSchema)) { dropped++; continue; }
         const k = dedupKey(f, m.dedup_key);
-        if (!groups.has(k)) groups.set(k, { primary: f, reviewers: [] });
+        if (!groups.has(k)) groups.set(k, { primary: f, reviewers: [], union: Object.fromEntries(m.union.fields.map((u) => [u, []])) });
         const g = groups.get(k);
+        for (const u of m.union.fields) for (const v of f[u] ?? []) if (!g.union[u].includes(v)) g.union[u].push(v);
         if (!g.reviewers.some((r) => r.name === rv.name)) g.reviewers.push({ name: rv.name, provider: rv.provider });
       }
     }
@@ -92,7 +97,7 @@ export function mergeRun(run, method) {
   const date = run.date.replace(/-/g, '');
   let seq = m.id.seq_start;
   const findings = [];
-  for (const { primary: p, reviewers: rvs } of groups.values()) {
+  for (const { primary: p, reviewers: rvs, union } of groups.values()) {
     const value = (k) => p[k] ?? m.defaults[k];
     findings.push({
       id: [m.id.prefix, date, String(seq++).padStart(m.id.seq_width, '0')].join(m.id.separator),
@@ -105,6 +110,8 @@ export function mergeRun(run, method) {
       detail: value('detail'),
       confidence: m.confidence.find((c) => rvs.length >= c.min_reviewers).label,
       reviewers: rvs,
+      // merge.union: the group's values across every reviewer, first-seen; an empty union is omitted.
+      ...Object.fromEntries(Object.entries(union).filter(([, vs]) => vs.length)),
     });
   }
   return { schema_version: method.schema_version, range: run.range, profiles: run.profiles, reviewers, findings };

@@ -13,7 +13,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "range": {
       "type": "string",
@@ -190,6 +190,13 @@
               }
             },
             "description": "Every reviewer that reported this finding, with its provider, in first-seen order."
+          },
+          "principles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Never empty: the union of the principle ids (method principles.json) every reviewer of this finding tagged, in first-seen order; absent when none did (method.json merge.union)."
           }
         }
       },

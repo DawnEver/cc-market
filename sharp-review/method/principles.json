@@ -1,0 +1,13 @@
+{
+  "description": "The engineering principles every reviewer judges a change against, INCLUDING BUT NOT LIMITED TO these: a reviewer still reports a defect no principle names. The one source of the set: the loader fills the finding schema's principles enum from these ids, and the prompts render this list. Extend it by adding an entry; an id, once published, is never renamed.",
+  "principles": [
+    { "id": "first-principles", "name": "First principles", "statement": "Decisions derive from the actual system and current requirements, not from templates, habits or precedent; assumptions that shape the outcome are stated." },
+    { "id": "no-historical-baggage", "name": "Discard historical baggage", "statement": "Obsolete structures, dead paths and leftover layers are removed once no current need is served by them." },
+    { "id": "occams-razor", "name": "Occam's razor", "statement": "The simplest design that fully meets the requirement; no abstraction, option or indirection for a hypothetical need." },
+    { "id": "single-source-of-truth", "name": "Single source of truth", "statement": "Each fact or configuration lives in one authoritative place; every other representation is derived from it, never maintained beside it." },
+    { "id": "layered-decoupling", "name": "Layered decoupling", "statement": "Modules depend in one direction through narrow interfaces; no layer reaches into another's internals or upward." },
+    { "id": "names-match-behaviour", "name": "Names match what they do", "statement": "A name (function, file, flag, field) says what the thing does now; a name that misleads is a defect." },
+    { "id": "no-backward-compatibility", "name": "No backward compatibility", "statement": "No shims, aliases or dual paths kept for old callers or formats; callers move with the change." },
+    { "id": "progressive-disclosure", "name": "Progressive disclosure", "statement": "An entry point states only what is needed first and points to the detail; detail is not front-loaded or duplicated across levels." }
+  ]
+}

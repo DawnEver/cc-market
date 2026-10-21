@@ -18,13 +18,19 @@ export function contextEntry(profile, manifest, method) {
   return entry;
 }
 
+// method.json principles.list_item, once per principles.json entry, one per line.
+export function principleList(method) {
+  return method.principleList.map((p) => renderTemplate(method.principles.list_item, p, method)).join('\n');
+}
+
 // -> { status } when the context skips this manifest, else { call_mode, prompt }.
 export function renderReviewerPrompt(profile, manifest, method) {
   const entry = contextEntry(profile, manifest, method);
   if (entry.status) return { status: entry.status };
   const partials = {};
+  const partialVars = { finding_schema: JSON.stringify(method.findingSchema), principle_list: principleList(method) };
   for (const [name, rel] of Object.entries(method.template.partials)) {
-    partials[name] = renderTemplate(method.readTemplate(rel), { finding_schema: JSON.stringify(method.findingSchema) }, method);
+    partials[name] = renderTemplate(method.readTemplate(rel), partialVars, method);
   }
   const vars = {
     ...partials,

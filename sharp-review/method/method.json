@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "files": {
     "profiles": "profiles.json",
+    "principles": "principles.json",
     "finding_schema": "finding.schema.json",
     "output_schema": "findings-output.schema.json",
     "conformance": "conformance"
@@ -41,6 +42,7 @@
     "collapse_blank_lines": true,
     "trim": true,
     "partials": {
+      "principles": "prompts/principles.md",
       "output_contract": "prompts/output-contract.md"
     }
   },
@@ -159,6 +161,18 @@
       "seq_width": 3,
       "seq_start": 1,
       "separator": "-"
+    },
+    "union": {
+      "fields": [
+        "principles"
+      ],
+      "order": "first_seen",
+      "empty": "omitted"
     }
+  },
+  "principles": {
+    "finding_field": "principles",
+    "fills": "the finding schema property finding_field gets items.enum = every principles.json id, at load; the file never lists them",
+    "list_item": "- {{id}} ({{name}}): {{statement}}"
   }
 }

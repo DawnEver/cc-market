@@ -1,0 +1,40 @@
+{
+  "description": "A finding's principles are the union of every reviewer's tags for it, first-seen and without repeats (method.json merge.union); a finding no reviewer tagged, or tagged with an empty list, carries no principles field.",
+  "input": {
+    "range": "main...HEAD",
+    "date": "2026-10-21",
+    "profiles": ["diff", "architecture"],
+    "reviewers": [
+      { "name": "diff", "provider": "claude", "status": "pending" },
+      { "name": "architecture", "provider": "deepseek", "status": "pending" }
+    ],
+    "results": [
+      { "name": "diff", "findings": [
+        { "severity": "MEDIUM", "file": "src/a.js", "summary": "Second copy of the config table", "category": "Bug", "principles": ["single-source-of-truth"] },
+        { "severity": "LOW", "file": "src/b.js", "summary": "Typo in log line", "category": "Bug", "principles": [] }
+      ] },
+      { "name": "architecture", "findings": [
+        { "severity": "HIGH", "file": "src/a.js", "summary": "Second copy of the config table", "category": "Bug", "principles": ["occams-razor", "single-source-of-truth"] },
+        { "severity": "LOW", "file": "src/c.js", "summary": "Unused option", "category": "Feature" }
+      ] }
+    ]
+  },
+  "expected": {
+    "schema_version": 2,
+    "range": "main...HEAD",
+    "profiles": ["diff", "architecture"],
+    "reviewers": [
+      { "name": "diff", "provider": "claude", "status": "ok", "dropped_findings": 0 },
+      { "name": "architecture", "provider": "deepseek", "status": "ok", "dropped_findings": 0 }
+    ],
+    "findings": [
+      { "id": "SR-20261021-001", "severity": "MEDIUM", "file": "src/a.js", "summary": "Second copy of the config table", "category": "Bug", "status": "OPEN", "suggestion": "", "detail": "", "confidence": "high-confidence (≥2 reviewers)",
+        "reviewers": [ { "name": "diff", "provider": "claude" }, { "name": "architecture", "provider": "deepseek" } ],
+        "principles": ["single-source-of-truth", "occams-razor"] },
+      { "id": "SR-20261021-002", "severity": "LOW", "file": "src/b.js", "summary": "Typo in log line", "category": "Bug", "status": "OPEN", "suggestion": "", "detail": "", "confidence": "single-reviewer",
+        "reviewers": [ { "name": "diff", "provider": "claude" } ] },
+      { "id": "SR-20261021-003", "severity": "LOW", "file": "src/c.js", "summary": "Unused option", "category": "Feature", "status": "OPEN", "suggestion": "", "detail": "", "confidence": "single-reviewer",
+        "reviewers": [ { "name": "architecture", "provider": "deepseek" } ] }
+    ]
+  }
+}

@@ -37,6 +37,13 @@ export function renderReviewMarkdown(output, { date, labels = [] }) {
   const lines = [`## Review ${date} (session) — ${labels.join(' + ') || output.range}`, '', '### Reviewer Status'];
   for (const r of output.reviewers) lines.push(`- Reviewer ${r.name} (${r.provider ?? 'none'}): ${r.status}`);
   if (ok < ran.length) lines.push(`- Warning: only ${ok}/${ran.length} reviewers succeeded`);
+  // Findings by the principle they violate (method principles.json ids); absent when none is tagged.
+  const byPrinciple = new Map();
+  for (const f of output.findings) for (const p of f.principles ?? []) byPrinciple.set(p, [...(byPrinciple.get(p) ?? []), f.id]);
+  if (byPrinciple.size) {
+    lines.push('', '### By principle', '');
+    for (const p of [...byPrinciple.keys()].sort()) lines.push(`- ${p}: ${byPrinciple.get(p).join(', ')}`);
+  }
   lines.push('', '### Confirmed findings', '');
   for (const f of output.findings) {
     lines.push('---', '', `### [${f.id}] [${f.severity}] ${f.file} — ${f.summary}`, '');
@@ -44,6 +51,7 @@ export function renderReviewMarkdown(output, { date, labels = [] }) {
     lines.push(`- **Status:** ${f.status}`);
     lines.push(`- **Confidence:** ${f.confidence}`);
     lines.push(`- **Reviewers:** ${f.reviewers.map((r) => `${r.name} (${r.provider})`).join(', ')}`);
+    if (f.principles?.length) lines.push(`- **Principles:** ${f.principles.join(', ')}`);
     if (f.suggestion) lines.push(`- **Suggestion:** ${f.suggestion}`);
     if (f.detail) lines.push('', f.detail);
     lines.push('');
