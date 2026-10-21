@@ -9,6 +9,7 @@
     "summary": { "type": "string" },
     "category": { "type": "string", "enum": ["Bug", "Feature", "Performance"] },
     "suggestion": { "type": "string" },
-    "detail": { "type": "string" }
+    "detail": { "type": "string" },
+    "principles": { "type": "array", "items": { "type": "string" }, "description": "Ids of the principles this finding violates; an unknown id refuses the finding." }
   }
 }

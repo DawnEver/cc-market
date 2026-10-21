@@ -11,7 +11,7 @@ const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts
 
 export function plan(over = {}) {
   return {
-    schema_version: 1, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'memory',
+    schema_version: 2, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'memory',
     profiles: [{ key: 'diff', label: 'diff review' }, { key: 'adversarial', label: 'adversarial review' }],
     reviewers: [
       { name: 'diff', provider: 'codex', status: 'pending' },
@@ -100,7 +100,7 @@ test('--sink stdout prints the findings JSON and writes no memory', () => {
   try {
     const out = run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] }, ['--sink', 'stdout']);
     const json = JSON.parse(out);
-    assert.equal(json.schema_version, 1);
+    assert.equal(json.schema_version, 2);
     assert.deepEqual(json.profiles, ['diff', 'adversarial']);
     assert.deepEqual(json.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'codex', 'ok'], ['adversarial', 'deepseek', 'ok']]);
     assert.equal(json.findings[0].id, 'SR-20260621-001');
@@ -127,4 +127,18 @@ test('an unknown sink is refused by name', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('findings are reported by principle: each lists its ids and the entry indexes them (planted control: untagged lists none)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    run(dir, plan(), { run_id: 'run-1', results: [
+      { name: 'diff', findings: [{ ...leak, principles: ['single-source-of-truth'] }, { file: 'b.js', summary: 'typo', severity: 'LOW', category: 'Bug' }] },
+      { name: 'adversarial', findings: [{ ...leak, principles: ['occams-razor', 'single-source-of-truth'] }] },
+    ] });
+    const md = readFileSync(memFile(dir), 'utf8');
+    assert.match(md, /- \*\*Principles:\*\* single-source-of-truth, occams-razor/);
+    assert.equal((md.match(/\*\*Principles:\*\*/g) || []).length, 1, 'the untagged finding lists none');
+    assert.match(md, /### By principle\n\n- occams-razor: SR-20260621-001\n- single-source-of-truth: SR-20260621-001/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

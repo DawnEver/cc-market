@@ -30,7 +30,8 @@ sharp-review/
 │   ├── profiles.json             Built-in profiles
 │   ├── finding.schema.json       Reviewer finding schema
 │   ├── findings-output.schema.json  The findings JSON contract (versioned by schema_version)
-│   ├── prompts/*.md              Prompt templates + output_contract partial
+│   ├── principles.json           The principle set (ids fill the finding schema enum at load)
+│   ├── prompts/*.md              Prompt templates + principles and output_contract partials
 │   └── conformance/{merge,pick,prompt}/*.json   input → expected, for every executor
 ├── agents/sharp-review.md        Worker subagent: reads SKILL.md and runs it
 ├── hooks/sharp-review-hook.js    Stop hook: wave gate, sources, dispatch

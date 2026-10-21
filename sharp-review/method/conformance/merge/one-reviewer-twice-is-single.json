@@ -13,7 +13,7 @@
     ]
   },
   "expected": {
-    "schema_version": 1,
+    "schema_version": 2,
     "range": "HEAD",
     "profiles": ["diff"],
     "reviewers": [ { "name": "diff", "provider": "claude", "status": "ok", "dropped_findings": 0 } ],

@@ -15,7 +15,7 @@
     ]
   },
   "expected": {
-    "schema_version": 1,
+    "schema_version": 2,
     "range": "HEAD",
     "profiles": ["security"],
     "reviewers": [ { "name": "security", "provider": "kimi", "status": "ok", "dropped_findings": 3 } ],
