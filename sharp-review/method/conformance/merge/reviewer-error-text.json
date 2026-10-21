@@ -1,0 +1,115 @@
+{
+  "description": "A failed reviewer says why: the failed call's recorded error text is copied verbatim and wins over the rule's reason, even when its kind is unknown (unavailable); a planned reviewer's recorded error explains its planned status; a blank recorded error falls back to the reason; an ok reviewer's stray error is dropped and a skipped reviewer gets none.",
+  "input": {
+    "range": "HEAD",
+    "date": "2026-10-21",
+    "profiles": [
+      "diff"
+    ],
+    "reviewers": [
+      {
+        "name": "http400",
+        "provider": "anthropic",
+        "status": "pending"
+      },
+      {
+        "name": "unclassified",
+        "provider": "anthropic",
+        "status": "pending"
+      },
+      {
+        "name": "absent",
+        "provider": "kimi",
+        "status": "unavailable",
+        "error": "provider 'kimi' is not in the catalogue"
+      },
+      {
+        "name": "blank",
+        "provider": "anthropic",
+        "status": "pending"
+      },
+      {
+        "name": "clean",
+        "provider": "anthropic",
+        "status": "pending"
+      },
+      {
+        "name": "empty-diff",
+        "provider": "anthropic",
+        "status": "skipped"
+      }
+    ],
+    "results": [
+      {
+        "name": "http400",
+        "error_kind": "auth",
+        "error": "HTTP 400: messages: user messages must have non-empty content"
+      },
+      {
+        "name": "unclassified",
+        "error_kind": "",
+        "error": "HTTP 500 from https://api.anthropic.com/v1/messages"
+      },
+      {
+        "name": "blank",
+        "error_kind": "timeout",
+        "error": "   "
+      },
+      {
+        "name": "clean",
+        "findings": [],
+        "error": "ignored"
+      }
+    ]
+  },
+  "expected": {
+    "schema_version": 1,
+    "range": "HEAD",
+    "profiles": [
+      "diff"
+    ],
+    "reviewers": [
+      {
+        "name": "http400",
+        "provider": "anthropic",
+        "status": "auth",
+        "dropped_findings": 0,
+        "error": "HTTP 400: messages: user messages must have non-empty content"
+      },
+      {
+        "name": "unclassified",
+        "provider": "anthropic",
+        "status": "unavailable",
+        "dropped_findings": 0,
+        "error": "HTTP 500 from https://api.anthropic.com/v1/messages"
+      },
+      {
+        "name": "absent",
+        "provider": "kimi",
+        "status": "unavailable",
+        "dropped_findings": 0,
+        "error": "provider 'kimi' is not in the catalogue"
+      },
+      {
+        "name": "blank",
+        "provider": "anthropic",
+        "status": "timeout",
+        "dropped_findings": 0,
+        "error": "the call failed with kind timeout and recorded no error text"
+      },
+      {
+        "name": "clean",
+        "provider": "anthropic",
+        "status": "ok",
+        "dropped_findings": 0
+      },
+      {
+        "name": "empty-diff",
+        "provider": "anthropic",
+        "status": "skipped",
+        "dropped_findings": 0
+      }
+    ],
+    "findings": []
+  }
+}

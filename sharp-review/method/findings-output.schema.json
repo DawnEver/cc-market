@@ -65,8 +65,52 @@
           "dropped_findings": {
             "type": "integer",
             "description": "Findings this reviewer returned that failed method/finding.schema.json."
+          },
+          "error": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why this reviewer has no findings: the failed call's recorded error text (never a key), else the method's reason for its status (method.json reviewer_status.error). Required for every status but ok and skipped; forbidden for ok."
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ok"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "error"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "exhausted",
+                    "auth",
+                    "rate_limit",
+                    "timeout",
+                    "unsupported",
+                    "unavailable"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "error"
+              ]
+            }
+          }
+        ]
       },
       "description": "Every planned reviewer, in plan order. Only ok reviewers contribute findings."
     },

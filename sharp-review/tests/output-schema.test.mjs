@@ -9,8 +9,8 @@ import { loadMethod } from '../scripts/lib/method.mjs';
 const method = loadMethod();
 const schema = JSON.parse(readFileSync(join(method.dir, method.files.output_schema), 'utf8'));
 
-// Enough JSON Schema to check the contract: type, const, enum, pattern, required, properties,
-// additionalProperties false, items.
+// Enough JSON Schema to check the contract: type, const, enum, pattern, minLength, required,
+// properties, additionalProperties false, items, allOf, if/then, not.
 function errors(value, s, at = '$') {
   const out = [];
   const types = s.type ? [].concat(s.type) : null;
@@ -19,6 +19,10 @@ function errors(value, s, at = '$') {
   if ('const' in s && value !== s.const) out.push(`${at}: not ${s.const}`);
   if (s.enum && !s.enum.includes(value)) out.push(`${at}: ${value} not in enum`);
   if (s.pattern && !new RegExp(s.pattern).test(value)) out.push(`${at}: ${value} !~ ${s.pattern}`);
+  if (s.minLength !== undefined && typeof value === 'string' && Array.from(value).length < s.minLength) out.push(`${at}: shorter than ${s.minLength}`);
+  for (const sub of s.allOf || []) out.push(...errors(value, sub, at));
+  if (s.if && errors(value, s.if, at).length === 0 && s.then) out.push(...errors(value, s.then, at));
+  if (s.not && errors(value, s.not, at).length === 0) out.push(`${at}: matches a forbidden shape`);
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     for (const k of s.required || []) if (!(k in value)) out.push(`${at}.${k}: missing`);
     for (const [k, v] of Object.entries(value)) {
@@ -49,4 +53,24 @@ test('the schema version and enums are the method\'s own, not a second copy that
 
 test('a planted violation is caught (the checker is not vacuous)', () => {
   assert.notDeepEqual(errors({ schema_version: 1, range: 'HEAD', profiles: [], reviewers: [{ name: 'a', provider: 'x', status: 'failed', dropped_findings: 0 }], findings: [] }, schema), []);
+});
+
+const reviewer = (status, extra = {}) => ({ schema_version: 1, range: 'HEAD', profiles: [], findings: [],
+  reviewers: [{ name: 'a', provider: 'x', status, dropped_findings: 0, ...extra }] });
+
+test('a failed reviewer must say why, an ok one must not, a skipped one may', () => {
+  assert.deepEqual(errors(reviewer('auth', { error: 'HTTP 400' }), schema), []);
+  assert.notDeepEqual(errors(reviewer('auth'), schema), []);
+  assert.notDeepEqual(errors(reviewer('unavailable', { error: '' }), schema), []);
+  assert.notDeepEqual(errors(reviewer('ok', { error: 'x' }), schema), []);
+  assert.deepEqual(errors(reviewer('ok'), schema), []);
+  assert.deepEqual(errors(reviewer('skipped'), schema), []);
+  assert.deepEqual(errors(reviewer('skipped', { error: 'empty diff' }), schema), []);
+});
+
+test('the statuses that must carry an error are the vocabulary but ok and skipped, not a second list', () => {
+  const [, mustSay] = schema.properties.reviewers.items.allOf;
+  const vocab = method.reviewer_status.vocabulary;
+  assert.deepEqual(mustSay.if.properties.status.enum, vocab.filter((k) => k !== 'ok' && k !== 'skipped'));
+  for (const k of [...vocab.filter((v) => v !== 'ok' && v !== 'skipped')]) assert.ok(method.reviewer_status.failure_kinds.includes(k) || k === 'unavailable', k);
 });

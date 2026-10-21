@@ -25,12 +25,14 @@ reviewer the plan marked `pending`, keyed by the plan's reviewer `name`:
 | JSON `{ "findings": [...] }` (Anthropic-compatible providers) | `{ "name", "findings": [...] }` — `[]` is a clean pass |
 | codex review-mode prose with issues | `{ "name", "findings": [...] }` normalized per § Codex prose |
 | codex reply that is only the `(no findings ...)` placeholder | `{ "name", "text": "<the reply>" }`, plus `"error_kind"` when fabric reported one |
-| the call failed and fabric named a kind | `{ "name", "error_kind": "exhausted" \| "auth" \| "rate_limit" \| "timeout" \| "unsupported" }` |
-| failed with no kind, empty, truncated, off-topic, unparseable | `{ "name" }` (no findings) |
+| the call failed and fabric named a kind | `{ "name", "error_kind": "exhausted" \| "auth" \| "rate_limit" \| "timeout" \| "unsupported", "error": "<its error text>" }` |
+| failed with no kind, empty, truncated, off-topic, unparseable | `{ "name" }` (no findings), plus `"error"` when the call reported one |
 
 A reviewer left out of `results` is recorded as `unavailable`. post-review.js maps each entry
 to a reviewer status by the method's `reviewer_status` rules; the worker never writes a status
-itself and never turns an ambiguous reply into `[]`.
+itself and never turns an ambiguous reply into `[]`. A failed call's `"error"` text (never a key)
+is copied into the reviewer's `error`; a failed reviewer without one gets the method's reason for
+its status (`reviewer_status.error`).
 
 ## Codex prose
 

@@ -1,5 +1,5 @@
 {
-  "description": "reviewer_status.precedence: a planned final status (unavailable, skipped, unsupported) stands; no result is unavailable; a failure kind fabric reported wins even over findings, an unknown kind is unavailable; a codex '(no findings ...)' placeholder is unavailable unless a kind was reported; only a findings array is ok, and only ok reviewers contribute findings.",
+  "description": "reviewer_status.precedence: a planned final status (unavailable, skipped, unsupported) stands; no result is unavailable; a failure kind fabric reported wins even over findings, an unknown kind is unavailable; a codex '(no findings ...)' placeholder is unavailable unless a kind was reported; only a findings array is ok, and only ok reviewers contribute findings. Every reviewer that is neither ok nor skipped says why: with no error text recorded, the reason of the rule that decided its status.",
   "input": {
     "range": "HEAD",
     "date": "2026-10-20",
@@ -36,17 +36,17 @@
     "profiles": ["diff"],
     "reviewers": [
       { "name": "r01", "provider": "claude", "status": "ok", "dropped_findings": 0 },
-      { "name": "r02", "provider": "codex", "status": "exhausted", "dropped_findings": 0 },
-      { "name": "r03", "provider": "codex", "status": "unavailable", "dropped_findings": 0 },
-      { "name": "r04", "provider": "deepseek", "status": "rate_limit", "dropped_findings": 0 },
-      { "name": "r05", "provider": "kimi", "status": "unavailable", "dropped_findings": 0 },
-      { "name": "r06", "provider": "anthropic", "status": "unavailable", "dropped_findings": 0 },
+      { "name": "r02", "provider": "codex", "status": "exhausted", "dropped_findings": 0, "error": "the call failed with kind exhausted and recorded no error text" },
+      { "name": "r03", "provider": "codex", "status": "unavailable", "dropped_findings": 0, "error": "the reply was only a no-findings placeholder" },
+      { "name": "r04", "provider": "deepseek", "status": "rate_limit", "dropped_findings": 0, "error": "the call failed with kind rate_limit and recorded no error text" },
+      { "name": "r05", "provider": "kimi", "status": "unavailable", "dropped_findings": 0, "error": "no result came back" },
+      { "name": "r06", "provider": "anthropic", "status": "unavailable", "dropped_findings": 0, "error": "the requested provider is not available here" },
       { "name": "r07", "provider": "claude", "status": "skipped", "dropped_findings": 0 },
-      { "name": "r08", "provider": "anthropic", "status": "unsupported", "dropped_findings": 0 },
-      { "name": "r09", "provider": "kimi", "status": "unavailable", "dropped_findings": 0 },
-      { "name": "r10", "provider": "anthropic", "status": "unavailable", "dropped_findings": 0 },
-      { "name": "r11", "provider": "anthropic", "status": "auth", "dropped_findings": 0 },
-      { "name": "r12", "provider": "anthropic", "status": "timeout", "dropped_findings": 0 }
+      { "name": "r08", "provider": "anthropic", "status": "unsupported", "dropped_findings": 0, "error": "the run mode cannot execute this reviewer's call mode" },
+      { "name": "r09", "provider": "kimi", "status": "unavailable", "dropped_findings": 0, "error": "the reply held no findings array" },
+      { "name": "r10", "provider": "anthropic", "status": "unavailable", "dropped_findings": 0, "error": "the call failed with kind boom and recorded no error text" },
+      { "name": "r11", "provider": "anthropic", "status": "auth", "dropped_findings": 0, "error": "the call failed with kind auth and recorded no error text" },
+      { "name": "r12", "provider": "anthropic", "status": "timeout", "dropped_findings": 0, "error": "the call failed with kind timeout and recorded no error text" }
     ],
     "findings": [
       { "id": "SR-20261020-001", "severity": "LOW", "file": "a", "summary": "kept", "category": "Bug", "status": "OPEN", "suggestion": "", "detail": "", "confidence": "single-reviewer",
