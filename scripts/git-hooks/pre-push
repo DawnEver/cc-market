@@ -7,6 +7,8 @@ remote_name="${1:-origin}"
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -n "${local_sha:-}" ] || continue
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  # Only a push to main publishes a release; topic branches need no tag.
+  [ "$remote_ref" = "refs/heads/main" ] || continue
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
     remote_default="refs/remotes/$remote_name/main"
     if git rev-parse --verify "$remote_default" >/dev/null 2>&1; then

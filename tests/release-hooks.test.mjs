@@ -75,7 +75,7 @@ test('pre-push rejects an unrelated tag and accepts the matching marketplace rel
   assert.equal(runHook(dir, input).status, 0);
 });
 
-test('pre-push checks a newly-created branch against remote main', () => {
+test('pre-push lets a topic branch with untagged plugin changes through', () => {
   const dir = fixture();
   const base = git(dir, 'rev-parse', 'HEAD');
   git(dir, 'update-ref', 'refs/remotes/origin/main', base);
@@ -83,6 +83,17 @@ test('pre-push checks a newly-created branch against remote main', () => {
   git(dir, 'commit', '-qam', 'plugin change');
   const head = git(dir, 'rev-parse', 'HEAD');
   const input = `refs/heads/topic ${head} refs/heads/topic ${ZERO}\n`;
+  assert.equal(runHook(dir, input).status, 0);
+});
+
+test('pre-push refuses a newly-created main push with untagged plugin changes', () => {
+  const dir = fixture();
+  const base = git(dir, 'rev-parse', 'HEAD');
+  git(dir, 'update-ref', 'refs/remotes/origin/main', base);
+  writeFileSync(join(dir, 'demo', 'scripts', 'run.mjs'), 'export const value = 3;\n');
+  git(dir, 'commit', '-qam', 'plugin change');
+  const head = git(dir, 'rev-parse', 'HEAD');
+  const input = `refs/heads/topic ${head} refs/heads/main ${ZERO}\n`;
   assert.equal(runHook(dir, input).status, 1);
 });
 
