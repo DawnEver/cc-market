@@ -173,6 +173,6 @@
   "principles": {
     "finding_field": "principles",
     "fills": "the finding schema property finding_field gets items.enum = every principles.json id, at load; the file never lists them",
-    "list_item": "- {{id}} ({{name}}): {{statement}}"
+    "list_item": "- {{id}}: {{statement}}"
   }
 }
