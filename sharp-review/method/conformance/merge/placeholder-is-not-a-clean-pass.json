@@ -55,7 +55,8 @@
         "name": "placeholder",
         "provider": "codex",
         "status": "unavailable",
-        "dropped_findings": 0
+        "dropped_findings": 0,
+        "error": "the reply was only a no-findings placeholder"
       }
     ],
     "findings": [

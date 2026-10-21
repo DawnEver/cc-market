@@ -6,7 +6,7 @@
 //   node post-review.js --plan <plan.json> --raw <raw.json> [--sink memory|stdout]
 //   node post-review.js --rescan --date <YYYY-MM-DD>     re-derive frontmatter after an edit
 //
-// raw.json: { run_id, results: [{ name, findings? | text? | error_kind? }] } — `name` is the
+// raw.json: { run_id, results: [{ name, findings? | text? | error_kind?, error? }] } — `name` is the
 // plan's reviewer name; see skills/sharp-review/reference/direct-fanout.md.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';

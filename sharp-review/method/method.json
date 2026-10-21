@@ -111,7 +111,18 @@
     ],
     "placeholder_replies": [
       "^\\s*\\(no findings"
-    ]
+    ],
+    "error": "every reviewer whose status is neither ok nor skipped carries a non-empty error naming why: the recorded error text (the result's `error`, else the planned reviewer's `error`) when it is a non-empty string, else the reason of the precedence rule that decided the status ({error_kind} replaced by the recorded kind). An ok reviewer never carries one; a skipped one carries none from the merge. The text is copied, never a key.",
+    "reasons": {
+      "planned_final": {
+        "unavailable": "the requested provider is not available here",
+        "unsupported": "the run mode cannot execute this reviewer's call mode"
+      },
+      "missing_result": "no result came back",
+      "error_kind": "the call failed with kind {error_kind} and recorded no error text",
+      "placeholder_reply": "the reply was only a no-findings placeholder",
+      "otherwise": "the reply held no findings array"
+    }
   },
   "merge": {
     "validate": "finding_schema",
