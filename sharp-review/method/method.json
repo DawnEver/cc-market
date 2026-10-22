@@ -173,6 +173,8 @@
   "principles": {
     "finding_field": "principles",
     "fills": "the finding schema property finding_field gets items.enum = every principles.json id, at load; the file never lists them",
-    "list_item": "- {{id}}: {{statement}}"
+    "list_item": "- {{id}}: {{statement}}",
+    "prompt_schema": "unfilled",
+    "prompt_schema_means": "filled: the prompt's finding schema carries the ids enum; unfilled: it does not, since the principles partial already lists every id. Validation always uses the filled schema"
   }
 }

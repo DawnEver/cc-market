@@ -29,12 +29,18 @@ export function loadMethod(dir = METHOD_DIR) {
   const profiles = {};
   for (const p of readJSON(join(dir, method.files.profiles)).profiles) profiles[p.key] = p;
   const principles = readJSON(join(dir, method.files.principles)).principles;
+  const fileSchema = readJSON(join(dir, method.files.finding_schema));
+  const findingSchema = withPrincipleIds(fileSchema, method.principles.finding_field, principles);
+  const promptSchemas = { filled: findingSchema, unfilled: fileSchema };
+  const promptSchema = promptSchemas[method.principles.prompt_schema];
+  if (!promptSchema) throw new Error(`method principles.prompt_schema must be one of ${Object.keys(promptSchemas)}`);
   return {
     ...method,
     dir,
     profiles,
     principleList: principles,
-    findingSchema: withPrincipleIds(readJSON(join(dir, method.files.finding_schema)), method.principles.finding_field, principles),
+    findingSchema,
+    promptSchema,
     readTemplate: (rel) => readFileSync(join(dir, rel), 'utf8'),
   };
 }

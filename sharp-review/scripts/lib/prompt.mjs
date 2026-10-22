@@ -28,7 +28,7 @@ export function renderReviewerPrompt(profile, manifest, method) {
   const entry = contextEntry(profile, manifest, method);
   if (entry.status) return { status: entry.status };
   const partials = {};
-  const partialVars = { finding_schema: JSON.stringify(method.findingSchema), principle_list: principleList(method) };
+  const partialVars = { finding_schema: JSON.stringify(method.promptSchema), principle_list: principleList(method) };
   for (const [name, rel] of Object.entries(method.template.partials)) {
     partials[name] = renderTemplate(method.readTemplate(rel), partialVars, method);
   }
