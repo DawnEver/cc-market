@@ -7,7 +7,7 @@
 # exercised here and again every time you use Codex normally afterwards.
 #
 # Installs the 4 in-scope plugins: fabric, rem, sharp-review, evolve.
-#   (NOT watch — works but Notification degrades to Stop-only on Codex.  NOT traceme — unsupported.)
+#   (NOT watch — works but Notification degrades to Stop-only on Codex.)
 # Uninstall later, cleanly, with:  codex plugin remove <name>@cc-market
 #
 # Usage:  bash scripts/codex-e2e-live.sh        (run from the cc-market repo root; be logged in: `codex login`)

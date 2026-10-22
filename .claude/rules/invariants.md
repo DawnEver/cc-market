@@ -32,7 +32,7 @@ that `windowsHide` on the `cmd.exe` call cannot reach. Spawn the target (e.g. `p
 directly with `{ detached: true, stdio: 'ignore', windowsHide: true }` instead.
 
 Exception: foreground launchers the user runs in their own terminal with `stdio: 'inherit'`
-(e.g. `cc.js`, the `todo`/`traceme` CLI launchers) already share a console and don't flash —
+(e.g. `cc.js`, the `todo` CLI launcher) already share a console and don't flash —
 `windowsHide` there is unnecessary (still harmless).
 
 ## Progressive disclosure
@@ -70,7 +70,7 @@ Each top-level key has exactly one owner — never write another plugin's key:
 | `reviewGate` | sharp-review | Wave gate: mode, review counts, `lastReviewRef`/`lastReviewDiff` |
 | `evolveState` | evolve | Round loop: findings, `lastRoundAt`, `emptyRounds` |
 
-traceme (own SQLite DB), watch (`.claude/watch/state/alert.json`), and fabric keep state
+watch (`.claude/watch/state/alert.json`), and fabric keep state
 elsewhere and must not add keys here. Adding a key: claim it in this table first, add it to
 `DEFAULT_STATE` if shared, then rebundle `shared/` copies.
 

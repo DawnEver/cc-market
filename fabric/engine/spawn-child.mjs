@@ -104,7 +104,7 @@ export function buildChildEnv({ provider, observe, proxyUrl, configPath, task })
 // ── Stream-json parsing (large prompts / images go via stdin) ────────────────
 
 // Headless children must not inherit the host's hooks: user/project Stop hooks
-// (sharp-review gate, rem, traceme SessionStart pulls, …) fire inside the child
+// (sharp-review gate, rem, …) fire inside the child
 // too, where they can inject more turns and keep the one-shot `claude -p` child
 // alive forever (observed: native claude child hung past its timeout because the
 // inherited sharp-review Stop hook dispatched a reviewer inside it). Hooks are a
