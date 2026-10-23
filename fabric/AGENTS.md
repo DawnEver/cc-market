@@ -24,7 +24,7 @@ L2 ERGONOMICS     commands (/continue /models /handoff), the `takeover` handoff 
 L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
                   scripts/codex (review, image) + prompts/ — mode dispatch matrix
 L0 MECHANISM      engine/ (fabric-owned, canonical): providers routing · spawn-child ·
-                  ai-lab-call (one-shot API calls via `python -m ai_lab.call`) · codex/{app-server,task} · observe proxy.
+                  ai-lab-call (one-shot API calls via `python -m ai_lab.call`) · codex/{launch,app-server,task} · observe proxy.
                   (shared/ now holds only cross-plugin generic utils)
 ```
 
@@ -59,5 +59,7 @@ to all plugins).
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic. Export functions for testability where needed.
+- Codex startup/status share `engine/codex/launch.mjs`: native Windows executables
+  use no shell; batch shims accept fixed bootstrap flags only. Prompts stay in JSON-RPC.
 - Version bumping is automatic — the repo-level `pre-push` hook bumps this plugin's
   `plugin.json` whenever `fabric/` changed in the push.

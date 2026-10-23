@@ -7,6 +7,7 @@ import { spawn } from "../../shared/spawn.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { findCodexBinary } from "./discovery.mjs";
+import { prepareCodexLaunch } from './launch.mjs';
 import { killTree, treeSpawnOptions } from "../kill-tree.mjs";
 
 // Walk up from startPath (default: the entry script) to the nearest
@@ -50,10 +51,10 @@ export class CodexAppServerClient {
     const bin = this.codexPath || findCodexBinary();
     this._closePromise = new Promise((resolve) => { this._closeResolve = resolve; });
 
-    this.child = spawn(bin, ["app-server"], {
+    const launch = prepareCodexLaunch(bin, ['app-server']);
+    this.child = spawn(launch.command, launch.args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
-      shell: process.platform === "win32",
+      ...launch.options,
       ...treeSpawnOptions(),
     });
 
@@ -154,7 +155,7 @@ export class CodexAppServerClient {
     }
     if (this.child) {
       if (!this.child.stdin.destroyed) this.child.stdin.end();
-      // shell:true on Windows: the root is cmd.exe; kill the tree or codex survives it.
+      // A batch shim can own a cmd.exe root; terminate its whole process tree.
       this._killTree(this.child);
     }
     if (this._closeResolve) { this._closeResolve(); this._closeResolve = null; }

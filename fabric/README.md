@@ -40,6 +40,10 @@ selects policy: task/review/agent/image-generate/image-edit):
 
 The `/continue` command drives the `takeover` handoff subagent over this surface.
 
+Windows Codex startup and status checks share one launcher: native executables run
+without a shell; batch shims use a constrained invocation that preserves literal paths.
+Only fixed bootstrap flags enter a shim. Prompts remain JSON-RPC data.
+
 Library import — the same engines, directly:
 
 ```js

@@ -4,17 +4,24 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { spawnSync } from "../../shared/spawn.mjs";
+import { prepareCodexLaunch } from './launch.mjs';
 
 const execFileP = promisify(execFile);
 /** Await a command → { status, stdout, stderr, error? }. Never blocks the event loop. */
 async function runAsync(cmd, args, timeoutMs) {
   try {
-    const { stdout, stderr } = await execFileP(cmd, args, { timeout: timeoutMs, encoding: "utf8", shell: process.platform === "win32", windowsHide: true });
+    const launch = prepareCodexLaunch(cmd, args);
+    const { stdout, stderr } = await execFileP(launch.command, launch.args, { ...launch.options, timeout: timeoutMs, encoding: "utf8", windowsHide: true });
     return { status: 0, stdout: stdout ?? "", stderr: stderr ?? "" };
   } catch (e) {
     // exit-code != 0 rejects; map to a sync-spawn-like shape. e.stdout may be a Buffer/string.
     return { status: e.code ?? -1, stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? e.message), error: e };
   }
+}
+
+function runSync(cmd, args, timeout) {
+  const launch = prepareCodexLaunch(cmd, args);
+  return spawnSync(launch.command, launch.args, { ...launch.options, stdio: ['ignore', 'pipe', 'pipe'], timeout });
 }
 
 // Shared pure decision helpers — sync and async paths must agree on WHERE codex could
@@ -57,15 +64,11 @@ export function findCodexBinary() {
     return p;
   }
 
-  const pathResult = spawnSync("codex", ["--version"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 10000,
-    shell: process.platform === "win32",
-  });
+  const pathResult = runSync('codex', ['--version'], 10000);
   if (pathResult.status === 0) {
     if (process.platform === "win32") {
       // 'where codex' to resolve full path with extension
-      const where = spawnSync("where", ["codex"], { stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
+      const where = runSync('where', ['codex'], 5000);
       if (where.status === 0) {
         const best = pickWhereBest(where.stdout.toString().trim().split("\n"));
         if (best) return best;
@@ -114,11 +117,7 @@ export async function findCodexBinaryAsync() {
 export function checkCodexStatus(codexPath) {
   const bin = codexPath || findCodexBinary();
 
-  const version = spawnSync(bin, ["--version"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 10000,
-    shell: process.platform === "win32",
-  });
+  const version = runSync(bin, ['--version'], 10000);
 
   if (version.error || version.status !== 0) {
     // spawn failure (e.g. ENOENT) leaves stderr null and status null — fall back to error/status.
@@ -129,11 +128,7 @@ export function checkCodexStatus(codexPath) {
   }
 
   // Check auth via `codex doctor` — `codex account read` doesn't exist in v0.137+
-  const doctor = spawnSync(bin, ["doctor", "--json"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 15000,
-    shell: process.platform === "win32",
-  });
+  const doctor = runSync(bin, ['doctor', '--json'], 15000);
 
   let authenticated = false;
   if (doctor.status === 0 && doctor.stdout) {
