@@ -276,11 +276,17 @@ export function resolveUpstream(provider, configPath = getConfigPath(), { task }
   };
 }
 
-/** One line per provider: the host CLIs, then the catalogue's rows (or why there are none). */
+/**
+ * One line per provider: the host CLIs, then the catalogue's rows (or why there are none),
+ * then `callable:` — the providers a call without `model` can run: the host CLIs and every
+ * row with a default model. A caller picking providers (sharp-review) takes that line.
+ */
 export function listModels(configPath = getConfigPath()) {
   const lines = Object.entries(HOST_PROVIDERS).map(([name, what]) => `${name.padEnd(10)} — ${what}`);
+  const callable = Object.keys(HOST_PROVIDERS);
+  const done = () => [...lines, "", `callable: ${callable.join(", ")}`].join("\n");
   let doc;
-  try { doc = readCatalogue(configPath); } catch (e) { return [...lines, "", e.message].join("\n"); }
+  try { doc = readCatalogue(configPath); } catch (e) { lines.push("", e.message); return done(); }
   lines.push("");
   for (const [name, row] of Object.entries(doc.providers || {}).sort(([a], [b]) => a.localeCompare(b))) {
     const m = modelEnv(row.models);
@@ -289,6 +295,7 @@ export function listModels(configPath = getConfigPath()) {
       .filter(([, k]) => m[k]).map(([role, k]) => `${role}=${m[k]}`);
     const endpoints = Object.values(row.endpoints || {}).join(" ");
     lines.push(`${name.padEnd(10)} → ${endpoints}  [${models.length ? models.join(", ") : "no defaults set"}]`);
+    if (models.length) callable.push(name);
   }
-  return lines.join("\n");
+  return done();
 }
