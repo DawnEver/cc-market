@@ -67,7 +67,8 @@ node "<root>/scripts/post-review.js" --plan "<plan_file>" --raw "<raw file>"
 the contract, with its field and status meanings, is `<root>/method/findings-output.schema.json`.)
 
 It refuses a raw file whose `run_id` is not the plan's or that is older than the run, then
-merges by the method's rules, writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps
+merges by the method's rules (through ai-lab's `python -m ai_lab.review merge`; `AiLabUnavailable`
+names the remedy when ai-lab is absent or too old), writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps
 `.claude/rules/MEMORY.md`, and prints the summary line. Do NOT merge or assign `SR-` ids
 yourself. If it errors, report the error and stop.
 

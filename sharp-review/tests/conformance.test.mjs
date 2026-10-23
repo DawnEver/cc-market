@@ -31,15 +31,10 @@ for (const kind of KINDS) {
 }
 
 // ── The Node executor against the fixtures ──
-import { mergeRun } from '../scripts/lib/merge.mjs';
 import { pickProfiles } from '../scripts/lib/pick.mjs';
 import { renderTemplate, renderReviewerPrompt } from '../scripts/lib/prompt.mjs';
 
-for (const fx of fixtures('merge')) {
-  test(`node executor: ${fx.file}`, () => {
-    assert.deepEqual(mergeRun(fx.input, method), fx.expected);
-  });
-}
+// merge/ is ai-lab's: its suite runs those fixtures against the one merge (`python -m ai_lab.review merge`).
 
 for (const fx of fixtures('pick')) {
   test(`node executor: ${fx.file}`, () => {
