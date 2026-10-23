@@ -34,7 +34,7 @@ for (const kind of KINDS) {
 import { pickProfiles } from '../scripts/lib/pick.mjs';
 import { renderTemplate, renderReviewerPrompt } from '../scripts/lib/prompt.mjs';
 
-// merge/ is ai-lab's: its suite runs those fixtures against the one merge (`python -m ai_lab.review merge`).
+// merge/ is ai-lab's: its suite runs those fixtures against the one merge (`python -m ai_lab.review.merge`).
 
 for (const fx of fixtures('pick')) {
   test(`node executor: ${fx.file}`, () => {

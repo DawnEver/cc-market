@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code and Codex. The review METHOD — profiles, prompt templates, finding schema, reviewer-status rules, merge/id spec — is versioned data in `method/`; the scripts are a thin Node executor of it, tested against `method/conformance/` (the same fixtures ai-lab's headless executor follows); the merge itself is ai-lab's (`python -m ai_lab.review merge`), called by `post-review.js` — this plugin keeps none. Findings are stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
+Post-feature code review plugin for Claude Code and Codex. The review METHOD — profiles, prompt templates, finding schema, reviewer-status rules, merge/id spec — is versioned data in `method/`; the scripts are a thin Node executor of it, tested against `method/conformance/` (the same fixtures ai-lab's headless executor follows); the merge itself is ai-lab's (`python -m ai_lab.review.merge`), called by `post-review.js` — this plugin keeps none. Findings are stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
 
 ## Architecture
 

@@ -7,7 +7,7 @@ or the method/executor split.
 
 The review METHOD is pure data in `method/` (one `schema_version` in `method/method.json`).
 An executor reads it and does I/O. The MERGE has one implementation, ai-lab's
-(`python -m ai_lab.review merge`); pick and render are executed by both, against the same
+(`python -m ai_lab.review.merge`); pick and render are executed by both, against the same
 conformance fixtures:
 
 - **Node (this plugin)** — in-host sessions: `plan.js` → host fan-out via fabric →
@@ -49,7 +49,7 @@ sharp-review/
 │       ├── pick.mjs              Effective profiles (method + project config), eligibility, weighted pick
 │       ├── prompt.mjs            Template rendering, context → template + call mode
 │       ├── plan.mjs              buildPlan (pure)
-│       ├── ai-lab.mjs            The merge: pipes the run record to `python -m ai_lab.review merge`
+│       ├── ai-lab.mjs            The merge: pipes the run record to `python -m ai_lab.review.merge`
 │       ├── findings.mjs          Memory sink: markdown render + same-day follow-up renumber
 │       ├── manifest.mjs          Diff classification, git -z parsing, manifest render (pure)
 │       ├── git-manifest.mjs      Runs git and builds the manifest

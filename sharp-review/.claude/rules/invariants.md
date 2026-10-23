@@ -13,8 +13,8 @@ Dev-only constraints; the runtime procedure is `skills/sharp-review/SKILL.md` an
 - Bump `schema_version` on any change an executor reading the old version would misread.
 
 ## Merge / render
-- Hosts fan out reviewers; merge, status and ids run only in ai-lab (`python -m ai_lab.review
-  merge`), reached from `post-review.js` via `lib/ai-lab.mjs`. This plugin keeps NO merge code,
+- Hosts fan out reviewers; merge, status and ids run only in ai-lab (`python -m
+  ai_lab.review.merge`), reached from `post-review.js` via `lib/ai-lab.mjs`. This plugin keeps NO merge code,
   and an absent or too-old ai-lab is `AiLabUnavailable` by name, never a fallback. Hosts must NOT
   merge or assign ids themselves.
 - Finding ids are `SR-YYYYMMDD-NNN`, assigned by the merge — never by reviewers.

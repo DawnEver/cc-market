@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // post-review.js — finish a planned run: merge the reviewers' raw results by the method's rules
-// (ai-lab's `python -m ai_lab.review merge`, via lib/ai-lab.mjs; sharp-review keeps no merge)
+// (ai-lab's `python -m ai_lab.review.merge`, via lib/ai-lab.mjs; sharp-review keeps no merge)
 // and write one sink: `memory` (.claude/memory/YYYY/MM/DD/sharp-review.md)
 // or `stdout` (the findings JSON, method/findings-output.schema.json). Default: the plan's sink.
 //
