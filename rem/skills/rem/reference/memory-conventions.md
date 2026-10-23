@@ -33,16 +33,16 @@ Two paths:
 | Tier | When | Content | Eviction |
 |---|---|---|---|
 | `.claude/rules/*.md` | Always injected | Core behavioral constraints ALL agents must follow. Keep under ~10 lines. | Never (hand-curated) |
-| Long-term memory (`tier: long`) | On-demand, progressive disclosure via MEMORY.md | Frequently accessed/updated memories. Promoted from short-term. | Immune to 90d eviction |
-| Short-term memory (`tier: short`) | On-demand, progressive disclosure via MEMORY.md | Session notes, one-off fixes, historical reference. | 90d eviction window |
+| Long-term memory (`tier: long`) | On-demand, progressive disclosure via MEMORY.md | Frequently accessed/updated memories. Promoted from short-term. | Protected while long-term; may be demoted |
+| Short-term memory (`tier: short`) | On-demand, progressive disclosure via MEMORY.md | Session notes, one-off fixes, historical reference. | 90d stale eviction; feedback exempt |
 
-**Promotion:** Each memory file tracks `access_count` — incremented whenever `bumpAccessed`
-advances `accessed` to a new date (same-day re-touches don't count). Once `access_count >= 3`,
+**Promotion:** Each memory file tracks `count` — incremented whenever `bumpAccessed`
+advances `accessed` to a new date (same-day re-touches don't count). Once `count >= 3`,
 `rem-prep.js --promote` automatically sets `tier: long`. To promote manually:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/touch-memory.js <path> --promote
 ```
-This sets `tier: long`, making it immune to eviction.
+This sets `tier: long`, protecting it from stale eviction while it remains long-term.
 
 ## Memory file format
 ```yaml
@@ -90,14 +90,18 @@ the doc stays pure and a fresh clone conservatively re-reviews. Discovery roots 
 same way; multiple roots ⇒ user picks. No `doc_source` docs ⇒ dormant. Staleness is commits ≥ 15
 OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
 
-## Index (`.claude/rules/MEMORY.md`)
-- Sorted by `accessed` newest-first, max 20 short-term entries (long-term entries are protected from count-based eviction)
+## Full catalog and injected index
+- `.claude/meta/MEMORY.full.md` is the unbounded full catalog of every non-dropped entry.
+- `.claude/rules/MEMORY.md` is the injected hot view: all long-term entries plus the newest
+  short-term entries up to `HOT_SHORT_MAX`, defined in `scripts/lib.mjs`. This bounds
+  injection only; older active entries remain in the full catalog and available to recall.
+- Both views are sorted by `accessed` newest-first, then creation date newest-first.
 - Each line: `[date title](../memory/YYYY/MM/DD/slug.md) — created: ..., accessed: ...`
 
 ## Scoped memory (monorepo / multi-project)
 
 Any directory containing its own `.claude/memory/` is an independent memory **scope**
-with its own `MEMORY.md` index, its own 20-entry cap, and its own prune cycle —
+with its own full catalog, bounded injected index, and time-based prune cycle —
 e.g. each `cc-market/<plugin>/` alongside the repo root.
 
 - `findMemoryScope()` walks up from `cwd` to the nearest ancestor (within
@@ -118,13 +122,16 @@ e.g. each `cc-market/<plugin>/` alongside the repo root.
 ## Eviction
 
 **Short-term (`tier: short`):**
-- `accessed > 90 days` → evicted from index
-- Index > 20 entries → drop oldest short-term first
-- **Never delete `.claude/memory/` files** — only remove from the index
+- With `--evict-stale`, entries last accessed more than 90 days ago are tombstoned
+  out of the catalog/index; `feedback`-type entries are exempt.
+- There is no count-based eviction. Falling outside the injected hot view does not
+  drop an entry from the full catalog or make it unavailable to recall.
+- **Never delete `.claude/memory/` files** — stale eviction changes metadata and indexes only
 
 **Long-term (`tier: long`):**
-- Checked each prune cycle: if `accessed < lastPruneTime` → demoted to `tier: short`
-- Needs 2 inactive prune cycles to fully evict (demote → wait 90d → evict)
+- Entries inactive since the previous prune day may be demoted to `tier: short`.
+- Demotion resets `count`, not `accessed`: an already-stale demoted entry can be
+  evicted in the same cycle unless exempt. There is no extra grace period on demotion.
 - Promoted back via `touch-memory.js --promote` when accessed again
 
 **Never shrink, only merge** (user ruling 2026-09-27: memory keeps everything):

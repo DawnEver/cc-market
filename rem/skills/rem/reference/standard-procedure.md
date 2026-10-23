@@ -21,9 +21,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>" 
 
 This single command does all of:
 - Shows recent prune events (demotions, evictions)
-- Scans transcript for `.claude/memory/` file reads → batch-touches `accessed` timestamps and bumps `access_count`
-- Auto-promotes short-term entries with `access_count >= 3` to `tier: long`
-- Reports crystallize status (warns if ≥20 entries)
+- Scans transcript for `.claude/memory/` file reads → batch-touches `accessed` timestamps and bumps metadata `count`
+- Auto-promotes short-term entries with metadata `count >= 3` to `tier: long`
+- Reports crystallize status against the full catalog using the script's current advisory threshold
 
 Review the output. Re-promote any entries that were demoted but you referenced this session.
 
