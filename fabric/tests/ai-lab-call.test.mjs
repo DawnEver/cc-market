@@ -43,6 +43,12 @@ test("textRequest is a respond request with the text schema and base64 images", 
   assert.equal("task" in textRequest({ provider: "a", model: "m", prompt: "p" }), false);
 });
 
+test("textRequest drops Claude Code's [1m] context marker: the API knows only the bare model", () => {
+  assert.equal(textRequest({ provider: "deepseek", model: "deepseek-v4-flash[1m]", prompt: "p" }).model, "deepseek-v4-flash");
+  assert.equal(textRequest({ provider: "a", model: "m[1M]", prompt: "p" }).model, "m");
+  assert.equal(textRequest({ provider: "a", model: undefined, prompt: "p" }).model, undefined);
+});
+
 for (const kind of ["exhausted", "auth", "rate_limit", "unsupported", "timeout"]) {
   test(`a reply of kind ${kind} is a ProviderError of kind ${kind}`, async () => {
     await assert.rejects(callAiLab(req(`kind-${kind}`), opts()), (e) => e.kind === kind && e.message.includes(`classified ${kind}`));

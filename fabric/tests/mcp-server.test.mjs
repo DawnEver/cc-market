@@ -261,7 +261,7 @@ describe("call options reach every path", () => {
       assert.equal(text(res), "from ai-lab");
       assert.equal(sent.verb, "respond");
       assert.equal(sent.provider, "acme");
-      assert.equal(sent.model, "acme-pro[1m]", "tier word resolved through the catalogue row");
+      assert.equal(sent.model, "acme-pro", "tier word resolved through the catalogue row, minus Claude Code's [1m]");
       assert.equal(sent.task, "pr-review");
       assert.deepEqual(sent.images, [{ mime: "image/png", data: "QUJD" }]);
       assert.match(sent.context[0].text, /p$/);
