@@ -16,6 +16,8 @@ import {
   decideStop,
   isCodexHost,
   resolveHookExit,
+  decideSessionStop,
+  completeSession,
 } from "../hooks/rem-hook.js";
 
 // ── Constants expected from rem-hook.js ──
@@ -287,13 +289,13 @@ describe("decideStop", () => {
     assert.equal(result.decision, "allow");
   });
 
-  test("allows stop, clears remPending, and sets remDone when remPending was set", () => {
+  test("pending work is not completion evidence", () => {
     const now = Date.now();
     let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
     const result = decideStop(state, { session_id: "s1", transcript_path: "/nonexistent" }, now);
     assert.equal(result.decision, "allow");
-    assert.equal(result.state.hook.remPending, false);
-    assert.equal(result.state.hook.remDone, true);
+    assert.equal(result.state.hook.remPending, true);
+    assert.equal(result.state.hook.remDone, false);
   });
 
   test("null session_id does not inherit remPending from a stored session", () => {
@@ -334,14 +336,14 @@ describe("decideStop", () => {
     assert.equal(other.state.hook.sessionKey, "/t/b.jsonl");
   });
 
-  test("sets remDone when remPending was true regardless of transcript", () => {
+  test("an unverified pending request remains pending", () => {
     const now = Date.now();
     // No transcript needed — remPending=true always → remDone=true, decision=allow
     let state = { hook: { sessionKey: "s1", stopCount: 3, firstStopAt: now - 300000, remPending: true, remDone: false, lastTouched: now - 1000, taskActiveUntil: null } };
     const result = decideStop(state, { session_id: "s1", transcript_path: "/nonexistent" }, now);
     assert.equal(result.decision, "allow");
-    assert.equal(result.state.hook.remDone, true);
-    assert.equal(result.state.hook.remPending, false);
+    assert.equal(result.state.hook.remDone, false);
+    assert.equal(result.state.hook.remPending, true);
   });
 });
 
@@ -360,10 +362,36 @@ describe("host-specific hook exit behavior", () => {
     assert.deepEqual(resolveHookExit("deny", {}), { code: 2, stderr: "/rem\n" });
   });
 
-  test("Codex deny exits cleanly instead of injecting a slash command", () => {
+  test("Codex deny requests bounded native continuation with natural language", () => {
     const result = resolveHookExit("deny", { CODEX_HOME: "/home/u/.codex" });
-    assert.equal(result.code, 0);
-    assert.match(result.stderr, /REM due/);
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /REM skill/);
     assert.doesNotMatch(result.stderr, /^\/rem$/m);
   });
+});
+
+test('interleaved sessions retain independent gate counters and explicit completion', () => {
+  const state = { hook: {} };
+  decideSessionStop(state, { session_id: 'a' }, 1000);
+  decideSessionStop(state, { session_id: 'b' }, 1001);
+  decideSessionStop(state, { session_id: 'a' }, 130000);
+  const result = decideSessionStop(state, { session_id: 'a' }, 131000);
+  assert.equal(result.decision, 'deny');
+  assert.equal(state.hook.sessions.b.stopCount, 1);
+  const request = state.hook.sessions.a.requestId;
+  assert.throws(() => completeSession(state, 'a', 'wrong'), /matching pending/);
+  completeSession(state, 'a', request, 132000);
+  assert.equal(state.hook.sessions.a.remDone, true);
+  assert.equal(state.hook.sessions.b.remDone, false);
+});
+
+test('a Stop continuation cannot recursively trigger a fresh REM request', () => {
+  const state = { hook: { sessionKey: 'a', stopCount: 4, firstStopAt: 1, lastTouched: 100000 } };
+  assert.equal(decideStop(state, { session_id: 'a', stop_hook_active: true }, 200000).decision, 'allow');
+});
+
+test('an in-flight review reservation defers REM without advancing counters', () => {
+  const state = { hook: {}, reviewGate: { pending: { expiresAt: 2000 } } };
+  assert.equal(decideSessionStop(state, { session_id: 'a' }, 1000).decision, 'allow');
+  assert.equal(state.hook.sessions.a, undefined);
 });

@@ -10,17 +10,17 @@ that area.
 SessionStart → prune-memory.js --evict-stale
             → inject-rules.js (Codex-only: feed host .claude/rules into context)
             → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)
-PostCompact → memo.js list --hook (same listing at the moment context is actually lost)
+PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart source=compact)
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
-  UserPromptSubmit → recall.js (Claude Code only: heuristic memory recall → additionalContext; silent on Codex)
+  UserPromptSubmit → recall.js (both hosts: heuristic recall → additionalContext; semantic access touch)
      ↓
-  Stop → rem-hook.js (gates after ≥3 stops AND (≥2 min session OR ≥30s + substantive code edits))
+  Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
   /rem skill:
     ├── main loop: run user-gated crystallize/scope-split checks first (a fork can't prompt)
-    ├── then dispatch a `fork` for the standard pass (inherits session context → first-hand summary,
+    ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
     │   keeps prune/prep/stamp/memory-write noise out of the main session) → returns a one-line recap
     ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
     ├── Model summarizes learnings → writes memory files

@@ -15,8 +15,9 @@ config detail → **`reference/profiles-and-modes.md`**.
 ## Execution mode (read first)
 
 Review runs on git state, not the conversation, so the main loop **dispatches one
-`sharp-review:sharp-review` subagent** to run Steps 0–4 and return only the
-`Sharp review: <summary>` line (pass it the hook's `firedSources`). The worker fans out
+`sharp-review:sharp-review` subagent** (Codex: built-in `worker` told to use this skill)
+to run Steps 0–4 and return only the `Sharp review: <summary>` line. Pass the hook's
+`firedSources`, plugin root and `gateToken`, when supplied. The worker fans out
 reviewers itself and must not re-dispatch.
 
 ## Execution
@@ -35,6 +36,18 @@ Call `mcp__plugin_fabric_fabric__list_providers` and pass its provider keys as `
 ```powershell
 node "<root>/scripts/plan.js" --sources <firedSources> --available <key1,key2,...>
 ```
+
+For a hook-triggered run, add `--gate-token <gateToken>` exactly as dispatched. The plan
+carries this token to `post-review.js`; only a persisted run with a successful reviewer
+credits the source hashes. Do not invent a token for manual runs. If Fabric is unavailable
+or the run fails before post-review, release the claim with:
+
+```powershell
+node "<root>/scripts/post-review.js" --release-gate <gateToken>
+```
+
+Release is not completion. A plan with no runnable reviewers releases automatically. A
+crashed worker's claim expires after 30 minutes; the Stop hook never loops indefinitely.
 
 Options: `--providers <a,b>` requests a provider set instead of the rotation (a requested
 provider that is not available is planned `unavailable`, never replaced); `--profile <key>`
@@ -87,7 +100,8 @@ Only when a human asks to **triage now** route OPEN findings through `shared/att
 1. Run `todo` — review open findings against code changed this session (`⚠ likely-resolved`).
 2. For each finding you fixed AND verified this session, `todo mark <SR-ID> fixed` now.
 3. Flag stale items (> 90d) — `todo` shows `⚠ stale`.
-4. Check in-flight Codex tasks via `TaskGet` before calling a feature complete.
+4. Check in-flight tasks with the host's available task/agent status tools before calling
+   a feature complete; do not assume Claude's `TaskGet` exists on Codex.
 
 ## Usage
 

@@ -1,6 +1,6 @@
 # Standard REM Procedure
 
-Full walkthrough of the standard pass (run inside the dispatched fork), plus the lightweight
+Full walkthrough of the standard pass (in an inherited-context fork, or inline on Codex), plus the lightweight
 variant for doc-only sessions.
 
 ## Lightweight (doc-only or non-code session)
@@ -26,6 +26,11 @@ This single command does all of:
 - Reports crystallize status (warns if ≥20 entries)
 
 Review the output. Re-promote any entries that were demoted but you referenced this session.
+
+Structured Claude/Codex file-read events are recognized; arbitrary shell commands are
+not parsed to guess file access. Recall records access when it actually injects a memory.
+After a manual raw-shell memory read, call `touch-memory.js <relative-memory-path>` when
+that memory informed the task. Do not touch unrelated files merely mentioned in output.
 
 ### 1. Summarize
 

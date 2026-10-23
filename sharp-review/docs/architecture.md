@@ -38,6 +38,7 @@ sharp-review/
 ├── scripts/
 │   ├── plan.js                   Plan a run: profiles, manifest, providers, rendered prompts → plan file
 │   ├── post-review.js            Merge raw results by the method, write the memory sink; --rescan
+│   ├── gate.mjs                  Atomic review-claim lifecycle; only successful completion credits content
 │   ├── sources.mjs               Trigger adapters (pure): diff | codebase | deps | docs
 │   ├── lib.mjs                   Barrel: findings, manifest, config + shared frontmatter helpers
 │   └── lib/

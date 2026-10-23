@@ -345,7 +345,7 @@ describe("recall.js CLI", () => {
     assert.equal(r.stdout.trim(), "");
   });
 
-  test("silent on Codex host (no UserPromptSubmit equivalent)", () => {
+  test("Codex UserPromptSubmit recalls the same scoped memories", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "commit style", "feedback"),
       "body", { accessed: "2026-07-20", count: 3, tier: "short" });
     const r = run(
@@ -353,7 +353,9 @@ describe("recall.js CLI", () => {
       { CLAUDE_PLUGIN_ROOT: "/home/u/.codex/plugins/cache/cc-market/rem/1.0.0" },
     );
     assert.equal(r.status, 0);
-    assert.equal(r.stdout.trim(), "");
+    assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /Relevant memories/);
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'memory', '2026', '07', '01', '_meta.json'), 'utf8'));
+    assert.equal(meta['git-conventions.md'].count, 4, 'an actually injected memory records semantic access');
   });
 
   test("exits 0 on malformed stdin (never breaks the session)", () => {

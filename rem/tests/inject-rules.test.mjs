@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   isCodexHost,
@@ -19,6 +21,26 @@ import {
   findScopeChain,
   collectChainRuleFiles,
 } from "../scripts/inject-rules.js";
+
+test('Codex compact restores project rules even with a large rollout, while resume/fork do not duplicate them', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-rules-lifecycle-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.mkdirSync(path.join(root, '.claude', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude', 'rules', 'main.md'), 'Keep the project invariant.');
+  const transcript = path.join(root, 'large.jsonl');
+  fs.writeFileSync(transcript, 'x'.repeat(1000));
+  const script = fileURLToPath(new URL('../scripts/inject-rules.js', import.meta.url));
+  for (const source of ['startup', 'compact', 'clear', 'resume', 'fork']) {
+    const r = spawnSync(process.execPath, [script], {
+      cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PLUGIN_ROOT: path.join(root, '.codex', 'plugins', 'rem') },
+      input: JSON.stringify({ hook_event_name: 'SessionStart', source, cwd: root, transcript_path: transcript }),
+    });
+    assert.equal(r.status, 0);
+    if (['resume', 'fork'].includes(source)) assert.equal(r.stdout, '');
+    else assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /project invariant/);
+  }
+});
 
 describe("isCodexHost", () => {
   test("true when plugin root lives under .codex", () => {
@@ -135,10 +157,13 @@ describe("isResume", () => {
     assert.equal(isResume(f), false);
   });
 
-  test("true when file has content (>500 bytes — resumed session)", () => {
+  test("lifecycle source, not transcript size, identifies resume or fork", () => {
     const f = path.join(dir, "resumed.jsonl");
     fs.writeFileSync(f, "x".repeat(501));
-    assert.equal(isResume(f), true);
+    assert.equal(isResume({ source: 'resume', transcript_path: f }), true);
+    assert.equal(isResume({ source: 'fork', transcript_path: f }), true);
+    assert.equal(isResume({ source: 'compact', transcript_path: f }), false);
+    assert.equal(isResume({ source: 'startup', transcript_path: f }), false);
   });
 });
 

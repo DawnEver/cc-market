@@ -168,6 +168,11 @@ describe("cli", () => {
       cwd: repo, encoding: "utf8", env: codexEnv, input: '{"hook_event_name":"PostCompact"}',
     });
     assert.deepEqual(JSON.parse(compact.stdout), {});
+    const restored = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
+      cwd: repo, encoding: "utf8", env: codexEnv,
+      input: '{"hook_event_name":"SessionStart","source":"compact"}',
+    });
+    assert.match(JSON.parse(restored.stdout).hookSpecificOutput.additionalContext, /band\s+FRESH/);
   });
 
   test("get of an unknown memo exits 1", () => {

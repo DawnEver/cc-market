@@ -50,9 +50,18 @@ manual `/sharp-review` bypasses the gate.
 - `lastReviewRef` / `lastReviewDiff` in `reviewGate` make a same-ref check compare only the
   delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD~1`.
 - **Content-hash gate:** a fired source dispatches only when the content it reviews changed
-  since it last dispatched (`reviewGate.reviewedHashes`: sha256 over each covered file's path
+  since its last successful review (`reviewGate.reviewedHashes`: sha256 over each covered file's path
   and bytes; `codebase` hashes HEAD). Sessions sharing one checkout alternate on the same state,
   so without it an unchanged dirty tree re-fired the same profile every turn.
+- Every eligible Stop reevaluates thresholds, even within a session whose first turn was
+  below threshold. No model classifies depth: a fired source requests one planned pass.
+- `reviewGate.pending` is a checkout-wide, 30-minute claim carrying token, session/turn,
+  source hashes, head and diff stat. It is reserved atomically, not counted as a review.
+  Pass its token to `plan.js --gate-token`; post-review credits hashes only after a sink
+  write with at least one successful reviewer. `--release-gate` cancels without credit.
+- A session's pending REM, user-input wait, active project deferral, or Stop continuation
+  suppresses dispatch. REM checks the same locked review claim so both cannot request
+  competing continuations from one Stop. Manual review bypasses the trigger thresholds.
 
 ## Sources and profile selection
 

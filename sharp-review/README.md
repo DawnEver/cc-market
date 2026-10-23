@@ -31,15 +31,20 @@ node scripts/setup/setup.js
 
 ## Usage
 
-Run `/sharp-review` after finishing a feature. The Stop hook automatically classifies review depth and triggers the skill when appropriate.
+Run `/sharp-review` after finishing a feature (Codex: invoke the skill). The Stop hook
+evaluates deterministic change/source thresholds on every eligible turn and requests one
+review pass. It does not invoke a hidden Claude classifier or a model just to decide depth.
 
 ### Modes
 
 | Mode | Trigger | Reviewers |
 |---|---|---|
-| `none` | Trivial/doc-only tasks | 0 (skipped) |
-| `once` | Moderate code changes | 1 pass |
-| `multi` | Complex/risky changes | 2 parallel (picked dynamically from N provider backends) + merge |
+| `none` | No fresh source crosses its configured threshold | 0 (skipped) |
+| `once` | A fresh diff/docs/deps/codebase source fires | 1 pass using the method's provider/profile plan |
+
+A pass can contain multiple independent reviewers. Further passes are an explicit manual
+or Evolve workflow, not a separate model-classified Stop loop. Codex uses its built-in
+worker; installed plugins still require normal hook trust and Fabric/provider authentication.
 
 ## Output
 
@@ -58,13 +63,20 @@ node cc-market/sharp-review/scripts/post-review.js --rescan --date YYYY-MM-DD
 
 ## How It Works
 
-Full architecture and flow: Stop hook → classify → skill (profile pick, diff manifest, parallel reviewers, merge, memory write). See **`AGENTS.md`** for the architecture diagram and component map.
+Full architecture and flow: Stop hook → source gate and atomic claim → skill (profile pick,
+diff manifest, parallel reviewers, merge, memory write) → successful claim completion.
+See **`AGENTS.md`** for the architecture diagram and component map.
 
 ### Wave Gate
 
 Reviews are gated by accumulated code changes, not per-session. A new commit reviews early on a small change; once a ref is reviewed, only substantial new changes re-trigger. Skipped sessions preserve the reference point so changes add up until the threshold is met; the wave resets when HEAD moves to a new commit.
 
 Thresholds are per-project configurable under `thresholds` in the tracked `.claude/sharp-review.json` (committed, so the tuning is shared — not device-local). Exact defaults, the full config schema, custom profiles, and weighting → `skills/sharp-review/reference/profiles-and-modes.md`.
+
+REM and review share the state lock: a pending REM continuation defers review for that
+session; an active checkout review defers REM. Waiting-input and Stop-continuation turns
+do not recursively dispatch. Only successful post-review output credits reviewed hashes;
+an unavailable/failed review does not falsely mark the checkout reviewed.
 
 ### Large Diffs
 

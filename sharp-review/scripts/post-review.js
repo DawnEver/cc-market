@@ -15,8 +15,10 @@ import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderRevi
 import { loadMethod } from './lib/method.mjs';
 import { mergeRun } from './lib/merge.mjs';
 import { upsertIndexEntry } from '../shared/stamp.mjs';
+import { finishGate } from './gate.mjs';
+import { findProjectRoot } from '../shared/lib.mjs';
 
-const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const ROOT = findProjectRoot();
 const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 const args = process.argv.slice(2);
 const arg = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
@@ -83,7 +85,9 @@ function writeMemory(output, plan, method) {
   console.log(`Sharp review: ${output.findings.length} issues (${high} high-confidence) → .claude/memory/${date.replace(/-/g, '/')}/sharp-review.md`);
 }
 
-if (args.includes('--rescan')) {
+if (arg('--release-gate')) {
+  finishGate(ROOT, arg('--release-gate'), false);
+} else if (args.includes('--rescan')) {
   const date = arg('--date');
   if (!date) fail('--rescan needs --date <YYYY-MM-DD>');
   rescan(date);
@@ -103,4 +107,5 @@ if (args.includes('--rescan')) {
   if (sink === 'memory') writeMemory(output, plan, method);
   else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
   else fail(`unknown sink ${sink}; known: memory, stdout`);
+  finishGate(ROOT, plan.gate_token, output.reviewers.some(reviewer => reviewer.status === 'ok'));
 }

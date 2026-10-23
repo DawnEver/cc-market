@@ -1,6 +1,6 @@
 # rem
 
-REM sleep for Claude sessions — prune stale memory, consolidate learnings, maintain `.claude/memory/` with timestamps and automatic eviction.
+REM sleep for Claude Code and Codex sessions — prune stale memory, consolidate learnings, maintain `.claude/memory/` with timestamps and automatic eviction.
 
 The injected memory index contains long-term entries plus the newest 15 short-term
 entries. The full catalog and original memory files remain available for recall.
@@ -78,8 +78,13 @@ Then register the hooks in `~/.claude/settings.json`:
 > additionally, rem's SessionStart hook injects the host project's `.claude/rules/**/*.md`
 > into context (Codex doesn't auto-load them — Claude Code does, where this step is a no-op).
 > `/rem` and `/todo` are Claude slash-commands; on Codex invoke the underlying skills directly.
-> Prompt-time auto-recall (`recall.js`) is Claude Code only — Codex has no
-> `UserPromptSubmit`-equivalent hook, so the script exits silently there.
+> Prompt-time recall runs on both hosts and touches only memories actually injected.
+> Codex `SessionStart source=compact` restores rules and memo context immediately after
+> compaction. Resume/fork inherit rules rather than guessing from transcript file size.
+> Normal hook trust review is required; configuration presence is not proof of execution.
+> Stop requests the REM skill using native continuation on Codex, with bounded recursion,
+> session-isolated state and explicit successful-work acknowledgement. Run inline when a
+> context-inheriting fork is unavailable; an empty worker is not equivalent.
 
 ## Usage
 
@@ -93,7 +98,7 @@ After installation, `/rem` is available as a slash command. It triggers automati
 
 Three-tier memory system (rules / long-term / short-term) and promotion rules → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
 
-Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading — the SessionStart/PostCompact `list --hook` surfaces what is still valid right after a compaction dropped the excerpts. On Codex, SessionStart emits structured JSON (or stays silent when empty); PostCompact emits empty JSON because Codex does not accept session-start context for that event. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
+Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading. Claude uses SessionStart/PostCompact; Codex uses structured SessionStart output including `source=compact` and returns empty JSON for PostCompact. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
 
 ## Skills
 

@@ -1,30 +1,32 @@
 #!/usr/bin/env node
-// review-gate-hook.js — Claude Code Stop hook
-// Wave-gated adaptive review trigger. Tracks change accumulation per ref:
+// sharp-review-hook.js — Claude Code and Codex Stop hook.
+// Deterministic, wave-gated one-pass review trigger. Tracks change accumulation per ref:
 //   wave 0 (new territory): low threshold, catch issues early
 //   wave 1+ (same ref already reviewed): high threshold, accumulate before re-trigger
 //   Resets to wave 0 when HEAD moves to a new commit.
 //
-// Per-project configurable thresholds in .claude/.rem-state.json → reviewGate.thresholds.
+// Per-project configurable thresholds in tracked .claude/sharp-review.json.
 // Defaults: wave0 = 300 lines / 5 files, wave1 = 1000 lines / 15 files.
 //
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, spawnSync } from "../shared/spawn.mjs";
+import { execFileSync } from "../shared/spawn.mjs";
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
-import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
+import { loadState as _loadState, withStateLock } from '../shared/state.mjs';
+import { normalizeHookFacts, isCodexHost } from '../shared/hook-facts.mjs';
+import { claimReview } from '../scripts/gate.mjs';
 import { evaluateSources, sourceFiles, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
 import { loadReviewConfig } from '../scripts/lib/config.mjs';
 
-// Backward compat: keep findGitRoot export for sharp-review/tests/hook.test.mjs
+// Project-root lookup is shared with installed plugin scripts.
 export function findGitRoot(startDir) { return findProjectRoot(startDir); }
 
 export function resolveReviewWorkerTarget(env = process.env) {
-  if (env.CODEX_HOME || env.CODEX_SANDBOX) {
+  if (isCodexHost(env)) {
     return {
       agentType: 'worker',
       host: 'codex',
@@ -51,7 +53,7 @@ export function resolvePluginRoot(root = path.resolve(path.dirname(fileURLToPath
 }
 
 // ── Content-hash gate ──
-// A source fires again only when the content it reviews changed since it last fired:
+// A source fires again only when its content changed since its last successful review:
 // sessions sharing one checkout alternate on the same state, so a session-scoped gate alone
 // re-fired the deps profile every turn on an unchanged dirty tree (2026-10-20).
 export function contentHash(entries) {
@@ -82,20 +84,19 @@ function sourceHashes(fired, changedFiles, head) {
   return hashes;
 }
 
-export function buildDispatchInstruction(sources, target = resolveReviewWorkerTarget(), pluginRoot = resolvePluginRoot()) {
+export function buildDispatchInstruction(sources, target = resolveReviewWorkerTarget(), pluginRoot = resolvePluginRoot(), gateToken = null) {
   const firedSources = sources || 'diff';
   return (
     `Dispatch ONE ${target.agentType} subagent with firedSources: ${firedSources} and plugin root: ${pluginRoot}. ` +
+    (gateToken ? `Pass gateToken: ${gateToken} through plan.js --gate-token; release it with post-review.js --release-gate if no review can run. ` : '') +
     `${target.setup}, execute SKILL.md Steps 0-4 directly, ` +
     `and do not re-dispatch. Relay only its \`Sharp review: <summary>\` line; do not ` +
     `run the steps inline yourself.\n`
   );
 }
 
-const projectDir = findProjectRoot();
-const unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
-const MEMORY_MAX = 20;
-const TARGETS = { none: 0, once: 1, multi: 2 };
+let projectDir = findProjectRoot();
+let unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
 
 const DEFAULT_THRESHOLDS = {
   wave0: { lines: 300, files: 5 },
@@ -106,32 +107,18 @@ function readStdinJSON() { return _readStdinJSON(); }
 
 function loadUnifiedState() { return _loadState(unifiedStateFile); }
 
-function saveUnifiedState(state) { return _saveState(unifiedStateFile, state); }
-
-function loadReviewGate() {
-  const unified = loadUnifiedState();
-  return unified.reviewGate || null;
-}
-
-function saveReviewGate(reviewGate) {
-  const unified = loadUnifiedState();
-  unified.reviewGate = reviewGate;
-  saveUnifiedState(unified);
-}
-
-function loadClassifierMemory() {
-  const unified = loadUnifiedState();
-  return unified.reviewGate?.memory || [];
-}
 
 function getChangedFiles() {
   try {
-    const out = execFileSync('git', ['status', '--porcelain'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
-    return out.split('\n').map(l => {
-      const p = l.slice(3).trim();
-      const arrow = p.indexOf(' -> ');
-      return arrow === -1 ? p : p.slice(arrow + 4);
-    }).filter(Boolean);
+    const out = execFileSync('git', ['status', '--porcelain', '-z'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const entries = out.split('\0'), files = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (!entry) continue;
+      files.push(entry.slice(3));
+      if (/[RC]/.test(entry.slice(0, 2))) i++; // -z emits destination first, then the old path.
+    }
+    return files;
   } catch { return []; }
 }
 
@@ -174,223 +161,66 @@ function loadThresholds(config) {
 
 function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
 
-function hasCodeEdits(transcript) {
-  return transcript.some(entry => {
-    const content = entry?.message?.content;
-    if (!Array.isArray(content)) return false;
-    return content.some(block =>
-      block?.type === 'tool_use' &&
-      ['Edit', 'Write', 'NotebookEdit'].includes(block?.name)
-    );
-  });
-}
-
-function isAwaitingInput(transcript) {
-  for (let i = transcript.length - 1; i >= 0; i--) {
-    const entry = transcript[i];
-    if (entry?.message?.role !== 'assistant') break;
-    const content = entry.message.content;
-    if (!Array.isArray(content)) continue;
-    for (let j = content.length - 1; j >= 0; j--) {
-      if (content[j]?.type === 'text') {
-        return /[?？]$/.test(content[j].text.trim());
-      }
-    }
-  }
-  return false;
-}
-
-function extractTaskSummary(transcript) {
-  const msgs = transcript
-    .filter(e => e?.message?.role === 'assistant')
-    .flatMap(e => {
-      const c = e?.message?.content;
-      return Array.isArray(c) ? c.filter(b => b?.type === 'text').map(b => b.text) : [];
-    })
-    .join(' ')
-    .slice(0, 800);
-  return msgs || '(no summary)';
-}
-
-function classify(taskSummary, changedFiles, memory) {
-  const examples = memory.slice(-5).map(m =>
-    `Task: ${m.task.slice(0, 120)}\nFiles: ${(m.files || []).join(', ')}\nMode: ${m.mode}`
-  ).join('\n---\n');
-
-  const prompt = `You are a code review gate classifier. Decide how many rounds of critique to run.
-
-Modes:
-- none: trivial task, no code logic changed, or purely informational
-- once: moderate code change, single review pass is enough
-- multi: complex multi-file change, algorithm change, or high-risk logic
-
-${examples ? `Past examples:\n${examples}\n---\n` : ''}Current task summary:
-${taskSummary}
-
-Changed files: ${changedFiles.join(', ') || 'none'}
-
-Respond ONLY with valid JSON: {"mode": "none"|"once"|"multi", "reason": "one sentence"}`;
-
-  try {
-    const result = spawnSync('claude', ['-p', prompt], {
-      env: { ...process.env, SHARP_REVIEW_CLASSIFY: '1' },
-      timeout: 15000,
-      encoding: 'utf8',
-    });
-    const text = result.stdout || '';
-    const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}');
-    const mode = ['none', 'once', 'multi'].includes(parsed.mode) ? parsed.mode : 'once';
-    return { mode, reason: parsed.reason || '' };
-  } catch {
-    return { mode: 'once', reason: 'classifier error' };
-  }
+export function reviewBlocked(input, facts, state, now = Date.now()) {
+  const hook = state.hook || {};
+  const session = hook.sessions?.[input.session_id] ||
+    (hook.sessionKey === input.session_id ? hook : {});
+  return Boolean(input.stop_hook_active || facts.waitingForInput ||
+    (session.remPending && session.requestExpiresAt > now) || hook.taskActiveUntil > now);
 }
 
 async function main() {
-  if (process.env.SHARP_REVIEW_CLASSIFY) process.exit(0);
-
   const input = readStdinJSON();
-
-  if (input.stop_hook_active) process.exit(0);
-
-  const sessionId = input.session_id || '';
-  const transcriptPath = input.transcript_path || '';
-
-  const transcript = transcriptPath ? readTranscriptTail(transcriptPath) : [];
-
-  // Conversation still active — assistant is waiting for user input
-  if (isAwaitingInput(transcript)) process.exit(0);
+  projectDir = findProjectRoot(input.cwd || process.cwd());
+  unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
+  const transcript = input.transcript_path ? readTranscriptTail(input.transcript_path) : [];
+  const facts = normalizeHookFacts(transcript, input);
+  const now = Date.now();
+  const initial = loadUnifiedState();
+  if (reviewBlocked(input, facts, initial, now)) return;
 
   const changedFiles = getChangedFiles();
+  if (!changedFiles.length && !facts.hasEdits) return;
+  const previous = initial.reviewGate || {};
+  const reviewCfg = loadReviewConfig(projectDir);
+  const head = getCurrentHead();
+  const thresholds = loadThresholds(reviewCfg);
+  const sameRef = Boolean(previous.lastReviewRef && head === previous.lastReviewRef);
+  const wave = sameRef ? (previous.wave || 0) + 1 : 0;
+  const threshold = wave === 0 ? thresholds.wave0 : thresholds.wave1;
+  let diffRef = previous.lastReviewRef;
+  if (!diffRef || !gitRefExists(diffRef)) diffRef = gitRefExists('HEAD~1') ? 'HEAD~1' : 'HEAD';
+  const stat = getDiffStat(diffRef);
+  const effectiveStat = sameRef && previous.lastReviewDiff ? {
+    lines: Math.max(0, stat.lines - previous.lastReviewDiff.lines),
+    files: Math.max(0, stat.files - previous.lastReviewDiff.files),
+  } : stat;
+  const lastReviewAt = previous.lastReviewAt || 0;
+  const { fired, reasons } = evaluateSources({
+    changedFiles, diffStat: effectiveStat, waveThreshold: threshold,
+    minutesSinceLastReview: lastReviewAt ? Math.max(0, (now - lastReviewAt) / 60000) : 0,
+    docsThreshold: reviewCfg.docsThreshold ?? DOCS_THRESHOLD_DEFAULT,
+    codebaseIntervalMin: reviewCfg.codebaseIntervalMin ?? CODEBASE_INTERVAL_MIN_DEFAULT,
+  });
+  const hashes = sourceHashes(fired, changedFiles, head);
+  let pending = null;
+  withStateLock(unifiedStateFile, state => {
+    // Recheck under the same lock REM uses: only one continuation can claim the checkout.
+    if (reviewBlocked(input, facts, state, now)) return;
+    const result = claimReview(state.reviewGate, {
+      sessionId: input.session_id || '', turnId: input.turn_id, head, stat, wave,
+      sources: fired, hashes, reasons,
+    }, { token: randomUUID(), now });
+    state.reviewGate = result.gate;
+    if (result.dispatch) pending = result.gate.pending;
+  }, { atomic: true, onTimeout: 'throw' });
+  if (!pending) return;
 
-  // A doc-only change no longer auto-skips: the `docs` source may fire (governed below by
-  // source evaluation). Only skip outright when there is nothing at all to review.
-  if (changedFiles.length === 0 && !hasCodeEdits(transcript)) {
-    process.exit(0);
-  }
-
-  const now = Date.now();
-  let reviewGate = loadReviewGate();
-  const reviewCfg = loadReviewConfig(projectDir);   // tracked config (thresholds, source tuning)
-  const isFresh = !reviewGate || reviewGate.sessionId !== sessionId;
-
-  if (isFresh) {
-    // ── Wave gate ──
-    const head = getCurrentHead();
-    const thresholds = loadThresholds(reviewCfg);
-    const lastRef = reviewGate?.lastReviewRef;
-
-    // Wave resets to 0 when HEAD moves to a new commit, otherwise increments
-    const sameRef = !!(lastRef && head && head === lastRef);
-    const wave = sameRef ? ((reviewGate.wave ?? 0) + 1) : 0;
-    const threshold = wave === 0 ? thresholds.wave0 : thresholds.wave1;
-
-    // Resolve diff reference: use lastReviewRef, fall back to HEAD~1 or HEAD
-    let diffRef = lastRef;
-    if (!diffRef || !gitRefExists(diffRef)) {
-      diffRef = gitRefExists('HEAD~1') ? 'HEAD~1' : 'HEAD';
-    }
-
-    const stat = getDiffStat(diffRef);
-
-    // For same-ref, only count new changes since the last review.
-    // This prevents "one more file" from re-triggering after wave1 is reached.
-    let effectiveStat = stat;
-    if (sameRef && reviewGate.lastReviewDiff) {
-      effectiveStat = {
-        lines: Math.max(0, stat.lines - reviewGate.lastReviewDiff.lines),
-        files: Math.max(0, stat.files - reviewGate.lastReviewDiff.files),
-      };
-    }
-
-    // ── Source evaluation ──
-    // The diff source reproduces the wave gate exactly (effectiveStat vs the wave threshold);
-    // the other sources (codebase/deps/docs) widen the trigger. The hook owns all I/O and
-    // builds the pure ctx; evaluateSources decides what fired.
-    // No prior timestamp on a never-reviewed repo → treat as 0 (don't fire a codebase survey
-    // on the very first stop); the 7-day clock starts once the first review is recorded.
-    const lastReviewAt = reviewGate?.classifiedAt || reviewGate?.lastReviewAt || 0;
-    const minutesSinceLastReview = lastReviewAt ? Math.max(0, (now - lastReviewAt) / 60000) : 0;
-    const { fired, reasons } = evaluateSources({
-      changedFiles,
-      diffStat: effectiveStat,
-      waveThreshold: threshold,
-      minutesSinceLastReview,
-      docsThreshold: reviewCfg.docsThreshold ?? DOCS_THRESHOLD_DEFAULT,
-      codebaseIntervalMin: reviewCfg.codebaseIntervalMin ?? CODEBASE_INTERVAL_MIN_DEFAULT,
-    });
-
-    const hashes = sourceHashes(fired, changedFiles, head);
-    const reviewed = reviewGate?.reviewedHashes || {};
-    const fresh = freshSources(fired, hashes, reviewed);
-
-    if (fresh.length === 0) {
-      // Nothing fired, or only sources whose content was already reviewed — skip and
-      // preserve the ref for accumulation.
-      reviewGate = {
-        ...(reviewGate || {}),
-        sessionId,
-        mode: 'none',
-        reason: fired.length
-          ? `unchanged since last review: ${fired.join(', ')}`
-          : `wave-${wave} gate: ${effectiveStat.lines}L/${effectiveStat.files}F < ${threshold.lines}L/${threshold.files}F`,
-        reviewCount: 0,
-        classifiedAt: now,
-      };
-      saveReviewGate(reviewGate);
-      process.exit(0);
-    }
-
-    // ── Gate passed — classify review depth ──
-    const taskSummary = extractTaskSummary(transcript);
-    const memory = loadClassifierMemory();
-    let classification;
-    try {
-      classification = classify(taskSummary, changedFiles, memory);
-    } catch {
-      classification = { mode: 'once', reason: 'classifier error' };
-    }
-
-    const updatedMemory = [
-      ...memory,
-      { task: taskSummary.slice(0, 200), files: changedFiles.slice(0, 10), mode: classification.mode },
-    ].slice(-MEMORY_MAX);
-
-    reviewGate = {
-      sessionId,
-      mode: classification.mode,
-      reason: classification.reason,
-      reviewCount: 0,
-      classifiedAt: now,
-      lastReviewRef: head,
-      lastReviewDiff: stat,
-      wave,
-      firedSources: fresh,        // the worker passes these to plan.js --sources
-      firedReasons: Object.fromEntries(fresh.map((k) => [k, reasons[k]])),
-      reviewedHashes: { ...reviewed, ...Object.fromEntries(fresh.map((k) => [k, hashes[k]])) },
-      memory: updatedMemory,
-      // Config (thresholds / source tuning) lives in the tracked .claude/sharp-review.json —
-      // never copied into this gitignored runtime state, so the two can't drift.
-    };
-    saveReviewGate(reviewGate);
-  }
-
-  const target = TARGETS[reviewGate.mode] ?? 1;
-
-  if (reviewGate.reviewCount >= target) {
-    process.exit(0);
-  }
-
-  reviewGate.reviewCount += 1;
-  saveReviewGate(reviewGate);
-
-  // Delegate, don't run inline: review operates on git state, so dispatch a fresh worker
-  // subagent to run the whole skill and return only its summary — keeps the main session clean.
-  const sources = (reviewGate.firedSources || []).join(',') || 'diff';
-  const instruction = buildDispatchInstruction(sources, resolveReviewWorkerTarget(), resolvePluginRoot());
-  process.stderr.write(instruction, () => process.exit(2));
+  const instruction = buildDispatchInstruction(pending.sources.join(','),
+    resolveReviewWorkerTarget(), resolvePluginRoot(), pending.token);
+  process.stderr.write(instruction);
+  process.exitCode = 2; // Native Stop continuation; no subprocess classifier or implicit model call.
 }
-
 // Only run when executed directly (not when imported for testing)
 if (isMain(import.meta)) {
   main().catch((e) => {

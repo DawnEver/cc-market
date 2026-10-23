@@ -1,6 +1,6 @@
 ---
 name: rem
-description: REM sleep for Claude sessions — summarize what changed, update memory, crystallize if needed
+description: REM sleep for Claude Code and Codex sessions — summarize what changed, update memory, crystallize if needed
 ---
 
 # REM
@@ -11,6 +11,10 @@ rem summarizes **this session**, so it needs live context — offload via **`for
 (`subagent_type: "fork"`), not a fresh subagent: the fork inherits the conversation (first-hand
 summary) yet keeps prune/prep/stamp/memory-write noise out of the main session.
 
+**Codex:** run the standard pass inline in the current session unless the host explicitly
+offers a context-inheriting fork. A fresh worker without this conversation is not an
+equivalent substitute. Do not spawn a second CLI session to reconstruct live context.
+
 1. **Main loop first** runs the user-gated checks (a background fork can't prompt):
    `crystallize.js --check` and `scope-split.js --check` — if either fires, do its interactive
    procedure (`reference/crystallize.md` / `scope-split.md`) inline before forking.
@@ -19,6 +23,13 @@ summary) yet keeps prune/prep/stamp/memory-write noise out of the main session.
    touch crystallize/scope-split.
 
 Lightweight (doc-only) sessions are cheap — running inline is fine.
+
+When a Stop continuation supplied a session/request acknowledgement command, execute it
+only after every required REM step succeeds, in the same project cwd. The command is
+`node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-session.js complete --session <id> --request <id>`.
+Never acknowledge failed, interrupted, user-blocked or merely scheduled work. Manual REM
+without a pending request needs no acknowledgement. A continuation already in progress
+does not request another REM pass; review and REM share a transaction-locked reservation.
 
 ## Memory Mechanism (global conventions)
 

@@ -1,32 +1,21 @@
 #!/usr/bin/env node
 /**
  * SessionStart hook — inject the host project's `.claude/rules/**\/*.md` into the
- * session as `additionalContext`, but ONLY under Codex and ONLY on a fresh session
- * (not a resume — the rules are already in context from the original session).
+ * session as `additionalContext` under Codex on startup, clear and compact.
  *
  * Why: Claude Code natively auto-loads `.claude/rules/` every session. Codex has
  * no such mechanism. This hook is the plugin-level, project-agnostic bridge: it
  * ships once in rem's hooks.json and, for whatever project Codex opens, reads that
  * project's own rules and feeds them in. Under Claude Code it is a no-op (the rules
  * are already loaded, so injecting would duplicate them). On a resumed Codex session
- * (transcript already has content) it also skips — the rules were injected on the
+ * or fork it also skips — the rules were injected on the
  * original SessionStart and persist through the resume.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { isMain } from "../shared/lib.mjs";
-
-/**
- * Detect whether we are running under Codex. The resolved ${CLAUDE_PLUGIN_ROOT}
- * is the most reliable signal: Codex substitutes it beneath `.codex/plugins/…`,
- * Claude Code beneath `.claude/plugins/…`.
- */
-export function isCodexHost(env = process.env) {
-  const root = env.CLAUDE_PLUGIN_ROOT || "";
-  if (/[\\/]\.codex[\\/]/.test(root)) return true;
-  if (/[\\/]\.claude[\\/]/.test(root)) return false;
-  return Boolean(env.CODEX_HOME);
-}
+import { isCodexHost } from '../shared/hook-facts.mjs';
+export { isCodexHost } from '../shared/hook-facts.mjs';
 
 /** Recursively collect `.md` files under `<projectRoot>/.claude/rules`, sorted. */
 export function collectRuleFiles(projectRoot) {
@@ -132,22 +121,15 @@ function readStdinPayload() {
   }
 }
 
-/** True when the transcript already has content — i.e. this is a resume, not a fresh session. */
-export function isResume(transcriptPath) {
-  if (!transcriptPath) return false;
-  try {
-    return fs.statSync(transcriptPath).size > 500;
-  } catch {
-    return false;
-  }
-}
+/** Resume/fork inherit context. A compact event must restore it immediately. */
+export function isResume(payload) { return ['resume', 'fork'].includes(payload?.source); }
 
 function main() {
   if (!isCodexHost()) return; // Claude Code already auto-loads rules
   const payload = readStdinPayload();
 
-  // On resume the rules are already in context from the original session — don't re-inject.
-  if (isResume(payload.transcript_path)) return;
+  // Resume/fork inherit context; compact/clear must restore it, regardless of file size.
+  if (isResume(payload)) return;
 
   const cwd = typeof payload.cwd === "string"
     ? path.resolve(payload.cwd)

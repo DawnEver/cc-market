@@ -9,6 +9,7 @@
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { normalizeHookFacts } from '../shared/hook-facts.mjs';
 import {
   findAllScopes, loadState, scopeRoot,
   todayISO, bumpAccessed, getMemoryMeta, saveMemoryMeta,
@@ -45,17 +46,10 @@ if (transcriptPath && existsSync(transcriptPath)) {
     for (const line of lines) {
       let entry;
       try { entry = JSON.parse(line); } catch { continue; }
-      const content = entry?.message?.content;
-      if (!Array.isArray(content)) continue;
-      for (const block of content) {
-        if (block?.type === 'tool_use' && ['Read', 'Edit', 'Write', 'NotebookEdit'].includes(block?.name)) {
-          const fp = block?.input?.file_path || '';
-          const rel = fp.replace(/\\/g, '/');
-          const memIdx = rel.indexOf('.claude/memory/');
-          if (memIdx >= 0) {
-            touchedFiles.add(rel.slice(memIdx + '.claude/memory/'.length));
-          }
-        }
+      for (const fp of normalizeHookFacts([entry]).readPaths) {
+        const rel = fp.replace(/\\/g, '/');
+        const memIdx = rel.indexOf('.claude/memory/');
+        if (memIdx >= 0) touchedFiles.add(rel.slice(memIdx + '.claude/memory/'.length));
       }
     }
   } catch { /* transcript parse error — skip */ }

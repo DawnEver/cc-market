@@ -4,9 +4,11 @@ Post-feature code review plugin for Claude Code and Codex. The review METHOD —
 
 ## Architecture
 
-Full flow: Stop hook → classify → main loop dispatches **one worker subagent** → worker runs
+Full flow: Stop hook → deterministic source gate and atomic claim → main loop dispatches **one worker subagent** → worker runs
 `/sharp-review` Steps 0-4 → memory entry → worker returns only `Sharp review: <summary>`.
 Diagram and per-step detail → **`skills/sharp-review/SKILL.md`** (see Execution-mode preamble).
+The gate has no Claude CLI/model classification dependency. Runtime claims coordinate with
+REM under the shared state lock; only successful post-review completion credits content.
 
 ### Subagent execution (context isolation)
 

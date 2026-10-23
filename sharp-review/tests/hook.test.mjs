@@ -8,12 +8,85 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildDispatchInstruction,
+  reviewBlocked,
   findGitRoot,
   resolveReviewWorkerTarget,
 } from "../hooks/sharp-review-hook.js";
+import { claimReview, completeReview } from '../scripts/gate.mjs';
+
+describe('native lifecycle and deterministic review gate', () => {
+  const snapshot = { sessionId: 's1', turnId: 't1', head: 'head', stat: { lines: 350, files: 5 }, wave: 0,
+    sources: ['diff'], hashes: { diff: 'hash' }, reasons: { diff: 'threshold reached' } };
+
+  test('every stop reevaluates content, including a session previously below threshold', () => {
+    const result = claimReview({ sessionId: 's1', mode: 'none' }, snapshot, { token: 'claim', now: 100 });
+    assert.equal(result.dispatch, true);
+    assert.equal(result.gate.mode, 'once');
+    assert.equal(result.gate.reviewedHashes, undefined, 'dispatch is not completion');
+  });
+
+  test('a pending checkout review excludes concurrent sessions and expired claims recover', () => {
+    const first = claimReview({}, snapshot, { token: 'first', now: 100 });
+    const second = claimReview(first.gate, { ...snapshot, sessionId: 's2' }, { token: 'second', now: 101 });
+    assert.equal(second.dispatch, false);
+    assert.equal(second.gate.pending.token, 'first');
+    assert.equal(claimReview(first.gate, snapshot, { token: 'retry', now: first.gate.pending.expiresAt + 1 }).dispatch, true);
+  });
+
+  test('only a matching successful completion credits reviewed content', () => {
+    const { gate } = claimReview({}, snapshot, { token: 'claim', now: 100 });
+    assert.equal(completeReview(gate, 'other', true, 200), gate);
+    const failed = completeReview(gate, 'claim', false, 200);
+    assert.equal(failed.reviewedHashes, undefined);
+    assert.equal(failed.pending, null);
+    const completed = completeReview(gate, 'claim', true, 200);
+    assert.deepEqual(completed.reviewedHashes, { diff: 'hash' });
+    assert.equal(completed.lastReviewRef, 'head');
+    assert.equal(claimReview(completed, snapshot, { token: 'next', now: 300 }).dispatch, false);
+  });
+
+  test('native user waiting, continuation, active REM and project task deferral do not request review', () => {
+    assert.equal(reviewBlocked({ stop_hook_active: true }, {}, {}, 100), true);
+    assert.equal(reviewBlocked({}, { waitingForInput: true }, {}, 100), true);
+    assert.equal(reviewBlocked({ session_id: 's1' }, {}, { hook: { sessions: { s1: { remPending: true, requestExpiresAt: 101 } } } }, 100), true);
+    assert.equal(reviewBlocked({ session_id: 's1' }, {}, { hook: { sessions: { s1: { remPending: true, requestExpiresAt: 99 } } } }, 100), false);
+    assert.equal(reviewBlocked({ session_id: 's2' }, {}, { hook: { sessions: { s1: { remPending: true } } } }, 100), false);
+    assert.equal(reviewBlocked({}, {}, { hook: { taskActiveUntil: 101 } }, 100), true);
+  });
+
+  test('native Codex thread identity selects the built-in worker without CODEX_HOME', () => {
+    assert.equal(resolveReviewWorkerTarget({ CODEX_THREAD_ID: 'thread' }).host, 'codex');
+  });
+});
+
+test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a Claude classifier', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-codex-stop-'));
+  const hook = fileURLToPath(new URL('../hooks/sharp-review-hook.js', import.meta.url));
+  const run = (extra = {}) => spawnSync(process.execPath, [hook], {
+    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_THREAD_ID: 'session', CLAUDE_PLUGIN_ROOT: '' },
+    input: JSON.stringify({ session_id: 'session', turn_id: 'turn', hook_event_name: 'Stop', ...extra }),
+    encoding: 'utf8', windowsHide: true,
+  });
+  try {
+    execFileSync('git', ['init', '--quiet', dir], { windowsHide: true });
+    fs.writeFileSync(path.join(dir, 'one.md'), 'one');
+    assert.equal(run().status, 0, 'below threshold initially');
+    fs.writeFileSync(path.join(dir, 'space name.md'), 'two');
+    fs.writeFileSync(path.join(dir, 'résumé.md'), 'three');
+    const dispatched = run();
+    assert.equal(dispatched.status, 2, dispatched.stderr);
+    assert.match(dispatched.stderr, /Dispatch ONE worker subagent/);
+    assert.match(dispatched.stderr, /gateToken:/);
+    assert.equal(run().status, 0, 'an existing claim prevents repeat dispatch');
+    assert.equal(run({ stop_hook_active: true }).status, 0);
+    assert.doesNotMatch(fs.readFileSync(hook, 'utf8'), /spawnSync\(['"]claude/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 describe("findGitRoot", () => {
   let savedEnv;

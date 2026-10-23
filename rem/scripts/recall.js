@@ -11,9 +11,7 @@
  * by a stat-only fingerprint of the memory tree (count + total size + max
  * mtime, incl. _meta.json) — any write invalidates it, so it never goes stale.
  *
- * Codex limitation: Codex has no UserPromptSubmit-equivalent hook, so on a
- * Codex host this script exits 0 silently (detected via inject-rules.js's
- * isCodexHost). Auto-recall is Claude Code only.
+ * Claude Code and Codex share the UserPromptSubmit additionalContext contract.
  *
  * Both hosts: any failure is swallowed (exit 0) — a recall miss must never
  * break the session.
@@ -23,9 +21,8 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { loadMemoryState } from "./lib.mjs";
+import { loadMemoryState, bumpAccessed, todayISO } from "./lib.mjs";
 import { parseFrontmatter, isMain } from "../shared/lib.mjs";
-import { isCodexHost } from "./inject-rules.js";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
 // inside), captures everything else. Used by the telemetry ring.
@@ -348,8 +345,6 @@ function readStdinPayload() {
 
 function main() {
   if (process.argv.includes("--telemetry")) { printTelemetry(); return; }
-  // Codex has no UserPromptSubmit hook — exit silently (see header comment).
-  if (isCodexHost()) return;
   const payload = readStdinPayload();
   const prompt = payload.prompt || payload.user_prompt || "";
   const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
@@ -375,6 +370,12 @@ function main() {
     injected: Boolean(context),
   });
   if (!context) return;
+
+  // Only entries whose bodies were actually injected count as semantic reads.
+  // Raw shell I/O is intentionally not guessed from transcript command strings.
+  for (const entry of winners) if (context.includes(`(${entry.relPath.replace(/\\/g, '/')})`)) {
+    try { bumpAccessed(scope, entry.relPath, todayISO()); } catch { /* advisory read accounting */ }
+  }
 
   process.stdout.write(
     JSON.stringify({

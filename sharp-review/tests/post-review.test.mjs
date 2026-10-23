@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,52 @@ export function run(dir, planObj, raw, extra = []) {
 
 const memFile = (dir) => join(dir, '.claude', 'memory', '2026', '06', '21', 'sharp-review.md');
 const leak = { file: 'a.js', summary: 'leak', severity: 'HIGH', category: 'Bug' };
+
+test('a successful gated review credits only its matching claim after writing the result', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-complete-'));
+  try {
+    mkdirSync(join(dir, '.claude'));
+    const stateFile = join(dir, '.claude', '.rem-state.json');
+    writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: {
+      token: 'claim', head: 'reviewed-head', stat: { lines: 400, files: 5 }, wave: 0,
+      hashes: { diff: 'content' },
+    } }, hook: { sessions: { other: { remPending: true } } } }));
+    run(dir, plan({ gate_token: 'claim' }), { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] });
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+    assert.equal(state.reviewGate.pending, null);
+    assert.equal(state.reviewGate.reviewedHashes.diff, 'content');
+    assert.equal(state.hook.sessions.other.remPending, true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('an unavailable review releases the gate without recording a successful review', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-unavailable-'));
+  try {
+    mkdirSync(join(dir, '.claude'));
+    const stateFile = join(dir, '.claude', '.rem-state.json');
+    writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: { token: 'claim', hashes: { diff: 'content' } } } }));
+    run(dir, plan({ gate_token: 'claim' }), { run_id: 'run-1', results: [] });
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+    assert.equal(state.reviewGate.pending, null);
+    assert.equal(state.reviewGate.reviewedHashes, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('explicit cancellation releases only the named gate without a plan or paid reviewer', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-release-'));
+  try {
+    mkdirSync(join(dir, '.claude'));
+    const stateFile = join(dir, '.claude', '.rem-state.json');
+    writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: { token: 'claim' } } }));
+    const invoke = token => execFileSync(process.execPath, [POST_REVIEW, '--release-gate', token], {
+      cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, windowsHide: true,
+    });
+    invoke('stale');
+    assert.equal(JSON.parse(readFileSync(stateFile, 'utf8')).reviewGate.pending.token, 'claim');
+    invoke('claim');
+    assert.equal(JSON.parse(readFileSync(stateFile, 'utf8')).reviewGate.pending, null);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('a two-reviewer agreement is written once, high-confidence, naming both reviewers', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));

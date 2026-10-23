@@ -4,11 +4,11 @@ Memory management plugin for Claude Code sessions. Three-tier system: rules (alw
 
 ## Architecture — at a glance
 
-SessionStart runs the prune / inject / memo-listing hooks; PostCompact re-lists memos at the
-moment context is actually lost; UserPromptSubmit runs recall (Claude Code only); Stop fires
+SessionStart runs the prune / inject / memo-listing hooks (Codex compact restores context);
+PostCompact re-lists memos on Claude Code; UserPromptSubmit runs recall on both hosts; Stop fires
 `rem-hook.js`, gated after ≥3 stops AND (≥2 min session OR ≥30s + substantive edits), which
-auto-triggers `/rem`. `/rem` runs user-gated crystallize/scope-split checks first (a fork can't
-prompt), then dispatches a `fork` for the standard pass. `/todo` drives `task-engine.js`. Full
+requests the REM skill. The skill runs user-gated checks first, then uses a context-inheriting
+fork on Claude or the current session on Codex. `/todo` drives `task-engine.js`. Full
 lifecycle flow diagram → `docs/architecture.md` § Architecture.
 
 Three-tier memory system (rules / long-term / short-term) → `skills/rem/reference/memory-conventions.md`.
@@ -33,11 +33,12 @@ See `.claude/rules/invariants.md` (always-injected) for append-only, path securi
 
 ## Host Behavior
 
-Claude Code uses the Stop hook's non-zero slash-command injection convention to
-auto-trigger `/rem` when the session is due for memory consolidation. Codex does
-not use that convention for REM: when due, `rem-hook.js` exits successfully and
-prints a reminder to invoke the rem skill directly, avoiding Codex hook failure
-noise.
+Claude Code requests `/rem`; Codex uses native Stop continuation to request the skill.
+Runtime session facts live in `hook.sessions[sessionId]`, updated inside the existing
+state transaction lock. Completion is explicitly acknowledged rather than inferred
+from another Stop. Native lifecycle source fields replace transcript-size guesses.
+Shared host facts normalize structured transcript records without guessing shell I/O.
+Execution and acknowledgement procedures live in the REM skill and its references.
 
 ## Reference
 

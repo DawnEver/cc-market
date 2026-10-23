@@ -16,4 +16,5 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | `check-docs.js` | Doc freshness check at crystallize time. Flags a doc only when it *references* a file that changed (by relative path or filename), and names which — not every doc that happens to be untouched | `--json` |
 | `task-engine.js` | Task CLI (`/todo`) | `report`, `add`, `remove`, `show`, `mark`, `check`, `help` |
 | `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, markFinding, groupBy* |
-| `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` (Claude Code only) | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
+| `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` on both hosts; injected entries record semantic access | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
+| `rem-session.js` | Acknowledge successfully completed REM work for the matching pending Stop request | `complete --session <id> --request <request-id>`; run in the project cwd, never acknowledge unfinished work |

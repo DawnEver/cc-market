@@ -1,9 +1,13 @@
 #!/usr/bin/env node
-// rem-hook.js — Claude Code Stop hook
-// Triggers /rem after 3+ stops AND either (2+ min session) OR (substantive code edits).
+// rem-hook.js — Claude Code and Codex Stop gate.
+// Requests REM after 3+ stops AND sufficient session age; requests are not completion.
 // State tracked in unified .claude/.rem-state.json
 
-import { loadState, saveState } from "../scripts/lib.mjs";
+import { stateFile } from "../scripts/lib.mjs";
+import { withStateLock } from '../shared/state.mjs';
+import { normalizeHookFacts, isCodexHost } from '../shared/hook-facts.mjs';
+import { fileURLToPath } from 'node:url';
+export { isCodexHost } from '../shared/hook-facts.mjs';
 import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 
 const MIN_STOP_COUNT = 3;
@@ -13,35 +17,15 @@ const SESSION_EXPIRY_MS = 30 * 60 * 1000;
 
 // ── Pure helpers ──
 
-// Re-exported from shared/lib.mjs for backward compat (rem-hook.test.mjs imports from here)
+// Public helper, implemented by the bundled shared transcript reader.
 export function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
 
 export function hasSubstantiveWork(transcript) {
-  return transcript.some(entry => {
-    const content = entry?.message?.content;
-    if (!Array.isArray(content)) return false;
-    return content.some(block =>
-      block?.type === 'tool_use' &&
-      ['Edit', 'Write', 'NotebookEdit'].includes(block?.name)
-    );
-  });
+  return normalizeHookFacts(transcript).hasEdits;
 }
 
 export function isAwaitingInput(transcript) {
-  // Walk backwards to find the last text block in the last assistant message.
-  // If it ends with ? or ？, the assistant is waiting for the user.
-  for (let i = transcript.length - 1; i >= 0; i--) {
-    const entry = transcript[i];
-    if (entry?.message?.role !== 'assistant') break;
-    const content = entry.message.content;
-    if (!Array.isArray(content)) continue;
-    for (let j = content.length - 1; j >= 0; j--) {
-      if (content[j]?.type === 'text') {
-        return /[?？]$/.test(content[j].text.trim());
-      }
-    }
-  }
-  return false;
+  return normalizeHookFacts(transcript).waitingForInput;
 }
 
 export function isFreshSession(state, inputKey, now) {
@@ -90,7 +74,7 @@ export function decideStop(state, input, now) {
 
   const transcriptPath = input.transcript_path || '';
   const transcript = transcriptPath ? readTranscriptTail(transcriptPath) : [];
-  const awaitingInput = !hasPendingWork && isAwaitingInput(transcript);
+  const awaitingInput = !hasPendingWork && normalizeHookFacts(transcript, input).waitingForInput;
 
   if (!hasPendingWork && !awaitingInput) {
     state.hook.stopCount = (state.hook.stopCount || 0) + 1;
@@ -105,11 +89,11 @@ export function decideStop(state, input, now) {
 
   if (state.hook.remDone) {
     decision = 'allow';
-  } else if (hasPendingWork || awaitingInput) {
+  } else if (hasPendingWork || awaitingInput || input.stop_hook_active) {
     decision = 'allow';
   } else if (state.hook.remPending) {
-    state.hook.remPending = false;
-    state.hook.remDone = true;
+    // A continuation request is not evidence that the skill finished. Only the
+    // explicit completion command can acknowledge the matching request.
     decision = 'allow';
   } else if (stopCount >= MIN_STOP_COUNT) {
     const isSubstantive = hasSubstantiveWork(transcript);
@@ -123,14 +107,43 @@ export function decideStop(state, input, now) {
   return { state, decision };
 }
 
-export function isCodexHost(env = process.env) {
-  return Boolean(env.CODEX_HOME || env.CODEX_SANDBOX);
-}
-
 export function resolveHookExit(decision, env = process.env) {
   if (decision !== 'deny') return { code: 0, stderr: '' };
-  if (isCodexHost(env)) return { code: 0, stderr: '[rem-hook] REM due; run /rem manually or invoke the rem skill.\n' };
+  if (isCodexHost(env)) return { code: 2, stderr: 'Run the REM skill in this session context before finishing. Do not fork into a worker without inherited context.\n' };
   return { code: 2, stderr: '/rem\n' };
+}
+
+export function decideSessionStop(state, input, now) {
+  state.hook ??= {};
+  state.hook.sessions ??= {};
+  const key = input.session_id || input.transcript_path || FALLBACK_SESSION_KEY;
+  for (const [id, record] of Object.entries(state.hook.sessions))
+    if (now - (record.lastTouched || 0) > SESSION_EXPIRY_MS) delete state.hook.sessions[id];
+  const session = state.hook.sessions[key] ?? { sessionKey: null, lastTouched: 0 };
+  if (state.reviewGate?.pending?.expiresAt > now) return { state, decision: 'allow' };
+  const view = { hook: { ...session, taskActiveUntil: Math.max(session.taskActiveUntil || 0, state.hook.taskActiveUntil || 0) } };
+  if (view.hook.remPending && !(view.hook.requestExpiresAt > now)) view.hook.remPending = false;
+  const result = decideStop(view, input, now);
+  if (result.decision === 'deny') {
+    result.state.hook.requestId = `${key}:${now}`;
+    result.state.hook.requestExpiresAt = now + SESSION_EXPIRY_MS;
+  }
+  state.hook.sessions[key] = result.state.hook;
+  return { state, decision: result.decision, sessionKey: key, requestId: result.state.hook.requestId };
+}
+
+export function completeSession(state, session, request, now = Date.now()) {
+  const record = state.hook?.sessions?.[session];
+  if (!request || !record?.remPending || record.requestId !== request || !(record.requestExpiresAt > now))
+    throw new Error('REM completion requires a matching pending session request');
+  record.remPending = false;
+  record.remDone = true;
+  record.completedAt = now;
+}
+
+export function acknowledgementCommand(script, session, request) {
+  const data = Buffer.from(JSON.stringify([script, 'complete', '--session', session, '--request', request])).toString('base64');
+  return `node -e "const a=JSON.parse(Buffer.from('${data}','base64').toString());const r=require('node:child_process').spawnSync(process.execPath,a,{stdio:'inherit'});process.exit(r.error?1:(r.status??1))"`;
 }
 
 // ── Main ──
@@ -139,11 +152,14 @@ export function resolveHookExit(decision, env = process.env) {
 if (isMain(import.meta)) {
   const input = readStdinJSON();
   const now = Date.now();
-  let state = loadState();
-  const { state: newState, decision } = decideStop(state, input, now);
-  saveState(newState);
-
-  const { code, stderr } = resolveHookExit(decision);
-  if (stderr) process.stderr.write(stderr, () => process.exit(code));
+  let result;
+  try {
+    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now); }, { atomic: true, onTimeout: 'throw' });
+    if (!saved?.persisted) process.exit(0);
+  } catch { process.exit(0); }
+  const { code, stderr } = resolveHookExit(result?.decision);
+  const acknowledgement = code === 2 && result.requestId ?
+    `After the skill succeeds, run ${acknowledgementCommand(fileURLToPath(new URL('../scripts/rem-session.js', import.meta.url)), result.sessionKey, result.requestId)} in the current project directory. Paths and IDs are encoded argv data. Do not acknowledge failed or unfinished work.\n` : '';
+  if (stderr) process.stderr.write(stderr + acknowledgement, () => process.exit(code));
   else process.exit(code);
 }
