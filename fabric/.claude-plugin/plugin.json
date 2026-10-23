@@ -1,6 +1,6 @@
 {
   "name": "fabric",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Multi-provider agent fabric — any agent (Claude / Codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes) + fan_out + a minimal observe proxy that captures a child's API traffic.",
   "author": {
     "name": "Mingyang Bao"
