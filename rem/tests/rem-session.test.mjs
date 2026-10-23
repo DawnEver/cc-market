@@ -35,3 +35,54 @@ test('completion CLI acknowledges only the matching live request in the host pro
   assert.equal(state.hook.sessions.b.remPending, true);
   assert.equal(run('token').status, 1, 'a completion acknowledgement is not replayable');
 });
+
+test('real REM hook processes isolate sibling threads and acknowledge the execution key', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-native-siblings-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.mkdirSync(path.join(root, '.claude'));
+  const file = path.join(root, '.claude', '.rem-state.json');
+  fs.writeFileSync(file, JSON.stringify({ hook: { sessions: {
+    a: { sessionKey: 'a', stopCount: 1, firstStopAt: Date.now() - 180000, lastTouched: Date.now() },
+  } } }));
+  const hook = fileURLToPath(new URL('../hooks/rem-hook.js', import.meta.url));
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_PLUGIN_ROOT: '', CODEX_HOME: root, CODEX_THREAD_ID: 'stale' };
+  const run = (thread, overrides = {}) => spawnSync(process.execPath, [hook], {
+    cwd: root, env: { ...env, ...overrides }, encoding: 'utf8', windowsHide: true,
+    input: JSON.stringify({ session_id: 'parent', thread_id: thread }),
+  });
+  assert.equal(run('a').status, 0);
+  assert.equal(run('b').status, 0);
+  const requested = run('a');
+  assert.equal(requested.status, 2, requested.stderr);
+  let state = JSON.parse(fs.readFileSync(file));
+  assert.equal(state.hook.sessions.a.stopCount, 3);
+  assert.equal(state.hook.sessions.b.stopCount, 1);
+  assert.equal(state.hook.sessions.parent, undefined);
+  assert.equal(state.hook.sessions.stale, undefined);
+  assert.equal(run(null, { CODEX_THREAD_ID: '' }).status, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)).hook.sessions, state.hook.sessions);
+  const completed = spawnSync(process.execPath, [script, 'complete', '--session', 'a', '--request', state.hook.sessions.a.requestId],
+    { cwd: root, env, encoding: 'utf8', windowsHide: true });
+  assert.equal(completed.status, 0, completed.stderr);
+  state = JSON.parse(fs.readFileSync(file));
+  assert.equal(state.hook.sessions.a.remDone, true);
+  assert.equal(state.hook.sessions.b.remDone, false);
+});
+
+test('completion CLI reports persistence failure instead of acknowledging in-memory completion', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-completion-write-failure-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.mkdirSync(path.join(root, '.claude'));
+  const file = path.join(root, '.claude', '.rem-state.json');
+  fs.writeFileSync(file, JSON.stringify({ hook: { sessions: {
+    thread: { remPending: true, requestId: 'request', requestExpiresAt: Date.now() + 60000 },
+  } } }));
+  fs.mkdirSync(file + '.tmp');
+  const result = spawnSync(process.execPath, [script, 'complete', '--session', 'thread', '--request', 'request'],
+    { cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root }, encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 1);
+  assert.doesNotMatch(result.stdout, /completed/);
+  assert.equal(JSON.parse(fs.readFileSync(file)).hook.sessions.thread.remPending, true);
+});

@@ -107,5 +107,5 @@ if (arg('--release-gate')) {
   if (sink === 'memory') writeMemory(output, plan, method);
   else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
   else fail(`unknown sink ${sink}; known: memory, stdout`);
-  finishGate(ROOT, plan.gate_token, output.reviewers.some(reviewer => reviewer.status === 'ok'));
+  finishGate(ROOT, plan.gate_token, sink === 'memory' && output.reviewers.some(reviewer => reviewer.status === 'ok'));
 }

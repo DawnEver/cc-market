@@ -50,26 +50,44 @@ describe('native lifecycle and deterministic review gate', () => {
     assert.equal(claimReview(completed, snapshot, { token: 'next', now: 300 }).dispatch, false);
   });
 
+  test('an expired matching review can release its reservation but cannot credit content', () => {
+    const { gate } = claimReview({}, snapshot, { token: 'expired', now: 100 });
+    const completed = completeReview(gate, 'expired', true, gate.pending.expiresAt);
+    assert.equal(completed.pending, null);
+    assert.equal(completed.reviewedHashes, undefined);
+    assert.equal(completed.lastReviewRef, undefined);
+  });
+
   test('native user waiting, continuation, active REM and project task deferral do not request review', () => {
     assert.equal(reviewBlocked({ stop_hook_active: true }, {}, {}, 100), true);
     assert.equal(reviewBlocked({}, { waitingForInput: true }, {}, 100), true);
     assert.equal(reviewBlocked({ session_id: 's1' }, {}, { hook: { sessions: { s1: { remPending: true, requestExpiresAt: 101 } } } }, 100), true);
     assert.equal(reviewBlocked({ session_id: 's1' }, {}, { hook: { sessions: { s1: { remPending: true, requestExpiresAt: 99 } } } }, 100), false);
     assert.equal(reviewBlocked({ session_id: 's2' }, {}, { hook: { sessions: { s1: { remPending: true } } } }, 100), false);
+    assert.equal(reviewBlocked({ session_id: 's2' }, {}, { hook: { sessions: { s1: { remPending: true, requestExpiresAt: 101 } } } }, 100), true);
+    assert.equal(reviewBlocked({ session_id: 's2' }, {}, { hook: { sessions: { s1: { remPending: true, requestExpiresAt: 99 } } } }, 100), false);
     assert.equal(reviewBlocked({}, {}, { hook: { taskActiveUntil: 101 } }, 100), true);
   });
 
   test('native Codex thread identity selects the built-in worker without CODEX_HOME', () => {
     assert.equal(resolveReviewWorkerTarget({ CODEX_THREAD_ID: 'thread' }).host, 'codex');
   });
+
+  test('a live REM reservation excludes reviews from sibling execution threads too', () => {
+    const state = { hook: { sessions: { child: { remPending: true, requestExpiresAt: 101 } } } };
+    assert.equal(reviewBlocked({ session_id: 'parent', thread_id: 'child' }, {}, state, 100,
+      { CODEX_THREAD_ID: 'stale' }), true);
+    assert.equal(reviewBlocked({ session_id: 'parent', thread_id: 'sibling' }, {}, state, 100,
+      { CODEX_THREAD_ID: 'child' }), true);
+  });
 });
 
 test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a Claude classifier', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-codex-stop-'));
   const hook = fileURLToPath(new URL('../hooks/sharp-review-hook.js', import.meta.url));
-  const run = (extra = {}) => spawnSync(process.execPath, [hook], {
-    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_THREAD_ID: 'session', CLAUDE_PLUGIN_ROOT: '' },
-    input: JSON.stringify({ session_id: 'session', turn_id: 'turn', hook_event_name: 'Stop', ...extra }),
+  const run = (extra = {}, env = {}) => spawnSync(process.execPath, [hook], {
+    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_HOME: dir, CODEX_THREAD_ID: 'stale', CLAUDE_PLUGIN_ROOT: '', ...env },
+    input: JSON.stringify({ session_id: 'parent', thread_id: 'actual', turn_id: 'turn', hook_event_name: 'Stop', ...extra }),
     encoding: 'utf8', windowsHide: true,
   });
   try {
@@ -78,10 +96,13 @@ test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a
     assert.equal(run().status, 0, 'below threshold initially');
     fs.writeFileSync(path.join(dir, 'space name.md'), 'two');
     fs.writeFileSync(path.join(dir, 'résumé.md'), 'three');
+    assert.equal(run({ thread_id: null }, { CODEX_THREAD_ID: '' }).status, 0, 'unknown thread never claims the parent');
     const dispatched = run();
     assert.equal(dispatched.status, 2, dispatched.stderr);
     assert.match(dispatched.stderr, /Dispatch ONE worker subagent/);
     assert.match(dispatched.stderr, /gateToken:/);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, '.claude', '.rem-state.json')));
+    assert.equal(state.reviewGate.pending.sessionId, 'actual');
     assert.equal(run().status, 0, 'an existing claim prevents repeat dispatch');
     assert.equal(run({ stop_hook_active: true }).status, 0);
     assert.doesNotMatch(fs.readFileSync(hook, 'utf8'), /spawnSync\(['"]claude/);

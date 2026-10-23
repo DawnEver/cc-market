@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from "../shared/spawn.mjs";
 import { findProjectRoot, readStdinJSON as _readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
 import { loadState as _loadState, withStateLock } from '../shared/state.mjs';
-import { normalizeHookFacts, isCodexHost } from '../shared/hook-facts.mjs';
+import { normalizeHookFacts, isCodexHost, hookSessionKey, hasRemReservation } from '../shared/hook-facts.mjs';
 import { claimReview } from '../scripts/gate.mjs';
 import { evaluateSources, sourceFiles, DOCS_THRESHOLD_DEFAULT, CODEBASE_INTERVAL_MIN_DEFAULT } from '../scripts/sources.mjs';
 import { loadReviewConfig } from '../scripts/lib/config.mjs';
@@ -161,12 +161,12 @@ function loadThresholds(config) {
 
 function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
 
-export function reviewBlocked(input, facts, state, now = Date.now()) {
+export function reviewBlocked(input, facts, state, now = Date.now(), env = {}) {
+  const key = hookSessionKey(input, env);
+  if (!key && isCodexHost(env)) return true;
   const hook = state.hook || {};
-  const session = hook.sessions?.[input.session_id] ||
-    (hook.sessionKey === input.session_id ? hook : {});
   return Boolean(input.stop_hook_active || facts.waitingForInput ||
-    (session.remPending && session.requestExpiresAt > now) || hook.taskActiveUntil > now);
+    hasRemReservation(hook, now) || hook.taskActiveUntil > now);
 }
 
 async function main() {
@@ -177,7 +177,7 @@ async function main() {
   const facts = normalizeHookFacts(transcript, input);
   const now = Date.now();
   const initial = loadUnifiedState();
-  if (reviewBlocked(input, facts, initial, now)) return;
+  if (reviewBlocked(input, facts, initial, now, process.env)) return;
 
   const changedFiles = getChangedFiles();
   if (!changedFiles.length && !facts.hasEdits) return;
@@ -204,17 +204,17 @@ async function main() {
   });
   const hashes = sourceHashes(fired, changedFiles, head);
   let pending = null;
-  withStateLock(unifiedStateFile, state => {
+  const saved = withStateLock(unifiedStateFile, state => {
     // Recheck under the same lock REM uses: only one continuation can claim the checkout.
-    if (reviewBlocked(input, facts, state, now)) return;
+    if (reviewBlocked(input, facts, state, now, process.env)) return;
     const result = claimReview(state.reviewGate, {
-      sessionId: input.session_id || '', turnId: input.turn_id, head, stat, wave,
+      sessionId: hookSessionKey(input, process.env) || '', turnId: input.turn_id, head, stat, wave,
       sources: fired, hashes, reasons,
     }, { token: randomUUID(), now });
     state.reviewGate = result.gate;
     if (result.dispatch) pending = result.gate.pending;
   }, { atomic: true, onTimeout: 'throw' });
-  if (!pending) return;
+  if (!saved?.persisted || !pending) return;
 
   const instruction = buildDispatchInstruction(pending.sources.join(','),
     resolveReviewWorkerTarget(), resolvePluginRoot(), pending.token);

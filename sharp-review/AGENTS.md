@@ -9,6 +9,9 @@ Full flow: Stop hook → deterministic source gate and atomic claim → main loo
 Diagram and per-step detail → **`skills/sharp-review/SKILL.md`** (see Execution-mode preamble).
 The gate has no Claude CLI/model classification dependency. Runtime claims coordinate with
 REM under the shared state lock; only successful post-review completion credits content.
+REM reservations are checkout-wide too, and expired review claims cannot credit content.
+Bundled execution identity normalizes native Codex thread fields before consulting REM
+slots or attributing a review claim; parent lineage is never a substitute thread key.
 
 ### Subagent execution (context isolation)
 

@@ -25,7 +25,7 @@ export function completeReview(gate, token, success, now = Date.now()) {
   const pending = gate.pending;
   return {
     ...gate, pending: null, lastAttemptAt: now,
-    ...(success ? {
+    ...(success && pending.expiresAt > now ? {
       lastReviewAt: now, lastReviewRef: pending.head, lastReviewDiff: pending.stat,
       wave: pending.wave, reviewedHashes: { ...gate.reviewedHashes, ...pending.hashes },
     } : {}),
@@ -34,7 +34,8 @@ export function completeReview(gate, token, success, now = Date.now()) {
 
 export function finishGate(root, token, success) {
   if (!token) return;
-  withStateLock(join(root, '.claude', '.rem-state.json'), state => {
+  const saved = withStateLock(join(root, '.claude', '.rem-state.json'), state => {
     state.reviewGate = completeReview(state.reviewGate, token, success);
   }, { atomic: true, onTimeout: 'throw' });
+  if (!saved?.persisted) throw new Error('Could not persist review gate completion.');
 }

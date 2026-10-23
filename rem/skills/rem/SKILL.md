@@ -51,7 +51,7 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 
 - Full script reference (incl. `check-docs.js`, `task-engine.js`, all flags) → `reference/scripts.md`
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
-- Crystallize procedure (memory ≥20 entries; user-gated distill) → `reference/crystallize.md`
+- Crystallize procedure (current `--check` advisory threshold; user-gated distill) → `reference/crystallize.md`
 - Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`
 - Standard-pass walkthrough + Lightweight variant → `reference/standard-procedure.md`
 
@@ -70,7 +70,7 @@ keeps everything. Redundant entries are folded with `merge-memory.js`, never del
 
 Decide depth by checking context:
 
-## Crystallize (memory index ≥ 20 entries)
+## Crystallize (when the advisory check fires)
 
 Check whether crystallize is needed:
 ```bash

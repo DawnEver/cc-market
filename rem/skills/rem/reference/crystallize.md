@@ -1,6 +1,6 @@
 # REM — Crystallize procedure (reference)
 
-Run this only when `crystallize.js --check` exits 0 (memory index ≥ 20 entries). The everyday
+Run this only when `crystallize.js --check` exits 0 at the current catalog advisory threshold. The everyday
 `/rem` flow never touches it. Distilling memory into always-injected rules is a user-gated
 operation — present the proposal before acting.
 

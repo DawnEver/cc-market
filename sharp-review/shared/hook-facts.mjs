@@ -1,10 +1,39 @@
 // Minimal host-neutral facts for lifecycle gates. Structured events only: do not try
 // to infer file I/O from arbitrary shell commands or expose reasoning/tool output.
+import path from 'node:path';
+
 export function isCodexHost(env = process.env) {
   const root = env.CLAUDE_PLUGIN_ROOT || '';
+  let owner;
+  for (const [home, codex] of [[env.CODEX_HOME, true], [env.CLAUDE_CONFIG_DIR, false]]) {
+    if (!root || !home) continue;
+    const paths = /^[a-z]:[\\/]/i.test(home) ? path.win32 : path;
+    const plugins = paths.resolve(home, 'plugins');
+    const relative = paths.relative(plugins, paths.resolve(root));
+    if (relative !== '..' && !relative.startsWith(`..${paths.sep}`) && !paths.isAbsolute(relative) &&
+        (!owner || plugins.length > owner.depth)) owner = { codex, depth: plugins.length };
+  }
+  if (owner) return owner.codex;
   if (/[\\/]\.codex[\\/]/.test(root)) return true;
-  if (/[\\/]\.claude[\\/]/.test(root)) return false;
-  return Boolean(env.CODEX_HOME || env.CODEX_SANDBOX || env.CODEX_THREAD_ID);
+  if (/[\\/]\.claude(?:-[^\\/]+)?[\\/]/.test(root)) return false;
+  return Boolean(env.CODEX_HOME || env.CODEX_SANDBOX || env.CODEX_THREAD_ID || env.CODEX_SESSION_ID || env.HARNESS_AGENT === 'codex');
+}
+
+const id = value => typeof value === 'string' && value.trim() ? value.trim() : null;
+
+// Codex hook session_id can name a parent. Transient gates belong to the actual
+// executing thread; an unknown thread must not borrow that parent's counters.
+export function hookSessionKey(input = {}, env = process.env) {
+  const native = id(input.thread_id) || id(input.agent_id);
+  const file = String(input.transcript_path ?? '').split(/[\\/]/).at(-1);
+  const rollout = /^rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i.exec(file)?.[1];
+  if (isCodexHost(env)) return native || rollout || id(env.CODEX_THREAD_ID);
+  return native || id(input.session_id) || id(env.CLAUDE_CODE_SESSION_ID) || id(input.transcript_path);
+}
+
+export function hasRemReservation(hook = {}, now = Date.now(), exceptKey) {
+  return Object.entries(hook.sessions ?? {}).some(([key, session]) =>
+    key !== exceptKey && session?.remPending && session.requestExpiresAt > now);
 }
 
 const text = content => Array.isArray(content) ? content

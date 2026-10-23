@@ -11,68 +11,10 @@ entries. The full catalog and original memory files remain available for recall.
 /plugin install rem@cc-market
 ```
 
-Then register the hooks in `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prune-memory.js\" --evict-stale --quiet",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.js\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/memo.js\" list --hook",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/memo.js\" list --hook",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/recall.js\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rem-hook.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+Installation supplies the plugin-owned hooks in `hooks/hooks.json`: startup memory
+maintenance, rules and memo restoration, prompt-time recall, and the Stop gate.
+Do not copy these handlers into user settings: native hook sources accumulate,
+and duplicate registrations can run the same lifecycle work twice.
 
 > **On Codex:** install with `codex plugin add rem@cc-market`. The hooks run on Codex too;
 > additionally, rem's SessionStart hook injects the host project's `.claude/rules/**/*.md`
@@ -85,6 +27,10 @@ Then register the hooks in `~/.claude/settings.json`:
 > Stop requests the REM skill using native continuation on Codex, with bounded recursion,
 > session-isolated state and explicit successful-work acknowledgement. Run inline when a
 > context-inheriting fork is unavailable; an empty worker is not equivalent.
+> Codex gates use the actual execution thread, not a shared parent `session_id`.
+> When no execution identity is available, the hook does not request continuation.
+> A live REM or review reservation excludes other continuations in the same checkout;
+> per-thread counters remain independent and deferred work waits for an eligible Stop.
 
 ## Usage
 

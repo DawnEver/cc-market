@@ -41,7 +41,7 @@ test('a successful gated review credits only its matching claim after writing th
     const stateFile = join(dir, '.claude', '.rem-state.json');
     writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: {
       token: 'claim', head: 'reviewed-head', stat: { lines: 400, files: 5 }, wave: 0,
-      hashes: { diff: 'content' },
+      hashes: { diff: 'content' }, expiresAt: Date.now() + 60000,
     } }, hook: { sessions: { other: { remPending: true } } } }));
     run(dir, plan({ gate_token: 'claim' }), { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] });
     const state = JSON.parse(readFileSync(stateFile, 'utf8'));
@@ -60,6 +60,40 @@ test('an unavailable review releases the gate without recording a successful rev
     run(dir, plan({ gate_token: 'claim' }), { run_id: 'run-1', results: [] });
     const state = JSON.parse(readFileSync(stateFile, 'utf8'));
     assert.equal(state.reviewGate.pending, null);
+    assert.equal(state.reviewGate.reviewedHashes, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('stdout-only review output releases its gate without crediting persisted review content', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-stdout-gate-'));
+  try {
+    mkdirSync(join(dir, '.claude'));
+    const stateFile = join(dir, '.claude', '.rem-state.json');
+    writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: {
+      token: 'claim', hashes: { diff: 'content' }, expiresAt: Date.now() + 60000,
+    } } }));
+    const output = run(dir, plan({ gate_token: 'claim', sink: 'stdout' }), { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] });
+    assert.ok(JSON.parse(output).reviewers.some(reviewer => reviewer.status === 'ok'));
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+    assert.equal(state.reviewGate.pending, null);
+    assert.equal(state.reviewGate.reviewedHashes, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a persisted review survives gate-write failure without falsely acknowledging completion', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-gate-write-failure-'));
+  try {
+    mkdirSync(join(dir, '.claude'));
+    const stateFile = join(dir, '.claude', '.rem-state.json');
+    writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: {
+      token: 'claim', hashes: { diff: 'content' }, expiresAt: Date.now() + 60000,
+    } } }));
+    mkdirSync(stateFile + '.tmp');
+    assert.throws(() => run(dir, plan({ gate_token: 'claim' }),
+      { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] }), /persist.*gate/i);
+    assert.match(readFileSync(memFile(dir), 'utf8'), /sharp-review/);
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+    assert.equal(state.reviewGate.pending.token, 'claim');
     assert.equal(state.reviewGate.reviewedHashes, undefined);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

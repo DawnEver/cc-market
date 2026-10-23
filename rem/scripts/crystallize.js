@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Crystallize orchestrator for the REM memory system.
 //
-//   node crystallize.js --check       → exit 0 if crystallize needed (≥20 entries), exit 1 otherwise
+//   node crystallize.js --check       → exit 0 if the catalog advisory threshold is reached, exit 1 otherwise
 //   node crystallize.js --drift       → JSON listing of long-term entries as drift-verification candidates
 //   node crystallize.js --propose      → JSON listing of all indexed entries for user review
 //   node crystallize.js --execute      → after model distilled rules into .claude/rules/rem/,

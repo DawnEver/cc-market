@@ -395,3 +395,37 @@ test('an in-flight review reservation defers REM without advancing counters', ()
   assert.equal(decideSessionStop(state, { session_id: 'a' }, 1000).decision, 'allow');
   assert.equal(state.hook.sessions.a, undefined);
 });
+
+test('Codex siblings sharing a parent retain separate REM gates and completion keys', () => {
+  const state = { hook: {} };
+  const env = { CODEX_THREAD_ID: 'stale' };
+  decideSessionStop(state, { session_id: 'parent', thread_id: 'a' }, 1000, env);
+  decideSessionStop(state, { session_id: 'parent', thread_id: 'b' }, 1001, env);
+  assert.equal(decideSessionStop(state, { session_id: 'parent', thread_id: 'a' }, 130000, env).decision, 'allow');
+  const result = decideSessionStop(state, { session_id: 'parent', thread_id: 'a' }, 131000, env);
+  assert.equal(result.decision, 'deny');
+  assert.equal(result.sessionKey, 'a');
+  completeSession(state, result.sessionKey, result.requestId, 132000);
+  assert.equal(state.hook.sessions.a.remDone, true);
+  assert.equal(state.hook.sessions.b.stopCount, 1);
+  assert.equal(state.hook.sessions.parent, undefined);
+  assert.equal(state.hook.sessions.stale, undefined);
+});
+
+test('unknown Codex execution identity does not mutate a parent REM gate', () => {
+  const state = { hook: {} };
+  assert.equal(decideSessionStop(state, { session_id: 'parent' }, 1000, { CODEX_HOME: '/tmp/codex' }).decision, 'allow');
+  assert.deepEqual(state, { hook: {} });
+});
+
+test('another REM reservation defers a sibling counter until completion or expiry', () => {
+  const state = { hook: { sessions: {
+    owner: { sessionKey: 'owner', remPending: true, requestExpiresAt: 300000, lastTouched: 130000 },
+    sibling: { sessionKey: 'sibling', stopCount: 2, firstStopAt: 1000, lastTouched: 130000 },
+  } } };
+  const input = { session_id: 'sibling' };
+  assert.equal(decideSessionStop(state, input, 131000).decision, 'allow');
+  assert.equal(state.hook.sessions.sibling.stopCount, 2);
+  state.hook.sessions.owner.requestExpiresAt = 131000;
+  assert.equal(decideSessionStop(state, input, 132000).decision, 'deny');
+});

@@ -34,10 +34,13 @@ See `.claude/rules/invariants.md` (always-injected) for append-only, path securi
 ## Host Behavior
 
 Claude Code requests `/rem`; Codex uses native Stop continuation to request the skill.
-Runtime session facts live in `hook.sessions[sessionId]`, updated inside the existing
+Runtime execution-thread facts live in `hook.sessions[executionKey]`, updated inside the existing
 state transaction lock. Completion is explicitly acknowledged rather than inferred
 from another Stop. Native lifecycle source fields replace transcript-size guesses.
 Shared host facts normalize structured transcript records without guessing shell I/O.
+The bundled identity helper never treats Codex parent lineage as an execution key.
+A live continuation reservation excludes other REM/review dispatches checkout-wide;
+deferred sessions retain their counters and resume eligibility after completion or expiry.
 Execution and acknowledgement procedures live in the REM skill and its references.
 
 ## Reference

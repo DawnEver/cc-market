@@ -5,7 +5,7 @@
 
 import { stateFile } from "../scripts/lib.mjs";
 import { withStateLock } from '../shared/state.mjs';
-import { normalizeHookFacts, isCodexHost } from '../shared/hook-facts.mjs';
+import { normalizeHookFacts, isCodexHost, hookSessionKey, hasRemReservation } from '../shared/hook-facts.mjs';
 import { fileURLToPath } from 'node:url';
 export { isCodexHost } from '../shared/hook-facts.mjs';
 import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
@@ -50,10 +50,11 @@ export function isFreshSession(state, inputKey, now) {
 // session_id can never collide on a shared null key and leak remPending.
 const FALLBACK_SESSION_KEY = `proc-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 
-export function decideStop(state, input, now) {
+export function decideStop(state, input, now, env = {}) {
   // transcript_path is stable within a session and unique across sessions —
   // a valid discriminator for hosts that omit session_id.
-  const inputKey = input.session_id ?? input.transcript_path ?? null;
+  const inputKey = hookSessionKey(input, env);
+  if (!inputKey && isCodexHost(env)) return { state, decision: 'allow' };
   const fresh = isFreshSession(state, inputKey, now);
 
   if (fresh) {
@@ -113,17 +114,20 @@ export function resolveHookExit(decision, env = process.env) {
   return { code: 2, stderr: '/rem\n' };
 }
 
-export function decideSessionStop(state, input, now) {
+export function decideSessionStop(state, input, now, env = {}) {
+  const nativeKey = hookSessionKey(input, env);
+  if (!nativeKey && isCodexHost(env)) return { state, decision: 'allow' };
   state.hook ??= {};
   state.hook.sessions ??= {};
-  const key = input.session_id || input.transcript_path || FALLBACK_SESSION_KEY;
+  const key = nativeKey || FALLBACK_SESSION_KEY;
   for (const [id, record] of Object.entries(state.hook.sessions))
     if (now - (record.lastTouched || 0) > SESSION_EXPIRY_MS) delete state.hook.sessions[id];
   const session = state.hook.sessions[key] ?? { sessionKey: null, lastTouched: 0 };
-  if (state.reviewGate?.pending?.expiresAt > now) return { state, decision: 'allow' };
+  if (state.reviewGate?.pending?.expiresAt > now || hasRemReservation(state.hook, now, key))
+    return { state, decision: 'allow' };
   const view = { hook: { ...session, taskActiveUntil: Math.max(session.taskActiveUntil || 0, state.hook.taskActiveUntil || 0) } };
   if (view.hook.remPending && !(view.hook.requestExpiresAt > now)) view.hook.remPending = false;
-  const result = decideStop(view, input, now);
+  const result = decideStop(view, input, now, env);
   if (result.decision === 'deny') {
     result.state.hook.requestId = `${key}:${now}`;
     result.state.hook.requestExpiresAt = now + SESSION_EXPIRY_MS;
@@ -154,7 +158,7 @@ if (isMain(import.meta)) {
   const now = Date.now();
   let result;
   try {
-    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now); }, { atomic: true, onTimeout: 'throw' });
+    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { atomic: true, onTimeout: 'throw' });
     if (!saved?.persisted) process.exit(0);
   } catch { process.exit(0); }
   const { code, stderr } = resolveHookExit(result?.decision);
