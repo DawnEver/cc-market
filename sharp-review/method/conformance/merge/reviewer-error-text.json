@@ -63,7 +63,7 @@
     ]
   },
   "expected": {
-    "schema_version": 1,
+    "schema_version": 2,
     "range": "HEAD",
     "profiles": [
       "diff"

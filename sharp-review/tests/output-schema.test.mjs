@@ -52,10 +52,10 @@ test('the schema version and enums are the method\'s own, not a second copy that
 });
 
 test('a planted violation is caught (the checker is not vacuous)', () => {
-  assert.notDeepEqual(errors({ schema_version: 1, range: 'HEAD', profiles: [], reviewers: [{ name: 'a', provider: 'x', status: 'failed', dropped_findings: 0 }], findings: [] }, schema), []);
+  assert.notDeepEqual(errors({ schema_version: 2, range: 'HEAD', profiles: [], reviewers: [{ name: 'a', provider: 'x', status: 'failed', dropped_findings: 0 }], findings: [] }, schema), []);
 });
 
-const reviewer = (status, extra = {}) => ({ schema_version: 1, range: 'HEAD', profiles: [], findings: [],
+const reviewer = (status, extra = {}) => ({ schema_version: 2, range: 'HEAD', profiles: [], findings: [],
   reviewers: [{ name: 'a', provider: 'x', status, dropped_findings: 0, ...extra }] });
 
 test('a failed reviewer must say why, an ok one must not, a skipped one may', () => {

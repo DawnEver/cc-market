@@ -56,7 +56,7 @@ for name in "${plugins[@]}"; do bundle_shared "$name"; echo "release: $name v$(b
 market_version="$(bump_json .claude-plugin/marketplace.json)"
 node scripts/gen-codex.mjs . >/dev/null
 node --test fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs \
-  evolve/tests/*.test.mjs traceme/tests/*.test.mjs cc-latex/tests/*.test.mjs \
+  evolve/tests/*.test.mjs cc-latex/tests/*.test.mjs \
   shared/tests/*.test.mjs tests/*.test.mjs
 if printf '%s\n' "${plugins[@]}" | grep -qx cc-academia; then
   command -v uv >/dev/null 2>&1 || { echo "release: cc-academia requires uv" >&2; false; }

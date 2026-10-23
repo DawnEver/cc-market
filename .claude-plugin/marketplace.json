@@ -112,26 +112,6 @@
       "category": "productivity"
     },
     {
-      "name": "traceme",
-      "source": "./traceme",
-      "codex": false,
-      "displayName": "TraceMe",
-      "description": "[Archived] Local-first personal observability for Claude Code — token usage, cost, tool usage, daily reports. Hooks capture session/tool/prompt data, transcript parser extracts token/cost.",
-      "author": {
-        "name": "linxu"
-      },
-      "repository": "https://github.com/DawnEver/cc-market",
-      "license": "MIT",
-      "keywords": [
-        "observability",
-        "telemetry",
-        "token-usage",
-        "cost",
-        "report"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "cc-latex",
       "source": "./cc-latex",
       "displayName": "cc-latex",

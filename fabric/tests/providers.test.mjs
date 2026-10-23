@@ -130,6 +130,13 @@ test('listModels lists the host rows then the catalogue, or the refusal', () => 
   const { configPath, cachePath } = providerCacheFixture();
   unlinkSync(cachePath);
   assert.match(listModels(configPath), /absent.*setup/);
+  assert.match(listModels(configPath), /\ncallable: claude, codex$/, 'only the host CLIs without a catalogue');
+});
+
+test('listModels ends with the providers callable without a model', () => {
+  const out = listModels(fixture());
+  assert.match(out, /^openonly\s+→.*no defaults set/m);
+  assert.equal(out.split('\n').at(-1), 'callable: claude, codex, acme, plain, tiered');
 });
 
 test('anthropicEndpoint builds the /v1/messages URL Claude Code itself hits', () => {

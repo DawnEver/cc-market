@@ -17,7 +17,7 @@ jobs:
         run: >-
           node --test fabric/tests/*.test.mjs rem/tests/*.test.mjs
           sharp-review/tests/*.test.mjs evolve/tests/*.test.mjs
-          traceme/tests/*.test.mjs cc-latex/tests/*.test.mjs
+          cc-latex/tests/*.test.mjs
           shared/tests/*.test.mjs tests/*.test.mjs
       - name: Validate release shell scripts
         run: bash -n scripts/git-hooks/pre-commit scripts/git-hooks/pre-push scripts/release.sh

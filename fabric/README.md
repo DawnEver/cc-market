@@ -103,7 +103,8 @@ endpoint, auth, and model alias. `observe` is a single boolean — proxy vs dire
   `provider: "codex"` runs via the codex app-server (native — pass `write: true` for tools,
   `cwd` for the repo). `observe: true` (non-codex) captures API traffic to the proxy jsonl.
   Call several concurrently for fan-out.
-- `list_providers` — dump the provider registry + model aliases.
+- `list_providers` — dump the provider registry + model aliases; the last line,
+  `callable: ...`, names the providers a call without `model` can run.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
 - `codex_status` — codex CLI install / version / auth check.
 - `fan_out` — run N `call`s in parallel, at most `fabric.fanOutConcurrency` (default 4) at once; returns compact JSON (per-task `result` capped at

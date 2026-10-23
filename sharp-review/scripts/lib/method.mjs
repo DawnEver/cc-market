@@ -8,9 +8,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const METHOD_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'method');
-export const SUPPORTED_SCHEMA_VERSION = 1;
+export const SUPPORTED_SCHEMA_VERSION = 2;
 
 const readJSON = (file) => JSON.parse(readFileSync(file, 'utf8'));
+
+// method.json principles.fills: the finding schema names the field; principles.json alone lists the ids.
+function withPrincipleIds(schema, field, principles) {
+  const rule = schema.properties[field];
+  if (!rule) throw new Error(`finding schema has no ${field} property for principles.json to fill`);
+  const ids = principles.map((p) => p.id);
+  if (new Set(ids).size !== ids.length) throw new Error(`principles.json repeats an id: ${ids}`);
+  return { ...schema, properties: { ...schema.properties, [field]: { ...rule, items: { ...rule.items, enum: ids } } } };
+}
 
 export function loadMethod(dir = METHOD_DIR) {
   const method = readJSON(join(dir, 'method.json'));
@@ -19,11 +28,19 @@ export function loadMethod(dir = METHOD_DIR) {
   }
   const profiles = {};
   for (const p of readJSON(join(dir, method.files.profiles)).profiles) profiles[p.key] = p;
+  const principles = readJSON(join(dir, method.files.principles)).principles;
+  const fileSchema = readJSON(join(dir, method.files.finding_schema));
+  const findingSchema = withPrincipleIds(fileSchema, method.principles.finding_field, principles);
+  const promptSchemas = { filled: findingSchema, unfilled: fileSchema };
+  const promptSchema = promptSchemas[method.principles.prompt_schema];
+  if (!promptSchema) throw new Error(`method principles.prompt_schema must be one of ${Object.keys(promptSchemas)}`);
   return {
     ...method,
     dir,
     profiles,
-    findingSchema: readJSON(join(dir, method.files.finding_schema)),
+    principleList: principles,
+    findingSchema,
+    promptSchema,
     readTemplate: (rel) => readFileSync(join(dir, rel), 'utf8'),
   };
 }

@@ -105,10 +105,12 @@ export const TEXT_SCHEMA = Object.freeze({
 
 /**
  * A free-text `respond` request: instructions, the prompt as text context, images as base64.
+ * The catalogue's model maps are written for Claude Code, whose `[1m]` suffix selects the 1M
+ * context window; a provider API rejects it (DeepSeek: HTTP 400), so a direct call drops it.
  */
 export function textRequest({ provider, model, task, instructions = "", prompt, images = [] }) {
   return {
-    verb: "respond", provider, model, ...(task ? { task } : {}),
+    verb: "respond", provider, model: typeof model === "string" ? model.replace(/\[1m\]$/i, "") : model, ...(task ? { task } : {}),
     instructions, context: [{ kind: "text", text: prompt }], schema: TEXT_SCHEMA,
     ...(images.length ? { images: images.map((i) => ({ mime: i.media_type || "image/png", data: i.data })) } : {}),
   };

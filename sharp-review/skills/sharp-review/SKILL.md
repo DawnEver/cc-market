@@ -31,7 +31,9 @@ does not, report `Sharp review: plugin root not found` and stop.
 
 ### Step 1 — Plan
 
-Call `mcp__plugin_fabric_fabric__list_providers` and pass its provider keys as `--available`:
+Call `mcp__plugin_fabric_fabric__list_providers` and pass the keys on its last line,
+`callable: <key1>, <key2>, ...`, as `--available` — only those run without a `model`; a
+provider listed `[no defaults set]` fails every call and must never be a reviewer:
 
 ```powershell
 node "<root>/scripts/plan.js" --sources <firedSources> --available <key1,key2,...>

@@ -1,0 +1,13 @@
+{
+  "description": "The engineering principles every reviewer judges a change against, INCLUDING BUT NOT LIMITED TO these: a reviewer still reports a defect no principle names. The one source of the set: the loader fills the finding schema's principles enum from these ids, and the prompts render this list. Extend it by adding an entry; an id, once published, is never renamed.",
+  "principles": [
+    { "id": "first-principles", "name": "First principles", "statement": "Derive from the actual system and current needs, not habit or precedent; state shaping assumptions." },
+    { "id": "no-historical-baggage", "name": "Discard historical baggage", "statement": "Remove obsolete structures and dead paths no current need uses." },
+    { "id": "occams-razor", "name": "Occam's razor", "statement": "Simplest design that fully meets the need; nothing for hypothetical needs." },
+    { "id": "single-source-of-truth", "name": "Single source of truth", "statement": "Each fact lives in one place; everything else is derived from it." },
+    { "id": "layered-decoupling", "name": "Layered decoupling", "statement": "Depend one way through narrow interfaces; never into internals or upward." },
+    { "id": "names-match-behaviour", "name": "Names match what they do", "statement": "A name says what the thing does now." },
+    { "id": "no-backward-compatibility", "name": "No backward compatibility", "statement": "No shims, aliases or dual paths for old callers; callers move with the change." },
+    { "id": "progressive-disclosure", "name": "Progressive disclosure", "statement": "An entry point states what is needed first and points to detail; no duplication across levels." }
+  ]
+}
