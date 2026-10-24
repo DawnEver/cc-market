@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// post-review.js — finish a planned run: merge the reviewers' raw results by the method's
-// rules (lib/merge.mjs) and write one sink: `memory` (.claude/memory/YYYY/MM/DD/sharp-review.md)
+// post-review.js — finish a planned run: merge the reviewers' raw results by the method's rules
+// (ai-lab's `python -m ai_lab.review.merge`, via lib/ai-lab.mjs; sharp-review keeps no merge)
+// and write one sink: `memory` (.claude/memory/YYYY/MM/DD/sharp-review.md)
 // or `stdout` (the findings JSON, method/findings-output.schema.json). Default: the plan's sink.
 //
 //   node post-review.js --plan <plan.json> --raw <raw.json> [--sink memory|stdout]
@@ -13,7 +14,7 @@ import { join } from 'node:path';
 
 import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown } from './lib.mjs';
 import { loadMethod } from './lib/method.mjs';
-import { mergeRun } from './lib/merge.mjs';
+import { mergeRun, AiLabUnavailable } from './lib/ai-lab.mjs';
 import { upsertIndexEntry } from '../shared/stamp.mjs';
 import { finishGate } from './gate.mjs';
 import { findProjectRoot } from '../shared/lib.mjs';
@@ -102,7 +103,13 @@ if (arg('--release-gate')) {
   if (raw.run_id !== plan.run_id) fail(`raw.json belongs to run ${raw.run_id}, not run ${plan.run_id}`);
   if (statSync(rawFile).mtimeMs < Date.parse(plan.started_at)) fail(`raw.json (${rawFile}) is older than the run it claims (${plan.started_at})`);
   const method = loadMethod();
-  const output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results }, method);
+  let output;
+  try {
+    output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results }, method);
+  } catch (e) {
+    if (e instanceof AiLabUnavailable) fail(`${e.name}: ${e.message}`);
+    throw e;
+  }
   const sink = arg('--sink') || plan.sink;
   if (sink === 'memory') writeMemory(output, plan, method);
   else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
