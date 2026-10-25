@@ -2,7 +2,7 @@
 // post-review.js — finish a planned run: merge the reviewers' raw results by the method's rules
 // (ai-lab's `python -m ai_lab.review.merge`, via lib/ai-lab.mjs; sharp-review keeps no merge)
 // and write one sink: `memory` (.claude/memory/YYYY/MM/DD/sharp-review.md)
-// or `stdout` (the findings JSON, method/findings-output.schema.json). Default: the plan's sink.
+// or `stdout` (the findings JSON, ai-lab's findings-output.schema.json). Default: the plan's sink.
 //
 //   node post-review.js --plan <plan.json> --raw <raw.json> [--sink memory|stdout]
 //   node post-review.js --rescan --date <YYYY-MM-DD>     re-derive frontmatter after an edit
@@ -13,7 +13,6 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkS
 import { join } from 'node:path';
 
 import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown } from './lib.mjs';
-import { loadMethod } from './lib/method.mjs';
 import { mergeRun, AiLabUnavailable } from './lib/ai-lab.mjs';
 import { upsertIndexEntry } from '../shared/stamp.mjs';
 import { finishGate } from './gate.mjs';
@@ -64,7 +63,7 @@ function rescan(date) {
   console.log(`[post-review] Rescanned: ${findings.length} findings, ${open} open`);
 }
 
-function writeMemory(output, plan, method) {
+function writeMemory(output, plan) {
   const { date } = plan;
   const memFile = memFileFor(date);
   let findings = output.findings;
@@ -82,7 +81,7 @@ function writeMemory(output, plan, method) {
   } catch (e) {
     console.error(`[post-review] index stamp failed: ${e.message}`);
   }
-  const high = output.findings.filter((f) => f.confidence === method.merge.confidence[0].label).length;
+  const high = output.findings.filter((f) => f.confidence === plan.high_confidence).length;
   console.log(`Sharp review: ${output.findings.length} issues (${high} high-confidence) → .claude/memory/${date.replace(/-/g, '/')}/sharp-review.md`);
 }
 
@@ -102,16 +101,15 @@ if (arg('--release-gate')) {
   // A raw file from an earlier run (a stale TEMP leftover) must never be merged as this one's.
   if (raw.run_id !== plan.run_id) fail(`raw.json belongs to run ${raw.run_id}, not run ${plan.run_id}`);
   if (statSync(rawFile).mtimeMs < Date.parse(plan.started_at)) fail(`raw.json (${rawFile}) is older than the run it claims (${plan.started_at})`);
-  const method = loadMethod();
   let output;
   try {
-    output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results }, method);
+    output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results });
   } catch (e) {
     if (e instanceof AiLabUnavailable) fail(`${e.name}: ${e.message}`);
     throw e;
   }
   const sink = arg('--sink') || plan.sink;
-  if (sink === 'memory') writeMemory(output, plan, method);
+  if (sink === 'memory') writeMemory(output, plan);
   else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
   else fail(`unknown sink ${sink}; known: memory, stdout`);
   finishGate(ROOT, plan.gate_token, sink === 'memory' && output.reviewers.some(reviewer => reviewer.status === 'ok'));

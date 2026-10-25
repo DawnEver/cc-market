@@ -9,12 +9,12 @@
 // Shape of `.claude/sharp-review.json` (every key optional):
 //   {
 //     "profileWeights":      { "<profileKey>": number, ... },   // retune built-in weights / opt out (0)
-//     "customProfiles":      [ { key, source, context, scope, weight?, framing?, label? } ],  // method/profiles.json shape
+//     "customProfiles":      [ { key, source, context, scope, weight?, framing?, label? } ],  // ai-lab's method profiles.json shape
 //     "thresholds":          { "wave0": { lines, files }, "wave1": { lines, files } },
 //     "inlineDiffLimit":     number,   // chars; review→agent mode cutover
 //     "docsThreshold":       number,   // doc-file count that fires the docs source
 //     "codebaseIntervalMin": number,   // minutes between codebase surveys
-//     "providers":           { "<run mode>": ["<provider>", ...] }  // overrides method run_modes
+//     "providers":           { "<run mode>": ["<provider>", ...] }  // overrides the method's run_modes
 //   }
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

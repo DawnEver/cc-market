@@ -5,57 +5,40 @@ or the method/executor split.
 
 ## Method vs executor
 
-The review METHOD is pure data in `method/` (one `schema_version` in `method/method.json`).
-An executor reads it and does I/O. The MERGE has one implementation, ai-lab's
-(`python -m ai_lab.review.merge`); pick and render are executed by both, against the same
-conformance fixtures:
+The review METHOD is pure data owned by ai-lab (`ai_lab/review/method_data/`, one `schema_version`
+in its `method.json`; it moved there from this plugin under PLAN-a-short-robust-toolchain P4). Its rules
+have one implementation each, ai-lab's: the planner (`python -m ai_lab.review.plan`: profiles, pick,
+providers, rendered prompts, reviewer statuses) and the merge (`python -m ai_lab.review.merge`). The
+conformance fixtures ship with the method and run in ai-lab's suite. Two executors do the I/O:
 
-- **Node (this plugin)** — in-host sessions: `plan.js` → host fan-out via fabric →
-  `post-review.js`, which pipes the run record to ai-lab's merge (`lib/ai-lab.mjs`; the
-  interpreter is the one fabric setup pinned in `provider-cache.json`, and an absent one is
-  `AiLabUnavailable` naming the remedy, never a fallback) → memory sink or stdout findings JSON.
-- **Python (headless, ai-lab)** — reads the same `method/` directory, runs its reviewers
-  through a one-shot model call and the same merge, prints the findings JSON. Its suite runs
-  every `method/conformance/` fixture, including `merge/`, which this plugin no longer runs.
-
-What could not be data is named in `method/method.json` by a fixed vocabulary that every
-executor implements: the pick `algorithm`, the `reviewer_status.precedence` conditions, the
-`merge.validate` JSON-Schema subset (object, required, type string, enum), dedup-key
-normalisation (lowercase, truncate by code point), and the template substitution rules. The
-conformance fixtures pin each of them.
+- **Node (this plugin)** — in-host sessions: `plan.js` collects the manifest (git) and has ai-lab plan
+  the run → host fan-out via fabric → `post-review.js`, which pipes the run record to ai-lab's merge →
+  memory sink or stdout findings JSON. Both calls go through `lib/ai-lab.mjs`; the interpreter is the
+  one fabric setup pinned in `provider-cache.json`, and an absent or too-old one is `AiLabUnavailable`
+  naming the remedy, never a fallback.
+- **Python (headless, ai-lab)** — `python -m ai_lab.review` runs its reviewers through a one-shot
+  model call and the same merge, and prints the findings JSON.
 
 ## File Structure
 
 ```
 sharp-review/
-├── method/                       The review method as data (see table in reference/profiles-and-modes.md)
-│   ├── method.json               schema_version, pick, contexts, template, run_modes, reviewer_status, merge
-│   ├── profiles.json             Built-in profiles
-│   ├── finding.schema.json       Reviewer finding schema
-│   ├── findings-output.schema.json  The findings JSON contract (versioned by schema_version)
-│   ├── principles.json           The principle set (ids fill the finding schema enum at load)
-│   ├── prompts/*.md              Prompt templates + principles and output_contract partials
-│   └── conformance/{merge,pick,prompt}/*.json   input → expected, for every executor
 ├── agents/sharp-review.md        Worker subagent: reads SKILL.md and runs it
 ├── hooks/sharp-review-hook.js    Stop hook: wave gate, sources, dispatch
 ├── skills/sharp-review/          SKILL.md (procedure) + reference/*.md
 ├── scripts/
-│   ├── plan.js                   Plan a run: profiles, manifest, providers, rendered prompts → plan file
+│   ├── plan.js                   Collect the manifest, have ai-lab plan the run → plan file
 │   ├── post-review.js            Merge raw results through ai-lab, write the memory sink; --rescan
 │   ├── gate.mjs                  Atomic review-claim lifecycle; only successful completion credits content
 │   ├── sources.mjs               Trigger adapters (pure): diff | codebase | deps | docs
 │   ├── lib.mjs                   Barrel: findings, manifest, config + shared frontmatter helpers
 │   └── lib/
-│       ├── method.mjs            Load method/ and refuse an unknown schema_version
-│       ├── pick.mjs              Effective profiles (method + project config), eligibility, weighted pick
-│       ├── prompt.mjs            Template rendering, context → template + call mode
-│       ├── plan.mjs              buildPlan (pure)
-│       ├── ai-lab.mjs            The merge: pipes the run record to `python -m ai_lab.review.merge`
+│       ├── ai-lab.mjs            The planner and the merge: `python -m ai_lab.review.plan` / `.merge`
 │       ├── findings.mjs          Memory sink: markdown render + same-day follow-up renumber
 │       ├── manifest.mjs          Diff classification, git -z parsing, manifest render (pure)
 │       ├── git-manifest.mjs      Runs git and builds the manifest
 │       └── config.mjs            loadReviewConfig — tracked .claude/sharp-review.json
-└── tests/                        node:test; conformance.test.mjs runs the pick/prompt fixtures
+└── tests/                        node:test
 ```
 
 ## Config vs runtime state

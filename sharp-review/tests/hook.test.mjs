@@ -218,17 +218,17 @@ describe("content-hash gate", () => {
 });
 
 describe("plugin root", () => {
-  test("resolves to the directory holding method/method.json and is named in the dispatch", () => {
+  test("resolves to the directory holding scripts/plan.js and is named in the dispatch", () => {
     const root = resolvePluginRoot();
-    assert.ok(fs.existsSync(path.join(root, "method", "method.json")));
+    assert.ok(fs.existsSync(path.join(root, "scripts", "plan.js")));
     const text = buildDispatchInstruction("diff", resolveReviewWorkerTarget({}), root);
     assert.ok(text.includes(`plugin root: ${root}`));
   });
 
-  test("a root without the method directory is refused by name", () => {
+  test("a root without the planner is refused by name", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sr-root-"));
     try {
-      assert.throws(() => resolvePluginRoot(tmp), /method\/method\.json/);
+      assert.throws(() => resolvePluginRoot(tmp), /scripts\/plan\.js/);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

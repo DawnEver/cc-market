@@ -1,6 +1,6 @@
 # Sharp Review (锐评)
 
-Post-feature code review with independent AI reviewers. Each run picks review profiles, gives each to a reviewer on a provider drawn from fabric `list_providers`, and merges their schema-bound findings into a structured task list. The review method (profiles, prompts, finding schema, merge rules) is versioned data in `method/`.
+Post-feature code review with independent AI reviewers. Each run picks review profiles, gives each to a reviewer on a provider drawn from fabric `list_providers`, and merges their schema-bound findings into a structured task list. The review method (profiles, prompts, finding schema, merge rules), its planner and its merge are ai-lab's (`python -m ai_lab.review.plan` / `.merge`); this plugin keeps none of them.
 
 ## Install
 
@@ -23,7 +23,7 @@ node scripts/setup/setup.js
 > The standard trigger runs the **entire** review inside a dispatched worker subagent, so the
 > diff/reviewer/merge noise never touches the main session — only the one-line summary returns.
 > The worker runs `plan.js`, calls each planned reviewer, and hands the raw results to
-> `post-review.js`, which merges them by the method's rules.
+> `post-review.js`, which has ai-lab merge them by the method's rules.
 >
 > **On Codex:** install with `codex plugin add sharp-review@cc-market`. The Stop hook and the
 > review skill both run on Codex, fanning out reviewers the same way. `/sharp-review` is a
@@ -53,7 +53,7 @@ worker; installed plugins still require normal hook trust and Fabric/provider au
 
 ## Output
 
-- `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (`method/findings-output.schema.json`)
+- `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (ai-lab's `findings-output.schema.json`)
 - `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter (sole source of truth)
 - `.claude/rules/MEMORY.md` — one index entry per session (upserted in-process via the bundled shared stamp module)
 - `todo` / `todo report` — scan memory directly; no derived `tasks.md`

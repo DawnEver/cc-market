@@ -12,6 +12,7 @@ const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts
 export function plan(over = {}) {
   return {
     schema_version: 2, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'memory',
+    high_confidence: 'high-confidence (≥2 reviewers)',
     profiles: [{ key: 'diff', label: 'diff review' }, { key: 'adversarial', label: 'adversarial review' }],
     reviewers: [
       { name: 'diff', provider: 'codex', status: 'pending' },

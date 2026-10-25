@@ -43,11 +43,11 @@ export function resolveReviewWorkerTarget(env = process.env) {
   };
 }
 
-// The plugin root is this file's grandparent; it must hold the method data, or nothing the
-// worker runs can work — refuse here rather than dispatch a worker that fails later.
+// The plugin root is this file's grandparent; it must hold the planner the worker runs, or nothing
+// the worker runs can work — refuse here rather than dispatch a worker that fails later.
 export function resolvePluginRoot(root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')) {
-  if (!existsSync(path.join(root, 'method', 'method.json'))) {
-    throw new Error(`sharp-review plugin root ${root} holds no method/method.json`);
+  if (!existsSync(path.join(root, 'scripts', 'plan.js'))) {
+    throw new Error(`sharp-review plugin root ${root} holds no scripts/plan.js`);
   }
   return root;
 }

@@ -8,7 +8,8 @@ description: Post-feature sharp review (锐评) —parallel reviewers, merge fin
 Post-feature review: each run picks review profiles, gives each to a reviewer on a provider,
 and merges their schema-bound findings into one memory entry
 `.claude/memory/YYYY/MM/DD/sharp-review.md`. The METHOD (profiles, prompts, finding schema,
-status and merge rules) is data in `<root>/method/`; the scripts only execute it. Normally
+status and merge rules) is ai-lab's data, planned and merged by ai-lab; the scripts collect the
+manifest and the raw results and write the memory sink. Normally
 invoked by the Stop hook (Wave Gate); `/sharp-review` runs it manually. Gate, profile and
 config detail → **`reference/profiles-and-modes.md`**.
 
@@ -26,7 +27,7 @@ reviewers itself and must not re-dispatch.
 
 `<root>` is the absolute plugin root: the `plugin root:` the dispatch instruction names (the
 Stop hook resolves and checks it), else `$CLAUDE_PLUGIN_ROOT`, else two directories above this
-`SKILL.md` (`<root>/skills/sharp-review/SKILL.md`). It must contain `method/method.json`; if it
+`SKILL.md` (`<root>/skills/sharp-review/SKILL.md`). It must contain `scripts/plan.js`; if it
 does not, report `Sharp review: plugin root not found` and stop.
 
 ### Step 1 — Plan
@@ -79,7 +80,8 @@ node "<root>/scripts/post-review.js" --plan "<plan_file>" --raw "<raw file>"
 ```
 
 (`--sink stdout` prints the findings JSON instead of writing memory —
-the contract, with its field and status meanings, is `<root>/method/findings-output.schema.json`.)
+the contract, with its field and status meanings, is ai-lab's `findings-output.schema.json` in the
+directory `python -m ai_lab.review.method` prints.)
 
 It refuses a raw file whose `run_id` is not the plan's or that is older than the run, then
 merges by the method's rules (through ai-lab's `python -m ai_lab.review.merge`; `AiLabUnavailable`

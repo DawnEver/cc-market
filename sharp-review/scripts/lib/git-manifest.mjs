@@ -15,7 +15,7 @@ function excludedSummary(excluded) {
   return parts.length ? `${excluded.length} files excluded: ${parts.join(', ')}` : '';
 }
 
-// -> { mode: review|agent|empty, range, path?, stats, excludedSummary, diff? | manifestText? }
+// -> { mode: review|agent|empty, range, path?, stats, excludedSummary, diff? | manifest? }
 export function collectManifest(root, { range = 'HEAD', path, limit }) {
   const git = (args) => {
     try {
@@ -47,6 +47,6 @@ export function collectManifest(root, { range = 'HEAD', path, limit }) {
   };
   if (path) result.path = path;
   if (mode === 'review') result.diff = filtered;
-  if (mode === 'agent') result.manifestText = renderManifestText(entries, { range, subPath: path });
+  if (mode === 'agent') result.manifest = renderManifestText(entries, { range, subPath: path });
   return result;
 }

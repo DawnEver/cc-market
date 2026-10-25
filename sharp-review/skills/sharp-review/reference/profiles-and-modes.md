@@ -1,17 +1,18 @@
 # Sharp Review — profiles, modes & gating (reference)
 
-On-demand detail behind SKILL.md. The METHOD itself is data in `<root>/method/` — read the
-files there for the actual values; this page explains how they are used.
+On-demand detail behind SKILL.md. The METHOD itself is ai-lab's data, in the directory
+`python -m ai_lab.review.method` prints (with the interpreter fabric setup pinned in `provider-cache.json`)
+— read the files there for the actual values; this page explains how they are used.
 
 | file | holds |
 |---|---|
-| `method/method.json` | `schema_version`; pick rule; contexts → template + call mode; run modes (providers, models, synthesis, sink); reviewer-status rules; merge and id spec |
-| `method/profiles.json` | every built-in profile: `key`, `label`, `source`, `weight`, `context`, `framing`, `scope` |
-| `method/prompts/*.md` | the prompt templates (`{{name}}` placeholders) |
-| `method/principles.json` | the principle set reviewers judge against — the one source of the ids the finding schema accepts |
-| `method/finding.schema.json` | what each reviewer finding must satisfy |
-| `method/findings-output.schema.json` | the merged findings JSON contract; its `description`s define every field, status and the versioning rule |
-| `method/conformance/` | inputs paired with expected outputs; every executor is tested against them |
+| `method.json` | `schema_version`; pick rule; contexts → template + call mode; run modes (providers, models, synthesis, sink); reviewer-status rules; merge and id spec |
+| `profiles.json` | every built-in profile: `key`, `label`, `source`, `weight`, `context`, `framing`, `scope` |
+| `prompts/*.md` | the prompt templates (`{{name}}` placeholders) |
+| `principles.json` | the principle set reviewers judge against — the one source of the ids the finding schema accepts |
+| `finding.schema.json` | what each reviewer finding must satisfy |
+| `findings-output.schema.json` | the merged findings JSON contract; its `description`s define every field, status and the versioning rule |
+| `conformance/` | inputs paired with expected outputs; ai-lab's planner and merge are tested against them |
 
 ## Configuration file (`.claude/sharp-review.json`)
 
@@ -77,14 +78,14 @@ A profile's `context` decides its prompt: `diff` profiles review the diff (inlin
 `inlineDiffLimit`, else a manifest the reviewer explores, skipped when nothing reviewable is
 left); `explore` profiles (`architecture`, `docs`, `deps`) explore the repo with no diff. Every
 prompt renders the `principles` partial: judge against the principle set in
-`method/principles.json` (including but not limited to it) and the repository's own CLAUDE.md /
+the method's `principles.json` (including but not limited to it) and the repository's own CLAUDE.md /
 AGENTS.md / `.claude/rules/`, and tag each finding with the ids it violates (`principles`; an
 unknown id drops the finding). The merge keeps the union of a finding's tags; the memory entry
 lists them per finding and indexes the run `By principle`.
 
 ### Custom profiles
 
-`customProfiles` entries have the `method/profiles.json` shape and add to (or replace, by
+`customProfiles` entries have the method's `profiles.json` shape and add to (or replace, by
 `key`) the built-in set. `key`, `source`, `context` and `scope` are required — an entry lacking
 one is refused by name; `label` defaults to the key, `weight` to 0.1, `framing` to none.
 

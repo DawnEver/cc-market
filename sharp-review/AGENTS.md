@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code and Codex. The review METHOD — profiles, prompt templates, finding schema, reviewer-status rules, merge/id spec — is versioned data in `method/`; the scripts are a thin Node executor of it, tested against `method/conformance/` (the same fixtures ai-lab's headless executor follows); the merge itself is ai-lab's (`python -m ai_lab.review.merge`), called by `post-review.js` — this plugin keeps none. Findings are stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
+Post-feature code review plugin for Claude Code and Codex. The review METHOD — profiles, prompt templates, finding schema, reviewer-status rules, merge/id spec — is ai-lab's versioned data, and so are its planner (`python -m ai_lab.review.plan`, called by `plan.js`) and its merge (`python -m ai_lab.review.merge`, called by `post-review.js`); this plugin collects the manifest, fans reviewers out and writes the memory sink, and keeps no method data or logic. Findings are stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
 
 ## Architecture
 
@@ -24,10 +24,10 @@ fresh subagent suffices; rem, by contrast, needs session context and is offloade
 
 ### Fan-out (worker subagent / Codex)
 
-`plan.js` decides profiles, providers and the exact prompt of every reviewer from `method/`;
+`plan.js` collects the manifest and has ai-lab's planner decide profiles, providers and the exact prompt of every reviewer;
 the worker (Claude) or Codex worker only calls each planned reviewer via the fabric `call` MCP
 tool (listed in the worker's `tools:` allowlist) and records the raw results, which
-`post-review.js` merges by the method's rules. Procedure → **`skills/sharp-review/SKILL.md`**
+`post-review.js` has ai-lab merge. Procedure → **`skills/sharp-review/SKILL.md`**
 Step 2 → **`reference/direct-fanout.md`**. Method/executor split → `docs/architecture.md`.
 
 ### Wave Gate
@@ -48,7 +48,7 @@ deep detail when a task reaches into that area.
 
 ## Key Invariants
 
-See `.claude/rules/invariants.md` (always-injected) for the method-is-data, merge and finding-ID constraints.
+See `.claude/rules/invariants.md` (always-injected) for the method, planner, merge and finding-ID constraints.
 
 - **Report**: `todo` / `todo report` scans all memory files on the fly — never stale.
 
@@ -68,4 +68,4 @@ node --test cc-market/sharp-review/tests/*.test.mjs
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic.
-- The method lives only in `method/` (see `.claude/rules/invariants.md`); `scripts/lib/*` modules each own one concern and `lib.mjs` is only a re-export barrel.
+- The method and its logic live only in ai-lab (see `.claude/rules/invariants.md`); `scripts/lib/*` modules each own one concern and `lib.mjs` is only a re-export barrel.
