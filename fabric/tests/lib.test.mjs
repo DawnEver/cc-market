@@ -288,7 +288,9 @@ describe("resolveClaudeExe", () => {
 
 describe("getConfigPath", () => {
   test("evaluates CC_MARKET_CONFIG_PATH at call time", () => {
-    // Default path
+    // Default path: measured with the variable unset, whatever the caller's environment holds
+    const outer = process.env.CC_MARKET_CONFIG_PATH;
+    delete process.env.CC_MARKET_CONFIG_PATH;
     const defaultPath = getConfigPath();
     assert.ok(defaultPath.includes("claude_env_settings.json"));
 
@@ -302,6 +304,7 @@ describe("getConfigPath", () => {
 
     // After clearing, returns to default
     assert.equal(getConfigPath(), defaultPath);
+    if (outer !== undefined) process.env.CC_MARKET_CONFIG_PATH = outer;
   });
 });
 

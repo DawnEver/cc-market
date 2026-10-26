@@ -63,13 +63,16 @@ function writeReport(output, plan) {
   const { date } = plan;
   if (!plan.report) fail('the plan names no report path; upgrade ai-lab (ai_lab.review.plan emits `report`)');
   const reportFile = join(ROOT, plan.report);
+  const labels = plan.profiles.map((p) => p.label);
   let findings = output.findings;
-  let markdown = renderReviewMarkdown(output, { date, labels: plan.profiles.map((p) => p.label) });
+  let markdown = renderReviewMarkdown(output, { date, labels });
   if (existsSync(reportFile)) {
     const existing = readFileSync(reportFile, 'utf8');
-    const merged = mergeFollowup(parseFindingsFromMarkdown(existing, date), findings, markdown);
+    const merged = mergeFollowup(parseFindingsFromMarkdown(existing, date), findings);
     findings = merged.findings;
-    markdown = stripFrontmatter(existing) + `\n\n## Review ${date} (follow-up)\n\n` + merged.markdown;
+    const again = merged.repeated.length ? `Reported again (same id, above): ${merged.repeated.join(', ')}\n\n` : '';
+    const body = renderReviewMarkdown({ ...output, findings: merged.fresh }, { date, labels });
+    markdown = stripFrontmatter(existing) + `\n\n## Review ${date} (follow-up)\n\n` + again + body;
   }
   mkdirSync(dirname(reportFile), { recursive: true });
   atomicWrite(reportFile, `${reviewFrontmatter(findings, date)}\n\n${markdown}`);
@@ -96,7 +99,7 @@ if (arg('--release-gate')) {
   if (statSync(rawFile).mtimeMs < Date.parse(plan.started_at)) fail(`raw.json (${rawFile}) is older than the run it claims (${plan.started_at})`);
   let output;
   try {
-    output = mergeRun({ range: plan.range, date: plan.date, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results });
+    output = mergeRun({ range: plan.range, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results });
   } catch (e) {
     if (e instanceof AiLabUnavailable) fail(`${e.name}: ${e.message}`);
     throw e;

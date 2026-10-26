@@ -37,9 +37,9 @@ its status (`reviewer_status.error`).
 ## Codex prose
 
 Codex `mode="review"` uses its native review endpoint, which ignores the JSON instruction and
-returns prose. Parse each issue it raises into `{ severity, file, summary, category,
-suggestion, detail, principles }` as the finding schema in the prompt defines; do not invent a
-`file`, a severity or a principle id the prose does not support. post-review.js drops any entry failing the schema and
+returns prose. Parse each issue it raises into `{ severity, security, rule, file, anchor, summary,
+category, suggestion, detail }` as the finding schema in the prompt defines (findings v3); do not invent
+a `file`, an `anchor` line, a severity or a rule id the prose does not support. post-review.js drops any entry failing the schema and
 counts it on the reviewer (`dropped_findings`).
 
 A codex reply that is only `(no findings ...)` is NOT a clean pass — on a quota, auth or failed

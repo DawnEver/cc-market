@@ -9,7 +9,7 @@ On-demand detail behind SKILL.md. The METHOD itself is ai-lab's data, in the dir
 | `method.json` | `schema_version`; pick rule; contexts → template + call mode; run modes (providers, models, synthesis, sink); reviewer-status rules; merge and id spec |
 | `profiles.json` | every built-in profile: `key`, `label`, `source`, `weight`, `context`, `framing`, `scope` |
 | `prompts/*.md` | the prompt templates (`{{name}}` placeholders) |
-| `principles.json` | the principle set reviewers judge against — the one source of the ids the finding schema accepts |
+| `principles.json` | the principles reviewers judge against; with the family rule registry (`dev_lab.dev.rules`, read at load) the ids a finding's `rule` may name |
 | `finding.schema.json` | what each reviewer finding must satisfy |
 | `findings-output.schema.json` | the merged findings JSON contract; its `description`s define every field, status and the versioning rule |
 | `conformance/` | inputs paired with expected outputs; ai-lab's planner and merge are tested against them |
@@ -77,11 +77,12 @@ manual run); the draw order is then shuffled against the provider order. Set a w
 A profile's `context` decides its prompt: `diff` profiles review the diff (inline when it fits
 `inlineDiffLimit`, else a manifest the reviewer explores, skipped when nothing reviewable is
 left); `explore` profiles (`architecture`, `docs`, `deps`) explore the repo with no diff. Every
-prompt renders the `principles` partial: judge against the principle set in
-the method's `principles.json` (including but not limited to it) and the repository's own CLAUDE.md /
-AGENTS.md / `.claude/rules/`, and tag each finding with the ids it violates (`principles`; an
-unknown id drops the finding). The merge keeps the union of a finding's tags; the memory entry
-lists them per finding and indexes the run `By principle`.
+prompt renders the `rules` partial: judge against the principles in the method's
+`principles.json`, the family registry rule ids, and the repository's own CLAUDE.md / AGENTS.md /
+`.claude/rules/`, and tag each finding (findings v3) with `severity` (HIGH/MEDIUM/LOW), `security`
+and the ONE `rule` id it violates (an unknown id drops the finding), plus the verbatim `anchor` line.
+The finding id is `F-<12 hex>` of rule, file and anchor -- the same in every run. The report lists
+the tags per finding, the blocking (HIGH or security) ids, and indexes the run `By rule`.
 
 ### Custom profiles
 
