@@ -33,7 +33,8 @@ export function run(dir, planObj, raw, extra = []) {
 }
 
 const reportFile = (dir) => join(dir, 'output', 'logs', '26', '06', '21', 'sharp-review', 'sharp-review.md');
-const leak = { file: 'a.js', summary: 'leak', severity: 'HIGH', category: 'Bug' };
+const leak = { file: 'a.js', anchor: 'log(token)', rule: 'occams-razor', security: true, summary: 'leak', severity: 'HIGH', category: 'Bug' };
+const ID = /F-[0-9a-f]{12}/;
 
 test('a successful gated review credits only its matching claim after writing the result', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sr-complete-'));
@@ -124,7 +125,9 @@ test('a two-reviewer agreement is written once, high-confidence, naming both rev
     const content = readFileSync(reportFile(dir), 'utf8');
     assert.match(content, /^---\n/);
     assert.match(content, /## Review 2026-06-21 \(session\) — diff review \+ adversarial review/);
-    assert.match(content, /\[SR-20260621-001\] \[HIGH\] a\.js — leak/);
+    assert.match(content, /\[F-[0-9a-f]{12}\] \[HIGH\] a\.js — leak/);
+    assert.match(content, /- \*\*Rule:\*\* occams-razor\n- \*\*Security:\*\* yes\n- \*\*Anchor:\*\* `log\(token\)`/);
+    assert.match(content, /### Blocking \(HIGH or security\): F-/);
     assert.match(content, /\*\*Reviewers:\*\* diff \(codex\), adversarial \(deepseek\)/);
     assert.match(out, /Sharp review: 1 issues \(1 high-confidence\)/);
   } finally {
@@ -144,14 +147,17 @@ test('a reviewer with no result is unavailable and the run warns', () => {
   }
 });
 
-test('a same-day second run appends as a follow-up with renumbered ids', () => {
+test('a same-day second run appends only the findings the report does not hold, by stable id', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
   try {
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] });
-    run(dir, plan({ run_id: 'run-2' }), { run_id: 'run-2', results: [{ name: 'diff', findings: [{ ...leak, summary: 'other' }] }, { name: 'adversarial', findings: [] }] });
+    const other = { ...leak, anchor: 'log(secret)', summary: 'other' };
+    run(dir, plan({ run_id: 'run-2' }), { run_id: 'run-2', results: [{ name: 'diff', findings: [leak, other] }, { name: 'adversarial', findings: [] }] });
     const content = readFileSync(reportFile(dir), 'utf8');
     assert.match(content, /\(follow-up\)/);
-    assert.match(content, /\[SR-20260621-002\] \[HIGH\] a\.js — other/);
+    assert.match(content, /Reported again \(same id, above\): F-/);
+    assert.equal((content.match(/\] \[HIGH\] a\.js — leak/g) || []).length, 1, 'the repeated finding is written once');
+    assert.match(content, /\[F-[0-9a-f]{12}\] \[HIGH\] a\.js — other/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -181,10 +187,11 @@ test('--sink stdout prints the findings JSON and writes no report', () => {
   try {
     const out = run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] }, ['--sink', 'stdout']);
     const json = JSON.parse(out);
-    assert.equal(json.schema_version, 2);
+    assert.equal(json.schema_version, 3);
     assert.deepEqual(json.profiles, ['diff', 'adversarial']);
     assert.deepEqual(json.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'codex', 'ok'], ['adversarial', 'deepseek', 'ok']]);
-    assert.equal(json.findings[0].id, 'SR-20260621-001');
+    assert.match(json.findings[0].id, ID);
+    assert.deepEqual([json.findings[0].rule, json.findings[0].security], ['occams-razor', true]);
     assert.throws(() => readFileSync(reportFile(dir)));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -210,17 +217,15 @@ test('an unknown sink is refused by name', () => {
   }
 });
 
-test('findings are reported by principle: each lists its ids and the entry indexes them (planted control: untagged lists none)', () => {
+test('findings are indexed by the rule they violate, and only HIGH or security ones are blocking', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
   try {
-    run(dir, plan(), { run_id: 'run-1', results: [
-      { name: 'diff', findings: [{ ...leak, principles: ['single-source-of-truth'] }, { file: 'b.js', summary: 'typo', severity: 'LOW', category: 'Bug' }] },
-      { name: 'adversarial', findings: [{ ...leak, principles: ['occams-razor', 'single-source-of-truth'] }] },
-    ] });
+    const typo = { file: 'b.js', anchor: 'cosnt x', rule: 'names-match-behaviour', security: false, summary: 'typo', severity: 'LOW', category: 'Bug' };
+    run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak, typo] }, { name: 'adversarial', findings: [] }] });
     const md = readFileSync(reportFile(dir), 'utf8');
-    assert.match(md, /- \*\*Principles:\*\* single-source-of-truth, occams-razor/);
-    assert.equal((md.match(/\*\*Principles:\*\*/g) || []).length, 1, 'the untagged finding lists none');
-    assert.match(md, /### By principle\n\n- occams-razor: SR-20260621-001\n- single-source-of-truth: SR-20260621-001/);
+    assert.match(md, /### By rule\n\n- names-match-behaviour: F-[0-9a-f]{12}\n- occams-razor: F-[0-9a-f]{12}/);
+    const blocking = md.match(/### Blocking \(HIGH or security\): (.*)/)[1];
+    assert.equal(blocking.split(', ').length, 1, 'the LOW non-security typo does not block');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

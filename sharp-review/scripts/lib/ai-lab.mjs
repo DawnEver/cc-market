@@ -46,7 +46,7 @@ export function planRun(request, { python = aiLabPython() } = {}) {
   return runModule('ai_lab.review.plan', request, python);
 }
 
-/** The findings JSON of *run* ({range, date, profiles, reviewers, results}) merged by ai-lab. */
+/** The findings JSON (v3) of *run* ({range, profiles, reviewers, results}) merged by ai-lab. */
 export function mergeRun(run, { python = aiLabPython() } = {}) {
   return runModule('ai_lab.review.merge', run, python);
 }

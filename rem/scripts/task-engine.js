@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { join, relative, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { todayISO, findMemoryScope } from './lib.mjs';
+import { isFindingId } from '../shared/lib.mjs';
 import {
   ROOT,
   scanManualTasks,
@@ -133,7 +134,7 @@ function handleRemove(id) {
     }
     walk(memDir);
     if (!found) console.error(`${PREFIX} Task ${id} not found in any manual.md`);
-  } else if (id.startsWith('SR-')) {
+  } else if (isFindingId(id)) {
     let found = false;
     function walk(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -156,7 +157,7 @@ function handleRemove(id) {
     walk(memDir);
     if (!found) console.error(`${PREFIX} Finding ${id} not found in any sharp-review.md`);
   } else {
-    console.error(`${PREFIX} Unknown ID format: ${id}. Use SR-* or MANUAL-* ID.`);
+    console.error(`${PREFIX} Unknown ID format: ${id}. Use an F-*, SR-* or MANUAL-* ID.`);
     process.exit(1);
   }
   process.exit(0);

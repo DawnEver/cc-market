@@ -12,4 +12,4 @@ Dev-only constraints; the runtime procedure is `skills/sharp-review/SKILL.md` an
 - `plan.js` collects the manifest (git) and calls the planner; `post-review.js` calls the merge;
   both through `lib/ai-lab.mjs`. An absent or too-old ai-lab is `AiLabUnavailable` by name, never a
   fallback. Hosts must NOT plan, merge or assign ids themselves.
-- Finding ids are `SR-YYYYMMDD-NNN`, assigned by the merge — never by reviewers.
+- Finding ids are `F-<12 hex>` (ai-lab findings v3: a hash of rule, file and anchor line, stable across runs), assigned by the merge — never by reviewers. Reports from before v3 carry `SR-YYYYMMDD-NNN` and are still read.

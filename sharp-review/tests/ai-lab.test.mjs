@@ -33,7 +33,7 @@ test('a recorded interpreter that is gone is AiLabUnavailable naming it', () => 
 
 test('an interpreter without ai-lab is AiLabUnavailable, not a merge of our own', () => {
   // node stands in for an interpreter that cannot run `-m ai_lab.review.merge`.
-  assert.throws(() => mergeRun({ range: 'HEAD', date: '2026-10-20', profiles: [], reviewers: [] }, { python: process.execPath }),
+  assert.throws(() => mergeRun({ range: 'HEAD', profiles: [], reviewers: [] }, { python: process.execPath }),
     (e) => e instanceof Error && /ai_lab\.review\.merge exited|AiLabUnavailable/.test(`${e.name} ${e.message}`));
 });
 

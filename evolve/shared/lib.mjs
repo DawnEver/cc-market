@@ -180,9 +180,18 @@ export function inferModuleFromPath(file) {
 
 // ── SR finding regex patterns (contract between sharp-review and rem) ──
 
-export const SR_ID_RE = /SR-\d{8}-\d{3}/g;
+// A finding id is ai-lab's stable `F-<12 hex>` (findings v3: a hash of rule, file and anchor line, the same in
+// every run). Reports written before v3 carry `SR-YYYYMMDD-NNN`; they are still READ (upgrade on read), never
+// written.
+export const SR_ID_RE = /(?:F-[0-9a-f]{12}|SR-\d{8}-\d{3})/g;
 export const SR_ID_PARSE_RE = /^SR-(\d{8})-(\d{3})$/;
-export const SR_FINDING_HDR_RE = /^###\s+\[(SR-\d{8}-\d{3})\]\s+\[(\w+)\]\s+(.+?)\s+—\s+(.+)/;
+export const SR_FINDING_HDR_RE = /^###\s+\[(F-[0-9a-f]{12}|SR-\d{8}-\d{3})\]\s+\[(\w+)\]\s+(.+?)\s+—\s+(.+)/;
+// Where one finding block of a sharp-review.md starts.
+export const SR_BLOCK_SPLIT_RE = /\n(?=###\s+\[(?:F-|SR-))/;
+/** Whether *id* names a sharp-review finding (either id form). */
+export function isFindingId(id) {
+  return /^(?:F-[0-9a-f]{12}|SR-\d{8}-\d{3})$/.test(id || '');
+}
 export const SR_STATUS_RE = /^\s*-?\s*\*\*Status:\*\*\s*(\w+)/m;
 
 // ── Review Frontmatter ──
@@ -204,7 +213,7 @@ export function reviewFrontmatter(findings, date) {
 
 export function parseFindingsFromMarkdown(content, date) {
   const findings = [];
-  const blocks = content.split(/\n(?=###\s+\[SR-)/);
+  const blocks = content.split(SR_BLOCK_SPLIT_RE);
   for (const block of blocks) {
     const hdr = block.match(SR_FINDING_HDR_RE);
     if (!hdr) continue;
@@ -219,7 +228,7 @@ export function parseFindingsFromMarkdown(content, date) {
       file,
       summary: hdr[4].trim(),
       status,
-      discovered: hdr[1].slice(3, 11).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'),
+      discovered: !hdr[1].startsWith('SR-') ? date : hdr[1].slice(3, 11).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'),
       resolvedDate,
       category: 'Bug',
       module: moduleMatch ? moduleMatch[1].trim() : inferModuleFromPath(file),

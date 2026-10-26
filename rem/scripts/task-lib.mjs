@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 import { DAY_MS } from './lib.mjs';
-import { SR_FINDING_HDR_RE, SR_STATUS_RE, reviewFrontmatter, parseFindingsFromMarkdown, inferModuleFromPath } from '../shared/lib.mjs';
+import { SR_BLOCK_SPLIT_RE, SR_FINDING_HDR_RE, SR_STATUS_RE, isFindingId, reviewFrontmatter, parseFindingsFromMarkdown, inferModuleFromPath } from '../shared/lib.mjs';
 import { findAllScopes, extractDateFromPath, todayISO } from './lib.mjs';
 import { evaluateDocs } from './doc-freshness.js';
 
@@ -127,7 +127,7 @@ export function scanMemoryForFindings(memDir) {
       } else if (entry.name === 'sharp-review.md') {
         try {
           const content = readFileSync(full, 'utf8');
-          const blocks = content.split(/\n(?=###\s+\[SR-)/);
+          const blocks = content.split(SR_BLOCK_SPLIT_RE);
           for (const block of blocks) {
             const hdr = block.match(SR_FINDING_HDR_RE);
             if (!hdr) continue;
@@ -453,7 +453,7 @@ export function parseReportOpts(args) {
 // ── Show full detail of a single finding/task ──
 
 export function getFindingDetail(memDir, id) {
-  const fileName = id.startsWith('SR-') ? 'sharp-review.md'
+  const fileName = isFindingId(id) ? 'sharp-review.md'
     : id.startsWith('MANUAL-') ? 'manual.md' : null;
   if (!fileName) return { found: false, error: `Unknown ID format: ${id}` };
 
@@ -462,7 +462,7 @@ export function getFindingDetail(memDir, id) {
     const content = readFileSync(full, 'utf8');
     if (!content.includes(id)) return false;
     if (fileName === 'sharp-review.md') {
-      const blocks = content.split(/\n(?=###\s+\[SR-)/);
+      const blocks = content.split(SR_BLOCK_SPLIT_RE);
       const block = blocks.find(b => b.includes(`[${id}]`));
       if (!block) return false;
       result = { found: true, file: full, text: block.trim() };
@@ -488,7 +488,7 @@ export function markFinding(memDir, id, status) {
   if (!VALID_STATUSES.includes(norm)) {
     return { found: false, error: `Invalid status: ${status} (expected open|fixed|closed)` };
   }
-  if (id.startsWith('SR-')) return markSRFinding(memDir, id, norm);
+  if (isFindingId(id)) return markSRFinding(memDir, id, norm);
   if (id.startsWith('MANUAL-')) return markManualTask(memDir, id, norm);
-  return { found: false, error: `Unknown ID format: ${id} (expected SR-* or MANUAL-* ID)` };
+  return { found: false, error: `Unknown ID format: ${id} (expected F-*, SR-* or MANUAL-* ID)` };
 }
