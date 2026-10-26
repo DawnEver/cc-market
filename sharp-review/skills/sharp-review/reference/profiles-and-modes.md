@@ -35,7 +35,7 @@ Every key is optional:
 ## Run modes and providers
 
 `method.json` `run_modes` declares two: **interactive** (sessions: the providers fabric
-`list_providers` reports as `callable:`, alphabetical, rotated by the minute seed, two of them; memory sink)
+`list_providers` reports as `callable:`, alphabetical, rotated by the minute seed, two of them; report sink)
 and **headless** (no session: `["anthropic"]`, diff-context profiles and one-shot calls only,
 findings JSON on stdout). Neither synthesises or summarises reviewer output. The provider set
 resolves `--providers` → `providers.<mode>` here → the run mode default. Reviewer *i* takes

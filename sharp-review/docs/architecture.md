@@ -13,7 +13,7 @@ conformance fixtures ship with the method and run in ai-lab's suite. Two executo
 
 - **Node (this plugin)** — in-host sessions: `plan.js` collects the manifest (git) and has ai-lab plan
   the run → host fan-out via fabric → `post-review.js`, which pipes the run record to ai-lab's merge →
-  memory sink or stdout findings JSON. Both calls go through `lib/ai-lab.mjs`; the interpreter is the
+  report sink (`output/logs/`) or stdout findings JSON. Both calls go through `lib/ai-lab.mjs`; the interpreter is the
   one fabric setup pinned in `provider-cache.json`, and an absent or too-old one is `AiLabUnavailable`
   naming the remedy, never a fallback.
 - **Python (headless, ai-lab)** — `python -m ai_lab.review` runs its reviewers through a one-shot
@@ -28,7 +28,7 @@ sharp-review/
 ├── skills/sharp-review/          SKILL.md (procedure) + reference/*.md
 ├── scripts/
 │   ├── plan.js                   Collect the manifest, have ai-lab plan the run → plan file
-│   ├── post-review.js            Merge raw results through ai-lab, write the memory sink; --rescan
+│   ├── post-review.js            Merge raw results through ai-lab, write the report sink; --rescan
 │   ├── gate.mjs                  Atomic review-claim lifecycle; only successful completion credits content
 │   ├── sources.mjs               Trigger adapters (pure): diff | codebase | deps | docs
 │   ├── lib.mjs                   Barrel: findings, manifest, config + shared frontmatter helpers

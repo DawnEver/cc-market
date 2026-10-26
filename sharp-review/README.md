@@ -54,7 +54,7 @@ worker; installed plugins still require normal hook trust and Fabric/provider au
 ## Output
 
 - `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (ai-lab's `findings-output.schema.json`)
-- `.claude/memory/YYYY/MM/DD/sharp-review.md` — single memory entry per session with rem frontmatter (sole source of truth)
+- `output/logs/YY/MM/DD/sharp-review/sharp-review.md` — the run's report (regenerable output; keep a finding by moving it into `.claude/memory/`)
 - `.claude/rules/MEMORY.md` — one index entry per session (upserted in-process via the bundled shared stamp module)
 - `todo` / `todo report` — scan memory directly; no derived `tasks.md`
 
@@ -63,7 +63,7 @@ worker; installed plugins still require normal hook trust and Fabric/provider au
 Edit the memory file directly: change `**Status:** OPEN` → `**Status:** FIXED`. Then rescan:
 
 ```bash
-node cc-market/sharp-review/scripts/post-review.js --rescan --date YYYY-MM-DD
+node cc-market/sharp-review/scripts/post-review.js --rescan --date YYYY-MM-DD --file <review.md>
 ```
 
 ## How It Works

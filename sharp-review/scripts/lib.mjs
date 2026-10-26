@@ -1,7 +1,7 @@
 // lib.mjs — Sharp Review shared library (barrel).
 // Concern modules live in ./lib/; lib.mjs re-exports them so the many import
 // sites stay stable:
-//   - lib/findings.mjs  memory sink: markdown render + same-day follow-up renumber
+//   - lib/findings.mjs  report sink: markdown render + same-day follow-up renumber
 //   - lib/manifest.mjs  manifest: classification, git -z parsing, render
 // Regex/date/frontmatter helpers come from cc-market/shared/.
 

@@ -7,9 +7,9 @@ description: Post-feature sharp review (锐评) —parallel reviewers, merge fin
 
 Post-feature review: each run picks review profiles, gives each to a reviewer on a provider,
 and merges their schema-bound findings into one memory entry
-`.claude/memory/YYYY/MM/DD/sharp-review.md`. The METHOD (profiles, prompts, finding schema,
+`output/logs/YY/MM/DD/sharp-review/sharp-review.md`. The METHOD (profiles, prompts, finding schema,
 status and merge rules) is ai-lab's data, planned and merged by ai-lab; the scripts collect the
-manifest and the raw results and write the memory sink. Normally
+manifest and the raw results and write the report sink. Normally
 invoked by the Stop hook (Wave Gate); `/sharp-review` runs it manually. Gate, profile and
 config detail → **`reference/profiles-and-modes.md`**.
 
@@ -85,8 +85,8 @@ directory `python -m ai_lab.review.method` prints.)
 
 It refuses a raw file whose `run_id` is not the plan's or that is older than the run, then
 merges by the method's rules (through ai-lab's `python -m ai_lab.review.merge`; `AiLabUnavailable`
-names the remedy when ai-lab is absent or too old), writes `.claude/memory/YYYY/MM/DD/sharp-review.md`, stamps
-`.claude/rules/MEMORY.md`, and prints the summary line. Do NOT merge or assign `SR-` ids
+names the remedy when ai-lab is absent or too old), writes the plan's `report` (`output/logs/YY/MM/DD/sharp-review/sharp-review.md`;
+never memory), and prints the summary line. Do NOT merge or assign `SR-` ids
 yourself. If it errors, report the error and stop.
 
 ### Step 4 — Report
@@ -98,7 +98,7 @@ Only when a human asks to **triage now** route OPEN findings through `shared/att
 ## Resolving findings
 
 `todo mark <SR-ID> fixed` flips `**Status:**` and re-derives the frontmatter (same as
-`post-review.js --rescan --date <YYYY-MM-DD>`). File ownership → `reference/task-system.md`.
+`post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>`). File ownership → `reference/task-system.md`.
 
 ## Phase 2 — Task Audit
 

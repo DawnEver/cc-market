@@ -38,7 +38,7 @@ test('an interpreter without ai-lab is AiLabUnavailable, not a merge of our own'
 });
 
 test('post-review without ai-lab exits non-zero naming AiLabUnavailable', () => withDir((dir) => {
-  writeFileSync(join(dir, 'plan.json'), JSON.stringify({ run_id: 'run-1', started_at: '2000-01-01T00:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'memory',
+  writeFileSync(join(dir, 'plan.json'), JSON.stringify({ run_id: 'run-1', started_at: '2000-01-01T00:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'report', report: 'output/logs/26/06/21/sharp-review/sharp-review.md',
     profiles: [{ key: 'diff', label: 'diff review' }], reviewers: [{ name: 'diff', provider: 'codex', status: 'pending' }] }));
   writeFileSync(join(dir, 'raw.json'), JSON.stringify({ run_id: 'run-1', results: [] }));
   const env = { ...process.env, CLAUDE_PROJECT_DIR: dir, CC_MARKET_CONFIG_PATH: join(dir, 'reg.json') };

@@ -38,14 +38,14 @@ function fixture(t) {
   const finishReview = async () => {
     const pending = state().reviewGate.pending;
     const plan = { schema_version: 1, run_id: 'offline-fixture', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21',
-      range: 'HEAD', sink: 'memory', gate_token: pending.token, profiles: [{ key: 'diff', label: 'diff review' }],
+      range: 'HEAD', sink: 'report', report: 'output/logs/26/06/21/sharp-review/sharp-review.md', gate_token: pending.token, profiles: [{ key: 'diff', label: 'diff review' }],
       reviewers: [{ name: 'diff', provider: 'codex', status: 'pending' }] };
     fs.writeFileSync(path.join(root, 'plan.json'), JSON.stringify(plan));
     // Synthetic reviewer data exercises persistence, not a real provider/review acceptance claim.
     fs.writeFileSync(path.join(root, 'raw.json'), JSON.stringify({ run_id: plan.run_id, results: [{ name: 'diff', findings: [] }] }));
     const result = await run(postReview, ['--plan', 'plan.json', '--raw', 'raw.json']);
     assert.equal(result.code, 0, result.stderr);
-    assert.ok(fs.existsSync(path.join(root, '.claude', 'memory', '2026', '06', '21', 'sharp-review.md')));
+    assert.ok(fs.existsSync(path.join(root, 'output', 'logs', '26', '06', '21', 'sharp-review', 'sharp-review.md')));
     assert.deepEqual(state().reviewGate.reviewedHashes, pending.hashes);
     assert.equal(state().reviewGate.pending, null);
   };

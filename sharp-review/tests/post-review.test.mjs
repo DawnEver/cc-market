@@ -11,7 +11,7 @@ const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts
 
 export function plan(over = {}) {
   return {
-    schema_version: 2, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'memory',
+    schema_version: 2, run_id: 'run-1', started_at: '2026-06-21T10:00:00.000Z', date: '2026-06-21', range: 'HEAD', sink: 'report', report: 'output/logs/26/06/21/sharp-review/sharp-review.md',
     high_confidence: 'high-confidence (≥2 reviewers)',
     profiles: [{ key: 'diff', label: 'diff review' }, { key: 'adversarial', label: 'adversarial review' }],
     reviewers: [
@@ -32,7 +32,7 @@ export function run(dir, planObj, raw, extra = []) {
   });
 }
 
-const memFile = (dir) => join(dir, '.claude', 'memory', '2026', '06', '21', 'sharp-review.md');
+const reportFile = (dir) => join(dir, 'output', 'logs', '26', '06', '21', 'sharp-review', 'sharp-review.md');
 const leak = { file: 'a.js', summary: 'leak', severity: 'HIGH', category: 'Bug' };
 
 test('a successful gated review credits only its matching claim after writing the result', () => {
@@ -92,7 +92,7 @@ test('a persisted review survives gate-write failure without falsely acknowledgi
     mkdirSync(stateFile + '.tmp');
     assert.throws(() => run(dir, plan({ gate_token: 'claim' }),
       { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] }), /persist.*gate/i);
-    assert.match(readFileSync(memFile(dir), 'utf8'), /sharp-review/);
+    assert.match(readFileSync(reportFile(dir), 'utf8'), /sharp-review/);
     const state = JSON.parse(readFileSync(stateFile, 'utf8'));
     assert.equal(state.reviewGate.pending.token, 'claim');
     assert.equal(state.reviewGate.reviewedHashes, undefined);
@@ -121,7 +121,7 @@ test('a two-reviewer agreement is written once, high-confidence, naming both rev
     const out = run(dir, plan(), { run_id: 'run-1', results: [
       { name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [leak] },
     ] });
-    const content = readFileSync(memFile(dir), 'utf8');
+    const content = readFileSync(reportFile(dir), 'utf8');
     assert.match(content, /^---\n/);
     assert.match(content, /## Review 2026-06-21 \(session\) — diff review \+ adversarial review/);
     assert.match(content, /\[SR-20260621-001\] \[HIGH\] a\.js — leak/);
@@ -136,7 +136,7 @@ test('a reviewer with no result is unavailable and the run warns', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
   try {
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }] });
-    const content = readFileSync(memFile(dir), 'utf8');
+    const content = readFileSync(reportFile(dir), 'utf8');
     assert.match(content, /- Reviewer adversarial \(deepseek\): unavailable/);
     assert.match(content, /Warning: only 1\/2 reviewers succeeded/);
   } finally {
@@ -149,7 +149,7 @@ test('a same-day second run appends as a follow-up with renumbered ids', () => {
   try {
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] });
     run(dir, plan({ run_id: 'run-2' }), { run_id: 'run-2', results: [{ name: 'diff', findings: [{ ...leak, summary: 'other' }] }, { name: 'adversarial', findings: [] }] });
-    const content = readFileSync(memFile(dir), 'utf8');
+    const content = readFileSync(reportFile(dir), 'utf8');
     assert.match(content, /\(follow-up\)/);
     assert.match(content, /\[SR-20260621-002\] \[HIGH\] a\.js — other/);
   } finally {
@@ -176,7 +176,7 @@ test('a raw file older than the run is refused', () => {
   }
 });
 
-test('--sink stdout prints the findings JSON and writes no memory', () => {
+test('--sink stdout prints the findings JSON and writes no report', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
   try {
     const out = run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] }, ['--sink', 'stdout']);
@@ -185,7 +185,7 @@ test('--sink stdout prints the findings JSON and writes no memory', () => {
     assert.deepEqual(json.profiles, ['diff', 'adversarial']);
     assert.deepEqual(json.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'codex', 'ok'], ['adversarial', 'deepseek', 'ok']]);
     assert.equal(json.findings[0].id, 'SR-20260621-001');
-    assert.throws(() => readFileSync(memFile(dir)));
+    assert.throws(() => readFileSync(reportFile(dir)));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -217,9 +217,19 @@ test('findings are reported by principle: each lists its ids and the entry index
       { name: 'diff', findings: [{ ...leak, principles: ['single-source-of-truth'] }, { file: 'b.js', summary: 'typo', severity: 'LOW', category: 'Bug' }] },
       { name: 'adversarial', findings: [{ ...leak, principles: ['occams-razor', 'single-source-of-truth'] }] },
     ] });
-    const md = readFileSync(memFile(dir), 'utf8');
+    const md = readFileSync(reportFile(dir), 'utf8');
     assert.match(md, /- \*\*Principles:\*\* single-source-of-truth, occams-razor/);
     assert.equal((md.match(/\*\*Principles:\*\*/g) || []).length, 1, 'the untagged finding lists none');
     assert.match(md, /### By principle\n\n- occams-razor: SR-20260621-001\n- single-source-of-truth: SR-20260621-001/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the report sink writes the plan\'s report path and nothing into .claude/memory (planted control: the report exists)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  try {
+    run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] });
+    assert.match(readFileSync(reportFile(dir), 'utf8'), /a\.js — leak/);
+    assert.throws(() => readFileSync(join(dir, '.claude', 'memory', '2026', '06', '21', 'sharp-review.md')));
+    assert.throws(() => readFileSync(join(dir, '.claude', 'rules', 'MEMORY.md')));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

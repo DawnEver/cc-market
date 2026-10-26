@@ -1,4 +1,4 @@
-// findings.mjs — the memory sink: render a findings JSON (ai-lab merge output) as the
+// findings.mjs — the report sink: render a findings JSON (ai-lab merge output) as the
 // sharp-review.md body, and renumber a same-day follow-up. Re-exported via lib.mjs.
 
 // ── Same-day follow-up merge ──

@@ -1,6 +1,6 @@
 # Sharp Review Plugin — AGENTS.md
 
-Post-feature code review plugin for Claude Code and Codex. The review METHOD — profiles, prompt templates, finding schema, reviewer-status rules, merge/id spec — is ai-lab's versioned data, and so are its planner (`python -m ai_lab.review.plan`, called by `plan.js`) and its merge (`python -m ai_lab.review.merge`, called by `post-review.js`); this plugin collects the manifest, fans reviewers out and writes the memory sink, and keeps no method data or logic. Findings are stored as a single memory entry `.claude/memory/YYYY/MM/DD/sharp-review.md` with rem frontmatter — the sole source of truth. No derived `tasks.md`; the `todo` CLI scans memory directly.
+Post-feature code review plugin for Claude Code and Codex. The review METHOD — profiles, prompt templates, finding schema, reviewer-status rules, merge/id spec — is ai-lab's versioned data, and so are its planner (`python -m ai_lab.review.plan`, called by `plan.js`) and its merge (`python -m ai_lab.review.merge`, called by `post-review.js`); this plugin collects the manifest, fans reviewers out and writes the report sink, and keeps no method data or logic. Findings are written as one regenerable report `output/logs/YY/MM/DD/sharp-review/sharp-review.md` (path: ai-lab's `report_path`, carried in the plan as `report`) — program output, never a tracked memory path; a finding a person chooses to keep is moved into `.claude/memory/` by that person, and only then does the `todo` CLI see it.
 
 ## Architecture
 
@@ -54,7 +54,7 @@ See `.claude/rules/invariants.md` (always-injected) for the method, planner, mer
 
 ## Task System
 
-Sharp-review owns findings end-to-end. `post-review.js` writes `sharp-review.md` and stamps memory — no delegation to `task-engine.js`. The `todo` CLI (owned by rem) scans memory files on the fly for reporting.
+Sharp-review owns findings end-to-end. `post-review.js` writes `sharp-review.md` under `output/logs/` and stamps no memory — no delegation to `task-engine.js`. The `todo` CLI (owned by rem) scans memory files on the fly for reporting.
 
 Full file-ownership table → `skills/sharp-review/reference/task-system.md`.
 

@@ -1,25 +1,24 @@
 #!/usr/bin/env node
 // post-review.js — finish a planned run: merge the reviewers' raw results by the method's rules
 // (ai-lab's `python -m ai_lab.review.merge`, via lib/ai-lab.mjs; sharp-review keeps no merge)
-// and write one sink: `memory` (.claude/memory/YYYY/MM/DD/sharp-review.md)
-// or `stdout` (the findings JSON, ai-lab's findings-output.schema.json). Default: the plan's sink.
+// and write one sink: `report` (the plan's `report` path under the project root: ai-lab's
+// report_path, output/logs/<yy>/<mm>/<dd>/sharp-review/sharp-review.md -- regenerable output, never
+// memory; a finding worth keeping is moved into memory by a person) or `stdout` (the findings JSON, ai-lab's findings-output.schema.json). Default: the plan's sink.
 //
-//   node post-review.js --plan <plan.json> --raw <raw.json> [--sink memory|stdout]
-//   node post-review.js --rescan --date <YYYY-MM-DD>     re-derive frontmatter after an edit
+//   node post-review.js --plan <plan.json> --raw <raw.json> [--sink report|stdout]
+//   node post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>   re-derive frontmatter after an edit
 //
 // raw.json: { run_id, results: [{ name, findings? | text? | error_kind?, error? }] } — `name` is the
 // plan's reviewer name; see skills/sharp-review/reference/direct-fanout.md.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown } from './lib.mjs';
 import { mergeRun, AiLabUnavailable } from './lib/ai-lab.mjs';
-import { upsertIndexEntry } from '../shared/stamp.mjs';
 import { finishGate } from './gate.mjs';
 import { findProjectRoot } from '../shared/lib.mjs';
 
 const ROOT = findProjectRoot();
-const MEMORY_DIR = join(ROOT, '.claude', 'memory');
 const args = process.argv.slice(2);
 const arg = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
 
@@ -47,50 +46,44 @@ function atomicWrite(file, data) {
   }
 }
 
-const memFileFor = (date) => join(MEMORY_DIR, date.replace(/-/g, '/'), 'sharp-review.md');
-
-function rescan(date) {
-  const memFile = memFileFor(date);
-  if (!existsSync(memFile)) fail(`No review file for ${date}: ${memFile}`);
-  const content = readFileSync(memFile, 'utf8');
+function rescan(date, reportFile) {
+  if (!existsSync(reportFile)) fail(`No review file for ${date}: ${reportFile}`);
+  const content = readFileSync(reportFile, 'utf8');
   const findings = parseFindingsFromMarkdown(content, date);
   if (!findings.length) {
-    console.log(`[post-review] No findings found in ${memFile}`);
+    console.log(`[post-review] No findings found in ${reportFile}`);
     return;
   }
-  atomicWrite(memFile, `${reviewFrontmatter(findings, date)}\n${stripFrontmatter(content)}`);
+  atomicWrite(reportFile, `${reviewFrontmatter(findings, date)}\n${stripFrontmatter(content)}`);
   const open = findings.filter((f) => f.status !== 'fixed' && f.status !== 'FIXED').length;
   console.log(`[post-review] Rescanned: ${findings.length} findings, ${open} open`);
 }
 
-function writeMemory(output, plan) {
+function writeReport(output, plan) {
   const { date } = plan;
-  const memFile = memFileFor(date);
+  if (!plan.report) fail('the plan names no report path; upgrade ai-lab (ai_lab.review.plan emits `report`)');
+  const reportFile = join(ROOT, plan.report);
   let findings = output.findings;
   let markdown = renderReviewMarkdown(output, { date, labels: plan.profiles.map((p) => p.label) });
-  if (existsSync(memFile)) {
-    const existing = readFileSync(memFile, 'utf8');
+  if (existsSync(reportFile)) {
+    const existing = readFileSync(reportFile, 'utf8');
     const merged = mergeFollowup(parseFindingsFromMarkdown(existing, date), findings, markdown);
     findings = merged.findings;
     markdown = stripFrontmatter(existing) + `\n\n## Review ${date} (follow-up)\n\n` + merged.markdown;
   }
-  mkdirSync(join(MEMORY_DIR, date.replace(/-/g, '/')), { recursive: true });
-  atomicWrite(memFile, `${reviewFrontmatter(findings, date)}\n\n${markdown}`);
-  try {
-    upsertIndexEntry(ROOT, `${date.replace(/-/g, '/')}/sharp-review.md`, { name: `sharp-review-${date}`, date });
-  } catch (e) {
-    console.error(`[post-review] index stamp failed: ${e.message}`);
-  }
+  mkdirSync(dirname(reportFile), { recursive: true });
+  atomicWrite(reportFile, `${reviewFrontmatter(findings, date)}\n\n${markdown}`);
   const high = output.findings.filter((f) => f.confidence === plan.high_confidence).length;
-  console.log(`Sharp review: ${output.findings.length} issues (${high} high-confidence) → .claude/memory/${date.replace(/-/g, '/')}/sharp-review.md`);
+  console.log(`Sharp review: ${output.findings.length} issues (${high} high-confidence) → ${plan.report}`);
 }
 
 if (arg('--release-gate')) {
   finishGate(ROOT, arg('--release-gate'), false);
 } else if (args.includes('--rescan')) {
   const date = arg('--date');
-  if (!date) fail('--rescan needs --date <YYYY-MM-DD>');
-  rescan(date);
+  const file = arg('--file');
+  if (!date || !file) fail('--rescan needs --date <YYYY-MM-DD> --file <review.md>');
+  rescan(date, file);
 } else {
   const planFile = arg('--plan');
   const rawFile = arg('--raw');
@@ -109,8 +102,8 @@ if (arg('--release-gate')) {
     throw e;
   }
   const sink = arg('--sink') || plan.sink;
-  if (sink === 'memory') writeMemory(output, plan);
+  if (sink === 'report') writeReport(output, plan);
   else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
-  else fail(`unknown sink ${sink}; known: memory, stdout`);
-  finishGate(ROOT, plan.gate_token, sink === 'memory' && output.reviewers.some(reviewer => reviewer.status === 'ok'));
+  else fail(`unknown sink ${sink}; known: report, stdout`);
+  finishGate(ROOT, plan.gate_token, sink === 'report' && output.reviewers.some(reviewer => reviewer.status === 'ok'));
 }
