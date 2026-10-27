@@ -33,22 +33,35 @@ export function aiLabPython(cachePath = providerCachePath()) {
   return python;
 }
 
-// One `python -m <module>` run: *doc* as JSON on stdin, the JSON it prints on stdout.
-function runModule(module, doc, python) {
-  const done = spawnSync(python, ['-m', module], { input: JSON.stringify(doc), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// One `python -m <module> [args]` run: *doc* as JSON on stdin, the JSON it prints on stdout.
+function runModule(module, doc, python, args = []) {
+  const done = spawnSync(python, ['-m', module, ...args], { input: JSON.stringify(doc), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (done.error) throw new AiLabUnavailable(`Python ${python} cannot be started (${done.error.message}); run \`${SETUP_REMEDY}\``);
   if (done.status !== 0) throw moduleFailure(module, done, python);
   return JSON.parse(done.stdout);
 }
 
 /** The plan of one run: *request* ({manifest, run_id, started_at, date, seed, config?, sources?, ...}) planned by ai-lab. */
-export function planRun(request, { python = aiLabPython() } = {}) {
-  return runModule('ai_lab.review.plan', request, python);
+export function planRun(request, { python = aiLabPython(), rules = projectRuleIds() } = {}) {
+  return runModule('ai_lab.review.plan', request, python, ['--rules', rules]);
+}
+
+/**
+ * The registry rule ids of the project at *root*, comma-separated: the CALLER owns them (ai-lab imports no
+ * registry). A dev-lab family repo answers through its own interpreter (`dev_lab.dev.rules.RULES`, the one
+ * source); any other project has none, and `''` says so -- the review then cites principles alone.
+ */
+export function projectRuleIds(root = process.env.CLAUDE_PROJECT_DIR || process.cwd()) {
+  const python = ['.venv/Scripts/python.exe', '.venv/bin/python'].map((rel) => join(root, rel)).find((p) => existsSync(p));
+  if (!python) return '';
+  const done = spawnSync(python, ['-c', "from dev_lab.dev.rules import RULES; print(','.join(r.id for r in RULES))"],
+    { cwd: root, encoding: 'utf8' });
+  return done.status === 0 ? done.stdout.trim() : '';
 }
 
 /** The findings JSON (v3) of *run* ({range, profiles, reviewers, results}) merged by ai-lab. */
-export function mergeRun(run, { python = aiLabPython() } = {}) {
-  return runModule('ai_lab.review.merge', run, python);
+export function mergeRun(run, { python = aiLabPython(), rules = projectRuleIds() } = {}) {
+  return runModule('ai_lab.review.merge', run, python, ['--rules', rules]);
 }
 
 // The error a failed `-m <module>` run is: an ai-lab that is absent or older than the module is
