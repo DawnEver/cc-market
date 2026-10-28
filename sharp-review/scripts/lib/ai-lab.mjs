@@ -7,7 +7,12 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { spawnSync } from '../../shared/spawn.mjs';
+import { spawnSync as spawnHidden } from '../../shared/spawn.mjs';
+
+// Every Python child speaks UTF-8: on Windows its stdio otherwise defaults to the console code page
+// (cp1252), and a plan carrying "≥" dies with UnicodeEncodeError.
+const PY_ENV = { PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+const spawnSync = (cmd, args, opts = {}) => spawnHidden(cmd, args, { ...opts, env: { ...(opts.env ?? process.env), ...PY_ENV } });
 
 export const SETUP_REMEDY = 'node scripts/setup/setup.js (fabric setup: installs ai-lab and pins its interpreter)';
 
