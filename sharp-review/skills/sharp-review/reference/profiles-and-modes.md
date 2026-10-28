@@ -50,7 +50,7 @@ manual `/sharp-review` bypasses the gate.
 - **Wave 0** (new commit): ≥300 lines OR ≥5 files. **Wave 1+** (same ref already reviewed):
   ≥1000 lines OR ≥15 files. The wave resets when HEAD moves; skipped sessions accumulate.
 - `lastReviewRef` / `lastReviewDiff` in `reviewGate` make a same-ref check compare only the
-  delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD~1`.
+  delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD`, the range the review itself reads (a `HEAD~1` base fired on a commit the review then found empty, every Stop).
 - **Content-hash gate:** a fired source dispatches only when the content it reviews changed
   since its last successful review (`reviewGate.reviewedHashes`: sha256 over each covered file's path
   and bytes; `codebase` hashes HEAD). Sessions sharing one checkout alternate on the same state,

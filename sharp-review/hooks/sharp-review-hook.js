@@ -189,7 +189,7 @@ async function main() {
   const wave = sameRef ? (previous.wave || 0) + 1 : 0;
   const threshold = wave === 0 ? thresholds.wave0 : thresholds.wave1;
   let diffRef = previous.lastReviewRef;
-  if (!diffRef || !gitRefExists(diffRef)) diffRef = gitRefExists('HEAD~1') ? 'HEAD~1' : 'HEAD';
+  if (!diffRef || !gitRefExists(diffRef)) diffRef = 'HEAD'; // the review reads the tree against HEAD; trigger on that same range
   const stat = getDiffStat(diffRef);
   const effectiveStat = sameRef && previous.lastReviewDiff ? {
     lines: Math.max(0, stat.lines - previous.lastReviewDiff.lines),

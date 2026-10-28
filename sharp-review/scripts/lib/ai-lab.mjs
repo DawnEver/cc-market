@@ -3,8 +3,8 @@
 // one on stdout. sharp-review keeps no method data and no method logic. The interpreter is the one
 // fabric's setup pinned in the provider cache (`provider-cache.json` next to the cc-market registry); an
 // absent cache, interpreter or ai-lab is an AiLabUnavailable naming the remedy — never a fallback.
-import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { spawnSync } from '../../shared/spawn.mjs';
@@ -42,8 +42,8 @@ function runModule(module, doc, python, args = []) {
 }
 
 /** The plan of one run: *request* ({manifest, run_id, started_at, date, seed, config?, sources?, ...}) planned by ai-lab. */
-export function planRun(request, { python = aiLabPython(), rules = projectRuleIds() } = {}) {
-  return runModule('ai_lab.review.plan', request, python, ['--rules', rules]);
+export function planRun(request, { python = aiLabPython(), rules = projectRuleIds(), principles = projectPrinciples() } = {}) {
+  return runModule('ai_lab.review.plan', request, python, ['--rules', rules, '--principles', principles]);
 }
 
 /**
@@ -52,16 +52,41 @@ export function planRun(request, { python = aiLabPython(), rules = projectRuleId
  * source); any other project has none, and `''` says so -- the review then cites principles alone.
  */
 export function projectRuleIds(root = process.env.CLAUDE_PROJECT_DIR || process.cwd()) {
-  const python = ['.venv/Scripts/python.exe', '.venv/bin/python'].map((rel) => join(root, rel)).find((p) => existsSync(p));
+  const python = projectPython(root);
   if (!python) return '';
   const done = spawnSync(python, ['-c', "from dev_lab.dev.rules import RULES; print(','.join(r.id for r in RULES))"],
     { cwd: root, encoding: 'utf8' });
   return done.status === 0 ? done.stdout.trim() : '';
 }
 
+// ai-lab's interpreter if the provider cache names one, else none (projectPrinciples' fallback never throws).
+function cachedAiLabPython() {
+  try { return aiLabPython(); } catch { return undefined; }
+}
+
+function projectPython(root) {
+  return ['.venv/Scripts/python.exe', '.venv/bin/python'].map((rel) => join(root, rel)).find((p) => existsSync(p));
+}
+
+/**
+ * A JSON file of the project's PRINCIPLES, for `--principles`: the CALLER owns them (ai-lab keeps no list).
+ * A dev-lab family repo answers through its own interpreter (`python -m dev_lab.dev.principles --json`, the
+ * one source); any other project reads the family's through ai-lab's interpreter, and where neither carries
+ * dev-lab `{"principles": []}` says so.
+ */
+export function projectPrinciples(root = process.env.CLAUDE_PROJECT_DIR || process.cwd(), { fallback = cachedAiLabPython() } = {}) {
+  const text = [projectPython(root), fallback].filter(Boolean).map((python) => {
+    const done = spawnSync(python, ['-m', 'dev_lab.dev.principles', '--json'], { cwd: root, encoding: 'utf8' });
+    return done.status === 0 && done.stdout.trim() ? done.stdout : null;
+  }).find(Boolean) || '{"principles": []}';
+  const file = join(mkdtempSync(join(tmpdir(), 'sharp-review-')), 'principles.json');
+  writeFileSync(file, text);
+  return file;
+}
+
 /** The findings JSON (v3) of *run* ({range, profiles, reviewers, results}) merged by ai-lab. */
-export function mergeRun(run, { python = aiLabPython(), rules = projectRuleIds() } = {}) {
-  return runModule('ai_lab.review.merge', run, python, ['--rules', rules]);
+export function mergeRun(run, { python = aiLabPython(), rules = projectRuleIds(), principles = projectPrinciples() } = {}) {
+  return runModule('ai_lab.review.merge', run, python, ['--rules', rules, '--principles', principles]);
 }
 
 // The error a failed `-m <module>` run is: an ai-lab that is absent or older than the module is

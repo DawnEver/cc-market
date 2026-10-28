@@ -22,12 +22,20 @@ export function plan(over = {}) {
   };
 }
 
+// The principles the fixtures cite, injected so the merge never depends on the machine's dev-lab install.
+const PRINCIPLES = [
+  { id: 'occams-razor', name: "Occam's razor", statement: 'Simplest design that fully meets the need.' },
+  { id: 'names-match-behaviour', name: 'Names match what they do', statement: 'A name says what the thing does now.' },
+];
+
 export function run(dir, planObj, raw, extra = []) {
   const planFile = join(dir, 'plan.json');
   const rawFile = join(dir, 'raw.json');
   writeFileSync(planFile, JSON.stringify(planObj));
+  const principlesFile = join(dir, 'principles.json');
   writeFileSync(rawFile, JSON.stringify(raw));
-  return execFileSync('node', [POST_REVIEW, '--plan', planFile, '--raw', rawFile, ...extra], {
+  writeFileSync(principlesFile, JSON.stringify({ principles: PRINCIPLES }));
+  return execFileSync('node', [POST_REVIEW, '--plan', planFile, '--raw', rawFile, '--principles', principlesFile, ...extra], {
     cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, encoding: 'utf8', stdio: 'pipe', windowsHide: true,
   });
 }

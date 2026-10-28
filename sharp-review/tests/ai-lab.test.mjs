@@ -2,12 +2,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { AiLabUnavailable, aiLabPython, moduleFailure, mergeRun, planRun, projectRuleIds, providerCachePath } from '../scripts/lib/ai-lab.mjs';
+import { AiLabUnavailable, aiLabPython, moduleFailure, mergeRun, planRun, projectPrinciples, projectRuleIds, providerCachePath } from '../scripts/lib/ai-lab.mjs';
 
 const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'post-review.js');
 
@@ -55,6 +55,10 @@ test('an ai-lab older than the merge or the planner module is AiLabUnavailable a
 
 test('a project without a dev-lab interpreter states no registry rules (empty, never omitted)', () => withDir((dir) => {
   assert.equal(projectRuleIds(dir), '');
+}));
+
+test('a project and an ai-lab without dev-lab state no principles (an empty list file, never omitted)', () => withDir((dir) => {
+  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: undefined }), 'utf8')), { principles: [] });
 }));
 
 test('an interpreter without ai-lab cannot plan: no planner of our own', () => {

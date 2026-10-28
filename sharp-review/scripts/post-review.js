@@ -5,7 +5,8 @@
 // report_path, output/logs/<yy>/<mm>/<dd>/sharp-review/sharp-review.md -- regenerable output, never
 // memory; a finding worth keeping is moved into memory by a person) or `stdout` (the findings JSON, ai-lab's findings-output.schema.json). Default: the plan's sink.
 //
-//   node post-review.js --plan <plan.json> --raw <raw.json> [--sink report|stdout]
+//   node post-review.js --plan <plan.json> --raw <raw.json> [--sink report|stdout] [--principles <principles.json>]
+//     --principles overrides the project's principles (lib/ai-lab.mjs projectPrinciples)
 //   node post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>   re-derive frontmatter after an edit
 //
 // raw.json: { run_id, results: [{ name, findings? | text? | error_kind?, error? }] } — `name` is the
@@ -99,7 +100,8 @@ if (arg('--release-gate')) {
   if (statSync(rawFile).mtimeMs < Date.parse(plan.started_at)) fail(`raw.json (${rawFile}) is older than the run it claims (${plan.started_at})`);
   let output;
   try {
-    output = mergeRun({ range: plan.range, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results });
+    output = mergeRun({ range: plan.range, profiles: plan.profiles.map((p) => p.key), reviewers: plan.reviewers, results: raw.results },
+      arg('--principles') ? { principles: arg('--principles') } : {});
   } catch (e) {
     if (e instanceof AiLabUnavailable) fail(`${e.name}: ${e.message}`);
     throw e;
