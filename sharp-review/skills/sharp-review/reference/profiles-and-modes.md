@@ -24,7 +24,7 @@ Every key is optional:
 {
   "profileWeights":      { "architecture": 0.35, "diff": 0.45 },
   "customProfiles":      [ /* see "Custom profiles" */ ],
-  "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
+  "thresholds":          { "wave0": { "lines": 1000, "files": 15 }, "wave1": { "lines": 3000, "files": 45 } },
   "inlineDiffLimit":     20000,
   "docsThreshold":       3,
   "codebaseIntervalMin": 10080,
@@ -47,8 +47,8 @@ run mode cannot execute is `unsupported` — neither is ever replaced by another
 The Stop hook (`sharp-review-hook.js`) invokes the skill once enough change accumulates; a
 manual `/sharp-review` bypasses the gate.
 
-- **Wave 0** (new commit): ≥300 lines OR ≥5 files. **Wave 1+** (same ref already reviewed):
-  ≥1000 lines OR ≥15 files. The wave resets when HEAD moves; skipped sessions accumulate.
+- **Wave 0** (new commit): ≥1000 lines OR ≥15 files. **Wave 1+** (same ref already reviewed):
+  ≥3000 lines OR ≥45 files. The wave resets when HEAD moves; skipped sessions accumulate.
 - `lastReviewRef` / `lastReviewDiff` in `reviewGate` make a same-ref check compare only the
   delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD`, the range the review itself reads (a `HEAD~1` base fired on a commit the review then found empty, every Stop).
 - **Content-hash gate:** a fired source dispatches only when the content it reviews changed

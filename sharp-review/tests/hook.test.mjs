@@ -15,6 +15,7 @@ import {
   buildDispatchInstruction,
   reviewBlocked,
   findGitRoot,
+  loadThresholds,
   resolveReviewWorkerTarget,
 } from "../hooks/sharp-review-hook.js";
 import { claimReview, completeReview } from '../scripts/gate.mjs';
@@ -232,5 +233,17 @@ describe("plugin root", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("loadThresholds", () => {
+  test("defaults: wave0 at 1000 lines / 15 files, wave1 at 3000 lines / 45 files", () => {
+    assert.deepEqual(loadThresholds({}), {
+      wave0: { lines: 1000, files: 15 },
+      wave1: { lines: 3000, files: 45 },
+    });
+  });
+  test("a repo config overrides one field and keeps the other default", () => {
+    assert.deepEqual(loadThresholds({ thresholds: { wave0: { lines: 200 } } }).wave0, { lines: 200, files: 15 });
   });
 });

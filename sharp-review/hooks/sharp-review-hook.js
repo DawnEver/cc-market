@@ -6,7 +6,7 @@
 //   Resets to wave 0 when HEAD moves to a new commit.
 //
 // Per-project configurable thresholds in tracked .claude/sharp-review.json.
-// Defaults: wave0 = 300 lines / 5 files, wave1 = 1000 lines / 15 files.
+// Defaults: wave0 = 1000 lines / 15 files, wave1 = 3000 lines / 45 files.
 //
 // State stored in unified .claude/.rem-state.json under reviewGate key.
 
@@ -99,8 +99,8 @@ let projectDir = findProjectRoot();
 let unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
 
 const DEFAULT_THRESHOLDS = {
-  wave0: { lines: 300, files: 5 },
-  wave1: { lines: 1000, files: 15 },
+  wave0: { lines: 1000, files: 15 },
+  wave1: { lines: 3000, files: 45 },
 };
 
 function readStdinJSON() { return _readStdinJSON(); }
@@ -151,7 +151,7 @@ function getDiffStat(sinceRef) {
 
 // Thresholds come from the tracked, shareable `.claude/sharp-review.json` (config), NOT from
 // the gitignored runtime `reviewGate` — so a repo's trigger tuning travels with it.
-function loadThresholds(config) {
+export function loadThresholds(config) {
   const custom = config?.thresholds || {};
   return {
     wave0: { ...DEFAULT_THRESHOLDS.wave0, ...custom.wave0 },
