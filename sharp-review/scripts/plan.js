@@ -16,7 +16,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { AiLabUnavailable, planRun } from './lib/ai-lab.mjs';
+import { AiLabUnavailable, planRun, principlesFile, reviewPolicy } from './lib/ai-lab.mjs';
 import { loadReviewConfig } from './lib/config.mjs';
 import { collectManifest } from './lib/git-manifest.mjs';
 import { INLINE_DIFF_LIMIT_DEFAULT } from './lib/manifest.mjs';
@@ -30,7 +30,10 @@ const list = (flag) => (arg(flag) || '').split(',').map((s) => s.trim()).filter(
 
 try {
   const config = loadReviewConfig(ROOT);
+  // The review policy (scope, caps, principles) is dev-lab's; the wave thresholds that FIRE a review stay ours.
+  const policy = reviewPolicy(ROOT);
   const manifest = collectManifest(ROOT, {
+    policy,
     range: arg('--range') || 'HEAD',
     path: arg('--path'),
     limit: config.inlineDiffLimit ?? INLINE_DIFF_LIMIT_DEFAULT,
@@ -49,7 +52,7 @@ try {
     started_at: now.toISOString(),
     date: todayISO(now),
     seed: Math.floor(now.getTime() / 60000),
-  });
+  }, { principles: principlesFile(policy) });
   const out = arg('--out') || join(tmpdir(), 'claude-sharp-review', `plan-${runId}.json`);
   mkdirSync(dirname(out), { recursive: true });
   plan.plan_file = out;

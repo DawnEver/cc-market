@@ -58,7 +58,7 @@ test('a project without a dev-lab interpreter states no registry rules (empty, n
 }));
 
 test('a project and an ai-lab without dev-lab state no principles (an empty list file, never omitted)', () => withDir((dir) => {
-  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: undefined }), 'utf8')), { principles: [] });
+  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { pythons: [] }), 'utf8')), { principles: [] });
 }));
 
 test('an interpreter without ai-lab cannot plan: no planner of our own', () => {
@@ -72,9 +72,9 @@ const MANIFEST = { mode: 'review', range: 'HEAD', stats: {}, excludedSummary: ''
 const REQUEST = { manifest: MANIFEST, run_id: 'r', started_at: 't', date: '2026-10-25', seed: 0 };
 
 test('ai-lab plans the run: a forced profile on an available provider is pending with its prompt', () => {
-  const plan = planRun({ ...REQUEST, forced: 'diff', available: ['claude'] });
+  const plan = planRun({ ...REQUEST, forced: 'diff', available: ['anthropic'] });
   assert.equal(plan.run_id, 'r');
-  assert.deepEqual(plan.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'claude', 'pending']]);
+  assert.deepEqual(plan.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'anthropic', 'pending']]);
   assert.match(plan.reviewers[0].prompt, /\+x/);
   assert.equal(typeof plan.high_confidence, 'string');
 });

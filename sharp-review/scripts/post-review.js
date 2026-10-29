@@ -8,13 +8,16 @@
 //   node post-review.js --plan <plan.json> --raw <raw.json> [--sink report|stdout] [--principles <principles.json>]
 //     --principles overrides the project's principles (lib/ai-lab.mjs projectPrinciples)
 //   node post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>   re-derive frontmatter after an edit
+//   node post-review.js --dispose <F-id> --reason <one line>   print the `Review-Disposed: <id> -- <reason>`
+//     trailer for a finding disposed in the session; add it with `git commit --trailer "<line>"` (one per
+//     id). The forge PR review reads these trailers and passes the ids to the engine as disposed.
 //
 // raw.json: { run_id, results: [{ name, findings? | text? | error_kind?, error? }] } — `name` is the
 // plan's reviewer name; see skills/sharp-review/reference/direct-fanout.md.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown } from './lib.mjs';
+import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown, disposedTrailer } from './lib.mjs';
 import { mergeRun, AiLabUnavailable } from './lib/ai-lab.mjs';
 import { finishGate } from './gate.mjs';
 import { findProjectRoot } from '../shared/lib.mjs';
@@ -81,7 +84,9 @@ function writeReport(output, plan) {
   console.log(`Sharp review: ${output.findings.length} issues (${high} high-confidence) → ${plan.report}`);
 }
 
-if (arg('--release-gate')) {
+if (args.includes('--dispose')) {
+  try { console.log(disposedTrailer(arg('--dispose'), arg('--reason'))); } catch (e) { fail(e.message); }
+} else if (arg('--release-gate')) {
   finishGate(ROOT, arg('--release-gate'), false);
 } else if (args.includes('--rescan')) {
   const date = arg('--date');

@@ -46,3 +46,22 @@ export function renderReviewMarkdown(output, { date, labels = [] }) {
   }
   return lines.join('\n');
 }
+
+// ── Dispositions travel with the commit ──
+// A finding disposed in the session (fixed elsewhere, intended, a false positive) is recorded as a commit
+// trailer the forge PR review reads back and passes to the engine as disposed: one line per finding id.
+export const DISPOSED_TRAILER = 'Review-Disposed';
+const FINDING_ID_RE = /^F-[0-9a-f]{12}$/;
+const DISPOSED_LINE_RE = new RegExp(`^${DISPOSED_TRAILER}: (F-[0-9a-f]{12}) -- (.+)$`, 'gm');
+
+export function disposedTrailer(id, reason) {
+  if (!FINDING_ID_RE.test(id)) throw new Error(`not an engine finding id: ${id} (F-<12 hex>)`);
+  const text = String(reason ?? '').trim();
+  if (!text) throw new Error(`a disposition of ${id} needs a reason`);
+  if (/[\r\n]/.test(text)) throw new Error('a disposition reason is one line');
+  return `${DISPOSED_TRAILER}: ${id} -- ${text}`;
+}
+
+export function parseDisposedTrailers(message) {
+  return [...message.matchAll(DISPOSED_LINE_RE)].map(([, id, reason]) => ({ id, reason: reason.trim() }));
+}

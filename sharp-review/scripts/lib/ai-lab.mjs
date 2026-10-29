@@ -64,7 +64,7 @@ export function projectRuleIds(root = process.env.CLAUDE_PROJECT_DIR || process.
   return done.status === 0 ? done.stdout.trim() : '';
 }
 
-// ai-lab's interpreter if the provider cache names one, else none (projectPrinciples' fallback never throws).
+// ai-lab's interpreter if the provider cache names one, else none (reviewPolicy's fallback never throws).
 function cachedAiLabPython() {
   try { return aiLabPython(); } catch { return undefined; }
 }
@@ -74,19 +74,43 @@ function projectPython(root) {
 }
 
 /**
- * A JSON file of the project's PRINCIPLES, for `--principles`: the CALLER owns them (ai-lab keeps no list).
- * A dev-lab family repo answers through its own interpreter (`python -m dev_lab.dev.principles --json`, the
- * one source); any other project reads the family's through ai-lab's interpreter, and where neither carries
- * dev-lab `{"principles": []}` says so.
+ * The review policy of a project WITHOUT dev-lab: every file is code, no caps, no principles. This is the
+ * plugin's base case for a non-family project, not a compatibility shim: a family repo's policy is
+ * dev-lab's (reviewPolicy), and sharp-review keeps no copy of it.
  */
-export function projectPrinciples(root = process.env.CLAUDE_PROJECT_DIR || process.cwd(), { fallback = cachedAiLabPython() } = {}) {
-  const text = [projectPython(root), fallback].filter(Boolean).map((python) => {
-    const done = spawnSync(python, ['-m', 'dev_lab.dev.principles', '--json'], { cwd: root, encoding: 'utf8' });
-    return done.status === 0 && done.stdout.trim() ? done.stdout : null;
-  }).find(Boolean) || '{"principles": []}';
+export const BUILTIN_POLICY = Object.freeze({
+  schema: 1, principles: [], code: ['**'], not_code: [], max_total_bytes: null, max_file_bytes: null,
+  blocking: [], summary: { cite: [] },
+});
+
+/**
+ * The family review policy of the project at *root*: `python -m dev_lab.dev.reviewpolicy --json --repo
+ * <root>` (dev-lab owns it -- principles, code/not_code scope, caps; the forge PR review reads the same
+ * one), through the project's venv, else ai-lab's interpreter (the provider cache). Where neither carries
+ * dev-lab, BUILTIN_POLICY. An answer in an unknown schema is refused rather than half-read.
+ */
+export function reviewPolicy(root = process.env.CLAUDE_PROJECT_DIR || process.cwd(),
+  { pythons = [projectPython(root), cachedAiLabPython()], run = spawnSync } = {}) {
+  for (const python of pythons.filter(Boolean)) {
+    const done = run(python, ['-m', 'dev_lab.dev.reviewpolicy', '--json', '--repo', root], { cwd: root, encoding: 'utf8' });
+    if (done.status !== 0 || !done.stdout?.trim()) continue;
+    const policy = JSON.parse(done.stdout);
+    if (policy.schema !== 1) throw new Error(`dev_lab.dev.reviewpolicy answered schema ${policy.schema}; sharp-review reads schema 1`);
+    return policy;
+  }
+  return BUILTIN_POLICY;
+}
+
+/** A JSON file of *policy*'s principles, for ai-lab's `--principles` (ai-lab keeps no list). */
+export function principlesFile(policy) {
   const file = join(mkdtempSync(join(tmpdir(), 'sharp-review-')), 'principles.json');
-  writeFileSync(file, text);
+  writeFileSync(file, JSON.stringify({ principles: policy.principles }));
   return file;
+}
+
+/** The project's principles file: the review policy's principles. */
+export function projectPrinciples(root = process.env.CLAUDE_PROJECT_DIR || process.cwd(), options = {}) {
+  return principlesFile(reviewPolicy(root, options));
 }
 
 /** The findings JSON (v3) of *run* ({range, profiles, reviewers, results}) merged by ai-lab. */

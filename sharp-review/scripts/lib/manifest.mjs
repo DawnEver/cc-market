@@ -334,3 +334,38 @@ function truncateLine(text, maxLen) {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen - 1) + '…';
 }
+
+// ── Review policy scope (dev-lab's policy, or ai-lab.mjs BUILTIN_POLICY) ──
+
+// A glob: `**` spans directories, `*` and `?` stay inside one segment; a glob without `/` matches the basename.
+export function globMatch(filePath, glob) {
+  const TOKENS = { '**/': '(?:.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]' };
+  const re = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?|\*|\?/g, (t) => TOKENS[t]);
+  const target = glob.includes('/') ? filePath : filePath.split('/').pop();
+  return new RegExp(`^${re}$`).test(target);
+}
+
+// Keep the entries the policy reviews: inside `code`, outside `not_code`, and (where `sizes` knows a
+// file's diff bytes) not over `max_file_bytes`. Returns { entries, excluded } like buildManifest.
+export function applyPolicy(entries, policy, sizes = new Map()) {
+  const kept = [];
+  const excluded = [];
+  for (const entry of entries) {
+    const { path } = entry;
+    const isCode = policy.code.some((g) => globMatch(path, g)) && !policy.not_code.some((g) => globMatch(path, g));
+    if (!isCode) excluded.push({ path, reason: 'not code (review policy)' });
+    else if (policy.max_file_bytes != null && (sizes.get(path) ?? 0) > policy.max_file_bytes) excluded.push({ path, reason: 'over max_file_bytes (review policy)' });
+    else kept.push(entry);
+  }
+  return { entries: kept, excluded };
+}
+
+// Each file's bytes in a unified diff, by its b/ path.
+export function diffBytesByPath(diffText) {
+  const sizes = new Map();
+  for (const section of diffText.split(/^(?=diff --git )/m)) {
+    const m = section.match(/^diff --git a\/.* b\/(.*)$/m);
+    if (m) sizes.set(m[1], Buffer.byteLength(section, 'utf8'));
+  }
+  return sizes;
+}

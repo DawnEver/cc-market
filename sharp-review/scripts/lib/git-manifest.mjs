@@ -3,8 +3,9 @@
 import { execFileSync } from '../../shared/spawn.mjs';
 import {
   parseNumstatZ, parseNameStatusZ, buildManifest, decideManifestMode,
-  renderManifestText, extractHunkHeaders, filterDiff,
+  renderManifestText, extractHunkHeaders, filterDiff, applyPolicy, diffBytesByPath,
 } from './manifest.mjs';
+import { BUILTIN_POLICY } from './ai-lab.mjs';
 
 const MAX_BUFFER = 256 * 1024 * 1024;
 
@@ -16,7 +17,9 @@ function excludedSummary(excluded) {
 }
 
 // -> { mode: review|agent|empty, range, path?, stats, excludedSummary, diff? | manifest? }
-export function collectManifest(root, { range = 'HEAD', path, limit }) {
+// *policy* (lib/ai-lab.mjs reviewPolicy) scopes what is reviewed and caps it: a file outside its code
+// scope or over max_file_bytes is excluded, and a diff over max_total_bytes is listed, never inlined.
+export function collectManifest(root, { range = 'HEAD', path, limit, policy = BUILTIN_POLICY }) {
   const git = (args) => {
     try {
       return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: 'pipe' });
@@ -26,13 +29,17 @@ export function collectManifest(root, { range = 'HEAD', path, limit }) {
   };
   const base = ['-M', range, ...(path ? ['--', path] : [])];
   const fullDiff = git(['diff', ...base]);
-  const { entries, excluded } = buildManifest(
+  const built = buildManifest(
     parseNumstatZ(git(['diff', '--numstat', '-z', ...base])),
     parseNameStatusZ(git(['diff', '--name-status', '-z', ...base])),
     extractHunkHeaders(fullDiff),
   );
+  const scoped = applyPolicy(built.entries, policy, diffBytesByPath(fullDiff));
+  const { entries } = scoped;
+  const excluded = [...built.excluded, ...scoped.excluded];
   const filtered = filterDiff(fullDiff, new Set(excluded.map((e) => e.path)));
-  const mode = decideManifestMode(entries.length, filtered.length, limit);
+  const cap = policy.max_total_bytes ?? Infinity;
+  const mode = decideManifestMode(entries.length, Buffer.byteLength(filtered, 'utf8') > cap ? Infinity : filtered.length, limit);
   const result = {
     mode,
     range,
