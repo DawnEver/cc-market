@@ -63,7 +63,7 @@ One frontmatter for every kind of memory — an entry file and an archived task'
 | Field | Meaning | When absent |
 |---|---|---|
 | `name`, `description` | identity and one-line summary (a task: its slug and goal) | name = file name |
-| `kind` | `entry` or `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) | `entry` |
+| `kind` | `entry`, `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) or `todo` (an archived backlog item `YYYY/MM/DD/todo-<id>.md`) | `entry` |
 | `task` | the task the entry was written for (`remember.js` writes the bound task) | none |
 | `created` | when it began (a task: the day it was opened) | the path date |
 | `from` | where it was distilled from, e.g. `tasks/<slug>/JOURNAL.md#D3` | none |

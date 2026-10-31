@@ -48,7 +48,7 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 
 ### Reference
 
-- Full script reference (incl. `check-docs.js`, `task-engine.js`, all flags) → `reference/scripts.md`
+- Full script reference (incl. `check-docs.js`, `todo.js`, `task.js`, all flags) → `reference/scripts.md`
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
 - Crystallize procedure (current `--check` advisory threshold; user-gated distill) → `reference/crystallize.md`
 - Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`

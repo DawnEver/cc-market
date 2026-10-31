@@ -20,6 +20,12 @@ test (`tests/tasks.test.mjs`) green. A journal grows only by `appendJournal()` (
 distills first, then ARCHIVES the task by `git mv` into `.claude/memory/<date>/task-<slug>/` —
 never a delete (`closeTask()`).
 
+## One backlog, no checkboxes in memory
+
+A task's open items are journal lines; a repo backlog item is an issue (`.claude/rem.json`
+`{"backlog": "issues"}` makes `todo.js` a read-only view) or one `.claude/todo/<id>.md` file, archived
+into memory by `git mv` when closed. Nothing writes a checkbox or a status into a memory entry.
+
 ## Hook pending-work gate
 
 `rem-hook.js` gates Stop-hook state advancement on `hasPendingWork` (background tasks or

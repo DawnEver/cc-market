@@ -272,12 +272,12 @@ export function listEntries(scopeRoot) {
 }
 
 // Entries a newer entry names in `merged_from` or `supersedes` (their content has a
-// home), and archived tasks (distilled before they were archived): they leave recall and
+// home), and archived tasks and todo items (records, not knowledge): they leave recall and
 // the index. The files stay, reachable by provenance. A self-reference never hides.
 export function hiddenEntries(entries) {
   const live = new Set(entries.map(e => e.path));
   const out = new Map();
-  for (const e of entries) if (e.kind === 'task') out.set(e.path, 'archived task');
+  for (const e of entries) if (e.kind === 'task' || e.kind === 'todo') out.set(e.path, `archived ${e.kind}`);
   for (const e of entries) {
     for (const p of [...e.mergedFrom, ...e.supersedes]) {
       if (p !== e.path && live.has(p) && !out.has(p)) out.set(p, e.path);

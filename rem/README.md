@@ -7,6 +7,8 @@ the visible entries and bound docs of the scope being worked on, plus the bound 
 
 **Tasks** (`.claude/tasks/<slug>/`): only the user opens or closes one (`/rem:task open|close`); a session binds to one task (`--task`, or its worktree/branch name) and appends to its append-only `JOURNAL.md` with `task.js log|decide|open-item|close-item|handoff`. Closing distills the decisions into docs, rules and memory entries first, then archives the task by `git mv` into `.claude/memory/<date>/task-<slug>/`. → `skills/rem/reference/tasks.md`.
 
+**Todo** — one backlog: a task's open items are journal lines; a repo backlog item is an issue where `.claude/rem.json` says `{"backlog": "issues"}` (then `/todo` is a read-only view), else one file per item in `.claude/todo/`, archived into memory when closed. No checkboxes in memory. → `skills/todo/SKILL.md`.
+
 ## Install
 
 ```shell

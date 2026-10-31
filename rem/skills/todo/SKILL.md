@@ -1,91 +1,62 @@
 ---
 name: todo
-description: List, add, mark, remove entries in the persisted `/todo` backlog. Backed by rem/scripts/task-engine.js.
+description: View and manage the one backlog — task open items, the repo backlog (issue tracker or .claude/todo/ files), stale docs. Backed by rem/scripts/todo.js.
 ---
 
-# Tasks
+# Todo — one backlog, no second store
 
-Manage the project task list. Findings live in `.claude/memory/YYYY/MM/DD/sharp-review.md` (sole source of truth). Manual tasks live in `manual.md` alongside. No derived `tasks.md` — the report scans memory directly.
+| What | Where it lives | Closed by |
+|---|---|---|
+| A task's open item | a line `O<n> open:` in `.claude/tasks/<slug>/JOURNAL.md` | a later `O<n> closed:` line (`task.js close-item`) |
+| A repo backlog item, repo with a tracker | an ISSUE; `.claude/rem.json` says `{"backlog": "issues"}` | closing the issue |
+| A repo backlog item, no tracker | one file `.claude/todo/<id>.md` (status in frontmatter) | `todo.js close`, which archives it into memory |
+| A stale bound doc | virtual `DOC-<path>` row (git drift) | `/refresh-docs` |
 
-## Usage
+Nothing writes a checkbox, and nothing writes into `.claude/memory/` except the archive move.
 
-### `/todo` — View open tasks (default)
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" report
-```
-
-### `/todo add <summary>` — Add a manual task
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" add --summary "Fix login timeout" --severity MEDIUM --module auth
-```
-
-Options: `--severity` (HIGH|MEDIUM|LOW, default MEDIUM), `--module` (default 'manual'), `--scope <path>` (target scope, default: auto-detect from cwd).
-
-Generates a `MANUAL-YYYYMMDD-NNN` ID and writes to `.claude/memory/YYYY/MM/DD/manual.md` with rem frontmatter.
-
-Report options (work on `report` / `check`):
-
-- `--module <name>` — show only one module's open tasks.
-- `--severity` (or `--sort`) — sort each module by severity (HIGH→MEDIUM→LOW).
-- `--auto-close-resolved [all]` — flip high-confidence resolved findings (file no longer
-  exists) to `fixed`. Add `all` to also close medium-confidence ones (file modified after
-  the finding was discovered).
-
-The report groups open tasks by `module` (derived from the finding's file path when no
-explicit `**Module:**` line is present), shows a per-scope severity breakdown, truncates long
-summaries (use `show` for the full text), and lists copy-paste `mark … fixed` commands for any
-likely-resolved findings.
-
-### `/todo show <id>` — Show a finding's full detail
+## `/todo` — the report (read-only)
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" show SR-20260610-003
+node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" [--module <name>] [--severity]
 ```
 
-### `/todo check` — Quick status
+Lists the open items of every open task, then the backlog (or a pointer to the issue tracker),
+then stale docs. `--severity` sorts each module HIGH→LOW. It writes nothing.
+
+## `/todo add <summary>` — a new item (no tracker)
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" add "Fix login timeout" --severity HIGH --module auth [--file src/auth.js]
 ```
 
-### `/todo remove <id>` — Remove a manual task / close an SR finding
+Writes ONE new file `.claude/todo/T<yyyymmdd>-<hex>.md` (unique name — concurrent adds never
+collide). With `backlog: issues` it is refused: file an issue instead. A task's own open item is
+`task.js open-item "<text>"`, not a todo.
+
+## `/todo show <id>` · `/todo close <id> ["<how>"]`
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" remove MANUAL-20260620-001
+node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" show T20261031-a1b2c3
+node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" close T20261031-a1b2c3 "fixed in abc123"
 ```
 
-Closes a `MANUAL-*` task in place (`- [ ]` → `- [x]`, its text kept); for an `SR-*` id it sets the finding's
-`**Status:**` to `CLOSED` (findings are append-only, never deleted). Aliases: `rm`, `-r`.
+`close` records how, sets `status: closed`, and archives the item (git mv) to
+`.claude/memory/<date>/todo-<id>.md` — hidden from recall and the index, never deleted. A task's
+`O<n>` is closed in its journal: `task.js close-item O<n> "<how>"`.
 
-### `/todo mark <id> <open|fixed|closed>` — Set a finding's status
+Run it right after fixing AND verifying an item — don't leave it for the next review.
+
+## `/todo adopt <legacy.md>...` — leave the checkbox files behind
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js" mark SR-20260610-003 fixed
+node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" adopt .claude/memory/2026/06/20/manual.md .claude/memory/2026/06/21/sharp-review.md
 ```
 
-- `SR-*` IDs: flips `**Status:**` in `sharp-review.md`. Marking `fixed` also re-derives the
-  frontmatter — equivalent to hand-editing + `post-review.js --rescan`.
-- `MANUAL-*` IDs: toggles the `- [ ]` / `- [x]` checkbox in `manual.md` (`open` → unchecked,
-  `fixed`/`closed` → checked).
-- Status aliases: `done` and `resolved` both map to `fixed`.
+Each OPEN checkbox (`- [ ] MANUAL-…`) or OPEN finding (`### [SR-…]`, `**Status:** OPEN`) of a
+legacy file becomes its own item file with `from: memory/<path>#<id>`. The legacy file stays
+byte-identical (it is memory); adopting twice adds nothing.
 
-Agents should run this immediately after fixing AND verifying a finding (tests pass,
-behavior confirmed) — don't leave it for the next review to rediscover.
+## Sharp-review findings
 
-## Architecture
-
-```
-/todo (hosted by rem)
-  ├── /todo          → task-engine.js report (scans memory directly)
-  ├── /todo check    → task-engine.js report (alias)
-  ├── /todo add      → task-engine.js add --summary "..." (writes manual.md)
-  ├── /todo show     → task-engine.js show <id>   (full finding/task detail)
-  ├── /todo mark     → task-engine.js mark <id> <open|fixed|closed>
-  └── /todo remove   → task-engine.js remove <id> (close MANUAL / close SR, never delete)
-```
-
-**Rem** owns the task engine: report, add, check, show, mark, remove.
-
-**Sharp-review** owns findings: it writes the finding file (`.claude/memory/YYYY/MM/DD/sharp-review.md`).
+Sharp-review writes its report under `output/logs/` (never memory). A finding worth keeping
+becomes an issue (`backlog: issues`) or a `todo add` item.

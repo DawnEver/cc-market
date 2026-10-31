@@ -22,7 +22,7 @@ test('runtime memory policy: derived visibility, never deletion, no access bookk
 });
 
 // Retired scripts leave no trace in the plugin's own instructions.
-const RETIRED = /\b(?:retire-memory|prune-memory|touch-memory|stamp-memory|repair-overcapacity)\.js\b|\bstamp\.mjs\b/;
+const RETIRED = /\b(?:retire-memory|prune-memory|touch-memory|stamp-memory|repair-overcapacity|task-engine)\.js\b|\b(?:stamp|task-lib)\.mjs\b/;
 
 test('no rem instruction names a retired script', () => {
   const root = new URL('../', import.meta.url);
