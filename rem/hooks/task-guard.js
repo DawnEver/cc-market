@@ -4,12 +4,21 @@
 // refuse without the user's authority record (scripts/authority.mjs); scope-validate detects
 // a bypass. This hook judges what a shell command DOES, never what it merely mentions:
 //   - `task.js` whose VERB (first non-flag argument) is exactly `open` or `close`;
-//   - an interpreter (node/python/…) whose inline code names the task library, the authority
-//     store, or a path under .claude/tasks/;
+//   - an interpreter (node/python/…) whose code — -e/-c argument or a heredoc body — names the
+//     task library, the authority store, or a path under .claude/tasks/ (even to read: use cat);
+//   - a shell's -c / -Command string (bash, sh, pwsh, powershell, cmd /c), re-judged as a
+//     command line, recursively;
 //   - a known writer whose TARGET path lies under .claude/tasks/ or ~/.claude/rem/authority/:
 //     redirections (> >>), tee, cp/mv/install/ln (destination), touch/mkdir/rm/truncate,
 //     sed -i FILE, and PowerShell Set-Content/Add-Content/Out-File/New-Item/Copy-Item/… .
+// Consecutive cd's compose into one effective cwd for relative targets.
 // Message and body arguments (git commit -m, --body …) and read-only commands never match.
+//
+// Accepted misses, by design (a regex judge cannot close every path):
+//   - a verb hidden by $'..', variables, eval or xargs — the library still refuses without
+//     the user's authority grant (authority.mjs);
+//   - paths built by concatenation, symlinks into .claude/tasks, scripts on disk, git apply —
+//     detection is the backstop (scope-validate + git history of TASK.md).
 // File tools are refused when they write a TASK.md / JOURNAL.md or the authority store.
 
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
@@ -30,12 +39,44 @@ const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move
 const REASON = 'Opening or closing a task is the user\'s /rem:task open|close command, and a task journal is '
   + 'append-only through `task.js log|decide|open-item|close-item|handoff`. Propose the change to the user instead.';
 
+// Heredocs: `<<[-] DELIM` … `DELIM`. The body is cut out of the command line and its place
+// taken by a marker word, so the body is never parsed as commands; segments() turns the
+// marker into a { heredoc } item — code for an interpreter, data for anything else.
+const HEREDOC_RE = /<<(?!<)-?[ \t]*(['"]?)([A-Za-z_][\w-]*)\1/g;
+const MARKER_RE = /^\u0000HEREDOC(\d+)\u0000$/;
+
+function cutHeredocs(command) {
+  const bodies = [];
+  let text = command;
+  for (;;) {
+    HEREDOC_RE.lastIndex = 0;
+    const m = HEREDOC_RE.exec(text);
+    if (!m) break;
+    const lineEnd = text.indexOf('\n', m.index);
+    if (lineEnd < 0) { text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length); continue; }
+    const lines = text.slice(lineEnd + 1).split('\n');
+    const close = lines.findIndex(l => l.replace(/^\t+/, '') === m[2]);
+    const body = (close < 0 ? lines : lines.slice(0, close)).join('\n');
+    const rest = close < 0 ? '' : lines.slice(close + 1).join('\n');
+    bodies.push(body);
+    text = text.slice(0, m.index) + ` \u0000HEREDOC${bodies.length - 1}\u0000 ` + text.slice(m.index + m[0].length, lineEnd + 1) + rest;
+  }
+  return { text, bodies };
+}
+
 // Shell-ish split into segments at ; && || | and newlines. Quoted text stays inside its word
-// as data; redirection operators become { redirect } items.
+// as data; redirection operators become { redirect } items, heredocs { heredoc } items.
 export function segments(command) {
+  const { text, bodies } = cutHeredocs(command);
+  command = text;
   const out = [[]];
   let word = null;
-  const push = () => { if (word !== null) out[out.length - 1].push(word); word = null; };
+  const push = () => {
+    if (word === null) return;
+    const h = word.match(MARKER_RE);
+    out[out.length - 1].push(h ? { heredoc: bodies[Number(h[1])] } : word);
+    word = null;
+  };
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
     if (c === '"' || c === "'") {
@@ -75,7 +116,7 @@ export function writeTargets(seg) {
   for (let i = 0; i < seg.length; i++) {
     const w = seg[i];
     if (typeof w !== 'object') { words.push(w); continue; }
-    if (w.redirect.endsWith('&')) continue; // 2>&1: duplicates a descriptor, names no file
+    if (!w.redirect || w.redirect.endsWith('&')) continue; // 2>&1: duplicates a descriptor, names no file
     const next = seg[i + 1];
     if (typeof next === 'string') {
       if (w.redirect.startsWith('>')) targets.push(next);
@@ -124,16 +165,36 @@ export function decideTaskGuard(payload) {
     return { deny: TASK_FILE_RE.test(file) || STORE_RE.test(file) };
   }
   if (!SHELL_TOOLS.has(tool)) return { deny: false };
-  let cwd = '';
-  for (const seg of segments(String(input.command || ''))) {
+  return { deny: judgeCommandLine(String(input.command || ''), '', 0) };
+}
+
+const SHELLS = /^(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd)(?:\.exe)?$/i;
+const SHELL_COMMAND_FLAG = /^(?:-c|-command|\/c)$/i;
+const MAX_DEPTH = 4;
+
+// cd's compose: an absolute or home path replaces the cwd, a relative one extends it.
+const composeCwd = (cwd, to) => (!to || /^([\\/]|~|[A-Za-z]:)/.test(to) || !cwd ? to || '' : `${cwd}/${to}`);
+
+// True when a command line (or a shell's -c string inside it, recursively) is refused.
+function judgeCommandLine(command, cwd, depth) {
+  if (depth > MAX_DEPTH) return true; // nesting this deep is not ordinary work
+  for (const seg of segments(command)) {
     const words = seg.filter(w => typeof w === 'string');
-    if (words[0] === 'cd') { cwd = words[1] || ''; continue; }
+    const prog = base(words[0] || '');
+    if (prog === 'cd') { cwd = composeCwd(cwd, words[1]); continue; }
     const verb = taskVerb(words);
-    if (verb === 'open' || verb === 'close') return { deny: true };
-    if (verb === null && INTERPRETERS.test(base(words[0] || '')) && CODE_RE.test(words.slice(1).join(' '))) return { deny: true };
-    if (writeTargets(seg).some(t => protectedPath(t, cwd))) return { deny: true };
+    if (verb === 'open' || verb === 'close') return true;
+    if (SHELLS.test(prog)) {
+      const k = words.findIndex((w, i) => i > 0 && SHELL_COMMAND_FLAG.test(w));
+      if (k > 0 && words[k + 1] !== undefined && judgeCommandLine(words.slice(k + 1).join(' '), cwd, depth + 1)) return true;
+    }
+    if (verb === null && INTERPRETERS.test(prog)) {
+      const code = [...words.slice(1), ...seg.filter(w => w && w.heredoc !== undefined).map(w => w.heredoc)].join('\n');
+      if (CODE_RE.test(code)) return true;
+    }
+    if (writeTargets(seg).some(t => protectedPath(t, cwd))) return true;
   }
-  return { deny: false };
+  return false;
 }
 
 if (isMain(import.meta.url)) {

@@ -45,5 +45,24 @@ describe('refused: every bypass from the reviews', () => {
     ['mkdir -p .claude/tasks/x'],
     ['Set-Content .claude\\tasks\\x\\TASK.md hi', 'PowerShell'],
     ['Set-Content -Path .claude/tasks/x/JOURNAL.md -Value hi', 'PowerShell'],
+    // heredoc bodies fed to an interpreter are code, like -e / -c
+    ["python - <<EOF\nopen('.claude/tasks/x/TASK.md', 'w').write('x')\nEOF"],
+    ["node <<'JS'\nrequire('fs').writeFileSync('.claude/tasks/x/JOURNAL.md', '')\nJS"],
+    // a shell's -c / -Command string is a command line, judged recursively
+    ['bash -c "echo hi > .claude/tasks/x/TASK.md"'],
+    ["sh -c 'node task.js close x'"],
+    ['pwsh -c "Set-Content .claude/tasks/x/TASK.md hi"'],
+    [`powershell -Command "bash -c 'echo > .claude/tasks/x/TASK.md'"`],
+    // consecutive cd's compose into one effective cwd
+    ['cd .claude && cd tasks/x && echo > TASK.md'],
+    ['cd .claude; cd tasks; cd x; tee JOURNAL.md < notes'],
   ]) it(cmd, () => assert.equal(shell(cmd, tool), true));
+});
+
+describe('still allowed after the deeper parse', () => {
+  for (const cmd of [
+    'bash -c "cat .claude/tasks/x/TASK.md"',
+    'cat <<EOF > notes.md\nmentions .claude/tasks/x/TASK.md\nEOF',
+    'cd .claude && cd memory && echo > note.md',
+  ]) it(JSON.stringify(cmd), () => assert.equal(shell(cmd), false));
 });
