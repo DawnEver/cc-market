@@ -1,5 +1,5 @@
 /**
- * Tests for rem/lib.mjs — constants, file collection, state, and project root.
+ * Tests for rem/lib.mjs — index parsing, constants, file collection, state, and project root.
  * Run: node --test cc-market/rem/tests/lib.test.mjs
  */
 
@@ -10,16 +10,99 @@ import path from "node:path";
 import os from "node:os";
 
 import {
+  parseIndexEntry,
+  formatIndexEntry,
+  parseIndex,
   INDEX_HEADER,
+  MAX_ENTRIES,
+  STALE_DAYS,
   DAY_MS,
   collectMemoryFiles,
   loadState,
+  saveState,
+  appendEvent,
   stateFile,
   findProjectRoot,
   isScopeIgnored,
   findAllScopes,
   findChildScopes,
 } from "../scripts/lib.mjs";
+
+// ── Index parsing ──────────────────────────────────────────────────────────────
+
+describe("parseIndexEntry", () => {
+  test("parses valid entry line", () => {
+    const line = "- [2026-06-03 Test Entry](../memory/2026/06/03/test-entry.md) — `created: 2026-06-03, accessed: 2026-06-03`";
+    const entry = parseIndexEntry(line);
+    assert.equal(entry.date, "2026-06-03");
+    assert.equal(entry.title, "Test Entry");
+    assert.equal(entry.path, "2026/06/03/test-entry.md");
+    assert.equal(entry.created, "2026-06-03");
+    assert.equal(entry.accessed, "2026-06-03");
+  });
+
+  test("returns null for non-entry line", () => {
+    assert.equal(parseIndexEntry(""), null);
+    assert.equal(parseIndexEntry("# Header"), null);
+    assert.equal(parseIndexEntry("Some random text"), null);
+  });
+
+  test("returns null for markdown link that is not an index entry", () => {
+    assert.equal(parseIndexEntry("- [link](some/other/file.md)"), null);
+  });
+});
+
+describe("formatIndexEntry", () => {
+  test("formats entry correctly", () => {
+    const entry = {
+      date: "2026-06-03",
+      title: "Test Entry",
+      path: "2026/06/03/test-entry.md",
+      created: "2026-06-03",
+      accessed: "2026-06-03",
+    };
+    const line = formatIndexEntry(entry);
+    assert.ok(line.includes("[2026-06-03 Test Entry]"));
+    assert.ok(line.includes("../memory/2026/06/03/test-entry.md"));
+    assert.ok(line.includes("created: 2026-06-03"));
+    assert.ok(line.includes("accessed: 2026-06-03"));
+  });
+});
+
+
+describe("parseIndex", () => {
+  test("separates header and entries", () => {
+    const content = [
+      "# Memory Index",
+      "",
+      "<!-- comment -->",
+      "",
+      "- [2026-06-03 Entry A](../memory/2026/06/03/a.md) — `created: 2026-06-03, accessed: 2026-06-03`",
+      "- [2026-06-02 Entry B](../memory/2026/06/02/b.md) — `created: 2026-06-02, accessed: 2026-06-02`",
+    ].join("\n");
+    const { header, entries } = parseIndex(content);
+    assert.ok(header.length > 0);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].title, "Entry A");
+    assert.equal(entries[1].title, "Entry B");
+  });
+
+  test("handles index with only entries (no header)", () => {
+    const content = [
+      "- [2026-06-03 Entry](../memory/2026/06/03/entry.md) — `created: 2026-06-03, accessed: 2026-06-03`",
+    ].join("\n");
+    const { header, entries } = parseIndex(content);
+    assert.equal(header.length, 0);
+    assert.equal(entries.length, 1);
+  });
+
+  test("handles index with no entries", () => {
+    const content = INDEX_HEADER.trim();
+    const { header, entries } = parseIndex(content);
+    assert.ok(header.length > 0);
+    assert.equal(entries.length, 0);
+  });
+});
 
 // ── INDEX_HEADER ───────────────────────────────────────────────────────────────
 
@@ -30,6 +113,8 @@ test("INDEX_HEADER is non-empty", () => {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
+test("MAX_ENTRIES is 20", () => assert.equal(MAX_ENTRIES, 20));
+test("STALE_DAYS is 90", () => assert.equal(STALE_DAYS, 90));
 test("DAY_MS equals 86400000", () => assert.equal(DAY_MS, 86400000));
 
 // ── File collection ────────────────────────────────────────────────────────────
@@ -42,7 +127,7 @@ describe("collectMemoryFiles", () => {
 
 // ── State management ───────────────────────────────────────────────────────────
 
-describe("loadState", () => {
+describe("loadState / saveState / appendEvent", () => {
   let savedState = null;
 
   beforeEach(() => {
@@ -68,10 +153,12 @@ describe("loadState", () => {
     if (fs.existsSync(stateFile)) fs.unlinkSync(stateFile);
     const state = loadState();
     assert.ok("hook" in state);
-    assert.ok(!("prune" in state));
+    assert.ok("prune" in state);
     assert.equal(state.hook.stopCount, 0);
     assert.equal(state.hook.remPending, false);
     assert.equal(state.hook.remDone, false);
+    assert.equal(state.prune.lastPruneAt, 0);
+    assert.ok(Array.isArray(state.prune.events));
   });
 });
 

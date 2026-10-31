@@ -95,14 +95,8 @@ test('concurrent due REM siblings reserve one checkout while keeping separate co
 
 test('review hook never dispatches a claim whose atomic state write failed', { timeout: 30000 }, async t => {
   const f = fixture(t);
-  const file = path.join(f.root, '.claude', '.rem-state.json');
-  // Refuse the atomic state write on every OS: a read-only target blocks the rename on
-  // Windows, a read-only directory blocks the temp file on POSIX.
-  fs.chmodSync(file, 0o444);
-  if (process.platform !== 'win32') fs.chmodSync(path.dirname(file), 0o555);
+  fs.mkdirSync(path.join(f.root, '.claude', '.rem-state.json.tmp'));
   const result = await f.stop(reviewHook, 'review');
-  fs.chmodSync(path.dirname(file), 0o755);
-  fs.chmodSync(file, 0o644);
   assert.equal(result.code, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /Dispatch ONE/);
   assert.equal(f.state().reviewGate?.pending, undefined);

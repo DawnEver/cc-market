@@ -8,7 +8,7 @@ description: Refresh stale bound docs whose code has drifted, preserving human a
 Commit-anchored freshness for **living docs** — a collection distinct from dated event memory.
 Event memory is immutable/append-only/decaying; living docs are mutable, code-anchored, and
 never evicted. Kept out of the memory tree, so refresh-in-place has no append-only invariant to
-fight and retirement never touches them.
+fight and prune never touches them.
 
 A **bound doc** declares in its frontmatter *only the semantic binding* — what code it documents
 (+ optional thresholds). The volatile "last validated at commit X" **anchor is NOT in the doc**:

@@ -1,17 +1,17 @@
 # REM Plugin — AGENTS.md
 
-Memory management plugin for Claude Code sessions. Rules (always injected) and dated memory entries (derived index + prompt-time recall) that converge: a successor names what it replaces in `merged_from:` and the replaced entry is deleted.
+Memory management plugin for Claude Code sessions. Three-tier system: rules (always), long-term (progressive disclosure), short-term (90d eviction).
 
 ## Architecture — at a glance
 
-SessionStart runs the index / inject / memo-listing hooks (Codex compact restores context);
+SessionStart runs the prune / inject / memo-listing hooks (Codex compact restores context);
 PostCompact re-lists memos on Claude Code; UserPromptSubmit runs recall on both hosts; Stop fires
 `rem-hook.js`, gated after ≥3 stops AND (≥2 min session OR ≥30s + substantive edits), which
 requests the REM skill. The skill runs user-gated checks first, then uses a context-inheriting
 fork on Claude or the current session on Codex. `/todo` drives `task-engine.js`. Full
 lifecycle flow diagram → `docs/architecture.md` § Architecture.
 
-Memory lifecycle → `skills/rem/reference/memory-conventions.md`. Nothing writes on read; the index is derived.
+Three-tier memory system (rules / long-term / short-term) → `skills/rem/reference/memory-conventions.md`.
 
 ## Orientation
 
@@ -57,11 +57,11 @@ node --test cc-market/rem/tests/*.test.mjs
 
 Pre-commit hook runs rem tests when rem files are staged. Functions exported for testing: `decideStop`, `isFreshSession`, `hasSubstantiveWork`, `readTranscriptTail` from `rem-hook.js`; `findProjectRoot` and all other `lib.mjs` exports are public.
 
-Test files: `rem/tests/*.test.mjs` (the lifecycle contract is `lifecycle.test.mjs`).
+Test files: `frontmatter.test.mjs`, `date-path.test.mjs`, `lib.test.mjs`, `rem-hook.test.mjs`, `task-lib.test.mjs`, `check-docs.test.mjs`, `doc-freshness.test.mjs`, `scope-split.test.mjs`, `inject-rules.test.mjs`, `memory-state.test.mjs`, `migrations.test.mjs`, `scope-validate.test.mjs`, `task-engine-cli.test.mjs`, `recall.test.mjs`, `remember.test.mjs`, `memo.test.mjs`, `crystallize.test.mjs`, `prune-memory.test.mjs`, `merge-memory.test.mjs`.
 
 ## Standard
 
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic.
-- Keep `lib.mjs` as the single source of truth for paths, constants, entries, the derived index format, and retirement.
+- Keep `lib.mjs` as the single source of truth for paths, constants, and formats — except the MEMORY.md index entry format, which lives in `shared/stamp.mjs` (also consumed by sharp-review's post-review upsert) and is re-exported through `lib.mjs`.
 - **When memory entries are created or split**: update MEMORY.md, AGENTS.md, and README.md to reflect the new structure.

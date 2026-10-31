@@ -72,20 +72,14 @@ test('real REM hook processes isolate sibling threads and acknowledge the execut
 
 test('completion CLI reports persistence failure instead of acknowledging in-memory completion', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-completion-write-failure-'));
-  t.after(() => {
-    try { fs.chmodSync(path.join(root, '.claude'), 0o755); fs.chmodSync(path.join(root, '.claude', '.rem-state.json'), 0o644); } catch { /* absent */ }
-    fs.rmSync(root, { recursive: true, force: true });
-  });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, '.git'));
   fs.mkdirSync(path.join(root, '.claude'));
   const file = path.join(root, '.claude', '.rem-state.json');
   fs.writeFileSync(file, JSON.stringify({ hook: { sessions: {
     thread: { remPending: true, requestId: 'request', requestExpiresAt: Date.now() + 60000 },
   } } }));
-  // Refuse the atomic write on every OS: a read-only target blocks the rename on
-  // Windows, a read-only directory blocks the temp file on POSIX.
-  fs.chmodSync(file, 0o444);
-  if (process.platform !== 'win32') fs.chmodSync(path.dirname(file), 0o555);
+  fs.mkdirSync(file + '.tmp');
   const result = spawnSync(process.execPath, [script, 'complete', '--session', 'thread', '--request', 'request'],
     { cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root }, encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 1);

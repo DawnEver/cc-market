@@ -214,7 +214,7 @@ async function main() {
     }, { token: randomUUID(), now });
     state.reviewGate = result.gate;
     if (result.dispatch) pending = result.gate.pending;
-  }, { onTimeout: 'throw' });
+  }, { atomic: true, onTimeout: 'throw' });
   if (!saved?.persisted || !pending) return;
 
   const instruction = buildDispatchInstruction(pending.sources.join(','),

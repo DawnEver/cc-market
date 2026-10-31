@@ -1,5 +1,5 @@
 /**
- * Tests for rem/scripts/merge-memory.js — fold duplicates into one live entry, then retire them.
+ * Tests for rem/scripts/merge-memory.js — fold duplicates into one live entry, never delete.
  * Run: node --test cc-market/rem/tests/merge-memory.test.mjs
  */
 
@@ -27,18 +27,16 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 describe("merge-memory.js", () => {
-  test("folds the source verbatim, records merged_from, deletes the source, regenerates the index", () => {
+  test("folds the source verbatim, records merged_from, keeps the source file, tombstones its index row", () => {
     execFileSync(process.execPath, [SCRIPT, "--into", "2026/07/01/live.md", "--from", "2026/07/01/dup.md"], { cwd: tmp, encoding: "utf8" });
     const live = fs.readFileSync(path.join(day(), "live.md"), "utf8");
     assert.match(live, /merged_from:\n {2}- 2026\/07\/01\/dup\.md\n---/);
     assert.match(live, /Live finding: 1\.25e-4 residual\./);
     assert.match(live, /## Merged from 2026\/07\/01\/dup\.md/);
     assert.match(live, /Measured 7\.8499932 vs 7\.85\.\n> "quote kept"/);
-    assert.ok(!fs.existsSync(path.join(day(), "dup.md")));
-    assert.ok(!fs.existsSync(path.join(day(), "_meta.json")));
-    const index = fs.readFileSync(path.join(tmp, ".claude", "rules", "MEMORY.md"), "utf8");
-    assert.match(index, /live.md/);
-    assert.doesNotMatch(index, /dup.md/);
+    assert.equal(fs.readFileSync(path.join(day(), "dup.md"), "utf8"), entry("dup", "Measured 7.8499932 vs 7.85.\n> \"quote kept\""));
+    const meta = JSON.parse(fs.readFileSync(path.join(day(), "_meta.json"), "utf8"));
+    assert.equal(meta["dup.md"].dropped, "merged→2026/07/01/live.md");
   });
 
   test("merged_from extends an existing list without duplicating", () => {

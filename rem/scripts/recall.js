@@ -3,16 +3,13 @@
  * recall.js — UserPromptSubmit hook: prompt-time relevance recall.
  *
  * Reads the hook payload on stdin (user prompt, cwd, session_id), scores the
- * memory scope's live (unretired) entries against the prompt with a pure heuristic
+ * memory scope's non-dropped entries against the prompt with a pure heuristic
  * (no model call, <200ms), and injects the top 1–3 entries as
  * `additionalContext`. No matches → exit 0 silently.
  *
  * Candidate frontmatter is cached per scope in a per-host tmpdir file, keyed
  * by a stat-only fingerprint of the memory tree (count + total size + max
- * mtime) — any write invalidates it, so it never goes stale.
- *
- * Read-only toward the repo: recall never writes the memory tree or any state
- * file (its cache and telemetry live in os.tmpdir()).
+ * mtime, incl. _meta.json) — any write invalidates it, so it never goes stale.
  *
  * Claude Code and Codex share the UserPromptSubmit additionalContext contract.
  *
@@ -24,9 +21,8 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { listEntries, retiredEntries } from "./lib.mjs";
-import { isMain } from "../shared/lib.mjs";
-import { atomicWriteFile } from "../shared/atomic-write.mjs";
+import { loadMemoryState, bumpAccessed, todayISO } from "./lib.mjs";
+import { parseFrontmatter, isMain } from "../shared/lib.mjs";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
 // inside), captures everything else. Used by the telemetry ring.
@@ -99,35 +95,46 @@ export function isSkippable(relPath) {
 }
 
 /**
- * Candidate entries for a scope: every live, non-task memory entry with its
- * frontmatter fields. Bodies are NOT read here (only for the winners).
+ * Collect candidate entries for a scope: every non-dropped, non-task memory
+ * file, with its frontmatter fields and volatile meta. Bodies are NOT read
+ * here (only for the winners) to stay under the latency budget.
  */
 function collectCandidatesUncached(scopeRoot) {
+  const state = loadMemoryState(scopeRoot);
   const memDir = path.join(scopeRoot, ".claude", "memory");
-  const entries = listEntries(scopeRoot);
-  const retired = retiredEntries(entries);
-  return entries
-    .filter((e) => !retired.has(e.path) && !isSkippable(e.path))
-    .map((e) => ({
-      relPath: e.path,
-      abs: path.join(memDir, e.path),
-      name: e.name,
-      description: e.description,
-      type: e.type || "project",
-      date: e.date,
-    }));
+  const out = [];
+  for (const [relPath, meta] of state) {
+    if (meta.dropped) continue;
+    if (isSkippable(relPath)) continue;
+    const abs = path.join(memDir, relPath);
+    let fm = {};
+    try {
+      fm = parseFrontmatter(fs.readFileSync(abs, "utf8")) || {};
+    } catch { continue; }
+    const md = (fm.metadata && typeof fm.metadata === "object") ? fm.metadata : {};
+    out.push({
+      relPath,
+      abs,
+      name: String(fm.name || path.basename(relPath, ".md")),
+      description: String(fm.description || ""),
+      type: md.type || fm.type || "project",
+      accessed: meta.accessed || "",
+      count: Number.isFinite(meta.count) ? meta.count : 1,
+    });
+  }
+  return out;
 }
 
 // ── Candidate cache ──
 // Reading every memory file's frontmatter on every prompt is too slow on
 // cloud-synced dirs (OneDrive placeholders). Cache candidates in a per-host
 // tmpdir file keyed by a stat-only fingerprint of the memory tree (file count
-// + max mtime + total size).
+// + max mtime + total size, including _meta.json).
 //
 // The whole tree is re-statted at most once per FINGERPRINT_TTL_MS (30s):
 // within the window the cache is served without touching the memory tree at
 // all, so the per-prompt cost is a single statSync on the cache file. Any
-// write from remember.js / merge-memory.js / retire-memory.js changes the fingerprint and
+// write from remember.js / touch-memory.js / prune changes the fingerprint and
 // is picked up on the next expiry (staleness bounded by the TTL — acceptable
 // for best-effort recall). The cache lives in os.tmpdir() (not the synced
 // tree) so multi-device setups each keep their own — and it never shows up in
@@ -180,7 +187,7 @@ export function collectCandidates(scopeRoot, { useCache = true, info, now = Date
   if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
     // Tree unchanged → reuse candidates, only refresh the TTL stamp.
     cached.ts = now;
-    try { atomicWriteFile(cacheFile, JSON.stringify(cached)); } catch { /* best-effort */ }
+    try { fs.writeFileSync(cacheFile, JSON.stringify(cached), "utf8"); } catch { /* best-effort */ }
     if (info) { info.cacheHit = true; info.fast = false; }
     return cached.candidates;
   }
@@ -189,7 +196,7 @@ export function collectCandidates(scopeRoot, { useCache = true, info, now = Date
   if (info) { info.cacheHit = false; info.fast = false; }
   const candidates = collectCandidatesUncached(scopeRoot);
   try {
-    atomicWriteFile(cacheFile, JSON.stringify({ ts: now, fingerprint, candidates }));
+    fs.writeFileSync(cacheFile, JSON.stringify({ ts: now, fingerprint, candidates }), "utf8");
   } catch { /* cache is best-effort */ }
   return candidates;
 }
@@ -221,7 +228,7 @@ export function appendTelemetry(scopeRoot, record) {
     const file = telemetryFileFor(scopeRoot);
     const ring = readRing(file);
     ring.push(record);
-    atomicWriteFile(file, JSON.stringify(ring.slice(-TELEMETRY_RING)));
+    fs.writeFileSync(file, JSON.stringify(ring.slice(-TELEMETRY_RING)), "utf8");
   } catch { /* telemetry is best-effort */ }
 }
 
@@ -233,7 +240,7 @@ export function finalizeTelemetry(scopeRoot, record) {
     for (let i = ring.length - 1; i >= 0; i--) {
       if (ring[i] && ring[i].done === false) { ring[i] = record; break; }
     }
-    atomicWriteFile(file, JSON.stringify(ring.slice(-TELEMETRY_RING)));
+    fs.writeFileSync(file, JSON.stringify(ring.slice(-TELEMETRY_RING)), "utf8");
   } catch { /* telemetry is best-effort */ }
 }
 
@@ -275,8 +282,8 @@ function printTelemetry() {
 
 /**
  * Heuristic score: token matches against name (×2) + description (×1),
- * weighted by type (user/feedback ×2, project/reference ×1) and recency
- * (an entry dated within 30d boosts up to ×1.3). The date is the entry's path.
+ * weighted by type (user/feedback ×2, project/reference ×1), recency
+ * (accessed within 30d boosts up to ×1.3), and access count (×1 + min(count,5)/10).
  */
 export function scoreEntry(entry, tokens, now = Date.now()) {
   if (!tokens.length) return 0;
@@ -290,9 +297,10 @@ export function scoreEntry(entry, tokens, now = Date.now()) {
   if (!matches) return 0;
 
   const typeWeight = entry.type === "user" || entry.type === "feedback" ? 2 : 1;
-  const days = (now - Date.parse(entry.date)) / 86400000;
+  const days = (now - Date.parse(entry.accessed)) / 86400000;
   const recency = Number.isFinite(days) ? 1 + Math.max(0, 30 - days) / 100 : 1;
-  return matches * typeWeight * recency;
+  const countFactor = 1 + Math.min(entry.count, 5) / 10;
+  return matches * typeWeight * recency * countFactor;
 }
 
 /** Rank candidates, return the top 1–3 above threshold (best first). */
@@ -363,6 +371,11 @@ function main() {
   });
   if (!context) return;
 
+  // Only entries whose bodies were actually injected count as semantic reads.
+  // Raw shell I/O is intentionally not guessed from transcript command strings.
+  for (const entry of winners) if (context.includes(`(${entry.relPath.replace(/\\/g, '/')})`)) {
+    try { bumpAccessed(scope, entry.relPath, todayISO()); } catch { /* advisory read accounting */ }
+  }
 
   process.stdout.write(
     JSON.stringify({

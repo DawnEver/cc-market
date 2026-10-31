@@ -1,8 +1,8 @@
 // shared/state.mjs — unified .rem-state.json read/write
 // Pure functions: stateFile path passed as parameter.
 
-import { readFileSync, existsSync } from 'fs';
-import { atomicWriteFile } from './atomic-write.mjs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
+import { dirname } from 'path';
 import { withLock } from './lock.mjs';
 
 export const DEFAULT_STATE = {
@@ -18,6 +18,10 @@ export const DEFAULT_STATE = {
     remDone: false,
     lastTouched: null,
     taskActiveUntil: null,
+  },
+  prune: {
+    lastPruneAt: 0,
+    events: [],
   },
   scopes: {
     // Glob/name patterns for directories findAllScopes/findChildScopes skip during
@@ -72,29 +76,58 @@ export function loadState(stateFile) {
   }
 }
 
-// saveState(stateFile, state, { onTimeout })
-// Always tmp+rename (shared/atomic-write.mjs): a reader never sees a torn file, so
-// loadState never falls back to defaults over a half-written one and clobbers it.
-// Returns { persisted } — a failed rename (Windows AV/OneDrive) reports false
-// instead of throwing, so hooks degrade to in-memory state. The write is
-// lease-locked; hooks default to onTimeout 'proceed', mutating CLIs pass 'throw'.
-export function saveState(stateFile, state, { onTimeout = 'proceed' } = {}) {
+// saveState(stateFile, state, { atomic, onTimeout })
+// Default: direct write (back-compat). With { atomic: true }: write to a temp file then
+// rename over the target so a crash never leaves a half-written state file. The rename can
+// intermittently fail on Windows under OneDrive/AV — retry once, then give up without
+// throwing. Returns { persisted } so callers (e.g. evolve's loop) can fall back to in-memory
+// state instead of blocking. Pre-atomic callers ignore the return value, so this is safe.
+// The write phase is lease-locked (shared/lock.mjs) against concurrent processes.
+// Default onTimeout: 'proceed' — state writes are best-effort for hook callers; mutating
+// CLI scripts pass 'throw' explicitly (fail-closed).
+export function saveState(stateFile, state, { atomic = false, onTimeout = 'proceed' } = {}) {
   return withLock(stateFile, () => {
-    try { atomicWriteFile(stateFile, JSON.stringify(state, null, 2)); return { persisted: true }; }
-    catch { return { persisted: false }; }
+    const dir = dirname(stateFile);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const payload = JSON.stringify(state, null, 2);
+
+    if (!atomic) {
+      writeFileSync(stateFile, payload, 'utf8');
+      return { persisted: true };
+    }
+
+    const tmp = stateFile + '.tmp';
+    const tryWrite = () => { writeFileSync(tmp, payload, 'utf8'); renameSync(tmp, stateFile); };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { tryWrite(); return { persisted: true }; }
+      catch { /* retry once (Windows/OneDrive rename flake) */ }
+    }
+    try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
+    return { persisted: false };
   }, { onTimeout });
 }
 
-// withStateLock(stateFile, fn, { onTimeout })
+// withStateLock(stateFile, fn, { onTimeout, atomic })
 // Atomic load→mutate→save: loads FRESH state inside the lock, lets fn(state)
 // mutate it, then saves — closing the TOCTOU window where a caller classifies
 // from a stale snapshot and overwrites another process's concurrent write.
 // Returns { persisted } from the inner saveState.
-export function withStateLock(stateFile, fn, { onTimeout = 'proceed' } = {}) {
+export function withStateLock(stateFile, fn, { onTimeout = 'proceed', atomic = false } = {}) {
   return withLock(stateFile, () => {
     const state = loadState(stateFile);
     fn(state);
-    return saveState(stateFile, state, { onTimeout }); // reentrant
+    return saveState(stateFile, state, { atomic, onTimeout }); // reentrant
   }, { onTimeout });
 }
 
+// appendEvent is a load→modify→save critical section (via withStateLock): the
+// lock is reentrant, so the inner saveState reuses the held lock. Returns
+// { persisted } so callers can detect a dropped write.
+export function appendEvent(stateFile, type, detail, { onTimeout = 'proceed' } = {}) {
+  return withStateLock(stateFile, (state) => {
+    state.prune.events.push({ ts: new Date().toISOString(), type, ...detail });
+    if (state.prune.events.length > 15) {
+      state.prune.events = state.prune.events.slice(-15);
+    }
+  }, { onTimeout });
+}

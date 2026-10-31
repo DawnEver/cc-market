@@ -36,6 +36,6 @@ export function finishGate(root, token, success) {
   if (!token) return;
   const saved = withStateLock(join(root, '.claude', '.rem-state.json'), state => {
     state.reviewGate = completeReview(state.reviewGate, token, success);
-  }, { onTimeout: 'throw' });
+  }, { atomic: true, onTimeout: 'throw' });
   if (!saved?.persisted) throw new Error('Could not persist review gate completion.');
 }

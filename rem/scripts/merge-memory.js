@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// Fold duplicate memory entries into ONE live entry. Content is never lost: every source
-// body moves verbatim into the live entry, which names the source in `merged_from:`.
+// Fold duplicate memory entries into ONE live entry — the only way an entry leaves the index
+// by consolidation. Memory keeps everything: redundancy is removed by MERGING, never deleting.
 //
 //   node merge-memory.js --into <YYYY/MM/DD/live.md> --from <a.md,b.md,...> [--dry-run]
 //
 // For each source: its full body (every measurement, number and quote) is appended verbatim to
 // the live entry under `## Merged from <path>`, the path is added to the live entry's
-// `merged_from:` frontmatter list, and the source file is deleted (its content now lives in
-// the live entry; git keeps the original). The write is refused if any non-blank source line
-// would be missing from the result.
+// `merged_from:` frontmatter list, and the source is tombstoned in the index as
+// `dropped: merged→<live>`. The source FILE stays on disk untouched. The write is refused if any
+// non-blank source line would be missing from the result.
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { findMemoryScope, parseFrontmatter, retireMemory, rebuildIndex } from './lib.mjs';
+import { findMemoryScope, parseFrontmatter, dropFromIndex, rebuildIndex } from './lib.mjs';
 
 const PREFIX = '[merge-memory]';
 
@@ -62,9 +62,9 @@ function main(argv) {
   const merged = mergeContent(read(into), from.map(p => ({ path: p, content: read(p) })));
   if (argv.includes('--dry-run')) { process.stdout.write(merged); return; }
   writeFileSync(join(memDir, into), merged, 'utf8');
-  const retired = retireMemory(scope, { dryRun: false });
+  for (const p of from) dropFromIndex(scope, p, `merged→${into}`);
   rebuildIndex(scope);
-  console.log(`${PREFIX} folded ${from.length} entr${from.length === 1 ? 'y' : 'ies'} into ${into}; retired ${retired.size}`);
+  console.log(`${PREFIX} folded ${from.length} entr${from.length === 1 ? 'y' : 'ies'} into ${into}; sources kept on disk`);
 }
 
 if (process.argv[1] && process.argv[1].replace(/\\/g, '/').endsWith('/merge-memory.js')) main(process.argv.slice(2));

@@ -16,9 +16,9 @@ in this file's frontmatter.
 
 ## Modules
 
-- `lib.mjs` — single source of truth for paths, dates, entries, the derived index, retirement.
+- `lib.mjs` — single source of truth for paths, dates, `_meta.json` I/O, index.
 - `task-engine.js` / `task-lib.mjs` — `/todo` engine + pure task logic.
-- `retire-memory.js`, `merge-memory.js`, `crystallize.js`, `index-memory.js`, `scope-split.js` — memory lifecycle.
+- `prune-memory.js`, `crystallize.js`, `scope-split.js` — memory lifecycle.
 
 <!-- rem:manual -->
 NOTE (human): this block must survive any automated refresh verbatim — it is the

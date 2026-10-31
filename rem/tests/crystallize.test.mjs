@@ -1,77 +1,69 @@
 /**
- * Tests for rem/scripts/crystallize.js — distill entries into a rule, then retire them.
+ * Tests for rem/scripts/crystallize.js --drift — long-term drift-verification listing.
  * Run: node --test cc-market/rem/tests/crystallize.test.mjs
  */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "crystallize.js");
+const SCRIPT = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "scripts",
+  "crystallize.js"
+);
 
 let tmp;
 beforeEach(() => {
   tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "crystallize-")));
-  fs.mkdirSync(path.join(tmp, ".git"));
+  fs.mkdirSync(path.join(tmp, ".claude", "memory", "2026", "07", "01"), { recursive: true });
 });
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], {
-  cwd: tmp, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: tmp },
-});
-
-function seed(rel, extra = "") {
-  const file = path.join(tmp, ".claude", "memory", rel);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const slug = path.basename(rel, ".md");
-  fs.writeFileSync(file, `---\nname: ${slug}\ndescription: about ${slug}\n${extra}metadata:\n  type: project\n---\n\nbody SR-20260701-001\n`);
-  return file;
+function drift() {
+  const out = execFileSync(process.execPath, [SCRIPT, "--drift"], {
+    cwd: tmp,
+    encoding: "utf8",
+  });
+  return JSON.parse(out).driftCandidates;
 }
 
-function rule(name = "topic.md", text = "# Topic\n\n- the rule\n") {
-  fs.mkdirSync(path.join(tmp, ".claude", "rules", "rem"), { recursive: true });
-  fs.writeFileSync(path.join(tmp, ".claude", "rules", "rem", name), text);
+function seed(slug, meta) {
+  const dir = path.join(tmp, ".claude", "memory", "2026", "07", "01");
+  fs.writeFileSync(
+    path.join(dir, `${slug}.md`),
+    `---\nname: ${slug}\ndescription: x\nmetadata.type: project\n---\n\nbody\n`
+  );
+  const metaFile = path.join(dir, "_meta.json");
+  const data = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : {};
+  data[`${slug}.md`] = meta;
+  fs.writeFileSync(metaFile, JSON.stringify(data));
 }
 
-describe("crystallize.js", () => {
-  test("--propose lists live entries oldest first and omits retired ones", () => {
-    seed("2026/07/01/a.md");
-    seed("2026/07/02/b.md");
-    seed("2026/07/03/c.md", "merged_from: 2026/07/02/b.md\n");
-    const out = JSON.parse(run("--propose").stdout);
-    assert.deepEqual(out.entries.map(e => e.path), ["2026/07/01/a.md", "2026/07/03/c.md"]);
+describe("crystallize.js --drift", () => {
+  test("lists only non-dropped long-term entries with path/name/dates/count", () => {
+    seed("long-one", { accessed: "2026-07-20", count: 5, tier: "long" });
+    seed("short-one", { accessed: "2026-07-21", count: 1, tier: "short" });
+    seed("dropped-long", { accessed: "2026-07-22", count: 9, tier: "long", dropped: "crystallized" });
+
+    const candidates = drift();
+    assert.deepEqual(candidates, [
+      {
+        path: "2026/07/01/long-one.md",
+        name: "long-one",
+        created: "2026-07-01",
+        accessed: "2026-07-20",
+        count: 5,
+      },
+    ]);
   });
 
-  test("--execute refuses without a written rule", () => {
-    const a = seed("2026/07/01/a.md");
-    const r = run("--execute", "--rule", "topic.md", "--distilled", "2026/07/01/a.md");
-    assert.equal(r.status, 1);
-    assert.ok(fs.existsSync(a));
-  });
-
-  test("--execute records a ledger entry naming the distilled entries and retires them", () => {
-    const a = seed("2026/07/01/a.md");
-    const b = seed("2026/07/01/b.md");
-    const keep = seed("2026/07/01/keep.md");
-    rule();
-    const r = run("--execute", "--rule", "topic.md", "--distilled", "2026/07/01/a.md,2026/07/01/b.md");
-    assert.equal(r.status, 0, r.stderr);
-    assert.ok(!fs.existsSync(a) && !fs.existsSync(b) && fs.existsSync(keep));
-    const ledger = fs.readdirSync(path.join(tmp, ".claude", "memory"), { recursive: true })
-      .map(p => p.replace(/\\/g, "/")).find(p => p.endsWith("crystallized-into-topic.md"));
-    const text = fs.readFileSync(path.join(tmp, ".claude", "memory", ledger), "utf8");
-    assert.match(text, /merged_from:\n {2}- 2026\/07\/01\/a\.md\n {2}- 2026\/07\/01\/b\.md\n/);
-    assert.match(text, /\.claude\/rules\/rem\/topic\.md/);
-    assert.match(r.stdout, /SR-20260701-001/);
-  });
-
-  test("--execute refuses an entry that is not live", () => {
-    rule();
-    seed("2026/07/01/a.md");
-    assert.equal(run("--execute", "--rule", "topic.md", "--distilled", "2026/07/01/nope.md").status, 1);
+  test("empty when no long-term entries", () => {
+    assert.deepEqual(drift(), []);
   });
 });

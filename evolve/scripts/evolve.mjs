@@ -58,7 +58,7 @@ export function saveState(projectRoot = process.cwd(), state) {
   const file = statePath(projectRoot);
   const root = loadSharedState(file); // returns DEFAULT_STATE if absent; shared save creates the dir
   root.evolveState = state;
-  return saveSharedState(file, root);
+  return saveSharedState(file, root, { atomic: true });
 }
 
 // Task guard — set/clear the rem Stop-hook window so evolve can run multi-round without
@@ -69,7 +69,7 @@ export function setTaskGuard(projectRoot = process.cwd(), minutes = 30) {
   const root = loadSharedState(file);
   if (!root.hook) root.hook = {};
   root.hook.taskActiveUntil = Date.now() + minutes * 60 * 1000;
-  return saveSharedState(file, root);
+  return saveSharedState(file, root, { atomic: true });
 }
 
 export function clearTaskGuard(projectRoot = process.cwd()) {
@@ -80,7 +80,7 @@ export function clearTaskGuard(projectRoot = process.cwd()) {
   }
   // Clean up stale tmp file from a prior failed atomic write.
   try { fs.unlinkSync(file + '.tmp'); } catch (_) { /* ignore */ }
-  return saveSharedState(file, root);
+  return saveSharedState(file, root, { atomic: true });
 }
 
 function findingFiles(f) {

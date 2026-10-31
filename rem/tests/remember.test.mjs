@@ -91,9 +91,14 @@ describe("remember.js", () => {
     assert.match(e.stderr, /single line/);
   });
 
-  test("writes no bookkeeping beside the entry", () => {
+  test("creates _meta.json entry with short tier defaults", () => {
     run(...BASE);
-    assert.deepEqual(fs.readdirSync(path.dirname(metaFile())), ["no-force-push.md"]);
+    const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
+    assert.deepEqual(meta["no-force-push.md"], {
+      accessed: new Date().toISOString().slice(0, 10),
+      count: 1,
+      tier: "short",
+    });
   });
 
   test("upserts MEMORY.md index entry", () => {
@@ -123,6 +128,10 @@ describe("remember.js", () => {
     assert.ok(runFail("--name", "ok-name", "--type", "feedback"));
   });
 
+  test("rejects volatile metadata fields in body", () => {
+    const e = runFail("--name", "volatile", "--type", "user", "--body", "line\ntier: long");
+    assert.match(e.stderr, /volatile metadata field/);
+  });
 
   test("refuses to overwrite different content without --update", () => {
     run(...BASE);
@@ -134,25 +143,27 @@ describe("remember.js", () => {
     run(...BASE);
     const out = run(...BASE).trim();
     assert.equal(out, memoryFile("no-force-push"));
+    // Meta unchanged (still count 1)
+    const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
+    assert.equal(meta["no-force-push.md"].count, 1);
   });
 
-  test("--update replaces the same-day entry", () => {
+  test("--update appends the revision, keeps the prior body, and preserves meta", () => {
     run(...BASE);
     run("--name", "no-force-push", "--type", "feedback", "--body", "Revised rule.", "--update");
     const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
-    assert.match(text, /Revised rule\./);
-    assert.doesNotMatch(text, /Never force-push shared branches\./);
+    assert.match(text, /Never force-push shared branches\./);
+    assert.match(text, /## Update \d{4}-\d{2}-\d{2}\n\nRevised rule\./);
+    const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
+    assert.equal(meta["no-force-push.md"].count, 1);
   });
 
-  test("an older entry with the same name is superseded through merged_from", () => {
-    const old = path.join(tmp, ".claude", "memory", "2020", "01", "01", "no-force-push.md");
-    fs.mkdirSync(path.dirname(old), { recursive: true });
-    fs.writeFileSync(old, "---\nname: no-force-push\ndescription: old\n---\n\nold rule\n");
+  test("--update with a superset body writes it once, no duplicate section", () => {
     run(...BASE);
+    run("--name", "no-force-push", "--type", "feedback", "--body", "Never force-push shared branches.\nAlso tags.", "--update");
     const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
-    assert.match(text, /merged_from:\n {2}- 2020\/01\/01\/no-force-push\.md\n/);
-    const index = fs.readFileSync(path.join(tmp, ".claude", "rules", "MEMORY.md"), "utf8");
-    assert.doesNotMatch(index, /2020\/01\/01/);
+    assert.equal(text.match(/^Never force-push/gm).length, 1);
+    assert.doesNotMatch(text, /## Update/);
   });
 
   test("--scope <dir> writes into the given scope", () => {

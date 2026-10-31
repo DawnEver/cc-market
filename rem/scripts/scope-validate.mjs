@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-// scope-validate.mjs — verify each memory scope's integrity.
-//   --check (default): print issues, exit 1 on an error
-//   --fix: regenerate stale indexes
-// Errors: a leftover _meta.json (pre-lifecycle bookkeeping — run migrations/migrate.mjs).
-// Warnings: a stale or missing index, an entry outside YYYY/MM/DD/, a child-scope state file.
+// scope-validate.mjs — verify scope isolation and intermediate file integrity.
+//   --check (default): dry-run, print issues, exit 0 = clean
+//   --fix: auto-repair missing _meta.json and MEMORY.md files
+// Called by SessionStart hook (prune-memory) and stamp-memory.
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
-import { findAllScopes, collectFiles, renderIndex, rebuildIndex, DATED_RE } from './lib.mjs';
+import { findAllScopes, loadMemoryState, rebuildIndex } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const fixMode = args.includes('--fix');
@@ -17,35 +16,116 @@ function findMemoryScopes() {
   return findAllScopes();
 }
 
-function validateScope(scopeRoot, isRepoRoot) {
+function validateScope(scopeRoot) {
   const issues = [];
   const memDir = join(scopeRoot, '.claude', 'memory');
-  const indexFile = join(scopeRoot, '.claude', 'rules', 'MEMORY.md');
-  const add = (level, msg) => issues.push({ scope: scopeRoot, level, msg });
+  const rulesDir = join(scopeRoot, '.claude', 'rules');
+  const indexFile = join(rulesDir, 'MEMORY.md');
+  const remStateFile = join(scopeRoot, '.claude', '.rem-state.json');
+  const isRepoRoot = scopeRoot === findAllScopes()[0];
 
-  if (!existsSync(memDir)) { add('error', '.claude/memory/ missing'); return issues; }
-
-  for (const abs of collectFiles(memDir)) {
-    const rel = relative(memDir, abs).replace(/\\/g, '/');
-    if (rel.endsWith('/_meta.json') || rel === '_meta.json') add('error', `leftover _meta.json: ${rel} — run migrations/migrate.mjs`);
-    else if (rel.endsWith('.md') && !rel.startsWith('tasks/') && !DATED_RE.test(rel)) add('warn', `entry outside a dated directory: ${rel}`);
+  // 1. memory/ directory exists
+  if (!existsSync(memDir)) {
+    issues.push({ scope: scopeRoot, level: 'error', msg: '.claude/memory/ missing' });
+    return issues;
   }
 
-  let current = null;
-  try { current = readFileSync(indexFile, 'utf8'); } catch { /* missing */ }
-  if (current === null) add('warn', '.claude/rules/MEMORY.md missing');
-  else if (current !== renderIndex(scopeRoot)) add('warn', '.claude/rules/MEMORY.md stale');
-
-  if (!isRepoRoot && existsSync(join(scopeRoot, '.claude', '.rem-state.json'))) {
-    add('warn', '.claude/.rem-state.json should only exist in repo root scope');
+  // 2. Each date dir with .md files must have _meta.json
+  function walk(dir) {
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.')) continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'tasks') continue;
+          walk(full);
+          // After walking, check if this date dir has .md files but no _meta.json
+          const hasMd = readdirSync(full, { withFileTypes: true }).some(
+            e => e.isFile() && e.name.endsWith('.md')
+          );
+          if (hasMd && !existsSync(join(full, '_meta.json'))) {
+            issues.push({ scope: scopeRoot, level: 'warn', msg: `missing _meta.json in ${relative(memDir, full).replace(/\\/g, '/')}` });
+          }
+        }
+      }
+    } catch { /* permissions */ }
   }
+  walk(memDir);
+
+  // 2b. _meta.json files must be valid JSON
+  function checkMeta(dir) {
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.')) continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) { checkMeta(full); continue; }
+        if (entry.name === '_meta.json') {
+          try { JSON.parse(readFileSync(full, 'utf8')); } catch {
+            issues.push({ scope: scopeRoot, level: 'error', msg: `corrupt _meta.json: ${relative(memDir, full).replace(/\\/g, '/')}` });
+          }
+        }
+      }
+    } catch { /* permissions */ }
+  }
+  checkMeta(memDir);
+
+  // 3. MEMORY.md exists
+  if (!existsSync(indexFile)) {
+    issues.push({ scope: scopeRoot, level: 'warn', msg: '.claude/rules/MEMORY.md missing' });
+  }
+
+  // 4. No cross-scope pollution in _meta.json
+  const state = loadMemoryState(scopeRoot);
+  for (const [relPath] of state) {
+    if (relPath.includes('..')) {
+      issues.push({ scope: scopeRoot, level: 'error', msg: `cross-scope path in _meta.json: ${relPath}` });
+    }
+  }
+
+  // 4b. migrated→ tombstones must point at an existing child scope
+  for (const [, meta] of state) {
+    if (typeof meta.dropped === 'string' && meta.dropped.startsWith('migrated→')) {
+      const target = meta.dropped.slice('migrated→'.length);
+      if (!existsSync(join(scopeRoot, target, '.claude', 'memory'))) {
+        issues.push({ scope: scopeRoot, level: 'warn', msg: `dangling migrated→ tombstone: child scope ${target} not found` });
+      }
+    }
+  }
+
+  // 5. Child scopes should not have .rem-state.json
+  if (!isRepoRoot && existsSync(remStateFile)) {
+    issues.push({ scope: scopeRoot, level: 'warn', msg: '.claude/.rem-state.json should only exist in repo root scope' });
+  }
+
   return issues;
 }
 
 function fixScope(scopeRoot, issues) {
-  if (issues.some(i => i.msg.startsWith('.claude/rules/MEMORY.md'))) {
-    rebuildIndex(scopeRoot);
-    console.log(`  [fix] regenerated MEMORY.md for ${relative(process.cwd(), scopeRoot) || '.'}`);
+  const memDir = join(scopeRoot, '.claude', 'memory');
+
+  for (const issue of issues) {
+    if (issue.msg.includes('missing _meta.json')) {
+      // Extract the relative path from the message
+      const m = issue.msg.match(/missing _meta.json in (.+)/);
+      if (m) {
+        const metaFile = join(memDir, m[1], '_meta.json');
+        if (!existsSync(metaFile)) {
+          writeFileSync(metaFile, '{}\n', 'utf8');
+          console.log(`  [fix] created ${relative(process.cwd(), metaFile)}`);
+        }
+      }
+    }
+    if (issue.msg.includes('MEMORY.md missing')) {
+      rebuildIndex(scopeRoot);
+      console.log(`  [fix] rebuilt MEMORY.md for ${relative(process.cwd(), scopeRoot) || '.'}`);
+    }
+    if (issue.msg.includes('corrupt _meta.json')) {
+      const m = issue.msg.match(/corrupt _meta.json: (.+)/);
+      if (m) {
+        writeFileSync(join(memDir, m[1]), '{}\n', 'utf8');
+        console.log(`  [fix] reset corrupt _meta.json: ${m[1]}`);
+      }
+    }
   }
 }
 
@@ -54,7 +134,7 @@ const scopes = findMemoryScopes();
 const allIssues = [];
 
 for (const scope of scopes) {
-  const issues = validateScope(scope, scope === scopes[0]);
+  const issues = validateScope(scope);
   allIssues.push(...issues);
 }
 

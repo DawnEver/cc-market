@@ -12,7 +12,7 @@ is proposed — the mechanism self-disables. Every split is confirmed by the use
 
 ## When to run
 
-Alongside the crystallize check. Run:
+After prune, alongside the crystallize check. Run:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --check
@@ -37,8 +37,9 @@ Exit 0 = at least one split candidate exists. Exit 1 = skip (proceed with normal
    node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --execute \
      --scope <subdir> --entries <rel1,rel2,...>
    ```
-   This **moves** each entry file into `<subdir>/.claude/memory/<same date path>` and rebuilds
-   both indexes. The parent's `## Scoped` section
+   This **moves** each entry file into `<subdir>/.claude/memory/<same date path>`, records a
+   `dropped: 'migrated→<subdir>'` tombstone in the parent's `_meta.json` (carrying tier/access
+   metadata over to the child), and rebuilds both indexes. The parent's `## Scoped` section
    auto-updates to link the new child scope.
 
 4. **Update prose** — if the split is architecturally meaningful, update the parent project's
@@ -60,5 +61,6 @@ bytes > `maxBytes`. A subdir becomes a candidate only when it additionally owns 
 
 ## Invariant note
 
-A split *relocates* entries; git records the move as a rename, so nothing is lost and no
-tombstone is needed.
+A split is the one operation permitted to remove a file from a scope's own memory tree — it
+*relocates* rather than evicts, leaving a `migrated→` tombstone so history is never silently
+lost. `scope-validate.mjs` flags dangling tombstones whose child scope is missing.

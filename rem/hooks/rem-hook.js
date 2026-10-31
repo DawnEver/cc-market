@@ -158,7 +158,7 @@ if (isMain(import.meta)) {
   const now = Date.now();
   let result;
   try {
-    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw' });
+    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { atomic: true, onTimeout: 'throw' });
     if (!saved?.persisted) process.exit(0);
   } catch { process.exit(0); }
   const { code, stderr } = resolveHookExit(result?.decision);

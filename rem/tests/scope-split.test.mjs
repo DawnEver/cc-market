@@ -183,7 +183,7 @@ describe("proposeScopeSplits", () => {
 // ── executeScopeSplit ─────────────────────────────────────────────────────────
 
 describe("executeScopeSplit", () => {
-  test("moves files into child scope and rebuilds both indexes", () => {
+  test("moves files into child scope, tombstones parent, rebuilds both indexes", () => {
     mkdir(tmp, "mod");
     writeMem(tmp, "2026/06/01/e1.md", { name: "e1", referenced: ["mod/x.js"] });
     writeMem(tmp, "2026/06/02/e2.md", { name: "e2", referenced: ["mod/y.js"] });
@@ -194,6 +194,12 @@ describe("executeScopeSplit", () => {
     // files relocated
     assert.ok(!fs.existsSync(path.join(tmp, ".claude/memory/2026/06/01/e1.md")));
     assert.ok(fs.existsSync(path.join(tmp, "mod/.claude/memory/2026/06/01/e1.md")));
+
+    // parent tombstone records destination
+    const parentMeta = JSON.parse(
+      fs.readFileSync(path.join(tmp, ".claude/memory/2026/06/01/_meta.json"), "utf8")
+    );
+    assert.equal(parentMeta["e1.md"].dropped, "migrated→mod");
 
     // child index lists the moved entry; parent index does not
     const childIndex = fs.readFileSync(path.join(tmp, "mod/.claude/rules/MEMORY.md"), "utf8");
@@ -206,6 +212,21 @@ describe("executeScopeSplit", () => {
     assert.ok(parentIndex.includes("mod → see mod/.claude/rules/MEMORY.md"));
   });
 
+  test("preserves tier/access metadata across the move", () => {
+    mkdir(tmp, "mod");
+    writeMem(tmp, "2026/06/01/e1.md", { name: "e1", referenced: ["mod/x.js"] });
+    // seed parent meta with promoted tier
+    const metaFile = path.join(tmp, ".claude/memory/2026/06/01/_meta.json");
+    fs.writeFileSync(metaFile, JSON.stringify({ "e1.md": { accessed: "2026-06-15", count: 7, tier: "long" } }), "utf8");
+
+    executeScopeSplit(tmp, "mod", ["2026/06/01/e1.md"]);
+    const childMeta = JSON.parse(
+      fs.readFileSync(path.join(tmp, "mod/.claude/memory/2026/06/01/_meta.json"), "utf8")
+    );
+    assert.equal(childMeta["e1.md"].tier, "long");
+    assert.equal(childMeta["e1.md"].count, 7);
+    assert.equal(childMeta["e1.md"].accessed, "2026-06-15");
+  });
 
   test("refuses path traversal in entry list", () => {
     mkdir(tmp, "mod");

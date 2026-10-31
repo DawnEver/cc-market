@@ -4,18 +4,17 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 
 | Script | Usage | Key Flags |
 |---|---|---|
-| `remember.js` | Immediate save for explicit "remember this" requests: write the dated entry, name an older same-name entry in `merged_from:` (supersede), regenerate the index | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` (replace a same-day entry) |
-| `merge-memory.js` | Fold duplicate entries into ONE live entry: sources appended verbatim under `## Merged from <path>`, listed in its `merged_from:`, then deleted | `--into <live.md>`, `--from <a.md,b.md>`, `--dry-run` |
-| `retire-memory.js` | Delete every entry a live entry names in `merged_from:`, then regenerate the index | `--execute` (default is a dry run) |
-| `index-memory.js` | Regenerate every scope's `.claude/rules/MEMORY.md` from its tree; written only when bytes change (SessionStart hook) | `--quiet` |
-| `crystallize.js` | Distill entries into `.claude/rules/rem/` and retire them through a ledger entry | `--check`, `--propose`, `--validate`, `--execute --rule <file.md> --distilled <paths>` |
-| `scope-split.js` | Relocate a memory cluster into a child scope (a move), user-gated | `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>` |
-| `scope-validate.mjs` | Verify every scope: no leftover `_meta.json`, entries under `YYYY/MM/DD/`, index current | `--check`, `--fix` (regenerate stale indexes) |
-| `rem-prep.js` | Read-only pre-REM report: entries this session read, live / retired-awaiting counts per scope, crystallize advisory | `--transcript <path>` |
+| `stamp-memory.js` | Create dirs, warn on missing `name:` frontmatter, rebuild MEMORY.md index | (none, idempotent) |
+| `remember.js` | Immediate save for explicit "remember this" requests: write dated memory file + `_meta.json` entry + index upsert | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` (appends a dated `## Update` section unless the new body contains the old; never drops text) |
+| `prune-memory.js` | Promote eligible entries, demote inactive long-term entries, and optionally tombstone >90d stale short-term entries; feedback exempt, no count cap | `--evict-stale`, `--dry-run` |
+| `merge-memory.js` | Fold duplicate entries into ONE live entry: sources appended verbatim under `## Merged from <path>`, listed in its `merged_from:` frontmatter, tombstoned `merged→<live>` in the index; source files kept on disk | `--into <live.md>`, `--from <a.md,b.md>`, `--dry-run` |
+| `touch-memory.js <path>` | Bump `accessed` to today | `--promote` (upgrade `tier: short` → `long`) |
+| `crystallize.js` | Orchestrate crystallize mode: distill memory into `.claude/rules/rem/` | `--check`, `--drift`, `--propose`, `--execute --distilled <paths>`, `--validate` |
+| `scope-split.js` | Relocate a memory cluster into a child scope (move + tombstone), user-gated | `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>` |
+| `scope-validate.mjs` | Verify scope isolation + intermediate file integrity across all scopes | `--check`, `--fix` |
+| `rem-prep.js` | Pre-REM automation: event log, batch touch, auto-promote, crystallize check | `--transcript <path>`, `--promote` |
 | `check-docs.js` | Doc freshness check at crystallize time. Flags a doc only when it *references* a file that changed (by relative path or filename), and names which — not every doc that happens to be untouched | `--json` |
 | `task-engine.js` | Task CLI (`/todo`) | `report`, `add`, `remove`, `show`, `mark`, `check`, `help` |
 | `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, markFinding, groupBy* |
-| `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` on both hosts; read-only toward the repo | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
+| `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` on both hosts; injected entries record semantic access | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
 | `rem-session.js` | Acknowledge successfully completed REM work for the matching pending Stop request | `complete --session <id> --request <request-id>`; run in the project cwd, never acknowledge unfinished work |
-
-One-shot migration from the access-tracking format: `node ${CLAUDE_PLUGIN_ROOT}/migrations/migrate.mjs [<root>] [--dry-run]`.

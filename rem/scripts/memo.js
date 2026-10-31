@@ -28,7 +28,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { join, resolve } from 'path';
-import { atomicWriteFile } from '../shared/atomic-write.mjs';
+import { atomicWriteFile } from '../shared/stamp.mjs';
 import { findMemoryScope, isInsideDir } from './lib.mjs';
 import { isMain } from "../shared/lib.mjs";
 import { isCodexHost } from './inject-rules.js';

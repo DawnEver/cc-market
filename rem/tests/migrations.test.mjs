@@ -1,5 +1,5 @@
 /**
- * Tests for rem/migrations/migrate.mjs — one-shot move to the tree-only lifecycle.
+ * Tests for rem/migrations/migrate.mjs — "migrate to latest" project migration.
  * Run: node --test cc-market/rem/tests/migrations.test.mjs
  */
 
@@ -8,64 +8,173 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { migrate, stripVolatile } from '../migrations/migrate.mjs';
+import { fileURLToPath } from 'node:url';
+import { migrate } from '../migrations/migrate.mjs';
 
-let root;
-const mem = (...p) => path.join(root, '.claude', 'memory', ...p);
-function put(file, text) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); }
-
-function legacyProject() {
-  put(mem('2026', '07', '01', 'old.md'), '---\nname: fact\ndescription: d\ncreated: 2026-07-01\naccessed: 2026-09-01\ntier: long\nmetadata:\n  type: project\n---\n\ntier: in the body stays\n');
-  put(mem('2026', '08', '01', 'new.md'), '---\nname: fact\ndescription: d\nmerged_from: 2026/07/01/old.md\nmetadata:\n  type: project\n---\n\nnew\n');
-  put(mem('2026', '07', '01', '_meta.json'), '{"old.md":{"accessed":"2026-09-01","count":4,"tier":"long"}}');
-  put(path.join(root, '.claude', 'meta', 'MEMORY.full.md'), '# catalog\n');
-  put(path.join(root, '.claude', '.rem-state.json'), JSON.stringify({ hook: { stopCount: 2 }, prune: { lastPruneAt: 5, events: [] } }));
-}
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('rem migrate()', () => {
+  let projectRoot;
+
   beforeEach(() => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-migrate-'));
-    fs.mkdirSync(path.join(root, '.git'));
-  });
-  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  test('stripVolatile touches only frontmatter and keeps created', () => {
-    const out = stripVolatile('---\nname: a\ncreated: 2026-01-01\naccessed: 2026-02-02\ncount: 3\n---\n\ncount: body\n');
-    assert.equal(out, '---\nname: a\ncreated: 2026-01-01\n---\n\ncount: body\n');
+    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-migrate-'));
   });
 
-  test('dry run reports every step and changes nothing', async () => {
-    legacyProject();
-    const before = fs.readFileSync(mem('2026', '07', '01', 'old.md'), 'utf8');
-    const { counts, summary } = await migrate(root, { dryRun: true });
-    assert.deepEqual(
-      { meta: counts.meta, catalog: counts.catalog, stripped: counts.stripped, retired: counts.retired, state: counts.state },
-      { meta: 1, catalog: 1, stripped: 1, retired: 1, state: 1 },
+  afterEach(() => {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  });
+
+  test('strips volatile fields and imports into _meta.json', async () => {
+    const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
+    fs.mkdirSync(dayDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dayDir, 'example.md'),
+      '---\nname: example\ndescription: an example memory\ncreated: 2026-06-10\naccessed: 2026-06-10\ntier: short\n---\n\nbody\n',
     );
-    assert.ok(summary.every(s => /would|regenerated/.test(s)));
-    assert.equal(fs.readFileSync(mem('2026', '07', '01', 'old.md'), 'utf8'), before);
-    assert.ok(fs.existsSync(mem('2026', '07', '01', '_meta.json')));
-    assert.ok(!fs.existsSync(path.join(root, '.gitignore')));
+
+    const { changed } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    // Volatile fields stripped from frontmatter
+    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
+    assert.equal(content.includes('created:'), false);
+    assert.equal(content.includes('accessed:'), false);
+    assert.equal(content.includes('tier:'), false);
+    // _meta.json created with migrated data
+    const metaFile = path.join(dayDir, '_meta.json');
+    assert.equal(fs.existsSync(metaFile), true);
+    const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+    assert.ok(meta['example.md']);
+    assert.equal(meta['example.md'].tier, 'short');
   });
 
-  test('applies: bookkeeping gone, superseded entry retired, index derived, then idempotent', async () => {
-    legacyProject();
-    await migrate(root);
-    assert.ok(!fs.existsSync(mem('2026', '07', '01', '_meta.json')));
-    assert.ok(!fs.existsSync(mem('2026', '07', '01', 'old.md')));
-    assert.ok(!fs.existsSync(path.join(root, '.claude', 'meta', 'MEMORY.full.md')));
-    const state = JSON.parse(fs.readFileSync(path.join(root, '.claude', '.rem-state.json'), 'utf8'));
-    assert.deepEqual(state, { hook: { stopCount: 2 } });
-    const index = fs.readFileSync(path.join(root, '.claude', 'rules', 'MEMORY.md'), 'utf8');
-    assert.match(index, /2026\/08\/01\/new\.md/);
-    assert.match(fs.readFileSync(path.join(root, '.gitignore'), 'utf8'), /^\*\*\/\.claude\/rules\/MEMORY\.md$/m);
-    const again = await migrate(root);
-    assert.equal(again.changed, false);
+  test('is idempotent — second run does not re-import already migrated fields', async () => {
+    const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
+    fs.mkdirSync(dayDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dayDir, 'example.md'),
+      '---\nname: example\ndescription: an example memory\ncreated: 2026-06-10\naccessed: 2026-06-10\ntier: short\n---\n\nbody\n',
+    );
+
+    await migrate(projectRoot);
+    // Second run: volatile fields already stripped, _meta.json already exists
+    await migrate(projectRoot);
+
+    // frontmatter should still be clean
+    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
+    assert.equal(content.includes('created:'), false);
+    assert.equal(content.includes('accessed:'), false);
+    // _meta.json still intact
+    const meta = JSON.parse(fs.readFileSync(path.join(dayDir, '_meta.json'), 'utf8'));
+    assert.ok(meta['example.md']);
   });
 
-  test('appends only missing ignores and preserves the rest', async () => {
-    put(path.join(root, '.gitignore'), 'node_modules/\n**/.claude/memo/\n');
-    await migrate(root);
-    assert.equal(fs.readFileSync(path.join(root, '.gitignore'), 'utf8'), 'node_modules/\n**/.claude/memo/\n\n**/.claude/rules/MEMORY.md\n');
+  test('creates .gitignore even when .claude/ does not exist', async () => {
+    const { changed, summary } = await migrate(projectRoot);
+    // gitignore step runs regardless of .claude/ presence
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('rem gitignore ignore')));
+    assert.equal(fs.existsSync(path.join(projectRoot, '.gitignore')), true);
+  });
+
+  test('removes stray legacy .claude/.retro_state.json', async () => {
+    fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.claude', '.retro_state.json'), '{}');
+
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('.retro_state.json')));
+    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', '.retro_state.json')), false);
+  });
+
+  // rem owns ONLY ignores for the artifacts it generates — the broader .claude
+  // structure template is the root migrate skill's concern.
+  const REM_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
+
+  test('ensures rem generated-artifact ignores when .gitignore does not exist', async () => {
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    assert.equal(fs.existsSync(gitignorePath), true);
+    const present = new Set(fs.readFileSync(gitignorePath, 'utf8').split('\n').map(l => l.trim()));
+    for (const e of REM_IGNORES) assert.ok(present.has(e), `missing ${e}`);
+    assert.ok(summary.some(s => s.includes('rem gitignore ignore')));
+  });
+
+  test('appends only missing rem ignores, preserves everything else', async () => {
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    // Host project already has its own .claude structure rules + one of rem's ignores.
+    fs.writeFileSync(gitignorePath, '**/.claude/**\n!**/.claude/memory/\n!**/.claude/memory/**\nnode_modules/\n**/_meta.json\n');
+
+    const { changed } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    const content = fs.readFileSync(gitignorePath, 'utf8');
+    assert.ok(content.includes('node_modules/'));            // unrelated entry kept
+    assert.ok(content.includes('**/.claude/**'));            // host's structure rules untouched
+    assert.ok(content.includes('**/.claude/rules/MEMORY.md')); // the missing rem ignore added
+    // rem never strips others — _meta.json kept, missing entries appended after it
+    // in REM_GENERATED_IGNORES order.
+    const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+    assert.deepEqual(lines.slice(-2), ['**/.claude/rules/MEMORY.md', '**/.claude/memo/']);
+  });
+
+  test('gitignore step is idempotent — no-op when rem ignores already present', async () => {
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+    fs.writeFileSync(gitignorePath, '.DS_Store\n' + REM_IGNORES.join('\n') + '\n');
+
+    const { changed } = await migrate(projectRoot);
+
+    // No .claude/ dir → no stamp; rem ignores already present → gitignore no-op → full no-op.
+    assert.equal(changed, false);
+  });
+
+  test('removes legacy .claude/tasks/ and .claude/memory/tasks/ across scopes', async () => {
+    const taskArchive = path.join(projectRoot, '.claude', 'tasks', 'archive', '2026', '05');
+    fs.mkdirSync(taskArchive, { recursive: true });
+    fs.writeFileSync(path.join(taskArchive, '30.md'), 'x');
+    const memTasks = path.join(projectRoot, '.claude', 'memory', 'tasks');
+    fs.mkdirSync(memTasks, { recursive: true });
+    fs.writeFileSync(path.join(memTasks, 'old.md'), 'x');
+
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('legacy task dir')));
+    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', 'tasks')), false);
+    assert.equal(fs.existsSync(memTasks), false);
+  });
+
+  test('converts flat YYYY-MM-DD/ memory dirs to nested YYYY/MM/DD/', async () => {
+    const memoryDir = path.join(projectRoot, '.claude', 'memory');
+    const flatDir = path.join(memoryDir, '2026-06-03');
+    fs.mkdirSync(flatDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(flatDir, 'flat-entry.md'),
+      '---\nname: flat-entry\ndescription: test\ncreated: 2026-06-03\naccessed: 2026-06-03\ntier: short\n---\n\nbody\n',
+    );
+
+    const { changed, summary } = await migrate(projectRoot);
+
+    assert.equal(changed, true);
+    assert.ok(summary.some(s => s.includes('migrated 1 flat memory entry')));
+    // Old flat dir removed
+    assert.equal(fs.existsSync(flatDir), false);
+    // New nested dir exists with the file
+    const nestedFile = path.join(memoryDir, '2026', '06', '03', 'flat-entry.md');
+    assert.equal(fs.existsSync(nestedFile), true);
+    const content = fs.readFileSync(nestedFile, 'utf8');
+    assert.match(content, /name: flat-entry/);
+  });
+
+  test('migration stamp child process is hidden on Windows', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', 'migrate.mjs'),
+      'utf8',
+    );
+    // windowsHide is forced by the shared spawn wrapper — assert the wrapper is used.
+    assert.match(source, /import \{ execFileSync \} from ["']\.\.\/shared\/spawn\.mjs["']/);
   });
 });
