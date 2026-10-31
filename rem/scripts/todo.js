@@ -5,7 +5,8 @@
 //   todo.js add "<summary>" [--severity HIGH|MEDIUM|LOW] [--module <m>] [--file <path>]
 //   todo.js show <id>
 //   todo.js close <id> ["<how>"]                   archive the item into memory
-//   todo.js adopt <legacy.md>...                   one item file per open checkbox/finding
+//   todo.js adopt [--dry-run] <legacy.md>...       one item file per open checkbox/finding
+//                                                  (--dry-run lists them and writes nothing)
 // With .claude/rem.json {"backlog": "issues"}, add/close/adopt are refused: the tracker is the store.
 
 import { readFileSync } from 'fs';
@@ -44,6 +45,12 @@ export function main(argv) {
     const [id, ...how] = args;
     console.log(`${PREFIX} closed ${id} → ${closeItem(cwd, id, how.join(' '))}`);
   } else if (verb === 'adopt') {
+    if (args.includes('--dry-run')) {
+      const planned = adoptLegacy(cwd, args.filter(a => a !== '--dry-run'), { dryRun: true });
+      console.log(`${PREFIX} would adopt ${planned.length} open item(s)`);
+      for (const i of planned) console.log(`  ${i.from} [${i.severity}] ${i.summary}`);
+      return;
+    }
     const ids = adoptLegacy(cwd, args);
     console.log(`${PREFIX} adopted ${ids.length} open item(s)${ids.length ? `: ${ids.join(', ')}` : ''}`);
   } else {

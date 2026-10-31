@@ -118,7 +118,8 @@ export function parseLegacyItems(content) {
   return out;
 }
 
-export function adoptLegacy(start, relFiles) {
+// dryRun: return the items it WOULD adopt ({from, severity, summary}) and write nothing.
+export function adoptLegacy(start, relFiles, { dryRun = false } = {}) {
   const root = findProjectRoot(start);
   const adopted = new Set(listItems(start).map(i => i.from).filter(Boolean));
   const made = [];
@@ -129,7 +130,8 @@ export function adoptLegacy(start, relFiles) {
       const from = `${memRel}#${item.id}`;
       if (!item.open || adopted.has(from)) continue;
       const severity = SEVERITIES.includes(item.severity.toUpperCase()) ? item.severity : 'MEDIUM';
-      made.push(addItem(start, item.summary, { severity, module: item.module, file: item.file, from, detail: item.detail }).id);
+      made.push(dryRun ? { from, severity: severity.toUpperCase(), summary: item.summary }
+        : addItem(start, item.summary, { severity, module: item.module, file: item.file, from, detail: item.detail }).id);
       adopted.add(from);
     }
   }
