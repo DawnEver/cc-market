@@ -19,7 +19,7 @@ import { parseLegacyItems } from '../scripts/todo-lib.mjs';
 const REM_GENERATED_IGNORES = ['**/.claude/memory-index.md', '**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
 
 export const VOLATILE_FIELDS = ['accessed', 'tier', 'count'];
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/; // the closing fence is a whole `---` line
 const CLASSED_RE = /^(HANDOFF|PLAN|DECISIONS)-/;
 
 function readGitignore(projectRoot) {

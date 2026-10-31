@@ -136,4 +136,14 @@ describe('rem migration plan (four layers)', () => {
     assert.match(entry, /^created: 2026-10-01$/m);
     assert.match(entry, /accessed: body text stays/);
   });
+
+  test('the closing fence is a whole `---` line: `----` and `---x` do not end the frontmatter', async () => {
+    const rel = '.claude/memory/2026/10/05/fences.md';
+    write(rel, '---\nname: f\ndescription: d\n----\n---x\naccessed: 2026-10-05\n---\n\n---x body\n');
+    spawnSync('git', ['add', '-A'], { cwd: root });
+    const { plan } = await migrate(root, { dryRun: true });
+    assert.deepEqual(plan.strip.find(s => s.path === rel)?.fields, ['accessed']);
+    await migrate(root);
+    assert.equal(fs.readFileSync(path.join(root, rel), 'utf8'), '---\nname: f\ndescription: d\n----\n---x\n---\n\n---x body\n');
+  });
 });
