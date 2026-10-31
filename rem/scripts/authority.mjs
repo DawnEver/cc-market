@@ -83,16 +83,21 @@ export function consumeAuthority(start, verb, slug, now = Date.now()) {
   });
 }
 
-// Detection: why a task's authority id does not hold up, or null when it does.
+// Detection: { level, msg } when a task's authority id does not hold up, else null. The
+// history is per machine: with NO local history for the project (another workstation, CI,
+// a wiped ~/.claude) nothing can be checked here — a warning. Local history that
+// contradicts the task is an error.
 export function authorityProblem(start, slug, id) {
-  const events = readHistory(start).filter(e => e.id === id);
-  if (!events.some(e => e.event === 'granted')) return `authority ${id} is not in the authority history`;
-  if (!events.some(e => e.event === 'consumed' && e.verb === 'open' && e.slug === slug)) return `authority ${id} was not consumed by opening ${slug}`;
+  const history = readHistory(start);
+  if (!history.length) return { level: 'warn', msg: 'no local authority history for this project -- cannot check here' };
+  const events = history.filter(e => e.id === id);
+  if (!events.some(e => e.event === 'granted')) return { level: 'error', msg: `authority ${id} is not in the authority history` };
+  if (!events.some(e => e.event === 'consumed' && e.verb === 'open' && e.slug === slug)) return { level: 'error', msg: `authority ${id} was not consumed by opening ${slug}` };
   return null;
 }
 
-// Probe mode (REM_AUTHORITY_PROBE=1): record the raw prompt the hook received, so the one
-// live check of the prompt shape is cheap. See skills/rem/reference/tasks.md.
+// Probe mode (REM_AUTHORITY_PROBE=1): record the RAW prompt the hook received, for the one
+// live check of the prompt shape only — it logs every prompt verbatim; unset it after. See skills/rem/reference/tasks.md.
 export function probe(prompt, now = Date.now()) {
   append(join(authorityDir(), 'probe.jsonl'), { time: new Date(now).toISOString(), prompt: String(prompt) });
 }

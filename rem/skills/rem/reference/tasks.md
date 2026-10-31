@@ -24,8 +24,9 @@ POSIX; never a shared temp dir). A grant matches exactly one verb and slug, is l
 minutes, and is spent by a `consumed` event; the history is append-only. The consumed id is
 written into `TASK.md` (`authority:`) and the journal's opened/closed line.
 
-Detection: `scope-validate.mjs` errors when a task's id is missing, absent from the history, or
-was not consumed by opening that task; `git log -- .claude/tasks/<slug>/TASK.md` shows who wrote it.
+Detection: `scope-validate.mjs` errors when a task's id is missing, or when this machine's history
+for the project exists and lacks the id or shows it consumed by another task; with no local history
+(another workstation, CI, a wiped `~/.claude`) it warns that it cannot check here; `git log -- .claude/tasks/<slug>/TASK.md` shows who wrote it.
 
 Limit: the hook and an agent's shell run as the same OS user, so a determined agent can
 forge a record; preventing that would need a privilege boundary. `hooks/task-guard.js` (PreToolUse)
@@ -35,7 +36,8 @@ or pointing an interpreter or shell write at `.claude/tasks/`. To start a task, 
 the user. On Codex the user types the same `/rem:task …` prompt (the hook records it) and the
 session then runs `task.js open …`.
 
-**The one live check** (the hook's prompt shape): start a session with
+**The one live check** (the hook's prompt shape): probe mode logs every RAW prompt verbatim, so
+use it for this check only and unset it after. Start a session with
 `REM_AUTHORITY_PROBE=1`, type `/rem:task open probe`, read
 `~/.claude/rem/authority/probe.jsonl`, and pin the observed prompt in
 `tests/task-authority.test.mjs`. If the prompt arrives in another shape than

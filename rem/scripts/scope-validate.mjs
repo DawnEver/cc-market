@@ -38,7 +38,7 @@ function validateScope(scopeRoot, isRepoRoot) {
   if (current === null) add('warn', '.claude/memory-index.md missing');
   else if (current !== renderIndex(scopeRoot)) add('warn', '.claude/memory-index.md stale');
 
-  if (isRepoRoot) for (const issue of taskAuthorityIssues(scopeRoot)) add('error', issue);
+  if (isRepoRoot) for (const { level, msg } of taskAuthorityIssues(scopeRoot)) add(level, msg);
 
   if (!isRepoRoot && existsSync(join(scopeRoot, '.claude', '.rem-state.json'))) {
     add('warn', '.claude/.rem-state.json should only exist in repo root scope');
@@ -51,15 +51,15 @@ function validateScope(scopeRoot, isRepoRoot) {
 function taskAuthorityIssues(root) {
   const dir = join(root, '.claude', 'tasks');
   if (!existsSync(dir)) return [];
-  const out = [];
+  const out = []; // { level, msg }
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const read = f => { try { return readFileSync(join(dir, e.name, f), 'utf8'); } catch { return ''; } };
     const id = read('TASK.md').match(/^authority: ([0-9a-f]{12})\s*$/m)?.[1];
     const opened = id && new RegExp(`^- \\d{4}-\\d{2}-\\d{2} opened: .*\\(authority ${id}\\)\\s*$`, 'm').test(read('JOURNAL.md'));
-    if (!opened) { out.push(`task ${e.name} has no user authority — its TASK.md was not written by /rem:task open`); continue; }
+    if (!opened) { out.push({ level: 'error', msg: `task ${e.name} has no user authority — its TASK.md was not written by /rem:task open` }); continue; }
     const problem = authorityProblem(root, e.name, id);
-    if (problem) out.push(`task ${e.name}: ${problem} — opened around /rem:task (see git log of its TASK.md)`);
+    if (problem) out.push({ level: problem.level, msg: `task ${e.name}: ${problem.msg}${problem.level === 'error' ? ' — opened around /rem:task (see git log of its TASK.md)' : ''}` });
   }
   return out;
 }

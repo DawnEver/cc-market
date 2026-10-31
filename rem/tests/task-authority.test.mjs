@@ -142,8 +142,9 @@ describe('the authority store: under the home directory, append-only, detectable
     assert.match(after.slice(before.length), /"event":"consumed"/);
   });
 
-  it('planted: a made-up authority id reds in scope-validate', () => {
+  it('planted: a made-up authority id reds in scope-validate when local history exists', () => {
     const root = repo();
+    userTypes(root, '/rem:task open other goal');
     const dir = path.join(root, '.claude', 'tasks', 'x');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'TASK.md'), '---\nname: x\nstatus: open\nopened_by: user\nauthority: abc123abc123\n---\n');
@@ -163,6 +164,17 @@ describe('the authority store: under the home directory, append-only, detectable
     fs.writeFileSync(path.join(dir, 'TASK.md'), `---\nname: x\nstatus: open\nopened_by: user\nauthority: ${id}\n---\n`);
     fs.writeFileSync(path.join(dir, 'JOURNAL.md'), `- 2026-10-31 opened: g (authority ${id})\n`);
     assert.match(validate(root).stdout, /task x\b.*not consumed by opening x/);
+  });
+
+  it('planted: no local history for the project (another machine, CI) is a warning, not an error', () => {
+    const root = repo();
+    const dir = path.join(root, '.claude', 'tasks', 'x');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'TASK.md'), '---\nname: x\nstatus: open\nopened_by: user\nauthority: abc123abc123\n---\n');
+    fs.writeFileSync(path.join(dir, 'JOURNAL.md'), '- 2026-10-31 opened: g (authority abc123abc123)\n');
+    const r = validate(root);
+    assert.equal(r.status, 0, r.stdout);
+    assert.match(r.stdout, /\[warn\].*task x\b.*no local authority history for this project -- cannot check here/);
   });
 
   it('probe mode logs the raw prompt the hook received, and nothing else changes', () => {
