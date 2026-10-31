@@ -7,6 +7,8 @@
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 
@@ -181,34 +183,37 @@ describe("proposeScopeSplits", () => {
 });
 
 // ── executeScopeSplit ─────────────────────────────────────────────────────────
+// A path is part of an entry's identity (citations name it), so a split moves NOTHING:
+// it creates the child scope, NEW entries written there land in it, and recall from the
+// child still finds the parent's entries.
 
 describe("executeScopeSplit", () => {
-  test("moves files into child scope and rebuilds both indexes", () => {
+  test("creates the child scope and leaves every existing entry where it is", () => {
     mkdir(tmp, "mod");
     writeMem(tmp, "2026/06/01/e1.md", { name: "e1", referenced: ["mod/x.js"] });
-    writeMem(tmp, "2026/06/02/e2.md", { name: "e2", referenced: ["mod/y.js"] });
-
-    const res = executeScopeSplit(tmp, "mod", ["2026/06/01/e1.md", "2026/06/02/e2.md"]);
-    assert.equal(res.moved, 2);
-
-    // files relocated
-    assert.ok(!fs.existsSync(path.join(tmp, ".claude/memory/2026/06/01/e1.md")));
-    assert.ok(fs.existsSync(path.join(tmp, "mod/.claude/memory/2026/06/01/e1.md")));
-
-    // child index lists the moved entry; parent index does not
-    const childIndex = fs.readFileSync(path.join(tmp, "mod/.claude/memory-index.md"), "utf8");
-    assert.ok(childIndex.includes("e1"));
+    const before = fs.readFileSync(path.join(tmp, ".claude/memory/2026/06/01/e1.md"), "utf8");
+    const res = executeScopeSplit(tmp, "mod");
+    assert.equal(res.scope, "mod");
+    assert.equal(fs.readFileSync(path.join(tmp, ".claude/memory/2026/06/01/e1.md"), "utf8"), before);
+    assert.ok(fs.existsSync(path.join(tmp, "mod/.claude/memory")));
+    assert.ok(!fs.existsSync(path.join(tmp, "mod/.claude/memory/2026")));
     const parentIndex = fs.readFileSync(path.join(tmp, ".claude/memory-index.md"), "utf8");
-    assert.ok(!/\(\.\.\/memory\/2026\/06\/01\/e1\.md\)/.test(parentIndex));
-
-    // parent now lists the child in its Scoped section
-    assert.ok(parentIndex.includes("## Scoped"));
+    assert.ok(parentIndex.includes("2026/06/01/e1.md"));
     assert.ok(parentIndex.includes("mod → see mod/.claude/memory-index.md"));
   });
 
-
-  test("refuses path traversal in entry list", () => {
+  test("recall from the child still finds the parent's entry about it", () => {
     mkdir(tmp, "mod");
-    assert.throws(() => executeScopeSplit(tmp, "mod", ["../../../etc/passwd"]));
+    fs.mkdirSync(path.join(tmp, ".git"), { recursive: true });
+    writeMem(tmp, "2026/06/01/zebra-split.md", { name: "zebra-split", referenced: ["mod/x.js"] });
+    executeScopeSplit(tmp, "mod");
+    const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "recall.js")],
+      { input: JSON.stringify({ prompt: "zebra split", cwd: path.join(tmp, "mod") }), encoding: "utf8" });
+    assert.match(r.stdout, /zebra-split/);
+  });
+
+  test("refuses a child path outside the scope", () => {
+    assert.throws(() => executeScopeSplit(tmp, "../outside"));
   });
 });
+

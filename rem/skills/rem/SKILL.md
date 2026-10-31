@@ -51,7 +51,7 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 - Full script reference (incl. `check-docs.js`, `todo.js`, `task.js`, all flags) → `reference/scripts.md`
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
 - Crystallize procedure (current `--check` advisory threshold; user-gated distill) → `reference/crystallize.md`
-- Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`
+- Scope-split procedure (large scope; give a cluster its own child scope, nothing moves) → `reference/scope-split.md`
 - Standard-pass walkthrough + Lightweight variant → `reference/standard-procedure.md`
 - Tasks layer (user-opened tasks, binding, the append-only journal) → `reference/tasks.md`
 
@@ -71,14 +71,14 @@ Exit 0 = needed, exit 1 = skip. **If needed**, follow the full user-gated distil
 
 ## Scope split (large scope + a subdir owns a cluster)
 
-Check whether a memory cluster should move into its own child scope:
+Check whether a memory cluster should get its own child scope:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --check
 ```
 Exit 0 = a split candidate exists, exit 1 = skip. **If a candidate exists**, follow the
 user-gated procedure in **`reference/scope-split.md`** (propose → confirm each split →
 execute). Self-disables in flat repos with no internal module boundary. Distinct from crystallize:
-a split relocates entries into a nested scope rather than distilling them into rules.
+a split routes NEW entries to a nested scope (existing ones stay) rather than distilling them into rules.
 
 ## Lightweight (doc-only or non-code session)
 

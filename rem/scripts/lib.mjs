@@ -1,7 +1,7 @@
 // lib.mjs — shared module for REM memory system
 // Single source of truth for paths, frontmatter, entries, derived visibility and the derived index.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, writeFileSync, renameSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { join, dirname, resolve, relative, basename, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
@@ -387,7 +387,7 @@ export function collectMemoryFiles(dir) {
   return results;
 }
 
-// ── Scope split (relocate a cluster of entries into a child scope) ──
+// ── Scope split (make a child scope for a cluster; nothing moves) ──
 //
 // Generic and structure-agnostic: a candidate child scope must correspond to a real
 // subdirectory that the clustered entries reference. No assumption about repo layout
@@ -520,30 +520,16 @@ export function proposeScopeSplits(scopeRoot, opts) {
   return candidates;
 }
 
-// Relocate `entryRelPaths` from `scopeRoot` into the child scope at `subdirRel`.
-// The file moves into the child's memory tree; nothing else records the move.
-// Both indexes rebuild (parent's Scoped section auto-picks-up the new child).
-export function executeScopeSplit(scopeRoot, subdirRel, entryRelPaths) {
-  const parentMem = join(scopeRoot, '.claude', 'memory');
-  const childRoot = join(scopeRoot, subdirRel);
-  const childMem = join(childRoot, '.claude', 'memory');
-  let moved = 0;
-
-  for (const rel of entryRelPaths) {
-    const src = resolve(parentMem, rel);
-    if (!isInsideDir(parentMem, src)) throw new Error(`path traversal denied (source): ${rel}`);
-    const dest = resolve(childMem, rel);
-    if (!isInsideDir(childMem, dest)) throw new Error(`path traversal denied (dest): ${rel}`);
-    if (!existsSync(src)) continue;
-
-    mkdirSync(dirname(dest), { recursive: true });
-    renameSync(src, dest);
-    moved++;
-  }
-
+// Make `subdirRel` a child scope. NOTHING moves: an entry's path is part of its identity
+// (citations name it), so existing entries stay in the parent, which recall reads from
+// inside the child too. New entries written under the child land in its own tree.
+export function executeScopeSplit(scopeRoot, subdirRel) {
+  const childRoot = resolve(scopeRoot, subdirRel);
+  if (childRoot === resolve(scopeRoot) || !isInsideDir(scopeRoot, childRoot)) throw new Error(`not a subdirectory of the scope: ${subdirRel}`);
+  mkdirSync(join(childRoot, '.claude', 'memory'), { recursive: true });
   rebuildIndex(childRoot);
   rebuildIndex(scopeRoot);
-  return { moved, scope: subdirRel };
+  return { scope: subdirRel.replace(/\\/g, '/') };
 }
 
 // ── State management (delegates to shared/state.mjs) ──

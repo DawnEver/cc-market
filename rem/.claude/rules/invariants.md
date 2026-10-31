@@ -9,7 +9,7 @@ state exists beside the files. NOTHING deletes a file under `.claude/memory/` (u
 2026-10-31; `tests/lifecycle.test.mjs` scans every script for a file-removing call). An entry
 is never edited either: a correction or restatement is a NEW entry naming the old one
 (`corrects:` flags it; `supersedes:` / `merged_from:` hide it) — visibility is derived, the file stays.
-`scope-split.js` moves files between scopes (a rename, not a removal).
+`scope-split.js` moves nothing: an entry's path is part of its identity.
 
 ## Only the user opens a task; a journal is append-only
 

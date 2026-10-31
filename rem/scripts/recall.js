@@ -441,6 +441,13 @@ export function scopedContext(prompt, cwd, now = Date.now()) {
     // Paths being worked on: the bound task's scope, else the cwd's scope directory.
     const workPaths = task?.scope.length ? task.scope : [path.relative(root, home).replace(/\\/g, "/")];
     const scopes = new Set([home]);
+    // Ancestor scopes cover their whole subtree: a split never moves an entry, so the
+    // parent's entries about a child directory are recalled from inside the child.
+    for (let dir = path.dirname(home); !path.relative(root, dir).startsWith("..") && !path.isAbsolute(path.relative(root, dir)); dir = path.dirname(dir)) {
+      const s = findScopeForCwd(dir);
+      if (s && !path.relative(root, s).startsWith("..")) scopes.add(s);
+      if (dir === path.dirname(dir) || dir === root) break;
+    }
     for (const p of task?.scope || []) {
       const s = findScopeForCwd(path.join(root, p));
       if (s) scopes.add(s);

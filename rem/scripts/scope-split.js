@@ -4,7 +4,7 @@
 //   node scope-split.js --check                          → exit 0 if a split candidate exists, exit 1 otherwise
 //   node scope-split.js --propose                         → JSON: candidate child scopes + their entries
 //   node scope-split.js --execute --scope <subdir> \
-//        --entries <rel1,rel2,...>                         → relocate entries into the child scope (move + tombstone)
+//                                                          → make <subdir> a child scope; NOTHING moves
 //
 // Generic and structure-agnostic: a candidate child scope must correspond to a real
 // subdirectory that the clustered entries reference. In a flat repo with no internal
@@ -15,7 +15,9 @@
 //   1. Model runs --check; if exit 0 → a split candidate exists
 //   2. Model runs --propose → presents candidate scope(s) + entry lists to user
 //   3. User confirms a specific split (per-candidate)
-//   4. Model runs --execute --scope <subdir> --entries <paths>
+//   4. Model runs --execute --scope <subdir>
+// An entry's path is part of its identity: existing entries stay; new ones written under
+// <subdir> land in the child, and recall from the child still reads the parent.
 
 import {
   scopeRoot, proposeScopeSplits, executeScopeSplit, resolveSplitConfig,
@@ -51,26 +53,19 @@ if (mode === '--propose') {
   process.exit(0);
 }
 
-// ── --execute: relocate entries into a child scope ──
+// ── --execute: make a child scope (nothing moves) ──
 if (mode === '--execute') {
   const subdir = flag('--scope');
-  const entriesArg = flag('--entries');
-  if (!subdir || !entriesArg) {
-    console.error('[scope-split] --execute requires --scope <subdir> --entries <rel1,rel2,...>');
+  if (!subdir) {
+    console.error('[scope-split] --execute requires --scope <subdir>');
     process.exit(1);
   }
-  const entries = entriesArg.split(',').map((s) => s.trim()).filter(Boolean);
-  if (entries.length === 0) {
-    console.error('[scope-split] no entries given');
-    process.exit(1);
-  }
-  const res = executeScopeSplit(scopeRoot, subdir, entries);
-  console.log(`[scope-split] moved ${res.moved} entr${res.moved === 1 ? 'y' : 'ies'} → ${res.scope}/.claude/memory/`);
-  console.log(`[scope-split] parent index tombstoned (migrated→${res.scope}); both indexes rebuilt`);
+  const res = executeScopeSplit(scopeRoot, subdir);
+  console.log(`[scope-split] ${res.scope}/.claude/memory/ is a child scope; existing entries stay in the parent; both indexes rebuilt`);
   console.log('[scope-split] reminder: update the parent AGENTS.md / README "Scoped" prose if this split is architecturally meaningful');
   process.exit(0);
 }
 
 // ── default ──
-console.log('Usage: node scope-split.js [--check|--propose|--execute --scope <subdir> --entries <paths>]');
+console.log('Usage: node scope-split.js [--check|--propose|--execute --scope <subdir>]');
 process.exit(1);
