@@ -19,5 +19,6 @@
 !**/.claude/memory/**
 !**/.claude/docs/
 !**/.claude/docs/**
+**/.claude/memory-index.md
 **/.claude/rules/MEMORY.md
 **/_meta.json

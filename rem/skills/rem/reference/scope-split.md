@@ -1,9 +1,10 @@
 # Scope split (user-gated)
 
-Relocate a cluster of memory entries into a **child scope** when a scope's memory has grown
+Give a cluster of memory a **child scope** when a scope's memory has grown
 large *and* a real subdirectory already owns a cohesive cluster of entries. This is distinct
-from **crystallize** (which distills memory → `.claude/rules/rem/`): a split moves entries into a
-nested scope that gets its own independent `.claude/memory/` + `MEMORY.md`.
+from **crystallize** (which distills memory → `.claude/rules/rem/`): a split creates a nested
+scope with its own independent `.claude/memory/` + derived `memory-index.md`; new entries
+written there land in it, and existing entries stay where they are.
 
 Generic and structure-agnostic. A child scope only forms where a real internal module
 boundary already exists (a `packages/x`, `src/auth`, `lib/foo` subdir the clustered entries
@@ -12,7 +13,7 @@ is proposed — the mechanism self-disables. Every split is confirmed by the use
 
 ## When to run
 
-After prune, alongside the crystallize check. Run:
+Alongside the crystallize check. Run:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --check
@@ -22,7 +23,7 @@ Exit 0 = at least one split candidate exists. Exit 1 = skip (proceed with normal
 
 ## Procedure (only if --check exits 0)
 
-1. **Propose** — list candidate child scopes and the entries that would move:
+1. **Propose** — list candidate child scopes and the entries that point at them:
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --propose
    ```
@@ -34,13 +35,11 @@ Exit 0 = at least one split candidate exists. Exit 1 = skip (proceed with normal
 
 3. **Execute** — for each approved candidate:
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --execute \
-     --scope <subdir> --entries <rel1,rel2,...>
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-split.js --execute --scope <subdir>
    ```
-   This **moves** each entry file into `<subdir>/.claude/memory/<same date path>`, records a
-   `dropped: 'migrated→<subdir>'` tombstone in the parent's `_meta.json` (carrying tier/access
-   metadata over to the child), and rebuilds both indexes. The parent's `## Scoped` section
-   auto-updates to link the new child scope.
+   This creates `<subdir>/.claude/memory/` and rebuilds both indexes. **No entry moves**: a path is
+   part of an entry's identity (citations name it). New entries written from inside `<subdir>`
+   land in the child; recall from the child still reads the parent's entries.
 
 4. **Update prose** — if the split is architecturally meaningful, update the parent project's
    `AGENTS.md` / `README.md` "Scoped" prose to mention the new child scope (per the rem standard
@@ -61,6 +60,4 @@ bytes > `maxBytes`. A subdir becomes a candidate only when it additionally owns 
 
 ## Invariant note
 
-A split is the one operation permitted to remove a file from a scope's own memory tree — it
-*relocates* rather than evicts, leaving a `migrated→` tombstone so history is never silently
-lost. `scope-validate.mjs` flags dangling tombstones whose child scope is missing.
+A split moves nothing and deletes nothing: it only routes NEW entries to the child scope.

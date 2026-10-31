@@ -110,8 +110,8 @@ incrementing) — do not mark it fixed in step 7.
 
 ## 7. Resolve & commit
 
-- Mark each finding `fixed` or `wont-fix` (with reason) via `todo mark <ID> <status>`. Mirror
-  status into `evolveState.findings`.
+- Record each finding `fixed` or `wont-fix` (with reason) in `evolveState.findings`. A finding
+  kept in rem's backlog is closed where it lives: its issue, or `todo.js close <id> "<how>"`.
 - **Stage only evolve's changes:** `git add <file> ...` listing exactly the files the round's
   agents modified (diff against step-0 snapshot). Never `git add -A`.
 - **Commit granularity (`--commit=round|group`):** default `round` — one commit per round.

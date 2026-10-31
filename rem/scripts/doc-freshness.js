@@ -167,12 +167,13 @@ export function docRootOf(relPath) {
 // Resolve the doc roots to scan. Uses the device-local cache when present; else
 // discovers repo-wide and, if unambiguous (≤1 root), persists it. Returns
 // { roots, ambiguous } — ambiguous:true (multiple distinct roots, no cached
-// choice) signals the skill to ask the user which to track.
-export function resolveDocRoots(root = repoRoot) {
+// choice) signals the skill to ask the user which to track. persist:false never
+// writes (read-only callers such as the todo report).
+export function resolveDocRoots(root = repoRoot, { persist = true } = {}) {
   const cached = _loadState(stateFileFor(root)).docs?.roots;
   if (Array.isArray(cached)) return { roots: cached };
   const roots = [...new Set(collectBoundDocs(root).map(d => docRootOf(d.relPath)))].sort();
-  if (roots.length <= 1) { saveDocRoots(root, roots); return { roots }; }
+  if (roots.length <= 1) { if (persist) saveDocRoots(root, roots); return { roots }; }
   return { roots, ambiguous: true };
 }
 
@@ -184,8 +185,8 @@ export function saveDocRoots(root, roots) {
 
 // Evaluate stale bound docs. Scans only the resolved (cached/discovered) roots.
 // Each doc's own frontmatter thresholds win over the built-in defaults.
-export function evaluateDocs(root, cwd, today) {
-  const { roots } = resolveDocRoots(root);
+export function evaluateDocs(root, cwd, today, { persist = true } = {}) {
+  const { roots } = resolveDocRoots(root, { persist });
   const stale = [];
   for (const doc of collectBoundDocs(root, roots)) {
     const th = resolveThresholds(doc);

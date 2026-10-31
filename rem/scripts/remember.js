@@ -3,21 +3,26 @@
 // (works on Claude Code and Codex alike, since it's just a CLI the agent runs).
 //
 //   node remember.js --name <kebab-slug> --type <user|feedback|project|reference>
-//                    --body <text> [--scope <dir|auto>] [--description <text>] [--update]
-//   (body may also be piped on stdin instead of --body)
+//                    --body <text> [--scope <dir|auto>] [--description <text>]
+//                    [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]
+//   (body may also be piped on stdin instead of --body; <paths> is a comma list of
+//    YYYY/MM/DD/<slug>.md entries of the same scope)
 //
-// Writes .claude/memory/YYYY/MM/DD/<slug>.md with generated frontmatter (volatile
-// fields forbidden — enforced), creates the _meta.json entry, and upserts the
-// MEMORY.md index. Refuses a different-bodied file without --update, which APPENDS (never drops).
-// Prints the created/updated file path.
+// Writes a NEW .claude/memory/YYYY/MM/DD/<slug>.md and regenerates the derived index.
+// An entry is written once and never edited: a correction or a restatement is a new
+// entry that names the old one (`corrects:` keeps it visible and flags it,
+// `supersedes:` hides it). An identical re-run is a no-op; a different body under an
+// existing name is refused. The entry carries `task: <slug>` of the bound task (--task, else
+// the worktree/branch name; see tasks.mjs). --from records where the entry was distilled from,
+// e.g. tasks/<slug>/JOURNAL.md#D3 (task close counts that decision as distilled).
+// Prints the created file path.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
-import { upsertIndexEntry } from '../shared/stamp.mjs';
 import {
-  findMemoryScope, saveMemoryMeta, loadMemoryState,
-  isInsideDir, todayISO, dateToPath,
+  findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs, writeOnce,
 } from './lib.mjs';
+import { resolveTask } from './tasks.mjs';
 
 const TYPES = new Set(['user', 'feedback', 'project', 'reference']);
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -33,7 +38,7 @@ function yamlScalar(s) {
 
 function usage(msg) {
   if (msg) console.error(`[remember] ${msg}`);
-  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--update]');
+  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]');
   process.exit(1);
 }
 
@@ -43,13 +48,18 @@ function argValue(flag) {
   const i = args.indexOf(flag);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : null;
 }
+const list = flag => (argValue(flag) || '').split(',').map(s => s.trim()).filter(Boolean);
 const name = argValue('--name');
 const type = argValue('--type');
 const scopeArg = argValue('--scope') || 'auto';
 const description = argValue('--description');
-const update = args.includes('--update');
+const refs = { corrects: list('--corrects'), supersedes: list('--supersedes') };
+const taskArg = argValue('--task');
+const from = list('--from');
+if (from.some(c => /\s/.test(c))) usage('--from takes a comma list of citations without spaces, e.g. tasks/<slug>/JOURNAL.md#D3');
 let body = argValue('--body');
 
+if (args.includes('--update')) usage('--update is gone: an entry is never edited — write a new entry with --corrects or --supersedes');
 if (!name || !NAME_RE.test(name)) usage(`--name must be a kebab-case slug, got: ${name || '(missing)'}`);
 if (!type || !TYPES.has(type)) usage(`--type must be one of ${[...TYPES].join('|')}, got: ${type || '(missing)'}`);
 
@@ -59,21 +69,29 @@ if (body === null && !process.stdin.isTTY) {
 if (!body || !body.trim()) usage('--body is required (or pipe body on stdin)');
 body = body.trim() + '\n';
 
-// Volatile metadata never belongs in file content (frontmatter or body) — it lives
-// in _meta.json only.
+// Access bookkeeping never belongs in an entry: reading leaves no trace.
 if (VOLATILE_RE.test(body)) {
-  usage('body contains a volatile metadata field (accessed|count|tier|dropped) — these live in _meta.json, never in the file');
+  usage('body contains a volatile metadata field (accessed|count|tier|dropped) — an entry carries no access bookkeeping');
 }
 
 // ── Scope & path security ──
 const scopeRoot = scopeArg === 'auto' ? findMemoryScope() : resolve(scopeArg);
 const memDir = join(scopeRoot, '.claude', 'memory');
-const date = todayISO();
 const relPath = `${dateToPath()}/${name}.md`;
 const file = resolve(memDir, relPath);
 if (!isInsideDir(memDir, file)) {
   console.error(`[remember] path traversal denied: ${relPath}`);
   process.exit(1);
+}
+
+// ── The bound task, if any ──
+const task = resolveTask(scopeRoot, { task: taskArg });
+if (taskArg && !task) usage(`--task ${taskArg} is not an open task`);
+
+// ── Provenance targets must be entries of this scope ──
+const known = new Set(listEntries(scopeRoot).map(e => e.path));
+for (const p of [...refs.corrects, ...refs.supersedes]) {
+  if (!known.has(p)) usage(`${p} is not an entry of ${memDir}`);
 }
 
 // ── Content ──
@@ -84,42 +102,20 @@ const desc = description
   || body.split('\n').map(l => l.replace(/^#+\s*/, '').replace(/[*_`]/g, '').trim())
     .find(l => l.length > 0)?.slice(0, 80)
   || name;
-// metadata.type is nested YAML — prune-memory.js and recall.js read it via the
-// structured parser as metadata.type. A flat dotted key would be invisible to
-// them (feedback entries would lose their eviction exemption and recall weight).
-let content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\nmetadata:\n  type: ${type}\n---\n\n${body}`;
+// metadata.type is nested YAML — recall and the index read it as metadata.type;
+// a flat dotted key would be invisible to them (feedback would lose its weight).
+const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\n`
+  + (task ? `task: ${task}\n` : '')
+  + (from.length ? `from:\n${from.map(c => `  - ${c}`).join('\n')}\n` : '')
+  + formatRefs(refs)
+  + `metadata:\n  type: ${type}\n---\n\n${body}`;
 
-// ── Overwrite guard ──
-// Memory keeps everything: --update never drops prior text. A body that already contains the
-// old body is written as-is; any other revision is APPENDED under a dated heading.
-if (existsSync(file)) {
-  const existing = readFileSync(file, 'utf8');
-  if (existing === content) {
-    console.log(file);
-    process.exit(0);
-  }
-  if (!update) {
-    console.error(`[remember] file exists with different content: ${file}`);
-    console.error('[remember] re-run with --update to append the revision');
-    process.exit(1);
-  }
-  const oldBody = existing.replace(/^---\n[\s\S]*?\n---\n\n?/, '').trim();
-  if (!body.includes(oldBody)) content = `${existing.trimEnd()}\n\n## Update ${date}\n\n${body}`;
+// ── Written once (O_EXCL: a racing writer of the same name loses) ──
+if (!writeOnce(file, content)) {
+  if (readFileSync(file, 'utf8') === content) { console.log(file); process.exit(0); }
+  console.error(`[remember] ${relPath} exists with different content — an entry is never edited.`);
+  console.error('[remember] write a new entry under another --name, with --corrects or --supersedes naming this one');
+  process.exit(1);
 }
-
-// Snapshot state BEFORE writing — loadMemoryState backfills on-disk files, so a
-// post-write snapshot would always contain relPath and skip the meta entry.
-const isNewEntry = !loadMemoryState(scopeRoot).has(relPath);
-
-mkdirSync(dirname(file), { recursive: true });
-writeFileSync(file, content, 'utf8');
-
-// ── Volatile metadata (new entries only — updates keep their history) ──
-if (isNewEntry) {
-  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count: 1, tier: 'short' });
-}
-
-// ── Index upsert ──
-upsertIndexEntry(scopeRoot, relPath, { name, date });
-
+rebuildIndex(scopeRoot);
 console.log(file);

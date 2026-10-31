@@ -7,42 +7,49 @@ that area.
 ## Architecture
 
 ```
-SessionStart → prune-memory.js --evict-stale
-            → inject-rules.js (Codex-only: feed host .claude/rules into context)
+UserPromptSubmit → task-authority.js (records the user's own /rem:task open|close prompt)
+PreToolUse → task-guard.js (refuses an agent opening/closing a task or rewriting its files)
+SessionStart → inject-rules.js (Codex-only: feed host .claude/rules into context)
             → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)
 PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart source=compact)
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
-  UserPromptSubmit → recall.js (both hosts: heuristic recall → additionalContext; semantic access touch)
+  UserPromptSubmit → recall.js (both hosts; read-only; SCOPED: the bound task's goal/open items/journal tail,
+                     then entries + bound docs of the scope(s) worked on; another task's entries only when named)
      ↓
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
   /rem skill:
     ├── main loop: run user-gated crystallize/scope-split checks first (a fork can't prompt)
     ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
-    │   keeps prune/prep/stamp/memory-write noise out of the main session) → returns a one-line recap
-    ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
-    ├── Model summarizes learnings → writes memory files
-    ├── Update MEMORY.md index
-    ├── If ≥20 entries → crystallize into .claude/rules/rem/
+    │   keeps prep/memory-write noise out of the main session) → returns a one-line recap
+    ├── rem-prep.js — read-only: entries read this session, visible / hidden counts, advisory
+    ├── Model summarizes learnings → writes NEW memory files (corrects / supersedes / merge-memory.js; never edits one)
+    ├── index-memory.js (derived .claude/memory-index.md, written only on change)
+    ├── If visible entries ≥ CRYSTALLIZE_ADVISORY → crystallize into .claude/rules/rem/ (ledger hides the sources)
     │   └── check-docs.js — audit doc freshness after crystallization
     ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
 
-  /todo skill (user-facing task management):
-    ├── /todo        → task-engine.js report  (scans memory directly)
-    ├── /todo add    → task-engine.js add --summary "..."
-    ├── /todo remove → task-engine.js remove <id>  (or close SR-*)
-    ├── /todo mark   → task-engine.js mark <id> <open|fixed|closed>
-    └── /todo check  → task-engine.js report  (report includes stats)
+  /rem:task command (the user's; an agent is refused by default, a bypass is detected):
+    ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
+    └── close <slug>          → task.js close: refuse until distilled, then git mv into
+                                .claude/memory/<date>/task-<slug>/ (hidden, kept)
+  task.js log|decide|open-item|close-item|handoff → append to the bound task's JOURNAL.md
+
+  /todo skill (the one backlog):
+    ├── /todo        → todo.js report  (read-only: task open items, backlog, stale docs)
+    ├── /todo add    → todo.js add      (.claude/todo/<id>.md; refused with rem.json backlog: issues)
+    ├── /todo close  → todo.js close    (write .claude/memory/<date>/todo-<id>.md whole, then git rm the item)
+    └── /todo adopt  → todo.js adopt    (legacy manual.md / sharp-review.md → item files)
 ```
 
-Three-tier memory system (rules / long-term / short-term) → `skills/rem/reference/memory-conventions.md`.
+Memory lifecycle (rules + dated entries; merge / crystallize hide, nothing is deleted) → `skills/rem/reference/memory-conventions.md`.
 
 ## Living docs
 
 **Living docs** are a *separate collection* from dated event memory: mutable, code-anchored,
-refreshed in place, never evicted. Kept out of the memory tree, so prune/eviction never touches
+refreshed in place, never hidden. Kept out of the memory tree, so memory provenance never touches
 them — the opposed-lifecycle conflict is solved by separation, not a special case. The tracked
 doc frontmatter carries only the semantic binding (`doc_source` + optional thresholds);
 discovery is by that signature via `git ls-files` (honoring `.gitignore`). All volatile state is
@@ -66,10 +73,12 @@ excerpts the saved facts were paid for.
 
 ```
 rem/
-├── hooks/          hooks.json + rem-hook.js
-├── scripts/        lib.mjs, stamp-memory.js, remember.js, merge-memory.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
-│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, task-engine.js, task-lib.mjs, scope-validate.mjs
+├── hooks/          hooks.json + rem-hook.js + task-guard.js
+├── commands/       task.md (/rem:task, the user's command)
+├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs, scope-split.js,
+│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, todo.js, todo-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
+├── migrations/     migrate.mjs (one-shot move to the tree-only lifecycle; --dry-run)
 ├── tests/          *.test.mjs (see AGENTS.md § Testing)
 ├── docs/           architecture.md (this file — the dev reference behind AGENTS.md)
 ├── .claude/rules/  invariants only

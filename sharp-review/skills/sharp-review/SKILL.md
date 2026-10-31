@@ -97,15 +97,16 @@ Only when a human asks to **triage now** route OPEN findings through `shared/att
 
 ## Resolving findings
 
-`todo mark <SR-ID> fixed` flips `**Status:**` and re-derives the frontmatter (same as
-`post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>`). File ownership → `reference/task-system.md`.
+A kept finding is a rem backlog item: close it where it lives — the issue (repos with
+`.claude/rem.json` `backlog: issues`) or `todo.js close <id> "<how>"`. A report under
+`output/logs/` can be re-derived with `post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>`.
+File ownership → `reference/task-system.md`.
 
 ## Phase 2 — Task Audit
 
-1. Run `todo` — review open findings against code changed this session (`⚠ likely-resolved`).
-2. For each finding you fixed AND verified this session, `todo mark <SR-ID> fixed` now.
-3. Flag stale items (> 90d) — `todo` shows `⚠ stale`.
-4. Check in-flight tasks with the host's available task/agent status tools before calling
+1. Run `todo` — review the open backlog items against code changed this session.
+2. For each item you fixed AND verified this session, close it now (the issue, or `todo.js close <id>`).
+3. Check in-flight tasks with the host's available task/agent status tools before calling
    a feature complete; do not assume Claude's `TaskGet` exists on Codex.
 
 ## Usage

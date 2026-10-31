@@ -2,14 +2,23 @@
 /**
  * recall.js — UserPromptSubmit hook: prompt-time relevance recall.
  *
- * Reads the hook payload on stdin (user prompt, cwd, session_id), scores the
- * memory scope's non-dropped entries against the prompt with a pure heuristic
- * (no model call, <200ms), and injects the top 1–3 entries as
- * `additionalContext`. No matches → exit 0 silently.
+ * Reads the hook payload on stdin (user prompt, cwd, session_id) and injects, as
+ * `additionalContext`, a SCOPED view:
+ *   - the bound task (tasks.mjs resolveTask: worktree/branch name) — goal, open
+ *     items and the latest journal lines, on every turn;
+ *   - the top 1–3 visible memory entries and bound docs scoring against the prompt
+ *     (pure heuristic, no model call), drawn from the scope of cwd plus the scopes
+ *     of the bound task's `scope:` paths, and the bound docs of those paths;
+ *   - never an entry tagged with ANOTHER task (`task: <slug>`), unless the prompt
+ *     names that task — other tasks come in only on explicit query.
+ * Nothing to say → exit 0 silently.
  *
  * Candidate frontmatter is cached per scope in a per-host tmpdir file, keyed
  * by a stat-only fingerprint of the memory tree (count + total size + max
- * mtime, incl. _meta.json) — any write invalidates it, so it never goes stale.
+ * mtime) — any write invalidates it, so it never goes stale.
+ *
+ * Read-only toward the repo: recall never writes the memory tree or any state
+ * file (its cache and telemetry live in os.tmpdir()).
  *
  * Claude Code and Codex share the UserPromptSubmit additionalContext contract.
  *
@@ -21,8 +30,11 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { loadMemoryState, bumpAccessed, todayISO } from "./lib.mjs";
-import { parseFrontmatter, isMain } from "../shared/lib.mjs";
+import { listEntries, visibleEntries } from "./lib.mjs";
+import { readTask, listTasks, resolveTask } from "./tasks.mjs";
+import { collectBoundDocs } from "./doc-freshness.js";
+import { isMain, findProjectRoot } from "../shared/lib.mjs";
+import { atomicWriteFile } from "../shared/atomic-write.mjs";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
 // inside), captures everything else. Used by the telemetry ring.
@@ -95,46 +107,103 @@ export function isSkippable(relPath) {
 }
 
 /**
- * Collect candidate entries for a scope: every non-dropped, non-task memory
- * file, with its frontmatter fields and volatile meta. Bodies are NOT read
- * here (only for the winners) to stay under the latency budget.
+ * Candidate entries for a scope: every visible memory entry with its
+ * frontmatter fields. Bodies are NOT read here (only for the winners).
  */
 function collectCandidatesUncached(scopeRoot) {
-  const state = loadMemoryState(scopeRoot);
   const memDir = path.join(scopeRoot, ".claude", "memory");
-  const out = [];
-  for (const [relPath, meta] of state) {
-    if (meta.dropped) continue;
-    if (isSkippable(relPath)) continue;
-    const abs = path.join(memDir, relPath);
-    let fm = {};
+  return visibleEntries(listEntries(scopeRoot))
+    .filter((e) => !isSkippable(e.path))
+    .map((e) => ({
+      relPath: e.path,
+      abs: path.join(memDir, e.path),
+      name: e.name,
+      description: e.description,
+      type: e.type || "project",
+      task: e.task,
+      date: e.date,
+      corrections: e.correctedBy.map((p) => ({ relPath: p, abs: path.join(memDir, p) })),
+    }));
+}
+
+// ── Bound docs ──
+// A bound doc (frontmatter `doc_source`) explains how code works NOW. Discovery reads
+// every tracked markdown file, so it is cached in tmpdir and refreshed only when git's
+// index changes (a doc added, moved or committed).
+
+function gitIndexStamp(root) {
+  let gitDir = path.join(root, ".git");
+  try {
+    if (fs.statSync(gitDir).isFile()) {
+      const m = fs.readFileSync(gitDir, "utf8").match(/^gitdir:\s*(.+)$/m);
+      if (m) gitDir = path.resolve(root, m[1].trim());
+    }
+    return String(fs.statSync(path.join(gitDir, "index")).mtimeMs);
+  } catch { return "0"; }
+}
+
+export function collectDocs(root, { now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
+  const key = crypto.createHash("sha1").update(path.resolve(root)).digest("hex").slice(0, 16);
+  const cacheFile = path.join(os.tmpdir(), `rem-recall-docs-${key}.json`);
+  const stamp = gitIndexStamp(root);
+  try {
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    if (cached.stamp === stamp && now - cached.ts < ttl * 20) return cached.docs;
+  } catch { /* rebuild */ }
+  const docs = collectBoundDocs(root).map((d) => {
+    let name = path.basename(d.relPath, ".md"), description = "";
     try {
-      fm = parseFrontmatter(fs.readFileSync(abs, "utf8")) || {};
-    } catch { continue; }
-    const md = (fm.metadata && typeof fm.metadata === "object") ? fm.metadata : {};
-    out.push({
-      relPath,
-      abs,
-      name: String(fm.name || path.basename(relPath, ".md")),
-      description: String(fm.description || ""),
-      type: md.type || fm.type || "project",
-      accessed: meta.accessed || "",
-      count: Number.isFinite(meta.count) ? meta.count : 1,
-    });
-  }
-  return out;
+      const text = fs.readFileSync(d.full, "utf8");
+      name = text.match(/^name:\s*(.+)$/m)?.[1].trim() || name;
+      description = text.match(/^description:\s*(.+)$/m)?.[1].trim().replace(/^['"]|['"]$/g, "") || "";
+    } catch { /* keep defaults */ }
+    return { relPath: d.relPath, abs: d.full, name, description, type: "doc", docSource: d.doc_source };
+  });
+  try { atomicWriteFile(cacheFile, JSON.stringify({ ts: now, stamp, docs })); } catch { /* best-effort */ }
+  return docs;
+}
+
+// True when a doc's sources and the paths being worked on overlap (either contains the other).
+export function docCovers(doc, workPaths) {
+  const norm = (p) => String(p).replace(/\\/g, "/").replace(/^\.\/|\/+$/g, "");
+  return doc.docSource.some((s) => workPaths.some((w) => {
+    const a = norm(s), b = norm(w);
+    return !a || !b || a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
+  }));
+}
+
+// ── The bound task ──
+
+const TASK_TAIL = 8;
+
+export function taskBlock(task) {
+  const journal = (() => {
+    try { return fs.readFileSync(path.join(task.dir, "JOURNAL.md"), "utf8"); } catch { return ""; }
+  })();
+  const tail = journal.split(/\r?\n/).filter((l) => l.startsWith("- ")).slice(-TASK_TAIL);
+  const lines = [`Bound task: ${task.slug} — ${task.goal} (${task.status})`];
+  if (task.scope.length) lines.push(`Scope: ${task.scope.join(", ")}`);
+  if (task.openItems.length) lines.push(`Open items: ${task.openItems.map((i) => `O${i.n} open: ${i.text}`).join("; ")}`);
+  if (tail.length) lines.push("Latest journal (.claude/tasks/" + task.slug + "/JOURNAL.md):", ...tail);
+  return lines.join("\n");
+}
+
+// Tasks the prompt names explicitly (whole slug, hyphen-aware).
+export function queriedTasks(prompt, slugs) {
+  const text = String(prompt).toLowerCase();
+  return new Set(slugs.filter((s) => new RegExp(`(^|[^a-z0-9-])${s}($|[^a-z0-9-])`).test(text)));
 }
 
 // ── Candidate cache ──
 // Reading every memory file's frontmatter on every prompt is too slow on
 // cloud-synced dirs (OneDrive placeholders). Cache candidates in a per-host
 // tmpdir file keyed by a stat-only fingerprint of the memory tree (file count
-// + max mtime + total size, including _meta.json).
+// + max mtime + total size).
 //
 // The whole tree is re-statted at most once per FINGERPRINT_TTL_MS (30s):
 // within the window the cache is served without touching the memory tree at
 // all, so the per-prompt cost is a single statSync on the cache file. Any
-// write from remember.js / touch-memory.js / prune changes the fingerprint and
+// write from remember.js / merge-memory.js / crystallize.js changes the fingerprint and
 // is picked up on the next expiry (staleness bounded by the TTL — acceptable
 // for best-effort recall). The cache lives in os.tmpdir() (not the synced
 // tree) so multi-device setups each keep their own — and it never shows up in
@@ -187,7 +256,7 @@ export function collectCandidates(scopeRoot, { useCache = true, info, now = Date
   if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
     // Tree unchanged → reuse candidates, only refresh the TTL stamp.
     cached.ts = now;
-    try { fs.writeFileSync(cacheFile, JSON.stringify(cached), "utf8"); } catch { /* best-effort */ }
+    try { atomicWriteFile(cacheFile, JSON.stringify(cached)); } catch { /* best-effort */ }
     if (info) { info.cacheHit = true; info.fast = false; }
     return cached.candidates;
   }
@@ -196,7 +265,7 @@ export function collectCandidates(scopeRoot, { useCache = true, info, now = Date
   if (info) { info.cacheHit = false; info.fast = false; }
   const candidates = collectCandidatesUncached(scopeRoot);
   try {
-    fs.writeFileSync(cacheFile, JSON.stringify({ ts: now, fingerprint, candidates }), "utf8");
+    atomicWriteFile(cacheFile, JSON.stringify({ ts: now, fingerprint, candidates }));
   } catch { /* cache is best-effort */ }
   return candidates;
 }
@@ -228,7 +297,7 @@ export function appendTelemetry(scopeRoot, record) {
     const file = telemetryFileFor(scopeRoot);
     const ring = readRing(file);
     ring.push(record);
-    fs.writeFileSync(file, JSON.stringify(ring.slice(-TELEMETRY_RING)), "utf8");
+    atomicWriteFile(file, JSON.stringify(ring.slice(-TELEMETRY_RING)));
   } catch { /* telemetry is best-effort */ }
 }
 
@@ -240,7 +309,7 @@ export function finalizeTelemetry(scopeRoot, record) {
     for (let i = ring.length - 1; i >= 0; i--) {
       if (ring[i] && ring[i].done === false) { ring[i] = record; break; }
     }
-    fs.writeFileSync(file, JSON.stringify(ring.slice(-TELEMETRY_RING)), "utf8");
+    atomicWriteFile(file, JSON.stringify(ring.slice(-TELEMETRY_RING)));
   } catch { /* telemetry is best-effort */ }
 }
 
@@ -282,8 +351,9 @@ function printTelemetry() {
 
 /**
  * Heuristic score: token matches against name (×2) + description (×1),
- * weighted by type (user/feedback ×2, project/reference ×1), recency
- * (accessed within 30d boosts up to ×1.3), and access count (×1 + min(count,5)/10).
+ * weighted by type (user/feedback ×2, project/reference ×1) and recency
+ * (an entry dated within 30d boosts up to ×1.3). The date is the entry's path.
+ * An entry of the bound task carries `boost` (×2).
  */
 export function scoreEntry(entry, tokens, now = Date.now()) {
   if (!tokens.length) return 0;
@@ -297,10 +367,9 @@ export function scoreEntry(entry, tokens, now = Date.now()) {
   if (!matches) return 0;
 
   const typeWeight = entry.type === "user" || entry.type === "feedback" ? 2 : 1;
-  const days = (now - Date.parse(entry.accessed)) / 86400000;
+  const days = (now - Date.parse(entry.date)) / 86400000;
   const recency = Number.isFinite(days) ? 1 + Math.max(0, 30 - days) / 100 : 1;
-  const countFactor = 1 + Math.min(entry.count, 5) / 10;
-  return matches * typeWeight * recency * countFactor;
+  return matches * typeWeight * recency * (entry.boost || 1);
 }
 
 /** Rank candidates, return the top 1–3 above threshold (best first). */
@@ -321,15 +390,25 @@ export function buildRecallContext(entries, maxBytes = MAX_BYTES) {
   if (!entries.length) return null;
   const header = "Relevant memories (auto-recalled):";
   let body = "";
+  const shown = new Set();
+  const read = (abs) => { try { return bodyOf(fs.readFileSync(abs, "utf8")).trim(); } catch { return ""; } };
   for (const e of entries) {
-    let text;
-    try {
-      text = bodyOf(fs.readFileSync(e.abs, "utf8")).trim();
-    } catch { continue; }
+    if (shown.has(e.relPath)) continue;
+    const text = read(e.abs);
     if (!text) continue;
-    const block = `\n\n--- ${e.name} (${e.relPath.replace(/\\/g, "/")}) ---\n${text}`;
+    // A corrected entry travels with its corrections: the old text alone would mislead.
+    const fixes = (e.corrections || []).filter((c) => !shown.has(c.relPath));
+    const note = fixes.length ? ` [corrected by ${fixes.map((c) => c.relPath).join(", ")}]` : "";
+    const kind = e.type === "doc" ? "doc: " : "";
+    let block = `\n\n--- ${kind}${e.name} (${e.relPath.replace(/\\/g, "/")})${note} ---\n${text}`;
+    for (const c of fixes) {
+      const fix = read(c.abs);
+      if (fix) block += `\n\n--- correction (${c.relPath}) ---\n${fix}`;
+    }
     if (header.length + body.length + block.length > maxBytes) continue; // try a smaller entry
     body += block;
+    shown.add(e.relPath);
+    for (const c of fixes) shown.add(c.relPath);
   }
   if (!body) return null;
   return header + body;
@@ -343,39 +422,67 @@ function readStdinPayload() {
   }
 }
 
+/**
+ * The scoped context for one prompt in `cwd`, or null. Read-only toward the repo.
+ */
+export function scopedContext(prompt, cwd, now = Date.now()) {
+  const root = findProjectRoot(cwd);
+  const tasks = listTasks(root);
+  const bound = resolveTask(root, {});
+  const task = bound ? readTask(root, bound) : null;
+  const queried = queriedTasks(prompt, tasks.map((t) => t.slug));
+  const active = new Set(tasks.filter((t) => t.status === "open").map((t) => t.slug));
+  const parts = [];
+  if (task) parts.push(taskBlock(task));
+
+  const tokens = tokenize(prompt);
+  const home = findScopeForCwd(cwd);
+  if (tokens.length && home) {
+    // Paths being worked on: the bound task's scope, else the cwd's scope directory.
+    const workPaths = task?.scope.length ? task.scope : [path.relative(root, home).replace(/\\/g, "/")];
+    const scopes = new Set([home]);
+    // Ancestor scopes cover their whole subtree: a split never moves an entry, so the
+    // parent's entries about a child directory are recalled from inside the child.
+    for (let dir = path.dirname(home); !path.relative(root, dir).startsWith("..") && !path.isAbsolute(path.relative(root, dir)); dir = path.dirname(dir)) {
+      const s = findScopeForCwd(dir);
+      if (s && !path.relative(root, s).startsWith("..")) scopes.add(s);
+      if (dir === path.dirname(dir) || dir === root) break;
+    }
+    for (const p of task?.scope || []) {
+      const s = findScopeForCwd(path.join(root, p));
+      if (s) scopes.add(s);
+    }
+    const info = {};
+    appendTelemetry(home, { t: new Date().toISOString(), done: false });
+    const entries = [...scopes].flatMap((s) => collectCandidates(s, { info }))
+      // Another OPEN task's entries stay out unless named; a closed task's are memory.
+      .filter((e) => !e.task || e.task === bound || !active.has(e.task) || queried.has(e.task))
+      .map((e) => (e.task && e.task === bound ? { ...e, boost: 2 } : e));
+    const docs = collectDocs(root).filter((d) => docCovers(d, workPaths));
+    const candidates = [...entries, ...docs.map((d) => ({ ...d, date: "" }))];
+    const recalled = buildRecallContext(selectTop(candidates, tokens, now));
+    finalizeTelemetry(home, {
+      t: new Date().toISOString(),
+      done: true,
+      ms: Date.now() - T0,
+      cache: info.cacheHit !== false,
+      fast: info.fast === true,
+      cands: candidates.length,
+      injected: Boolean(recalled),
+    });
+    if (recalled) parts.push(recalled);
+  }
+  return parts.length ? parts.join("\n\n") : null;
+}
+
 function main() {
   if (process.argv.includes("--telemetry")) { printTelemetry(); return; }
   const payload = readStdinPayload();
   const prompt = payload.prompt || payload.user_prompt || "";
   const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
 
-  const tokens = tokenize(prompt);
-  if (!tokens.length) return;
-
-  const scope = findScopeForCwd(cwd);
-  if (!scope) return;
-
-  const info = {};
-  appendTelemetry(scope, { t: new Date().toISOString(), done: false });
-  const candidates = collectCandidates(scope, { info });
-  const winners = selectTop(candidates, tokens, Date.now());
-  const context = buildRecallContext(winners);
-  finalizeTelemetry(scope, {
-    t: new Date().toISOString(),
-    done: true,
-    ms: Date.now() - T0,
-    cache: info.cacheHit !== false,
-    fast: info.fast === true,
-    cands: candidates.length,
-    injected: Boolean(context),
-  });
+  const context = scopedContext(prompt, cwd);
   if (!context) return;
-
-  // Only entries whose bodies were actually injected count as semantic reads.
-  // Raw shell I/O is intentionally not guessed from transcript command strings.
-  for (const entry of winners) if (context.includes(`(${entry.relPath.replace(/\\/g, '/')})`)) {
-    try { bumpAccessed(scope, entry.relPath, todayISO()); } catch { /* advisory read accounting */ }
-  }
 
   process.stdout.write(
     JSON.stringify({

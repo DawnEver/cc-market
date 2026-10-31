@@ -1,9 +1,13 @@
 # rem
 
-REM sleep for Claude Code and Codex sessions — prune stale memory, consolidate learnings, maintain `.claude/memory/` with timestamps and automatic eviction.
+REM sleep for Claude Code and Codex sessions — consolidate learnings into `.claude/memory/`, where no entry is ever deleted or edited: a newer entry corrects, supersedes or merges older ones, and the index is derived from the files.
 
-The injected memory index contains long-term entries plus the newest 15 short-term
-entries. The full catalog and original memory files remain available for recall.
+The derived index (`.claude/memory-index.md`, outside `rules/`) is read on demand; recall injects
+the visible entries and bound docs of the scope being worked on, plus the bound task — never another task's memory unless the prompt names it. Reading memory never writes.
+
+**Tasks** (`.claude/tasks/<slug>/`): opening or closing one without the user's `/rem:task open|close` prompt is refused by default and detectable when bypassed (an agent running as the same OS user could still forge it); a session binds to one task (`--task`, or its worktree/branch name) and appends to its append-only `JOURNAL.md` with `task.js log|decide|open-item|close-item|handoff`. Closing distills the decisions into docs, rules and memory entries first, then archives the task by `git mv` into `.claude/memory/<date>/task-<slug>/`. → `skills/rem/reference/tasks.md`.
+
+**Todo** — one backlog: a task's open items are journal lines; a repo backlog item is an issue where `.claude/rem.json` says `{"backlog": "issues"}` (then `/todo` is a read-only view), else one file per item in `.claude/todo/`, archived into memory when closed. No checkboxes in memory. → `skills/todo/SKILL.md`.
 
 ## Install
 
@@ -42,7 +46,7 @@ After installation, `/rem` is available as a slash command. It triggers automati
 
 ## How It Works
 
-Three-tier memory system (rules / long-term / short-term) and promotion rules → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
+Memory lifecycle → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
 
 Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading. Claude uses SessionStart/PostCompact; Codex uses structured SessionStart output including `source=compact` and returns empty JSON for PostCompact. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
 

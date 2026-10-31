@@ -1,42 +1,44 @@
 #!/usr/bin/env node
-// Fold duplicate memory entries into ONE live entry — the only way an entry leaves the index
-// by consolidation. Memory keeps everything: redundancy is removed by MERGING, never deleting.
+// Fold duplicate memory entries into ONE new entry. Memory keeps everything and an
+// entry is never edited: the sources stay byte-identical on disk, and the new entry
+// names them in `merged_from:`, which hides them from recall and the derived index.
 //
-//   node merge-memory.js --into <YYYY/MM/DD/live.md> --from <a.md,b.md,...> [--dry-run]
+//   node merge-memory.js --name <kebab-slug> --from <a.md,b.md,...> [--description <text>] [--dry-run]
 //
-// For each source: its full body (every measurement, number and quote) is appended verbatim to
-// the live entry under `## Merged from <path>`, the path is added to the live entry's
-// `merged_from:` frontmatter list, and the source is tombstoned in the index as
-// `dropped: merged→<live>`. The source FILE stays on disk untouched. The write is refused if any
-// non-blank source line would be missing from the result.
+// The new entry is .claude/memory/<today>/<slug>.md. Each source's full body (every
+// measurement, number and quote) is copied verbatim under `## From <path>`. The write
+// is refused if any non-blank source line would be missing from the result.
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import { findMemoryScope, parseFrontmatter, dropFromIndex, rebuildIndex } from './lib.mjs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import {
+  findMemoryScope, parseFrontmatter, rebuildIndex, dateToPath, formatRefs, listEntries, writeOnce,
+} from './lib.mjs';
 
 const PREFIX = '[merge-memory]';
+const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-export function addMergedFrom(content, paths) {
-  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) throw new Error('live entry has no frontmatter');
-  const lines = m[1].split(/\r?\n/);
-  let at = lines.findIndex(l => /^merged_from:/.test(l));
-  if (at < 0) { lines.push('merged_from:'); at = lines.length - 1; }
-  let end = at + 1;
-  while (end < lines.length && /^\s+-\s/.test(lines[end])) end++;
-  const have = new Set(lines.slice(at + 1, end).map(l => l.replace(/^\s+-\s*/, '').trim()));
-  lines.splice(end, 0, ...paths.filter(p => !have.has(p)).map(p => `  - ${p}`));
-  return `---\n${lines.join('\n')}\n---${content.slice(m[0].length)}`;
+// Most common metadata.type among the sources (first wins a tie): the merged fact keeps
+// the kind its sources were.
+function mergedType(sources) {
+  const counts = new Map();
+  for (const { content } of sources) {
+    const t = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m)?.[1] || 'project';
+    counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1])[0][0];
 }
 
-export function mergeContent(live, sources) {
-  let out = addMergedFrom(live, sources.map(s => s.path)).trimEnd();
+export function mergeContent(name, description, sources) {
+  const desc = description || `${sources.length} entries merged`;
+  let out = `---\nname: ${name}\ndescription: ${JSON.stringify(desc)}\n`
+    + formatRefs({ merged_from: sources.map(s => s.path) })
+    + `metadata:\n  type: ${mergedType(sources)}\n---\n`;
   for (const { path, content } of sources) {
     const { fields, body } = parseFrontmatter(content);
-    const desc = fields.description ? `_${fields.description}_\n\n` : '';
-    out += `\n\n## Merged from ${path}\n\n${desc}${body.trim()}`;
+    const d = fields.description ? `_${fields.description}_\n\n` : '';
+    out += `\n## From ${path}\n\n${d}${body.trim()}\n`;
   }
-  out += '\n';
   for (const { path, content } of sources) {
     const missing = parseFrontmatter(content).body.split(/\r?\n/).filter(l => l.trim() && !out.includes(l));
     if (missing.length) throw new Error(`${path}: ${missing.length} line(s) would be lost`);
@@ -46,25 +48,26 @@ export function mergeContent(live, sources) {
 
 function main(argv) {
   const arg = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
-  const into = arg('--into');
+  const name = arg('--name');
   const from = (arg('--from') || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!into || !from.length || from.includes(into)) {
-    console.error(`${PREFIX} usage: --into <live.md> --from <a.md,b.md> [--dry-run] (a source may not be the live entry)`);
+  if (!name || !NAME_RE.test(name) || from.length < 1) {
+    console.error(`${PREFIX} usage: --name <kebab-slug> --from <a.md,b.md> [--description <text>] [--dry-run]`);
     process.exit(1);
   }
   const scope = findMemoryScope();
   const memDir = join(scope, '.claude', 'memory');
-  const read = p => {
-    const f = join(memDir, p);
-    if (!existsSync(f)) { console.error(`${PREFIX} not found: ${p}`); process.exit(1); }
-    return readFileSync(f, 'utf8');
-  };
-  const merged = mergeContent(read(into), from.map(p => ({ path: p, content: read(p) })));
+  const known = new Set(listEntries(scope).map(e => e.path));
+  const sources = from.map(p => {
+    if (!known.has(p)) { console.error(`${PREFIX} not an entry: ${p}`); process.exit(1); }
+    return { path: p, content: readFileSync(join(memDir, p), 'utf8') };
+  });
+  const merged = mergeContent(name, arg('--description'), sources);
   if (argv.includes('--dry-run')) { process.stdout.write(merged); return; }
-  writeFileSync(join(memDir, into), merged, 'utf8');
-  for (const p of from) dropFromIndex(scope, p, `merged→${into}`);
+  const rel = `${dateToPath()}/${name}.md`;
+  const file = join(memDir, rel);
+  if (!writeOnce(file, merged)) { console.error(`${PREFIX} ${rel} exists — an entry is never edited; pick another --name`); process.exit(1); }
   rebuildIndex(scope);
-  console.log(`${PREFIX} folded ${from.length} entr${from.length === 1 ? 'y' : 'ies'} into ${into}; sources kept on disk`);
+  console.log(`${PREFIX} ${rel} folds ${from.length} entr${from.length === 1 ? 'y' : 'ies'}; sources kept on disk, hidden`);
 }
 
 if (process.argv[1] && process.argv[1].replace(/\\/g, '/').endsWith('/merge-memory.js')) main(process.argv.slice(2));

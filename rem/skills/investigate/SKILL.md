@@ -20,16 +20,15 @@ Research-only mode — understand before acting. When invoked:
    - Recommendation with reasoning
    - List of files checked
 
-3. **Add to rem:todo** via:
+3. **Add to rem:todo** (where `.claude/rem.json` says `backlog: issues`, file an issue instead) via:
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/task-engine.js add \
-     --summary "调研：<topic> — <one-line conclusion>" \
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/todo.js add "调研：<topic> — <one-line conclusion>" \
      --severity LOW --module research
    ```
 
 4. **Index the new memory file:**
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/index-memory.js
    ```
 
 ## Constraints

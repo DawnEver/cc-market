@@ -50,11 +50,10 @@ deep detail when a task reaches into that area.
 
 See `.claude/rules/invariants.md` (always-injected) for the method, planner, merge and finding-ID constraints.
 
-- **Report**: `todo` / `todo report` scans all memory files on the fly — never stale.
 
 ## Task System
 
-Sharp-review owns findings end-to-end. `post-review.js` writes `sharp-review.md` under `output/logs/` and stamps no memory — no delegation to `task-engine.js`. The `todo` CLI (owned by rem) scans memory files on the fly for reporting.
+Sharp-review owns findings end-to-end. `post-review.js` writes `sharp-review.md` under `output/logs/` and stamps no memory. A finding worth keeping becomes an issue or a rem `todo.js add` item (rem's one backlog).
 
 Full file-ownership table → `skills/sharp-review/reference/task-system.md`.
 
