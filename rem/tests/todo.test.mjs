@@ -87,6 +87,23 @@ describe('per-item files (no tracker)', () => {
   });
 });
 
+describe('closing never half-writes an archive', () => {
+  it('an archive name already taken refuses the close and leaves the item untouched', () => {
+    const root = repo();
+    ok(todo(root, 'add', 'Fix login timeout'));
+    const [file] = items(root);
+    const id = file.replace(/\.md$/, '');
+    const src = path.join(root, '.claude', 'todo', file);
+    const before = fs.readFileSync(src, 'utf8');
+    const dest = path.join(root, '.claude', 'memory', ...todayPath.split('/'), `todo-${id}.md`);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, 'occupied');
+    assert.equal(todo(root, 'close', id, 'x').status, 1);
+    assert.equal(fs.readFileSync(src, 'utf8'), before);
+    assert.equal(fs.readFileSync(dest, 'utf8'), 'occupied');
+  });
+});
+
 describe('backlog: issues', () => {
   it('todo is a read-only view: add is refused, nothing is written', () => {
     const root = repo();

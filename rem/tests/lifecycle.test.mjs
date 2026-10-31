@@ -139,10 +139,17 @@ describe('no memory entry is ever deleted', () => {
     assert.match('fs.rmSync(dir, { recursive: true });', DELETES);
   });
 
-  it('no rem script, hook or migration calls a file-removing API', () => {
+  // The one remover: todo-lib's removeBacklogItem (a closed .claude/todo/ item, after its
+  // archive exists in memory). Named here, guarded by its own path check below.
+  const ALLOWED = new Set(['scripts/todo-lib.mjs']);
+
+  it('no rem script, hook or migration calls a file-removing API, except the named one', () => {
     const offenders = sources(REM)
       .filter(f => DELETES.test(fs.readFileSync(f, 'utf8')))
       .map(f => path.relative(REM, f).replace(/\\/g, '/'));
-    assert.deepEqual(offenders, []);
+    assert.deepEqual(offenders.filter(f => !ALLOWED.has(f)), []);
+    const text = fs.readFileSync(path.join(REM, 'scripts', 'todo-lib.mjs'), 'utf8');
+    assert.equal(text.match(/unlinkSync\(/g).length, 1, 'todo-lib removes in exactly one place');
+    assert.match(text, /function removeBacklogItem\(file\) \{\n {2}if \(!\/.*todo.*\.test\(file\)\) throw/);
   });
 });

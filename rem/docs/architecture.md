@@ -39,7 +39,7 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
   /todo skill (the one backlog):
     ├── /todo        → todo.js report  (read-only: task open items, backlog, stale docs)
     ├── /todo add    → todo.js add      (.claude/todo/<id>.md; refused with rem.json backlog: issues)
-    ├── /todo close  → todo.js close    (git mv into .claude/memory/<date>/todo-<id>.md)
+    ├── /todo close  → todo.js close    (write .claude/memory/<date>/todo-<id>.md whole, then git rm the item)
     └── /todo adopt  → todo.js adopt    (legacy manual.md / sharp-review.md → item files)
 ```
 

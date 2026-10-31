@@ -5,15 +5,15 @@
 //     `todo` is a read-only view (task open items + a pointer to the tracker).
 //   - Otherwise one file per item, `.claude/todo/<id>.md` (a unique name, status in the
 //     frontmatter). A closed item is archived into memory like a task:
-//     `.claude/memory/<date>/todo-<id>.md` (git mv; a plain rename outside git).
+//     `.claude/memory/<date>/todo-<id>.md` is written whole (O_EXCL), then the item leaves .claude/todo/.
 // Nothing here writes a checkbox, and nothing writes under .claude/memory/ except that move.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, appendFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { join, dirname, relative } from 'path';
 import { randomBytes } from 'crypto';
 import { findProjectRoot, todayISO, SR_BLOCK_SPLIT_RE, SR_FINDING_HDR_RE, SR_STATUS_RE } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
-import { parseFrontmatter } from './lib.mjs';
+import { parseFrontmatter, writeOnce } from './lib.mjs';
 import { listTasks } from './tasks.mjs';
 import { evaluateDocs } from './doc-freshness.js';
 
@@ -74,15 +74,24 @@ export function closeItem(start, id, how, { date = todayISO() } = {}) {
   const src = join(todoDir(start), `${id}.md`);
   if (!/^T\d{8}-[0-9a-f]{6}$/.test(id) || !existsSync(src)) throw new Error(`no open todo item ${id}`);
   const text = readFileSync(src, 'utf8');
-  writeFileSync(src, text.replace(/^status: .*$/m, `status: closed\nclosed: ${date}`), 'utf8');
-  appendFileSync(src, `\nClosed ${date}: ${how || 'done'}\n`, 'utf8');
+  const closed = text.replace(/^status: .*$/m, `status: closed\nclosed: ${date}`).trimEnd() + `\n\nClosed ${date}: ${how || 'done'}\n`;
   const root = findProjectRoot(start);
   const [y, m, d] = date.split('-');
   const dest = join(root, '.claude', 'memory', y, m, d, `todo-${id}.md`);
-  mkdirSync(dirname(dest), { recursive: true });
-  const moved = spawnSync('git', ['mv', src, dest], { cwd: root, encoding: 'utf8' });
-  if (moved.status !== 0) renameSync(src, dest);
+  // The archive is written WHOLE and exclusively first; only then does the backlog item
+  // (outside memory) go. A taken name refuses the close and leaves the item untouched.
+  if (!writeOnce(dest, closed)) throw new Error(`${dest} exists — the item stays open`);
+  const removed = spawnSync('git', ['rm', '-q', '--cached', '--ignore-unmatch', src], { cwd: root, encoding: 'utf8' });
+  if (removed.status !== 0) throw new Error(`git could not untrack ${src}: ${removed.stderr}`);
+  removeBacklogItem(src);
   return dest;
+}
+
+// The ONE file removal in rem: a closed backlog item under .claude/todo/, after its
+// whole archive exists in memory. It refuses any path outside .claude/todo/.
+function removeBacklogItem(file) {
+  if (!/[\\/]\.claude[\\/]todo[\\/]T\d{8}-[0-9a-f]{6}\.md$/.test(file)) throw new Error(`not a backlog item: ${file}`);
+  unlinkSync(file);
 }
 
 // ── Legacy checkbox files (manual.md, sharp-review.md) ──

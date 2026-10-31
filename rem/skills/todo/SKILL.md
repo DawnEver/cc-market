@@ -40,7 +40,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" show T20261031-a1b2c3
 node "${CLAUDE_PLUGIN_ROOT}/scripts/todo.js" close T20261031-a1b2c3 "fixed in abc123"
 ```
 
-`close` records how, sets `status: closed`, and archives the item (git mv) to
+`close` records how, sets `status: closed`, and writes the whole closed item to
 `.claude/memory/<date>/todo-<id>.md` — hidden from recall and the index, never deleted. A task's
 `O<n>` is closed in its journal: `task.js close-item O<n> "<how>"`.
 
