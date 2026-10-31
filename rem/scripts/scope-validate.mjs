@@ -8,6 +8,7 @@
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
+import { authorityProblem } from './authority.mjs';
 import { findAllScopes, collectFiles, renderIndex, rebuildIndex, indexFilePath, DATED_RE } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -56,7 +57,9 @@ function taskAuthorityIssues(root) {
     const read = f => { try { return readFileSync(join(dir, e.name, f), 'utf8'); } catch { return ''; } };
     const id = read('TASK.md').match(/^authority: ([0-9a-f]{12})\s*$/m)?.[1];
     const opened = id && new RegExp(`^- \\d{4}-\\d{2}-\\d{2} opened: .*\\(authority ${id}\\)\\s*$`, 'm').test(read('JOURNAL.md'));
-    if (!opened) out.push(`task ${e.name} has no user authority — its TASK.md was not written by /rem:task open`);
+    if (!opened) { out.push(`task ${e.name} has no user authority — its TASK.md was not written by /rem:task open`); continue; }
+    const problem = authorityProblem(root, e.name, id);
+    if (problem) out.push(`task ${e.name}: ${problem} — opened around /rem:task (see git log of its TASK.md)`);
   }
   return out;
 }
