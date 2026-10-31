@@ -52,7 +52,25 @@ Each call appends ONE line `- <date> <tag>: <text>` (O_APPEND; earlier bytes are
 rewritten) to the bound task's journal only. Decisions and open items number themselves. A
 closed task's journal is final. Read with `task.js show [<slug>]` and `task.js list`.
 
-## Close — the user only
+## Close — distill, then archive (the user closes)
 
-`/rem:task close <slug> ["<reason>"]` appends `closed: <reason>` and sets `status: closed`;
-a closed task binds no session. An agent proposes closing; the user runs the command.
+1. **Distill** (any session, before the user closes): mechanism → the docs (`/refresh-docs`);
+   a constraint → a proposed rule the user approves; incidents, measurements and reasons → memory
+   entries that cite their decision, e.g.
+   `remember.js --name <slug> --type project --body "…" --from tasks/<slug>/JOURNAL.md#D3`.
+   A rule or bound doc that mentions `tasks/<slug>/JOURNAL.md#D3` distills D3 as well.
+   `task.js distill-status [<slug>]` lists the undistilled decisions and open items.
+2. **Close** — `/rem:task close <slug> ["<reason>"] [--journal-only D<n>,...]` refuses while an item
+   is open or a decision is neither distilled nor named in `--journal-only` (kept only in the
+   archived journal). It appends `closed: <reason>`, sets `status: closed`, then ARCHIVES:
+   `git mv .claude/tasks/<slug> .claude/memory/<close-date>/task-<slug>/` (a plain rename outside
+   git). Nothing is deleted. An agent proposes closing; the user runs the command.
+
+## An archived task is memory
+
+One storage shape: `memory/<date>/<name>`, where `<name>` is a file (an entry) or a directory
+holding `TASK.md` (an archived task). One frontmatter (`memory-conventions.md`): `TASK.md` already
+carries `name`, `description`, `kind: task`, `task`, `created`. One recall and index path: an
+archived task is HIDDEN from recall and the index (derived from `kind: task`); its files stay,
+reachable by provenance (`from:` citations) and by `task.js show <slug>`. Entries tagged with a
+closed task are ordinary memory again: recall excludes only entries of another OPEN task.

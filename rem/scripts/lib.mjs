@@ -201,6 +201,13 @@ export const PROVENANCE_FIELDS = ['merged_from', 'supersedes', 'corrects'];
 // A provenance field as an inline comma list or a YAML block list. Each item is
 // normalized to a path relative to its scope's `.claude/memory/`.
 export function parseRefs(content, key) {
+  return parseList(content, key)
+    .filter(s => s.endsWith('.md') || /^\d{4}\/\d{2}\/\d{2}\/task-[^/]+$/.test(s))
+    .map(s => s.replace(/^.*\.claude\/memory\//, ''));
+}
+
+// A frontmatter list field (inline comma list or YAML block list), items unquoted, POSIX.
+export function parseList(content, key) {
   const m = content.match(FM_RE);
   if (!m) return [];
   const lines = m[1].split(/\r?\n/);
@@ -208,10 +215,7 @@ export function parseRefs(content, key) {
   if (at < 0) return [];
   const items = lines[at].slice(key.length + 1).trim().replace(/^\[|\]$/g, '').split(',');
   for (let i = at + 1; i < lines.length && /^\s+-\s/.test(lines[i]); i++) items.push(lines[i].replace(/^\s+-\s*/, ''));
-  return items
-    .map(s => s.trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/'))
-    .filter(s => s.endsWith('.md'))
-    .map(s => s.replace(/^.*\.claude\/memory\//, ''));
+  return items.map(s => s.trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/')).filter(Boolean);
 }
 
 // Frontmatter lines for the provenance a new entry writes, in PROVENANCE_FIELDS order.
@@ -222,31 +226,42 @@ export function formatRefs(refs) {
     .join('');
 }
 
-// An entry lives at YYYY/MM/DD/<slug>.md under its scope's .claude/memory/.
+// An entry lives at YYYY/MM/DD/<name> under its scope's .claude/memory/: <name> is a
+// file (an entry, kind: entry) or a directory holding TASK.md (an archived task, kind: task).
 export const DATED_RE = /^\d{4}\/\d{2}\/\d{2}\//;
+const ENTRY_FILE_RE = /^\d{4}\/\d{2}\/\d{2}\/[^/]+\.md$/;
+const TASK_DIR_RE = /^(\d{4}\/\d{2}\/\d{2}\/[^/]+)\/TASK\.md$/;
 
 // Byte order, never locale order: the same tree sorts the same on every machine.
 export const byteOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-// Every entry of a scope, newest first, then by path:
-// { path, date, name, description, type, task, mergedFrom, supersedes, corrects }.
+// Every entry of a scope, newest first, then by path. ONE frontmatter for both kinds:
+// { path, date, kind, name, description, type, task, created, from, mergedFrom, supersedes, corrects }.
+// Absent fields are derived, never duplicated: kind defaults to entry, created to the
+// path date, scope to the directory holding .claude/memory/.
 export function listEntries(scopeRoot) {
   const memDir = join(scopeRoot, '.claude', 'memory');
   const entries = [];
   for (const abs of collectMemoryFiles(memDir)) {
-    const path = relative(memDir, abs).replace(/\\/g, '/');
-    if (!DATED_RE.test(path)) continue;
+    const rel = relative(memDir, abs).replace(/\\/g, '/');
+    const taskDir = rel.match(TASK_DIR_RE)?.[1];
+    if (!taskDir && !ENTRY_FILE_RE.test(rel)) continue;
+    const path = taskDir || rel;
     let content = '';
     try { content = readFileSync(abs, 'utf8'); } catch { continue; }
     const { fields } = parseFrontmatter(content);
     const typeMatch = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m);
+    const date = path.slice(0, 10).replace(/\//g, '-');
     entries.push({
       path,
-      date: path.slice(0, 10).replace(/\//g, '-'),
+      date,
+      kind: taskDir ? 'task' : (fields.kind || 'entry'),
       name: fields.name || basename(path, '.md'),
       description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
       type: typeMatch ? typeMatch[1] : null,
       task: fields.task || null,
+      created: fields.created || date,
+      from: parseList(content, 'from'),
       mergedFrom: parseRefs(content, 'merged_from'),
       supersedes: parseRefs(content, 'supersedes'),
       corrects: parseRefs(content, 'corrects'),
@@ -256,12 +271,13 @@ export function listEntries(scopeRoot) {
   return entries;
 }
 
-// Entries a newer entry names in `merged_from` or `supersedes`: their content has a
-// home, so they leave recall and the index. The file stays. A self-reference never
-// hides the entry.
+// Entries a newer entry names in `merged_from` or `supersedes` (their content has a
+// home), and archived tasks (distilled before they were archived): they leave recall and
+// the index. The files stay, reachable by provenance. A self-reference never hides.
 export function hiddenEntries(entries) {
   const live = new Set(entries.map(e => e.path));
   const out = new Map();
+  for (const e of entries) if (e.kind === 'task') out.set(e.path, 'archived task');
   for (const e of entries) {
     for (const p of [...e.mergedFrom, ...e.supersedes]) {
       if (p !== e.path && live.has(p) && !out.has(p)) out.set(p, e.path);

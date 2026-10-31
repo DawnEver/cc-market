@@ -431,6 +431,7 @@ export function scopedContext(prompt, cwd, now = Date.now()) {
   const bound = resolveTask(root, {});
   const task = bound ? readTask(root, bound) : null;
   const queried = queriedTasks(prompt, tasks.map((t) => t.slug));
+  const active = new Set(tasks.filter((t) => t.status === "open").map((t) => t.slug));
   const parts = [];
   if (task) parts.push(taskBlock(task));
 
@@ -447,7 +448,8 @@ export function scopedContext(prompt, cwd, now = Date.now()) {
     const info = {};
     appendTelemetry(home, { t: new Date().toISOString(), done: false });
     const entries = [...scopes].flatMap((s) => collectCandidates(s, { info }))
-      .filter((e) => !e.task || e.task === bound || queried.has(e.task))
+      // Another OPEN task's entries stay out unless named; a closed task's are memory.
+      .filter((e) => !e.task || e.task === bound || !active.has(e.task) || queried.has(e.task))
       .map((e) => (e.task && e.task === bound ? { ...e, boost: 2 } : e));
     const docs = collectDocs(root).filter((d) => docCovers(d, workPaths));
     const candidates = [...entries, ...docs.map((d) => ({ ...d, date: "" }))];

@@ -16,7 +16,9 @@ is never edited either: a correction or restatement is a NEW entry naming the ol
 `.claude/tasks/<slug>/TASK.md` is written only by the user's `/rem:task open|close` (command
 expansion, not a tool call). `hooks/task-guard.js` refuses an agent writing a `TASK.md`, rewriting a
 `JOURNAL.md`, or running `task.js open|close` — keep that hook registered and its planted-control
-test (`tests/tasks.test.mjs`) green. A journal grows only by `appendJournal()` (O_APPEND).
+test (`tests/tasks.test.mjs`) green. A journal grows only by `appendJournal()` (O_APPEND). Close
+distills first, then ARCHIVES the task by `git mv` into `.claude/memory/<date>/task-<slug>/` —
+never a delete (`closeTask()`).
 
 ## Hook pending-work gate
 

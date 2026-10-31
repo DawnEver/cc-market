@@ -7,11 +7,12 @@
 // works on ONE task, bound by the user's instruction (--task) or by its worktree/branch
 // name, and appends only to that task's journal.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync } from 'fs';
-import { join, basename } from 'path';
+import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync } from 'fs';
+import { join, basename, dirname } from 'path';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
-import { parseFrontmatter } from './lib.mjs';
+import { parseFrontmatter, findAllScopes, listEntries } from './lib.mjs';
+import { collectBoundDocs } from './doc-freshness.js';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -140,8 +141,86 @@ export function appendJournal(start, slug, tag, text, { date = todayISO(), allow
 }
 
 // Status is the one TASK.md field that moves after open; only the user's command moves it.
-export function setTaskStatus(start, slug, status) {
+function setTaskStatus(start, slug, status) {
   const file = taskFile(start, slug);
   const text = readFileSync(file, 'utf8');
   writeFileSync(file, text.replace(/^status: .*$/m, `status: ${status}`), 'utf8');
+}
+
+// ── Close: distill, then archive into memory ──
+//
+// A decision Dn is DISTILLED when something outside the journal cites
+// `tasks/<slug>/JOURNAL.md#Dn`: a memory entry (`from:` or its body), a rule under
+// .claude/rules/, or a bound doc. Distilled knowledge lives on in its new home; the
+// archived journal stays the record.
+
+function filesUnder(dir, out = []) {
+  if (!existsSync(dir)) return out;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.name.startsWith('.') && e.name !== '.claude') continue;
+    const full = join(dir, e.name);
+    if (e.isDirectory()) filesUnder(full, out);
+    else if (e.name.endsWith('.md')) out.push(full);
+  }
+  return out;
+}
+
+export function distillStatus(start, slug) {
+  const task = readTask(start, slug);
+  if (!task) throw new Error(`no task ${slug}`);
+  const root = findProjectRoot(start);
+  const cite = new RegExp(`tasks/${slug}/JOURNAL\\.md#D(\\d+)\\b`, 'g');
+  const cited = new Set();
+  const homes = [
+    ...findAllScopes(root).flatMap(s => filesUnder(join(s, '.claude', 'memory'))),
+    ...filesUnder(join(root, '.claude', 'rules')),
+    ...collectBoundDocs(root).map(d => d.full),
+  ];
+  for (const file of homes) {
+    let text = '';
+    try { text = readFileSync(file, 'utf8'); } catch { continue; }
+    for (const m of text.replace(/\\/g, '/').matchAll(cite)) cited.add(Number(m[1]));
+  }
+  return {
+    undistilled: task.decisions.map(d => d.n).filter(n => !cited.has(n)),
+    openItems: task.openItems.map(i => i.n),
+  };
+}
+
+// Close = refuse until distilled, record the close, then ARCHIVE: the task directory
+// moves (git mv; a plain rename outside git) to .claude/memory/<close-date>/task-<slug>/.
+// `journalOnly` names decisions the user keeps only in the archived journal.
+export function closeTask(start, slug, reason, { journalOnly = [], date = todayISO() } = {}) {
+  const task = readTask(start, slug);
+  if (!task || task.status !== 'open') throw new Error(`no open task ${slug}`);
+  const { undistilled, openItems } = distillStatus(start, slug);
+  if (openItems.length) throw new Error(`${openItems.map(n => `O${n}`).join(', ')} ${openItems.length === 1 ? 'is' : 'are'} open — close or carry each item before closing the task`);
+  const keep = new Set(journalOnly.map(s => Number(String(s).replace(/^D/, ''))));
+  const missing = undistilled.filter(n => !keep.has(n));
+  if (missing.length) {
+    throw new Error(`${missing.map(n => `D${n}`).join(', ')} not distilled — cite tasks/${slug}/JOURNAL.md#Dn from a memory entry `
+      + '(remember.js --from), a rule or a bound doc, or keep them in the journal only (--journal-only D<n>,...)');
+  }
+  const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
+  appendJournal(start, slug, 'closed', `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`, { date });
+  setTaskStatus(start, slug, 'closed');
+
+  const root = findProjectRoot(start);
+  const [y, m, d] = date.split('-');
+  const dest = join(root, '.claude', 'memory', y, m, d, `task-${slug}`);
+  if (existsSync(dest)) throw new Error(`${dest} exists`);
+  mkdirSync(dirname(dest), { recursive: true });
+  const moved = spawnSync('git', ['mv', task.dir, dest], { cwd: root, encoding: 'utf8' });
+  if (moved.status !== 0) renameSync(task.dir, dest); // untracked or no git: a plain move
+  return dest;
+}
+
+// An archived task: .claude/memory/<date>/task-<slug>/ in any scope.
+export function findArchivedTask(start, slug) {
+  const root = findProjectRoot(start);
+  for (const scope of findAllScopes(root)) {
+    const hit = listEntries(scope).find(e => e.kind === 'task' && e.task === slug);
+    if (hit) return join(scope, '.claude', 'memory', hit.path);
+  }
+  return null;
 }

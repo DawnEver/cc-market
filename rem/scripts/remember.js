@@ -4,7 +4,7 @@
 //
 //   node remember.js --name <kebab-slug> --type <user|feedback|project|reference>
 //                    --body <text> [--scope <dir|auto>] [--description <text>]
-//                    [--corrects <paths>] [--supersedes <paths>] [--task <slug>]
+//                    [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]
 //   (body may also be piped on stdin instead of --body; <paths> is a comma list of
 //    YYYY/MM/DD/<slug>.md entries of the same scope)
 //
@@ -13,7 +13,9 @@
 // entry that names the old one (`corrects:` keeps it visible and flags it,
 // `supersedes:` hides it). An identical re-run is a no-op; a different body under an
 // existing name is refused. The entry carries `task: <slug>` of the bound task (--task, else
-// the worktree/branch name; see tasks.mjs). Prints the created file path.
+// the worktree/branch name; see tasks.mjs). --from records where the entry was distilled from,
+// e.g. tasks/<slug>/JOURNAL.md#D3 (task close counts that decision as distilled).
+// Prints the created file path.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
@@ -36,7 +38,7 @@ function yamlScalar(s) {
 
 function usage(msg) {
   if (msg) console.error(`[remember] ${msg}`);
-  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--corrects <paths>] [--supersedes <paths>] [--task <slug>]');
+  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]');
   process.exit(1);
 }
 
@@ -53,6 +55,8 @@ const scopeArg = argValue('--scope') || 'auto';
 const description = argValue('--description');
 const refs = { corrects: list('--corrects'), supersedes: list('--supersedes') };
 const taskArg = argValue('--task');
+const from = list('--from');
+if (from.some(c => /\s/.test(c))) usage('--from takes a comma list of citations without spaces, e.g. tasks/<slug>/JOURNAL.md#D3');
 let body = argValue('--body');
 
 if (args.includes('--update')) usage('--update is gone: an entry is never edited — write a new entry with --corrects or --supersedes');
@@ -102,6 +106,7 @@ const desc = description
 // a flat dotted key would be invisible to them (feedback would lose its weight).
 const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\n`
   + (task ? `task: ${task}\n` : '')
+  + (from.length ? `from:\n${from.map(c => `  - ${c}`).join('\n')}\n` : '')
   + formatRefs(refs)
   + `metadata:\n  type: ${type}\n---\n\n${body}`;
 

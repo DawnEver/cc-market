@@ -32,7 +32,8 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
 
   /rem:task command (user only; command expansion, not a tool call):
     ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
-    └── close <slug>          → task.js close
+    └── close <slug>          → task.js close: refuse until distilled, then git mv into
+                                .claude/memory/<date>/task-<slug>/ (hidden, kept)
   task.js log|decide|open-item|close-item|handoff → append to the bound task's JOURNAL.md
 
   /todo skill (user-facing task management):

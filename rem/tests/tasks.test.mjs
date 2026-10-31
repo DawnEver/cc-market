@@ -97,7 +97,7 @@ describe('binding', () => {
     run(root, 'close', 'feature-x');
     assert.equal(resolveTask(root, {}), null);
     assert.equal(resolveTask(root, { task: 'nope' }), null);
-    assert.deepEqual(listTasks(root).map(t => `${t.slug}:${t.status}`), ['feature-x:closed', 'other:open']);
+    assert.deepEqual(listTasks(root).map(t => `${t.slug}:${t.status}`), ['other:open'], 'a closed task is archived out of .claude/tasks/');
   });
 
   it('remember.js tags the entry with the bound task', () => {

@@ -58,6 +58,19 @@ structured parser (`metadata.type`); a flat dotted `metadata.type:` key is invis
 to them and silently drops the recall weighting. `remember.js` emits this nested form and
 YAML-quotes the `description` when it contains colons or other metacharacters.
 
+One frontmatter for every kind of memory — an entry file and an archived task's `TASK.md`:
+
+| Field | Meaning | When absent |
+|---|---|---|
+| `name`, `description` | identity and one-line summary (a task: its slug and goal) | name = file name |
+| `kind` | `entry` or `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) | `entry` |
+| `task` | the task the entry was written for (`remember.js` writes the bound task) | none |
+| `created` | when it began (a task: the day it was opened) | the path date |
+| `from` | where it was distilled from, e.g. `tasks/<slug>/JOURNAL.md#D3` | none |
+| scope | the directory holding this `.claude/memory/` | derived, never written |
+
+Absent fields are derived, never written twice (the path is the single source of the date).
+
 Provenance fields (inline comma list or YAML block list of `YYYY/MM/DD/slug.md` in the same
 scope), each written only by the newer entry:
 
@@ -143,6 +156,8 @@ newer entry names the older ones:
 - **Supersede** — the current truth replaces an entry: `remember.js --supersedes <path>`.
 - **Merge** — duplicates on one topic: `merge-memory.js --name <slug> --from <a.md,b.md>`
   writes a new entry with every source line verbatim and names the sources in `merged_from:`.
+- **Archive** — a closed task moves (git mv) to `YYYY/MM/DD/task-<slug>/` after its decisions were
+  distilled (`tasks.md`); it is hidden, its distilled entries stay visible.
 - **Crystallize** — a fact every session needs becomes a rule:
   `crystallize.js --execute --rule <file> --distilled <paths>` writes a ledger entry that
   points at the rule and names the distilled entries in `supersedes:`.
