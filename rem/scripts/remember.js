@@ -6,17 +6,17 @@
 //                    --body <text> [--scope <dir|auto>] [--description <text>] [--update]
 //   (body may also be piped on stdin instead of --body)
 //
-// Writes .claude/memory/YYYY/MM/DD/<slug>.md with generated frontmatter (volatile
-// fields forbidden — enforced), creates the _meta.json entry, and upserts the
-// MEMORY.md index. Refuses a different-bodied file without --update, which APPENDS (never drops).
+// Writes .claude/memory/YYYY/MM/DD/<slug>.md and regenerates the derived index.
+// An older live entry with the same name is SUPERSEDED: the new entry names it in
+// `merged_from:`, so it retires (retire-memory.js deletes it; git keeps it).
+// A same-day file with a different body is refused without --update, which replaces it.
 // Prints the created/updated file path.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
-import { upsertIndexEntry } from '../shared/stamp.mjs';
 import {
-  findMemoryScope, saveMemoryMeta, loadMemoryState,
-  isInsideDir, todayISO, dateToPath,
+  findMemoryScope, listEntries, retiredEntries, rebuildIndex,
+  isInsideDir, dateToPath,
 } from './lib.mjs';
 
 const TYPES = new Set(['user', 'feedback', 'project', 'reference']);
@@ -59,16 +59,10 @@ if (body === null && !process.stdin.isTTY) {
 if (!body || !body.trim()) usage('--body is required (or pipe body on stdin)');
 body = body.trim() + '\n';
 
-// Volatile metadata never belongs in file content (frontmatter or body) — it lives
-// in _meta.json only.
-if (VOLATILE_RE.test(body)) {
-  usage('body contains a volatile metadata field (accessed|count|tier|dropped) — these live in _meta.json, never in the file');
-}
 
 // ── Scope & path security ──
 const scopeRoot = scopeArg === 'auto' ? findMemoryScope() : resolve(scopeArg);
 const memDir = join(scopeRoot, '.claude', 'memory');
-const date = todayISO();
 const relPath = `${dateToPath()}/${name}.md`;
 const file = resolve(memDir, relPath);
 if (!isInsideDir(memDir, file)) {
@@ -84,42 +78,27 @@ const desc = description
   || body.split('\n').map(l => l.replace(/^#+\s*/, '').replace(/[*_`]/g, '').trim())
     .find(l => l.length > 0)?.slice(0, 80)
   || name;
-// metadata.type is nested YAML — prune-memory.js and recall.js read it via the
-// structured parser as metadata.type. A flat dotted key would be invisible to
-// them (feedback entries would lose their eviction exemption and recall weight).
-let content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\nmetadata:\n  type: ${type}\n---\n\n${body}`;
+// metadata.type is nested YAML (recall and the index read it as metadata.type).
+const entries = listEntries(scopeRoot);
+const retired = retiredEntries(entries);
+const superseded = entries
+  .filter(e => e.name === name && e.path !== relPath && !retired.has(e.path))
+  .map(e => e.path);
+const mergedFrom = superseded.length ? `merged_from:\n${superseded.map(p => `  - ${p}`).join('\n')}\n` : '';
+const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\n${mergedFrom}metadata:\n  type: ${type}\n---\n\n${body}`;
 
-// ── Overwrite guard ──
-// Memory keeps everything: --update never drops prior text. A body that already contains the
-// old body is written as-is; any other revision is APPENDED under a dated heading.
 if (existsSync(file)) {
   const existing = readFileSync(file, 'utf8');
-  if (existing === content) {
-    console.log(file);
-    process.exit(0);
-  }
+  if (existing === content) { console.log(file); process.exit(0); }
   if (!update) {
     console.error(`[remember] file exists with different content: ${file}`);
-    console.error('[remember] re-run with --update to append the revision');
+    console.error('[remember] re-run with --update to replace it');
     process.exit(1);
   }
-  const oldBody = existing.replace(/^---\n[\s\S]*?\n---\n\n?/, '').trim();
-  if (!body.includes(oldBody)) content = `${existing.trimEnd()}\n\n## Update ${date}\n\n${body}`;
 }
-
-// Snapshot state BEFORE writing — loadMemoryState backfills on-disk files, so a
-// post-write snapshot would always contain relPath and skip the meta entry.
-const isNewEntry = !loadMemoryState(scopeRoot).has(relPath);
 
 mkdirSync(dirname(file), { recursive: true });
 writeFileSync(file, content, 'utf8');
-
-// ── Volatile metadata (new entries only — updates keep their history) ──
-if (isNewEntry) {
-  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count: 1, tier: 'short' });
-}
-
-// ── Index upsert ──
-upsertIndexEntry(scopeRoot, relPath, { name, date });
-
+rebuildIndex(scopeRoot);
+for (const p of superseded) console.error(`[remember] supersedes ${p} (retire-memory.js --execute deletes it)`);
 console.log(file);

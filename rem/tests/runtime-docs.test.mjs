@@ -13,12 +13,11 @@ test('active REM instructions never prescribe retired count-based eviction or ad
   }
 });
 
-test('runtime memory policy distinguishes an unbounded catalog from its bounded injected view', () => {
+test('runtime memory policy describes the tree-only lifecycle, not access bookkeeping', () => {
   const text = reference('memory-conventions');
-  assert.match(text, /\.claude\/meta\/MEMORY\.full\.md/);
-  assert.match(text, /(?:unbounded|uncapped|no count cap)/i);
-  assert.match(text, /(?:injected|hot)\s+(?:index|view|set)/i);
-  assert.match(text, /HOT_SHORT_MAX/);
-  assert.match(text, /feedback[^\n]*(?:exempt|excluded)/i);
-  assert.doesNotMatch(text, /needs 2 inactive prune cycles/i);
+  assert.match(text, /merged_from/);
+  assert.match(text, /retire-memory.js/);
+  assert.match(text, /HOT_MAX/);
+  assert.match(text, /never writes/i);
+  assert.doesNotMatch(text, /_meta.json|touch-memory|prune-memory|MEMORY.full.md|tier: long/);
 });

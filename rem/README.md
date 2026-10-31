@@ -1,9 +1,9 @@
 # rem
 
-REM sleep for Claude Code and Codex sessions — prune stale memory, consolidate learnings, maintain `.claude/memory/` with timestamps and automatic eviction.
+REM sleep for Claude Code and Codex sessions — consolidate learnings into `.claude/memory/`, where a newer entry retires the ones it supersedes and the index is derived from the files.
 
-The injected memory index contains long-term entries plus the newest 15 short-term
-entries. The full catalog and original memory files remain available for recall.
+The injected memory index lists user/feedback entries plus the newest 15; recall searches
+every live entry. Reading memory never writes.
 
 ## Install
 
@@ -42,7 +42,7 @@ After installation, `/rem` is available as a slash command. It triggers automati
 
 ## How It Works
 
-Three-tier memory system (rules / long-term / short-term) and promotion rules → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
+Memory lifecycle → `skills/rem/reference/memory-conventions.md`. Session lifecycle diagram → `AGENTS.md` Architecture section.
 
 Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's stdout together with the git blob hashes of its sources, and `get` can answer FRESH or STALE (naming what moved) instead of re-reading. Claude uses SessionStart/PostCompact; Codex uses structured SessionStart output including `source=compact` and returns empty JSON for PostCompact. Store: `<scope>/.claude/memo/` (gitignored, per-worktree).
 

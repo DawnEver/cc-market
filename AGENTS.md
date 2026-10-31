@@ -16,7 +16,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 |---|---|---|
 | [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
 | [`fabric`](fabric/README.md) | `fabric/` | Multi-provider fabric: one `call` primitive (task/review/agent/image) + `fan_out` + observe proxy. Absorbed the former `takeover` plugin |
-| [`rem`](rem/README.md) | `rem/` | Memory management: pruning, summarization, crystallization, eviction |
+| [`rem`](rem/README.md) | `rem/` | Memory management: summarization, supersession → retirement, crystallization, derived index |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |

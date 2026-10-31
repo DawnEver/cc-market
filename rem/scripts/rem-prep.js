@@ -1,221 +1,51 @@
 #!/usr/bin/env node
-// REM preparation script — runs before /rem skill, does all mechanical work:
-//   1. Show recent prune events from unified state
-//   2. Scan transcript for .claude/memory/ file reads → batch bump accessed (in state)
-//   3. For touched files, check access count → suggest promotions
-//   4. Check if compact is needed
+// REM preparation — read-only report that runs before the /rem skill:
+//   1. Memory entries this session read (from the transcript) — the candidates to
+//      merge into, supersede, or crystallize, since they are what the session used.
+//   2. Per scope: live entries, entries already retired (named by a live entry's
+//      `merged_from`) awaiting `retire-memory.js --execute`, and the crystallize advisory.
+// It never writes: reading memory leaves no trace in the tree or in any state file.
 //
-// Usage: node rem-prep.js [--transcript <path>] [--promote]
+// Usage: node rem-prep.js [--transcript <path>]
 
-import { readFileSync, existsSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { relative } from 'path';
 import { normalizeHookFacts } from '../shared/hook-facts.mjs';
-import {
-  findAllScopes, loadState, scopeRoot,
-  todayISO, bumpAccessed, getMemoryMeta, saveMemoryMeta,
-  catalogFilePath, CATALOG_ADVISORY_MAX, rebuildIndex,
-} from './lib.mjs';
+import { findAllScopes, listEntries, retiredEntries, CRYSTALLIZE_ADVISORY } from './lib.mjs';
 
 const args = process.argv.slice(2);
-const transcriptIdx = args.indexOf('--transcript');
-const transcriptPath = transcriptIdx >= 0 ? args[transcriptIdx + 1] : null;
-const autoPromote = args.includes('--promote');
-const today = todayISO();
+const at = args.indexOf('--transcript');
+const transcriptPath = at >= 0 ? args[at + 1] : null;
 
-// ── 1. Event log (from unified state) ──
-console.log('─── Recent prune events ───');
-const state = loadState();
-const events = state.prune.events || [];
-if (events.length === 0) {
-  console.log('  (no events)');
-} else {
-  const recent = events.slice(-20);
-  for (const ev of recent) {
-    const ts = ev.ts?.slice(0, 19) || '?';
-    console.log(`  [${ts}] ${ev.type}: ${ev.path}${ev.reason ? ` (${ev.reason})` : ''}`);
-  }
-}
-
-// ── 2. Scan transcript for memory file access (reads & edits) ──
-console.log('\n─── Memory files accessed ───');
-const touchedFiles = new Set();
-
-if (transcriptPath && existsSync(transcriptPath)) {
-  try {
-    const lines = readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-    for (const line of lines) {
-      let entry;
-      try { entry = JSON.parse(line); } catch { continue; }
-      for (const fp of normalizeHookFacts([entry]).readPaths) {
-        const rel = fp.replace(/\\/g, '/');
-        const memIdx = rel.indexOf('.claude/memory/');
-        if (memIdx >= 0) touchedFiles.add(rel.slice(memIdx + '.claude/memory/'.length));
-      }
-    }
-  } catch { /* transcript parse error — skip */ }
-}
-
-const touchedScopes = new Set();
-
-if (touchedFiles.size === 0) {
-  console.log('  (no memory files read this session)');
-} else {
-  const scopes = findAllScopes();
-  for (const f of touchedFiles) {
-    let found = false;
-    for (const scope of scopes) {
-      const memFile = join(scope, '.claude', 'memory', f);
-      if (!existsSync(memFile)) continue;
-      found = true;
-      bumpAccessed(scope, f, today);
-      touchedScopes.add(scope);
-      console.log(`  ✓ ${f} → accessed: ${today} (${scope === process.env.CLAUDE_PROJECT_DIR ? 'global' : 'scoped'})`);
-      break;
-    }
-    if (!found) console.log(`  ? ${f} (not found in any scope)`);
-  }
-}
-
-// ── 2b. Scan transcript for SR-ID references → touch finding memory files ──
-console.log('\n─── Sharp-review findings referenced ───');
-const touchedSRIds = new Set();
-
-if (transcriptPath && existsSync(transcriptPath)) {
-  try {
-    const lines = readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-    const SR_RE = /SR-(\d{8})-(\d{3})/g;
-    for (const line of lines) {
-      let entry;
-      try { entry = JSON.parse(line); } catch { continue; }
-      const text = JSON.stringify(entry);
-      let m;
-      while ((m = SR_RE.exec(text)) !== null) {
-        const dateStr = m[1];
-        const dateDir = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
-        touchedSRIds.add({ id: m[0], dateDir, seq: m[3] });
-      }
-    }
-  } catch { /* transcript parse error — skip */ }
-}
-
-if (touchedSRIds.size === 0) {
-  console.log('  (no SR-ID references this session)');
-} else {
-  const scopes = findAllScopes();
-  for (const { id, dateDir } of touchedSRIds) {
-    const filename = `${id}.md`;
-    let found = false;
-
-    for (const scope of scopes) {
-      const scopeMem = join(scope, '.claude', 'memory');
-      const expectedPath = join(scopeMem, dateDir.replace(/-/g, '/'), filename);
-      if (existsSync(expectedPath)) {
-        found = true;
-      } else {
-        // Fallback: search all date directories
-        try {
-          for (const dirEntry of readdirSync(scopeMem, { withFileTypes: true })) {
-            if (!dirEntry.isDirectory() || dirEntry.name.startsWith('.') || dirEntry.name === 'tasks') continue;
-            if (existsSync(join(scopeMem, dirEntry.name, filename))) { found = true; break; }
-          }
-        } catch {}
-      }
-
-      if (found) {
-        const relPath = `${dateDir.replace(/-/g, '/')}/${filename}`;
-        const memFile = join(scopeMem, relPath);
-        if (existsSync(memFile)) {
-          bumpAccessed(scope, relPath, today);
-          touchedScopes.add(scope);
-          console.log(`  ✓ ${id} → accessed: ${today}`);
-        }
-        break;
-      }
-    }
-    if (!found) console.log(`  ? ${id} (no memory entry yet — will be created on next sync)`);
-  }
-}
-
-// ── 3. Promotion suggestions ──
-console.log('\n─── Promotion candidates ──');
-let promoted = 0;
-const allScopesForPromo = findAllScopes();
-
-function findInScopes(relPath) {
-  for (const scope of allScopesForPromo) {
-    const p = join(scope, '.claude', 'memory', relPath);
-    if (existsSync(p)) return { file: p, scope };
-  }
-  return null;
-}
-
-for (const f of touchedFiles) {
-  const found = findInScopes(f);
-  if (!found) continue;
-  const { scope } = found;
-
-  const meta = getMemoryMeta(scope, f);
-  if (meta.tier === 'long') continue;
-  if (meta.dropped) continue;
-
-  if (meta.count >= 3) {
-    console.log(`  ↑ ${f} (accessed ${meta.count}x, currently ${meta.tier})`);
-    if (autoPromote) {
-      saveMemoryMeta(scope, f, { tier: 'long' });
-      touchedScopes.add(scope);
-      promoted++;
+export function memoryReads(lines) {
+  const read = new Set();
+  for (const line of lines) {
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    for (const fp of normalizeHookFacts([entry]).readPaths) {
+      const rel = fp.replace(/\\/g, '/');
+      const i = rel.indexOf('.claude/memory/');
+      if (i >= 0) read.add(rel.slice(i + '.claude/memory/'.length));
     }
   }
+  return [...read].sort();
 }
 
-// Also check SR-ID memory files for promotion
-if (touchedSRIds.size > 0) {
-  for (const { id, dateDir } of touchedSRIds) {
-    const relPath = `${dateDir.replace(/-/g, '/')}/${id}.md`;
-    const found = findInScopes(relPath);
-    if (!found) continue;
-    const { scope } = found;
+console.log('─── Memory entries read this session ───');
+const reads = transcriptPath && existsSync(transcriptPath)
+  ? memoryReads(readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean))
+  : [];
+if (!reads.length) console.log('  (none)');
+for (const p of reads) console.log(`  ${p}`);
 
-    const meta = getMemoryMeta(scope, relPath);
-    if (meta.tier === 'long') continue;
-    if (meta.dropped) continue;
-
-    if (meta.count >= 3) {
-      console.log(`  ↑ ${id} → promotion candidate (accessed ${meta.count}x, currently ${meta.tier})`);
-      if (autoPromote) {
-        saveMemoryMeta(scope, relPath, { tier: 'long' });
-        touchedScopes.add(scope);
-        promoted++;
-      }
-    }
-  }
-}
-
-if (promoted > 0) {
-  console.log(`  → auto-promoted ${promoted} file(s) to long-term`);
-} else if (touchedFiles.size > 0 || touchedSRIds.size > 0) {
-  console.log('  (no promotion candidates — run with --promote to auto-upgrade)');
-}
-
-// ── 4. Crystallize check (against the full catalog, not the injected hot list) ──
-console.log('\n─── Crystallize status ──');
-const catalogFor = scope => catalogFilePath(scope);
-if (existsSync(catalogFor(scopeRoot))) {
-  try {
-    const entries = readFileSync(catalogFor(scopeRoot), 'utf8').split('\n').filter(l => /^-\s+\[/.test(l));
-    if (entries.length >= CATALOG_ADVISORY_MAX) {
-      console.log(`  ⚠ ${entries.length} entries — crystallize recommended`);
-    } else {
-      console.log(`  ✓ ${entries.length} entries (<${CATALOG_ADVISORY_MAX}) — no crystallize needed`);
-    }
-  } catch { console.log('  (error reading catalog)'); }
-} else {
-  console.log('  (no catalog yet)');
-}
-
-// Rebuild index for all touched scopes
-for (const scope of touchedScopes) {
-  rebuildIndex(scope);
+console.log('\n─── Scopes ───');
+for (const scope of findAllScopes()) {
+  const entries = listEntries(scope);
+  const retired = retiredEntries(entries);
+  const live = entries.length - retired.size;
+  const label = relative(process.cwd(), scope).replace(/\\/g, '/') || '.';
+  const advice = live >= CRYSTALLIZE_ADVISORY ? ' — crystallize recommended' : '';
+  console.log(`  ${label}: ${live} live, ${retired.size} retired awaiting deletion${advice}`);
 }
 
 console.log('\n[rem-prep] done');
