@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { grantIfUserVerb } from './user-grant.mjs';
 import { renderIndex } from '../scripts/lib.mjs';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -26,7 +27,7 @@ function repo() {
 const cli = (script) => (root, ...args) => spawnSync(process.execPath, [script, ...args],
   { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
 const todo = cli(TODO);
-const task = cli(TASK);
+const task = (root, ...args) => (grantIfUserVerb(root, args), cli(TASK)(root, ...args));
 const ok = (r) => { assert.equal(r.status, 0, r.stderr); return r; };
 const items = (root) => fs.existsSync(path.join(root, '.claude', 'todo'))
   ? fs.readdirSync(path.join(root, '.claude', 'todo')).filter(f => f.endsWith('.md')) : [];

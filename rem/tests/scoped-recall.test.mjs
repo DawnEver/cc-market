@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { grantIfUserVerb } from './user-grant.mjs';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const RECALL = path.join(REM, 'scripts', 'recall.js');
@@ -27,6 +28,7 @@ function put(root, rel, text) {
 const entry = (name, desc, extra = '') =>
   `---\nname: ${name}\ndescription: ${desc}\n${extra}metadata:\n  type: project\n---\n\nbody of ${name}\n`;
 const task = (root, ...args) => {
+  grantIfUserVerb(root, args);
   const r = spawnSync(process.execPath, [TASK, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
   assert.equal(r.status, 0, r.stderr);
 };

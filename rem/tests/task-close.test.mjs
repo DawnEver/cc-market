@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { grantIfUserVerb } from './user-grant.mjs';
 import { listEntries, renderIndex } from '../scripts/lib.mjs';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -23,8 +24,8 @@ function repo() {
   fs.mkdirSync(path.join(root, '.claude', 'memory'), { recursive: true });
   return root;
 }
-const task = (root, ...args) => spawnSync(process.execPath, [TASK, ...args],
-  { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
+const task = (root, ...args) => (grantIfUserVerb(root, args), spawnSync(process.execPath, [TASK, ...args],
+  { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } }));
 const ok = (r) => { assert.equal(r.status, 0, r.stderr); return r; };
 function put(root, rel, text) {
   const file = path.join(root, rel);
@@ -107,7 +108,7 @@ describe('close archives with git mv; nothing is lost', () => {
     const after = contents(archived);
     const journalBefore = before.find(t => t.includes('opened:'));
     assert.ok(after.some(t => t.startsWith(journalBefore)), 'the journal grew only by appends');
-    assert.match(after.join('\n'), new RegExp(`^- ${today} closed: shipped \\(kept in the journal only: D1, D2\\)$`, 'm'));
+    assert.match(after.join('\n'), new RegExp(`^- ${today} closed: shipped \\(kept in the journal only: D1, D2\\) \\(authority [0-9a-f]{12}\\)$`, 'm'));
     assert.match(after.join('\n'), /^status: closed$/m);
     const status = spawnSync('git', ['-C', root, 'status', '--porcelain'], { encoding: 'utf8' }).stdout;
     assert.match(status, /^R. +\.claude\/tasks\/alpha\/JOURNAL\.md -> \.claude\/memory\/.*\/task-alpha\/JOURNAL\.md$/m);

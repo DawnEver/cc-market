@@ -1,34 +1,41 @@
 #!/usr/bin/env node
-// task-guard.js — PreToolUse hook: only the user opens (and closes) a task.
-//
-// The user's /rem:task command runs task.js through command expansion, which is not a
-// tool call, so it never reaches this hook. Every agent tool call does, and is refused when
-// it would write a task's TASK.md, rewrite its JOURNAL.md (appends go through task.js), or
-// run task.js open/close. Reading tasks and `task.js log|decide|...` stay allowed.
+// task-guard.js — PreToolUse hook: the SECOND line behind "only the user opens or closes a
+// task". The first line is the cause: openTask/closeTask refuse without a record that only
+// the user's own /rem:task prompt creates (scripts/authority.mjs). This hook refuses the
+// visible attempts early and with a clear reason: an agent writing a TASK.md, rewriting a
+// JOURNAL.md, running task.js open|close in any argument order, importing the task library
+// or the authority store, or pointing an interpreter or a shell write at .claude/tasks/.
+// Reading tasks and `task.js log|decide|open-item|close-item|handoff` stay allowed.
 
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
 
 const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/][^\\/]+[\\/](TASK|JOURNAL)\.md$/;
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
-const OPEN_CLOSE_RE = /task\.js["']?\s+(?:open|close)\b/;
-const TASK_PATH_RE = /\.claude[\\/]tasks[\\/][^\s"'`]*(?:TASK|JOURNAL)\.md/;
-const SHELL_WRITE_RE = />|\btee\b|\b(?:cp|mv|rm|touch|sed\s+-i|truncate|dd)\b|Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Remove-Item|writeFile|appendFile/i;
+const LIBRARY_RE = /\btasks\.mjs\b|\bauthority\.mjs\b|\b(?:openTask|closeTask|consumeAuthority|recordUserCommand)\b|rem-task-authority/;
+const VERB_RE = /(?:^|\s)(?:open|close)(?=\s|$)/;
+const TASK_PATH_RE = /\.claude[\\/]+tasks\b|\b(?:TASK|JOURNAL)\.md\b/;
+const WRITER_RE = />|\btee\b|\b(?:cp|mv|rm|touch|mkdir|sed\s+-i|truncate|dd|install|ln)\b|Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Remove-Item|writeFile|appendFile|makedirs|open\(/i;
+const INTERPRETER_RE = /\b(?:python\d?(?:\.\d+)?|py|node|deno|bun|perl|ruby|php|pwsh|powershell|bash|sh|zsh|cmd)\b/i;
 
 const REASON = 'Only the user opens or closes a task (/rem:task open|close), and a task journal is '
   + 'append-only through `task.js log|decide|open-item|close-item|handoff`. Propose the change to the user instead.';
+
+// Quoted text is data (a journal line may say "open" or "close"); verbs are bare words.
+const unquoted = cmd => cmd.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, ' ');
 
 export function decideTaskGuard(payload) {
   const tool = payload?.tool_name || '';
   const input = payload?.tool_input || {};
   if (FILE_TOOLS.has(tool)) {
     const file = String(input.file_path || input.notebook_path || '');
-    return { deny: TASK_FILE_RE.test(file) };
+    return { deny: TASK_FILE_RE.test(file) || /rem-task-authority/.test(file) };
   }
   if (SHELL_TOOLS.has(tool)) {
     const cmd = String(input.command || '');
-    if (OPEN_CLOSE_RE.test(cmd)) return { deny: true };
-    return { deny: TASK_PATH_RE.test(cmd) && SHELL_WRITE_RE.test(cmd) };
+    if (LIBRARY_RE.test(cmd)) return { deny: true };
+    if (/\btask\.js\b/.test(cmd) && VERB_RE.test(unquoted(cmd))) return { deny: true };
+    return { deny: TASK_PATH_RE.test(cmd) && (WRITER_RE.test(cmd) || INTERPRETER_RE.test(cmd)) };
   }
   return { deny: false };
 }

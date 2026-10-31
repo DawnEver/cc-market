@@ -7,6 +7,7 @@ that area.
 ## Architecture
 
 ```
+UserPromptSubmit → task-authority.js (records the user's own /rem:task open|close prompt)
 PreToolUse → task-guard.js (refuses an agent opening/closing a task or rewriting its files)
 SessionStart → inject-rules.js (Codex-only: feed host .claude/rules into context)
             → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)

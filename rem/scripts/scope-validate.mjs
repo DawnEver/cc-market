@@ -2,10 +2,11 @@
 // scope-validate.mjs — verify each memory scope's integrity.
 //   --check (default): print issues, exit 1 on an error
 //   --fix: regenerate stale indexes
-// Errors: a scope without .claude/memory/.
+// Errors: a scope without .claude/memory/; a task whose TASK.md lacks the user authority id
+// that /rem:task open records (TASK.md written around the library).
 // Warnings: a leftover _meta.json (nothing reads it), a stale or missing index, an entry outside YYYY/MM/DD/, a child-scope state file.
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 import { findAllScopes, collectFiles, renderIndex, rebuildIndex, indexFilePath, DATED_RE } from './lib.mjs';
 
@@ -36,10 +37,28 @@ function validateScope(scopeRoot, isRepoRoot) {
   if (current === null) add('warn', '.claude/memory-index.md missing');
   else if (current !== renderIndex(scopeRoot)) add('warn', '.claude/memory-index.md stale');
 
+  if (isRepoRoot) for (const issue of taskAuthorityIssues(scopeRoot)) add('error', issue);
+
   if (!isRepoRoot && existsSync(join(scopeRoot, '.claude', '.rem-state.json'))) {
     add('warn', '.claude/.rem-state.json should only exist in repo root scope');
   }
   return issues;
+}
+
+// Detection behind the authority check: a task opened by /rem:task carries the consumed
+// record id in TASK.md (`authority:`) and in its journal's opened line.
+function taskAuthorityIssues(root) {
+  const dir = join(root, '.claude', 'tasks');
+  if (!existsSync(dir)) return [];
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    const read = f => { try { return readFileSync(join(dir, e.name, f), 'utf8'); } catch { return ''; } };
+    const id = read('TASK.md').match(/^authority: ([0-9a-f]{12})\s*$/m)?.[1];
+    const opened = id && new RegExp(`^- \\d{4}-\\d{2}-\\d{2} opened: .*\\(authority ${id}\\)\\s*$`, 'm').test(read('JOURNAL.md'));
+    if (!opened) out.push(`task ${e.name} has no user authority — its TASK.md was not written by /rem:task open`);
+  }
+  return out;
 }
 
 function fixScope(scopeRoot, issues) {

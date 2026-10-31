@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { grantIfUserVerb } from './user-grant.mjs';
 import { readTask, listTasks, resolveTask, tasksDir } from '../scripts/tasks.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
@@ -21,8 +22,8 @@ function repo() {
   fs.mkdirSync(path.join(root, '.claude', 'memory'), { recursive: true });
   return root;
 }
-const run = (root, ...args) => spawnSync(process.execPath, [TASK, ...args],
-  { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
+const run = (root, ...args) => (grantIfUserVerb(root, args), spawnSync(process.execPath, [TASK, ...args],
+  { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } }));
 const journal = (root, slug) => fs.readFileSync(path.join(tasksDir(root), slug, 'JOURNAL.md'), 'utf8');
 
 describe('open', () => {

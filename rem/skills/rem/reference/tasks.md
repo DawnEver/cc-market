@@ -16,10 +16,18 @@ replaces state spread over dated memory files. Present only where a repo has
 (`commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
-An agent never opens a task: `hooks/task-guard.js` (PreToolUse) refuses any agent tool call that
-writes a `TASK.md`, rewrites a `JOURNAL.md`, or runs `task.js open|close`. To start a task,
-propose it to the user. On Codex (no plugin slash commands) the user runs
-`node <rem>/scripts/task.js open …` in their own shell.
+User authority is a precondition of the library itself: `openTask` / `closeTask` consume a
+record that only the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit)
+records a prompt that IS `/rem:task open|close <slug> …` (verb, slug, prompt hash, session,
+time) in `os.tmpdir()/rem-task-authority/`, outside the repo; a record matches exactly one verb
+and slug, expires after 30 minutes and is consumed on use. The consumed id is written into
+`TASK.md` (`authority:`) and the journal's opened/closed line, and `scope-validate.mjs` reports
+a task whose TASK.md lacks it (written around the library). `hooks/task-guard.js` (PreToolUse)
+is the second line: it refuses an agent writing a `TASK.md`, rewriting a `JOURNAL.md`, running
+`task.js open|close` in any argument order, importing the task library or the authority store,
+or pointing an interpreter or shell write at `.claude/tasks/`. To start a task, propose it to
+the user. On Codex the user types the same `/rem:task …` prompt (the hook records it) and the
+session then runs `task.js open …`.
 
 ## Bind — one task per session
 

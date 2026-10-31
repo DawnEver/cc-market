@@ -13,6 +13,7 @@ import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
 import { parseFrontmatter, findAllScopes, listEntries } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
+import { consumeAuthority } from './authority.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -96,6 +97,7 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   if (!SLUG_RE.test(slug)) throw new Error(`task slug must be kebab-case, got: ${slug}`);
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
   if (existsSync(taskFile(start, slug))) throw new Error(`task ${slug} exists`);
+  const authority = consumeAuthority(start, 'open', slug); // only the user's own prompt grants it
   mkdirSync(join(tasksDir(start), slug), { recursive: true });
   writeFileSync(taskFile(start, slug), [
     '---',
@@ -104,6 +106,7 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
     'kind: task',
     `task: ${slug}`,
     'opened_by: user',
+    `authority: ${authority}`,
     `owner: ${owner}`,
     `created: ${date}`,
     'status: open',
@@ -117,7 +120,7 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
     'Progress, decisions (Dn), open items (On) and handoffs are in JOURNAL.md (append-only).',
     '',
   ].join('\n'), { flag: 'wx' });
-  appendJournal(start, slug, 'opened', goal, { date, allowClosed: true });
+  appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
 }
 
 // Append ONE line. O_APPEND: earlier bytes are never rewritten.
@@ -209,8 +212,9 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
   const line = `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`;
   if (/[\r\n]/.test(line)) throw new Error('a close reason is one line');
+  const authority = consumeAuthority(start, 'close', slug); // only the user's own prompt grants it
 
-  appendJournal(start, slug, 'closed', line, { date });
+  appendJournal(start, slug, 'closed', `${line} (authority ${authority})`, { date });
   setTaskStatus(start, slug, 'closed');
   mkdirSync(dirname(dest), { recursive: true });
   const moved = spawnSync('git', ['mv', task.dir, dest], { cwd: root, encoding: 'utf8' });
