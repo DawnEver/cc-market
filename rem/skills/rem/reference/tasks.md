@@ -32,7 +32,9 @@ Limit: the hook and an agent's shell run as the same OS user, so a determined ag
 forge a record; preventing that would need a privilege boundary. `hooks/task-guard.js` (PreToolUse)
 is the second line: it refuses an agent writing a `TASK.md`, rewriting a `JOURNAL.md`, running
 `task.js open|close` in any argument order, importing the task library or the authority store,
-or pointing an interpreter or shell write at `.claude/tasks/`. To start a task, propose it to
+or pointing an interpreter or a writer's TARGET path at `.claude/tasks/` (judged by what a command
+does: the task.js verb in argv position, the target of >, tee, cp/mv, sed -i …; message and
+body arguments and read-only commands never match). To start a task, propose it to
 the user. On Codex the user types the same `/rem:task …` prompt (the hook records it) and the
 session then runs `task.js open …`.
 
