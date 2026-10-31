@@ -14,7 +14,8 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
-  UserPromptSubmit → recall.js (both hosts: heuristic recall → additionalContext; read-only)
+  UserPromptSubmit → recall.js (both hosts; read-only; SCOPED: the bound task's goal/open items/journal tail,
+                     then entries + bound docs of the scope(s) worked on; another task's entries only when named)
      ↓
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓

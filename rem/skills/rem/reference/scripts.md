@@ -14,7 +14,7 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | `check-docs.js` | Doc freshness check at crystallize time. Flags a doc only when it *references* a file that changed (by relative path or filename), and names which — not every doc that happens to be untouched | `--json` |
 | `task-engine.js` | Task CLI (`/todo`) | `report`, `add`, `remove`, `show`, `mark`, `check`, `help` |
 | `task-lib.mjs` | Task pure logic (library, not a CLI) | scan, parseExistingTasks, markFinding, groupBy* |
-| `recall.js` | UserPromptSubmit hook: heuristic memory recall → `additionalContext` on both hosts; read-only toward the repo | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
+| `recall.js` | UserPromptSubmit hook, both hosts, read-only toward the repo: the bound task (goal, open items, journal tail) plus the top entries and bound docs of the scope(s) being worked on; entries tagged with another task only when the prompt names it | `--telemetry` (print per-scope latency ring from tmpdir; rows stuck at `done:false` = killed mid-run by the hook timeout) |
 | `task.js` | Tasks layer: `open`/`close` are user-only (`/rem:task`); `log`, `decide`, `open-item`, `close-item`, `handoff` append to the bound task's journal; `list`, `show`, `bound` read | `--task <slug>`, `--scope <paths>`, `--owner <who>` |
 | `tasks.mjs` | Tasks layer library: `readTask`, `listTasks`, `resolveTask`, `openTask`, `appendJournal` | (library) |
 | `rem-session.js` | Acknowledge successfully completed REM work for the matching pending Stop request | `complete --session <id> --request <request-id>`; run in the project cwd, never acknowledge unfinished work |

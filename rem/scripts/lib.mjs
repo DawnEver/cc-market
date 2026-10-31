@@ -229,7 +229,7 @@ export const DATED_RE = /^\d{4}\/\d{2}\/\d{2}\//;
 export const byteOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // Every entry of a scope, newest first, then by path:
-// { path, date, name, description, type, mergedFrom, supersedes, corrects }.
+// { path, date, name, description, type, task, mergedFrom, supersedes, corrects }.
 export function listEntries(scopeRoot) {
   const memDir = join(scopeRoot, '.claude', 'memory');
   const entries = [];
@@ -246,6 +246,7 @@ export function listEntries(scopeRoot) {
       name: fields.name || basename(path, '.md'),
       description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
       type: typeMatch ? typeMatch[1] : null,
+      task: fields.task || null,
       mergedFrom: parseRefs(content, 'merged_from'),
       supersedes: parseRefs(content, 'supersedes'),
       corrects: parseRefs(content, 'corrects'),

@@ -2,10 +2,16 @@
 /**
  * recall.js — UserPromptSubmit hook: prompt-time relevance recall.
  *
- * Reads the hook payload on stdin (user prompt, cwd, session_id), scores the
- * memory scope's visible entries against the prompt with a pure heuristic
- * (no model call, <200ms), and injects the top 1–3 entries as
- * `additionalContext`. No matches → exit 0 silently.
+ * Reads the hook payload on stdin (user prompt, cwd, session_id) and injects, as
+ * `additionalContext`, a SCOPED view:
+ *   - the bound task (tasks.mjs resolveTask: worktree/branch name) — goal, open
+ *     items and the latest journal lines, on every turn;
+ *   - the top 1–3 visible memory entries and bound docs scoring against the prompt
+ *     (pure heuristic, no model call), drawn from the scope of cwd plus the scopes
+ *     of the bound task's `scope:` paths, and the bound docs of those paths;
+ *   - never an entry tagged with ANOTHER task (`task: <slug>`), unless the prompt
+ *     names that task — other tasks come in only on explicit query.
+ * Nothing to say → exit 0 silently.
  *
  * Candidate frontmatter is cached per scope in a per-host tmpdir file, keyed
  * by a stat-only fingerprint of the memory tree (count + total size + max
@@ -25,7 +31,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 import { listEntries, visibleEntries } from "./lib.mjs";
-import { isMain } from "../shared/lib.mjs";
+import { readTask, listTasks, resolveTask } from "./tasks.mjs";
+import { collectBoundDocs } from "./doc-freshness.js";
+import { isMain, findProjectRoot } from "../shared/lib.mjs";
 import { atomicWriteFile } from "../shared/atomic-write.mjs";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
@@ -99,7 +107,7 @@ export function isSkippable(relPath) {
 }
 
 /**
- * Candidate entries for a scope: every live, non-task memory entry with its
+ * Candidate entries for a scope: every visible memory entry with its
  * frontmatter fields. Bodies are NOT read here (only for the winners).
  */
 function collectCandidatesUncached(scopeRoot) {
@@ -112,9 +120,78 @@ function collectCandidatesUncached(scopeRoot) {
       name: e.name,
       description: e.description,
       type: e.type || "project",
+      task: e.task,
       date: e.date,
       corrections: e.correctedBy.map((p) => ({ relPath: p, abs: path.join(memDir, p) })),
     }));
+}
+
+// ── Bound docs ──
+// A bound doc (frontmatter `doc_source`) explains how code works NOW. Discovery reads
+// every tracked markdown file, so it is cached in tmpdir and refreshed only when git's
+// index changes (a doc added, moved or committed).
+
+function gitIndexStamp(root) {
+  let gitDir = path.join(root, ".git");
+  try {
+    if (fs.statSync(gitDir).isFile()) {
+      const m = fs.readFileSync(gitDir, "utf8").match(/^gitdir:\s*(.+)$/m);
+      if (m) gitDir = path.resolve(root, m[1].trim());
+    }
+    return String(fs.statSync(path.join(gitDir, "index")).mtimeMs);
+  } catch { return "0"; }
+}
+
+export function collectDocs(root, { now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
+  const key = crypto.createHash("sha1").update(path.resolve(root)).digest("hex").slice(0, 16);
+  const cacheFile = path.join(os.tmpdir(), `rem-recall-docs-${key}.json`);
+  const stamp = gitIndexStamp(root);
+  try {
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    if (cached.stamp === stamp && now - cached.ts < ttl * 20) return cached.docs;
+  } catch { /* rebuild */ }
+  const docs = collectBoundDocs(root).map((d) => {
+    let name = path.basename(d.relPath, ".md"), description = "";
+    try {
+      const text = fs.readFileSync(d.full, "utf8");
+      name = text.match(/^name:\s*(.+)$/m)?.[1].trim() || name;
+      description = text.match(/^description:\s*(.+)$/m)?.[1].trim().replace(/^['"]|['"]$/g, "") || "";
+    } catch { /* keep defaults */ }
+    return { relPath: d.relPath, abs: d.full, name, description, type: "doc", docSource: d.doc_source };
+  });
+  try { atomicWriteFile(cacheFile, JSON.stringify({ ts: now, stamp, docs })); } catch { /* best-effort */ }
+  return docs;
+}
+
+// True when a doc's sources and the paths being worked on overlap (either contains the other).
+export function docCovers(doc, workPaths) {
+  const norm = (p) => String(p).replace(/\\/g, "/").replace(/^\.\/|\/+$/g, "");
+  return doc.docSource.some((s) => workPaths.some((w) => {
+    const a = norm(s), b = norm(w);
+    return !a || !b || a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
+  }));
+}
+
+// ── The bound task ──
+
+const TASK_TAIL = 8;
+
+export function taskBlock(task) {
+  const journal = (() => {
+    try { return fs.readFileSync(path.join(task.dir, "JOURNAL.md"), "utf8"); } catch { return ""; }
+  })();
+  const tail = journal.split(/\r?\n/).filter((l) => l.startsWith("- ")).slice(-TASK_TAIL);
+  const lines = [`Bound task: ${task.slug} — ${task.goal} (${task.status})`];
+  if (task.scope.length) lines.push(`Scope: ${task.scope.join(", ")}`);
+  if (task.openItems.length) lines.push(`Open items: ${task.openItems.map((i) => `O${i.n} open: ${i.text}`).join("; ")}`);
+  if (tail.length) lines.push("Latest journal (.claude/tasks/" + task.slug + "/JOURNAL.md):", ...tail);
+  return lines.join("\n");
+}
+
+// Tasks the prompt names explicitly (whole slug, hyphen-aware).
+export function queriedTasks(prompt, slugs) {
+  const text = String(prompt).toLowerCase();
+  return new Set(slugs.filter((s) => new RegExp(`(^|[^a-z0-9-])${s}($|[^a-z0-9-])`).test(text)));
 }
 
 // ── Candidate cache ──
@@ -276,6 +353,7 @@ function printTelemetry() {
  * Heuristic score: token matches against name (×2) + description (×1),
  * weighted by type (user/feedback ×2, project/reference ×1) and recency
  * (an entry dated within 30d boosts up to ×1.3). The date is the entry's path.
+ * An entry of the bound task carries `boost` (×2).
  */
 export function scoreEntry(entry, tokens, now = Date.now()) {
   if (!tokens.length) return 0;
@@ -291,7 +369,7 @@ export function scoreEntry(entry, tokens, now = Date.now()) {
   const typeWeight = entry.type === "user" || entry.type === "feedback" ? 2 : 1;
   const days = (now - Date.parse(entry.date)) / 86400000;
   const recency = Number.isFinite(days) ? 1 + Math.max(0, 30 - days) / 100 : 1;
-  return matches * typeWeight * recency;
+  return matches * typeWeight * recency * (entry.boost || 1);
 }
 
 /** Rank candidates, return the top 1–3 above threshold (best first). */
@@ -321,7 +399,8 @@ export function buildRecallContext(entries, maxBytes = MAX_BYTES) {
     // A corrected entry travels with its corrections: the old text alone would mislead.
     const fixes = (e.corrections || []).filter((c) => !shown.has(c.relPath));
     const note = fixes.length ? ` [corrected by ${fixes.map((c) => c.relPath).join(", ")}]` : "";
-    let block = `\n\n--- ${e.name} (${e.relPath.replace(/\\/g, "/")})${note} ---\n${text}`;
+    const kind = e.type === "doc" ? "doc: " : "";
+    let block = `\n\n--- ${kind}${e.name} (${e.relPath.replace(/\\/g, "/")})${note} ---\n${text}`;
     for (const c of fixes) {
       const fix = read(c.abs);
       if (fix) block += `\n\n--- correction (${c.relPath}) ---\n${fix}`;
@@ -343,34 +422,58 @@ function readStdinPayload() {
   }
 }
 
+/**
+ * The scoped context for one prompt in `cwd`, or null. Read-only toward the repo.
+ */
+export function scopedContext(prompt, cwd, now = Date.now()) {
+  const root = findProjectRoot(cwd);
+  const tasks = listTasks(root);
+  const bound = resolveTask(root, {});
+  const task = bound ? readTask(root, bound) : null;
+  const queried = queriedTasks(prompt, tasks.map((t) => t.slug));
+  const parts = [];
+  if (task) parts.push(taskBlock(task));
+
+  const tokens = tokenize(prompt);
+  const home = findScopeForCwd(cwd);
+  if (tokens.length && home) {
+    // Paths being worked on: the bound task's scope, else the cwd's scope directory.
+    const workPaths = task?.scope.length ? task.scope : [path.relative(root, home).replace(/\\/g, "/")];
+    const scopes = new Set([home]);
+    for (const p of task?.scope || []) {
+      const s = findScopeForCwd(path.join(root, p));
+      if (s) scopes.add(s);
+    }
+    const info = {};
+    appendTelemetry(home, { t: new Date().toISOString(), done: false });
+    const entries = [...scopes].flatMap((s) => collectCandidates(s, { info }))
+      .filter((e) => !e.task || e.task === bound || queried.has(e.task))
+      .map((e) => (e.task && e.task === bound ? { ...e, boost: 2 } : e));
+    const docs = collectDocs(root).filter((d) => docCovers(d, workPaths));
+    const candidates = [...entries, ...docs.map((d) => ({ ...d, date: "" }))];
+    const recalled = buildRecallContext(selectTop(candidates, tokens, now));
+    finalizeTelemetry(home, {
+      t: new Date().toISOString(),
+      done: true,
+      ms: Date.now() - T0,
+      cache: info.cacheHit !== false,
+      fast: info.fast === true,
+      cands: candidates.length,
+      injected: Boolean(recalled),
+    });
+    if (recalled) parts.push(recalled);
+  }
+  return parts.length ? parts.join("\n\n") : null;
+}
+
 function main() {
   if (process.argv.includes("--telemetry")) { printTelemetry(); return; }
   const payload = readStdinPayload();
   const prompt = payload.prompt || payload.user_prompt || "";
   const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
 
-  const tokens = tokenize(prompt);
-  if (!tokens.length) return;
-
-  const scope = findScopeForCwd(cwd);
-  if (!scope) return;
-
-  const info = {};
-  appendTelemetry(scope, { t: new Date().toISOString(), done: false });
-  const candidates = collectCandidates(scope, { info });
-  const winners = selectTop(candidates, tokens, Date.now());
-  const context = buildRecallContext(winners);
-  finalizeTelemetry(scope, {
-    t: new Date().toISOString(),
-    done: true,
-    ms: Date.now() - T0,
-    cache: info.cacheHit !== false,
-    fast: info.fast === true,
-    cands: candidates.length,
-    injected: Boolean(context),
-  });
+  const context = scopedContext(prompt, cwd);
   if (!context) return;
-
 
   process.stdout.write(
     JSON.stringify({

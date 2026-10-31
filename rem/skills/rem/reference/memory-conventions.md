@@ -111,6 +111,13 @@ OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
 - Writers (`remember.js`, `merge-memory.js`, `crystallize.js`, `scope-split.js`) and
   `index-memory.js` regenerate it; no hook does. Recall reads the tree, never the index.
 
+## Recall
+
+`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task, the visible entries of
+the scope(s) being worked on (cwd, plus the bound task's `scope:` paths) and the bound docs of
+those paths. An entry tagged `task: <other>` stays out unless the prompt names that task. A
+corrected entry is injected together with its correction. Details → `tasks.md`.
+
 ## Scoped memory (monorepo / multi-project)
 
 Any directory containing its own `.claude/memory/` is an independent memory **scope**

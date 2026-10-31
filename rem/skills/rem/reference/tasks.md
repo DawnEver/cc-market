@@ -29,6 +29,13 @@ A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/task
 3. else the branch's last segment (`pr/<slug>`, `lane/<slug>`, …).
 
 Only an OPEN task binds; nothing else is guessed. `task.js bound` prints the binding.
+
+Recall (`scripts/recall.js`) is scoped by the binding, on every prompt:
+- the bound task's goal, scope, open items and latest journal lines;
+- entries tagged with the bound task rank first; untagged entries of the scope of cwd and of
+  the task's `scope:` paths; the bound docs (`doc_source`) covering those paths;
+- an entry tagged with ANOTHER task never comes in, unless the prompt names that task.
+
 `remember.js` tags each entry it writes with `task: <slug>` of the bound task.
 
 ## Run — the journal is append-only
