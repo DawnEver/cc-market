@@ -8,6 +8,7 @@
 //
 // Shape of `.claude/sharp-review.json` (every key optional):
 //   {
+//     "stopHook":            boolean,  // false: the Stop hook never dispatches here (a forge reviews every PR); /sharp-review still runs
 //     "profileWeights":      { "<profileKey>": number, ... },   // retune built-in weights / opt out (0)
 //     "customProfiles":      [ { key, source, context, scope, weight?, framing?, label? } ],  // ai-lab's method profiles.json shape
 //     "thresholds":          { "wave0": { lines, files }, "wave1": { lines, files } },

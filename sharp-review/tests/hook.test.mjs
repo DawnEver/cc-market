@@ -109,6 +109,27 @@ test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('stopHook:false in the committed config keeps the Stop hook from dispatching a review', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-stop-off-'));
+  const hook = fileURLToPath(new URL('../hooks/sharp-review-hook.js', import.meta.url));
+  const run = () => spawnSync(process.execPath, [hook], {
+    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_HOME: dir, CODEX_THREAD_ID: 'actual', CLAUDE_PLUGIN_ROOT: '' },
+    input: JSON.stringify({ session_id: 'parent', thread_id: 'actual', turn_id: 'turn', hook_event_name: 'Stop' }),
+    encoding: 'utf8', windowsHide: true,
+  });
+  try {
+    execFileSync('git', ['init', '--quiet', dir], { windowsHide: true });
+    for (const name of ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md']) fs.writeFileSync(path.join(dir, name), name);
+    fs.mkdirSync(path.join(dir, '.claude'));
+    fs.writeFileSync(path.join(dir, '.claude', 'sharp-review.json'), JSON.stringify({ stopHook: false }));
+    const off = run();
+    assert.equal(off.status, 0, off.stderr);
+    assert.equal(fs.existsSync(path.join(dir, '.claude', '.rem-state.json')), false, 'no claim is written');
+    fs.writeFileSync(path.join(dir, '.claude', 'sharp-review.json'), JSON.stringify({ stopHook: true }));
+    assert.equal(run().status, 2, 'the same tree dispatches when the key allows it (planted control)');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 describe("findGitRoot", () => {
   let savedEnv;
 

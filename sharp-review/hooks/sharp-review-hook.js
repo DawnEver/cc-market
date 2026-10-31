@@ -172,6 +172,8 @@ export function reviewBlocked(input, facts, state, now = Date.now(), env = {}) {
 async function main() {
   const input = readStdinJSON();
   projectDir = findProjectRoot(input.cwd || process.cwd());
+  const reviewCfg = loadReviewConfig(projectDir);
+  if (reviewCfg.stopHook === false) return; // the repo declares another reviewer (e.g. its forge); /sharp-review stays manual
   unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
   const transcript = input.transcript_path ? readTranscriptTail(input.transcript_path) : [];
   const facts = normalizeHookFacts(transcript, input);
@@ -182,7 +184,6 @@ async function main() {
   const changedFiles = getChangedFiles();
   if (!changedFiles.length && !facts.hasEdits) return;
   const previous = initial.reviewGate || {};
-  const reviewCfg = loadReviewConfig(projectDir);
   const head = getCurrentHead();
   const thresholds = loadThresholds(reviewCfg);
   const sameRef = Boolean(previous.lastReviewRef && head === previous.lastReviewRef);

@@ -22,6 +22,7 @@ Every key is optional:
 
 ```json
 {
+  "stopHook":            true,
   "profileWeights":      { "architecture": 0.35, "diff": 0.45 },
   "customProfiles":      [ /* see "Custom profiles" */ ],
   "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
@@ -31,6 +32,9 @@ Every key is optional:
   "providers":           { "interactive": ["claude", "codex"], "headless": ["anthropic"] }
 }
 ```
+
+`stopHook: false` stops the Stop hook dispatching a review in that repo -- set it where a forge
+already reviews every PR, so one change is not reviewed twice. `/sharp-review` still runs on demand.
 
 ## Run modes and providers
 
