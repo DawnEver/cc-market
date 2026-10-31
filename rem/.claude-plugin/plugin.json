@@ -1,6 +1,6 @@
 {
   "name": "rem",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, crystallized rules",
   "author": {
     "name": "Mingyang Bao"
