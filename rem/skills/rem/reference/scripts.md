@@ -4,9 +4,9 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 
 | Script | Usage | Key Flags |
 |---|---|---|
-| `remember.js` | Immediate save for explicit "remember this" requests: write the dated entry and regenerate the index | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--update` (append a dated revision to a same-day entry; never drops text) |
-| `merge-memory.js` | Fold duplicate entries into ONE live entry: sources appended verbatim under `## Merged from <path>`, listed in its `merged_from:`; source files stay on disk, hidden | `--into <live.md>`, `--from <a.md,b.md>`, `--dry-run` |
-| `index-memory.js` | Regenerate every scope's `.claude/rules/MEMORY.md` from its tree; written only when bytes change | `--quiet` |
+| `remember.js` | Immediate save for explicit "remember this" requests: write a NEW dated entry (never rewrites one) and regenerate the index | `--name`, `--type`, `--body` (or stdin), `--scope <dir|auto>`, `--description`, `--corrects <paths>`, `--supersedes <paths>` |
+| `merge-memory.js` | Fold duplicate entries into ONE new entry: sources copied verbatim under `## From <path>`, listed in its `merged_from:`; source files stay byte-identical, hidden | `--name <slug>`, `--from <a.md,b.md>`, `--description`, `--dry-run` |
+| `index-memory.js` | Derive every scope's `.claude/memory-index.md` from its tree; written only when bytes change | `--quiet`, `--print` (current scope, write nothing) |
 | `crystallize.js` | Distill entries into `.claude/rules/rem/`; a ledger entry names them (hidden, kept) | `--check`, `--propose`, `--validate`, `--execute --rule <file.md> --distilled <paths>` |
 | `scope-split.js` | Relocate a memory cluster into a child scope (a move), user-gated | `--check`, `--propose`, `--execute --scope <subdir> --entries <paths>` |
 | `scope-validate.mjs` | Verify every scope: a leftover `_meta.json` warns, entries under `YYYY/MM/DD/`, index current | `--check`, `--fix` (regenerate stale indexes) |

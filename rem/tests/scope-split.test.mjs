@@ -196,14 +196,14 @@ describe("executeScopeSplit", () => {
     assert.ok(fs.existsSync(path.join(tmp, "mod/.claude/memory/2026/06/01/e1.md")));
 
     // child index lists the moved entry; parent index does not
-    const childIndex = fs.readFileSync(path.join(tmp, "mod/.claude/rules/MEMORY.md"), "utf8");
+    const childIndex = fs.readFileSync(path.join(tmp, "mod/.claude/memory-index.md"), "utf8");
     assert.ok(childIndex.includes("e1"));
-    const parentIndex = fs.readFileSync(path.join(tmp, ".claude/rules/MEMORY.md"), "utf8");
+    const parentIndex = fs.readFileSync(path.join(tmp, ".claude/memory-index.md"), "utf8");
     assert.ok(!/\(\.\.\/memory\/2026\/06\/01\/e1\.md\)/.test(parentIndex));
 
     // parent now lists the child in its Scoped section
     assert.ok(parentIndex.includes("## Scoped"));
-    assert.ok(parentIndex.includes("mod → see mod/.claude/rules/MEMORY.md"));
+    assert.ok(parentIndex.includes("mod → see mod/.claude/memory-index.md"));
   });
 
 

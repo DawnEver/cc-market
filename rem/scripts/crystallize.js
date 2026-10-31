@@ -7,7 +7,7 @@
 //   node crystallize.js --execute --rule <file.md> --distilled <a.md,b.md,...>
 //        → after the model wrote .claude/rules/rem/<file.md>: record a dated
 //          `crystallized-into-<rule>` entry naming the distilled entries in
-//          `merged_from:` and pointing at the rule, which hides them from recall and the index.
+//          `supersedes:` and pointing at the rule, which hides them from recall and the index.
 //
 // The rule is the single source of the distilled fact; the ledger entry is the
 // provenance that hides the originals. No entry is ever deleted.
@@ -17,7 +17,7 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import { join, dirname, basename } from 'path';
 import {
   remRulesDir, scopeMemoryDir as memoryDir, scopeRoot, CRYSTALLIZE_ADVISORY,
-  listEntries, hiddenEntries, rebuildIndex, dateToPath,
+  listEntries, hiddenEntries, rebuildIndex, dateToPath, formatRefs,
 } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -36,10 +36,10 @@ export function ledgerEntry(rule, paths, date) {
     relPath: `${dateToPath(date)}/crystallized-into-${stem}.md`,
     content: `---\nname: crystallized-into-${stem}\n`
       + `description: ${paths.length} entries distilled into .claude/rules/rem/${rule}\n`
-      + `merged_from:\n${paths.map(p => `  - ${p}`).join('\n')}\n`
+      + formatRefs({ supersedes: paths })
       + `metadata:\n  type: project\n---\n\n`
       + `Distilled into \`.claude/rules/rem/${rule}\`, which is now the source of these facts.\n`
-      + `The originals stay at the paths listed in \`merged_from\`.\n`,
+      + `The originals stay at the paths listed in \`supersedes\`.\n`,
   };
 }
 

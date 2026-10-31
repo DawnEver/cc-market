@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  parseMergedFrom, listEntries, hiddenEntries, renderIndex, rebuildIndex, HOT_MAX,
+  parseRefs, listEntries, hiddenEntries, renderIndex, rebuildIndex, indexFilePath,
 } from '../scripts/lib.mjs';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -47,13 +47,13 @@ function sources(dir) {
   return out;
 }
 
-describe('parseMergedFrom', () => {
+describe('parseRefs', () => {
   it('reads inline and block lists and normalizes to scope-relative paths', () => {
-    assert.deepEqual(parseMergedFrom('---\nname: a\nmerged_from: .claude/memory/2026/06/14/x.md, 2026/06/15/y.md\n---\n'),
+    assert.deepEqual(parseRefs('---\nname: a\nmerged_from: .claude/memory/2026/06/14/x.md, 2026/06/15/y.md\n---\n', 'merged_from'),
       ['2026/06/14/x.md', '2026/06/15/y.md']);
-    assert.deepEqual(parseMergedFrom("---\nmerged_from:\n  - '2026/01/02/a.md'\n  - src/m/.claude/memory/2026/01/03/b.md\nname: z\n---\n"),
+    assert.deepEqual(parseRefs("---\nmerged_from:\n  - '2026/01/02/a.md'\n  - src/m/.claude/memory/2026/01/03/b.md\nname: z\n---\n", 'merged_from'),
       ['2026/01/02/a.md', '2026/01/03/b.md']);
-    assert.deepEqual(parseMergedFrom('---\nname: a\n---\nmerged_from: 2026/01/01/body.md\n'), []);
+    assert.deepEqual(parseRefs('---\nname: a\n---\nmerged_from: 2026/01/01/body.md\n', 'merged_from'), []);
   });
 });
 
@@ -84,23 +84,22 @@ describe('visibility', () => {
 });
 
 describe('derived index', () => {
-  it('carries no access bookkeeping, hides named entries, keeps user/feedback past the hot window', () => {
+  it('carries no access bookkeeping and hides named entries', () => {
     const root = scope();
     entry(root, '2025/01/01/pref.md', { type: 'user' });
-    for (let i = 1; i <= HOT_MAX + 3; i++) entry(root, `2026/02/${String(i).padStart(2, '0')}/e${i}.md`);
+    entry(root, '2026/02/18/e18.md');
     entry(root, '2026/03/01/sup.md', { extra: 'merged_from: 2026/02/18/e18.md\n' });
     const text = renderIndex(root);
     assert.doesNotMatch(text, /accessed|count:|tier/);
     assert.match(text, /2025\/01\/01\/pref\.md/);
     assert.doesNotMatch(text, /e18\.md\)/);
-    assert.doesNotMatch(text, /2026\/02\/01\/e1\.md/);
-    assert.match(text, /^- \[2026-03-01 sup\]\(\.\.\/memory\/2026\/03\/01\/sup\.md\) — d$/m);
+    assert.match(text, /^- \[2026-03-01 sup\]\(memory\/2026\/03\/01\/sup\.md\) — d$/m);
   });
 
   it('is written only when its bytes change, so concurrent sessions converge', () => {
     const root = scope();
     entry(root, '2026/01/01/a.md');
-    const file = path.join(root, '.claude', 'rules', 'MEMORY.md');
+    const file = indexFilePath(root);
     assert.equal(rebuildIndex(root), true);
     const first = fs.statSync(file).mtimeMs;
     assert.equal(rebuildIndex(root), false);

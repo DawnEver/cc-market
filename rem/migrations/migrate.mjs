@@ -5,10 +5,10 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 // rem owns ONLY the ignores for artefacts it generates or that earlier rem versions
-// generated: the old injected MEMORY.md index, the old _meta.json shards, and the
-// device-local memo store. The broader .claude structure template is global policy
+// generated: the derived memory-index.md, the old injected rules/MEMORY.md, the old
+// _meta.json shards, and the device-local memo store. The broader .claude structure template is global policy
 // owned by the root `migrate` skill — a plugin must not blanket-ignore a host's .claude.
-const REM_GENERATED_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
+const REM_GENERATED_IGNORES = ['**/.claude/memory-index.md', '**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
 
 function ensureGitignore(projectRoot) {
   const gitignorePath = join(projectRoot, '.gitignore');

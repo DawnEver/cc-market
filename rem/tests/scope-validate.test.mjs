@@ -42,7 +42,7 @@ describe("scope-validate", () => {
     project();
     run(INDEX);
     fs.writeFileSync(path.join(root, ".claude", "memory", "2026", "06", "11", "b.md"), "---\nname: b\n---\n");
-    assert.match(run(SCRIPT, "--check").stdout, /MEMORY\.md stale/);
+    assert.match(run(SCRIPT, "--check").stdout, /memory-index\.md stale/);
     run(SCRIPT, "--fix");
     assert.match(run(SCRIPT, "--check").stdout, /clean/);
   });

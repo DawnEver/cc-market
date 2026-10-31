@@ -12,11 +12,11 @@ rules is user-gated — present the proposal before acting.
 2. Verify the old ones against current reality: grep for the functions, flags and paths an
    entry mentions; check `git log` for the files it references. Then:
    - **Still accurate and needed every session** → rule-worthy (step 3).
-   - **Contradicted** → write a NEW entry stating the current truth and list the old path in its
-     `merged_from:`. Never edit or delete the old entry.
-   - **Duplicates another entry** → `merge-memory.js --into <live.md> --from <dup.md>`.
+   - **Contradicted** → `remember.js --corrects <old>` (part wrong) or `--supersedes <old>` (replaced).
+     Never edit or delete the old entry.
+   - **Duplicates another entry** → `merge-memory.js --name <slug> --from <a.md,b.md>`.
    - **No longer true and not worth restating** → propose a ledger entry that says so (a dated
-     entry whose `merged_from:` names it and whose body says why it is obsolete).
+     entry whose `supersedes:` names it and whose body says why it is obsolete).
 
 3. Present the classification (rule-worthy / keep / obsolete) to the user with AskUserQuestion
    (multiSelect).
@@ -29,7 +29,7 @@ rules is user-gated — present the proposal before acting.
    node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --execute --rule <topic>.md --distilled 2026/05/27/a.md,2026/05/28/b.md
    ```
    It writes `YYYY/MM/DD/crystallized-into-<topic>.md` naming the distilled entries in
-   `merged_from:` and pointing at the rule, and regenerates the index. The entries stay on
+   `supersedes:` and pointing at the rule, and regenerates the index. The entries stay on
    disk, hidden from recall and the index; the rule is now the single source.
 
 6. Check documentation freshness:

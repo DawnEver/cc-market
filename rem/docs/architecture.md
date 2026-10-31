@@ -22,8 +22,8 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
     ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
     │   keeps prep/memory-write noise out of the main session) → returns a one-line recap
     ├── rem-prep.js — read-only: entries read this session, visible / hidden counts, advisory
-    ├── Model summarizes learnings → writes memory files (merge-memory.js folds duplicates)
-    ├── index-memory.js (derived index, written only on change)
+    ├── Model summarizes learnings → writes NEW memory files (corrects / supersedes / merge-memory.js; never edits one)
+    ├── index-memory.js (derived .claude/memory-index.md, written only on change)
     ├── If visible entries ≥ CRYSTALLIZE_ADVISORY → crystallize into .claude/rules/rem/ (ledger hides the sources)
     │   └── check-docs.js — audit doc freshness after crystallization
     ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)

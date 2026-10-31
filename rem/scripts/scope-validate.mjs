@@ -7,7 +7,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { join, relative } from 'path';
-import { findAllScopes, collectFiles, renderIndex, rebuildIndex, DATED_RE } from './lib.mjs';
+import { findAllScopes, collectFiles, renderIndex, rebuildIndex, indexFilePath, DATED_RE } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const fixMode = args.includes('--fix');
@@ -20,7 +20,7 @@ function findMemoryScopes() {
 function validateScope(scopeRoot, isRepoRoot) {
   const issues = [];
   const memDir = join(scopeRoot, '.claude', 'memory');
-  const indexFile = join(scopeRoot, '.claude', 'rules', 'MEMORY.md');
+  const indexFile = indexFilePath(scopeRoot);
   const add = (level, msg) => issues.push({ scope: scopeRoot, level, msg });
 
   if (!existsSync(memDir)) { add('error', '.claude/memory/ missing'); return issues; }
@@ -33,8 +33,8 @@ function validateScope(scopeRoot, isRepoRoot) {
 
   let current = null;
   try { current = readFileSync(indexFile, 'utf8'); } catch { /* missing */ }
-  if (current === null) add('warn', '.claude/rules/MEMORY.md missing');
-  else if (current !== renderIndex(scopeRoot)) add('warn', '.claude/rules/MEMORY.md stale');
+  if (current === null) add('warn', '.claude/memory-index.md missing');
+  else if (current !== renderIndex(scopeRoot)) add('warn', '.claude/memory-index.md stale');
 
   if (!isRepoRoot && existsSync(join(scopeRoot, '.claude', '.rem-state.json'))) {
     add('warn', '.claude/.rem-state.json should only exist in repo root scope');
@@ -43,9 +43,9 @@ function validateScope(scopeRoot, isRepoRoot) {
 }
 
 function fixScope(scopeRoot, issues) {
-  if (issues.some(i => i.msg.startsWith('.claude/rules/MEMORY.md'))) {
+  if (issues.some(i => i.msg.startsWith('.claude/memory-index.md'))) {
     rebuildIndex(scopeRoot);
-    console.log(`  [fix] regenerated MEMORY.md for ${relative(process.cwd(), scopeRoot) || '.'}`);
+    console.log(`  [fix] regenerated memory-index.md for ${relative(process.cwd(), scopeRoot) || '.'}`);
   }
 }
 

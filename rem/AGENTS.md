@@ -1,6 +1,6 @@
 # REM Plugin — AGENTS.md
 
-Memory management plugin for Claude Code sessions. Rules (always injected) and dated memory entries (derived index + prompt-time recall) that converge without deletion: a newer entry names what it carries forward in `merged_from:`, which hides the older file from recall and the index; no memory file is ever deleted.
+Memory management plugin for Claude Code sessions. Rules (always injected) and dated memory entries (derived index + prompt-time recall) that converge without deletion or edits: a newer entry names older ones (`merged_from` / `supersedes` hide them, `corrects` flags them); no memory file is ever deleted or rewritten.
 
 ## Architecture — at a glance
 
@@ -64,4 +64,4 @@ Test files: `rem/tests/*.test.mjs` (the lifecycle contract is `lifecycle.test.mj
 - After changes, update README.md and this file if architecture/docs shift.
 - Always add tests for new logic.
 - Keep `lib.mjs` as the single source of truth for paths, constants, entries, derived visibility and the derived index format.
-- **When memory entries are created or split**: update MEMORY.md, AGENTS.md, and README.md to reflect the new structure.
+- **When memory entries are created or split**: run `index-memory.js` and update AGENTS.md and README.md to reflect the new structure.

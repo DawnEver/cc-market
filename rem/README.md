@@ -1,6 +1,6 @@
 # rem
 
-REM sleep for Claude Code and Codex sessions — consolidate learnings into `.claude/memory/`, where no entry is ever deleted: a newer entry hides the ones it names in `merged_from:`, and the index is derived from the files.
+REM sleep for Claude Code and Codex sessions — consolidate learnings into `.claude/memory/`, where no entry is ever deleted or edited: a newer entry corrects, supersedes or merges older ones, and the index is derived from the files.
 
 The injected memory index lists user/feedback entries plus the newest 15; recall searches
 every visible entry. Reading memory never writes.

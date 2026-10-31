@@ -7,8 +7,8 @@ Always-injected behavioral constraints for working on the rem plugin.
 Reading memory never writes: no hook, recall or report records an access, and no per-entry
 state exists beside the files. NOTHING deletes a file under `.claude/memory/` (user ruling
 2026-10-31; `tests/lifecycle.test.mjs` scans every script for a file-removing call). An entry
-leaves recall and the index only when a newer entry names it in `merged_from:`
-(`merge-memory.js`, `crystallize.js` ledger) — visibility is derived, the file stays.
+is never edited either: a correction or restatement is a NEW entry naming the old one
+(`corrects:` flags it; `supersedes:` / `merged_from:` hide it) — visibility is derived, the file stays.
 `scope-split.js` moves files between scopes (a rename, not a removal).
 
 ## Hook pending-work gate
@@ -36,21 +36,23 @@ if (!isInsideMemoryDir(file)) throw new Error("path traversal denied");
 
 ## Frontmatter → `skills/rem/reference/memory-conventions.md`
 
-Content fields (`name`, `description`, `metadata.type`, optional `merged_from`) live in file YAML
+Content fields (`name`, `description`, `metadata.type`, optional provenance `merged_from` /
+`supersedes` / `corrects`, written only by the newer entry) live in file YAML
 frontmatter. There is no volatile metadata anywhere. Full schema is in
 `skills/rem/reference/memory-conventions.md`.
 
 ## Index → `skills/rem/reference/memory-conventions.md`
 
-`MEMORY.md` is derived, gitignored, and written only through `rebuildIndex()` (a pure function
-of the tree, written only when its bytes change — no lock, no hand edits). Its line format is
+`.claude/memory-index.md` is derived, gitignored, outside `rules/`, and written only through
+`rebuildIndex()` (a pure function of the tree, byte-identical on every machine — byte-order
+sorting, POSIX paths — written only when its bytes change; no lock, no hand edits). Its line format is
 `formatIndexEntry()` in `lib.mjs`.
 
 ## Scope isolation
 
 Scopes are discovered purely by filesystem: any directory with `.claude/memory/` is a scope.
 `findAllScopes()` discovers all scopes (max depth 4), `isScopeIgnored()` skips directories
-matching `scopes.ignore` patterns. Each scope owns its own memory tree and derived `MEMORY.md`.
+matching `scopes.ignore` patterns. Each scope owns its own memory tree and derived `memory-index.md`.
 
 ## State
 

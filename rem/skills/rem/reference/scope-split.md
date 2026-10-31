@@ -3,7 +3,7 @@
 Relocate a cluster of memory entries into a **child scope** when a scope's memory has grown
 large *and* a real subdirectory already owns a cohesive cluster of entries. This is distinct
 from **crystallize** (which distills memory → `.claude/rules/rem/`): a split moves entries into a
-nested scope that gets its own independent `.claude/memory/` + `MEMORY.md`.
+nested scope that gets its own independent `.claude/memory/` + derived `memory-index.md`.
 
 Generic and structure-agnostic. A child scope only forms where a real internal module
 boundary already exists (a `packages/x`, `src/auth`, `lib/foo` subdir the clustered entries

@@ -20,7 +20,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>"
 ```
 
 It lists the memory entries this session read and, per scope, the visible entry count, the
-entries hidden by a newer `merged_from` (their files stay), and the crystallize advisory.
+entries hidden by a newer `merged_from` / `supersedes` (their files stay), and the crystallize advisory.
 It writes nothing.
 
 ### 1. Summarize
@@ -33,8 +33,10 @@ It writes nothing.
 
 - New learning → a new `.claude/memory/YYYY/MM/DD/<slug>.md` (or `remember.js` when the user
   asked to remember something).
-- Duplicates → `merge-memory.js --into <live> --from <dups>` (sources stay on disk, hidden).
-- Never delete a memory file. Then regenerate the index:
+- It changes what an entry read in step 0 says → a NEW entry: `remember.js --corrects <old>` (part
+  wrong; the old stays visible, flagged) or `--supersedes <old>` (replaced; the old is hidden).
+- Duplicates → `merge-memory.js --name <slug> --from <dups>` (sources stay byte-identical, hidden).
+- Never edit or delete a memory file. Then regenerate the index:
   ```bash
   node ${CLAUDE_PLUGIN_ROOT}/scripts/index-memory.js
   ```

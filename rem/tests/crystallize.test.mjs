@@ -65,7 +65,7 @@ describe("crystallize.js", () => {
     const ledger = fs.readdirSync(path.join(tmp, ".claude", "memory"), { recursive: true })
       .map(p => p.replace(/\\/g, "/")).find(p => p.endsWith("crystallized-into-topic.md"));
     const text = fs.readFileSync(path.join(tmp, ".claude", "memory", ledger), "utf8");
-    assert.match(text, /merged_from:\n {2}- 2026\/07\/01\/a\.md\n {2}- 2026\/07\/01\/b\.md\n/);
+    assert.match(text, /supersedes:\n {2}- 2026\/07\/01\/a\.md\n {2}- 2026\/07\/01\/b\.md\n/);
     assert.match(text, /\.claude\/rules\/rem\/topic\.md/);
     assert.match(r.stdout, /SR-20260701-001/);
   });

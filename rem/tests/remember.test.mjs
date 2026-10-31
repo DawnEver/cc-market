@@ -98,8 +98,8 @@ describe("remember.js", () => {
 
   test("regenerates the derived index", () => {
     run(...BASE);
-    const index = fs.readFileSync(path.join(tmp, ".claude", "rules", "MEMORY.md"), "utf8");
-    assert.match(index, new RegExp(`\\[\\d{4}-\\d{2}-\\d{2} no-force-push\\]\\(\\.\\./memory/${todayNested()}/no-force-push\\.md\\)`));
+    const index = fs.readFileSync(path.join(tmp, ".claude", "memory-index.md"), "utf8");
+    assert.match(index, new RegExp(`\\[\\d{4}-\\d{2}-\\d{2} no-force-push\\]\\(memory/${todayNested()}/no-force-push\\.md\\)`));
   });
 
   test("accepts body on stdin", () => {
@@ -128,32 +128,16 @@ describe("remember.js", () => {
     assert.match(e.stderr, /volatile metadata field/);
   });
 
-  test("refuses to overwrite different content without --update", () => {
+  test("refuses a different body under an existing name — an entry is never edited", () => {
     run(...BASE);
     const e = runFail("--name", "no-force-push", "--type", "feedback", "--body", "Different body.");
-    assert.match(e.stderr, /file exists with different content/);
+    assert.match(e.stderr, /exists with different content — an entry is never edited/);
   });
 
   test("identical re-run is idempotent", () => {
     run(...BASE);
     const out = run(...BASE).trim();
     assert.equal(out, memoryFile("no-force-push"));
-  });
-
-  test("--update appends the revision, keeps the prior body", () => {
-    run(...BASE);
-    run("--name", "no-force-push", "--type", "feedback", "--body", "Revised rule.", "--update");
-    const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
-    assert.match(text, /Never force-push shared branches\./);
-    assert.match(text, /## Update \d{4}-\d{2}-\d{2}\n\nRevised rule\./);
-  });
-
-  test("--update with a superset body writes it once, no duplicate section", () => {
-    run(...BASE);
-    run("--name", "no-force-push", "--type", "feedback", "--body", "Never force-push shared branches.\nAlso tags.", "--update");
-    const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
-    assert.equal(text.match(/^Never force-push/gm).length, 1);
-    assert.doesNotMatch(text, /## Update/);
   });
 
   test("--scope <dir> writes into the given scope", () => {

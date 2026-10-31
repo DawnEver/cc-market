@@ -42,7 +42,7 @@ the derived index, scoped memory (monorepo), rules-vs-memory boundary — → `r
 Core scripts the happy-path invokes — full table with all scripts and flags → `reference/scripts.md`.
 
 - `rem-prep.js --transcript <path>` — read-only report: entries read, visible / hidden counts, crystallize advisory
-- `index-memory.js` — regenerate the derived MEMORY.md indexes (written only when the bytes change)
+- `index-memory.js` — regenerate the derived `.claude/memory-index.md` indexes (written only when the bytes change)
 - `remember.js` — immediate save for explicit "remember this" requests (run it right away, don't wait for `/rem`; see `reference/memory-conventions.md` § When memory is written)
 - `crystallize.js --check` / `scope-split.js --check` — gated procedures (see below)
 
@@ -88,11 +88,11 @@ Brief one-sentence summary; usually no memory/rules updates. Run the doc-stalene
 
 Short flow (run in the fork): **0.** `rem-prep.js --transcript "<transcript_path>"`
 → **1.** summarize (what changed, validation, blockers) → **2.** write `.claude/memory/YYYY/MM/DD/`
-entries (`merge-memory.js` for duplicates), then `index-memory.js` → **3.** update project docs if needed.
+entries (`--corrects` / `--supersedes` / `merge-memory.js`; never edit an old one), then `index-memory.js` → **3.** update project docs if needed.
 
 Full step-by-step walkthrough →
 **`reference/standard-procedure.md`**.
 
 ## Cross-project check
 
-If you modified files in OTHER git repos during this session, you MUST also update their `.claude/memory/` and `.claude/rules/MEMORY.md`. Check your transcript — you know which repos you touched.
+If you modified files in OTHER git repos during this session, you MUST also update their `.claude/memory/` and run `index-memory.js` there. Check your transcript — you know which repos you touched.

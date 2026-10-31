@@ -24,7 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { listEntries, hiddenEntries } from "./lib.mjs";
+import { listEntries, visibleEntries } from "./lib.mjs";
 import { isMain } from "../shared/lib.mjs";
 import { atomicWriteFile } from "../shared/atomic-write.mjs";
 
@@ -104,10 +104,8 @@ export function isSkippable(relPath) {
  */
 function collectCandidatesUncached(scopeRoot) {
   const memDir = path.join(scopeRoot, ".claude", "memory");
-  const entries = listEntries(scopeRoot);
-  const hidden = hiddenEntries(entries);
-  return entries
-    .filter((e) => !hidden.has(e.path) && !isSkippable(e.path))
+  return visibleEntries(listEntries(scopeRoot))
+    .filter((e) => !isSkippable(e.path))
     .map((e) => ({
       relPath: e.path,
       abs: path.join(memDir, e.path),
@@ -115,6 +113,7 @@ function collectCandidatesUncached(scopeRoot) {
       description: e.description,
       type: e.type || "project",
       date: e.date,
+      corrections: e.correctedBy.map((p) => ({ relPath: p, abs: path.join(memDir, p) })),
     }));
 }
 
@@ -313,15 +312,24 @@ export function buildRecallContext(entries, maxBytes = MAX_BYTES) {
   if (!entries.length) return null;
   const header = "Relevant memories (auto-recalled):";
   let body = "";
+  const shown = new Set();
+  const read = (abs) => { try { return bodyOf(fs.readFileSync(abs, "utf8")).trim(); } catch { return ""; } };
   for (const e of entries) {
-    let text;
-    try {
-      text = bodyOf(fs.readFileSync(e.abs, "utf8")).trim();
-    } catch { continue; }
+    if (shown.has(e.relPath)) continue;
+    const text = read(e.abs);
     if (!text) continue;
-    const block = `\n\n--- ${e.name} (${e.relPath.replace(/\\/g, "/")}) ---\n${text}`;
+    // A corrected entry travels with its corrections: the old text alone would mislead.
+    const fixes = (e.corrections || []).filter((c) => !shown.has(c.relPath));
+    const note = fixes.length ? ` [corrected by ${fixes.map((c) => c.relPath).join(", ")}]` : "";
+    let block = `\n\n--- ${e.name} (${e.relPath.replace(/\\/g, "/")})${note} ---\n${text}`;
+    for (const c of fixes) {
+      const fix = read(c.abs);
+      if (fix) block += `\n\n--- correction (${c.relPath}) ---\n${fix}`;
+    }
     if (header.length + body.length + block.length > maxBytes) continue; // try a smaller entry
     body += block;
+    shown.add(e.relPath);
+    for (const c of fixes) shown.add(c.relPath);
   }
   if (!body) return null;
   return header + body;

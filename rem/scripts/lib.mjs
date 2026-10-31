@@ -7,11 +7,6 @@ import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
 import { writeIfChanged } from '../shared/atomic-write.mjs';
 
-// One index line per entry: date, name, link, description.
-export function formatIndexEntry(e) {
-  return `- [${e.date} ${e.name}](../memory/${e.path})${e.description ? ` — ${e.description}` : ''}`;
-}
-
 // ── Paths ──
 
 export function findProjectRoot(startDir) { return _findProjectRoot(startDir); }
@@ -20,7 +15,6 @@ export const repoRoot = findProjectRoot();
 export const memoryDir = join(repoRoot, '.claude', 'memory');
 export const rulesDir = join(repoRoot, '.claude', 'rules');
 export const remRulesDir = join(rulesDir, 'rem');
-export const indexFile = join(rulesDir, 'MEMORY.md');
 export const stateFile = join(repoRoot, '.claude', '.rem-state.json');
 
 // ── Scope-aware paths ──
@@ -109,7 +103,6 @@ export function findChildScopes(scopeRoot, ignore) {
 export const scopeRoot = findMemoryScope();
 export const scopeMemoryDir = join(scopeRoot, '.claude', 'memory');
 export const scopeRulesDir = join(scopeRoot, '.claude', 'rules');
-export const scopeIndexFile = join(scopeRulesDir, 'MEMORY.md');
 
 export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -193,22 +186,27 @@ export function isInsideMemoryDir(absPath) {
 
 // ── Entries, visibility, index ──
 //
-// The memory tree is the ONLY source of truth and no entry is ever deleted. There is
-// no per-entry state: an entry's date is its path, its identity its file. Whether it
-// is VISIBLE (to recall and the index) is derived from newer entries that name it;
-// the file itself stays forever, reachable by provenance. Everything else is DERIVED
-// from the tree by a pure function, so reading never writes and two sessions deriving
-// the same tree write the same bytes.
+// The memory tree is the ONLY source of truth and no entry is ever deleted or edited.
+// There is no per-entry state: an entry's date is its path, its identity its file. All
+// provenance is written by the NEWER entry, in its frontmatter:
+//   merged_from: <paths>  — their content now lives here       → they are hidden
+//   supersedes:  <paths>  — this restates the current truth    → they are hidden
+//   corrects:    <paths>  — this corrects part of them         → they stay visible, flagged
+// Visibility is DERIVED from those fields; a hidden file stays forever, reachable by
+// provenance. Everything here is a pure function of the tree: reading never writes, and
+// two machines deriving the same tree produce the same bytes.
 
-// `merged_from:` as an inline comma list or a YAML block list. Each item is
+export const PROVENANCE_FIELDS = ['merged_from', 'supersedes', 'corrects'];
+
+// A provenance field as an inline comma list or a YAML block list. Each item is
 // normalized to a path relative to its scope's `.claude/memory/`.
-export function parseMergedFrom(content) {
+export function parseRefs(content, key) {
   const m = content.match(FM_RE);
   if (!m) return [];
   const lines = m[1].split(/\r?\n/);
-  const at = lines.findIndex(l => /^merged_from:/.test(l));
+  const at = lines.findIndex(l => l.startsWith(`${key}:`));
   if (at < 0) return [];
-  const items = lines[at].replace(/^merged_from:\s*/, '').replace(/^\[|\]$/g, '').split(',');
+  const items = lines[at].slice(key.length + 1).trim().replace(/^\[|\]$/g, '').split(',');
   for (let i = at + 1; i < lines.length && /^\s+-\s/.test(lines[i]); i++) items.push(lines[i].replace(/^\s+-\s*/, ''));
   return items
     .map(s => s.trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/'))
@@ -216,16 +214,28 @@ export function parseMergedFrom(content) {
     .map(s => s.replace(/^.*\.claude\/memory\//, ''));
 }
 
+// Frontmatter lines for the provenance a new entry writes, in PROVENANCE_FIELDS order.
+export function formatRefs(refs) {
+  return PROVENANCE_FIELDS
+    .filter(k => refs[k]?.length)
+    .map(k => `${k}:\n${refs[k].map(p => `  - ${p}`).join('\n')}\n`)
+    .join('');
+}
+
 // An entry lives at YYYY/MM/DD/<slug>.md under its scope's .claude/memory/.
 export const DATED_RE = /^\d{4}\/\d{2}\/\d{2}\//;
 
-// Every entry of a scope, newest first: { path, date, name, description, type, mergedFrom }.
+// Byte order, never locale order: the same tree sorts the same on every machine.
+export const byteOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Every entry of a scope, newest first, then by path:
+// { path, date, name, description, type, mergedFrom, supersedes, corrects }.
 export function listEntries(scopeRoot) {
   const memDir = join(scopeRoot, '.claude', 'memory');
   const entries = [];
   for (const abs of collectMemoryFiles(memDir)) {
     const path = relative(memDir, abs).replace(/\\/g, '/');
-    if (path.startsWith('tasks/') || !DATED_RE.test(path)) continue;
+    if (!DATED_RE.test(path)) continue;
     let content = '';
     try { content = readFileSync(abs, 'utf8'); } catch { continue; }
     const { fields } = parseFrontmatter(content);
@@ -236,62 +246,93 @@ export function listEntries(scopeRoot) {
       name: fields.name || basename(path, '.md'),
       description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
       type: typeMatch ? typeMatch[1] : null,
-      mergedFrom: parseMergedFrom(content),
+      mergedFrom: parseRefs(content, 'merged_from'),
+      supersedes: parseRefs(content, 'supersedes'),
+      corrects: parseRefs(content, 'corrects'),
     });
   }
-  entries.sort((a, b) => b.date.localeCompare(a.date) || a.path.localeCompare(b.path));
+  entries.sort((a, b) => byteOrder(b.date, a.date) || byteOrder(a.path, b.path));
   return entries;
 }
 
-// Entries a newer entry names in `merged_from`: their content has a home, so they
-// leave recall and the index. The file stays. A self-reference never hides the entry.
+// Entries a newer entry names in `merged_from` or `supersedes`: their content has a
+// home, so they leave recall and the index. The file stays. A self-reference never
+// hides the entry.
 export function hiddenEntries(entries) {
   const live = new Set(entries.map(e => e.path));
   const out = new Map();
   for (const e of entries) {
-    for (const p of e.mergedFrom) {
+    for (const p of [...e.mergedFrom, ...e.supersedes]) {
       if (p !== e.path && live.has(p) && !out.has(p)) out.set(p, e.path);
     }
   }
   return out; // hidden path → the entry that holds it
 }
 
-// The injected index: entries a session must always see (user/feedback) plus the
-// newest HOT_MAX. Recall reads the tree directly, so the index never gates recall.
-export const HOT_MAX = 15;
+// Entries a newer entry `corrects`: still visible, flagged with their corrections.
+export function correctionsOf(entries) {
+  const live = new Set(entries.map(e => e.path));
+  const out = new Map();
+  for (const e of entries) {
+    for (const p of e.corrects) {
+      if (p === e.path || !live.has(p)) continue;
+      if (!out.has(p)) out.set(p, []);
+      out.get(p).push(e.path);
+    }
+  }
+  for (const list of out.values()) list.sort(byteOrder);
+  return out; // corrected path → the entries that correct it
+}
+
+// Visible entries of a scope, each carrying `correctedBy` (possibly empty).
+export function visibleEntries(entries) {
+  const hidden = hiddenEntries(entries);
+  const corrections = correctionsOf(entries);
+  return entries.filter(e => !hidden.has(e.path))
+    .map(e => ({ ...e, correctedBy: corrections.get(e.path) || [] }));
+}
+
+// The derived index: one file per scope, OUTSIDE .claude/rules/ (nothing generated
+// loads as a rule) and outside .claude/memory/ (it is not an entry). Read on demand.
+export function indexFilePath(scopeRoot) {
+  return join(scopeRoot, '.claude', 'memory-index.md');
+}
+
 export const INDEX_HEADER = `# Memory Index
 
-<!-- GENERATED from .claude/memory/ by rem (rebuildIndex) — never hand-edit, never commit.
-     Lists user/feedback entries and the newest ${HOT_MAX}; recall searches every entry.
-     An entry retires when a live entry names it in \`merged_from:\`. -->
+<!-- DERIVED from .claude/memory/ by rem — never hand-edit. Every visible entry, newest
+     first. An entry named by a newer entry's merged_from/supersedes is hidden (its file
+     stays); one named by corrects is flagged with its correction. -->
 `;
 
+// One index line per visible entry: date, name, link, description, corrections.
+export function formatIndexEntry(e) {
+  const fix = e.correctedBy?.length ? ` (corrected by ${e.correctedBy.map(p => `memory/${p}`).join(', ')})` : '';
+  return `- [${e.date} ${e.name}](memory/${e.path})${e.description ? ` — ${e.description}` : ''}${fix}`;
+}
+
 export function renderIndex(scopeRoot, entries = listEntries(scopeRoot)) {
-  const hidden = hiddenEntries(entries);
-  const liveEntries = entries.filter(e => !hidden.has(e.path));
-  const hot = liveEntries.filter((e, i) => i < HOT_MAX || e.type === 'user' || e.type === 'feedback');
+  const visible = visibleEntries(entries);
   const lines = [INDEX_HEADER];
-  const children = findChildScopes(scopeRoot);
+  const children = findChildScopes(scopeRoot)
+    .map(child => relative(scopeRoot, child).replace(/\\/g, '/'))
+    .sort(byteOrder);
   if (children.length) {
     lines.push('## Scoped\n');
-    for (const child of children) {
-      const rel = relative(scopeRoot, child).replace(/\\/g, '/');
-      lines.push(`- ${rel} → see ${rel}/.claude/rules/MEMORY.md`);
-    }
+    for (const rel of children) lines.push(`- ${rel} → see ${rel}/.claude/memory-index.md`);
     lines.push('');
   }
-  lines.push(`## Entries (${hot.length} of ${liveEntries.length})\n`);
-  if (!hot.length) lines.push('_(no entries)_');
-  for (const e of hot) lines.push(formatIndexEntry(e));
+  lines.push(`## Entries (${visible.length} visible of ${entries.length})\n`);
+  if (!visible.length) lines.push('_(no entries)_');
+  for (const e of visible) lines.push(formatIndexEntry(e));
   return lines.join('\n') + '\n';
 }
 
 // Lock-free: the content is a pure function of the tree, so concurrent writers
 // converge, and an unchanged index is never rewritten.
 export function rebuildIndex(scopeRoot) {
-  return writeIfChanged(join(scopeRoot, '.claude', 'rules', 'MEMORY.md'), renderIndex(scopeRoot));
+  return writeIfChanged(indexFilePath(scopeRoot), renderIndex(scopeRoot));
 }
-
 
 // ── File collection ──
 
