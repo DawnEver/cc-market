@@ -33,7 +33,7 @@
       "name": "rem",
       "source": "./rem",
       "displayName": "REM",
-      "description": "REM sleep for Claude sessions — auto-prunes stale memory on session start, crystallizes learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
+      "description": "REM sleep for Claude sessions — consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -43,8 +43,8 @@
         "memory",
         "session",
         "retrospect",
-        "prune",
-        "eviction",
+        "recall",
+        "derived-index",
         "memo",
         "cache"
       ],

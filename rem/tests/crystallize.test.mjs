@@ -1,69 +1,78 @@
 /**
- * Tests for rem/scripts/crystallize.js --drift — long-term drift-verification listing.
+ * Tests for rem/scripts/crystallize.js — distill entries into a rule; the entries stay on disk, hidden.
  * Run: node --test cc-market/rem/tests/crystallize.test.mjs
  */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "scripts",
-  "crystallize.js"
-);
+const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "crystallize.js");
 
 let tmp;
 beforeEach(() => {
   tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "crystallize-")));
-  fs.mkdirSync(path.join(tmp, ".claude", "memory", "2026", "07", "01"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, ".git"));
 });
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-function drift() {
-  const out = execFileSync(process.execPath, [SCRIPT, "--drift"], {
-    cwd: tmp,
-    encoding: "utf8",
-  });
-  return JSON.parse(out).driftCandidates;
+const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], {
+  cwd: tmp, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: tmp },
+});
+
+function seed(rel, extra = "") {
+  const file = path.join(tmp, ".claude", "memory", rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const slug = path.basename(rel, ".md");
+  fs.writeFileSync(file, `---\nname: ${slug}\ndescription: about ${slug}\n${extra}metadata:\n  type: project\n---\n\nbody SR-20260701-001\n`);
+  return file;
 }
 
-function seed(slug, meta) {
-  const dir = path.join(tmp, ".claude", "memory", "2026", "07", "01");
-  fs.writeFileSync(
-    path.join(dir, `${slug}.md`),
-    `---\nname: ${slug}\ndescription: x\nmetadata.type: project\n---\n\nbody\n`
-  );
-  const metaFile = path.join(dir, "_meta.json");
-  const data = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : {};
-  data[`${slug}.md`] = meta;
-  fs.writeFileSync(metaFile, JSON.stringify(data));
+function rule(name = "topic.md", text = "# Topic\n\n- the rule\n") {
+  fs.mkdirSync(path.join(tmp, ".claude", "rules", "rem"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, ".claude", "rules", "rem", name), text);
 }
 
-describe("crystallize.js --drift", () => {
-  test("lists only non-dropped long-term entries with path/name/dates/count", () => {
-    seed("long-one", { accessed: "2026-07-20", count: 5, tier: "long" });
-    seed("short-one", { accessed: "2026-07-21", count: 1, tier: "short" });
-    seed("dropped-long", { accessed: "2026-07-22", count: 9, tier: "long", dropped: "crystallized" });
-
-    const candidates = drift();
-    assert.deepEqual(candidates, [
-      {
-        path: "2026/07/01/long-one.md",
-        name: "long-one",
-        created: "2026-07-01",
-        accessed: "2026-07-20",
-        count: 5,
-      },
-    ]);
+describe("crystallize.js", () => {
+  test("--propose lists visible entries oldest first and omits hidden ones", () => {
+    seed("2026/07/01/a.md");
+    seed("2026/07/02/b.md");
+    seed("2026/07/03/c.md", "merged_from: 2026/07/02/b.md\n");
+    const out = JSON.parse(run("--propose").stdout);
+    assert.deepEqual(out.entries.map(e => e.path), ["2026/07/01/a.md", "2026/07/03/c.md"]);
   });
 
-  test("empty when no long-term entries", () => {
-    assert.deepEqual(drift(), []);
+  test("--execute refuses without a written rule", () => {
+    const a = seed("2026/07/01/a.md");
+    const r = run("--execute", "--rule", "topic.md", "--distilled", "2026/07/01/a.md");
+    assert.equal(r.status, 1);
+    assert.ok(fs.existsSync(a));
+  });
+
+  test("--execute records a ledger entry naming the distilled entries, which stay on disk but hidden", () => {
+    const a = seed("2026/07/01/a.md");
+    const b = seed("2026/07/01/b.md");
+    const keep = seed("2026/07/01/keep.md");
+    rule();
+    const r = run("--execute", "--rule", "topic.md", "--distilled", "2026/07/01/a.md,2026/07/01/b.md");
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(fs.existsSync(a) && fs.existsSync(b) && fs.existsSync(keep));
+    assert.deepEqual(JSON.parse(run("--propose").stdout).entries.map(e => e.path).filter(p => p.startsWith("2026/07/01/")).sort(), ["2026/07/01/keep.md"]);
+    const ledger = fs.readdirSync(path.join(tmp, ".claude", "memory"), { recursive: true })
+      .map(p => p.replace(/\\/g, "/")).find(p => p.endsWith("crystallized-into-topic.md"));
+    const text = fs.readFileSync(path.join(tmp, ".claude", "memory", ledger), "utf8");
+    assert.match(text, /merged_from:\n {2}- 2026\/07\/01\/a\.md\n {2}- 2026\/07\/01\/b\.md\n/);
+    assert.match(text, /\.claude\/rules\/rem\/topic\.md/);
+    assert.match(r.stdout, /SR-20260701-001/);
+  });
+
+  test("--execute refuses an entry that is not live", () => {
+    rule();
+    seed("2026/07/01/a.md");
+    assert.equal(run("--execute", "--rule", "topic.md", "--distilled", "2026/07/01/nope.md").status, 1);
   });
 });

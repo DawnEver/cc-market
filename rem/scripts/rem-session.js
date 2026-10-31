@@ -11,7 +11,7 @@ if (isMain(import.meta.url)) {
   try {
     if (args[0] !== 'complete' || !args.includes('--session') || !args.includes('--request'))
       throw new Error('Usage: rem-session.js complete --session <id> --request <request-id>');
-    const saved = withStateLock(stateFile, state => completeSession(state, value('--session'), value('--request')), { atomic: true, onTimeout: 'throw' });
+    const saved = withStateLock(stateFile, state => completeSession(state, value('--session'), value('--request')), { onTimeout: 'throw' });
     if (!saved?.persisted) throw new Error('Could not persist REM completion.');
     console.log('REM request completed.');
   } catch (e) { console.error(e.message); process.exitCode = 1; }

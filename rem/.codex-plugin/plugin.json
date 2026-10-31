@@ -1,7 +1,7 @@
 {
   "name": "rem",
   "version": "2.2.0",
-  "description": "REM sleep for your Claude sessions — prune stale memory, crystallize learnings, maintain .claude/memory/ with timestamps and automatic eviction",
+  "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, crystallized rules",
   "author": {
     "name": "Mingyang Bao"
   },
@@ -10,16 +10,16 @@
     "memory",
     "session",
     "retrospect",
-    "prune",
-    "eviction",
+    "recall",
+    "derived-index",
     "crystallize",
     "summarize"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "REM",
-    "shortDescription": "REM sleep for your Claude sessions — prune stale memory, crystallize learnings,",
-    "longDescription": "REM sleep for Claude sessions — auto-prunes stale memory on session start, crystallizes learnings on session stop, maintains .claude/memory/ with timestamps and 90-day eviction. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
+    "shortDescription": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall",
+    "longDescription": "REM sleep for Claude sessions — consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

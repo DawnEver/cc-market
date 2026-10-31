@@ -1,259 +1,108 @@
 #!/usr/bin/env node
-// Crystallize orchestrator for the REM memory system.
+// Crystallize: distill memory entries into a rule; the entries stay on disk, hidden.
 //
-//   node crystallize.js --check       → exit 0 if the catalog advisory threshold is reached, exit 1 otherwise
-//   node crystallize.js --drift       → JSON listing of long-term entries as drift-verification candidates
-//   node crystallize.js --propose      → JSON listing of all indexed entries for user review
-//   node crystallize.js --execute      → after model distilled rules into .claude/rules/rem/,
-//                                    validate and clear the MEMORY.md index
-//   node crystallize.js --validate     → check .claude/rules/rem/ namespace integrity
+//   node crystallize.js --check      → exit 0 when live entries reach CRYSTALLIZE_ADVISORY
+//   node crystallize.js --propose    → JSON of every live entry, oldest first, for review
+//   node crystallize.js --validate   → list .claude/rules/rem/ rules
+//   node crystallize.js --execute --rule <file.md> --distilled <a.md,b.md,...>
+//        → after the model wrote .claude/rules/rem/<file.md>: record a dated
+//          `crystallized-into-<rule>` entry naming the distilled entries in
+//          `merged_from:` and pointing at the rule, which hides them from recall and the index.
 //
-// Workflow:
-//   1. Model runs --check; if exit 0 → crystallize needed
-//   2. Model runs --propose → presents entry list to user for approval
-//   3. Model reads approved memory files, distills to .claude/rules/rem/<topic>.md
-//   4. Model runs --execute → validates rules exist, clears index, logs summary
+// The rule is the single source of the distilled fact; the ledger entry is the
+// provenance that hides the originals. No entry is ever deleted.
 
 import { SR_ID_RE } from '../shared/lib.mjs';
-import { withLock } from '../shared/lock.mjs';
-import { readFileSync, readdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname, basename } from 'path';
 import {
-  remRulesDir, scopeMemoryDir as memoryDir,
-  scopeRoot, catalogFilePath, CATALOG_ADVISORY_MAX, collectMemoryFiles,
-  getMemoryMeta, getField, rebuildIndex, dropFromIndex, loadMemoryState,
+  remRulesDir, scopeMemoryDir as memoryDir, scopeRoot, CRYSTALLIZE_ADVISORY,
+  listEntries, hiddenEntries, rebuildIndex, dateToPath,
 } from './lib.mjs';
-
-// Crystallize operates on the AUTHORITATIVE full catalog (every non-dropped entry),
-// not the injected hot view in .claude/rules/MEMORY.md — a truncated read would
-// silently consolidate only the recent set.
-const indexFile = catalogFilePath(scopeRoot);
 
 const args = process.argv.slice(2);
 const mode = args[0] || '--check';
+const arg = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
 
-// ── --check: is crystallize needed? ──
+function liveEntries() {
+  const entries = listEntries(scopeRoot);
+  const hidden = hiddenEntries(entries);
+  return entries.filter(e => !hidden.has(e.path));
+}
+
+export function ledgerEntry(rule, paths, date) {
+  const stem = basename(rule, '.md');
+  return {
+    relPath: `${dateToPath(date)}/crystallized-into-${stem}.md`,
+    content: `---\nname: crystallized-into-${stem}\n`
+      + `description: ${paths.length} entries distilled into .claude/rules/rem/${rule}\n`
+      + `merged_from:\n${paths.map(p => `  - ${p}`).join('\n')}\n`
+      + `metadata:\n  type: project\n---\n\n`
+      + `Distilled into \`.claude/rules/rem/${rule}\`, which is now the source of these facts.\n`
+      + `The originals stay at the paths listed in \`merged_from\`.\n`,
+  };
+}
+
 if (mode === '--check') {
-  if (!existsSync(indexFile)) {
-    console.log('[crystallize] catalog not found — nothing to crystallize');
-    process.exit(1);
-  }
-  const content = readFileSync(indexFile, 'utf8');
-  const entryCount = content.split('\n').filter(l => /^-\s+\[/.test(l)).length;
-  if (entryCount >= CATALOG_ADVISORY_MAX) {
-    console.log(`[crystallize] ${entryCount} entries (≥${CATALOG_ADVISORY_MAX}) — crystallize needed`);
-    process.exit(0);
-  }
-  console.log(`[crystallize] ${entryCount} entries (<${CATALOG_ADVISORY_MAX}) — not needed`);
-  process.exit(1);
+  const n = liveEntries().length;
+  const needed = n >= CRYSTALLIZE_ADVISORY;
+  console.log(`[crystallize] ${n} live entries (${needed ? '≥' : '<'}${CRYSTALLIZE_ADVISORY}) — ${needed ? 'crystallize needed' : 'not needed'}`);
+  process.exit(needed ? 0 : 1);
 }
 
-// ── --drift: list long-term entries as drift-verification candidates ──
-// The model verifies each against current code/git state before distilling —
-// see skills/rem/reference/crystallize.md § Drift verification.
-if (mode === '--drift') {
-  const state = loadMemoryState(scopeRoot);
-  const candidates = [];
-  for (const [relPath, meta] of state) {
-    if (meta.dropped || relPath.startsWith('tasks/')) continue;
-    if (meta.tier !== 'long') continue;
-    let name = relPath.split('/').pop().replace(/\.md$/, '');
-    const absPath = join(memoryDir, relPath);
-    if (existsSync(absPath)) {
-      try { name = getField(readFileSync(absPath, 'utf8'), 'name') || name; } catch { /* default */ }
-    }
-    candidates.push({
-      path: relPath,
-      name,
-      created: relPath.match(/(\d{4})\/(\d{2})\/(\d{2})/)?.slice(1).join('-') || '',
-      accessed: meta.accessed,
-      count: meta.count,
-    });
-  }
-  console.log(JSON.stringify({ driftCandidates: candidates }, null, 2));
-  process.exit(0);
-}
-
-// ── --propose: list all indexed entries for user review before crystallize ──
 if (mode === '--propose') {
-  if (!existsSync(indexFile)) {
-    console.log(JSON.stringify({ entryCount: 0, maxEntries: CATALOG_ADVISORY_MAX, entries: [] }));
-    process.exit(0);
-  }
-  const content = readFileSync(indexFile, 'utf8');
-
-  // Extract paths from index
-  const pathRe = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
-  const indexedPaths = [];
-  let pm;
-  while ((pm = pathRe.exec(content)) !== null) {
-    indexedPaths.push(pm[1]);
-  }
-
-  const result = indexedPaths.map(p => {
-    const memFile = join(memoryDir, p);
-    const meta = getMemoryMeta(scopeRoot, p);
-    let description = '';
-    if (existsSync(memFile)) {
-      try {
-        description = getField(readFileSync(memFile, 'utf8'), 'description') || '';
-      } catch { /* use defaults */ }
-    }
-    return {
-      path: p,
-      title: p.split('/').pop().replace('.md', ''),
-      created: p.match(/(\d{4})\/(\d{2})\/(\d{2})/)?.slice(1).join('-') || '',
-      accessed: meta.accessed,
-      tier: meta.tier,
-      accessCount: meta.count,
-      description,
-    };
-  });
-
-  console.log(JSON.stringify({
-    entryCount: result.length,
-    maxEntries: CATALOG_ADVISORY_MAX,
-    overLimit: Math.max(0, result.length - CATALOG_ADVISORY_MAX),
-    entries: result,
-  }, null, 2));
+  const entries = liveEntries().reverse()
+    .map(({ path, name, date, type, description }) => ({ path, name, date, type, description }));
+  console.log(JSON.stringify({ entryCount: entries.length, advisory: CRYSTALLIZE_ADVISORY, entries }, null, 2));
   process.exit(0);
 }
 
-// ── --validate: check rem/ namespace integrity ──
 if (mode === '--validate') {
-  if (!existsSync(remRulesDir)) {
-    console.log('[crystallize] .claude/rules/rem/ does not exist');
-    process.exit(0);
-  }
-
-  const remFiles = readdirSync(remRulesDir, { withFileTypes: true })
-    .filter(e => e.isFile() && e.name.endsWith('.md'))
-    .map(e => e.name);
-
-  if (remFiles.length === 0) {
-    console.log('[crystallize] rem/ is empty — nothing to validate');
-    process.exit(0);
-  }
-
-  console.log(`[crystallize] rem/ contains ${remFiles.length} rule(s):`);
-  for (const f of remFiles) {
+  const rules = existsSync(remRulesDir)
+    ? readdirSync(remRulesDir).filter(f => f.endsWith('.md')) : [];
+  if (!rules.length) { console.log('[crystallize] .claude/rules/rem/ has no rules'); process.exit(0); }
+  console.log(`[crystallize] rem/ contains ${rules.length} rule(s):`);
+  for (const f of rules) {
     const content = readFileSync(join(remRulesDir, f), 'utf8');
-    const hasContent = content.trim().length > 0;
-    console.log(`  ${hasContent ? '✓' : '!'} ${f} (${content.length}B)${hasContent ? '' : ' — empty file'}`);
+    console.log(`  ${content.trim() ? '✓' : '!'} ${f} (${content.length}B)${content.trim() ? '' : ' — empty file'}`);
   }
   process.exit(0);
 }
 
-// ── --execute: validate + clear index ──
 if (mode === '--execute') {
-  const distilledIdx = args.indexOf('--distilled');
-  const distilledPaths = distilledIdx >= 0 && args[distilledIdx + 1]
-    ? args[distilledIdx + 1].split(',').map(s => s.trim()).filter(Boolean)
-    : null;
-
-  // 1. Ensure rem/ has at least one rule file
-  if (!existsSync(remRulesDir)) {
-    console.error('[crystallize] .claude/rules/rem/ not found — create it and add rule files first');
+  const rule = arg('--rule');
+  const paths = (arg('--distilled') || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!rule || !paths.length) {
+    console.error('[crystallize] usage: --execute --rule <file.md> --distilled <a.md,b.md,...>');
     process.exit(1);
   }
-  const remFiles = readdirSync(remRulesDir, { withFileTypes: true })
-    .filter(e => e.isFile() && e.name.endsWith('.md'));
-  if (remFiles.length === 0) {
-    console.error('[crystallize] rem/ is empty — distill rules there before executing');
+  const ruleFile = join(remRulesDir, basename(rule));
+  if (!existsSync(ruleFile) || !readFileSync(ruleFile, 'utf8').trim()) {
+    console.error(`[crystallize] ${ruleFile} missing or empty — write the rule first`);
     process.exit(1);
   }
-  console.log(`[crystallize] ${remFiles.length} rule(s) in rem/: ${remFiles.map(e => e.name).join(', ')}`);
-
-  // 2. Verify no memory files were deleted (append-only rule)
-  if (!existsSync(memoryDir)) {
-    console.error('[crystallize] .claude/memory/ directory not found');
+  const live = new Set(liveEntries().map(e => e.path));
+  const unknown = paths.filter(p => !live.has(p));
+  if (unknown.length) {
+    console.error(`[crystallize] not live entries: ${unknown.join(', ')}`);
     process.exit(1);
   }
-  const indexedPaths = [];
-  const pathRe = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
-  let pm;
-  while ((pm = pathRe.exec(readFileSync(indexFile, 'utf8'))) !== null) {
-    indexedPaths.push(pm[1]);
-  }
-  const missing = indexedPaths.filter(p => !existsSync(join(memoryDir, p)));
-  if (missing.length > 0) {
-    console.error('[crystallize] append-only violation — indexed memory files deleted:');
-    for (const p of missing) console.error(`  ${p}`);
+  const srIds = new Set();
+  for (const p of paths) for (const m of readFileSync(join(memoryDir, p), 'utf8').matchAll(SR_ID_RE)) srIds.add(m[0]);
+
+  const { relPath, content } = ledgerEntry(basename(rule), paths);
+  const file = join(memoryDir, relPath);
+  if (existsSync(file)) {
+    console.error(`[crystallize] ${relPath} exists — one crystallize per rule per day`);
     process.exit(1);
   }
-  const memoryCount = collectMemoryFiles(memoryDir).length;
-  console.log(`[crystallize] ${indexedPaths.length} indexed, ${memoryCount} total memory file(s)`);
-
-  // 3. Apply drops
-  if (!existsSync(indexFile)) {
-    console.log('[crystallize] MEMORY.md not found');
-    process.exit(0);
-  }
-
-  let pathsToDrop;
-
-  // Decision (fresh index read) + drops + rebuild atomically under the index
-  // lease lock — reading the index OUTSIDE the lock and dropping a stale set is
-  // a TOCTOU race vs. concurrent stamps. Fail-CLOSED on lock timeout (mutating
-  // CLI); rebuildIndex/dropFromIndex nest via reentrancy or separate lock paths.
-  try {
-  withLock(indexFile, () => {
-    // Re-read the index inside the lock for the drop decision
-    const freshIndexed = [];
-    const freshRe = /\]\(\.\.\/memory\/(.+?\.md)\)/g;
-    let fm;
-    while ((fm = freshRe.exec(readFileSync(indexFile, 'utf8'))) !== null) {
-      freshIndexed.push(fm[1]);
-    }
-    pathsToDrop = distilledPaths || freshIndexed;
-
-    if (distilledPaths && distilledPaths.length > 0) {
-      // Granular mode: drop only distilled entries
-      for (const p of distilledPaths) {
-        dropFromIndex(scopeRoot, p, 'crystallized', { onTimeout: 'throw' });
-      }
-      console.log(`[crystallize] dropped ${distilledPaths.length}/${freshIndexed.length} distilled entries from index`);
-    } else {
-      // Full mode: drop all
-      for (const p of freshIndexed) {
-        dropFromIndex(scopeRoot, p, 'crystallized', { onTimeout: 'throw' });
-      }
-      console.log(`[crystallize] cleared ${freshIndexed.length} index entries`);
-    }
-
-    // 4. Rebuild index
-    rebuildIndex(scopeRoot, { onTimeout: 'throw' });
-  }, { onTimeout: 'throw' });
-  } catch (err) {
-    if (err.code === 'LOCK_TIMEOUT') {
-      console.error(`[crystallize] another process holds the index lock — refusing to run unlocked (${err.message})`);
-      process.exit(1);
-    }
-    throw err;
-  }
-
-  // 5. Detect SR-ID findings being crystallized
-  const srIds = [];
-  for (const p of pathsToDrop) {
-    const memFile = join(memoryDir, p);
-    if (!existsSync(memFile)) continue;
-    try {
-      const content = readFileSync(memFile, 'utf8');
-      let m;
-      while ((m = SR_ID_RE.exec(content)) !== null) {
-        srIds.push(m[0]);
-      }
-    } catch { /* skip */ }
-  }
-  if (srIds.length > 0) {
-    console.log(`[crystallize] ${srIds.length} SR finding(s) crystallized into rules:`);
-    console.log('  → Mark resolved: edit **Status:** OPEN → **Status:** FIXED in the memory file, then post-review --rescan');
-  }
-
-  console.log('[crystallize] done — memory crystallized into .claude/rules/rem/');
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, content, 'utf8');
+  rebuildIndex(scopeRoot);
+  console.log(`[crystallize] ${relPath} records the rule; ${paths.length} entr${paths.length === 1 ? 'y' : 'ies'} hidden, kept on disk`);
+  if (srIds.size) console.log(`[crystallize] SR findings now in the rule: ${[...srIds].join(', ')}`);
   process.exit(0);
 }
 
-// ── default ──
-console.log('Usage: node crystallize.js [--check|--drift|--propose|--validate|--execute]');
+console.log('Usage: node crystallize.js [--check|--propose|--validate|--execute --rule <f> --distilled <paths>]');
 process.exit(1);

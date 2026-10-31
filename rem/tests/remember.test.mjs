@@ -69,7 +69,7 @@ describe("remember.js", () => {
     assert.match(content, /Never force-push shared branches\./);
   });
 
-  test("frontmatter parses to a nested metadata.type (prune/recall contract)", () => {
+  test("frontmatter parses to a nested metadata.type (recall contract)", () => {
     const out = run(...BASE).trim();
     const fm = parseFrontmatter(fs.readFileSync(out, "utf8"));
     assert.equal(fm.metadata.type, "feedback");
@@ -91,17 +91,12 @@ describe("remember.js", () => {
     assert.match(e.stderr, /single line/);
   });
 
-  test("creates _meta.json entry with short tier defaults", () => {
+  test("writes no bookkeeping beside the entry", () => {
     run(...BASE);
-    const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-    assert.deepEqual(meta["no-force-push.md"], {
-      accessed: new Date().toISOString().slice(0, 10),
-      count: 1,
-      tier: "short",
-    });
+    assert.deepEqual(fs.readdirSync(path.dirname(metaFile())), ["no-force-push.md"]);
   });
 
-  test("upserts MEMORY.md index entry", () => {
+  test("regenerates the derived index", () => {
     run(...BASE);
     const index = fs.readFileSync(path.join(tmp, ".claude", "rules", "MEMORY.md"), "utf8");
     assert.match(index, new RegExp(`\\[\\d{4}-\\d{2}-\\d{2} no-force-push\\]\\(\\.\\./memory/${todayNested()}/no-force-push\\.md\\)`));
@@ -143,19 +138,14 @@ describe("remember.js", () => {
     run(...BASE);
     const out = run(...BASE).trim();
     assert.equal(out, memoryFile("no-force-push"));
-    // Meta unchanged (still count 1)
-    const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-    assert.equal(meta["no-force-push.md"].count, 1);
   });
 
-  test("--update appends the revision, keeps the prior body, and preserves meta", () => {
+  test("--update appends the revision, keeps the prior body", () => {
     run(...BASE);
     run("--name", "no-force-push", "--type", "feedback", "--body", "Revised rule.", "--update");
     const text = fs.readFileSync(memoryFile("no-force-push"), "utf8");
     assert.match(text, /Never force-push shared branches\./);
     assert.match(text, /## Update \d{4}-\d{2}-\d{2}\n\nRevised rule\./);
-    const meta = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-    assert.equal(meta["no-force-push.md"].count, 1);
   });
 
   test("--update with a superset body writes it once, no duplicate section", () => {

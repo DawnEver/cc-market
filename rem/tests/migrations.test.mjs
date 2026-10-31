@@ -1,5 +1,5 @@
 /**
- * Tests for rem/migrations/migrate.mjs — "migrate to latest" project migration.
+ * Tests for rem/migrations/migrate.mjs — additive .gitignore upkeep; never touches memory.
  * Run: node --test cc-market/rem/tests/migrations.test.mjs
  */
 
@@ -8,10 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { migrate } from '../migrations/migrate.mjs';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('rem migrate()', () => {
   let projectRoot;
@@ -24,51 +21,6 @@ describe('rem migrate()', () => {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  test('strips volatile fields and imports into _meta.json', async () => {
-    const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
-    fs.mkdirSync(dayDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dayDir, 'example.md'),
-      '---\nname: example\ndescription: an example memory\ncreated: 2026-06-10\naccessed: 2026-06-10\ntier: short\n---\n\nbody\n',
-    );
-
-    const { changed } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    // Volatile fields stripped from frontmatter
-    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
-    assert.equal(content.includes('created:'), false);
-    assert.equal(content.includes('accessed:'), false);
-    assert.equal(content.includes('tier:'), false);
-    // _meta.json created with migrated data
-    const metaFile = path.join(dayDir, '_meta.json');
-    assert.equal(fs.existsSync(metaFile), true);
-    const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-    assert.ok(meta['example.md']);
-    assert.equal(meta['example.md'].tier, 'short');
-  });
-
-  test('is idempotent — second run does not re-import already migrated fields', async () => {
-    const dayDir = path.join(projectRoot, '.claude', 'memory', '2026', '06', '10');
-    fs.mkdirSync(dayDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dayDir, 'example.md'),
-      '---\nname: example\ndescription: an example memory\ncreated: 2026-06-10\naccessed: 2026-06-10\ntier: short\n---\n\nbody\n',
-    );
-
-    await migrate(projectRoot);
-    // Second run: volatile fields already stripped, _meta.json already exists
-    await migrate(projectRoot);
-
-    // frontmatter should still be clean
-    const content = fs.readFileSync(path.join(dayDir, 'example.md'), 'utf8');
-    assert.equal(content.includes('created:'), false);
-    assert.equal(content.includes('accessed:'), false);
-    // _meta.json still intact
-    const meta = JSON.parse(fs.readFileSync(path.join(dayDir, '_meta.json'), 'utf8'));
-    assert.ok(meta['example.md']);
-  });
-
   test('creates .gitignore even when .claude/ does not exist', async () => {
     const { changed, summary } = await migrate(projectRoot);
     // gitignore step runs regardless of .claude/ presence
@@ -77,18 +29,7 @@ describe('rem migrate()', () => {
     assert.equal(fs.existsSync(path.join(projectRoot, '.gitignore')), true);
   });
 
-  test('removes stray legacy .claude/.retro_state.json', async () => {
-    fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(projectRoot, '.claude', '.retro_state.json'), '{}');
-
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('.retro_state.json')));
-    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', '.retro_state.json')), false);
-  });
-
-  // rem owns ONLY ignores for the artifacts it generates — the broader .claude
+  // rem owns ONLY ignores for the artefacts it generates — the broader .claude
   // structure template is the root migrate skill's concern.
   const REM_IGNORES = ['**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
 
@@ -131,50 +72,19 @@ describe('rem migrate()', () => {
     assert.equal(changed, false);
   });
 
-  test('removes legacy .claude/tasks/ and .claude/memory/tasks/ across scopes', async () => {
-    const taskArchive = path.join(projectRoot, '.claude', 'tasks', 'archive', '2026', '05');
-    fs.mkdirSync(taskArchive, { recursive: true });
-    fs.writeFileSync(path.join(taskArchive, '30.md'), 'x');
-    const memTasks = path.join(projectRoot, '.claude', 'memory', 'tasks');
-    fs.mkdirSync(memTasks, { recursive: true });
-    fs.writeFileSync(path.join(memTasks, 'old.md'), 'x');
 
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('legacy task dir')));
-    assert.equal(fs.existsSync(path.join(projectRoot, '.claude', 'tasks')), false);
-    assert.equal(fs.existsSync(memTasks), false);
-  });
-
-  test('converts flat YYYY-MM-DD/ memory dirs to nested YYYY/MM/DD/', async () => {
-    const memoryDir = path.join(projectRoot, '.claude', 'memory');
-    const flatDir = path.join(memoryDir, '2026-06-03');
-    fs.mkdirSync(flatDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(flatDir, 'flat-entry.md'),
-      '---\nname: flat-entry\ndescription: test\ncreated: 2026-06-03\naccessed: 2026-06-03\ntier: short\n---\n\nbody\n',
-    );
-
-    const { changed, summary } = await migrate(projectRoot);
-
-    assert.equal(changed, true);
-    assert.ok(summary.some(s => s.includes('migrated 1 flat memory entry')));
-    // Old flat dir removed
-    assert.equal(fs.existsSync(flatDir), false);
-    // New nested dir exists with the file
-    const nestedFile = path.join(memoryDir, '2026', '06', '03', 'flat-entry.md');
-    assert.equal(fs.existsSync(nestedFile), true);
-    const content = fs.readFileSync(nestedFile, 'utf8');
-    assert.match(content, /name: flat-entry/);
-  });
-
-  test('migration stamp child process is hidden on Windows', () => {
-    const source = fs.readFileSync(
-      path.join(__dirname, '..', 'migrations', 'migrate.mjs'),
-      'utf8',
-    );
-    // windowsHide is forced by the shared spawn wrapper — assert the wrapper is used.
-    assert.match(source, /import \{ execFileSync \} from ["']\.\.\/shared\/spawn\.mjs["']/);
+  test('never touches .claude/: memory, tasks and state files stay byte-identical', async () => {
+    const files = {
+      '.claude/memory/2026/01/01/a.md': '---\nname: a\n---\nbody\n',
+      '.claude/memory/2026/01/01/_meta.json': '{}',
+      '.claude/tasks/t/TASK.md': '---\nopened_by: user\n---\n',
+      '.claude/.retro_state.json': '{}',
+    };
+    for (const [rel, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(projectRoot, rel)), { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, rel), text);
+    }
+    await migrate(projectRoot);
+    for (const [rel, text] of Object.entries(files)) assert.equal(fs.readFileSync(path.join(projectRoot, rel), 'utf8'), text, rel);
   });
 });

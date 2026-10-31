@@ -1,6 +1,6 @@
 # REM State File Schema
 
-`lib.mjs` exports `loadState()`, `saveState()`, `appendEvent()`. State file: `.claude/.rem-state.json`.
+`lib.mjs` exports `loadState()`, `saveState()`. State file: `.claude/.rem-state.json`.
 
 ```json
 {
@@ -19,10 +19,6 @@
         "requestExpiresAt": 1780501800000
       }
     }
-  },
-  "prune": {
-    "lastPruneAt": 1780500000000,
-    "events": [{ "ts": "...", "type": "evict", "path": "...", "reason": "stale-90d" }]
   },
   "scopes": {
     "ignore": ["vendor", "test-*", "packages/legacy"],
@@ -50,9 +46,9 @@ other sessions defer without advancing their counters. Completion or expiry perm
 the next ordinary Stop to dispatch deferred work. A Stop continuation does not recurse.
 
 `scopes.ignore` — glob/name patterns for directories that `findAllScopes` /
-`findChildScopes` skip during scope discovery (and prune their descendants). A bare
+`findChildScopes` skip during scope discovery (and skip their descendants). A bare
 pattern (no `/`) matches a directory's basename; a pattern containing `/` matches the
 path relative to the scan root. Both support `*` and `?`. Empty by default.
 
-Useful for debugging hook gating (e.g. why `/rem` did or didn't trigger) or checking
-recent prune events (demotions/evictions) during a session.
+Useful for debugging hook gating (e.g. why `/rem` did or didn't trigger). The state file holds
+no memory bookkeeping: memory lifecycle lives entirely in the memory tree.

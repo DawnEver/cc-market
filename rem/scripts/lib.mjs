@@ -1,15 +1,16 @@
 // lib.mjs — shared module for REM memory system
-// Single source of truth for paths, frontmatter, index format, file collection, state.
+// Single source of truth for paths, frontmatter, entries, derived visibility and the derived index.
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, renameSync } from 'fs';
-import { join, dirname, resolve, relative, sep } from 'path';
+import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, renameSync } from 'fs';
+import { join, dirname, resolve, relative, basename, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
-import { withLock } from '../shared/lock.mjs';
-import { loadState as _loadState, saveState as _saveState, appendEvent as _appendEvent } from '../shared/state.mjs';
-import { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath, atomicWriteFile } from '../shared/stamp.mjs';
+import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
+import { writeIfChanged } from '../shared/atomic-write.mjs';
 
-// Index entry format lives in shared/stamp.mjs (also used by sharp-review's post-review upsert)
-export { formatIndexEntry, parseIndexEntry, parseIndex, normalizeMemoryPath };
+// One index line per entry: date, name, link, description.
+export function formatIndexEntry(e) {
+  return `- [${e.date} ${e.name}](../memory/${e.path})${e.description ? ` — ${e.description}` : ''}`;
+}
 
 // ── Paths ──
 
@@ -108,22 +109,9 @@ export function findChildScopes(scopeRoot, ignore) {
 export const scopeRoot = findMemoryScope();
 export const scopeMemoryDir = join(scopeRoot, '.claude', 'memory');
 export const scopeRulesDir = join(scopeRoot, '.claude', 'rules');
-// Injected view: bounded to long-term + the newest HOT_SHORT_MAX shorts, so the
-// auto-loaded rules file stays small. The authoritative full listing lives in the
-// (non-injected) catalog file — see catalogFilePath().
 export const scopeIndexFile = join(scopeRulesDir, 'MEMORY.md');
 
-// Full catalog path for a scope. Placed one level under `.claude/` (NOT under
-// `.claude/rules/`, which is auto-injected, and NOT under `.claude/memory/`, which
-// is scanned as memory) so its `../memory/...` index links resolve unchanged.
-export function catalogFilePath(scopeRootArg) {
-  return join(scopeRootArg, '.claude', 'meta', 'MEMORY.full.md');
-}
-
-export const MAX_ENTRIES = 20; // legacy advisory value (no longer a hard cap) — see CATALOG_ADVISORY_MAX
-export const HOT_SHORT_MAX = 15; // newest short-term entries kept in the injected hot list
-export const CATALOG_ADVISORY_MAX = 400; // "store is large — crystallize recommended" advisory (full catalog count)
-export const STALE_DAYS = 90;
+export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 // ── Frontmatter ──
@@ -203,260 +191,122 @@ export function isInsideMemoryDir(absPath) {
   return resolved.startsWith(memResolved + '\\') || resolved.startsWith(memResolved + '/') || resolved === memResolved;
 }
 
-// ── Memory state (_meta.json per date directory) ──
+// ── Entries, visibility, index ──
+//
+// The memory tree is the ONLY source of truth and no entry is ever deleted. There is
+// no per-entry state: an entry's date is its path, its identity its file. Whether it
+// is VISIBLE (to recall and the index) is derived from newer entries that name it;
+// the file itself stays forever, reachable by provenance. Everything else is DERIVED
+// from the tree by a pure function, so reading never writes and two sessions deriving
+// the same tree write the same bytes.
 
-function metaPath(scopeRoot, dateStr) {
-  const [y, m, d] = dateStr.split('-');
-  return join(scopeRoot, '.claude', 'memory', y, m, d, '_meta.json');
+// `merged_from:` as an inline comma list or a YAML block list. Each item is
+// normalized to a path relative to its scope's `.claude/memory/`.
+export function parseMergedFrom(content) {
+  const m = content.match(FM_RE);
+  if (!m) return [];
+  const lines = m[1].split(/\r?\n/);
+  const at = lines.findIndex(l => /^merged_from:/.test(l));
+  if (at < 0) return [];
+  const items = lines[at].replace(/^merged_from:\s*/, '').replace(/^\[|\]$/g, '').split(',');
+  for (let i = at + 1; i < lines.length && /^\s+-\s/.test(lines[i]); i++) items.push(lines[i].replace(/^\s+-\s*/, ''));
+  return items
+    .map(s => s.trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/'))
+    .filter(s => s.endsWith('.md'))
+    .map(s => s.replace(/^.*\.claude\/memory\//, ''));
 }
 
-export function loadMemoryState(scopeRoot) {
-  const memDir = join(scopeRoot, '.claude', 'memory');
-  const map = new Map();
-  if (!existsSync(memDir)) return map;
+// An entry lives at YYYY/MM/DD/<slug>.md under its scope's .claude/memory/.
+export const DATED_RE = /^\d{4}\/\d{2}\/\d{2}\//;
 
-  function walk(dir) {
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.name.startsWith('.') || entry.name === 'tasks') continue;
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) { walk(full); continue; }
-        if (entry.name === '_meta.json') {
-          try {
-            const data = JSON.parse(readFileSync(full, 'utf8'));
-            const dateDir = relative(memDir, dirname(full)).replace(/\\/g, '/');
-            for (const [slug, meta] of Object.entries(data)) {
-              map.set(`${dateDir}/${slug}`, meta);
-            }
-          } catch { /* corrupt _meta.json — skip */ }
-        }
-      }
-    } catch { /* permissions */ }
-  }
-  walk(memDir);
-
-  // Backfill: .md files on disk but missing from _meta.json get defaults
-  const allMd = collectMemoryFiles(memDir);
-  for (const absPath of allMd) {
-    const relPath = relative(memDir, absPath).replace(/\\/g, '/');
-    if (relPath.startsWith('tasks/')) continue;
-    if (!map.has(relPath)) {
-      const date = extractDateFromPath(absPath);
-      map.set(relPath, { accessed: date, count: 1, tier: 'short' });
-    }
-  }
-
-  return map;
-}
-
-export function saveMemoryMeta(scopeRoot, relPath, patch, { onTimeout = 'proceed' } = {}) {
-  const date = extractDateFromPath(relPath);
-  const file = metaPath(scopeRoot, date);
-  const slug = relPath.split('/').pop();
-
-  // Read-modify-write of this date dir's _meta.json under its lease lock.
-  withLock(file, () => {
-    let data = {};
-    if (existsSync(file)) {
-      try { data = JSON.parse(readFileSync(file, 'utf8')); } catch { /* start fresh */ }
-    } else {
-      mkdirSync(dirname(file), { recursive: true });
-    }
-
-    data[slug] = { ...(data[slug] || {}), ...patch };
-    writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
-  }, { onTimeout });
-}
-
-export function getMemoryMeta(scopeRoot, relPath) {
-  const state = loadMemoryState(scopeRoot);
-  if (state.has(relPath)) return state.get(relPath);
-  const date = extractDateFromPath(relPath);
-  return { accessed: date, count: 1, tier: 'short' };
-}
-
-export function bumpAccessed(scopeRoot, relPath, date, opts) {
-  const cur = getMemoryMeta(scopeRoot, relPath);
-  const count = cur.accessed !== date ? cur.count + 1 : cur.count;
-  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count }, opts);
-}
-
-export function dropFromIndex(scopeRoot, relPath, reason, opts) {
-  saveMemoryMeta(scopeRoot, relPath, { dropped: reason }, opts);
-}
-
-// ── Index ──
-
-export const INDEX_HEADER = `# Memory Index
-
-<!-- GENERATED — do not hand-edit. Rebuilt by rebuildIndex() on each session start,
-     touch, prune, and stamp. Device-local (gitignored). -->
-
-<!--
-Three-tier memory system:
-  1. Rules (.claude/rules/)          — always injected, core behavioral constraints only
-  2. Long-term memory (tier: long)   — progressive disclosure, demoted to short if inactive between prune cycles
-  3. Short-term memory (tier: short) — progressive disclosure, 90d eviction
-
-Promotion: run \`node scripts/touch-memory.js <path> --promote\` to upgrade short → long,
-           or automatic when access_count >= 3 (rem-prep.js --promote)
-Demotion:  long-term not accessed between two prune cycles → auto-demoted to short
-Prune:     run \`node scripts/prune-memory.js --evict-stale\` (short-term eviction + long-term demotion check)
-Crystallize:   run \`node scripts/crystallize.js --check\` when index grows large
-
-Path format:  ../memory/YYYY/MM/DD/slug.md — nested per-day directories (required).
-
-Frontmatter (content fields only):
-  - name:        short kebab-case slug (required)
-  - description: one-line summary (required)
-  - metadata.type: user | feedback | project | reference
-
-Volatile metadata (accessed, count, tier, dropped) lives in gitignored
-.claude/memory/YYYY/MM/DD/_meta.json per date directory — never in frontmatter.
--->
-
-`;
-
-// Injected view of the index — bounded so the auto-loaded rules file stays small.
-// Lists only long-term entries + the newest HOT_SHORT_MAX short-term entries. The
-// authoritative full catalog is at ../meta/MEMORY.full.md (see catalogFilePath()).
-export const HOT_INDEX_HEADER = `# Memory Index — hot set
-
-<!-- GENERATED — do not hand-edit. Injected view of the index: long-term entries plus
-     the newest ${HOT_SHORT_MAX} short-term entries, rebuilt by rebuildIndex() on each
-     session start, touch, prune, and stamp. Device-local (gitignored). -->
-
-<!-- The full catalog of EVERY non-dropped entry (newest-first) lives at
-     ../meta/MEMORY.full.md — read that to see entries older than the newest
-     ${HOT_SHORT_MAX} short-term ones, or when running crystallize. Recall reads the
-     .claude/memory/ files directly, so this hot list never gates what recall finds. -->
-
-`;
-
-function buildIndexEntries(scopeRoot, state) {
+// Every entry of a scope, newest first: { path, date, name, description, type, mergedFrom }.
+export function listEntries(scopeRoot) {
   const memDir = join(scopeRoot, '.claude', 'memory');
   const entries = [];
-
-  for (const [relPath, meta] of state) {
-    if (meta.dropped) continue;
-    if (relPath.startsWith('tasks/')) continue;
-
-    const absPath = join(memDir, relPath);
-    let title = relPath.split('/').pop().replace('.md', '');
-    let created = extractDateFromPath(relPath);
-
-    if (existsSync(absPath)) {
-      try {
-        const content = readFileSync(absPath, 'utf8');
-        const { fields } = parseFrontmatter(content);
-        if (fields.name) title = fields.name;
-      } catch { /* use defaults */ }
-    }
-
+  for (const abs of collectMemoryFiles(memDir)) {
+    const path = relative(memDir, abs).replace(/\\/g, '/');
+    if (path.startsWith('tasks/') || !DATED_RE.test(path)) continue;
+    let content = '';
+    try { content = readFileSync(abs, 'utf8'); } catch { continue; }
+    const { fields } = parseFrontmatter(content);
+    const typeMatch = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m);
     entries.push({
-      date: meta.accessed,
-      title,
-      path: relPath,
-      created,
-      accessed: meta.accessed,
-      accessedDate: parseDate(meta.accessed),
-      createdDate: parseDate(created),
-      tier: meta.tier || 'short',
+      path,
+      date: path.slice(0, 10).replace(/\//g, '-'),
+      name: fields.name || basename(path, '.md'),
+      description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
+      type: typeMatch ? typeMatch[1] : null,
+      mergedFrom: parseMergedFrom(content),
     });
   }
-
-  // Also include .md files on disk not yet in state (first-time stamp)
-  const allMd = collectMemoryFiles(memDir);
-  const indexed = new Set(state.keys());
-  for (const absPath of allMd) {
-    const relPath = relative(memDir, absPath).replace(/\\/g, '/');
-    if (relPath.startsWith('tasks/')) continue;
-    if (indexed.has(relPath)) continue;
-
-    let title = relPath.split('/').pop().replace('.md', '');
-    const created = extractDateFromPath(absPath);
-    try {
-      const content = readFileSync(absPath, 'utf8');
-      const { fields } = parseFrontmatter(content);
-      if (fields.name) title = fields.name;
-    } catch { /* use defaults */ }
-
-    entries.push({
-      date: created,
-      title,
-      path: relPath,
-      created,
-      accessed: created,
-      accessedDate: parseDate(created),
-      createdDate: parseDate(created),
-      tier: 'short',
-    });
-  }
-
-  // Sort: accessed desc, tiebreak created desc
-  entries.sort((a, b) => b.accessedDate - a.accessedDate || b.createdDate - a.createdDate);
+  entries.sort((a, b) => b.date.localeCompare(a.date) || a.path.localeCompare(b.path));
   return entries;
 }
 
-function renderEntries(header, scopedSection, entries) {
-  const lines = [header.trimEnd()];
-  if (scopedSection) lines.push(scopedSection);
-  lines.push('\n## Entries');
-  if (entries.length === 0) {
-    lines.push('\n_(no entries)_');
-  } else {
-    for (const e of entries) {
-      lines.push(formatIndexEntry(e));
+// Entries a newer entry names in `merged_from`: their content has a home, so they
+// leave recall and the index. The file stays. A self-reference never hides the entry.
+export function hiddenEntries(entries) {
+  const live = new Set(entries.map(e => e.path));
+  const out = new Map();
+  for (const e of entries) {
+    for (const p of e.mergedFrom) {
+      if (p !== e.path && live.has(p) && !out.has(p)) out.set(p, e.path);
     }
   }
+  return out; // hidden path → the entry that holds it
+}
+
+// The injected index: entries a session must always see (user/feedback) plus the
+// newest HOT_MAX. Recall reads the tree directly, so the index never gates recall.
+export const HOT_MAX = 15;
+export const INDEX_HEADER = `# Memory Index
+
+<!-- GENERATED from .claude/memory/ by rem (rebuildIndex) — never hand-edit, never commit.
+     Lists user/feedback entries and the newest ${HOT_MAX}; recall searches every entry.
+     An entry retires when a live entry names it in \`merged_from:\`. -->
+`;
+
+export function renderIndex(scopeRoot, entries = listEntries(scopeRoot)) {
+  const hidden = hiddenEntries(entries);
+  const liveEntries = entries.filter(e => !hidden.has(e.path));
+  const hot = liveEntries.filter((e, i) => i < HOT_MAX || e.type === 'user' || e.type === 'feedback');
+  const lines = [INDEX_HEADER];
+  const children = findChildScopes(scopeRoot);
+  if (children.length) {
+    lines.push('## Scoped\n');
+    for (const child of children) {
+      const rel = relative(scopeRoot, child).replace(/\\/g, '/');
+      lines.push(`- ${rel} → see ${rel}/.claude/rules/MEMORY.md`);
+    }
+    lines.push('');
+  }
+  lines.push(`## Entries (${hot.length} of ${liveEntries.length})\n`);
+  if (!hot.length) lines.push('_(no entries)_');
+  for (const e of hot) lines.push(formatIndexEntry(e));
   return lines.join('\n') + '\n';
 }
 
-export function rebuildIndex(scopeRoot, { onTimeout = 'proceed' } = {}) {
-  const rulesDir = join(scopeRoot, '.claude', 'rules');
-  const indexFile = join(rulesDir, 'MEMORY.md');
-  const catalogFile = catalogFilePath(scopeRoot);
-  // Serialize index rebuilds across concurrent processes (lock is reentrant, so
-  // callers that already hold the index lock — e.g. touch-memory.js — nest safely).
-  withLock(indexFile, () => {
-  const state = loadMemoryState(scopeRoot);
-
-  const entries = buildIndexEntries(scopeRoot, state);
-
-  // Build Scoped section from child scopes
-  const children = findChildScopes(scopeRoot);
-  let scopedSection = '';
-  if (children.length > 0) {
-    scopedSection = '\n## Scoped\n\n';
-    for (const child of children) {
-      const childRel = relative(scopeRoot, child).replace(/\\/g, '/') || child;
-      scopedSection += `- ${childRel} → see ${childRel}/.claude/rules/MEMORY.md\n`;
-    }
-  }
-
-  // Full catalog (authoritative): every non-dropped entry, newest-first. Written to
-  // a NON-injected path so it may be arbitrarily large without bloating the session.
-  if (!existsSync(dirname(catalogFile))) mkdirSync(dirname(catalogFile), { recursive: true });
-  atomicWriteFile(catalogFile, renderEntries(INDEX_HEADER, scopedSection, entries));
-
-  // Injected view: bound to long-term entries + the newest HOT_SHORT_MAX shorts so
-  // the auto-loaded .claude/rules/MEMORY.md stays small. Recall never depends on it.
-  const hotPaths = new Set(entries.filter(e => e.tier === 'long').map(e => e.path));
-  let shortSeen = 0;
-  for (const e of entries) {
-    if (e.tier === 'long') continue;
-    if (shortSeen >= HOT_SHORT_MAX) break;
-    hotPaths.add(e.path);
-    shortSeen++;
-  }
-  const hotEntries = entries.filter(e => hotPaths.has(e.path));
-
-  if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-  atomicWriteFile(indexFile, renderEntries(HOT_INDEX_HEADER, scopedSection, hotEntries));
-  }, { onTimeout });
+// Lock-free: the content is a pure function of the tree, so concurrent writers
+// converge, and an unchanged index is never rewritten.
+export function rebuildIndex(scopeRoot) {
+  return writeIfChanged(join(scopeRoot, '.claude', 'rules', 'MEMORY.md'), renderIndex(scopeRoot));
 }
 
+
 // ── File collection ──
+
+// Every file under dir (dot-entries skipped).
+export function collectFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const results = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) results.push(...collectFiles(full));
+    else results.push(full);
+  }
+  return results;
+}
 
 export function collectMemoryFiles(dir) {
   if (!existsSync(dir)) return [];
@@ -476,7 +326,7 @@ export function collectMemoryFiles(dir) {
 // subdirectory that the clustered entries reference. No assumption about repo layout
 // (monorepo, flat, src/, packages/*) — the algorithm degrades to silence wherever no
 // internal module boundary exists. All paths normalized to POSIX for cross-platform
-// determinism (identical _meta.json / index across macOS, Linux, Windows).
+// determinism (identical index across macOS, Linux, Windows).
 
 export const SPLIT_DEFAULTS = {
   minOwnEntries: 30,        // size-pressure gate: own (non-child) indexed entries
@@ -574,13 +424,9 @@ export function clusterBySubdir(scopeRoot, entryRelPaths) {
 export function proposeScopeSplits(scopeRoot, opts) {
   const cfg = resolveSplitConfig(opts);
   const memDir = join(scopeRoot, '.claude', 'memory');
-  const state = loadMemoryState(scopeRoot);
-
-  // Own (non-dropped, non-task) indexed entries.
   const own = [];
   let totalBytes = 0;
-  for (const [rel, meta] of state) {
-    if (meta.dropped || rel.startsWith('tasks/')) continue;
+  for (const { path: rel } of listEntries(scopeRoot)) {
     own.push(rel);
     try { totalBytes += statSync(join(memDir, rel)).size; } catch { /* gone */ }
   }
@@ -608,8 +454,7 @@ export function proposeScopeSplits(scopeRoot, opts) {
 }
 
 // Relocate `entryRelPaths` from `scopeRoot` into the child scope at `subdirRel`.
-// Move + tombstone: file physically moves into the child's memory tree; the parent's
-// _meta.json records `dropped: 'migrated→<subdir>'`; tier/access metadata carries over.
+// The file moves into the child's memory tree; nothing else records the move.
 // Both indexes rebuild (parent's Scoped section auto-picks-up the new child).
 export function executeScopeSplit(scopeRoot, subdirRel, entryRelPaths) {
   const parentMem = join(scopeRoot, '.claude', 'memory');
@@ -624,22 +469,13 @@ export function executeScopeSplit(scopeRoot, subdirRel, entryRelPaths) {
     if (!isInsideDir(childMem, dest)) throw new Error(`path traversal denied (dest): ${rel}`);
     if (!existsSync(src)) continue;
 
-    const meta = getMemoryMeta(scopeRoot, rel);
     mkdirSync(dirname(dest), { recursive: true });
     renameSync(src, dest);
-
-    dropFromIndex(scopeRoot, rel, `migrated→${subdirRel}`);
-    saveMemoryMeta(childRoot, rel, {
-      accessed: meta.accessed,
-      count: meta.count,
-      tier: meta.tier,
-    });
     moved++;
   }
 
   rebuildIndex(childRoot);
   rebuildIndex(scopeRoot);
-  appendEvent('split', { to: subdirRel, count: moved });
   return { moved, scope: subdirRel };
 }
 
@@ -647,4 +483,4 @@ export function executeScopeSplit(scopeRoot, subdirRel, entryRelPaths) {
 
 export function loadState() { return _loadState(stateFile); }
 export function saveState(state, opts) { return _saveState(stateFile, state, opts); }
-export function appendEvent(type, detail, opts) { return _appendEvent(stateFile, type, detail, opts); }
+

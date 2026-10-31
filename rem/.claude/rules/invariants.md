@@ -2,20 +2,14 @@
 
 Always-injected behavioral constraints for working on the rem plugin.
 
-## Append-only (with one carve-out: relocation)
+## The tree is the only source of truth — and no memory file is ever deleted
 
-Memory files in `.claude/memory/` are NEVER deleted. `prune-memory.js` and `crystallize.js` only
-mark entries as dropped in `_meta.json` — files stay on disk forever.
-
-The single exception is `scope-split.js`, which may **relocate** a file from a parent scope
-into a child scope's memory tree (move, not evict). It records a `dropped: 'migrated→<subdir>'`
-tombstone in the parent's `_meta.json` so the move is traceable and history is never silently
-lost. `scope-validate.mjs` flags dangling `migrated→` tombstones whose child scope is missing.
-This is a structural relocation, not an eviction — never treat it as license to delete memory.
-
-No script SHRINKS a memory file either (user ruling 2026-09-27: memory keeps everything, redundancy
-is removed by MERGING). `merge-memory.js` folds duplicates verbatim into one live entry carrying
-`merged_from:`; `remember.js --update` appends; `task-engine.js remove` closes a task in place.
+Reading memory never writes: no hook, recall or report records an access, and no per-entry
+state exists beside the files. NOTHING deletes a file under `.claude/memory/` (user ruling
+2026-10-31; `tests/lifecycle.test.mjs` scans every script for a file-removing call). An entry
+leaves recall and the index only when a newer entry names it in `merged_from:`
+(`merge-memory.js`, `crystallize.js` ledger) — visibility is derived, the file stays.
+`scope-split.js` moves files between scopes (a rename, not a removal).
 
 ## Hook pending-work gate
 
@@ -42,32 +36,27 @@ if (!isInsideMemoryDir(file)) throw new Error("path traversal denied");
 
 ## Frontmatter → `skills/rem/reference/memory-conventions.md`
 
-Content fields (`name`, `description`, `metadata.type`) live in file YAML frontmatter. Volatile
-metadata (`accessed`, `count`, `tier`, `dropped`) lives in per-date `_meta.json` — never in
-frontmatter. Full schema is in `skills/rem/reference/memory-conventions.md`.
+Content fields (`name`, `description`, `metadata.type`, optional `merged_from`) live in file YAML
+frontmatter. There is no volatile metadata anywhere. Full schema is in
+`skills/rem/reference/memory-conventions.md`.
 
 ## Index → `skills/rem/reference/memory-conventions.md`
 
-`MEMORY.md` is a generated, gitignored file. Use `parseIndex()` / `formatIndexEntry()` from
-`lib.mjs` — never hand-roll index parsing. Index rules (max entries, sort order) are in
-`skills/rem/reference/memory-conventions.md`.
-
-## Memory state → `skills/rem/reference/state-schema.md`
-
-Use `loadMemoryState()`, `getMemoryMeta()`, `saveMemoryMeta()`, `bumpAccessed()`, and
-`dropFromIndex()` — never read/write `_meta.json` directly. The state schema is in
-`skills/rem/reference/state-schema.md`.
+`MEMORY.md` is derived, gitignored, and written only through `rebuildIndex()` (a pure function
+of the tree, written only when its bytes change — no lock, no hand edits). Its line format is
+`formatIndexEntry()` in `lib.mjs`.
 
 ## Scope isolation
 
 Scopes are discovered purely by filesystem: any directory with `.claude/memory/` is a scope.
 `findAllScopes()` discovers all scopes (max depth 4), `isScopeIgnored()` skips directories
-matching `scopes.ignore` patterns. Each scope owns independent `_meta.json` files and `MEMORY.md`.
+matching `scopes.ignore` patterns. Each scope owns its own memory tree and derived `MEMORY.md`.
 
 ## State
 
-Unified state in `.claude/.rem-state.json`. Use `loadState()`/`saveState()` — never
-read/write directly. `appendEvent()` for prune log (auto-trims to 15).
+Unified hook state in `.claude/.rem-state.json`. Use `loadState()`/`saveState()`/`withStateLock()` —
+never read/write directly. Every save is tmp+rename with a unique temp name
+(`shared/atomic-write.mjs`), so a reader never sees a torn file.
 
 ### deepMerge preserves foreign keys
 

@@ -7,15 +7,13 @@
 //   (body may also be piped on stdin instead of --body)
 //
 // Writes .claude/memory/YYYY/MM/DD/<slug>.md with generated frontmatter (volatile
-// fields forbidden — enforced), creates the _meta.json entry, and upserts the
-// MEMORY.md index. Refuses a different-bodied file without --update, which APPENDS (never drops).
+// fields forbidden — enforced) and regenerates the derived index. Refuses a different-bodied file without --update, which APPENDS (never drops).
 // Prints the created/updated file path.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
-import { upsertIndexEntry } from '../shared/stamp.mjs';
 import {
-  findMemoryScope, saveMemoryMeta, loadMemoryState,
+  findMemoryScope, rebuildIndex,
   isInsideDir, todayISO, dateToPath,
 } from './lib.mjs';
 
@@ -59,10 +57,9 @@ if (body === null && !process.stdin.isTTY) {
 if (!body || !body.trim()) usage('--body is required (or pipe body on stdin)');
 body = body.trim() + '\n';
 
-// Volatile metadata never belongs in file content (frontmatter or body) — it lives
-// in _meta.json only.
+// Access bookkeeping never belongs in an entry: reading leaves no trace.
 if (VOLATILE_RE.test(body)) {
-  usage('body contains a volatile metadata field (accessed|count|tier|dropped) — these live in _meta.json, never in the file');
+  usage('body contains a volatile metadata field (accessed|count|tier|dropped) — an entry carries no access bookkeeping');
 }
 
 // ── Scope & path security ──
@@ -84,9 +81,8 @@ const desc = description
   || body.split('\n').map(l => l.replace(/^#+\s*/, '').replace(/[*_`]/g, '').trim())
     .find(l => l.length > 0)?.slice(0, 80)
   || name;
-// metadata.type is nested YAML — prune-memory.js and recall.js read it via the
-// structured parser as metadata.type. A flat dotted key would be invisible to
-// them (feedback entries would lose their eviction exemption and recall weight).
+// metadata.type is nested YAML — recall and the index read it as metadata.type;
+// a flat dotted key would be invisible to them (feedback would lose its weight).
 let content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\nmetadata:\n  type: ${type}\n---\n\n${body}`;
 
 // ── Overwrite guard ──
@@ -107,19 +103,9 @@ if (existsSync(file)) {
   if (!body.includes(oldBody)) content = `${existing.trimEnd()}\n\n## Update ${date}\n\n${body}`;
 }
 
-// Snapshot state BEFORE writing — loadMemoryState backfills on-disk files, so a
-// post-write snapshot would always contain relPath and skip the meta entry.
-const isNewEntry = !loadMemoryState(scopeRoot).has(relPath);
-
 mkdirSync(dirname(file), { recursive: true });
 writeFileSync(file, content, 'utf8');
 
-// ── Volatile metadata (new entries only — updates keep their history) ──
-if (isNewEntry) {
-  saveMemoryMeta(scopeRoot, relPath, { accessed: date, count: 1, tier: 'short' });
-}
-
-// ── Index upsert ──
-upsertIndexEntry(scopeRoot, relPath, { name, date });
+rebuildIndex(scopeRoot);
 
 console.log(file);

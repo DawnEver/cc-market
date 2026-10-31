@@ -89,54 +89,42 @@ describe("scoreEntry", () => {
 
   test("name match beats description match", () => {
     const nameHit = scoreEntry(
-      { name: "windowshide-rule", description: "unrelated", type: "project", accessed: "2026-07-29", count: 1 },
+      { name: "windowshide-rule", description: "unrelated", type: "project", date: "2026-07-29" },
       ["windowshide"], now,
     );
     const descHit = scoreEntry(
-      { name: "unrelated", description: "windowshide rule", type: "project", accessed: "2026-07-29", count: 1 },
+      { name: "unrelated", description: "windowshide rule", type: "project", date: "2026-07-29" },
       ["windowshide"], now,
     );
     assert.ok(nameHit > descHit);
   });
 
   test("user/feedback type weighs double", () => {
-    const base = { name: "git-conventions", description: "", accessed: "2026-07-29", count: 1 };
+    const base = { name: "git-conventions", description: "", date: "2026-07-29" };
     const user = scoreEntry({ ...base, type: "user" }, ["git"], now);
     const proj = scoreEntry({ ...base, type: "project" }, ["git"], now);
     assert.ok(Math.abs(user - 2 * proj) < 1e-9);
   });
 
-  test("access count boosts up to cap", () => {
-    const base = { name: "git-conventions", description: "", type: "project", accessed: "2026-07-29" };
-    const low = scoreEntry({ ...base, count: 1 }, ["git"], now);
-    const high = scoreEntry({ ...base, count: 5 }, ["git"], now);
-    const over = scoreEntry({ ...base, count: 100 }, ["git"], now);
-    assert.ok(high > low);
-    assert.equal(over, high); // capped at 5
-  });
 
   test("no token match scores zero", () => {
     assert.equal(scoreEntry(
-      { name: "abc", description: "def", type: "project", accessed: "2026-07-29", count: 1 },
+      { name: "abc", description: "def", type: "project", date: "2026-07-29" },
       ["zzz"], now,
     ), 0);
   });
 
   test("empty tokens score zero", () => {
-    assert.equal(scoreEntry({ name: "abc", description: "def", type: "user", accessed: "2026-07-29", count: 1 }, [], now), 0);
+    assert.equal(scoreEntry({ name: "abc", description: "def", type: "user", date: "2026-07-29" }, [], now), 0);
   });
 });
 
 // ── scope fixtures ───────────────────────────────────────────────────────────
 
-function mkMemory(scopeDir, datePath, slug, fm, body, meta) {
+function mkMemory(scopeDir, datePath, slug, fm, body) {
   const dir = path.join(scopeDir, ".claude", "memory", ...datePath.split("/"));
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${slug}.md`), `---\n${fm}---\n\n${body}\n`);
-  const metaFile = path.join(dir, "_meta.json");
-  const data = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : {};
-  data[`${slug}.md`] = meta;
-  fs.writeFileSync(metaFile, JSON.stringify(data));
 }
 
 const FM = (name, desc, type) =>
@@ -159,25 +147,25 @@ describe("recall over a fixture scope", () => {
     assert.equal(findScopeForCwd(path.join(os.tmpdir(), "no-scope-here-" + Date.now())), null);
   });
 
-  test("collectCandidates reads frontmatter type and skips dropped/tasks", () => {
-    mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
-      "Use conventional commits.", { accessed: "2026-07-20", count: 4, tier: "short" });
-    mkMemory(dir, "2026/07/02", "dropped-one", FM("dropped-one", "gone", "project"),
-      "body", { accessed: "2026-07-02", count: 1, tier: "short", dropped: "evicted" });
+  test("collectCandidates reads frontmatter type and skips retired/tasks", () => {
+    mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback") + "merged_from: 2026/07/02/old-one.md\n",
+      "Use conventional commits.");
+    mkMemory(dir, "2026/07/02", "old-one", FM("old-one", "gone", "project"),
+      "body");
     fs.mkdirSync(path.join(dir, ".claude", "memory", "tasks"), { recursive: true });
 
     const cands = collectCandidates(dir);
     assert.equal(cands.length, 1);
     assert.equal(cands[0].name, "git-rules");
     assert.equal(cands[0].type, "feedback");
-    assert.equal(cands[0].count, 4);
+    assert.equal(cands[0].date, "2026-07-01");
   });
 
   test("selectTop picks the relevant entry above threshold", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "commit message style rules", "feedback"),
-      "body", { accessed: "2026-07-20", count: 3, tier: "short" });
+      "body");
     mkMemory(dir, "2026/07/01", "cooking-recipes", FM("cooking-recipes", "pasta and sauce", "reference"),
-      "body", { accessed: "2026-07-01", count: 1, tier: "short" });
+      "body");
 
     const winners = selectTop(collectCandidates(dir), tokenize("how should I write git commit messages"), Date.now());
     assert.equal(winners.length, 1);
@@ -187,7 +175,7 @@ describe("recall over a fixture scope", () => {
   test("selectTop caps at 3 and returns [] when nothing matches", () => {
     for (let i = 0; i < 5; i++) {
       mkMemory(dir, "2026/07/0" + (i + 1), `git-topic-${i}`, FM(`git-topic-${i}`, "git stuff", "project"),
-        "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+        "body");
     }
     const winners = selectTop(collectCandidates(dir), ["git"], Date.now());
     assert.equal(winners.length, 3);
@@ -196,9 +184,9 @@ describe("recall over a fixture scope", () => {
 
   test("buildRecallContext emits header and bodies, capped at maxBytes", () => {
     mkMemory(dir, "2026/07/01", "big-entry", FM("big-entry", "big", "project"),
-      "x".repeat(3000), { accessed: "2026-07-20", count: 1, tier: "short" });
+      "x".repeat(3000));
     mkMemory(dir, "2026/07/02", "small-entry", FM("small-entry", "small", "project"),
-      "short body", { accessed: "2026-07-21", count: 1, tier: "short" });
+      "short body");
 
     const cands = collectCandidates(dir);
     const ctx = buildRecallContext(cands, 1024);
@@ -223,7 +211,7 @@ describe("collectCandidates cache", () => {
 
   test("cache hit returns identical candidates without re-reading", () => {
     mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
-      "body", { accessed: "2026-07-20", count: 2, tier: "short" });
+      "body");
     const first = collectCandidates(dir, { now: T0 });
     const info = {};
     const second = collectCandidates(dir, { now: T0 + 1000, info }); // within TTL → fast path
@@ -235,36 +223,32 @@ describe("collectCandidates cache", () => {
 
   test("fingerprint changes when a memory file is added → cache invalidated after TTL", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
-      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+      "body");
     const fp1 = scopeFingerprint(dir);
     collectCandidates(dir, { now: T0 }); // populate cache
     mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
-      "body", { accessed: "2026-07-21", count: 1, tier: "short" });
+      "body");
     const fp2 = scopeFingerprint(dir);
     assert.notEqual(fp1, fp2);
     const cands = collectCandidates(dir, { now: T0 + 60_000 }); // TTL expired → re-stat picks it up
     assert.deepEqual(cands.map((c) => c.name).sort(), ["one", "two"]);
   });
 
-  test("fingerprint changes when _meta.json changes (drop → invalidated after TTL)", () => {
+  test("a superseding entry retires the old one after TTL", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
-      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+      "body");
     assert.equal(collectCandidates(dir, { now: T0 }).length, 1);
-    // Drop the entry by rewriting _meta.json.
-    const metaFile = path.join(dir, ".claude", "memory", "2026", "07", "01", "_meta.json");
-    const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
-    meta["one.md"].dropped = "evicted";
-    fs.writeFileSync(metaFile, JSON.stringify(meta) + " "); // size must change
-    assert.equal(collectCandidates(dir, { now: T0 + 60_000 }).length, 0);
+    mkMemory(dir, "2026/07/02", "one", FM("one", "first", "project") + "merged_from: 2026/07/01/one.md\n", "body");
+    assert.deepEqual(collectCandidates(dir, { now: T0 + 60_000 }).map((c) => c.relPath), ["2026/07/02/one.md"]);
   });
 
   test("within TTL the cache is served without re-stating the tree (bounded staleness)", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
-      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+      "body");
     assert.equal(collectCandidates(dir, { now: T0 }).length, 1);
     // A memory write lands within the TTL window.
     mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
-      "body", { accessed: "2026-07-21", count: 1, tier: "short" });
+      "body");
     const info = {};
     const withinTtl = collectCandidates(dir, { now: T0 + 1000, info });
     assert.equal(withinTtl.length, 1); // stale — the tree was not re-walked
@@ -280,7 +264,7 @@ describe("collectCandidates cache", () => {
 
   test("TTL expiry with unchanged tree reuses candidates (fingerprint still guards correctness)", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
-      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+      "body");
     const first = collectCandidates(dir, { now: T0 });
     const info = {};
     const second = collectCandidates(dir, { now: T0 + 60_000, info });
@@ -291,7 +275,7 @@ describe("collectCandidates cache", () => {
 
   test("useCache:false bypasses the cache", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
-      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+      "body");
     const cands = collectCandidates(dir, { useCache: false });
     assert.equal(cands.length, 1);
   });
@@ -320,7 +304,7 @@ describe("recall.js CLI", () => {
 
   test("emits additionalContext for a matching prompt", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "commit message style rules", "feedback"),
-      "Use conventional commits with double quotes.", { accessed: "2026-07-20", count: 3, tier: "short" });
+      "Use conventional commits with double quotes.");
 
     const r = run({ prompt: "how do I write git commit messages?", cwd: dir, session_id: "s1" });
     assert.equal(r.status, 0);
@@ -332,7 +316,7 @@ describe("recall.js CLI", () => {
 
   test("emits additionalContext for a fully Chinese prompt (CJK recall)", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "提交信息风格约定", "feedback"),
-      "使用约定式提交。", { accessed: "2026-07-20", count: 3, tier: "short" });
+      "使用约定式提交。");
     const r = run({ prompt: "提交信息应该怎么写？", cwd: dir, session_id: "s1" });
     assert.equal(r.status, 0);
     const out = JSON.parse(r.stdout);
@@ -347,15 +331,15 @@ describe("recall.js CLI", () => {
 
   test("Codex UserPromptSubmit recalls the same scoped memories", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "commit style", "feedback"),
-      "body", { accessed: "2026-07-20", count: 3, tier: "short" });
+      "body");
     const r = run(
       { prompt: "git commit style", cwd: dir },
       { CLAUDE_PLUGIN_ROOT: "/home/u/.codex/plugins/cache/cc-market/rem/1.0.0" },
     );
     assert.equal(r.status, 0);
     assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /Relevant memories/);
-    const meta = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'memory', '2026', '07', '01', '_meta.json'), 'utf8'));
-    assert.equal(meta['git-conventions.md'].count, 4, 'an actually injected memory records semantic access');
+    assert.deepEqual(fs.readdirSync(path.join(dir, '.claude', 'memory', '2026', '07', '01')), ['git-conventions.md'],
+      'recall writes nothing beside the entry it read');
   });
 
   test("exits 0 on malformed stdin (never breaks the session)", () => {
@@ -372,7 +356,7 @@ describe("recall.js CLI", () => {
   test("runs well under the latency budget", () => {
     for (let i = 0; i < 30; i++) {
       mkMemory(dir, "2026/07/01", `entry-${i}`, FM(`entry-${i}`, `memory about topic${i} git`, "project"),
-        "body ".repeat(50), { accessed: "2026-07-20", count: 1, tier: "short" });
+        "body ".repeat(50));
     }
     const t0 = Date.now();
     const r = run({ prompt: "tell me about git", cwd: dir, session_id: "s1" });
@@ -421,7 +405,7 @@ describe("telemetry", () => {
 
   test("a CLI run leaves a completed telemetry row; --telemetry prints it", () => {
     mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
-      "body", { accessed: "2026-07-20", count: 1, tier: "short" });
+      "body");
     const r = spawnSync(process.execPath, [RECALL_JS], {
       input: JSON.stringify({ prompt: "git commit style", cwd: dir }),
       encoding: "utf8",
