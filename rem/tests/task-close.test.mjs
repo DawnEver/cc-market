@@ -114,6 +114,21 @@ describe('close archives with git mv; nothing is lost', () => {
   });
 });
 
+describe('close validates everything before its first write', () => {
+  it('a taken archive path refuses the close and leaves TASK.md and JOURNAL.md untouched', () => {
+    const root = repo();
+    worked(root);
+    ok(task(root, 'close-item', 'O1', 'done', '--task', 'alpha'));
+    const dir = path.join(root, '.claude', 'tasks', 'alpha');
+    const before = ['TASK.md', 'JOURNAL.md'].map(f => fs.readFileSync(path.join(dir, f), 'utf8'));
+    fs.mkdirSync(path.join(root, '.claude', 'memory', ...todayPath.split('/'), 'task-alpha'), { recursive: true });
+    const r = task(root, 'close', 'alpha', '--journal-only', 'D1,D2');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /exists/);
+    assert.deepEqual(['TASK.md', 'JOURNAL.md'].map(f => fs.readFileSync(path.join(dir, f), 'utf8')), before);
+  });
+});
+
 describe('an archived task has the memory architecture', () => {
   function archived() {
     const root = repo();

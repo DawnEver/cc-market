@@ -201,14 +201,17 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
     throw new Error(`${missing.map(n => `D${n}`).join(', ')} not distilled — cite tasks/${slug}/JOURNAL.md#Dn from a memory entry `
       + '(remember.js --from), a rule or a bound doc, or keep them in the journal only (--journal-only D<n>,...)');
   }
-  const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
-  appendJournal(start, slug, 'closed', `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`, { date });
-  setTaskStatus(start, slug, 'closed');
-
+  // Everything is validated before the first write: a refused close changes nothing.
   const root = findProjectRoot(start);
   const [y, m, d] = date.split('-');
   const dest = join(root, '.claude', 'memory', y, m, d, `task-${slug}`);
-  if (existsSync(dest)) throw new Error(`${dest} exists`);
+  if (existsSync(dest)) throw new Error(`${dest} exists — the task stays open`);
+  const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
+  const line = `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`;
+  if (/[\r\n]/.test(line)) throw new Error('a close reason is one line');
+
+  appendJournal(start, slug, 'closed', line, { date });
+  setTaskStatus(start, slug, 'closed');
   mkdirSync(dirname(dest), { recursive: true });
   const moved = spawnSync('git', ['mv', task.dir, dest], { cwd: root, encoding: 'utf8' });
   if (moved.status !== 0) renameSync(task.dir, dest); // untracked or no git: a plain move
