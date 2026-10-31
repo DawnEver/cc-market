@@ -4,7 +4,7 @@
 //
 //   node remember.js --name <kebab-slug> --type <user|feedback|project|reference>
 //                    --body <text> [--scope <dir|auto>] [--description <text>]
-//                    [--corrects <paths>] [--supersedes <paths>]
+//                    [--corrects <paths>] [--supersedes <paths>] [--task <slug>]
 //   (body may also be piped on stdin instead of --body; <paths> is a comma list of
 //    YYYY/MM/DD/<slug>.md entries of the same scope)
 //
@@ -12,13 +12,15 @@
 // An entry is written once and never edited: a correction or a restatement is a new
 // entry that names the old one (`corrects:` keeps it visible and flags it,
 // `supersedes:` hides it). An identical re-run is a no-op; a different body under an
-// existing name is refused. Prints the created file path.
+// existing name is refused. The entry carries `task: <slug>` of the bound task (--task, else
+// the worktree/branch name; see tasks.mjs). Prints the created file path.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import {
   findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs,
 } from './lib.mjs';
+import { resolveTask } from './tasks.mjs';
 
 const TYPES = new Set(['user', 'feedback', 'project', 'reference']);
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -34,7 +36,7 @@ function yamlScalar(s) {
 
 function usage(msg) {
   if (msg) console.error(`[remember] ${msg}`);
-  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--corrects <paths>] [--supersedes <paths>]');
+  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--corrects <paths>] [--supersedes <paths>] [--task <slug>]');
   process.exit(1);
 }
 
@@ -50,6 +52,7 @@ const type = argValue('--type');
 const scopeArg = argValue('--scope') || 'auto';
 const description = argValue('--description');
 const refs = { corrects: list('--corrects'), supersedes: list('--supersedes') };
+const taskArg = argValue('--task');
 let body = argValue('--body');
 
 if (args.includes('--update')) usage('--update is gone: an entry is never edited — write a new entry with --corrects or --supersedes');
@@ -77,6 +80,10 @@ if (!isInsideDir(memDir, file)) {
   process.exit(1);
 }
 
+// ── The bound task, if any ──
+const task = resolveTask(scopeRoot, { task: taskArg });
+if (taskArg && !task) usage(`--task ${taskArg} is not an open task`);
+
 // ── Provenance targets must be entries of this scope ──
 const known = new Set(listEntries(scopeRoot).map(e => e.path));
 for (const p of [...refs.corrects, ...refs.supersedes]) {
@@ -94,6 +101,7 @@ const desc = description
 // metadata.type is nested YAML — recall and the index read it as metadata.type;
 // a flat dotted key would be invisible to them (feedback would lose its weight).
 const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\n`
+  + (task ? `task: ${task}\n` : '')
   + formatRefs(refs)
   + `metadata:\n  type: ${type}\n---\n\n${body}`;
 

@@ -5,6 +5,8 @@ REM sleep for Claude Code and Codex sessions — consolidate learnings into `.cl
 The injected memory index lists user/feedback entries plus the newest 15; recall searches
 every visible entry. Reading memory never writes.
 
+**Tasks** (`.claude/tasks/<slug>/`): only the user opens or closes one (`/rem:task open|close`); a session binds to one task (`--task`, or its worktree/branch name) and appends to its append-only `JOURNAL.md` with `task.js log|decide|open-item|close-item|handoff`. → `skills/rem/reference/tasks.md`.
+
 ## Install
 
 ```shell

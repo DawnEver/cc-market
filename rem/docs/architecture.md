@@ -7,6 +7,7 @@ that area.
 ## Architecture
 
 ```
+PreToolUse → task-guard.js (refuses an agent opening/closing a task or rewriting its files)
 SessionStart → inject-rules.js (Codex-only: feed host .claude/rules into context)
             → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)
 PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart source=compact)
@@ -27,6 +28,11 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
     ├── If visible entries ≥ CRYSTALLIZE_ADVISORY → crystallize into .claude/rules/rem/ (ledger hides the sources)
     │   └── check-docs.js — audit doc freshness after crystallization
     ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
+
+  /rem:task command (user only; command expansion, not a tool call):
+    ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
+    └── close <slug>          → task.js close
+  task.js log|decide|open-item|close-item|handoff → append to the bound task's JOURNAL.md
 
   /todo skill (user-facing task management):
     ├── /todo        → task-engine.js report  (scans memory directly)
@@ -65,8 +71,9 @@ excerpts the saved facts were paid for.
 
 ```
 rem/
-├── hooks/          hooks.json + rem-hook.js
-├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, scope-split.js,
+├── hooks/          hooks.json + rem-hook.js + task-guard.js
+├── commands/       task.md (/rem:task, user only)
+├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs, scope-split.js,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, task-engine.js, task-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── migrations/     migrate.mjs (one-shot move to the tree-only lifecycle; --dry-run)

@@ -8,7 +8,7 @@ SessionStart runs the inject / memo-listing hooks (it writes nothing) (Codex com
 PostCompact re-lists memos on Claude Code; UserPromptSubmit runs recall on both hosts; Stop fires
 `rem-hook.js`, gated after ≥3 stops AND (≥2 min session OR ≥30s + substantive edits), which
 requests the REM skill. The skill runs user-gated checks first, then uses a context-inheriting
-fork on Claude or the current session on Codex. `/todo` drives `task-engine.js`. Full
+fork on Claude or the current session on Codex. The user's `/rem:task open|close` drives `task.js` (a PreToolUse hook refuses an agent doing it); `/todo` drives `task-engine.js`. Full
 lifecycle flow diagram → `docs/architecture.md` § Architecture.
 
 Memory lifecycle → `skills/rem/reference/memory-conventions.md`. Nothing writes on read; the index is derived.

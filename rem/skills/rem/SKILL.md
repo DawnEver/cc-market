@@ -53,6 +53,7 @@ Core scripts the happy-path invokes — full table with all scripts and flags �
 - Crystallize procedure (current `--check` advisory threshold; user-gated distill) → `reference/crystallize.md`
 - Scope-split procedure (large scope; relocate a cluster into a child scope) → `reference/scope-split.md`
 - Standard-pass walkthrough + Lightweight variant → `reference/standard-procedure.md`
+- Tasks layer (user-opened tasks, binding, the append-only journal) → `reference/tasks.md`
 
 ---
 

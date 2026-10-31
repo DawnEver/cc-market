@@ -11,6 +11,13 @@ is never edited either: a correction or restatement is a NEW entry naming the ol
 (`corrects:` flags it; `supersedes:` / `merged_from:` hide it) — visibility is derived, the file stays.
 `scope-split.js` moves files between scopes (a rename, not a removal).
 
+## Only the user opens a task; a journal is append-only
+
+`.claude/tasks/<slug>/TASK.md` is written only by the user's `/rem:task open|close` (command
+expansion, not a tool call). `hooks/task-guard.js` refuses an agent writing a `TASK.md`, rewriting a
+`JOURNAL.md`, or running `task.js open|close` — keep that hook registered and its planted-control
+test (`tests/tasks.test.mjs`) green. A journal grows only by `appendJournal()` (O_APPEND).
+
 ## Hook pending-work gate
 
 `rem-hook.js` gates Stop-hook state advancement on `hasPendingWork` (background tasks or
