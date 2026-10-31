@@ -100,6 +100,11 @@ Only when a human asks to **triage now** route OPEN findings through `shared/att
 `todo mark <SR-ID> fixed` flips `**Status:**` and re-derives the frontmatter (same as
 `post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>`). File ownership → `reference/task-system.md`.
 
+A finding disposed WITHOUT a fix (intended, false positive) travels to the forge PR review as a
+commit trailer, one per engine id: `git commit --trailer "$(node "<root>/scripts/post-review.js"
+--dispose <F-id> --reason "<one line>")"` writes `Review-Disposed: <F-id> -- <reason>`; the PR
+review passes those ids to the engine as disposed.
+
 ## Phase 2 — Task Audit
 
 1. Run `todo` — review open findings against code changed this session (`⚠ likely-resolved`).
