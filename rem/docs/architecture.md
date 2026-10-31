@@ -7,25 +7,25 @@ that area.
 ## Architecture
 
 ```
-SessionStart → prune-memory.js --evict-stale
+SessionStart → index-memory.js --quiet (derive every scope's MEMORY.md; writes only on change)
             → inject-rules.js (Codex-only: feed host .claude/rules into context)
             → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)
 PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart source=compact)
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
-  UserPromptSubmit → recall.js (both hosts: heuristic recall → additionalContext; semantic access touch)
+  UserPromptSubmit → recall.js (both hosts: heuristic recall → additionalContext; read-only)
      ↓
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
   /rem skill:
     ├── main loop: run user-gated crystallize/scope-split checks first (a fork can't prompt)
     ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
-    │   keeps prune/prep/stamp/memory-write noise out of the main session) → returns a one-line recap
-    ├── rem-prep.js — scan transcript, bump accessed, suggest promotions
-    ├── Model summarizes learnings → writes memory files
-    ├── Update MEMORY.md index
-    ├── If ≥20 entries → crystallize into .claude/rules/rem/
+    │   keeps prep/memory-write noise out of the main session) → returns a one-line recap
+    ├── rem-prep.js — read-only: entries read this session, retired-awaiting counts, advisory
+    ├── Model summarizes learnings → writes memory files, naming superseded ones in merged_from
+    ├── retire-memory.js --execute → index-memory.js
+    ├── If live entries ≥ CRYSTALLIZE_ADVISORY → crystallize into .claude/rules/rem/ (ledger retires the sources)
     │   └── check-docs.js — audit doc freshness after crystallization
     ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
 
@@ -37,12 +37,12 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
     └── /todo check  → task-engine.js report  (report includes stats)
 ```
 
-Three-tier memory system (rules / long-term / short-term) → `skills/rem/reference/memory-conventions.md`.
+Memory lifecycle (rules + dated entries; supersede / merge / crystallize → retire) → `skills/rem/reference/memory-conventions.md`.
 
 ## Living docs
 
 **Living docs** are a *separate collection* from dated event memory: mutable, code-anchored,
-refreshed in place, never evicted. Kept out of the memory tree, so prune/eviction never touches
+refreshed in place, never retired. Kept out of the memory tree, so retirement never touches
 them — the opposed-lifecycle conflict is solved by separation, not a special case. The tracked
 doc frontmatter carries only the semantic binding (`doc_source` + optional thresholds);
 discovery is by that signature via `git ls-files` (honoring `.gitignore`). All volatile state is
@@ -67,9 +67,10 @@ excerpts the saved facts were paid for.
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js
-├── scripts/        lib.mjs, stamp-memory.js, remember.js, merge-memory.js, prune-memory.js, touch-memory.js, crystallize.js, scope-split.js,
+├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, retire-memory.js, crystallize.js, scope-split.js,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, task-engine.js, task-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
+├── migrations/     migrate.mjs (one-shot move to the tree-only lifecycle; --dry-run)
 ├── tests/          *.test.mjs (see AGENTS.md § Testing)
 ├── docs/           architecture.md (this file — the dev reference behind AGENTS.md)
 ├── .claude/rules/  invariants only

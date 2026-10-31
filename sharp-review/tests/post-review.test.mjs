@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -98,9 +98,14 @@ test('a persisted review survives gate-write failure without falsely acknowledgi
     writeFileSync(stateFile, JSON.stringify({ reviewGate: { pending: {
       token: 'claim', hashes: { diff: 'content' }, expiresAt: Date.now() + 60000,
     } } }));
-    mkdirSync(stateFile + '.tmp');
-    assert.throws(() => run(dir, plan({ gate_token: 'claim' }),
-      { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] }), /persist.*gate/i);
+    // Refuse the atomic state write on every OS: a read-only target blocks the rename on
+    // Windows, a read-only directory blocks the temp file on POSIX.
+    chmodSync(stateFile, 0o444);
+    if (process.platform !== 'win32') chmodSync(join(dir, '.claude'), 0o555);
+    try {
+      assert.throws(() => run(dir, plan({ gate_token: 'claim' }),
+        { run_id: 'run-1', results: [{ name: 'diff', findings: [] }] }), /persist.*gate/i);
+    } finally { chmodSync(join(dir, '.claude'), 0o755); chmodSync(stateFile, 0o644); }
     assert.match(readFileSync(reportFile(dir), 'utf8'), /sharp-review/);
     const state = JSON.parse(readFileSync(stateFile, 'utf8'));
     assert.equal(state.reviewGate.pending.token, 'claim');

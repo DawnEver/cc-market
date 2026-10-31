@@ -22,7 +22,7 @@ Most plugins run on **both** hosts. What each does and where it runs:
 
 | Plugin | What it gives you | Claude Code | Codex |
 |---|---|---|---|
-| [`rem`](rem/README.md) | Memory pruning, session summarization, crystallization, automatic eviction | yes | yes (SessionStart hook injects `.claude/rules`) |
+| [`rem`](rem/README.md) | Memory that converges: session summarization, supersession, crystallization, derived index | yes | yes (SessionStart hook injects `.claude/rules`) |
 | [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync | yes | yes |
 | [`evolve`](evolve/README.md) | Iterative review→fix loop (depends on `sharp-review` + `rem`) | yes | yes |
 | [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |

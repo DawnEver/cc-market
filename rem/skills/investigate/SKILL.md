@@ -29,7 +29,7 @@ Research-only mode — understand before acting. When invoked:
 
 4. **Index the new memory file:**
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/index-memory.js
    ```
 
 ## Constraints

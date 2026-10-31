@@ -13,24 +13,15 @@ Brief summary only:
 
 ## Standard
 
-### 0. Run rem-prep (automated mechanical work)
+### 0. Run rem-prep (read-only report)
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>" --promote
+node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>"
 ```
 
-This single command does all of:
-- Shows recent prune events (demotions, evictions)
-- Scans transcript for `.claude/memory/` file reads → batch-touches `accessed` timestamps and bumps metadata `count`
-- Auto-promotes short-term entries with metadata `count >= 3` to `tier: long`
-- Reports crystallize status against the full catalog using the script's current advisory threshold
-
-Review the output. Re-promote any entries that were demoted but you referenced this session.
-
-Structured Claude/Codex file-read events are recognized; arbitrary shell commands are
-not parsed to guess file access. Recall records access when it actually injects a memory.
-After a manual raw-shell memory read, call `touch-memory.js <relative-memory-path>` when
-that memory informed the task. Do not touch unrelated files merely mentioned in output.
+It lists the memory entries this session read and, per scope, the live entry count, entries
+already named in a live `merged_from` (awaiting retirement), and the crystallize advisory.
+It writes nothing.
 
 ### 1. Summarize
 
@@ -38,28 +29,21 @@ that memory informed the task. Do not touch unrelated files merely mentioned in 
 2. How it was validated (tests run, manual checks, edge cases)
 3. Any open blockers or follow-up items
 
-### 2. Update project memory
+### 2. Update project memory — converge, do not pile up
 
-- `.claude/memory/YYYY/MM/DD/` — add/update content files under date directory
-- If the user explicitly asked to remember something this session and it was NOT already
-  saved inline via `remember.js`, save it now with `remember.js` (see
-  `memory-conventions.md` § When memory is written) rather than hand-writing the file
-- Run `stamp-memory.js` to auto-index new files:
+- New learning → a new `.claude/memory/YYYY/MM/DD/<slug>.md` (or `remember.js` when the user
+  asked to remember something).
+- If it changes what an entry read in step 0 says, the new entry SUPERSEDES it: list the old
+  path(s) under `merged_from:`. Never edit an old entry to correct it.
+- Duplicates → `merge-memory.js --into <live> --from <dups>`.
+- Then delete what is now named:
   ```bash
-  node ${CLAUDE_PLUGIN_ROOT}/scripts/stamp-memory.js
+  node ${CLAUDE_PLUGIN_ROOT}/scripts/retire-memory.js            # dry run
+  node ${CLAUDE_PLUGIN_ROOT}/scripts/retire-memory.js --execute
+  node ${CLAUDE_PLUGIN_ROOT}/scripts/index-memory.js
   ```
 
 ### 3. Update project docs if needed
 
 - If crystallize ran: `check-docs.js` already flagged stale docs above — update them now
 - If no crystallize: use judgment — update `AGENTS.md`, `README.md`, etc. if architecture, directory layout, setup steps, or hook behaviour changed this session
-
-### 4. Re-run rem-prep (catch this session's own memory work)
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>" --promote
-```
-
-Steps 1-3 above read/edit `.claude/memory/` files (e.g. consolidating entries during crystallize).
-Re-running rem-prep here bumps `accessed`/`access_count` for those files too — step 0 only
-saw memory files touched *before* `/rem` started, not the ones touched *during* it.

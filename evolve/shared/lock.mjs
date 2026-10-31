@@ -1,7 +1,7 @@
 // shared/lock.mjs — cross-process lease lock via exclusive-create lockfile
-// Guards read-modify-write sections of shared mutable files (.rem-state.json,
-// _meta.json, MEMORY.md) against concurrent hook/script runs on both hosts.
-// Pure Node, sync API (matches the sync fs style of state.mjs / stamp.mjs).
+// Guards read-modify-write sections of shared mutable files (.rem-state.json and
+// other plugin state) against concurrent hook/script runs on both hosts.
+// Pure Node, sync API (matches the sync fs style of state.mjs).
 //
 // Acquire: fs.open(lockFilePath(lockPath), 'wx') writing {pid, at, token}.
 // EEXIST: steal the lock if older than staleMs (crashed holder), else retry with
