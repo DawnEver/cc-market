@@ -47,3 +47,24 @@ describe('writeIfChanged', () => {
     assert.equal(readFileSync(file, 'utf8'), 'b');
   });
 });
+
+describe('atomicWriteFile failure', () => {
+  it('a rename that keeps failing throws and leaves no temp file behind', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    const target = join(dir, 'busy');
+    writeFileSync(join(dir, 'keep'), 'x');
+    // A non-empty directory can never be renamed over: every retry fails.
+    mkdtempSync(join(dir, 'busy-'));
+    const busy = readdirSync(dir).find(n => n.startsWith('busy-'));
+    writeFileSync(join(dir, busy, 'f'), 'y');
+    assert.throws(() => atomicWriteFile(join(dir, busy), 'payload'));
+    assert.deepEqual(readdirSync(dir).filter(n => n.endsWith('.tmp')), []);
+    assert.ok(!target.endsWith('.tmp'));
+  });
+
+  it('a write that throws leaves no partial temp file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    assert.throws(() => atomicWriteFile(join(dir, 'x.txt'), Symbol('not writable')));
+    assert.deepEqual(readdirSync(dir), []);
+  });
+});
