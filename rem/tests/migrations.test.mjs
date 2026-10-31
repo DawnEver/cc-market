@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import childProcess from 'node:child_process';
 import { migrate } from '../migrations/migrate.mjs';
 
 describe('rem migrate()', () => {
@@ -86,5 +87,53 @@ describe('rem migrate()', () => {
     }
     await migrate(projectRoot);
     for (const [rel, text] of Object.entries(files)) assert.equal(fs.readFileSync(path.join(projectRoot, rel), 'utf8'), text, rel);
+  });
+});
+
+describe('rem migration plan (four layers)', () => {
+  let root;
+  const { spawnSync } = childProcess;
+  const write = (rel, text) => { const f = path.join(root, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); return f; };
+  const snapshot = () => Object.fromEntries(walk(root).map(f => [f, fs.readFileSync(f, 'utf8')]));
+  const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.name === '.git' ? [] : e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-plan-'));
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    write('.claude/memory/2026/10/01/an-entry.md', '---\nname: an-entry\ndescription: d\naccessed: 2026-10-28\ntier: hot\ncount: 3\ncreated: 2026-10-01\n---\n\naccessed: body text stays\n');
+    write('.claude/memory/2026/10/02/manual-tasks.md', '---\nname: manual\n---\n\n- [ ] M-1 [HIGH] Open one (2026-10-02)\n- [x] M-2 [LOW] Closed one (2026-10-02)\n');
+    write('.claude/memory/2026/10/03/HANDOFF-x.md', '---\nname: h\n---\nb\n');
+    write('.claude/memory/2026/10/03/PLAN-y.md', '---\nname: p\n---\nb\n');
+    write('src/.claude/memory/2026/10/04/DECISIONS-z.md', '---\nname: z\naccessed: 2026-10-04\n---\nb\n');
+    spawnSync('git', ['add', '-A'], { cwd: root });
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  test('a dry run plans the strip, the adoption and the classes, and writes nothing', async () => {
+    const before = snapshot();
+    const { plan } = await migrate(root, { dryRun: true });
+    assert.deepEqual(snapshot(), before, 'a dry run writes nothing');
+    assert.deepEqual(plan.strip.map(s => [s.path, s.fields]), [
+      ['.claude/memory/2026/10/01/an-entry.md', ['accessed', 'tier', 'count']],
+      ['src/.claude/memory/2026/10/04/DECISIONS-z.md', ['accessed']],
+    ]);
+    assert.deepEqual(plan.legacyTodos, [{ path: '.claude/memory/2026/10/02/manual-tasks.md', open: 1, closed: 1 }]);
+    assert.deepEqual(plan.classified.map(c => [c.path, c.prefix]), [
+      ['.claude/memory/2026/10/03/HANDOFF-x.md', 'HANDOFF'],
+      ['.claude/memory/2026/10/03/PLAN-y.md', 'PLAN'],
+      ['src/.claude/memory/2026/10/04/DECISIONS-z.md', 'DECISIONS'],
+    ]);
+    assert.deepEqual(plan.deletes, []);
+  });
+
+  test('applying strips only frontmatter volatile fields and deletes nothing', async () => {
+    const files = Object.keys(snapshot());
+    await migrate(root);
+    const after = snapshot();
+    assert.deepEqual(Object.keys(after).filter(f => !f.endsWith('.gitignore')), files.filter(f => !f.endsWith('.gitignore')));
+    const entry = after[path.join(root, '.claude/memory/2026/10/01/an-entry.md')];
+    assert.doesNotMatch(entry.split('---')[1], /^(accessed|tier|count):/m);
+    assert.match(entry, /^created: 2026-10-01$/m);
+    assert.match(entry, /accessed: body text stays/);
   });
 });

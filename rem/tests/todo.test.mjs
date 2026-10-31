@@ -145,6 +145,18 @@ describe('adopting a legacy checkbox file', () => {
     ok(todo(root, 'adopt', '.claude/memory/2026/06/20/manual.md'));
     assert.equal(items(root).length, 2, 'adopting twice adds nothing');
   });
+
+  it('--dry-run lists the open items it would adopt and writes nothing, even when the backlog is the tracker', () => {
+    const root = repo();
+    const manual = path.join(root, '.claude', 'memory', '2026', '06', '20', 'manual.md');
+    fs.mkdirSync(path.dirname(manual), { recursive: true });
+    fs.writeFileSync(manual, '- [ ] MANUAL-1 [HIGH] Fix the flaky gate (2026-06-20)\n- [x] MANUAL-2 [LOW] Done (2026-06-20)\n');
+    fs.writeFileSync(path.join(root, '.claude', 'rem.json'), '{"backlog":"issues"}');
+    const r = ok(todo(root, 'adopt', '--dry-run', '.claude/memory/2026/06/20/manual.md'));
+    assert.match(r.stdout, /would adopt 1 open item/);
+    assert.match(r.stdout, /memory\/2026\/06\/20\/manual\.md#MANUAL-1 \[HIGH\] Fix the flaky gate/);
+    assert.equal(fs.existsSync(path.join(root, '.claude', 'todo')), false);
+  });
 });
 
 describe('stale bound docs', () => {
