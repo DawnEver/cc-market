@@ -80,7 +80,7 @@ describe('the PreToolUse guard (second line) refuses every planted bypass', () =
     'cd .claude/tasks/x && echo > TASK.md',
     `python -c "open('.claude/tasks/x/TASK.md','w')"`,
     `python3 -c "import os; os.makedirs('.claude/tasks/x')"`,
-    'echo {} > "$TMP/rem-task-authority/abc.json"',
+    'echo {} >> ~/.claude/rem/authority/abc.jsonl',
   ]) it(cmd, () => assert.ok(bash(cmd)));
 
   it('still allows reading tasks and appending through task.js', () => {
@@ -127,7 +127,7 @@ describe('the authority store: under the home directory, append-only, detectable
     const logs = fs.readdirSync(STORE()).filter(f => f.endsWith('.jsonl'));
     assert.ok(logs.length >= 1);
     if (process.platform !== 'win32') assert.equal(fs.statSync(STORE()).mode & 0o777, 0o700);
-    assert.ok(!fs.existsSync(path.join(os.tmpdir(), 'rem-task-authority', 'never')));
+    assert.ok(decideTaskGuard({ tool_name: 'Write', tool_input: { file_path: path.join(STORE(), 'x.jsonl') } }).deny, 'the guard covers the store');
   });
 
   it('the history only grows: a consumed grant stays, marked consumed', () => {

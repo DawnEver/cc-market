@@ -3,7 +3,8 @@
 // A task is a directory .claude/tasks/<slug>/ at the project root:
 //   TASK.md     goal, scope, owner, status — written only by the user's /rem:task command
 //   JOURNAL.md  append-only: dated progress, decisions Dn, open items On, handoffs
-// Only the user opens or closes a task (hooks/task-guard.js refuses an agent). A session
+// Opening/closing needs the user's authority record (authority.mjs): refused by default,
+// detectable when bypassed, not preventable by the same OS user. A session
 // works on ONE task, bound by the user's instruction (--task) or by its worktree/branch
 // name, and appends only to that task's journal.
 
@@ -97,7 +98,7 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   if (!SLUG_RE.test(slug)) throw new Error(`task slug must be kebab-case, got: ${slug}`);
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
   if (existsSync(taskFile(start, slug))) throw new Error(`task ${slug} exists`);
-  const authority = consumeAuthority(start, 'open', slug); // only the user's own prompt grants it
+  const authority = consumeAuthority(start, 'open', slug); // the user's /rem:task prompt grants it
   mkdirSync(join(tasksDir(start), slug), { recursive: true });
   writeFileSync(taskFile(start, slug), [
     '---',
@@ -143,7 +144,7 @@ export function appendJournal(start, slug, tag, text, { date = todayISO(), allow
   return line.trimEnd();
 }
 
-// Status is the one TASK.md field that moves after open; only the user's command moves it.
+// Status is the one TASK.md field that moves after open; the user's close command moves it.
 function setTaskStatus(start, slug, status) {
   const file = taskFile(start, slug);
   const text = readFileSync(file, 'utf8');
@@ -212,7 +213,7 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
   const line = `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`;
   if (/[\r\n]/.test(line)) throw new Error('a close reason is one line');
-  const authority = consumeAuthority(start, 'close', slug); // only the user's own prompt grants it
+  const authority = consumeAuthority(start, 'close', slug); // the user's /rem:task prompt grants it
 
   appendJournal(start, slug, 'closed', `${line} (authority ${authority})`, { date });
   setTaskStatus(start, slug, 'closed');

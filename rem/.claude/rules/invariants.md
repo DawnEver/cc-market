@@ -11,13 +11,16 @@ is never edited either: a correction or restatement is a NEW entry naming the ol
 (`corrects:` flags it; `supersedes:` / `merged_from:` hide it) — visibility is derived, the file stays.
 `scope-split.js` moves nothing: an entry's path is part of its identity.
 
-## Only the user opens a task; a journal is append-only
+## Opening/closing a task: refused by default, detectable when bypassed; a journal is append-only
 
-`openTask` / `closeTask` refuse without a user-authority record that only the user's own
+`openTask` / `closeTask` refuse without an authority record that the user's own
 `/rem:task open|close <slug>` prompt creates (`hooks/task-authority.js`, `scripts/authority.mjs`);
-never add a path around that check. `hooks/task-guard.js` (second line) refuses an agent writing a `TASK.md`, rewriting a
+never add a path around that check. A bypass is detectable: `scope-validate.mjs` checks every
+task's `authority:` id against the append-only history in `~/.claude/rem/authority/`, and git
+history shows who wrote TASK.md. Limit: the hook and an agent's shell run as the same OS user, so a determined agent can
+forge a record; preventing that would need a privilege boundary. `hooks/task-guard.js` (second line) refuses an agent writing a `TASK.md`, rewriting a
 `JOURNAL.md`, or running `task.js open|close` — keep that hook registered and its planted-control
-test (`tests/tasks.test.mjs`) green. A journal grows only by `appendJournal()` (O_APPEND). Close
+tests (`tests/tasks.test.mjs`, `tests/task-authority.test.mjs`) green. A journal grows only by `appendJournal()` (O_APPEND). Close
 distills first, then ARCHIVES the task by `git mv` into `.claude/memory/<date>/task-<slug>/` —
 never a delete (`closeTask()`).
 

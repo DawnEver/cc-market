@@ -10,24 +10,36 @@ replaces state spread over dated memory files. Present only where a repo has
   JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
 ```
 
-## Open — the user only
+## Open — refused by default, detectable when bypassed
 
 `/rem:task open <slug> "<goal>" [--scope <paths>] [--owner <who>]` — a user slash command
 (`commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
-User authority is a precondition of the library itself: `openTask` / `closeTask` consume a
-record that only the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit)
-records a prompt that IS `/rem:task open|close <slug> …` (verb, slug, prompt hash, session,
-time) in `os.tmpdir()/rem-task-authority/`, outside the repo; a record matches exactly one verb
-and slug, expires after 30 minutes and is consumed on use. The consumed id is written into
-`TASK.md` (`authority:`) and the journal's opened/closed line, and `scope-validate.mjs` reports
-a task whose TASK.md lacks it (written around the library). `hooks/task-guard.js` (PreToolUse)
+An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
+grant that the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit) appends a
+`granted` event for a prompt that IS `/rem:task open|close <slug> …` (verb, slug, prompt hash,
+session, time) to `~/.claude/rem/authority/<project>.jsonl` (directory 0o700, owner checked on
+POSIX; never a shared temp dir). A grant matches exactly one verb and slug, is live for 30
+minutes, and is spent by a `consumed` event; the history is append-only. The consumed id is
+written into `TASK.md` (`authority:`) and the journal's opened/closed line.
+
+Detection: `scope-validate.mjs` errors when a task's id is missing, absent from the history, or
+was not consumed by opening that task; `git log -- .claude/tasks/<slug>/TASK.md` shows who wrote it.
+
+Limit: the hook and an agent's shell run as the same OS user, so a determined agent can
+forge a record; preventing that would need a privilege boundary. `hooks/task-guard.js` (PreToolUse)
 is the second line: it refuses an agent writing a `TASK.md`, rewriting a `JOURNAL.md`, running
 `task.js open|close` in any argument order, importing the task library or the authority store,
 or pointing an interpreter or shell write at `.claude/tasks/`. To start a task, propose it to
 the user. On Codex the user types the same `/rem:task …` prompt (the hook records it) and the
 session then runs `task.js open …`.
+
+**The one live check** (the hook's prompt shape): start a session with
+`REM_AUTHORITY_PROBE=1`, type `/rem:task open probe`, read
+`~/.claude/rem/authority/probe.jsonl`, and pin the observed prompt in
+`tests/task-authority.test.mjs`. If the prompt arrives in another shape than
+`/rem:task open probe`, `parseTaskCommand()` must accept it.
 
 ## Bind — one task per session
 

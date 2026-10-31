@@ -31,7 +31,7 @@ PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart sou
     │   └── check-docs.js — audit doc freshness after crystallization
     ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
 
-  /rem:task command (user only; command expansion, not a tool call):
+  /rem:task command (the user's; an agent is refused by default, a bypass is detected):
     ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
     └── close <slug>          → task.js close: refuse until distilled, then git mv into
                                 .claude/memory/<date>/task-<slug>/ (hidden, kept)
@@ -74,7 +74,7 @@ excerpts the saved facts were paid for.
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js + task-guard.js
-├── commands/       task.md (/rem:task, user only)
+├── commands/       task.md (/rem:task, the user's command)
 ├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs, scope-split.js,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, todo.js, todo-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md

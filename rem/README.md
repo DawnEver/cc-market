@@ -5,7 +5,7 @@ REM sleep for Claude Code and Codex sessions — consolidate learnings into `.cl
 The derived index (`.claude/memory-index.md`, outside `rules/`) is read on demand; recall injects
 the visible entries and bound docs of the scope being worked on, plus the bound task — never another task's memory unless the prompt names it. Reading memory never writes.
 
-**Tasks** (`.claude/tasks/<slug>/`): only the user opens or closes one (`/rem:task open|close`); a session binds to one task (`--task`, or its worktree/branch name) and appends to its append-only `JOURNAL.md` with `task.js log|decide|open-item|close-item|handoff`. Closing distills the decisions into docs, rules and memory entries first, then archives the task by `git mv` into `.claude/memory/<date>/task-<slug>/`. → `skills/rem/reference/tasks.md`.
+**Tasks** (`.claude/tasks/<slug>/`): opening or closing one without the user's `/rem:task open|close` prompt is refused by default and detectable when bypassed (an agent running as the same OS user could still forge it); a session binds to one task (`--task`, or its worktree/branch name) and appends to its append-only `JOURNAL.md` with `task.js log|decide|open-item|close-item|handoff`. Closing distills the decisions into docs, rules and memory entries first, then archives the task by `git mv` into `.claude/memory/<date>/task-<slug>/`. → `skills/rem/reference/tasks.md`.
 
 **Todo** — one backlog: a task's open items are journal lines; a repo backlog item is an issue where `.claude/rem.json` says `{"backlog": "issues"}` (then `/todo` is a read-only view), else one file per item in `.claude/todo/`, archived into memory when closed. No checkboxes in memory. → `skills/todo/SKILL.md`.
 

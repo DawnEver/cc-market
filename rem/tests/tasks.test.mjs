@@ -1,4 +1,4 @@
-// tasks.test.mjs — the tasks layer: only the user opens (and closes) a task, a session
+// tasks.test.mjs — the tasks layer: an agent opening or closing a task is refused, a session
 // binds to one task, and its JOURNAL.md is append-only.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -112,7 +112,7 @@ describe('binding', () => {
   });
 });
 
-describe('only the user opens a task', () => {
+describe('an agent opening a task is refused', () => {
   const deny = (payload) => decideTaskGuard(payload).deny;
   const write = (tool, file) => ({ tool_name: tool, tool_input: { file_path: file } });
   const bash = (command, tool = 'Bash') => ({ tool_name: tool, tool_input: { command } });
@@ -144,7 +144,7 @@ describe('only the user opens a task', () => {
     const r = spawnSync(process.execPath, [GUARD], { input: JSON.stringify(write('Write', '/r/.claude/tasks/x/TASK.md')), encoding: 'utf8' });
     const out = JSON.parse(r.stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, 'deny');
-    assert.match(out.permissionDecisionReason, /only the user opens/i);
+    assert.match(out.permissionDecisionReason, /the user's \/rem:task open\|close command/);
     const ok = spawnSync(process.execPath, [GUARD], { input: JSON.stringify(write('Write', '/r/src/a.js')), encoding: 'utf8' });
     assert.equal(ok.stdout, '');
   });

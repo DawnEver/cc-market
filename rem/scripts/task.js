@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // task.js — the tasks layer CLI.
 //
-// User-only (the /rem:task command; hooks/task-guard.js refuses an agent running them):
+// The user's (/rem:task; refused by default without its authority record, see authority.mjs):
 //   task.js open <slug> "<goal>" [--scope <paths>] [--owner <who>]
 //   task.js close <slug> ["<reason>"] [--journal-only D<n>,...]
 //     refuses while an item is open or a decision is undistilled, then archives the task
