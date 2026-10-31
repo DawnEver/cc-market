@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import {
-  findMemoryScope, parseFrontmatter, rebuildIndex, dateToPath, formatRefs, listEntries,
+  findMemoryScope, parseFrontmatter, rebuildIndex, dateToPath, formatRefs, listEntries, writeOnce,
 } from './lib.mjs';
 
 const PREFIX = '[merge-memory]';
@@ -65,9 +65,7 @@ function main(argv) {
   if (argv.includes('--dry-run')) { process.stdout.write(merged); return; }
   const rel = `${dateToPath()}/${name}.md`;
   const file = join(memDir, rel);
-  if (existsSync(file)) { console.error(`${PREFIX} ${rel} exists — an entry is never edited; pick another --name`); process.exit(1); }
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, merged, 'utf8');
+  if (!writeOnce(file, merged)) { console.error(`${PREFIX} ${rel} exists — an entry is never edited; pick another --name`); process.exit(1); }
   rebuildIndex(scope);
   console.log(`${PREFIX} ${rel} folds ${from.length} entr${from.length === 1 ? 'y' : 'ies'}; sources kept on disk, hidden`);
 }

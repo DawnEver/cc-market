@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import {
-  findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs,
+  findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs, writeOnce,
 } from './lib.mjs';
 import { resolveTask } from './tasks.mjs';
 
@@ -110,15 +110,12 @@ const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\n`
   + formatRefs(refs)
   + `metadata:\n  type: ${type}\n---\n\n${body}`;
 
-// ── Written once ──
-if (existsSync(file)) {
+// ── Written once (O_EXCL: a racing writer of the same name loses) ──
+if (!writeOnce(file, content)) {
   if (readFileSync(file, 'utf8') === content) { console.log(file); process.exit(0); }
   console.error(`[remember] ${relPath} exists with different content — an entry is never edited.`);
   console.error('[remember] write a new entry under another --name, with --corrects or --supersedes naming this one');
   process.exit(1);
 }
-
-mkdirSync(dirname(file), { recursive: true });
-writeFileSync(file, content, 'utf8');
 rebuildIndex(scopeRoot);
 console.log(file);

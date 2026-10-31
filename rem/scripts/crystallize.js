@@ -17,7 +17,7 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import { join, dirname, basename } from 'path';
 import {
   remRulesDir, scopeMemoryDir as memoryDir, scopeRoot, CRYSTALLIZE_ADVISORY,
-  listEntries, hiddenEntries, rebuildIndex, dateToPath, formatRefs,
+  listEntries, hiddenEntries, rebuildIndex, dateToPath, formatRefs, writeOnce,
 } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -92,12 +92,10 @@ if (mode === '--execute') {
 
   const { relPath, content } = ledgerEntry(basename(rule), paths);
   const file = join(memoryDir, relPath);
-  if (existsSync(file)) {
+  if (!writeOnce(file, content)) {
     console.error(`[crystallize] ${relPath} exists — one crystallize per rule per day`);
     process.exit(1);
   }
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content, 'utf8');
   rebuildIndex(scopeRoot);
   console.log(`[crystallize] ${relPath} records the rule; ${paths.length} entr${paths.length === 1 ? 'y' : 'ies'} hidden, kept on disk`);
   if (srIds.size) console.log(`[crystallize] SR findings now in the rule: ${[...srIds].join(', ')}`);

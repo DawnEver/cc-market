@@ -179,3 +179,24 @@ describe('recall carries corrections', () => {
     assert.match(ctx, /It is 7\./);
   });
 });
+
+describe('write-once under a race', () => {
+  it('two writers over the same 200 names: each name is won by exactly one, and stays whole', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-once-'));
+    const lib = new URL('../scripts/lib.mjs', import.meta.url).href;
+    const script = `import { writeOnce } from ${JSON.stringify(lib)};
+      let won = 0;
+      for (let i = 0; i < 200; i++) if (writeOnce(process.argv[1] + '/n' + i + '.md', process.argv[2].repeat(5000))) won++;
+      console.log(won);`;
+    const { spawn } = await import('node:child_process');
+    const go = c => new Promise(done => {
+      let out = '';
+      const p = spawn(process.execPath, ['--input-type=module', '-e', script, dir, c]);
+      p.stdout.on('data', d => { out += d; });
+      p.on('exit', () => done(Number(out.trim())));
+    });
+    const won = await Promise.all([go('A'), go('B')]);
+    assert.equal(won[0] + won[1], 200);
+    for (let i = 0; i < 200; i++) assert.match(fs.readFileSync(path.join(dir, `n${i}.md`), 'utf8'), /^(A{5000}|B{5000})$/);
+  });
+});

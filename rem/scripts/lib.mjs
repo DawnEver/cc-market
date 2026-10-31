@@ -1,7 +1,7 @@
 // lib.mjs — shared module for REM memory system
 // Single source of truth for paths, frontmatter, entries, derived visibility and the derived index.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, renameSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, statSync, writeFileSync, renameSync } from 'fs';
 import { join, dirname, resolve, relative, basename, sep } from 'path';
 import { findProjectRoot as _findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { loadState as _loadState, saveState as _saveState } from '../shared/state.mjs';
@@ -349,6 +349,15 @@ export function renderIndex(scopeRoot, entries = listEntries(scopeRoot)) {
 // converge, and an unchanged index is never rewritten.
 export function rebuildIndex(scopeRoot) {
   return writeIfChanged(indexFilePath(scopeRoot), renderIndex(scopeRoot));
+}
+
+// Write a NEW file, exclusively (O_EXCL): true when this call created it, false when the
+// name already exists. Check and create are one syscall, so two writers racing for one
+// name never both succeed and never interleave bytes. Memory is written only this way.
+export function writeOnce(file, content) {
+  mkdirSync(dirname(file), { recursive: true });
+  try { writeFileSync(file, content, { encoding: 'utf8', flag: 'wx' }); return true; }
+  catch (err) { if (err.code === 'EEXIST') return false; throw err; }
 }
 
 // ── File collection ──
