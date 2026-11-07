@@ -9,7 +9,6 @@ On-demand detail behind SKILL.md. The METHOD itself is ai-lab's data, in the dir
 | `method.json` | `schema_version`; pick rule; contexts → template + call mode; run modes (providers, models, synthesis, sink); reviewer-status rules; merge and id spec |
 | `profiles.json` | every built-in profile: `key`, `label`, `source`, `weight`, `context`, `framing`, `scope` |
 | `prompts/*.md` | the prompt templates (`{{name}}` placeholders) |
-| `principles.json` | the principles reviewers judge against; with the family rule registry (`dev_lab.dev.rules`, read at load) the ids a finding's `rule` may name |
 | `finding.schema.json` | what each reviewer finding must satisfy |
 | `findings-output.schema.json` | the merged findings JSON contract; its `description`s define every field, status and the versioning rule |
 | `conformance/` | inputs paired with expected outputs; ai-lab's planner and merge are tested against them |
@@ -22,7 +21,7 @@ Every key is optional:
 
 ```json
 {
-  "stopHook":            true,
+  "stopHook":            false,
   "profileWeights":      { "architecture": 0.35, "diff": 0.45 },
   "customProfiles":      [ /* see "Custom profiles" */ ],
   "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
@@ -33,8 +32,9 @@ Every key is optional:
 }
 ```
 
-`stopHook: false` stops the Stop hook dispatching a review in that repo -- set it where a forge
-already reviews every PR, so one change is not reviewed twice. `/sharp-review` still runs on demand.
+The Stop hook dispatches a review only where `stopHook: true` (default `false`; the env
+`SHARP_REVIEW_STOP_HOOK=1|0` overrides it). Leave it off where a forge already reviews every PR, so one
+change is not reviewed twice. `/sharp-review` still runs on demand.
 
 ## Run modes and providers
 
@@ -81,8 +81,8 @@ manual run); the draw order is then shuffled against the provider order. Set a w
 A profile's `context` decides its prompt: `diff` profiles review the diff (inline when it fits
 `inlineDiffLimit`, else a manifest the reviewer explores, skipped when nothing reviewable is
 left); `explore` profiles (`architecture`, `docs`, `deps`) explore the repo with no diff. Every
-prompt renders the `rules` partial: judge against the principles in the method's
-`principles.json`, the family registry rule ids, and the repository's own CLAUDE.md / AGENTS.md /
+prompt renders the `rules` partial: judge against the reviewed project's principles
+(its `.claude/rules/principles.md`, passed to ai-lab as `--principles`; the ids a finding's `rule` may name), and the repository's own CLAUDE.md / AGENTS.md /
 `.claude/rules/`, and tag each finding (findings v3) with `severity` (HIGH/MEDIUM/LOW), `security`
 and the ONE `rule` id it violates (an unknown id drops the finding), plus the verbatim `anchor` line.
 The finding id is `F-<12 hex>` of rule, file and anchor -- the same in every run. The report lists

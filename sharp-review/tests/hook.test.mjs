@@ -86,7 +86,7 @@ test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-codex-stop-'));
   const hook = fileURLToPath(new URL('../hooks/sharp-review-hook.js', import.meta.url));
   const run = (extra = {}, env = {}) => spawnSync(process.execPath, [hook], {
-    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_HOME: dir, CODEX_THREAD_ID: 'stale', CLAUDE_PLUGIN_ROOT: '', ...env },
+    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_HOME: dir, CODEX_THREAD_ID: 'stale', CLAUDE_PLUGIN_ROOT: '', SHARP_REVIEW_STOP_HOOK: '1', ...env },
     input: JSON.stringify({ session_id: 'parent', thread_id: 'actual', turn_id: 'turn', hook_event_name: 'Stop', ...extra }),
     encoding: 'utf8', windowsHide: true,
   });
@@ -109,11 +109,19 @@ test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('stopHook:false in the committed config keeps the Stop hook from dispatching a review', () => {
+test('stopHookEnabled: off by default, the committed key turns it on, the env overrides both', async () => {
+  const { stopHookEnabled } = await import('../hooks/sharp-review-hook.js');
+  assert.equal(stopHookEnabled({}, {}), false, 'off by default');
+  assert.equal(stopHookEnabled({ stopHook: true }, {}), true);
+  assert.equal(stopHookEnabled({}, { SHARP_REVIEW_STOP_HOOK: '1' }), true);
+  assert.equal(stopHookEnabled({ stopHook: true }, { SHARP_REVIEW_STOP_HOOK: '0' }), false);
+});
+
+test('without stopHook:true the Stop hook never dispatches a review', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-stop-off-'));
   const hook = fileURLToPath(new URL('../hooks/sharp-review-hook.js', import.meta.url));
   const run = () => spawnSync(process.execPath, [hook], {
-    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_HOME: dir, CODEX_THREAD_ID: 'actual', CLAUDE_PLUGIN_ROOT: '' },
+    cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CODEX_HOME: dir, CODEX_THREAD_ID: 'actual', CLAUDE_PLUGIN_ROOT: '', SHARP_REVIEW_STOP_HOOK: '' },
     input: JSON.stringify({ session_id: 'parent', thread_id: 'actual', turn_id: 'turn', hook_event_name: 'Stop' }),
     encoding: 'utf8', windowsHide: true,
   });

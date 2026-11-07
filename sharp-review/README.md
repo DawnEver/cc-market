@@ -31,8 +31,10 @@ node scripts/setup/setup.js
 
 ## Usage
 
-Run `/sharp-review` after finishing a feature (Codex: invoke the skill). The Stop hook
-evaluates deterministic change/source thresholds on every eligible turn and requests one
+Run `/sharp-review` after finishing a feature (Codex: invoke the skill). Automatic review
+from the Stop hook is **off by default**: switch it on per repo with `"stopHook": true` in
+`.claude/sharp-review.json`, or per shell with `SHARP_REVIEW_STOP_HOOK=1` (`=0` forces it off).
+Once on, the Stop hook evaluates deterministic change/source thresholds on every eligible turn and requests one
 review pass. It does not invoke a hidden Claude classifier or a model just to decide depth.
 Codex claims and REM coordination use actual execution-thread identity, not a shared
 parent session ID. Unknown execution identity skips automatic review continuation.

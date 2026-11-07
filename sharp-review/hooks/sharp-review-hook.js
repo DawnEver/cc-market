@@ -161,6 +161,15 @@ function loadThresholds(config) {
 
 function readTranscriptTail(transcriptPath, maxLines = 40) { return _readTranscriptTail(transcriptPath, maxLines); }
 
+// The Stop hook reviews only where it is switched on: `stopHook: true` in the tracked
+// .claude/sharp-review.json, or SHARP_REVIEW_STOP_HOOK=1 (=0 forces it off). Default off -- a forge
+// or the user reviews; /sharp-review always works.
+export function stopHookEnabled(config, env = {}) {
+  if (env.SHARP_REVIEW_STOP_HOOK === '1') return true;
+  if (env.SHARP_REVIEW_STOP_HOOK === '0') return false;
+  return config?.stopHook === true;
+}
+
 export function reviewBlocked(input, facts, state, now = Date.now(), env = {}) {
   const key = hookSessionKey(input, env);
   if (!key && isCodexHost(env)) return true;
@@ -173,7 +182,7 @@ async function main() {
   const input = readStdinJSON();
   projectDir = findProjectRoot(input.cwd || process.cwd());
   const reviewCfg = loadReviewConfig(projectDir);
-  if (reviewCfg.stopHook === false) return; // the repo declares another reviewer (e.g. its forge); /sharp-review stays manual
+  if (!stopHookEnabled(reviewCfg, process.env)) return;
   unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
   const transcript = input.transcript_path ? readTranscriptTail(input.transcript_path) : [];
   const facts = normalizeHookFacts(transcript, input);
