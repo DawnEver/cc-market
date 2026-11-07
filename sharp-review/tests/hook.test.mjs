@@ -1,5 +1,5 @@
 /**
- * Tests for sharp-review/hooks/sharp-review-hook.js — findGitRoot.
+ * Tests for the Stop hook: hooks/sharp-review-hook.js (entry) + scripts/stop-review.mjs.
  * Run: node --test cc-market/sharp-review/tests/hook.test.mjs
  */
 
@@ -14,9 +14,8 @@ import { fileURLToPath } from 'node:url';
 import {
   buildDispatchInstruction,
   reviewBlocked,
-  findGitRoot,
   resolveReviewWorkerTarget,
-} from "../hooks/sharp-review-hook.js";
+} from "../scripts/stop-review.mjs";
 import { claimReview, completeReview } from '../scripts/gate.mjs';
 
 describe('native lifecycle and deterministic review gate', () => {
@@ -105,12 +104,12 @@ test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a
     assert.equal(state.reviewGate.pending.sessionId, 'actual');
     assert.equal(run().status, 0, 'an existing claim prevents repeat dispatch');
     assert.equal(run({ stop_hook_active: true }).status, 0);
-    assert.doesNotMatch(fs.readFileSync(hook, 'utf8'), /spawnSync\(['"]claude/);
+    assert.doesNotMatch(fs.readFileSync(fileURLToPath(new URL('../scripts/stop-review.mjs', import.meta.url)), 'utf8'), /spawnSync\(['"]claude/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('stopHookEnabled: off by default, the committed key turns it on, the env overrides both', async () => {
-  const { stopHookEnabled } = await import('../hooks/sharp-review-hook.js');
+  const { stopHookEnabled } = await import('../scripts/lib/config.mjs');
   assert.equal(stopHookEnabled({}, {}), false, 'off by default');
   assert.equal(stopHookEnabled({ stopHook: true }, {}), true);
   assert.equal(stopHookEnabled({}, { SHARP_REVIEW_STOP_HOOK: '1' }), true);
@@ -138,61 +137,6 @@ test('without stopHook:true the Stop hook never dispatches a review', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-describe("findGitRoot", () => {
-  let savedEnv;
-
-  beforeEach(() => {
-    savedEnv = process.env.CLAUDE_PROJECT_DIR;
-    delete process.env.CLAUDE_PROJECT_DIR;
-  });
-
-  afterEach(() => {
-    if (savedEnv) process.env.CLAUDE_PROJECT_DIR = savedEnv;
-    else delete process.env.CLAUDE_PROJECT_DIR;
-  });
-
-  test("walks up from subdirectory to find .git", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sr-test-"));
-    try {
-      fs.mkdirSync(path.join(tmp, ".git"));
-      fs.mkdirSync(path.join(tmp, "sub"));
-      assert.equal(findGitRoot(path.join(tmp, "sub")), tmp);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("returns dir itself when it has .git", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sr-test-"));
-    try {
-      fs.mkdirSync(path.join(tmp, ".git"));
-      assert.equal(findGitRoot(tmp), tmp);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("returns startDir unchanged when no .git found", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sr-test-"));
-    try {
-      assert.equal(findGitRoot(tmp), tmp);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("walks up multiple levels to find .git", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sr-test-"));
-    try {
-      fs.mkdirSync(path.join(tmp, ".git"));
-      const deep = path.join(tmp, "a", "b", "c");
-      fs.mkdirSync(deep, { recursive: true });
-      assert.equal(findGitRoot(deep), tmp);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-});
 
 describe("buildDispatchInstruction", () => {
   test("resolves the dedicated sharp-review agent outside Codex", () => {
@@ -227,7 +171,7 @@ describe("buildDispatchInstruction", () => {
   });
 });
 
-import { contentHash, freshSources, resolvePluginRoot } from "../hooks/sharp-review-hook.js";
+import { contentHash, freshSources, resolvePluginRoot } from "../scripts/stop-review.mjs";
 
 describe("content-hash gate", () => {
   test("contentHash is independent of entry order and sensitive to content", () => {

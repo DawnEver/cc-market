@@ -32,3 +32,12 @@ export function loadReviewConfig(root) {
     return {};
   }
 }
+
+// The Stop hook reviews only where it is switched on: `stopHook: true` in the tracked
+// .claude/sharp-review.json, or SHARP_REVIEW_STOP_HOOK=1 (=0 forces it off). Default off -- a forge
+// or the user reviews; /sharp-review always works.
+export function stopHookEnabled(config, env = {}) {
+  if (env.SHARP_REVIEW_STOP_HOOK === '1') return true;
+  if (env.SHARP_REVIEW_STOP_HOOK === '0') return false;
+  return config?.stopHook === true;
+}
