@@ -9,9 +9,9 @@ that area.
 ```
 UserPromptSubmit → task-authority.js (records the user's own /rem:task open|close prompt)
 PreToolUse → task-guard.js (refuses an agent opening/closing a task or rewriting its files)
-SessionStart → inject-rules.js (Codex-only: feed host .claude/rules into context)
-            → memo.js list --hook (saved facts with FRESH/STALE vs their sources' blob hashes)
-PostCompact → memo.js list --hook (Claude; Codex restores via SessionStart source=compact)
+SessionStart → session-context.js (one process: on Codex, host .claude/rules via rules-context.js;
+               on both, saved memos with FRESH/STALE vs their sources' blob hashes; nothing saved → silent)
+PostCompact → session-context.js (memos; Claude only — Codex restores via SessionStart source=compact)
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
@@ -66,17 +66,17 @@ the git blob hashes of the sources it depends on, so re-reading it costs one cal
 (gitignored by migrate; per-worktree by construction). CLI: `save <name> (--file f [--lines a,b] |
 --cmd "..." --from paths...)` / `get <name> [--refresh]` / `list`. A `--cmd` memo without `--from` is
 REFUSED — a memo with guessed sources would report FRESH on a stale value. SessionStart and PostCompact
-run `list --hook` (never exits non-zero); PostCompact is the moment a compaction has dropped the
+list them through `hooks/session-context.js` (silent when nothing is saved, never exits non-zero; every source hashed in one `git hash-object` call); PostCompact is the moment a compaction has dropped the
 excerpts the saved facts were paid for.
 
 ## File Structure
 
 ```
 rem/
-├── hooks/          hooks.json + rem-hook.js + task-guard.js
+├── hooks/          hooks.json + rem-hook.js + task-guard.js + task-authority.js + session-context.js
 ├── commands/       task.md (/rem:task, the user's command)
 ├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs, scope-split.js,
-│                   rem-prep.js, check-docs.js, doc-freshness.js, inject-rules.js, recall.js, memo.js, todo.js, todo-lib.mjs, scope-validate.mjs
+│                   rem-prep.js, check-docs.js, doc-freshness.js, rules-context.js, recall.js, memo.js, todo.js, todo-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── migrations/     migrate.mjs (one-shot move to the tree-only lifecycle; --dry-run)
 ├── tests/          *.test.mjs (see AGENTS.md § Testing)

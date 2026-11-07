@@ -4,7 +4,7 @@ Memory management plugin for Claude Code sessions. Rules (always injected) and d
 
 ## Architecture — at a glance
 
-SessionStart runs the inject / memo-listing hooks (it writes nothing) (Codex compact restores context);
+SessionStart runs `session-context.js` — Codex rules + memo listing in one process (it writes nothing) (Codex compact restores context);
 PostCompact re-lists memos on Claude Code; UserPromptSubmit runs recall on both hosts; Stop fires
 `rem-hook.js`, gated after ≥3 stops AND (≥2 min session OR ≥30s + substantive edits), which
 requests the REM skill. The skill runs user-gated checks first, then uses a context-inheriting

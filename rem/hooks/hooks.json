@@ -17,12 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.js\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/memo.js\" list --hook",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-context.js\"",
             "timeout": 5
           }
         ]
@@ -33,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/memo.js\" list --hook",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-context.js\"",
             "timeout": 5
           }
         ]

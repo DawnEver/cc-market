@@ -6,7 +6,7 @@
 //   node memo.js save ladder --cmd "python probe.py" --from src/hamilton/accuracy.py
 //   node memo.js get band            # value + FRESH, or STALE naming the changed source
 //   node memo.js list                # one line each: name, FRESH/STALE, age
-//   node memo.js list --hook         # SessionStart/PostCompact form: never exits non-zero
+// SessionStart/PostCompact list the memos through hooks/session-context.js (memoLines).
 //
 // WHY AN INVALIDATION KEY AND NOT A SCRATCHPAD. A written fact does not
 // invalidate itself when its source changes, so a note is cheap and silently
@@ -31,7 +31,6 @@ import { join, resolve } from 'path';
 import { atomicWriteFile } from '../shared/atomic-write.mjs';
 import { findMemoryScope, isInsideDir } from './lib.mjs';
 import { isMain } from "../shared/lib.mjs";
-import { isCodexHost } from './inject-rules.js';
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -42,27 +41,37 @@ export function storeDir(scopeRoot = findMemoryScope()) {
   return join(scopeRoot, '.claude', 'memo');
 }
 
-/** `git hash-object` of path, or null when it cannot be hashed.
- *  The file's CONTENT hash, not its mtime: a touched-but-unchanged file is not
- *  a change, and a reverted edit is not one either. mtime says "something
- *  happened to this file", which is a different question and the one that
- *  produces false STALEs. */
+/** `git hash-object` of every existing path in ONE git process: Map path -> hash
+ *  (null when it cannot be hashed). The file's CONTENT hash, not its mtime: a
+ *  touched-but-unchanged file is not a change, and a reverted edit is not one
+ *  either. mtime says "something happened to this file", which is a different
+ *  question and the one that produces false STALEs. */
+export function blobHashes(paths) {
+  const hashes = new Map(paths.map((p) => [p, null]));
+  const present = [...hashes.keys()].filter((p) => existsSync(p));
+  if (!present.length) return hashes;
+  const out = spawnSync(GIT, ['hash-object', '--', ...present], { encoding: 'utf8', windowsHide: true });
+  if (out.status !== 0) return hashes;
+  const lines = out.stdout.trim().split('\n');
+  if (lines.length !== present.length) return hashes;
+  present.forEach((p, i) => hashes.set(p, lines[i].trim() || null));
+  return hashes;
+}
+
 export function blobHash(path) {
-  if (!existsSync(path)) return null;
-  const out = spawnSync(GIT, ['hash-object', '--', path], { encoding: 'utf8', windowsHide: true });
-  if (out.status !== 0) return null;
-  return out.stdout.trim() || null;
+  return blobHashes([path]).get(path);
 }
 
 /** The content hash of every named source, keyed by the spelling the caller used. */
 export function sourcesState(sources) {
-  return Object.fromEntries(sources.map((s) => [s, blobHash(s)]));
+  return Object.fromEntries(blobHashes(sources));
 }
 
-/** Sources whose content hash no longer matches what was saved. */
-export function drift(memo) {
+/** Sources whose content hash no longer matches what was saved; `hashes` may be
+ *  precomputed for many memos at once. */
+export function drift(memo, hashes = blobHashes(Object.keys(memo.sources))) {
   return Object.entries(memo.sources)
-    .filter(([source, was]) => blobHash(source) !== was)
+    .filter(([source, was]) => hashes.get(source) !== was)
     .map(([source]) => source);
 }
 
@@ -83,7 +92,7 @@ function usage(msg) {
     'Usage:\n' +
       '  node memo.js save <name> (--file <path> [--lines START,END] | --cmd <shell> --from <path>...)\n' +
       '  node memo.js get <name> [--refresh]\n' +
-      '  node memo.js list [--hook]',
+      '  node memo.js list',
   );
   process.exit(1);
 }
@@ -171,46 +180,24 @@ function cmdGet(name, rest) {
   return changed.length && !refresh ? 2 : 0;
 }
 
-function hookEventName() {
-  try {
-    const input = JSON.parse(readFileSync(0, 'utf8'));
-    return input.hook_event_name || input.hookEventName || 'SessionStart';
-  } catch {
-    return 'SessionStart';
-  }
-}
-
-function cmdList({ hook = false } = {}) {
-  // PostCompact accepts common JSON fields but not SessionStart-specific context.
-  if (hook && isCodexHost() && hookEventName() === 'PostCompact') {
-    process.stdout.write('{}');
-    return 0;
-  }
-  const store = storeDir();
-  if (!existsSync(store)) {
-    if (!hook || !isCodexHost()) console.log('[memo] nothing saved');
-    return 0;
-  }
-  const files = readdirSync(store).filter((f) => f.endsWith('.json')).sort();
-  if (!files.length) {
-    if (!hook || !isCodexHost()) console.log('[memo] nothing saved');
-    return 0;
-  }
-  const lines = [];
-  for (const f of files) {
-    const memo = JSON.parse(readFileSync(join(store, f), 'utf8'));
-    const changed = drift(memo);
+/** One line per saved memo (name, FRESH/STALE, age, size) — every source of every
+ *  memo hashed in one git call. [] when nothing is saved. */
+export function memoLines(store = storeDir()) {
+  if (!existsSync(store)) return [];
+  const memos = readdirSync(store).filter((f) => f.endsWith('.json')).sort()
+    .map((f) => JSON.parse(readFileSync(join(store, f), 'utf8')));
+  const hashes = blobHashes([...new Set(memos.flatMap((m) => Object.keys(m.sources)))]);
+  return memos.map((memo) => {
+    const changed = drift(memo, hashes);
     const age = (Date.now() / 1000 - (memo.saved_at || 0)) / 60;
     const state = changed.length ? `STALE (${changed.length} source(s) moved)` : 'FRESH';
-    lines.push(`${memo.name.padEnd(24)} ${state.padEnd(28)} ${String(Math.round(age)).padStart(6)} min  ${memo.value.length} chars`);
-  }
-  if (hook && isCodexHost()) {
-    process.stdout.write(JSON.stringify({ hookSpecificOutput: {
-      hookEventName: 'SessionStart', additionalContext: lines.join('\n'),
-    } }));
-  } else {
-    console.log(lines.join('\n'));
-  }
+    return `${memo.name.padEnd(24)} ${state.padEnd(28)} ${String(Math.round(age)).padStart(6)} min  ${memo.value.length} chars`;
+  });
+}
+
+function cmdList() {
+  const lines = memoLines();
+  console.log(lines.length ? lines.join('\n') : '[memo] nothing saved');
   return 0;
 }
 
@@ -221,23 +208,16 @@ function flagValue(args, flag) {
 
 function main() {
   const [action, name, ...rest] = process.argv.slice(2);
-  const hook = process.argv.includes('--hook');
-  try {
-    if (action === 'save') {
-      if (!name || !NAME_RE.test(name)) usage(`memo name must be a kebab-case slug, got: ${name || '(missing)'}`);
-      process.exit(cmdSave(name, rest));
-    }
-    if (action === 'get') {
-      if (!name) usage('get needs a memo name');
-      process.exit(cmdGet(name, rest));
-    }
-    if (action === 'list') process.exit(cmdList({ hook }));
-    usage(`unknown action: ${action || '(missing)'}`);
-  } catch (err) {
-    if (!hook) throw err;
-    // A hook miss must never break the session.
-    process.exit(0);
+  if (action === 'save') {
+    if (!name || !NAME_RE.test(name)) usage(`memo name must be a kebab-case slug, got: ${name || '(missing)'}`);
+    process.exit(cmdSave(name, rest));
   }
+  if (action === 'get') {
+    if (!name) usage('get needs a memo name');
+    process.exit(cmdGet(name, rest));
+  }
+  if (action === 'list') process.exit(cmdList());
+  usage(`unknown action: ${action || '(missing)'}`);
 }
 
 if (isMain(import.meta.url)) {

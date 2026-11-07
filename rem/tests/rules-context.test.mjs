@@ -1,6 +1,6 @@
 /**
- * Tests for rem/scripts/inject-rules.js — Codex .claude/rules injection.
- * Run: node --test cc-market/rem/tests/inject-rules.test.mjs
+ * Tests for rem/scripts/rules-context.js + hooks/session-context.js — Codex .claude/rules injection.
+ * Run: node --test cc-market/rem/tests/rules-context.test.mjs
  */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
@@ -12,15 +12,14 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  isCodexHost,
   collectRuleFiles,
-  buildRulesContext,
+  rulesContext,
   buildContextFromFiles,
-  isResume,
-  findGitRoot,
   findScopeChain,
   collectChainRuleFiles,
-} from "../scripts/inject-rules.js";
+} from "../scripts/rules-context.js";
+import { isCodexHost } from "../shared/hook-facts.mjs";
+import { isResume } from "../hooks/session-context.js";
 
 test('Codex compact restores project rules even with a large rollout, while resume/fork do not duplicate them', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-rules-lifecycle-'));
@@ -30,7 +29,7 @@ test('Codex compact restores project rules even with a large rollout, while resu
   fs.writeFileSync(path.join(root, '.claude', 'rules', 'main.md'), 'Keep the project invariant.');
   const transcript = path.join(root, 'large.jsonl');
   fs.writeFileSync(transcript, 'x'.repeat(1000));
-  const script = fileURLToPath(new URL('../scripts/inject-rules.js', import.meta.url));
+  const script = fileURLToPath(new URL('../hooks/session-context.js', import.meta.url));
   for (const source of ['startup', 'compact', 'clear', 'resume', 'fork']) {
     const r = spawnSync(process.execPath, [script], {
       cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PLUGIN_ROOT: path.join(root, '.codex', 'plugins', 'rem') },
@@ -102,7 +101,7 @@ describe("collectRuleFiles", () => {
   });
 });
 
-describe("buildRulesContext", () => {
+describe("rulesContext", () => {
   let dir;
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-rules-"));
@@ -112,7 +111,7 @@ describe("buildRulesContext", () => {
   });
 
   test("returns null when no rules", () => {
-    assert.equal(buildRulesContext(dir), null);
+    assert.equal(rulesContext(dir), null);
   });
 
   test("concatenates files with a header path per file", () => {
@@ -120,7 +119,7 @@ describe("buildRulesContext", () => {
     fs.mkdirSync(rules, { recursive: true });
     fs.writeFileSync(path.join(rules, "invariants.md"), "# Inv\nbody");
 
-    const ctx = buildRulesContext(dir);
+    const ctx = rulesContext(dir);
     assert.match(ctx, /\.claude[\\/]rules[\\/]invariants\.md/);
     assert.match(ctx, /# Inv\nbody/);
   });
@@ -164,32 +163,6 @@ describe("isResume", () => {
     assert.equal(isResume({ source: 'fork', transcript_path: f }), true);
     assert.equal(isResume({ source: 'compact', transcript_path: f }), false);
     assert.equal(isResume({ source: 'startup', transcript_path: f }), false);
-  });
-});
-
-describe("findGitRoot", () => {
-  let dir;
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-gitroot-"));
-  });
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  test("returns dir when .git exists at startDir", () => {
-    fs.mkdirSync(path.join(dir, ".git"));
-    assert.equal(findGitRoot(dir), dir);
-  });
-
-  test("walks up to find .git two levels above", () => {
-    fs.mkdirSync(path.join(dir, ".git"));
-    const deep = path.join(dir, "a", "b");
-    fs.mkdirSync(deep, { recursive: true });
-    assert.equal(findGitRoot(deep), dir);
-  });
-
-  test("falls back to startDir when no .git found", () => {
-    assert.equal(findGitRoot(dir), dir);
   });
 });
 
@@ -327,7 +300,7 @@ describe("buildContextFromFiles", () => {
   });
 });
 
-describe("inject-rules integration", () => {
+describe("rules-context integration", () => {
   let dir;
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "rem-integ-"));
