@@ -10,7 +10,7 @@ Approved by the user 2026-10-31 ("其他都同意 ... 坚决执行直到完成�
 principles, discard historical baggage, Occam, single source of truth, layered decoupling, names match behaviour,
 no backward compatibility. A first attempt (cc-market 1ac2468) deleted entries and was reverted (e283e5e).
 
-## Why (measured in motronics-studio, 2026-10-31)
+## Why (measured in <project>, 2026-10-31)
 
 - Recall WRITES: `_meta.json` on every prompt, and its lock writes anyway on timeout; it covers 149/2993 entries
   and lives per worktree.
@@ -20,7 +20,7 @@ no backward compatibility. A first attempt (cc-market 1ac2468) deleted entries a
 - 2993 entries (1942 in October), 82 indexed; nothing ever leaves the active set.
 - No TASK entity: a long-running agent's state is spread over dated files (the integrator's D1..D121 live in a file
   dated 2026-10-28 that grew until 10-31), and recall injects other tasks' memories into unrelated turns.
-- `rem todo` keeps checkboxes inside dated memory dirs (`manual.md`, `sharp-review.md`; 37 files in motronics):
+- `rem todo` keeps checkboxes inside dated memory dirs (`manual.md`, `sharp-review.md`; 37 files in <project>):
   mutable memory, and a second backlog beside the forge issue tracker, which already files review follow-ups.
 - `.claude/rules/MEMORY.md` (and 11 scoped copies) is a GENERATED hot list placed under `rules/`, so it loads every
   turn as if it were a rule, while `rules/` is hard constraints only (DOCS-SPLIT).
@@ -30,7 +30,7 @@ no backward compatibility. A first attempt (cc-market 1ac2468) deleted entries a
 | layer | answers | where | read | mutability | owner |
 |---|---|---|---|---|---|
 | rules | what must hold | `.claude/rules/` | every turn | revised, user approves | repo |
-| docs | how it works NOW | `docs/` (`docs-src/` in motronics) | on demand, by code path | changes with the code | code author |
+| docs | how it works NOW | `docs/` (`docs-src/` in <project>) | on demand, by code path | changes with the code | code author |
 | memory | why: what happened, was measured, was decided | `.claude/memory/<yyyy>/<mm>/<dd>/<name>` | scoped recall | immutable once written | scope |
 | tasks | what is being done, how far | `.claude/tasks/<slug>/` | every turn, by its agent | append-only journal | a user-opened task |
 
@@ -100,5 +100,5 @@ no backward compatibility. A first attempt (cc-market 1ac2468) deleted entries a
   `sharp-review.md` moved.
 - P6 dev-lab: the adds-only merge check, same-scope cited merges, MEMORY-SHAPE reworded (no `accessed`).
 - P7 a one-shot migration per repo (strip volatile fields; HANDOFF- / PLAN- / DECISIONS- into tasks or archived
-  tasks; todo files moved; NOTHING deleted): a dry run on motronics is shown to the user and applied after approval.
+  tasks; todo files moved; NOTHING deleted): a dry run on <project> is shown to the user and applied after approval.
 - The first task under the new layer is `integrator`: the D1..D121 journal moves to `.claude/tasks/integrator/JOURNAL.md`.
