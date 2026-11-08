@@ -97,6 +97,22 @@ content verbatim.
     it is itself the transferable finding (a scaling exponent, a ratio, a bound), and then
     without the operating point that produced it.
 
+16. **Established terminology, no coined terms.** Use the term the field already uses for a
+    concept (check a standard textbook or the cited papers) instead of inventing a descriptive
+    phrase; e.g. "first and second carrier groups" rather than "carrier band and double-carrier
+    band", "DC and AC copper loss" rather than "conductor DC and conductor AC". Keep type
+    descriptors attached to the noun they qualify: a winding is of hairpin type, so write "a
+    hairpin winding with two three-phase sets", not "two hairpin winding sets". Introduce a new
+    term only for a genuinely new concept, define it once, and say why no existing term fits.
+17. **Refer to the manuscript as "this paper".** Whatever the submission format (digest,
+    extended abstract, letter), the document calls itself "this paper", never "this digest" or
+    "this work" in alternation.
+18. **The introduction opens general and narrows.** The first sentence states the broad
+    context the reader already shares (e.g. the electrification trend and its demand on the
+    machine); each following sentence narrows by one level (application, machine class,
+    operating regime, problem) until the gap. Do not open on a technical specific such as an
+    operating regime or a component.
+
 ## Self-check before finishing a section
 
 - Every sentence is short enough to read aloud in one breath.
@@ -121,3 +137,7 @@ content verbatim.
 - Tables use full parameter names, one quantity per cell, and units in square brackets.
 - The abstract, introduction and conclusion carry no operating points, absolute values or
   fitted coefficients; those stay in the results.
+- Every technical term is the one the field uses; no coined phrases; type descriptors sit on
+  the right noun.
+- The manuscript calls itself "this paper".
+- The introduction's first sentence is general and each sentence narrows by one level.

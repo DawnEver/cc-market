@@ -32,6 +32,7 @@ Look for:
 - Statistical test mismatch, sample size too small for the claim.
 - Missing distribution plots (histograms, violins, box plots) when only bar charts are shown.
 - Truncated axes, missing error bars, captions that overclaim.
+- Terminology: coined terms where the field has an established one; type descriptors attached to the wrong noun.
 
 ### significance
 Significance — the increment over the closest prior work, the reader's takeaway, and whether the analysis and

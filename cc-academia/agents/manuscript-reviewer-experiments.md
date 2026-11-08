@@ -46,6 +46,8 @@ You are a sharp reviewer covering **experimental adequacy and figure/writing qua
 - **Misleading visual encoding** — bar widths, color choices that hide overlap, 3D pies, missing legends.
 - **Writing clarity** — undefined notation, claims without referent, unclear which numbers are the headline, structural confusion (results before method).
 
+- **Terminology.** Flag every coined term or phrase where the field has an established one (check the cited papers or a standard textbook), and type descriptors attached to the wrong noun ("two hairpin winding sets" for a hairpin winding with two sets). Give the established term in the suggested action.
+
 ## Output
 
 Write to `ongoing/<slug>/2-review/critiques/experiments.md`. Number every point sequentially (1, 2, 3, …) in descending severity order (Major → Minor → Nit). Format:
