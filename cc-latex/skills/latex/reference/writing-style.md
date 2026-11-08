@@ -87,6 +87,16 @@ content verbatim.
     ("Stator outer diameter [mm]") and leave the value cell as a bare number, so that every
     dimensional entry states its unit exactly once.
 
+15. **Detail follows position.** The abstract, the introduction and the conclusion state
+    what was found and why it holds: the mechanism, the direction of an effect, and its
+    relative size or validity condition. Case-specific detail stays in the results: the
+    operating point, the absolute value in watts or volts, the fitted coefficient, the count
+    of simulated points. Write "PWM adds a large share of the loss, and almost all of the
+    magnet loss comes from PWM" in the abstract, and give "1.67 kW at 450 N·m and
+    5000 r/min" in the results section. A number may appear in a general section only when
+    it is itself the transferable finding (a scaling exponent, a ratio, a bound), and then
+    without the operating point that produced it.
+
 ## Self-check before finishing a section
 
 - Every sentence is short enough to read aloud in one breath.
@@ -109,3 +119,5 @@ content verbatim.
   line before a new-topic paragraph.
 - Substantive deleted material has been copied to the project archive.
 - Tables use full parameter names, one quantity per cell, and units in square brackets.
+- The abstract, introduction and conclusion carry no operating points, absolute values or
+  fitted coefficients; those stay in the results.
