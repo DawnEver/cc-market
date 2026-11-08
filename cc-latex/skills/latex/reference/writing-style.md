@@ -113,6 +113,15 @@ content verbatim.
     operating regime, problem) until the gap. Do not open on a technical specific such as an
     operating regime or a component.
 
+19. **Write for the general practitioner of the field, and build up before use.** Assume a
+    reader who knows the field broadly but not the paper's specialty (e.g. a machine designer
+    who has not worked on multiphase control). Before a specialty concept is used in an
+    argument (a transformation, a subspace, a modulation spectrum), introduce it: what it is,
+    why it exists and what it implies, in that order, with its standard reference. Order the
+    background from the familiar to the special, so that each new concept rests only on
+    concepts already explained. A concept that appears in the abstract may be named there, but
+    it is explained in the body before the results rely on it.
+
 ## Self-check before finishing a section
 
 - Every sentence is short enough to read aloud in one breath.
@@ -141,3 +150,5 @@ content verbatim.
   the right noun.
 - The manuscript calls itself "this paper".
 - The introduction's first sentence is general and each sentence narrows by one level.
+- Every specialty concept is introduced (what, why, implication) before an argument uses it;
+  the background runs from familiar to special.
