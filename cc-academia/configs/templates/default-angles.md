@@ -1,6 +1,6 @@
 # Default critique angles
 
-Compact default set — four angles. Each maps to one reviewer agent under `.claude/agents/`. The angle gate (step 03) presents these plus high-hit-count library angles; the user adds, removes, or customises before fanout.
+Compact default set — five angles. Each maps to one reviewer agent under `.claude/agents/`. The angle gate (step 03) presents these plus high-hit-count library angles; the user adds, removes, or customises before fanout.
 
 ### novelty
 Novelty + related-work coverage. Decide whether each claimed contribution is genuinely new given what the paper cites — and what it omits.
@@ -33,8 +33,19 @@ Look for:
 - Missing distribution plots (histograms, violins, box plots) when only bar charts are shown.
 - Truncated axes, missing error bars, captions that overclaim.
 
+### significance
+Significance — the increment over the closest prior work, the reader's takeaway, and whether the analysis and
+mechanism generalise beyond the studied case.
+
+Look for:
+- A delta over prior work that is only a new case (machine, operating point, dataset) of a known effect.
+- No transferable takeaway: the conclusion restates case numbers instead of a rule or design guidance.
+- A mechanism tied to one design or operating point, with no stated validity conditions or evidence beyond it.
+- Prior work reporting the opposite trend, left unreconciled by the mechanism.
+- Generality claimed in the abstract that the evidence does not reach, or a general result buried as a case note.
+
 ### freestyle
-Wildcard. Invent a fresh angle the three above do not cover, tailored to **this** paper.
+Wildcard. Invent a fresh angle the four above do not cover, tailored to **this** paper.
 
 Examples (not a menu — pick something this paper specifically invites):
 - Ethics / societal impact
