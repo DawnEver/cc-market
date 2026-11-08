@@ -80,6 +80,13 @@ content verbatim.
     with its origin and deletion date. Archiving keeps superseded reasoning available
     for later comparison without leaving it in the compiled manuscript.
 
+14. **Tables: full names, one quantity per cell, units in brackets.** Write every parameter
+    name in full; never abbreviate it ("Stator outer diameter", not "Stator OD"). Give each
+    physical quantity its own row or cell; never pack two quantities into one cell with a slash
+    ("Slots / poles", "264.3 / 192 mm"). Put the unit in square brackets after the name
+    ("Stator outer diameter [mm]") and leave the value cell as a bare number, so that every
+    dimensional entry states its unit exactly once.
+
 ## Self-check before finishing a section
 
 - Every sentence is short enough to read aloud in one breath.
@@ -101,3 +108,4 @@ content verbatim.
 - After every display equation: no blank line before a where-style continuation, a blank
   line before a new-topic paragraph.
 - Substantive deleted material has been copied to the project archive.
+- Tables use full parameter names, one quantity per cell, and units in square brackets.
