@@ -157,6 +157,11 @@ content verbatim.
     the increment over the cited work follow from that. Describe a background section by
     what it does ("outlines", "reviews"), not "develops", unless it derives new results.
     Name the application (e.g. heavy-duty traction) in the paper's statement of purpose.
+24. **The roadmap is one sentence per section.** Close the introduction with the purpose
+    statement followed by the section roadmap in one paragraph; give each section one sentence
+    that states its role in the argument, not its findings, and do not repeat what the purpose
+    statement or the contribution sentences already say. Results belong to the abstract, the
+    results section and the conclusion.
 
 ## Self-check before finishing a section
 
@@ -190,6 +195,7 @@ content verbatim.
 - The manuscript calls itself "this paper".
 - No nested in-which/so-that clauses, no noun-clause subjects, no vague causal subjects or metaphors;
   no announced novelty; every sentence follows from its predecessor.
+- The roadmap gives one sentence per section, states roles not findings, and repeats nothing.
 - The first sentence of the abstract, the introduction and the conclusion is general, and each
   following sentence narrows by one level; no specialty symbol appears in the abstract before its
   role is stated in plain words.
