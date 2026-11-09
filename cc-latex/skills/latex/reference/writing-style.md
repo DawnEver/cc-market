@@ -135,6 +135,12 @@ content verbatim.
     their axes carry numbers.
     Explanatory notes ("one set shown", "set 2 shifted by ...") never appear inside a figure;
     they belong in the caption.
+21. **Figures follow the text and are laid out cleanly.** A change of a term, a symbol, a
+    label or a claim in the text is carried into every figure, axis label, legend and
+    caption that shows it, in the same edit; a figure never keeps a label the text has
+    dropped. Panels of one figure share a baseline and a common height, use one font size
+    and one colour scheme, and keep their tick labels and legends legible at print size;
+    check the compiled page, not only the source, before finishing.
 
 ## Self-check before finishing a section
 
@@ -151,6 +157,8 @@ content verbatim.
   attribute lists; properties are organized into mechanism chains.
 - Each paragraph starts by linking to the previous one.
 - Schematic figures carry symbols only: no case values, gains, file names or tool internals.
+- Every text change is mirrored in the figures; panels share a baseline and height, and the
+  compiled page has been inspected.
 - No enumerative scaffolding ("the first strand ... the second strand ..."); the section
   advances along a single line.
 - The canonical term is used throughout; no synonym substitutes.
