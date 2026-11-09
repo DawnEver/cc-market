@@ -162,6 +162,16 @@ content verbatim.
     that states its role in the argument, not its findings, and do not repeat what the purpose
     statement or the contribution sentences already say. Results belong to the abstract, the
     results section and the conclusion.
+25. **Sections run as one line of reasoning.** Start a section with its first substantive fact,
+    linked to what the reader already knows; never preview its structure ("in four steps",
+    "the later sections test", "as discussed below"), since the roadmap lives only at the end
+    of the introduction. Do not write a bare assertion sentence ("An inverter imposes voltage,
+    not current."): fold the fact into the causal sentence it supports. Do not open with an
+    abstract umbrella sentence ("Each component is produced by the quantity that acts on it");
+    name the concrete quantities directly. Never define a quantity circularly (defining the
+    inductance as flux over current and then stating that current equals flux over
+    inductance). Close a section with one causal sentence drawn from its facts, not with a
+    list of expectations or "levers".
 
 ## Self-check before finishing a section
 
@@ -196,6 +206,8 @@ content verbatim.
 - No nested in-which/so-that clauses, no noun-clause subjects, no vague causal subjects or metaphors;
   no announced novelty; every sentence follows from its predecessor.
 - The roadmap gives one sentence per section, states roles not findings, and repeats nothing.
+- No section previews its own structure; no bare assertions, umbrella openers or circular
+  definitions; each section closes with a causal sentence, not a list.
 - The first sentence of the abstract, the introduction and the conclusion is general, and each
   following sentence narrows by one level; no specialty symbol appears in the abstract before its
   role is stated in plain words.
