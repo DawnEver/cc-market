@@ -129,6 +129,8 @@ content verbatim.
     internals; the values belong in the machine/method table or the text. Use the paper's
     terms in the figure (e.g. "winding set", not a tool's "star"). Data plots are exempt:
     their axes carry numbers.
+    Explanatory notes ("one set shown", "set 2 shifted by ...") never appear inside a figure;
+    they belong in the caption.
 
 ## Self-check before finishing a section
 
