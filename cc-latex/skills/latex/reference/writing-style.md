@@ -141,6 +141,8 @@ content verbatim.
     dropped. Panels of one figure share a baseline and a common height, use one font size
     and one colour scheme, and keep their tick labels and legends legible at print size;
     check the compiled page, not only the source, before finishing.
+    Use the page width: do not leave a single half-width panel alone on a row when a related
+    panel can share it; pair related panels or widen the plot.
 
 ## Self-check before finishing a section
 
