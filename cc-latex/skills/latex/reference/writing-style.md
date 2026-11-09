@@ -113,14 +113,14 @@ content verbatim.
     operating regime, problem) until the gap. Do not open on a technical specific such as an
     operating regime or a component.
 
-19. **Write for the general practitioner of the field, and build up before use.** Assume a
-    reader who knows the field broadly but not the paper's specialty (e.g. a machine designer
-    who has not worked on multiphase control). Before a specialty concept is used in an
-    argument (a transformation, a subspace, a modulation spectrum), introduce it: what it is,
-    why it exists and what it implies, in that order, with its standard reference. Order the
-    background from the familiar to the special, so that each new concept rests only on
-    concepts already explained. A concept that appears in the abstract may be named there, but
-    it is explained in the body before the results rely on it.
+19. **Write for the general practitioner; cite the textbook, explain only what the argument
+    needs.** Assume a reader who knows the field broadly but not the paper's specialty. Before
+    a specialty concept is used in an argument, name it with its standard reference and state,
+    in one or two sentences, only the property the argument relies on. Do not re-derive or
+    tutor textbook material (a standard transformation, a modulation scheme, a control
+    structure): cite it. Spend explanation only on what is specific to this paper's argument,
+    and order it from the familiar to the special, so that each concept rests on concepts
+    already introduced. A background section that reads like a tutorial is a defect.
 
 ## Self-check before finishing a section
 
@@ -150,5 +150,5 @@ content verbatim.
   the right noun.
 - The manuscript calls itself "this paper".
 - The introduction's first sentence is general and each sentence narrows by one level.
-- Every specialty concept is introduced (what, why, implication) before an argument uses it;
-  the background runs from familiar to special.
+- Every specialty concept is named with its reference and its one needed property before use;
+  textbook material is cited, not explained; the background runs from familiar to special.
