@@ -143,6 +143,20 @@ content verbatim.
     check the compiled page, not only the source, before finishing.
     Use the page width: do not leave a single half-width panel alone on a row when a related
     panel can share it; pair related panels or widen the plot.
+22. **Natural sentences, concrete subjects.** Do not nest clauses such as "a simulation in which
+    ... so that ..."; split them into independent sentences. Do not open a sentence with a noun
+    clause ("How the ripple divides ... is set by ...", "What has not been shown is ..."); give
+    the sentence a concrete subject (a quantity, a component, the authors' study). Name the
+    physical cause: write "the ripple current depends on the high-frequency inductance", not
+    "the machine itself sets the ripple current". Replace metaphors ("a second path for the
+    ripple") with the established term. Every sentence must follow from the one before; if a
+    reader cannot say why it comes next, add the missing link.
+23. **Let the contribution show through the work.** Do not announce novelty ("Its novelty is
+    ..., not ...") or label the paper's own work with an ill-fitting abstract noun
+    ("attribution"); state what the paper does and finds, in the order it does it, and let
+    the increment over the cited work follow from that. Describe a background section by
+    what it does ("outlines", "reviews"), not "develops", unless it derives new results.
+    Name the application (e.g. heavy-duty traction) in the paper's statement of purpose.
 
 ## Self-check before finishing a section
 
@@ -174,6 +188,8 @@ content verbatim.
 - Every technical term is the one the field uses; no coined phrases; type descriptors sit on
   the right noun.
 - The manuscript calls itself "this paper".
+- No nested in-which/so-that clauses, no noun-clause subjects, no vague causal subjects or metaphors;
+  no announced novelty; every sentence follows from its predecessor.
 - The first sentence of the abstract, the introduction and the conclusion is general, and each
   following sentence narrows by one level; no specialty symbol appears in the abstract before its
   role is stated in plain words.
