@@ -107,11 +107,15 @@ content verbatim.
 17. **Refer to the manuscript as "this paper".** Whatever the submission format (digest,
     extended abstract, letter), the document calls itself "this paper", never "this digest" or
     "this work" in alternation.
-18. **The introduction opens general and narrows.** The first sentence states the broad
-    context the reader already shares (e.g. the electrification trend and its demand on the
-    machine); each following sentence narrows by one level (application, machine class,
-    operating regime, problem) until the gap. Do not open on a technical specific such as an
-    operating regime or a component.
+18. **Abstract, introduction and conclusion open general and narrow.** The first sentence of
+    each states the broad context the reader already shares (e.g. the electrification trend
+    and its demand on the machine); each following sentence narrows by one level
+    (application, machine class, operating regime, problem) until the gap, then states what
+    the paper does, what it finds and why it matters. Never open on a technical specific
+    such as a converter detail, an operating regime or a component. In the abstract,
+    describe a specialty concept by its role in plain words before, or instead of, its
+    symbol or name; one sentence carries one step, never a chain packed with semicolons.
+    The conclusion opens with the question the paper answered, not with a result detail.
 
 19. **Write for the general practitioner; cite the textbook, explain only what the argument
     needs.** Assume a reader who knows the field broadly but not the paper's specialty. Before
@@ -160,6 +164,8 @@ content verbatim.
 - Every technical term is the one the field uses; no coined phrases; type descriptors sit on
   the right noun.
 - The manuscript calls itself "this paper".
-- The introduction's first sentence is general and each sentence narrows by one level.
+- The first sentence of the abstract, the introduction and the conclusion is general, and each
+  following sentence narrows by one level; no specialty symbol appears in the abstract before its
+  role is stated in plain words.
 - Every specialty concept is named with its reference and its one needed property before use;
   textbook material is cited, not explained; the background runs from familiar to special.
