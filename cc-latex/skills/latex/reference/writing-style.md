@@ -121,6 +121,14 @@ content verbatim.
     structure): cite it. Spend explanation only on what is specific to this paper's argument,
     and order it from the familiar to the special, so that each concept rests on concepts
     already introduced. A background section that reads like a tutorial is a defect.
+20. **Schematic figures are symbolic.** A schematic (circuit, control block diagram, model
+    structure, flow chart) shows structure, not a case: label every quantity with its symbol
+    ($V_\mathrm{dc}$, $f_c$, $\omega_r$, the set displacement as a symbol or "$\pi/6$" only when
+    the angle is the defining property) and never with a numeric value of the studied case
+    ("800 V", "20 kHz", "523.6 rad/s"). Leave out gains, step sizes, file names and tool
+    internals; the values belong in the machine/method table or the text. Use the paper's
+    terms in the figure (e.g. "winding set", not a tool's "star"). Data plots are exempt:
+    their axes carry numbers.
 
 ## Self-check before finishing a section
 
@@ -136,6 +144,7 @@ content verbatim.
 - Every sentence hooks onto its predecessor (anaphora or causal link); no isolated
   attribute lists; properties are organized into mechanism chains.
 - Each paragraph starts by linking to the previous one.
+- Schematic figures carry symbols only: no case values, gains, file names or tool internals.
 - No enumerative scaffolding ("the first strand ... the second strand ..."); the section
   advances along a single line.
 - The canonical term is used throughout; no synonym substitutes.
