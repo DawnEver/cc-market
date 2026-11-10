@@ -188,6 +188,10 @@ content verbatim.
     iron loss, the field reaching conductive magnets induces magnet eddy currents), not as a
     bare list; a split into fundamental and switching-frequency parts follows from the two
     sources in the current and field, not from an analysis purpose ("to separate").
+29. **No trailing relative or participle tails.** Do not hang a ", which ..." / ", whose ..."
+    clause or a ", computed ..." participle on the end of a sentence, and do not invert object
+    and agent ("the impedance, which eddy currents modify"). Give the added fact its own
+    sentence with its real subject ("Eddy currents in the laminations change this impedance.").
 
 ## Self-check before finishing a section
 
