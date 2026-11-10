@@ -172,6 +172,14 @@ content verbatim.
     inductance as flux over current and then stating that current equals flux over
     inductance). Close a section with one causal sentence drawn from its facts, not with a
     list of expectations or "levers".
+26. **Technical verbs, not personified or spoken ones.** Physical quantities do not see, feed,
+    decide, go, or link: write "is limited by the leakage inductance", not "sees the leakage
+    inductance"; "couples the stator to the rotor through the air-gap field", not "links the
+    rotor"; "determines", not "decides"; "contributes to", not "feeds". Avoid spoken phrases
+    ("where the ripple can go", "case by case", "has even moved", "well documented") and vague
+    "there" / "this split" / "these studies"; name the plane, quantity or works. Do not start
+    consecutive sentences with the same pronoun ("Its ... Its ... Its"). Generalise a single
+    study's finding only as that study's finding ("a comparative study found ...").
 
 ## Self-check before finishing a section
 
