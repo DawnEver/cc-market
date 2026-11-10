@@ -180,6 +180,14 @@ content verbatim.
     "there" / "this split" / "these studies"; name the plane, quantity or works. Do not start
     consecutive sentences with the same pronoun ("Its ... Its ... Its"). Generalise a single
     study's finding only as that study's finding ("a comparative study found ...").
+27. **Paragraph break after a display equation.** When the text after a displayed equation
+    starts a new idea (applying or interpreting the equation), leave a blank line so it opens a
+    new paragraph; only a direct continuation ("where ...") follows without a blank line.
+28. **Loss components from physics.** Introduce loss components by their physical cause (the
+    conductor current produces copper loss, the alternating flux density in laminations produces
+    iron loss, the field reaching conductive magnets induces magnet eddy currents), not as a
+    bare list; a split into fundamental and switching-frequency parts follows from the two
+    sources in the current and field, not from an analysis purpose ("to separate").
 
 ## Self-check before finishing a section
 
