@@ -192,6 +192,13 @@ content verbatim.
     clause or a ", computed ..." participle on the end of a sentence, and do not invert object
     and agent ("the impedance, which eddy currents modify"). Give the added fact its own
     sentence with its real subject ("Eddy currents in the laminations change this impedance.").
+30. **Data-figure template.** Use linear axes unless a log axis is unavoidable. End each y-axis just
+    above its tallest data (a few percent headroom, no empty band). Stacked panels share the x-axis
+    with a small pad before zero. Put per-panel labels in a top corner, wrapped onto two lines, and
+    put the legend inside the plot area (first panel or an empty region), not in a row above it.
+    Mark characteristic positions (e.g. f_c, 2f_c) as symbols on the top axis with light-grey dashed
+    guide lines behind the data through all panels. Paired panels share width, font size and height;
+    colours and fonts come from one style block in the figure script.
 
 ## Self-check before finishing a section
 
