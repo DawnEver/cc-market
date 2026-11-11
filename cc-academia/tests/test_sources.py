@@ -248,3 +248,11 @@ def test_orcid_peer_reviews_of_an_unknown_record_are_unknown(monkeypatch):
     monkeypatch.setattr(orcid, "get_json", missing)
     assert orcid.Orcid().get_peer_reviews("0000-0000-0000-0001") is None
     assert orcid.Orcid().get_peer_reviews("") is None
+
+
+def test_openalex_requests_carry_the_api_key(monkeypatch):
+    seen = []
+    monkeypatch.setenv("OPENALEX_API_KEY", "test-key")
+    monkeypatch.setattr(openalex, "get_json", lambda url, *a, **k: seen.append(url) or {})
+    openalex.journal_name("0000-0000")
+    assert "api_key=test-key" in seen[0]
