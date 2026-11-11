@@ -633,6 +633,30 @@ def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, s
     assert "rev-disc search" in warning
 
 
+class OwnWorks:
+    """OpenAlex as far as fetching a Locator person's own works goes."""
+
+    def find_author_by_orcid(self, orcid):
+        from academia.core.models import Person
+
+        if orcid == "0000-0000-0000-0001":
+            return Person(person_id="x", display_name="", openalex_id="A-erin")
+        return None
+
+    def search_authors(self, name, *, limit=10):
+        return []
+
+    def get_author_papers(self, author_id, *, limit=50):
+        erin = Author(name="Erin Imaginary", idx=0, position="first", openalex_id="A-erin")
+        papers = [
+            _paper("10.9/e1", "Torque ripple in fictional PMSM drives", [erin]),
+            _paper("10.9/e2", "Torque ripple suppression, a synthetic study", [erin]),
+        ]
+        for paper in papers:
+            paper.venue_type = "article"
+        return papers
+
+
 def _through_candidates(slug="tie-demo"):
     run("init", "--slug", slug, "--title", "Torque ripple suppression in PMSM drives",
         "--abstract", "Torque ripple suppression for PMSM traction drives.",
@@ -648,6 +672,7 @@ def test_an_imported_editorial_page_merges_into_the_workbook(
     tmp_path, stub_sources, capsys, monkeypatch
 ):
     monkeypatch.setattr("academia.reviewer.enrich.enrich", lambda conn, person: person)
+    monkeypatch.setattr("academia.sources.openalex.OpenAlex", OwnWorks)
     _through_candidates()
     page = Path(__file__).parent / "fixtures" / "scholarone_assign_reviewers.html"
     capsys.readouterr()
@@ -656,8 +681,13 @@ def test_an_imported_editorial_page_merges_into_the_workbook(
     assert imported["candidates_added"] == 3
     assert imported["invitees"] == 4
 
-    # Re-running candidates keeps the Locator people.
-    run("candidates", "--slug", "tie-demo")
+    # Re-running candidates keeps the Locator people, and fetches the works of
+    # anyone who arrived without evidence.
+    capsys.readouterr()
+    run("candidates", "--slug", "tie-demo", "--json")
+    stage = json.loads(capsys.readouterr().out)
+    assert stage["without_evidence"] == 3
+    assert stage["evidence_from_own_works"] == 1
     run("enrich", "--slug", "tie-demo", "--no-email")
     assert run("coi", "--slug", "tie-demo") == 0
     assert run("report", "--slug", "tie-demo", "--json") == 0
@@ -675,6 +705,12 @@ def test_an_imported_editorial_page_merges_into_the_workbook(
     assert by_name["Gökhan Çakal"]["Found by (ours, locator or both)"] == "ours"
     assert by_name["Gökhan Çakal"]["Invitation on this manuscript"] == "not yet invited"
     assert by_name["Erin Imaginary"]["Found by (ours, locator or both)"] == "locator"
+    # Erin's own works were scored; Frank's could not be fetched, so the
+    # relevance rules ask for a check rather than pass him.
+    assert by_name["Erin Imaginary"]["Closest works to this manuscript"]
+    frank = by_name["Frank Madeup"]
+    assert frank["Rule: related journal papers ≥ 3"] == "No evidence"
+    assert frank["Recommend as reviewer"] != "Recommend"
     assert by_name["Erin Imaginary"]["Verified reviews in Web of Science (Locator)"] == 80
     assert by_name["Erin Imaginary"]["Check: review record in proportion to output"] == "Check by hand"
     chen = by_name["Chen Placeholder"]

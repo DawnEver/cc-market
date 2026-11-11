@@ -244,10 +244,14 @@ It stores two things against this manuscript:
   most relevant works. Each is attached to a person by ORCID, then by an address
   already in the store, then by name — the last only when exactly one candidate
   *in this run* carries it; otherwise a new low-confidence person is created.
-  They join the candidate pool (`candidates` keeps them on a re-run) with no
-  evidence of ours, so the relevance rules abstain for them, and they still go
-  through enrichment, conflict screening, eligibility and geography. Run
-  `enrich` for them after importing.
+  They join the candidate pool. **Re-run `candidates` after importing**: anyone
+  in the pool without evidence in this corpus has their own works fetched from
+  OpenAlex (by ORCID, else by a name search their stored institution
+  corroborates — a name never raises identity confidence) and scored with the
+  same similarity as everybody else. Those works feed only that person's
+  evidence, never the harvest, so `found_by` stays honest. If no works can be
+  obtained the relevance rules read *No evidence* and the candidate is at best
+  *Check first*. Then run `enrich`, `coi` and `report` as usual.
 - The **Reviewer List**: every invitee's status and dates. Outcomes go into the
   invitation record `rev-disc invite` writes, so they travel between machines;
   anyone on it reads *Already invited* and is not proposed again. That is

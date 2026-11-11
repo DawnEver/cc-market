@@ -305,8 +305,14 @@ def test_every_ieee_journal_resolves_to_the_one_policy():
         return {k: v for k, v in policy.data.items() if k not in ("journal", "issns")}
 
     base = rules(load_policy())
-    for journal in ("tie", "tii", "tte", "tec"):
+    for journal in ("tie", "tii", "tte"):
         assert rules(load_policy(journal)) == base, journal
+
+    # TEC records one deliberate deviation, and only that one.
+    tec = rules(load_policy("tec"))
+    assert tec["activity"]["related_journals"]["min_publications"] == 2
+    tec["activity"]["related_journals"]["min_publications"] = 3
+    assert tec == base
 
 
 def test_unknown_journal_is_refused_rather_than_silently_defaulted():

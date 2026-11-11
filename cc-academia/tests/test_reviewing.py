@@ -51,7 +51,7 @@ def _reviews(conn, person_id, items):
 
 def test_unknown_is_blank_not_zero(conn, policy):
     candidate = _candidate(conn, orcid="")
-    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY)
+    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
     assert out["reviews"] == ""
     assert out["reviews_source"] == "unknown"
     assert out["reviews_by_journal"] == ""
@@ -77,7 +77,7 @@ def test_public_record_counts_and_target_journal(conn, policy):
     repo.record_output(conn, candidate.person.person_id, {2026: 4, 2023: 3, 2015: 9}, source="openalex")
     candidate.person = repo.load_person(conn, candidate.person.person_id)
 
-    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY)
+    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
     assert out["found_by"] == "ours"
     assert out["reviews"] == 3
     assert out["reviews_source"] == "orcid"
@@ -95,7 +95,7 @@ def test_public_record_counts_and_target_journal(conn, policy):
 def test_checked_but_empty_record_reads_zero_public(conn, policy):
     candidate = _candidate(conn)
     _reviews(conn, candidate.person.person_id, [])
-    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY)
+    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
     assert out["reviews"] == 0
     assert out["reviewed_target_journal"] is False
     assert out["days_since_last_review"] == ""
@@ -107,7 +107,7 @@ def test_invitation_load_and_status(conn, policy):
     repo.record_invitation(conn, pid, "ms-old", invited_at="2026-03-01", responded=None)
     repo.record_invitation(conn, pid, "ms-1", invited_at="2026-10-01", responded=True, accepted=False)
     repo.record_invitation(conn, pid, "ms-ancient", invited_at="2020-01-01", responded=True)
-    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY)
+    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
     assert out["invitation_status"] == "declined"
     assert out["invitations_last_12_months"] == 2
     assert out["invitations_open"] == 1
@@ -141,7 +141,7 @@ def test_suspicious_record_is_a_hint_only(conn, policy):
                    "days_since_last_review": 3, "r_score": 2.75, "affiliations": [],
                    "wos_url": "https://www.webofscience.com/wos/author/record/X"}}],
     )
-    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY)
+    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=False)
     assert out["found_by"] == "locator"
     assert out["locator_reviews"] == 117
     assert out["locator_load"] == "0 / 2"
@@ -163,6 +163,6 @@ def test_many_countries_also_trip_the_hint(conn, policy):
         for c in ("AA", "BB", "CC")
     ]
     candidate.person = person
-    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY)
+    out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
     assert out["review_record"] == "REVIEW"
     assert "3 countries" in out["review_record_reasons"]

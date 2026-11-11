@@ -174,8 +174,14 @@ def signals(
     *,
     ms_id: str,
     today: date,
+    harvested: bool,
 ) -> dict[str, Any]:
-    """Every reviewing column for one candidate, keyed by column name."""
+    """Every reviewing column for one candidate, keyed by column name.
+
+    ``harvested`` says whether this run found them as an author of related
+    work. It is not read off the evidence: a candidate proposed from outside
+    has their own works scored, and having evidence does not make them ours.
+    """
     person = candidate.person
     settings = policy.data.get("reviewing") or {}
     window = int(settings.get("article_window_years", 5))
@@ -187,8 +193,7 @@ def signals(
         (r["data"] for r in repo.locator_suggestions(conn, ms_id) if r["person_id"] == person.person_id),
         None,
     )
-    ours = bool(candidate.evidence or candidate.relevant_papers)
-    found_by = "both" if ours and locator else ("locator" if locator else "ours")
+    found_by = "both" if harvested and locator else ("locator" if locator else "ours")
 
     check, rows = repo.review_record(conn, person.person_id)
     by_journal: dict[str, int] = {}

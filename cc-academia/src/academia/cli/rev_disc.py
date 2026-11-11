@@ -396,10 +396,11 @@ def run_candidates(args: argparse.Namespace) -> int:
         else policy.retrieval_int("top_papers", discover.DEFAULT_TOP_PAPERS)
     )
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    def harvest(conn, own_works: frozenset[str] = frozenset()):
         scores = discover.relevance(conn, profile, now_year=_now_year(), limit=pool)
+        searched = {pid: s for pid, s in scores.items() if pid not in own_works}
         candidates = discover.build_candidates(
-            conn, scores, top_papers=top_papers, min_evidence=args.min_evidence
+            conn, searched, top_papers=top_papers, min_evidence=args.min_evidence
         )
         harvested = [
             {
@@ -408,6 +409,7 @@ def run_candidates(args: argparse.Namespace) -> int:
                 "orcid": c.person.orcid,
                 "confidence": c.person.confidence,
                 "resolution_method": c.person.resolution_method,
+                "harvested": True,
                 "evidence": [e.as_dict() for e in c.evidence],
                 # The whole relevant record, so a counting rule reads the same
                 # basis on a re-run as it did on the run that wrote this.
@@ -417,7 +419,28 @@ def run_candidates(args: argparse.Namespace) -> int:
         ]
         # An imported editorial page adds its suggestions here, so a re-run of
         # this stage keeps them rather than silently dropping them.
-        rows = scholarone.merge_candidates(conn, harvested, state.ms_id)
+        return scores, scholarone.merge_candidates(conn, harvested, state.ms_id)
+
+    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+        scores, rows = harvest(conn)
+        # Missing evidence must not pass. Anyone who joined without papers of
+        # theirs in this corpus has their own works fetched, and the corpus is
+        # scored again so they are judged by the same similarity as everybody.
+        missing = [row["person_id"] for row in rows if not row["evidence"]]
+        fetched = {
+            pid: discover.fetch_own_works(conn, person)
+            for pid in missing
+            if (person := repo.load_person(conn, pid)) is not None
+        }
+        if own := frozenset(p for ids in fetched.values() for p in ids):
+            scores, rows = harvest(conn, own)
+        found = discover.evidence_for(conn, scores, missing)
+        for row in rows:
+            if row["person_id"] in found and not row["evidence"]:
+                evidence, relevant = found[row["person_id"]]
+                row["evidence"] = [e.as_dict() for e in evidence]
+                row["relevant_papers"] = [e.as_dict() for e in relevant]
+        evidenced = sum(1 for pid in missing if found.get(pid, ([], []))[1])
 
     workspace.write_jsonl(workspace.candidate_dir / "candidates.jsonl", rows)
     state.mark("candidates")
@@ -427,6 +450,9 @@ def run_candidates(args: argparse.Namespace) -> int:
         "candidates": len(rows),
         "papers_considered": len(scores),
         "retrieval": {"candidate_pool": pool, "top_papers": top_papers},
+        "without_evidence": len(missing),
+        "own_works_fetched": sum(1 for n in fetched.values() if n),
+        "evidence_from_own_works": evidenced,
     }
     if args.json:
         log.emit(payload)
@@ -835,6 +861,7 @@ def run_report(args: argparse.Namespace) -> int:
     except UsageError:
         email_rows = {}
 
+    harvested = {row["person_id"]: row["harvested"] for row in candidate_rows}
     with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
         candidates: list[rank.Candidate] = []
         for row in candidate_rows:
@@ -917,7 +944,12 @@ def run_report(args: argparse.Namespace) -> int:
 
         signals = {
             candidate.person.person_id: reviewing.signals(
-                conn, candidate, policy, ms_id=state.ms_id, today=datetime.now().date()
+                conn,
+                candidate,
+                policy,
+                ms_id=state.ms_id,
+                today=datetime.now().date(),
+                harvested=harvested[candidate.person.person_id],
             )
             for candidate in ordered
         }

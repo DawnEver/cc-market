@@ -265,34 +265,7 @@ def build_candidates(
     """
     ranked = sorted(paper_scores.items(), key=lambda kv: -kv[1])
     shown = {paper_id for paper_id, _ in ranked[:top_papers]}
-    by_person: dict[str, list[Evidence]] = {}
-    record: dict[str, list[Evidence]] = {}
-
-    # Two passes over one loop: the top papers become the evidence an editor
-    # reads, and every relevant paper becomes the record a counting rule needs.
-    for paper_id, similarity in ranked:
-        row = repo.get_paper(conn, paper_id)
-        if row is None:
-            continue
-        for authorship in conn.execute(
-            "SELECT person_id, position, position_weight FROM authorships WHERE paper_id = ?",
-            (paper_id,),
-        ):
-            item = Evidence(
-                paper_id=paper_id,
-                title=row["title"],
-                year=row["year"],
-                url=_readable_url(row),
-                doi=row["doi"] or "",
-                venue=row["venue"] or "",
-                venue_type=row["venue_type"] or "",
-                position=authorship["position"] or "middle",
-                position_weight=authorship["position_weight"],
-                similarity=similarity,
-            )
-            record.setdefault(authorship["person_id"], []).append(item)
-            if paper_id in shown:
-                by_person.setdefault(authorship["person_id"], []).append(item)
+    by_person, record = _evidence_by_person(conn, ranked, shown)
 
     candidates: list[Candidate] = []
     for person_id, evidence in by_person.items():
@@ -312,6 +285,142 @@ def build_candidates(
     # strongest ones.
     candidates.sort(key=lambda c: -sum(e.similarity * e.position_weight for e in c.evidence))
     return candidates
+
+
+#: How many of a candidate's closest papers are shown as their evidence.
+EVIDENCE_SHOWN = 10
+
+
+def evidence_for(
+    conn: sqlite3.Connection, paper_scores: dict[str, float], person_ids: list[str]
+) -> dict[str, tuple[list[Evidence], list[Evidence]]]:
+    """Evidence and relevant record for named people, from the run's own scores.
+
+    For candidates who did not enter through the harvest. The same scored
+    papers and the same similarity as everybody else; only the "top papers"
+    gate is skipped, because that gate decides who is harvested, and these
+    people are already candidates.
+    """
+    ranked = sorted(paper_scores.items(), key=lambda kv: -kv[1])
+    _, record = _evidence_by_person(conn, ranked, set(), only=set(person_ids))
+    out = {}
+    for person_id in person_ids:
+        papers = sorted(record.get(person_id, []), key=lambda e: -e.similarity)
+        out[person_id] = (papers[:EVIDENCE_SHOWN], papers)
+    return out
+
+
+def _evidence_by_person(
+    conn: sqlite3.Connection,
+    ranked: list[tuple[str, float]],
+    shown: set[str],
+    *,
+    only: set[str] | None = None,
+) -> tuple[dict[str, list[Evidence]], dict[str, list[Evidence]]]:
+    by_person: dict[str, list[Evidence]] = {}
+    record: dict[str, list[Evidence]] = {}
+
+    # Two passes over one loop: the top papers become the evidence an editor
+    # reads, and every relevant paper becomes the record a counting rule needs.
+    for paper_id, similarity in ranked:
+        row = repo.get_paper(conn, paper_id)
+        if row is None:
+            continue
+        for authorship in conn.execute(
+            "SELECT person_id, position, position_weight FROM authorships WHERE paper_id = ?",
+            (paper_id,),
+        ):
+            if only is not None and authorship["person_id"] not in only:
+                continue
+            item = Evidence(
+                paper_id=paper_id,
+                title=row["title"],
+                year=row["year"],
+                url=_readable_url(row),
+                doi=row["doi"] or "",
+                venue=row["venue"] or "",
+                venue_type=row["venue_type"] or "",
+                position=authorship["position"] or "middle",
+                position_weight=authorship["position_weight"],
+                similarity=similarity,
+            )
+            record.setdefault(authorship["person_id"], []).append(item)
+            if paper_id in shown:
+                by_person.setdefault(authorship["person_id"], []).append(item)
+    return by_person, record
+
+
+#: How many of their own works are fetched for a candidate with no evidence.
+OWN_WORKS_LIMIT = 100
+
+
+def _openalex_id_for(person, client) -> tuple[str, bool]:
+    """The person's OpenAlex author id, resolved without letting a name decide.
+
+    A stored id, then the ORCID, then a name search accepted only when exactly
+    one proposed profile shares the person's stored current institution. The
+    last proposes an id; it never upgrades the identity, so a person who was
+    matched by name stays marked for confirmation. Returns the id and whether
+    an identifier (not a name) established it.
+    """
+    if person.openalex_id:
+        return person.openalex_id, True
+    if person.orcid and (found := client.find_author_by_orcid(person.orcid)) is not None:
+        return found.openalex_id, True
+    affiliation = person.current_affiliation
+    if affiliation is None or not affiliation.institution:
+        return "", False
+    key = repo.normalize_institution_key(affiliation.institution)
+    agreeing = [
+        profile
+        for profile in client.search_authors(person.display_name)
+        if any(
+            repo.normalize_institution_key(a.institution) == key for a in profile.affiliations
+        )
+    ]
+    return (agreeing[0].openalex_id if len(agreeing) == 1 else ""), False
+
+
+def fetch_own_works(conn: sqlite3.Connection, person, client=None) -> list[str]:
+    """Store a candidate's own works so the run can score them like any other.
+
+    Returns the stored paper ids; empty when no profile could be resolved or
+    the source failed, which leaves the candidate without evidence and the
+    relevance rules asking for a check. The caller keeps these papers out of
+    the harvest: they were fetched for this person, not found by the search.
+    """
+    from academia.core.errors import SourceError
+    from academia.sources.openalex import OpenAlex
+
+    client = client or OpenAlex()
+    try:
+        openalex_id, certain = _openalex_id_for(person, client)
+        if not openalex_id:
+            return []
+        holder = conn.execute(
+            "SELECT person_id FROM persons WHERE openalex_id = ?", (openalex_id,)
+        ).fetchone()
+        if holder is not None and holder["person_id"] != person.person_id:
+            log.warn(f"OpenAlex profile {openalex_id} already belongs to another person; skipped")
+            return []
+        conn.execute(
+            "UPDATE persons SET openalex_id = ? WHERE person_id = ?", (openalex_id, person.person_id)
+        )
+        works = client.get_author_papers(openalex_id, limit=OWN_WORKS_LIMIT)
+    except SourceError as error:
+        log.warn(f"own works for {person.display_name} not fetched: {error}")
+        return []
+    for paper in works:
+        repo.ingest_paper(conn, paper)
+    if not certain:
+        # Storing the works matched them to this person by the proposed id,
+        # which the store reads as an identifier. A name proposed it, so the
+        # identity keeps the confidence it had.
+        conn.execute(
+            "UPDATE persons SET resolution_method = ?, confidence = ? WHERE person_id = ?",
+            (person.resolution_method, person.confidence, person.person_id),
+        )
+    return [paper.paper_id for paper in works]
 
 
 def topics_for(conn: sqlite3.Connection, candidate: Candidate, limit: int = 10) -> list[str]:

@@ -633,6 +633,7 @@ def merge_candidates(conn, rows: list[dict], ms_id: str) -> list[dict]:
                 "orcid": person.orcid,
                 "confidence": person.confidence,
                 "resolution_method": person.resolution_method,
+                "harvested": False,
                 "evidence": [],
                 "relevant_papers": [],
             }

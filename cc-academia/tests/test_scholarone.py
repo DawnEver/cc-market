@@ -197,6 +197,7 @@ def test_locator_people_join_the_candidate_pool_without_evidence(conn, page):
     added = merged[1:]
     assert len(added) == 2
     assert all(row["evidence"] == [] and row["relevant_papers"] == [] for row in added)
+    assert not any(row["harvested"] for row in added)
     # Merging twice adds nobody twice.
     assert scholarone.merge_candidates(conn, merged, "ms-1") == merged
 

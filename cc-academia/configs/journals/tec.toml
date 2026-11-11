@@ -1,6 +1,14 @@
 # IEEE Transactions on Energy Conversion.
 #
-# No overrides.
+# One deliberate deviation from the shared policy, below.
 journal = "IEEE Transactions on Energy Conversion"
 # How public review records name this journal (ISSNs as OpenAlex lists them).
 issns = ["0885-8969", "1558-0059"]
+
+# Two related journal papers rather than three. TEC topics are narrow (a single
+# test method, one machine class), and on a live case the shared floor of three
+# excluded 116 of 154 candidates whose related records were full of conference
+# and journal work just under it. Decided by the editor for this journal; the
+# other IEEE journals keep the shared value.
+[activity.related_journals]
+min_publications = 2

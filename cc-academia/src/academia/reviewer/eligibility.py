@@ -312,9 +312,11 @@ def relevant_activity(record: CandidateRecord, constraint: Constraint) -> RuleOu
         return _outcome(
             constraint,
             True,
-            "no relevant papers in this run's corpus — relevance not assessed",
+            "no relevant papers in this run's corpus — relevance not assessed; "
+            "check their record before inviting",
             thresholds,
             abstained=True,
+            manual_review=True,
         )
     count = record.relevant.count_since(record.now_year - window + 1, record.now_year)
     latest = record.relevant.latest_year
@@ -404,9 +406,11 @@ def related_journals(record: CandidateRecord, constraint: Constraint) -> RuleOut
         return _outcome(
             constraint,
             True,
-            "no relevant papers in this run's corpus — journal record not assessed",
+            "no relevant papers in this run's corpus — journal record not assessed; "
+            "check their record before inviting",
             {"minimum": minimum},
             abstained=True,
+            manual_review=True,
         )
     positions = [(getattr(p, "position", "") or "").lower() for p in papers]
     types = [getattr(p, "venue_type", "") or "" for p in papers]

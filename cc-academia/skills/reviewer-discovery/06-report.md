@@ -113,7 +113,7 @@ reason, not a second copy of these numbers:
 | Config table | Rule | Shipped | Fires when |
 |--------------|------|---------|-----------|
 | `geo.restricted` | `restricted_country` | require (IN, IR) | the current affiliation is in a country the journal will not invite from |
-| `activity.related_journals` | `related_journals` | require (3) | too little of the relevant record is journal work |
+| `activity.related_journals` | `related_journals` | require (3; TEC 2) | too little of the relevant record is journal work |
 | `activity.relevant` | `relevant_activity` | require | nothing on *this* topic in the last 3 years |
 | `activity` | `recent_activity` | require | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
@@ -204,6 +204,10 @@ but carries `blocked = True`, an empty score and the reason in `notes`. Blocked
 rows sort below every invitable candidate whatever the reason, so the ranking
 reads: invitable by conflict status, then expertise, then geography; then
 everyone who was removed.
+
+**Missing relevance evidence is not a pass.** A candidate with no relevant
+paper in this run, even after `candidates` fetched and scored their own works,
+reads *No evidence* on the relevance rules and is *Check first* at best.
 
 **A missing fact never disqualifies anybody.** No publication years, no stated
 enrolment year, **no public address** — each of these is

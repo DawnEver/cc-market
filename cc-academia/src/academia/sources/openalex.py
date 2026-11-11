@@ -419,6 +419,15 @@ class OpenAlex(PaperSource, AuthorSource):
             return None
         return self.get_author(f"https://orcid.org/{clean}", timeout=timeout)
 
+    def search_authors(self, name: str, *, limit: int = 10, timeout: int = 30) -> list[Person]:
+        """Author profiles OpenAlex finds for a name — proposals, never identities."""
+        url = build_url(
+            AUTHORS_URL,
+            _identified({"search": name, "per-page": min(limit, 50), "select": self.AUTHOR_SELECT}),
+        )
+        data = get_json(url, SOURCE, timeout=timeout)
+        return [to_person(r) for r in data.get("results") or [] if isinstance(r, dict)]
+
     def get_author_papers(self, author_id: str, *, limit: int = 50, timeout: int = 30) -> list[Paper]:
         url = build_url(
             WORKS_URL,
