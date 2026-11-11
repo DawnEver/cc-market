@@ -348,7 +348,9 @@ def _work(tip: str) -> Work | None:
 
 def _suggestion(chunk: str) -> Suggestion | None:
     name_match = re.search(r"<b>(.*?)</b>", chunk, re.S)
-    if not name_match:
+    # A candidate always carries its review line; the pager below the list
+    # also sits in a test123top cell with a bold word, and is not a person.
+    if not name_match or "Verified Reviews in Web of Science" not in chunk:
         return None
     wos = re.search(r'href="(https?://[^"]*webofscience\.com/wos/author/record/[^"]+)"', chunk)
     orcid = _ORCID.search(chunk)
