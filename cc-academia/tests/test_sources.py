@@ -222,3 +222,29 @@ def test_orcid_empty_record_yields_no_entries():
 
 def test_orcid_rejects_a_malformed_identifier():
     assert orcid.Orcid().get_author("not-an-orcid") is None
+
+
+def test_orcid_peer_reviews_are_parsed_per_review():
+    from conftest import load_fixture
+
+    reviews = orcid.parse_peer_reviews(load_fixture("orcid_peer_reviews.json"))
+    assert [r.put_code for r in reviews] == [11, 12, 13, 14]
+    first = reviews[0]
+    assert first.group_id == "issn:0885-8969"
+    assert first.issn == "0885-8969"
+    assert first.completed == "2026-05-02"
+    assert first.source_name == "Web of Science"
+    # A month without a day keeps the precision it has; no date stays empty.
+    assert reviews[1].completed == "2025-11"
+    assert reviews[3].completed == ""
+
+
+def test_orcid_peer_reviews_of_an_unknown_record_are_unknown(monkeypatch):
+    from academia.core.errors import SourceError
+
+    def missing(*args, **kwargs):
+        raise SourceError("http_404", "orcid", details={"status": 404})
+
+    monkeypatch.setattr(orcid, "get_json", missing)
+    assert orcid.Orcid().get_peer_reviews("0000-0000-0000-0001") is None
+    assert orcid.Orcid().get_peer_reviews("") is None

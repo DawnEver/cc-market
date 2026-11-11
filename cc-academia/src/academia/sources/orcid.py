@@ -1,4 +1,4 @@
-"""ORCID — education and employment history.
+"""ORCID — education and employment history, and the public reviewing record.
 
 Best-effort by design. A live sample of 40 ORCID-bearing authors in the target
 domain (electrical machines, power electronics, EV traction, 2023 onward) found
@@ -155,6 +155,60 @@ def parse_contact(email_payload: dict[str, Any], url_payload: dict[str, Any]) ->
     return Contact(emails=list(dict.fromkeys(emails)), urls=list(dict.fromkeys(urls)))
 
 
+@dataclass(frozen=True)
+class PeerReview:
+    """One public peer-review activity on an ORCID record.
+
+    Most in this field are written there by Web of Science (formerly Publons)
+    on the reviewer's behalf, so this is the public counterpart of the
+    "verified reviews" an editorial system shows. ``group_id`` names the venue,
+    usually as ``issn:XXXX-XXXX``.
+    """
+
+    put_code: int
+    group_id: str
+    completed: str = ""
+    source_name: str = ""
+
+    @property
+    def issn(self) -> str:
+        kind, _, value = self.group_id.partition(":")
+        return value if kind.lower() == "issn" else ""
+
+
+def _date(block: Any) -> str:
+    """``YYYY-MM-DD`` at whatever precision the record states, else empty."""
+    if not isinstance(block, dict):
+        return ""
+    parts = []
+    for key in ("year", "month", "day"):
+        value = as_text((block.get(key) or {}).get("value") if isinstance(block.get(key), dict) else "")
+        if not value:
+            break
+        parts.append(value.zfill(2) if key != "year" else value)
+    return "-".join(parts)
+
+
+def parse_peer_reviews(payload: dict[str, Any]) -> list[PeerReview]:
+    reviews: list[PeerReview] = []
+    for group in payload.get("group") or []:
+        for review_group in (group or {}).get("peer-review-group") or []:
+            for summary in (review_group or {}).get("peer-review-summary") or []:
+                if not isinstance(summary, dict):
+                    continue
+                reviews.append(
+                    PeerReview(
+                        put_code=optional_int(summary.get("put-code")) or 0,
+                        group_id=as_text(summary.get("review-group-id")),
+                        completed=_date(summary.get("completion-date")),
+                        source_name=as_text(
+                            ((summary.get("source") or {}).get("source-name") or {}).get("value")
+                        ),
+                    )
+                )
+    return reviews
+
+
 class Orcid(AuthorSource):
     request_delay = 0.15
 
@@ -210,6 +264,23 @@ class Orcid(AuthorSource):
                 return Contact()
             raise
         return parse_contact(emails, urls)
+
+    def get_peer_reviews(self, author_id: str, *, timeout: int = 30) -> list[PeerReview] | None:
+        """Every public review on the record; ``None`` when there is no record.
+
+        An empty list means the record exists and shows no public review — a
+        private section looks the same, so callers report it as "none public",
+        never as "never reviewed".
+        """
+        orcid = normalize_orcid(author_id)
+        if not orcid:
+            return None
+        try:
+            return parse_peer_reviews(self._fetch(orcid, "peer-reviews", timeout))
+        except SourceError as error:
+            if error.details.get("status") in (404, 409):
+                return None
+            raise
 
     def find_author_by_orcid(self, orcid: str, *, timeout: int = 30) -> Person | None:
         return self.get_author(orcid, timeout=timeout)
