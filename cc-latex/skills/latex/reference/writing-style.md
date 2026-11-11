@@ -199,8 +199,21 @@ content verbatim.
     Mark characteristic positions (e.g. f_c, 2f_c) as symbols on the top axis with light-grey dashed
     guide lines behind the data through all panels. Paired panels share width, font size and height;
     colours and fonts come from one style block in the figure script.
+31. **No relative clauses on nouns; human actions only for humans.** Do not attach a "that ..." /
+    "which ..." / "who ..." clause to a noun, with or without a comma ("machines that stay
+    efficient", "losses that computations omit", "comparisons that change one property"). Use an
+    adjective or prepositional phrase ("machines with high efficiency") or give the fact its own
+    sentence. Machines, methods, planes and quantities do not meet needs, pursue goals, need,
+    seek, help or carry intentions: state the physical action ("split the current", "lower the
+    current of each inverter", "are designed for higher efficiency"). Rules 26 and 29 name
+    examples; this rule names the pattern, and every newly drafted or rewritten sentence is
+    checked against it, abstracts and conclusions included.
 
 ## Self-check before finishing a section
+
+- Search the new text for " that ", " which ", " who " and for personal verbs (meet, need, pursue,
+  seek, help, allow, enable, see, feed, decide); each hit is either a pronoun ("that of") or is
+  rewritten (rule 31).
 
 - Every sentence is short enough to read aloud in one breath.
 - No showy adjectives or abstract-noun piles survive.
