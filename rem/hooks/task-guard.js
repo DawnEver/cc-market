@@ -36,8 +36,13 @@ const SINGLE_TARGET_WRITERS = new Set(['cp', 'mv', 'install', 'ln']);
 const ALL_TARGET_WRITERS = new Set('tee touch mkdir rm rmdir truncate unlink'.split(' '));
 const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move-item|remove-item)$/i;
 
-const REASON = 'Opening or closing a task is the user\'s /rem:task open|close command, and a task journal is '
-  + 'append-only through `task.js log|decide|open-item|close-item|handoff`. Propose the change to the user instead.';
+// The remedy must be one the other guards allow (dev-lab#419): a `! <cmd>` handed to the user is
+// refused at Stop, so a written line is repaired by the user in an editor, and the next line is
+// rephrased BEFORE it is appended.
+export const REASON = 'Opening or closing a task is the user\'s /rem:task open|close command, and a task journal is '
+  + 'append-only through `task.js log|decide|open-item|close-item|handoff`. To change a line already written, '
+  + 'ask the user to edit it in an editor (describe the edit; do not hand over a command). To avoid one, '
+  + 'rephrase before appending: a memory name or a <placeholder> path shape.';
 
 // Heredocs: `<<[-] DELIM` … `DELIM`. The body is cut out of the command line and its place
 // taken by a marker word, so the body is never parsed as commands; segments() turns the
