@@ -209,7 +209,21 @@ content verbatim.
     examples; this rule names the pattern, and every newly drafted or rewritten sentence is
     checked against it, abstracts and conclusions included.
 
+32. **Order of revision and paragraph re-read.** The rules have four levels, and a higher level wins:
+    L1 argument (each sentence follows from the previous; broad to narrow; causal close: rules 16, 22,
+    25), L2 position (detail follows position, no previews or umbrella openers: rules 15, 24, 25),
+    L3 sentence (one claim per sentence, no noun clauses as subjects, no relative tails or relative
+    clauses on nouns: rules 22, 29, 31), L4 wording (technical verbs, established terms, one name per
+    concept: rules 17, 18, 21, 26). To rewrite a paragraph, first write its chain of reasoning as a
+    skeleton, then the sentences. After any split, merge or deletion, re-read the paragraph from its
+    first sentence and check that each sentence opens with a link to the one before (connective or
+    back-reference); restore a lost link instead of trading L1 for L3 or L4.
+
 ## Self-check before finishing a section
+
+- Two passes, in this order. Pass 1 (L1): read each paragraph from start to end and check every link
+  between consecutive sentences. Pass 2 (L3-L4): search the sentences for the patterns of rules 26,
+  29 and 31.
 
 - Search the new text for " that ", " which ", " who " and for personal verbs (meet, need, pursue,
   seek, help, allow, enable, see, feed, decide); each hit is either a pronoun ("that of") or is
