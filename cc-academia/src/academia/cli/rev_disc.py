@@ -23,7 +23,7 @@ from academia.core.errors import EXIT_OK, UsageError
 from academia.core.models import stable_id
 from academia.reviewer import coi as coi_module
 from academia.reviewer import contact as contact_module
-from academia.reviewer import discover, geo, rank, report, scholarone
+from academia.reviewer import discover, geo, rank, report, reviewing, scholarone
 from academia.reviewer import enrich as enrich_module
 from academia.reviewer import lookups as lookup_module
 from academia.reviewer import workbook as workbook_module
@@ -915,7 +915,13 @@ def run_report(args: argparse.Namespace) -> int:
                 )
                 break
 
-        rows = report.build_rows(ordered, emails, alternates)
+        signals = {
+            candidate.person.person_id: reviewing.signals(
+                conn, candidate, policy, ms_id=state.ms_id, today=datetime.now().date()
+            )
+            for candidate in ordered
+        }
+        rows = report.build_rows(ordered, emails, alternates, signals)
         coverage = report.email_coverage(rows, policy)
 
         # candidate_scores is the ranking table, and a blocked candidate has no
@@ -932,7 +938,9 @@ def run_report(args: argparse.Namespace) -> int:
             for row in rows
             if row.institution == "unknown" and not row.candidate.blocked
         ]
-        written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy)
+        written = report.write_all(
+            conn, workspace.shortlist_dir, rows, profile, policy, ms_id=state.ms_id
+        )
         # The one file that leaves the workspace, built from the audit CSV that
         # was just written so the workbook cannot describe an earlier run.
         deliverable = workspace.deliverable

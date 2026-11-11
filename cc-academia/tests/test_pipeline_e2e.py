@@ -631,3 +631,99 @@ def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, s
     warning = capsys.readouterr().err
     assert "no papers" in warning
     assert "rev-disc search" in warning
+
+
+def _through_candidates(slug="tie-demo"):
+    run("init", "--slug", slug, "--title", "Torque ripple suppression in PMSM drives",
+        "--abstract", "Torque ripple suppression for PMSM traction drives.",
+        "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026",
+        "--authors", "Alice Author|Tsinghua University|CN")
+    run("profile", "--slug", slug)
+    run("profile", "--slug", slug, "--approve")
+    run("search", "--slug", slug)
+    run("candidates", "--slug", slug)
+
+
+def test_an_imported_editorial_page_merges_into_the_workbook(
+    tmp_path, stub_sources, capsys, monkeypatch
+):
+    monkeypatch.setattr("academia.reviewer.enrich.enrich", lambda conn, person: person)
+    _through_candidates()
+    page = Path(__file__).parent / "fixtures" / "scholarone_assign_reviewers.html"
+    capsys.readouterr()
+    assert run("import-scholarone", "--slug", "tie-demo", str(page), "--json") == 0
+    imported = json.loads(capsys.readouterr().out)
+    assert imported["candidates_added"] == 3
+    assert imported["invitees"] == 4
+
+    # Re-running candidates keeps the Locator people.
+    run("candidates", "--slug", "tie-demo")
+    run("enrich", "--slug", "tie-demo", "--no-email")
+    assert run("coi", "--slug", "tie-demo") == 0
+    assert run("report", "--slug", "tie-demo", "--json") == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    book = openpyxl.load_workbook(payload["deliverable"])
+    assert {"decision", "audit", "columns", "reviewer list", "works"} <= set(book.sheetnames)
+    decision = book["decision"]
+    heading = [cell.value for cell in decision[1]]
+    rows = [
+        dict(zip(heading, (c.value for c in line), strict=True))
+        for line in decision.iter_rows(min_row=2)
+    ]
+    by_name = {r["Reviewer name"]: r for r in rows}
+    assert by_name["Gökhan Çakal"]["Found by (ours, locator or both)"] == "ours"
+    assert by_name["Gökhan Çakal"]["Invitation on this manuscript"] == "not yet invited"
+    assert by_name["Erin Imaginary"]["Found by (ours, locator or both)"] == "locator"
+    assert by_name["Erin Imaginary"]["Verified reviews in Web of Science (Locator)"] == 80
+    assert by_name["Erin Imaginary"]["Check: review record in proportion to output"] == "Check by hand"
+    chen = by_name["Chen Placeholder"]
+    assert chen["Invitation on this manuscript"] == "returned"
+    assert chen["Recommend as reviewer"] == "Already invited"
+    assert chen["Why not recommended"] is None
+
+    contacts = Path(payload["contact_list"]).read_text(encoding="utf-8-sig")
+    assert "Chen Placeholder" not in contacts
+
+    reviewers = book["reviewer list"]
+    assert [c.value for c in reviewers[1]][:2] == ["Order", "Reviewer"]
+    assert reviewers.max_row >= 5
+
+    glossary = [row[1].value for row in book["columns"].iter_rows()]
+    assert "Average R-Score (Locator)" in glossary
+
+
+def test_without_an_import_no_locator_column_appears(tmp_path, stub_sources, capsys, monkeypatch):
+    monkeypatch.setattr("academia.reviewer.enrich.enrich", lambda conn, person: person)
+    _through_candidates()
+    run("enrich", "--slug", "tie-demo", "--no-email")
+    run("coi", "--slug", "tie-demo")
+    capsys.readouterr()
+    run("report", "--slug", "tie-demo", "--json")
+    book = openpyxl.load_workbook(json.loads(capsys.readouterr().out)["deliverable"])
+    heading = [cell.value for cell in book["decision"][1]]
+    assert "Public peer reviews (ORCID)" in heading
+    assert not any("Locator" in str(h) for h in heading)
+    assert "reviewer list" not in book.sheetnames
+
+
+def test_search_window_years_bounds_the_search(tmp_path, monkeypatch):
+    seen = {}
+
+    class Recording(StubSource):
+        def search_pages(self, expression, query_id, **kwargs):
+            seen.setdefault("year_from", kwargs.get("year_from"))
+            return super().search_pages(expression, query_id, **kwargs)
+
+    monkeypatch.setattr("academia.cli.rev_disc._sources", lambda names: [Recording()])
+    overlay = tmp_path / "config"
+    (overlay / "journals").mkdir(parents=True)
+    (overlay / "journals" / "tie.toml").write_text(
+        'journal = "IEEE Transactions on Industrial Electronics"\n'
+        "[retrieval]\nsearch_window_years = 5\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ACADEMIA_CONFIG_DIR", str(overlay))
+    monkeypatch.setattr("academia.cli.rev_disc._now_year", lambda: 2026)
+    _through_candidates()
+    assert seen["year_from"] == 2022

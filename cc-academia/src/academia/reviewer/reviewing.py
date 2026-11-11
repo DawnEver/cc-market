@@ -32,6 +32,21 @@ from academia.store import repository as repo
 
 NOT_INVITED = "not yet invited"
 
+#: Every column ``signals`` can return, in reading order. The review-record
+#: columns are absent when that check is switched off.
+COLUMNS = (
+    "found_by", "invitation_status",
+    "reviews", "reviews_source", "reviews_by_journal", "reviewed_target_journal",
+    "reviews_last_12_months", "days_since_last_review", "articles_window",
+    "articles_window_years",
+    "invitations_last_12_months", "invitations_open", "relevant_works", "orcid_url",
+    "locator_reviews", "locator_articles", "locator_reviews_by_journal", "locator_load",
+    "locator_days_since_review", "locator_r_score", "locator_works", "locator_wos_url",
+    "review_record", "review_record_ratio", "review_record_reasons",
+    "review_record_reviews_minimum", "review_record_ratio_minimum",
+    "review_record_countries_minimum",
+)
+
 #: How many entries a compact text cell lists before it says "…".
 COMPACT = 5
 WORKS_SHOWN = 3
@@ -164,8 +179,9 @@ def signals(
     person = candidate.person
     settings = policy.data.get("reviewing") or {}
     window = int(settings.get("article_window_years", 5))
-    months = int(settings.get("recent_months", 12))
-    since = _months_ago(today, months)
+    # Twelve months, fixed: the column names say so, and it is the window the
+    # Reviewer Locator's own workload figure uses.
+    since = _months_ago(today, 12)
 
     locator = next(
         (r["data"] for r in repo.locator_suggestions(conn, ms_id) if r["person_id"] == person.person_id),
@@ -216,6 +232,7 @@ def signals(
         "reviews_last_12_months": sum(1 for d in dates if d >= since) if known else "",
         "days_since_last_review": (today - latest).days if latest else "",
         "articles_window": articles,
+        "articles_window_years": window,
         "invitations_last_12_months": len(recent),
         "invitations_open": sum(1 for h in history if h["responded"] is None),
         "relevant_works": "\n".join(

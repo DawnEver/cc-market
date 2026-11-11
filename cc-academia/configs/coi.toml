@@ -198,7 +198,6 @@ activity = 0.07
 # store). They describe; they never exclude and never score.
 [reviewing]
 article_window_years = 5       # "articles" counts this many years, like the Reviewer Locator
-recent_months = 12             # window for "reviews / invitations in the last N months"
 
 # A hint, never a verdict: a review record out of proportion to the person's
 # own output, seen together with only a free-mail address or affiliations in
