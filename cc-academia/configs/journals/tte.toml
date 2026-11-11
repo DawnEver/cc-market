@@ -8,3 +8,5 @@
 # resolves to configs/coi.toml, and a deviation belongs here only with its
 # reason beside it.
 journal = "IEEE Transactions on Transportation Electrification"
+# How public review records name this journal (ISSNs as OpenAlex lists them).
+issns = ["2332-7782", "2372-2088", "2577-4212"]

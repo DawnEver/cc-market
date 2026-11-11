@@ -23,7 +23,7 @@ from academia.core.errors import EXIT_OK, UsageError
 from academia.core.models import stable_id
 from academia.reviewer import coi as coi_module
 from academia.reviewer import contact as contact_module
-from academia.reviewer import discover, geo, rank, report
+from academia.reviewer import discover, geo, rank, report, scholarone
 from academia.reviewer import enrich as enrich_module
 from academia.reviewer import lookups as lookup_module
 from academia.reviewer import workbook as workbook_module
@@ -315,12 +315,17 @@ def run_search(args: argparse.Namespace) -> int:
     profile = _load_profile(workspace)
     _require_approved_queries(args.slug, state, profile)
 
+    # `search_window_years` mirrors the Reviewer Locator's "5 years of
+    # publications" when a journal wants it; 0 (shipped) leaves the corpus
+    # unbounded. An explicit --year-from always wins.
+    window = load_policy(state.journal or profile.journal).retrieval_int("search_window_years", 0)
+    year_from = args.year_from or (_now_year() - window + 1 if window > 0 else None)
     outcome = discover.run_search(
         _sources(args.source),
         profile,
         max_pages=args.pages,
         per_page=args.per_page,
-        year_from=args.year_from,
+        year_from=year_from,
     )
 
     with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
@@ -396,7 +401,7 @@ def run_candidates(args: argparse.Namespace) -> int:
         candidates = discover.build_candidates(
             conn, scores, top_papers=top_papers, min_evidence=args.min_evidence
         )
-        rows = [
+        harvested = [
             {
                 "person_id": c.person.person_id,
                 "name": c.person.display_name,
@@ -410,6 +415,9 @@ def run_candidates(args: argparse.Namespace) -> int:
             }
             for c in candidates
         ]
+        # An imported editorial page adds its suggestions here, so a re-run of
+        # this stage keeps them rather than silently dropping them.
+        rows = scholarone.merge_candidates(conn, harvested, state.ms_id)
 
     workspace.write_jsonl(workspace.candidate_dir / "candidates.jsonl", rows)
     state.mark("candidates")
@@ -1002,6 +1010,58 @@ def run_report(args: argparse.Namespace) -> int:
                     "address(es). Run `rev-disc contacts`, look the names up, feed them "
                     "back with `enrich --homepages`, then re-run report."
                 )
+    return EXIT_OK
+
+
+# -------------------------------------------------------- import-scholarone
+
+
+def run_import_scholarone(args: argparse.Namespace) -> int:
+    """Store a saved ScholarOne Assign Reviewers page against this manuscript.
+
+    Optional input: nothing downstream requires it. It adds the Reviewer
+    Locator's candidates and numbers, and this manuscript's invitation
+    statuses — which only the editorial system knows.
+    """
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    if not state.ms_id:
+        raise UsageError(f"run `rev-disc init --slug {args.slug}` before importing a page")
+    source = Path(args.html).expanduser()
+    if not source.exists():
+        raise UsageError(f"file not found: {source}")
+    try:
+        page = scholarone.parse(source.read_text(encoding="utf-8", errors="replace"))
+    except scholarone.NotAnAssignPage as error:
+        raise UsageError(str(error)) from error
+
+    candidates_path = workspace.candidate_dir / "candidates.jsonl"
+    rows = workspace.read_jsonl(candidates_path) if candidates_path.exists() else []
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
+        result = scholarone.store_page(conn, page, state.ms_id, candidate_rows=rows)
+        if candidates_path.exists():
+            merged = scholarone.merge_candidates(conn, rows, state.ms_id)
+    if candidates_path.exists():
+        workspace.write_jsonl(candidates_path, merged)
+
+    payload = {
+        "locator_suggestions": len(page.suggestions),
+        "locator_total": page.locator_total,
+        "locator_matched": result.locator,
+        "invitees": len(page.invitees),
+        "invitees_matched": result.invitees,
+        "candidates_added": (len(merged) - len(rows)) if candidates_path.exists() else 0,
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(
+            f"reviewer locator: {len(page.suggestions)} of {page.locator_total} shown on the page"
+        )
+        log.info(f"  matched: {result.locator}")
+        log.info(f"reviewer list: {len(page.invitees)} invitee(s); matched: {result.invitees}")
+        if not candidates_path.exists():
+            log.info("  `rev-disc candidates` will add the Locator people to the pool")
     return EXIT_OK
 
 

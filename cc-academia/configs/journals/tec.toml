@@ -2,3 +2,5 @@
 #
 # No overrides.
 journal = "IEEE Transactions on Energy Conversion"
+# How public review records name this journal (ISSNs as OpenAlex lists them).
+issns = ["0885-8969", "1558-0059"]

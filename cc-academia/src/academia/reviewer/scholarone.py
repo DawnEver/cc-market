@@ -433,3 +433,206 @@ def parse(text: str) -> AssignPage:
             "manuscript's Assign Reviewers page from ScholarOne"
         )
     return page
+
+
+# ------------------------------------------------------------------ storing
+
+
+@dataclass
+class ImportResult:
+    #: How each Locator candidate was attached to a person, by method.
+    locator: dict[str, int] = field(default_factory=dict)
+    #: The same for the reviewer list.
+    invitees: dict[str, int] = field(default_factory=dict)
+
+
+#: An address the Locator states. Below a published corresponding address,
+#: above a bare public ORCID one: Clarivate shows the address it mails, but
+#: cannot say whether it is still current.
+LOCATOR_SOURCE = "reviewer_locator"
+LOCATOR_EMAIL_CONFIDENCE = 0.8
+
+
+def _display(name: str) -> str:
+    """``Last, First`` as ``First Last`` — the order the rest of the store uses."""
+    surname, comma, given = name.partition(",")
+    return f"{given.strip()} {surname.strip()}".strip() if comma else name.strip()
+
+
+class _Resolver:
+    """ORCID, then a stored address, then a name — the last only within the run.
+
+    A name is never an identity (see AGENTS.md): it is accepted here only when
+    exactly one person in *this run's* pool carries it, the pool being the
+    harvested candidates plus whoever the page itself already resolved. Outside
+    that pool a name creates a new low-confidence person rather than attaching
+    one editor's page to another researcher with the same name.
+    """
+
+    def __init__(self, conn, pool: list[str]):
+        from academia.store import repository as repo
+
+        self.conn, self.repo = conn, repo
+        self.pool = list(dict.fromkeys(pool))
+
+    def _by_name(self, name: str) -> str | None:
+        from academia.core.text import normalize_name
+
+        key = normalize_name(name)
+        hits = []
+        for person_id in dict.fromkeys(self.pool):
+            person = self.repo.load_person(self.conn, person_id)
+            if person and key in {normalize_name(n) for n in [person.display_name, *person.names]}:
+                hits.append(person_id)
+        return hits[0] if len(hits) == 1 else None
+
+    def __call__(self, name: str, orcid: str = "", emails: tuple[str, ...] = ()) -> tuple[str, str]:
+        from academia.core.models import Author
+
+        found, method = self.repo.person_by_orcid(self.conn, orcid), "orcid"
+        if not found:
+            method = "email"
+            found = next(
+                (pid for pid in (self.repo.person_by_email(self.conn, e) for e in emails) if pid),
+                None,
+            )
+        if not found:
+            found, method = self._by_name(name), "name"
+        if not found:
+            found = self.repo.upsert_person(self.conn, Author(name=name, idx=0, orcid=orcid))
+            method = "new"
+        elif orcid:
+            self.conn.execute(
+                "UPDATE persons SET orcid = ?, confidence = max(confidence, 0.99), "
+                "resolution_method = 'orcid' WHERE person_id = ? AND coalesce(orcid, '') = ''",
+                (orcid, found),
+            )
+        self.repo.add_name_variants(self.conn, found, [name])
+        self.pool.append(found)
+        return found, method
+
+
+def _first_per_person(rows: list[dict]) -> list[dict]:
+    seen: dict[str, dict] = {}
+    for row in rows:
+        seen.setdefault(row["person_id"], row)
+    return list(seen.values())
+
+
+def store_page(conn, page: AssignPage, ms_id: str, *, candidate_rows: list[dict]) -> ImportResult:
+    """Attach everything the page states to people in the store, for one manuscript.
+
+    Replaces this manuscript's previous import, so importing a re-saved page
+    updates statuses rather than duplicating them. Invitation outcomes go to
+    ``review_history`` — the portable record ``rev-disc invite`` also writes —
+    so a person invited here is known as invited on every machine.
+    """
+    from dataclasses import asdict
+
+    from academia.store import repository as repo
+
+    resolve = _Resolver(conn, [row["person_id"] for row in candidate_rows])
+    result = ImportResult()
+
+    locator_rows = []
+    for position, suggestion in enumerate(page.suggestions, start=1):
+        person_id, method = resolve(suggestion.name, suggestion.orcid, suggestion.emails)
+        result.locator[method] = result.locator.get(method, 0) + 1
+        for email in suggestion.emails:
+            repo.record_email(
+                conn,
+                person_id,
+                email,
+                source=LOCATOR_SOURCE,
+                source_url=suggestion.wos_url,
+                confidence=LOCATOR_EMAIL_CONFIDENCE,
+            )
+        if suggestion.affiliations:
+            institution, country = suggestion.affiliations[0]
+            # Not marked current: the Locator lists every affiliation it has
+            # seen, and a bibliographic current one must still win.
+            repo.store_institution_for(
+                conn,
+                person_id,
+                name=institution,
+                country_code=country,
+                is_current=False,
+                source=LOCATOR_SOURCE,
+                source_url=suggestion.wos_url,
+            )
+        data = asdict(suggestion)
+        data["wos_id"] = suggestion.wos_id
+        locator_rows.append(
+            {"person_id": person_id, "position": position, "match_method": method, "data": data}
+        )
+    repo.replace_locator_suggestions(conn, ms_id, _first_per_person(locator_rows))
+
+    invitee_rows = []
+    for invitee in page.invitees:
+        person_id, method = resolve(_display(invitee.name), invitee.orcid)
+        result.invitees[method] = result.invitees.get(method, 0) + 1
+        repo.record_invitation(
+            conn,
+            person_id,
+            ms_id,
+            invited_at=invitee.invited,
+            responded=invitee.responded,
+            accepted=invitee.accepted,
+            note=f"ScholarOne: {invitee.status}" if invitee.status else "",
+        )
+        invitee_rows.append(
+            {
+                "person_id": person_id,
+                "position": invitee.order,
+                "match_method": method,
+                "data": asdict(invitee),
+            }
+        )
+    repo.replace_editorial_invitations(conn, ms_id, _first_per_person(invitee_rows))
+
+    repo.set_editorial_import(
+        conn,
+        ms_id,
+        {
+            "manuscript_ref": page.manuscript_ref,
+            "submitted": page.submitted,
+            "last_updated": page.last_updated,
+            "summary": page.summary,
+            "locator_shown": len(page.suggestions),
+            "locator_total": page.locator_total,
+        },
+    )
+    return result
+
+
+def merge_candidates(conn, rows: list[dict], ms_id: str) -> list[dict]:
+    """The run's candidates plus every Locator person not already among them.
+
+    A Locator person joins with no evidence: their Locator works are Clarivate's
+    choice, not papers this run scored, so they are shown beside the candidate
+    rather than counted by rules that read relevance. With no relevant record
+    those rules abstain, as they do for any gap.
+    """
+    from academia.store import repository as repo
+
+    present = {row["person_id"] for row in rows}
+    added = []
+    for suggestion in repo.locator_suggestions(conn, ms_id):
+        if suggestion["person_id"] in present:
+            continue
+        person = repo.load_person(conn, suggestion["person_id"])
+        if person is None:
+            continue
+        present.add(person.person_id)
+        added.append(
+            {
+                "person_id": person.person_id,
+                "name": person.display_name,
+                "orcid": person.orcid,
+                "confidence": person.confidence,
+                "resolution_method": person.resolution_method,
+                "evidence": [],
+                "relevant_papers": [],
+            }
+        )
+    return [*rows, *added]

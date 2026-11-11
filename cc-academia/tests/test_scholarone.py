@@ -132,3 +132,82 @@ def test_affiliation_line_with_known_countries():
 def test_page_without_sections_is_refused():
     with pytest.raises(scholarone.NotAnAssignPage):
         scholarone.parse("<html><body>Nothing here</body></html>")
+
+
+# ------------------------------------------------------------------ storing
+
+
+@pytest.fixture()
+def conn(tmp_path):
+    from academia.store import db
+
+    with db.session(tmp_path / "store.db") as connection:
+        yield connection
+
+
+def _harvested(conn, name, **ids):
+    from academia.core.models import Author
+    from academia.store import repository as repo
+
+    return repo.upsert_person(conn, Author(name=name, idx=0, **ids))
+
+
+def test_import_matches_by_orcid_then_email_then_name(conn, page):
+    from academia.store import repository as repo
+
+    erin = _harvested(conn, "E. Imaginary", orcid="0000-0000-0000-0001")
+    frank = _harvested(conn, "Frank M.", openalex_id="A-frank")
+    repo.record_email(conn, frank, "f.madeup@example.org", source="orcid_public")
+    chen = _harvested(conn, "Chen Placeholder", openalex_id="A-chen")
+    rows = [{"person_id": pid} for pid in (erin, frank, chen)]
+
+    result = scholarone.store_page(conn, page, "ms-1", candidate_rows=rows)
+
+    methods = {row["person_id"]: row["match_method"] for row in repo.locator_suggestions(conn, "ms-1")}
+    assert methods == {erin: "orcid", frank: "email", chen: "name"}
+    assert result.locator == {"orcid": 1, "email": 1, "name": 1}
+
+    invited = {row["person_id"]: row for row in repo.editorial_invitations(conn, "ms-1")}
+    assert chen in invited and invited[chen]["match_method"] == "name"
+    assert len(invited) == 4
+    history = {r["person_id"]: r for r in conn.execute("SELECT * FROM review_history")}
+    assert (history[chen]["responded"], history[chen]["accepted"]) == (1, 1)
+    assert all(r["ms_id"] == "ms-1" for r in history.values())
+
+
+def test_a_name_never_matches_outside_this_runs_candidates(conn, page):
+    from academia.store import repository as repo
+
+    stranger = _harvested(conn, "Frank Madeup", openalex_id="A-other-frank")
+    scholarone.store_page(conn, page, "ms-1", candidate_rows=[])
+    frank = next(
+        r for r in repo.locator_suggestions(conn, "ms-1") if r["data"]["name"] == "Frank Madeup"
+    )
+    assert frank["person_id"] != stranger
+    assert frank["match_method"] == "new"
+
+
+def test_locator_people_join_the_candidate_pool_without_evidence(conn, page):
+    ours = _harvested(conn, "E. Imaginary", orcid="0000-0000-0000-0001")
+    rows = [{"person_id": ours, "evidence": [{"paper_id": "p"}], "relevant_papers": []}]
+    scholarone.store_page(conn, page, "ms-1", candidate_rows=rows)
+
+    merged = scholarone.merge_candidates(conn, rows, "ms-1")
+    assert merged[0] is rows[0]
+    added = merged[1:]
+    assert len(added) == 2
+    assert all(row["evidence"] == [] and row["relevant_papers"] == [] for row in added)
+    # Merging twice adds nobody twice.
+    assert scholarone.merge_candidates(conn, merged, "ms-1") == merged
+
+
+def test_import_is_idempotent(conn, page):
+    from academia.store import repository as repo
+
+    scholarone.store_page(conn, page, "ms-1", candidate_rows=[])
+    scholarone.store_page(conn, page, "ms-1", candidate_rows=[])
+    assert len(repo.locator_suggestions(conn, "ms-1")) == 3
+    assert conn.execute("SELECT count(*) FROM review_history").fetchone()[0] == 4
+    summary = repo.editorial_import(conn, "ms-1")
+    assert summary["summary"]["invited"] == 4
+    assert summary["locator_total"] == 7
