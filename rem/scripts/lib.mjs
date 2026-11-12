@@ -355,9 +355,60 @@ export function rebuildIndex(scopeRoot) {
 // name already exists. Check and create are one syscall, so two writers racing for one
 // name never both succeed and never interleave bytes. Memory is written only this way.
 export function writeOnce(file, content) {
+  assertLanguage(dirname(file), content, file);
   mkdirSync(dirname(file), { recursive: true });
   try { writeFileSync(file, content, { encoding: 'utf8', flag: 'wx' }); return true; }
   catch (err) { if (err.code === 'EEXIST') return false; throw err; }
+}
+
+// ── Language policy ──
+// `.claude/rem.json` {"language": "english" | "unrestricted"}; absent means "english".
+// "English only" is dev-lab's CJK rule (dev_lab.dev.cjk.CJK_RANGES) plus kana and hangul;
+// ordinary non-ASCII (degree sign, Greek letters, em dash, multiplication sign) stays legal.
+export const LANGUAGES = ['english', 'unrestricted'];
+const FOREIGN_RANGES = [
+  [0x1100, 0x11FF], // Hangul Jamo
+  [0x3000, 0x303F], // CJK Symbols and Punctuation          (dev-lab)
+  [0x3040, 0x30FF], // Hiragana, Katakana
+  [0x3130, 0x318F], // Hangul Compatibility Jamo
+  [0x31F0, 0x31FF], // Katakana Phonetic Extensions
+  [0x3400, 0x4DBF], // CJK Unified Ideographs Extension A    (dev-lab)
+  [0x4E00, 0x9FFF], // CJK Unified Ideographs                (dev-lab)
+  [0xAC00, 0xD7AF], // Hangul Syllables
+  [0xF900, 0xFAFF], // CJK Compatibility Ideographs          (dev-lab)
+  [0xFF00, 0xFFEF], // Halfwidth and Fullwidth Forms         (dev-lab)
+];
+
+// The distinct foreign-script characters in text, in order of first appearance.
+export function findForeignScript(text) {
+  const seen = new Set();
+  for (const ch of String(text ?? '')) {
+    const cp = ch.codePointAt(0);
+    if (FOREIGN_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi)) seen.add(ch);
+  }
+  return [...seen];
+}
+
+// The repo's policy, from its committed .claude/rem.json (the file that also holds `backlog`).
+export function languagePolicy(start) {
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(join(findProjectRoot(start), '.claude', 'rem.json'), 'utf8')); }
+  catch { return 'english'; }
+  const lang = cfg?.language ?? 'english';
+  if (!LANGUAGES.includes(lang)) throw new Error(`.claude/rem.json language must be one of ${LANGUAGES.join('|')}, got: ${lang}`);
+  return lang;
+}
+
+// Every rem writer calls this before it writes. Under "english" it throws, naming the characters.
+export function assertLanguage(start, text, what = 'text') {
+  if (languagePolicy(start) === 'unrestricted') return;
+  const bad = findForeignScript(text);
+  if (!bad.length) return;
+  const cp = c => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+  const shown = bad.slice(0, 8).map(c => `${cp(c)} ${c}`).join(', ') + (bad.length > 8 ? ', ...' : '');
+  throw new Error(`${what} contains non-English script (${shown}). rem writes English only: write a faithful `
+    + 'English translation, marking a translated user quote "(user, translated)". To allow any language, '
+    + 'set {"language": "unrestricted"} in .claude/rem.json.');
 }
 
 // ── File collection ──

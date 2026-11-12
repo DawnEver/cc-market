@@ -9,6 +9,13 @@ the visible entries and bound docs of the scope being worked on, plus the bound 
 
 **Todo** — one backlog: a task's open items are journal lines; a repo backlog item is an issue where `.claude/rem.json` says `{"backlog": "issues"}` (then `/todo` is a read-only view), else one file per item in `.claude/todo/`, archived into memory when closed. No checkboxes in memory. → `skills/todo/SKILL.md`.
 
+**Language** — rem writes English only by default: a memory entry, task goal, journal line or
+todo item containing CJK, kana, hangul or full-width characters is refused, naming the code
+points and asking for a faithful English translation (user quotes marked `(user, translated)`).
+To allow any language, commit `.claude/rem.json` with `{"language": "unrestricted"}` — the file
+that also holds `backlog`; values `english` (default) | `unrestricted`. Character set →
+`skills/rem/reference/memory-conventions.md` § Language.
+
 ## Install
 
 ```shell

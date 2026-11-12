@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import {
-  findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs, writeOnce,
+  findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs, writeOnce, assertLanguage,
 } from './lib.mjs';
 import { resolveTask } from './tasks.mjs';
 
@@ -109,6 +109,8 @@ const content = `---\nname: ${name}\ndescription: ${yamlScalar(desc)}\n`
   + (from.length ? `from:\n${from.map(c => `  - ${c}`).join('\n')}\n` : '')
   + formatRefs(refs)
   + `metadata:\n  type: ${type}\n---\n\n${body}`;
+
+try { assertLanguage(scopeRoot, content, 'the entry'); } catch (e) { usage(e.message); }
 
 // ── Written once (O_EXCL: a racing writer of the same name loses) ──
 if (!writeOnce(file, content)) {

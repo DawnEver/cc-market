@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, write
 import { join, basename, dirname } from 'path';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
-import { parseFrontmatter, findAllScopes, listEntries } from './lib.mjs';
+import { parseFrontmatter, findAllScopes, listEntries, assertLanguage } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority } from './authority.mjs';
 
@@ -97,6 +97,7 @@ export function resolveTask(start, { task } = {}) {
 export function openTask(start, slug, goal, { scope = [], owner = 'user', date = todayISO() } = {}) {
   if (!SLUG_RE.test(slug)) throw new Error(`task slug must be kebab-case, got: ${slug}`);
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
+  assertLanguage(start, goal, 'the task goal');
   if (existsSync(taskFile(start, slug))) throw new Error(`task ${slug} exists`);
   const authority = consumeAuthority(start, 'open', slug); // the user's /rem:task prompt grants it
   mkdirSync(join(tasksDir(start), slug), { recursive: true });
@@ -130,6 +131,7 @@ export function appendJournal(start, slug, tag, text, { date = todayISO(), allow
   if (!task) throw new Error(`no task ${slug}`);
   if (task.status !== 'open' && !allowClosed) throw new Error(`task ${slug} is ${task.status}; its journal is final`);
   if (!text || /[\r\n]/.test(text)) throw new Error('a journal line is one line of text');
+  assertLanguage(start, text, 'the journal line');
   let label = tag;
   if (tag === 'decision') label = `D${task.decisions.length + 1}`;
   else if (tag === 'open-item') label = `O${Math.max(0, ...task.items.map(i => i.n)) + 1} open`;

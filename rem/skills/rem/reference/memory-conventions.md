@@ -16,6 +16,18 @@ Two paths:
 2. **Session consolidation (`/rem`)** — everything learned during a session that the user
    didn't explicitly ask to keep. See `standard-procedure.md`.
 
+## Language
+
+Write memory entries, task goals, journal lines and todo items **in English** unless the
+repo's `.claude/rem.json` sets `"language": "unrestricted"`. When the user spoke another
+language, write a faithful English translation and mark a translated quote `(user, translated)`.
+Under the default, every rem writer (`remember.js`, `merge-memory.js`, `crystallize.js`,
+`task.js`, `todo.js`) refuses text containing CJK ideographs, CJK symbols and punctuation, kana,
+hangul or full-width forms, naming the offending code points. Ordinary non-ASCII (degree sign,
+Greek letters, em dash, multiplication sign) is accepted. The character set is dev-lab's CJK
+rule (`dev_lab.dev.cjk.CJK_RANGES`) plus kana and hangul; it lives once, in `scripts/lib.mjs`
+(`findForeignScript`).
+
 ## Per-type save constraints
 
 - **`user`** — facts about the user: preferences, role, environment, workflow habits.

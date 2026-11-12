@@ -14,6 +14,7 @@ Research-only mode — understand before acting. When invoked:
 
 2. **Write a detailed memory file** at `.claude/memory/YYYY/MM/DD/<slug>.md` with:
    - Proper YAML frontmatter (`name`, `description`, `metadata.type: research`)
+   - Written in English unless `.claude/rem.json` sets `"language": "unrestricted"` (see `../rem/reference/memory-conventions.md` § Language)
    - Clear conclusion up top (not buried)
    - Current-state breakdown (what exists, what doesn't)
    - Analysis (pros/cons, technical blockers, alternatives considered)
@@ -22,7 +23,7 @@ Research-only mode — understand before acting. When invoked:
 
 3. **Add to rem:todo** (where `.claude/rem.json` says `backlog: issues`, file an issue instead) via:
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/todo.js add "调研：<topic> — <one-line conclusion>" \
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/todo.js add "Research: <topic> — <one-line conclusion>" \
      --severity LOW --module research
    ```
 

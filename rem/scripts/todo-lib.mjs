@@ -13,7 +13,7 @@ import { join, dirname, relative } from 'path';
 import { randomBytes } from 'crypto';
 import { findProjectRoot, todayISO, SR_BLOCK_SPLIT_RE, SR_FINDING_HDR_RE, SR_STATUS_RE } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
-import { parseFrontmatter, writeOnce } from './lib.mjs';
+import { parseFrontmatter, writeOnce, assertLanguage } from './lib.mjs';
 import { listTasks } from './tasks.mjs';
 import { evaluateDocs } from './doc-freshness.js';
 
@@ -54,6 +54,7 @@ export function listItems(start) {
 export function addItem(start, summary, { severity = 'MEDIUM', module = 'general', file = '', from = '', detail = '', date = todayISO() } = {}) {
   if (backlogMode(start) === 'issues') throw new Error('this repo\'s backlog is the issue tracker (.claude/rem.json backlog: issues) — file an issue there');
   if (!summary || /[\r\n]/.test(summary)) throw new Error('a todo item needs a one-line summary');
+  assertLanguage(start, [summary, module, file, from, detail].join('\n'), 'the todo item');
   const sev = String(severity).toUpperCase();
   if (!SEVERITIES.includes(sev)) throw new Error(`--severity must be one of ${SEVERITIES.join('|')}`);
   const id = `T${date.replace(/-/g, '')}-${randomBytes(3).toString('hex')}`;

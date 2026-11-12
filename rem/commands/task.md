@@ -9,6 +9,8 @@ disable-model-invocation: true
 
 Show the user the output above verbatim. If it opened a task, the session that works on it
 binds by `--task <slug>` or by a worktree/branch named after it, and records progress only
-through `task.js log|decide|open-item|close-item|handoff`. Do not run `task.js open` or
+through `task.js log|decide|open-item|close-item|handoff` -- in English unless `.claude/rem.json`
+sets `"language": "unrestricted"` (translate the user's words; mark quotes `(user, translated)`).
+Do not run `task.js open` or
 `task.js close` yourself: without this command's authority record it is refused, and a
 workaround is detected by scope-validate.

@@ -74,7 +74,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js handoff "next: rerun the gate"
 
 Each call appends ONE line `- <date> <tag>: <text>` (O_APPEND; earlier bytes are never
 rewritten) to the bound task's journal only. Decisions and open items number themselves. A
-closed task's journal is final. Read with `task.js show [<slug>]` and `task.js list`.
+closed task's journal is final. Lines are English by default (`memory-conventions.md` § Language). Read with `task.js show [<slug>]` and `task.js list`.
 
 ## Close — distill, then archive (the user closes)
 
