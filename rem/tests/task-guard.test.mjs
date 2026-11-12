@@ -3,7 +3,7 @@
 // arguments and read-only commands never match. (Detection in scope-validate is the backstop.)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideTaskGuard } from '../hooks/task-guard.js';
+import { decideTaskGuard, REASON } from '../hooks/task-guard.js';
 
 const shell = (command, tool = 'Bash') => decideTaskGuard({ tool_name: tool, tool_input: { command } }).deny;
 
@@ -65,4 +65,13 @@ describe('still allowed after the deeper parse', () => {
     'cat <<EOF > notes.md\nmentions .claude/tasks/x/TASK.md\nEOF',
     'cd .claude && cd memory && echo > note.md',
   ]) it(JSON.stringify(cmd), () => assert.equal(shell(cmd), false));
+});
+
+describe('the refusal names a remedy the other guards allow', () => {
+  // dev-lab#419: "propose the change to the user" became a `! sed` the stop hook refused in turn.
+  it('asks for an edit in an editor, never a command, and names the rephrase-before-append door', () => {
+    assert.match(REASON, /editor/);
+    assert.match(REASON, /<placeholder>/);
+    assert.doesNotMatch(REASON, /`!|\bsed\b|\brun\b/);
+  });
 });
