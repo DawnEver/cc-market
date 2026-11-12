@@ -219,7 +219,19 @@ content verbatim.
     first sentence and check that each sentence opens with a link to the one before (connective or
     back-reference); restore a lost link instead of trading L1 for L3 or L4.
 
+33. **Sentence variety serves the chain of reasoning.** The logical link between sentences comes
+    first (rule 32); sentence form serves it. Mix sentence forms: subject-first sentences, sentences
+    opened by a phrase, short and long sentences. An opening phrase ("As a result,", "In contrast,",
+    "For this reason,") is used where it carries the link; a decorative opener that only adds a comma
+    ("In the steady state,", "Grouped by m,", "For each plane,") is not. Do not open two consecutive
+    sentences with a phrase and a comma, and avoid more than about one such opening in three sentences.
+    Do not use "whereas": give each side of a contrast its own sentence and mark the contrast in the
+    second ("The magnet loss, in contrast, ...").
+
 ## Self-check before finishing a section
+
+- Read the opening words of consecutive sentences in each paragraph: no two phrase-plus-comma openings in a
+  row, no decorative opener, no "whereas" (rule 33).
 
 - Two passes, in this order. Pass 1 (L1): read each paragraph from start to end and check every link
   between consecutive sentences. Pass 2 (L3-L4): search the sentences for the patterns of rules 26,
