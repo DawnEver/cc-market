@@ -234,7 +234,11 @@ content verbatim.
     (3) The `prose-reviewer` agent, never the writer, reviews the diff cold: links first (pass 1), then
     sentence patterns (pass 2), then consistency with figures and captions. (4) The main session
     re-reads every changed paragraph and resolves each FIX; a BLOCK (meaning change to user-approved
-    text) goes to the user. (5) Only then compile, inspect the page and report. A new user rule is
+    text) goes to the user. (5) Only then compile and inspect: call the TeX engine by its full path or
+    a verified PATH, never discard its output (no redirect to /dev/null), check its exit status and the
+    log for errors and undefined references, and confirm the PDF's timestamp is newer than the edit (a
+    stale PDF or log is not a compile). Render every changed page to an image and read it; the report
+    names the pages read, the page count and the PDF time. A new user rule is
     added in the same pass to the project's writing rules, which the reviewer applies; a generic rule
     a pattern can catch is also added to the lint.
 
@@ -298,6 +302,7 @@ content verbatim.
 - Every specialty concept is named with its reference and its one needed property before use;
   textbook material is cited, not explained; the background runs from familiar to special.
 - The review chain of rule 34 has run: lint hits resolved, `prose-reviewer` verdict obtained from an
-  agent other than the writer, every changed paragraph re-read whole.
+  agent other than the writer, every changed paragraph re-read whole, the PDF rebuilt after the edit
+  (timestamp checked) and every changed page rendered and read.
 - Every figure passes rule 35: readable in greyscale, Okabe-Ito colours from the shared definition,
   one colour and style per quantity across figures.
