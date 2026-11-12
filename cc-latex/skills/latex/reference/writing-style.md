@@ -238,6 +238,14 @@ content verbatim.
     added in the same pass to the project's writing rules, which the reviewer applies; a generic rule
     a pattern can catch is also added to the lint.
 
+35. **Figures stay readable without colour.** Colour never carries a distinction alone: every
+    colour difference is doubled by a line style, a marker or a hatch, so the figure survives
+    greyscale printing and colour-vision deficiency. Use a colour-blind-safe palette (Okabe-Ito:
+    #E69F00, #56B4E9, #009E73, #F0E442, #0072B2, #D55E00, #CC79A7, #000000), defined once in the
+    figure script and reused by every figure; avoid red against green. One quantity keeps one
+    colour and one style across all figures, including schematics. Label curves directly where
+    space allows; a legend is the fallback.
+
 ## Self-check before finishing a section
 
 - Read the opening words of consecutive sentences in each paragraph: no two phrase-plus-comma openings in a
@@ -291,3 +299,5 @@ content verbatim.
   textbook material is cited, not explained; the background runs from familiar to special.
 - The review chain of rule 34 has run: lint hits resolved, `prose-reviewer` verdict obtained from an
   agent other than the writer, every changed paragraph re-read whole.
+- Every figure passes rule 35: readable in greyscale, Okabe-Ito colours from the shared definition,
+  one colour and style per quantity across figures.
