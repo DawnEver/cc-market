@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { lint, sentences } from '../scripts/lint-prose.mjs';
 
-const ids = (src, cfg) => lint(src, 't.tex', cfg).map(h => h.rule);
+const ids = (src) => lint(src, 't.tex').map(h => h.rule);
 
 test('sentences skip floats and tokenise cites and maths', () => {
   const s = sentences('A loss $P_s$ rises~\\cite{a}.\nIt falls.\n\\begin{figure}\nNot prose.\n\\end{figure}\n');
@@ -26,9 +26,4 @@ test('flags two phrase-plus-comma openings in a row, not one', () => {
 test('flags bare and long sentences', () => {
   const r = ids('These changes reverse.\n' + 'Long ' + 'word '.repeat(45).trim() + '.\n');
   assert.ok(r.includes('bare') && r.includes('length'));
-});
-
-test('project patterns extend the generic rules', () => {
-  const cfg = { patterns: [{ id: 'term', regex: '\\bpeak torque\\b', message: 'say continuous torque' }] };
-  assert.ok(ids('The loss is reported at peak torque and full speed here.\n', cfg).includes('term'));
 });

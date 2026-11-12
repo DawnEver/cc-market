@@ -39,8 +39,8 @@ drafting or rewriting prose.
 ## Review chain (mandatory for every prose edit)
 
 Writer edits with a change log, then `node ${CLAUDE_PLUGIN_ROOT}/scripts/lint-prose.mjs [files]`
-(project patterns in `.claude/prose-lint.json`), then the `prose-reviewer` agent reviews the diff
-cold, then the main session resolves every FIX and sends every BLOCK to the user, then compile and
+(generic rules), then the `prose-reviewer` agent reviews the diff cold against the generic and the
+project writing rules, then the main session resolves every FIX and sends every BLOCK to the user, then compile and
 inspect. Details: rule 34 in `reference/writing-style.md`.
 
 ## Word counts

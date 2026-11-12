@@ -235,8 +235,8 @@ content verbatim.
     sentence patterns (pass 2), then consistency with figures and captions. (4) The main session
     re-reads every changed paragraph and resolves each FIX; a BLOCK (meaning change to user-approved
     text) goes to the user. (5) Only then compile, inspect the page and report. A new user rule is
-    added in the same pass to the project rules and, when a pattern can catch it, to the project's
-    `.claude/prose-lint.json` or to the lint's generic rules.
+    added in the same pass to the project's writing rules, which the reviewer applies; a generic rule
+    a pattern can catch is also added to the lint.
 
 ## Self-check before finishing a section
 

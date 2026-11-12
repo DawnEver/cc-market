@@ -13,7 +13,8 @@ Inputs from the caller: the files or `git diff` range to review, and the writer'
 Procedure (rule 32 order: L1 argument > L2 position > L3 sentence > L4 wording):
 1. Lint: run `node <cc-latex>/scripts/lint-prose.mjs <files>` from the LaTeX project root
    (`<cc-latex>` = `$CLAUDE_PLUGIN_ROOT`, else glob `~/.claude*/plugins/cache/*/cc-latex/*/scripts/lint-prose.mjs`).
-   The project's `.claude/prose-lint.json` adds its own patterns. Confirm or dismiss every hit with one reason.
+   The lint covers the generic rules only; apply the project's own rules by reading. Confirm or dismiss
+   every hit with one reason.
 2. Pass 1, links: read each changed paragraph whole, from its first sentence. Name the link of each
    sentence to the previous one (cause, consequence, contrast, elaboration). Flag sentences with no link,
    links lost by a split or deletion, bare assertions, sections without a causal closing sentence.
