@@ -238,7 +238,8 @@ content verbatim.
     a verified PATH, never discard its output (no redirect to /dev/null), check its exit status and the
     log for errors and undefined references, and confirm the PDF's timestamp is newer than the edit (a
     stale PDF or log is not a compile). Render every changed page to an image and read it; the report
-    names the pages read, the page count and the PDF time. A new user rule is
+    names the pages read, the page count and the PDF time. (6) Do not commit or push: the user reviews
+    the result and must explicitly agree before any commit. A new user rule is
     added in the same pass to the project's writing rules, which the reviewer applies; a generic rule
     a pattern can catch is also added to the lint.
 
