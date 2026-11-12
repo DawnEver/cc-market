@@ -228,6 +228,16 @@ content verbatim.
     Do not use "whereas": give each side of a contrast its own sentence and mark the contrast in the
     second ("The magnet loss, in contrast, ...").
 
+34. **Every prose edit passes a fixed review chain before it is reported.** (1) The writer (main
+    session or subagent) edits and keeps a change log: old sentence, new sentence, rule. (2)
+    `scripts/lint-prose.mjs` runs on the changed files; every hit is fixed or dismissed with a reason.
+    (3) The `prose-reviewer` agent, never the writer, reviews the diff cold: links first (pass 1), then
+    sentence patterns (pass 2), then consistency with figures and captions. (4) The main session
+    re-reads every changed paragraph and resolves each FIX; a BLOCK (meaning change to user-approved
+    text) goes to the user. (5) Only then compile, inspect the page and report. A new user rule is
+    added in the same pass to the project rules and, when a pattern can catch it, to the project's
+    `.claude/prose-lint.json` or to the lint's generic rules.
+
 ## Self-check before finishing a section
 
 - Read the opening words of consecutive sentences in each paragraph: no two phrase-plus-comma openings in a
@@ -279,3 +289,5 @@ content verbatim.
   role is stated in plain words.
 - Every specialty concept is named with its reference and its one needed property before use;
   textbook material is cited, not explained; the background runs from familiar to special.
+- The review chain of rule 34 has run: lint hits resolved, `prose-reviewer` verdict obtained from an
+  agent other than the writer, every changed paragraph re-read whole.
