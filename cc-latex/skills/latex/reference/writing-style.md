@@ -251,7 +251,22 @@ content verbatim.
     colour and one style across all figures, including schematics. Label curves directly where
     space allows; a legend is the fallback.
 
+36. **No machine-like sentence patterns.** Five patterns read as generated text and are rewritten:
+    (a) two contrasting facts joined in one sentence by "while", "although" or ", but"; give each
+    fact its own sentence and mark the contrast in the second ("in contrast", "however");
+    (b) a phrase or appositive wedged between subject and verb ("the second, beyond its peak near
+    $M=0.6$, grows"; "the index $M$, the amplitude over ..., sets"); state the inserted fact in its
+    own sentence; (c) one sentence carrying a premise, a cause and end-point values together; split
+    it so each sentence holds one of them; (d) mirrored sentence pairs built to the same template
+    ("X thus ... . Y, however, ..."); vary the structure or merge the content; (e) abstract or
+    nominalised subjects ("The iron-loss rise agrees with ..."); name the physical quantity and give
+    it a verb ("The rise in iron loss agrees with ..."). Fix by rewriting the paragraph from its
+    reasoning skeleton (rule 32), not by swapping words.
+
 ## Self-check before finishing a section
+
+- Search for " while ", " although ", ", but ", and for commas between a subject and its verb;
+  each hit is either kept for a reason or rewritten (rule 36).
 
 - Read the opening words of consecutive sentences in each paragraph: no two phrase-plus-comma openings in a
   row, no decorative opener, no "whereas" (rule 33).
