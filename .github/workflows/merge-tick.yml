@@ -73,6 +73,11 @@
           "env": {
             "GH_TOKEN": "${{ github.token }}"
           }
+        },
+        {
+          "name": "Prune the records home",
+          "if": "${{ !cancelled() && github.event_name != 'status' }}",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge records prune"
         }
       ],
       "permissions": {
