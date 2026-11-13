@@ -163,10 +163,10 @@ export function parseStreamJsonOutput(raw) {
 // Watchdog kill timer. The child_process `timeout` option is unusable here: on
 // spawn ENOENT Node emits 'error' but never 'exit', so its internal kill timer
 // is never cleared and keeps the event loop alive for the full timeout. This
-// timer is unref'd (never blocks process exit) and explicitly cleared.
+// timer is cleared on every settle; it stays ref'd while the call is pending, so a pending call
+// keeps the process alive until it settles or the timeout fires.
 function armKillTimer(child, ms, onTimeout, kill) {
   const t = globalThis.setTimeout(() => { try { kill(child); } catch {} onTimeout(); }, ms);
-  t.unref?.();
   return t;
 }
 
