@@ -187,7 +187,7 @@ def wait_for_clearance(page: Any, html: str, wait_s: float | None = None) -> str
         time.sleep(CHALLENGE_POLL_S)
         try:
             current = page.content()
-        except Exception:
+        except Exception:  # noqa: S112 -- best-effort poll: page.content() raises while the challenge navigates; the deadline bounds the retries
             continue
         # A check can turn into an outright ban while we wait; don't sit on it.
         if is_access_denied(current):
@@ -255,7 +255,7 @@ def fetch(page: Any, query: str, target: Path, warm_up: bool = True) -> str | No
                 link, timeout=90_000, headers={"Referer": publication},
             )
             body = response.body() if response.status == 200 else b""
-        except Exception:
+        except Exception:  # noqa: S112 -- best-effort download: a failed request for one publication moves on to the next candidate link
             continue
         if body and body.lstrip().startswith(b"%PDF-"):
             target.parent.mkdir(parents=True, exist_ok=True)

@@ -87,7 +87,7 @@ def to_paper(entry: Any) -> Paper:
 def parse_feed(xml_text: str) -> tuple[list[Paper], int]:
     """Parse an Atom feed into papers plus the reported total."""
     try:
-        root = ElementTree.fromstring(xml_text)
+        root = ElementTree.fromstring(xml_text)  # noqa: S314 -- expat (>=2.4.1) caps entity expansion and ElementTree resolves no external entities; defusedxml is not a dependency
     except ElementTree.ParseError as error:
         raise SourceError("malformed_xml", SOURCE) from error
 

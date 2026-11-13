@@ -30,7 +30,29 @@ _GITATTRIBUTES: Final = (
     '*.woff2 binary',
 )
 
+# The Makefile is a REQUIRED base: its target headers are the family's, its recipes this repo's. Every line the
+# base does not name -- the phony set, the default goal, the test list and the node recipes.
+_MAKEFILE: Final = (
+    '.DEFAULT_GOAL := all',
+    '.PHONY: all clean fmt install install-dev lint test test-parallel verify',
+    'NODE_TESTS := fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs evolve/tests/*.test.mjs cc-latex/tests/*.test.mjs shared/tests/*.test.mjs tests/*.test.mjs',
+    '\trm -rf output',
+    '\tuv sync --frozen',
+    '\tuv sync --frozen --all-groups',
+    '\tuv run python -m dev_lab.dev.hook_install --install',
+    '\tnode --test $(NODE_TESTS)',
+    '\tnode --test --test-concurrency=4 $(NODE_TESTS)',
+)
+
+#: The base's verify recipe is ruff plus pytest; this repo's tests are node:test, so `verify` runs the node suite --
+#: the command the forge's base part runs -- instead.
+_MAKEFILE_DROPPED: Final = {
+    '\tpython -m dev_lab.dev.verify': 'the tests are node:test, so verify runs the node suite the base part runs',
+}
+
 DELTAS: Final[dict[str, Delta]] = {
     '.gitignore': Delta(repo=REPO, added=_GITIGNORE, dropped={}, ceiling=len(_GITIGNORE)),
     '.gitattributes': Delta(repo=REPO, added=_GITATTRIBUTES, dropped={}, ceiling=len(_GITATTRIBUTES)),
+    '.rgignore': Delta(repo=REPO, added=(), dropped={}, ceiling=0),
+    'Makefile': Delta(repo=REPO, added=_MAKEFILE, dropped=_MAKEFILE_DROPPED, ceiling=len(_MAKEFILE)),
 }
