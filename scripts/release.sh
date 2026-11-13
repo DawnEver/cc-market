@@ -55,7 +55,9 @@ bundle_shared() {
 for name in "${plugins[@]}"; do bundle_shared "$name"; echo "release: $name v$(bump_json "$name/.claude-plugin/plugin.json")"; done
 market_version="$(bump_json .claude-plugin/marketplace.json)"
 node scripts/gen-codex.mjs . >/dev/null
-node --test fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs \
+# Bounded: the suites spawn many node/git/python children, and an unbounded run times out
+# on a busy host (a release must not depend on an idle machine).
+node --test --test-concurrency=4 fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs \
   evolve/tests/*.test.mjs cc-latex/tests/*.test.mjs \
   shared/tests/*.test.mjs tests/*.test.mjs
 if printf '%s\n' "${plugins[@]}" | grep -qx cc-academia; then

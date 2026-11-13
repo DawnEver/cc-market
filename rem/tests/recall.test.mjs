@@ -358,11 +358,16 @@ describe("recall.js CLI", () => {
       mkMemory(dir, "2026/07/01", `entry-${i}`, FM(`entry-${i}`, `memory about topic${i} git`, "project"),
         "body ".repeat(50));
     }
+    // Relative to a bare node start measured just before: a loaded machine (a parallel suite, a
+    // release run) slows both alike, so the bound tests recall's own work, not the host's load.
+    const b0 = Date.now();
+    spawnSync(process.execPath, ["-e", "0"], { windowsHide: true });
+    const baseline = Date.now() - b0;
     const t0 = Date.now();
     const r = run({ prompt: "tell me about git", cwd: dir, session_id: "s1" });
     const elapsed = Date.now() - t0;
     assert.equal(r.status, 0);
-    assert.ok(elapsed < 2000, `took ${elapsed}ms`); // generous CI bound incl. node startup
+    assert.ok(elapsed < 3 * baseline + 1000, `took ${elapsed}ms against a ${baseline}ms bare node start`);
   });
 });
 

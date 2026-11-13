@@ -11,9 +11,10 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { blobHash, drift, sourcesState, storeDir } from "../scripts/memo.js";
+import { blobHash, blobHashes, drift, sourcesState, storeDir } from "../scripts/memo.js";
 
 const PINS_JS = fileURLToPath(new URL("../scripts/memo.js", import.meta.url));
+const HOOK_JS = fileURLToPath(new URL("../hooks/session-context.js", import.meta.url));
 
 // ── Fixture: a temp git repo per test ────────────────────────────────────────
 
@@ -73,6 +74,20 @@ describe("blobHash", () => {
     assert.notEqual(blobHash(f), was);
     fs.writeFileSync(f, "hello\n");
     assert.equal(blobHash(f), was);
+  });
+});
+
+describe("blobHashes", () => {
+  test("hashes many paths in one call, keyed by spelling; missing ones are null", () => {
+    const a = writeFile("a.txt", "a\n");
+    const b = writeFile("b.txt", "b\n");
+    const missing = path.join(repo, "nope.txt");
+    const hashes = blobHashes([a, missing, b]);
+    assert.equal(hashes.get(a), blobHash(a));
+    assert.equal(hashes.get(b), blobHash(b));
+    assert.notEqual(hashes.get(a), hashes.get(b));
+    assert.equal(hashes.get(missing), null);
+    assert.deepEqual(blobHashes([]), new Map());
   });
 });
 
@@ -146,33 +161,28 @@ describe("cli", () => {
     assert.match(run(["list"]).stdout, /band\s+STALE \(1 source\(s\) moved\)/);
   });
 
-  test("Codex hook listing emits valid SessionStart JSON, never bracket-prefixed prose", () => {
-    const codexEnv = { ...process.env, CLAUDE_PROJECT_DIR: repo, CODEX_HOME: path.join(repo, ".codex") };
-    const empty = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
-      cwd: repo, encoding: "utf8", env: codexEnv,
+  test("session-context hook: Codex gets SessionStart JSON, Claude plain lines; nothing saved prints nothing", () => {
+    const hook = (env, input = "") => spawnSync(process.execPath, [HOOK_JS], {
+      cwd: repo, encoding: "utf8", input, env: { ...process.env, CLAUDE_PROJECT_DIR: repo, ...env },
     });
-    assert.equal(empty.status, 0);
-    assert.equal(empty.stdout, "");
+    const codex = { CLAUDE_PLUGIN_ROOT: path.join(repo, ".codex", "plugins", "rem") };
+    const claude = { CLAUDE_PLUGIN_ROOT: path.join(repo, ".claude", "plugins", "rem") };
+    for (const env of [codex, claude]) {
+      const empty = hook(env);
+      assert.equal(empty.status, 0);
+      assert.equal(empty.stdout, "");
+    }
     writeFile("src.py", "l1\n");
     run(["save", "band", "--file", "src.py"]);
-    const listed = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
-      cwd: repo,
-      encoding: "utf8",
-      env: codexEnv,
-    });
+    const listed = hook(codex);
     assert.equal(listed.status, 0);
     const output = JSON.parse(listed.stdout);
     assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(output.hookSpecificOutput.additionalContext, /band\s+FRESH/);
-    const compact = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
-      cwd: repo, encoding: "utf8", env: codexEnv, input: '{"hook_event_name":"PostCompact"}',
-    });
-    assert.deepEqual(JSON.parse(compact.stdout), {});
-    const restored = spawnSync(process.execPath, [PINS_JS, "list", "--hook"], {
-      cwd: repo, encoding: "utf8", env: codexEnv,
-      input: '{"hook_event_name":"SessionStart","source":"compact"}',
-    });
+    assert.equal(hook(codex, '{"hook_event_name":"PostCompact"}').stdout, "");
+    const restored = hook(codex, '{"hook_event_name":"SessionStart","source":"compact"}');
     assert.match(JSON.parse(restored.stdout).hookSpecificOutput.additionalContext, /band\s+FRESH/);
+    assert.match(hook(claude, '{"hook_event_name":"PostCompact"}').stdout, /^band\s+FRESH/);
   });
 
   test("get of an unknown memo exits 1", () => {
@@ -198,12 +208,13 @@ describe("cli", () => {
     }
   });
 
-  test("--hook mode swallows a broken store and still exits 0", () => {
+  test("session-context hook swallows a broken store and still exits 0", () => {
     const dir = path.join(repo, ".claude", "memo");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "corrupt.json"), "{not json", "utf8");
-    const out = run(["list", "--hook"]);
+    const out = spawnSync(process.execPath, [HOOK_JS], { cwd: repo, encoding: "utf8", input: "" });
     assert.equal(out.status, 0);
+    assert.equal(out.stdout, "");
   });
 });
 

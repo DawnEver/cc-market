@@ -8,7 +8,7 @@
 //
 // Shape of `.claude/sharp-review.json` (every key optional):
 //   {
-//     "stopHook":            boolean,  // false: the Stop hook never dispatches here (a forge reviews every PR); /sharp-review still runs
+//     "stopHook":            boolean,  // true: the Stop hook may review here on its own (default false; env SHARP_REVIEW_STOP_HOOK=1|0 overrides); /sharp-review always runs
 //     "profileWeights":      { "<profileKey>": number, ... },   // retune built-in weights / opt out (0)
 //     "customProfiles":      [ { key, source, context, scope, weight?, framing?, label? } ],  // ai-lab's method profiles.json shape
 //     "thresholds":          { "wave0": { lines, files }, "wave1": { lines, files } },
@@ -31,4 +31,13 @@ export function loadReviewConfig(root) {
   } catch {
     return {};
   }
+}
+
+// The Stop hook reviews only where it is switched on: `stopHook: true` in the tracked
+// .claude/sharp-review.json, or SHARP_REVIEW_STOP_HOOK=1 (=0 forces it off). Default off -- a forge
+// or the user reviews; /sharp-review always works.
+export function stopHookEnabled(config, env = {}) {
+  if (env.SHARP_REVIEW_STOP_HOOK === '1') return true;
+  if (env.SHARP_REVIEW_STOP_HOOK === '0') return false;
+  return config?.stopHook === true;
 }

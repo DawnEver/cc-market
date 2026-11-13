@@ -36,6 +36,14 @@ per sentence: split any sentence that combines a definition aside with a consequ
 The full style rules with examples are in `reference/writing-style.md` — load it before
 drafting or rewriting prose.
 
+## Review chain (mandatory for every prose edit)
+
+Writer edits with a change log, then `node ${CLAUDE_PLUGIN_ROOT}/scripts/lint-prose.mjs [files]`
+(generic rules), then the `prose-reviewer` agent reviews the diff cold against the generic and the
+project writing rules, then the main session resolves every FIX and sends every BLOCK to the user, then compile
+(full engine path, output kept, PDF timestamp newer than the edit) and render and read every changed
+page. Details: rule 34 in `reference/writing-style.md`.
+
 ## Word counts
 
 For per-section word counts and progress against a word-count target, use the

@@ -72,7 +72,7 @@ echo "-- final message --"; [ -f "$OUT2" ] && cat "$OUT2" || echo "(none capture
 verdict "JSON list of models (NOT 'TOOL_NOT_FOUND') → MCP server started under Codex and \${CLAUDE_PLUGIN_ROOT} resolved"
 
 # ── 3. .claude/rules injection via rem SessionStart hook ──────────────────────────────
-sec "3. rem inject-rules — SessionStart hook injects host .claude/rules (Codex-only)"
+sec "3. rem session-context — SessionStart hook injects host .claude/rules (Codex-only)"
 PROJ="$(mktemp -d -t codex-e2e-proj.XXXXXX)"; mkdir -p "$PROJ/.claude/rules"
 printf '# Probe rule\nWhen asked about project rules, reply with the exact phrase: PROBE-RULE-OK-7Q.\n' > "$PROJ/.claude/rules/probe.md"
 ( cd "$PROJ" && git init -q 2>/dev/null; true )

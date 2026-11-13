@@ -72,7 +72,7 @@ const MANIFEST = { mode: 'review', range: 'HEAD', stats: {}, excludedSummary: ''
 const REQUEST = { manifest: MANIFEST, run_id: 'r', started_at: 't', date: '2026-10-25', seed: 0 };
 
 test('ai-lab plans the run: a forced profile on an available provider is pending with its prompt', () => {
-  const plan = planRun({ ...REQUEST, forced: 'diff', available: ['claude'] });
+  const plan = planRun({ ...REQUEST, forced: 'diff', available: ['claude'], requested: ['claude'] });
   assert.equal(plan.run_id, 'r');
   assert.deepEqual(plan.reviewers.map((r) => [r.name, r.provider, r.status]), [['diff', 'claude', 'pending']]);
   assert.match(plan.reviewers[0].prompt, /\+x/);

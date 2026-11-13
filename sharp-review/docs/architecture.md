@@ -24,7 +24,8 @@ conformance fixtures ship with the method and run in ai-lab's suite. Two executo
 ```
 sharp-review/
 ├── agents/sharp-review.md        Worker subagent: reads SKILL.md and runs it
-├── hooks/sharp-review-hook.js    Stop hook: wave gate, sources, dispatch
+├── hooks/sharp-review-hook.js    Stop hook entry: reads the stopHook switch, loads stop-review.mjs only when on
+├── scripts/stop-review.mjs       Stop review trigger: wave gate, sources, dispatch
 ├── skills/sharp-review/          SKILL.md (procedure) + reference/*.md
 ├── scripts/
 │   ├── plan.js                   Collect the manifest, have ai-lab plan the run → plan file

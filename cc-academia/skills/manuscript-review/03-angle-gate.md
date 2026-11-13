@@ -3,7 +3,7 @@
 Pick the 锐评 angles for this paper. **User gate** — iterate until they approve.
 
 ## Inputs
-- `templates/default-angles.md` — seed angles (now compact: novelty, methodology, experiments, freestyle)
+- `templates/default-angles.md` — seed angles (now compact: novelty, methodology, experiments, significance, freestyle)
 - `critiques-library/angles.md` — accumulated angle library (hit-counts, samples)
 - `ongoing/<slug>/2-review/summary.md` (especially `Obvious gaps`)
 - `ongoing/<slug>/2-review/literature.md` — landscape context from step 02
@@ -28,6 +28,8 @@ Pick the 锐评 angles for this paper. **User gate** — iterate until they appr
    - Description: `Methodology & soundness — scrutinises the technical approach: assumptions, derivations, soundness of proofs, reproducibility, and whether the method is correctly applied.`
    - Option label: `experiments`
    - Description: `Experiments & figures — evaluates experimental setup, baselines, ablation design, statistical rigour, and whether figures/tables support the claims.`
+   - Option label: `significance`
+   - Description: `Significance — the increment over the closest prior work, the reader's takeaway, and whether the analysis and mechanism generalise beyond the studied case.`
    - Option label: `freestyle`
    - Description: `Freestyle / wildcard — open-ended critique from any angle not covered above (writing clarity, ethics, significance, missing references, presentation).`
 

@@ -23,7 +23,7 @@ function fixture(t) {
   fs.writeFileSync(file, JSON.stringify({ hook: { sessions: Object.fromEntries(['memory', 'sibling'].map(key =>
     [key, { sessionKey: key, stopCount: 2, firstStopAt: now - 180000, lastTouched: now }])) } }));
   const state = () => JSON.parse(fs.readFileSync(file));
-  const env = { ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_PLUGIN_ROOT: '', CODEX_HOME: root, CODEX_THREAD_ID: 'stale' };
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_PLUGIN_ROOT: '', CODEX_HOME: root, CODEX_THREAD_ID: 'stale', SHARP_REVIEW_STOP_HOOK: '1' };
   const run = (script, args = [], input = {}) => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script, ...args], { cwd: root, env, windowsHide: true, stdio: 'pipe' });
     let stderr = '';
