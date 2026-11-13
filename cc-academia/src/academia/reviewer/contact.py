@@ -333,7 +333,7 @@ def hydrate_open_access_pdfs(
         JOIN authorships a ON a.paper_id = p.paper_id
         WHERE a.person_id IN ({placeholders})
           AND p.doi <> ''
-        """,
+        """,  # noqa: S608 -- only ? placeholders are interpolated; person_ids are bound
         person_ids,
     ).fetchall()
     dois = [row["doi"] for row in rows]

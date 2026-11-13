@@ -140,7 +140,7 @@ def initialize(path: Path | None = None) -> Path:
 def table_counts(path: Path | None = None) -> dict[str, int]:
     with session(path) as connection:
         return {
-            table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608 -- table iterates the TABLES constant
             for table in TABLES
         }
 

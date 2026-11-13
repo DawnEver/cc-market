@@ -136,3 +136,16 @@ def test_a_browser_fetch_sends_a_whole_browser_header_set():
     assert BROWSER_HEADERS["User-Agent"] == BROWSER_USER_AGENT
     for header in ("Accept", "Accept-Language", "Upgrade-Insecure-Requests"):
         assert header in BROWSER_HEADERS
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://host/x", "no-scheme"])
+def test_a_fetch_refuses_any_scheme_but_http(monkeypatch, url):
+    """``urlopen`` reads ``file:`` off the local disk; a scraped link must never reach it."""
+    opened = []
+    monkeypatch.setattr(http, "urlopen", lambda *a, **k: opened.append(a))
+
+    with pytest.raises(SourceError, match="bad_url"):
+        http.get_text_resolved(url, "probe")
+    with pytest.raises(ValueError, match="refusing"):
+        http.open_web(url, timeout=1)
+    assert opened == []

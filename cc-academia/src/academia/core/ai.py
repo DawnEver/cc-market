@@ -14,7 +14,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.request import Request, urlopen
+
+from academia.core.http import open_web
 
 
 @dataclass
@@ -121,8 +122,8 @@ def _read_cache() -> dict[str, Any]:
         data = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
         if time.time() - data.get("fetched_at", 0) < _CACHE_TTL_S:
             return data
-    except Exception:
-        pass
+    except (OSError, ValueError, AttributeError):
+        pass  # no cache, unreadable, or not a dict: discover afresh
     return {}
 
 
@@ -130,8 +131,8 @@ def _write_cache(data: dict[str, Any]) -> None:
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _CACHE_PATH.write_text(json.dumps(data), encoding="utf-8")
-    except Exception:
-        pass
+    except OSError:
+        pass  # the cache is an optimisation; an unwritable one only costs a refetch
 
 
 def _ensure_provider_key(provider: str) -> None:
@@ -170,8 +171,7 @@ def list_provider_models(provider: str, *, refresh: bool = False) -> list[str]:
         key = _load_env_key(spec["api_key_env"])
         if key:
             headers["Authorization"] = f"Bearer {key}"
-        req = Request(spec["models_url"], headers=headers)
-        with urlopen(req, timeout=15) as resp:
+        with open_web(spec["models_url"], headers=headers, timeout=15) as resp:
             payload = json.loads(resp.read())
         if provider == "ollama":
             ids = [m.get("name", "") for m in payload.get("models", [])]

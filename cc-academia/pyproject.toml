@@ -63,6 +63,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # The project writes prose in docstrings and renders reports for humans;
 # en dashes and minus signs there are intentional typography.
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+# Bandit (S) is judged by the forge's `tests/security` scan, not this lint: its
+# per-line `# noqa: Sxxx` waivers are used, not stale (RUF100).
+external = ["S"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

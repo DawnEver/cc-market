@@ -515,7 +515,7 @@ class PageFetcher:
                         if fallback is self._rescue_getter
                         else fallback(url)
                     )
-                except Exception:
+                except Exception:  # noqa: S112 -- fallback chain: a fetcher that fails hands the URL to the next fallback
                     continue
                 else:
                     text, final_url = self._as_text(result, url)

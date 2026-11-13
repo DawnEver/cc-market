@@ -210,7 +210,7 @@ class BrowserTransport:
                     button.click(timeout=5_000)
                     self.page.wait_for_timeout(1_000)
                     return
-            except Exception:
+            except Exception:  # noqa: S112 -- best-effort browser probe: a detached or navigating page raises playwright errors of every kind, and each means try the next one
                 continue
 
     def _await_challenge(self) -> None:
@@ -314,7 +314,7 @@ class BrowserTransport:
                 if not (button and button.is_visible()):
                     continue
                 button.click(timeout=3_000)
-            except Exception:
+            except Exception:  # noqa: S112 -- best-effort browser probe: a detached or navigating page raises playwright errors of every kind, and each means try the next one
                 continue
             for _ in range(6):
                 if downloads:

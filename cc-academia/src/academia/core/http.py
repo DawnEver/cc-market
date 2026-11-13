@@ -51,6 +51,27 @@ BROWSER_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+#: The only schemes a fetch may open: ``urlopen`` also honours ``file:`` and
+#: ``ftp:``, so a scraped link reading ``file:///etc/passwd`` would otherwise be
+#: read off the local disk and handed on as if a server had answered it.
+WEB_SCHEMES = frozenset({"http", "https"})
+
+
+def open_web(
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    timeout: float,
+):
+    """``urlopen`` for an ``http(s)`` URL only; any other scheme raises ``ValueError``."""
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in WEB_SCHEMES:
+        raise ValueError(f"refusing to open a {scheme or 'scheme-less'} URL: {url!r}")
+    request = Request(url, data=data, headers=headers or {}, method=method)  # noqa: S310 -- scheme checked to http(s) above
+    return urlopen(request, timeout=timeout)  # noqa: S310 -- scheme checked to http(s) above
+
 
 def polite_user_agent() -> str:
     """Identify ourselves to APIs with polite pools (OpenAlex, Crossref, ORCID)."""
@@ -98,9 +119,8 @@ def _request_resolved(
     to a publisher. Callers that track which hosts are failing need the host
     that failed, not the redirector every one of them shares.
     """
-    request = Request(url, data=body, method=method, headers=headers or {})
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with open_web(url, data=body, method=method, headers=headers, timeout=timeout) as response:
             return (
                 response.read().decode("utf-8", errors="replace"),
                 response.headers.get("content-type", ""),
@@ -113,6 +133,9 @@ def _request_resolved(
         ) from exc
     except URLError as exc:
         raise SourceError(f"network_error: {exc.reason}", source) from exc
+    except ValueError as exc:
+        # A non-http(s) scheme ``open_web`` refused, or a URL urllib cannot parse.
+        raise SourceError(f"bad_url: {exc}", source) from exc
     except TimeoutError as exc:
         raise SourceError("timeout", source) from exc
     except OSError as exc:
@@ -198,9 +221,8 @@ def get_body_resolved(
     """
     merged = {**BROWSER_HEADERS, "Accept": "text/html,application/pdf,*/*"}
     merged.update(headers or {})
-    request = Request(url, headers=merged, method="GET")
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with open_web(url, headers=merged, method="GET", timeout=timeout) as response:
             return (
                 response.read(),
                 response.headers.get("content-type", ""),
@@ -210,6 +232,9 @@ def get_body_resolved(
         raise SourceError(f"http_{exc.code}", source, {"status": exc.code}) from exc
     except URLError as exc:
         raise SourceError(f"network_error: {exc.reason}", source) from exc
+    except ValueError as exc:
+        # A non-http(s) scheme ``open_web`` refused, or a URL urllib cannot parse.
+        raise SourceError(f"bad_url: {exc}", source) from exc
     except TimeoutError as exc:
         raise SourceError("timeout", source) from exc
     except OSError as exc:
