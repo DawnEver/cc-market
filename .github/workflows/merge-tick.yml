@@ -57,6 +57,11 @@
           "run": "uv sync --frozen --all-groups"
         },
         {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
+        },
+        {
           "id": "ready",
           "name": "tests/merge-ready",
           "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready)\"; echo \"$said\"; case \"$said\" in *\"; merged\"*) echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"

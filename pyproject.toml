@@ -10,12 +10,14 @@ dependencies = []
 package = false
 
 [dependency-groups]
-# The family development system (part producer, hooks, forge door). DEV ONLY: no plugin imports it.
-dev = ["dev-lab"]
+# The family development system (part producer, hooks, forge door), and ai-lab -- the review and call engine
+# fabric and sharp-review drive, which a machine gets from `fabric setup`; the suite runs against the locked one.
+dev = ["dev-lab", "ai-lab"]
 
 [tool.uv.sources]
 # dev-lab floats on integrate/main like every family repo; the lock is the pin.
 dev-lab = { git = "https://github.com/DawnEver/dev-lab.git", branch = "integrate/main" }
+ai-lab = { git = "https://github.com/DawnEver/ai-lab.git", branch = "integrate/main" }
 
 [tool.dev_lab.parts]
 output = "output/logs"
@@ -37,6 +39,9 @@ produce = [
 trunk = "main"
 integration = "main"
 pr_merges_since = "98e43e0a8f2b5aa2a6658d1025afda18ddc7d766"
+# The merge audit looks for PYTHON tests under the test roots; this repo's tests are node:test files, gated as
+# the base part itself, so there is no Python test root to audit (an empty declaration audits nothing).
+test_roots = []
 
 [tool.dev_lab.branchset]
 trunk = "main"
@@ -79,6 +84,8 @@ setup = [
     { uses = "actions/setup-node@v4", with = { node-version = 22 } },
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
     { name = "Sync the environment", run = "uv sync --frozen --all-groups" },
+    # What `fabric setup` does on a machine: pin the ai-lab interpreter in the provider cache the plugins read.
+    { name = "Record the provider cache", shell = "bash", run = 'mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json' },
 ]
 
 # The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).

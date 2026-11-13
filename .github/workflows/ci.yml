@@ -80,6 +80,11 @@
           "run": "uv sync --frozen --all-groups"
         },
         {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
+        },
+        {
           "id": "pending",
           "name": "Whether main still lacks the tip",
           "if": "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/main' }}",
@@ -133,6 +138,11 @@
           "run": "uv sync --frozen --all-groups"
         },
         {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
+        },
+        {
           "name": "Produce and post the part",
           "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
         }
@@ -182,6 +192,11 @@
           "run": "uv sync --frozen --all-groups"
         },
         {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
+        },
+        {
           "name": "Post every part no job settled",
           "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\" --event \"$PARTS_EVENT\""
         }
@@ -221,6 +236,11 @@
         {
           "name": "Sync the environment",
           "run": "uv sync --frozen --all-groups"
+        },
+        {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
         },
         {
           "name": "tests/security",
@@ -263,6 +283,11 @@
         {
           "name": "Sync the environment",
           "run": "uv sync --frozen --all-groups"
+        },
+        {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
         },
         {
           "name": "head gates",
@@ -314,6 +339,11 @@
         {
           "name": "Sync the environment",
           "run": "uv sync --frozen --all-groups"
+        },
+        {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
         },
         {
           "id": "ready",
@@ -370,6 +400,11 @@
         {
           "name": "Sync the environment",
           "run": "uv sync --frozen --all-groups"
+        },
+        {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
         },
         {
           "name": "Promote main",

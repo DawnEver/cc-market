@@ -3,6 +3,14 @@ revision = 5
 requires-python = ">=3.13"
 
 [[package]]
+name = "ai-lab"
+version = "0.0.1.dev362+ga1912f2f2"
+source = { git = "https://github.com/DawnEver/ai-lab.git?branch=integrate%2Fmain#a1912f2f284d6917278c88c2806c828cad54cb8c" }
+dependencies = [
+    { name = "lab-commons", extra = ["paths"] },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -18,13 +26,17 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "ai-lab" },
     { name = "dev-lab" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
-dev = [{ name = "dev-lab", git = "https://github.com/DawnEver/dev-lab.git?branch=integrate%2Fmain" }]
+dev = [
+    { name = "ai-lab", git = "https://github.com/DawnEver/ai-lab.git?branch=integrate%2Fmain" },
+    { name = "dev-lab", git = "https://github.com/DawnEver/dev-lab.git?branch=integrate%2Fmain" },
+]
 
 [[package]]
 name = "cffi"
