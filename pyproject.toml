@@ -1,0 +1,57 @@
+# cc-market as a family member: a manifest only -- no Python package, no Python code. Its tests are node:test
+# suites, posted as the one `base` part by dev_lab.dev.commandpart. The principles drift test spawns
+# DEV_LAB_PYTHON, else `python` -- the venv's own under `uv run`, which imports dev_lab.
+[project]
+name = "cc-market"
+version = "0"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+# The family development system (part producer, hooks, forge door). DEV ONLY: nothing here imports it.
+dev = ["dev-lab"]
+
+[tool.uv.sources]
+# dev-lab floats on integrate/main like every family repo; the lock is the pin.
+dev-lab = { git = "https://github.com/DawnEver/dev-lab.git", branch = "integrate/main" }
+
+[tool.dev_lab.parts]
+output = "output/logs"
+
+# The complete JS suite (AGENTS.md, plugins-ci.yml); node expands the globs itself, so no shell is needed.
+[tool.lab_commons.tests]
+produce = [
+    "-m", "dev_lab.dev.commandpart", "{part}", "--", "node", "--test",
+    "fabric/tests/*.test.mjs", "rem/tests/*.test.mjs", "sharp-review/tests/*.test.mjs", "evolve/tests/*.test.mjs",
+    "cc-latex/tests/*.test.mjs", "shared/tests/*.test.mjs", "tests/*.test.mjs",
+]
+
+# Two branches: `main` moves only by `integrate promote` (fast-forward); PRs merge into integrate/main.
+# Both shas below are origin/main at adoption: integrate/main is cut there, and every later commit is a forge merge.
+[tool.dev_lab.integrator]
+trunk = "main"
+integration = "integrate/main"
+merges_only_since = "7198266f791f2921c0b9764ddcdfcd29ee86ada8"
+pr_merges_since = "7198266f791f2921c0b9764ddcdfcd29ee86ada8"
+# The merge audit looks for PYTHON tests under the test roots; this repo's tests are node:test files, gated as
+# the base part itself, so there is no Python test root to audit (an empty declaration audits nothing).
+test_roots = []
+
+[tool.dev_lab.branchset]
+trunk = "main"
+sessions = ["integrate/main"]
+prune_merged = true
+
+# FORGE-PROTECTION-DECLARED (dev_lab.dev.forgeprotect): the ONE bypass identity per forge; on GitHub the ops App
+# merges break-glass and the repo admin stays. `python -m dev_lab.dev.forge protect plan|check|apply`.
+[tool.dev_lab.protection]
+[tool.dev_lab.protection.forges."github.com"]
+breakglass = ["app:5704921", "role:admin"]
+
+# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10); ADVISORY, never a gate.
+[tool.dev_lab.review]
+where = "judge"
+judge_app = 5619495
