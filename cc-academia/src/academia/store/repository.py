@@ -124,8 +124,8 @@ def _find_person_id(conn: sqlite3.Connection, author: Author) -> str | None:
         if not value:
             continue
         row = conn.execute(
-            f"SELECT person_id FROM persons WHERE {column} = ?",
-            (value,),  # noqa: S608 -- column is one of the literal identifier columns above; the value is bound as ?
+            f"SELECT person_id FROM persons WHERE {column} = ?",  # noqa: S608 -- column is one of the literal identifier columns above; the value is bound as ?
+            (value,),
         ).fetchone()
         if row:
             return row["person_id"]
