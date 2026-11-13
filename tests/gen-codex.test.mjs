@@ -1,9 +1,9 @@
 // Tests for scripts/gen-codex.mjs — Claude → Codex artifact transpilation.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
 import {
   buildInterface,
   transpileManifest,
@@ -285,3 +285,32 @@ for (const _p of _readdirSync(_repoRoot).filter((n) =>
       `Codex rejects extra top-level keys; found: ${Object.keys(j).join(', ')}`);
   });
 }
+
+// The committed Codex artifacts are generate()'s output for the committed sources: regenerating a copy of the
+// tree changes nothing (what plugin CI's `gen-codex && git diff --exit-code` step held, now part of the suite).
+test('the committed Codex artifacts are fresh', () => {
+  const copy = mkTmp('gcfresh-');
+  const skip = new Set(['.git', 'node_modules', 'output', '.venv', 'worktrees']);
+  cpSync(_repoRoot, copy, { recursive: true, filter: (src) => !skip.has(basename(src)) });
+  generate(copy);
+  const generated = (root) => {
+    const files = new Map();
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else files.set(relative(root, path).split(sep).join('/'), readFileSync(path, 'utf8').replace(/\r\n/g, '\n'));
+      }
+    };
+    for (const top of readdirSync(root)) {
+      const codex = join(root, top, '.codex-plugin');
+      if (existsSync(codex)) walk(codex);
+    }
+    walk(join(root, '.agents', 'plugins'));
+    return files;
+  };
+  const committed = generated(_repoRoot);
+  const fresh = generated(copy);
+  assert.deepEqual([...committed.keys()].sort(), [...fresh.keys()].sort(), 'run `node scripts/gen-codex.mjs .` and commit');
+  for (const [path, text] of fresh) assert.equal(committed.get(path), text, `${path} is stale: run \`node scripts/gen-codex.mjs .\``);
+});

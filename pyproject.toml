@@ -1,0 +1,111 @@
+# cc-market as a family member: a manifest only -- no Python package at the root (cc-academia/ keeps its own
+# pyproject). The JS suite is the one `base` part, run by dev_lab.dev.commandpart on GitHub-hosted runners.
+[project]
+name = "cc-market"
+version = "0"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+# The family development system (part producer, hooks, forge door). DEV ONLY: no plugin imports it.
+dev = ["dev-lab"]
+
+[tool.uv.sources]
+# dev-lab floats on integrate/main like every family repo; the lock is the pin.
+dev-lab = { git = "https://github.com/DawnEver/dev-lab.git", branch = "integrate/main" }
+
+[tool.dev_lab.parts]
+output = "output/logs"
+
+# The complete JS suite (AGENTS.md "Tests & Git Hooks"); node expands the globs itself on every OS.
+[tool.lab_commons.tests]
+produce = [
+    "-m", "dev_lab.dev.commandpart", "{part}", "--",
+    "node", "--test", "--test-concurrency=4",
+    "fabric/tests/*.test.mjs", "rem/tests/*.test.mjs", "sharp-review/tests/*.test.mjs", "evolve/tests/*.test.mjs",
+    "cc-latex/tests/*.test.mjs", "shared/tests/*.test.mjs", "tests/*.test.mjs",
+]
+
+# ONE branch: `main` IS the published marketplace -- Claude Code and Codex clone the repository's DEFAULT branch,
+# and the family's two-branch flow makes integrate/main the default (its nightly schedule runs there), so every new
+# install would read the unpromoted branch. So, as hosts-config: PRs merge into main through the forge.
+# pr_merges_since is origin/main at adoption: every later first-parent commit of main is a forge merge.
+[tool.dev_lab.integrator]
+trunk = "main"
+integration = "main"
+pr_merges_since = "98e43e0a8f2b5aa2a6658d1025afda18ddc7d766"
+
+[tool.dev_lab.branchset]
+trunk = "main"
+sessions = ["main"]
+prune_merged = true
+
+# FORGE-PROTECTION-DECLARED (dev_lab.dev.forgeprotect): the ONE bypass identity per forge; on GitHub the ops App
+# merges break-glass and the repo admin stays. `python -m dev_lab.dev.forge protect plan|check|apply`.
+[tool.dev_lab.protection]
+[tool.dev_lab.protection.forges."github.com"]
+breakglass = ["app:5704921", "role:admin"]
+
+# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10); ADVISORY, never a gate.
+[tool.dev_lab.review]
+where = "judge"
+judge_app = 5619495
+
+# Git hooks: the family base (dev_lab/dev/githooks/base.toml), plus this repo's own: the staged-plugin tests,
+# public hygiene and runtime-doc lint (scripts/git-hooks/pre-commit), and the read-only release guard on main.
+[tool.dev_lab.hooks]
+
+[[tool.dev_lab.hooks.pre-commit]]
+id = "plugin-tests"
+run = ["bash", "scripts/git-hooks/pre-commit"]
+always_run = true
+
+[[tool.dev_lab.hooks.pre-push]]
+id = "release-tagged"
+run = ["bash", "scripts/git-hooks/pre-push", "origin"]
+refs = '^refs/heads/main$'
+always_run = true
+
+# GitHub Actions: the family's one PR lifecycle (dev_lab/dev/ci_base.toml), rendered to .github/workflows by
+# `python -m dev_lab.dev.ciworkflows render`, never hand-edited. Every job also gets node.
+[tool.dev_lab.ci."ci.yml"]
+
+[tool.dev_lab.ci._steps]
+setup = [
+    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
+    { uses = "actions/setup-node@v4", with = { node-version = 22 } },
+    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
+    { name = "Sync the environment", run = "uv sync --frozen --all-groups" },
+]
+
+# The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).
+[tool.dev_lab.ci."review-prepare.yml"]
+forge = "github"
+
+# cc-academia's Python suite in its own uv environment, and the secret scan over a public tree whose fixtures are
+# captured from live APIs. Not a merge gate: the forge's merge decision reads the parts (tests/base).
+[tool.dev_lab.ci."cc-academia-ci.yml"]
+name = "cc-academia"
+on = { push = { branches = ["main"] }, pull_request = {} }
+jobs.test.runs-on = "ubuntu-latest"
+# The plugin is one directory of a multi-plugin repository: every uv step runs inside it.
+jobs.test.defaults.run.working-directory = "cc-academia"
+jobs.test.steps = [
+    { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },
+    { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
+    { name = "Sync", run = "uv sync --all-extras --no-install-package paper-pdf-ingest" },
+    { name = "Lint", run = "uv run ruff check ." },
+    { name = "Test", run = "uv run python -m pytest -q" },
+]
+jobs.secrets.runs-on = "ubuntu-latest"
+jobs.secrets.steps = [
+    { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },
+    { uses = "gitleaks/gitleaks-action@v2", env = { GITHUB_TOKEN = "${{ secrets.GITHUB_TOKEN }}" } },
+]
+
+# The family files famfiles renders (.gitignore, .gitattributes) read this repo's deltas from this module.
+[tool.dev_lab.render]
+deltas = "scripts/_famconfig.py"

@@ -1,8 +1,36 @@
-.DS_Store
-!**/.claude/sharp-review.json
+# Rendered by dev_lab.dev.famconfig from the family base for .gitignore.
+# Hand edits RED. The base is data in dev_lab.dev._famconfig_rows;
+# this repo's own lines are its declared delta. Change one, re-render, commit.
 
+**/.DS_Store
+**/.env
+**/__pycache__/
+**/__version__.py
+**/ignore/
+**/log/*.log
+**/log/*.log.error
+**/temp/**
+*.c
+*.egg-info/
+*.spec
+.coverage*
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv*
+/build/
+/config/
+/dist/
+/dumps/
+/report/
+htmlcov/
+output/
 **/.claude/**
 !**/.claude/settings.json
+!**/.claude/sharp-review.json
+!**/.claude/rem.json
+!**/.claude/hooks/
+!**/.claude/hooks/**
 !**/.claude/agents/
 !**/.claude/agents/**
 !**/.claude/skills/
@@ -11,14 +39,22 @@
 !**/.claude/commands/**
 !**/.claude/workflows/
 !**/.claude/workflows/**
-!**/.claude/output-styles/
-!**/.claude/output-styles/**
 !**/.claude/rules/
 !**/.claude/rules/**
 !**/.claude/memory/
 !**/.claude/memory/**
+!**/.claude/tasks/
+!**/.claude/tasks/**
+!**/.claude/output-styles/
+!**/.claude/output-styles/**
 !**/.claude/docs/
 !**/.claude/docs/**
-**/.claude/memory-index.md
 **/.claude/rules/MEMORY.md
 **/_meta.json
+!**/attic/**
+**/.claude/**/__pycache__/
+**/.claude/**/*.py[cod]
+**/.claude/automode.json
+
+# --- cc-market delta, 1 of 1 allowed ---
+**/.claude/memory-index.md
