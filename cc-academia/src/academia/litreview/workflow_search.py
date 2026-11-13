@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 # Path helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -24,7 +25,9 @@ def _ensure(path: Path) -> Path:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
@@ -41,6 +44,7 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
 
 # 1. Search pipeline
 # ---------------------------------------------------------------------------
+
 
 def run_search(
     topic_dir: Path,
@@ -84,6 +88,7 @@ def run_search(
         ws_path = topic_dir / "workspace.toml"
         if ws_path.exists():
             from academia.litreview.models import Workspace
+
             provider = Workspace.from_dict(load_data(ws_path)).providers
         else:
             provider = ["openalex"]
@@ -105,7 +110,9 @@ def run_search(
     search_dir = _ensure(topic_dir / "search")
 
     if not brief_path.exists():
-        raise FileNotFoundError(f"research_brief.toml not found in {topic_dir}. Run define step first.")
+        raise FileNotFoundError(
+            f"research_brief.toml not found in {topic_dir}. Run define step first."
+        )
 
     result: dict[str, Any] = {
         "queries_path": str(queries_path),
@@ -154,15 +161,20 @@ def run_search(
         result["probe_results"] = str(probe_dir)
 
         if probe_only:
-            mark_step(topic_dir, "search", "probed",
-                      queries_path=str(queries_path),
-                      probe_results=result["probe_results"])
+            mark_step(
+                topic_dir,
+                "search",
+                "probed",
+                queries_path=str(queries_path),
+                probe_results=result["probe_results"],
+            )
             return result
 
         # Evaluate probe results per provider — advisory output for the agent
         # to review query breadth; full search does not gate on it. Paths are
         # surfaced in result['evaluation_paths'].
         from academia.litreview.query import evaluate_queries
+
         result["evaluation_paths"] = {}
         for prov in prov_instances:
             probe_results_file = probe_dir / prov.name / "probe_results.jsonl"
@@ -239,18 +251,26 @@ def run_search(
     # searched, and every later reader — including the resume hint — would take
     # the empty candidate list at face value.
     if not result["candidates_count"] and aborted:
-        mark_step(topic_dir, "search", "failed",
-                  candidates_count=result["candidates_count"],
-                  screening_packet_path=result["screening_packet_path"],
-                  providers_used=result["providers_used"],
-                  failures=result["failures"])
+        mark_step(
+            topic_dir,
+            "search",
+            "failed",
+            candidates_count=result["candidates_count"],
+            screening_packet_path=result["screening_packet_path"],
+            providers_used=result["providers_used"],
+            failures=result["failures"],
+        )
         return result
 
-    mark_step(topic_dir, "search", "done",
-              candidates_count=result["candidates_count"],
-              screening_packet_path=result["screening_packet_path"],
-              providers_used=result["providers_used"],
-              failures=result["failures"])
+    mark_step(
+        topic_dir,
+        "search",
+        "done",
+        candidates_count=result["candidates_count"],
+        screening_packet_path=result["screening_packet_path"],
+        providers_used=result["providers_used"],
+        failures=result["failures"],
+    )
 
     return result
 

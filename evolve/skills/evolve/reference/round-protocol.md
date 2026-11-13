@@ -29,7 +29,7 @@ to `shared/state.mjs`; never hand-write `.claude/.rem-state.json`.
 - If any touched file lives under `cc-market/`, verify `git -C cc-market rev-parse --git-dir`
   succeeds; abort if `cc-market/` exists but isn't its own repo.
 
-## 1. Architecture critique (锐评)
+## 1. Architecture critique (sharp review)
 
 Goal: produce a quorum-confirmed, severity-sorted **OPEN findings list** for this round.
 

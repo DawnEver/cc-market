@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 # Path helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -24,7 +25,9 @@ def _ensure(path: Path) -> Path:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
@@ -41,6 +44,7 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
 
 # 3. Ingest pipeline
 # ---------------------------------------------------------------------------
+
 
 def run_ingest(
     topic_dir: Path,
@@ -104,9 +108,14 @@ def run_ingest(
         return result
 
     # Decompose only the pending papers
-    print(f"Decomposing {len(pending)} papers ({len(cached)} cached, {len(not_requested)} not requested)...")
+    print(
+        f"Decomposing {len(pending)} papers ({len(cached)} cached, {len(not_requested)} not requested)..."
+    )
     artifact = ingest_mod.decompose_pdfs(
-        manifest_path, topic_dir, confirmed_by_user=True, candidate_ids=pending,
+        manifest_path,
+        topic_dir,
+        confirmed_by_user=True,
+        candidate_ids=pending,
     )
 
     # Re-count after decomposition
@@ -114,11 +123,13 @@ def run_ingest(
     final_failed = sum(1 for i in artifact.get("ingests", []) if i["status"] == "failed")
     final_skipped = sum(1 for i in artifact.get("ingests", []) if i["status"] == "skipped")
 
-    result.update({
-        "succeeded": final_succeeded,
-        "failed": final_failed,
-        "skipped": final_skipped + len(cached) + len(not_requested),
-    })
+    result.update(
+        {
+            "succeeded": final_succeeded,
+            "failed": final_failed,
+            "skipped": final_skipped + len(cached) + len(not_requested),
+        }
+    )
 
     mark_step(topic_dir, "ingest", "done", **result)
     return result

@@ -1,6 +1,6 @@
 ---
 name: manuscript-reviewer-significance
-description: 锐评 — significance. Stress-test the increment over prior work, the reader's takeaway, and whether the analysis and mechanism generalise beyond the studied case.
+description: Sharp review — significance. Stress-test the increment over prior work, the reader's takeaway, and whether the analysis and mechanism generalise beyond the studied case.
 angle: significance
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write,WebFetch,WebSearch"
@@ -54,5 +54,5 @@ proposed one-sentence takeaway the evidence actually supports.
 ## Hard rules
 
 - Every point cites a **specific** evidence location (file:section or URL).
-- 锐评 tone: sharp, specific, intellectually honest. Skip ceremony.
+- Sharp-review tone: sharp, specific, intellectually honest. Skip ceremony.
 - Praise plainly with evidence when warranted. Drop unsupported suspicions. Do not pad.

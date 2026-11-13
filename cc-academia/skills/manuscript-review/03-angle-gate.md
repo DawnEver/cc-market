@@ -1,6 +1,6 @@
 # Step 03 — Angle gate ⭐
 
-Pick the 锐评 angles for this paper. **User gate** — iterate until they approve.
+Pick the sharp review angles for this paper. **User gate** — iterate until they approve.
 
 ## Inputs
 - `templates/default-angles.md` — seed angles (now compact: novelty, methodology, experiments, significance, freestyle)

@@ -147,9 +147,13 @@ def _ingest_one(pdf_path: Path, out_dir: Path) -> None:
                 for img in src_flat.iterdir():
                     if img.is_file():
                         shutil.copy2(img, ap_img / img.name)
-            write_paper_output(ap_sections, ap_dir,
-                               ap_sections[0][1] if ap_sections else "",
-                               title_override=title, pdf_path=pdf_path)
+            write_paper_output(
+                ap_sections,
+                ap_dir,
+                ap_sections[0][1] if ap_sections else "",
+                title_override=title,
+                pdf_path=pdf_path,
+            )
 
     shutil.rmtree(text_dir / "_marker_tmp", ignore_errors=True)
     shutil.rmtree(text_dir / "img" / "flat", ignore_errors=True)
@@ -201,8 +205,10 @@ def decompose_pdfs(
         output_dir = ingest_root / slug_name
 
         record: dict[str, Any] = {
-            "candidate_id": cid, "pdf_path": str(paper["pdf_path"]),
-            "output_path": str(output_dir), "status": "failed",
+            "candidate_id": cid,
+            "pdf_path": str(paper["pdf_path"]),
+            "output_path": str(output_dir),
+            "status": "failed",
         }
 
         if output_dir.exists():

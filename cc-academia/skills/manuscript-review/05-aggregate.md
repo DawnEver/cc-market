@@ -31,7 +31,7 @@ Merge `critiques/*.md` into a single ranked `critiques.md`, then present a numbe
    - This preserves a 1:1 mapping between source-file point #N and aggregate code N<N> — no numbers shift, no re-ordering.
    - Format for a skipped slot:
      ```markdown
-     ### M5 · ⏭ SKIP — 与 N3 重复
+     ### M5 · ⏭ SKIP — duplicate of N3
      <one-line summary. The full critique is under N3.>
      ```
 5. **Flag conflicts**: if one angle calls X a strength and another calls X a weakness, mark both points with `⚡ CONFLICT` and cross-reference. Conflicts are NOT deduplicated — both sides stay.
@@ -47,7 +47,7 @@ Merge `critiques/*.md` into a single ranked `critiques.md`, then present a numbe
      N1 [Major] <point title>
      N2 [Minor] <point title>
      N3 [Major] <point title>
-     N4 [Minor] ⏭ SKIP — 与 E2 重复
+     N4 [Minor] ⏭ SKIP — duplicate of E2
    M · Methodology
      M1 [Major] <point title>
      ...

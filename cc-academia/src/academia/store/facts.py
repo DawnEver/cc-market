@@ -111,7 +111,8 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
     ]
 
     ranks = [
-        _identity(r) | {"rank": r["rank"], "source_url": r["source_url"] or "", "seen_at": r["seen_at"]}
+        _identity(r)
+        | {"rank": r["rank"], "source_url": r["source_url"] or "", "seen_at": r["seen_at"]}
         for r in _rows(
             conn,
             f"SELECT k.*, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
@@ -374,7 +375,12 @@ def _apply(conn: sqlite3.Connection, table: str, record: dict[str, Any], person_
                 seen_at    = max(excluded.seen_at, person_ranks.seen_at)
             WHERE excluded.seen_at >= person_ranks.seen_at
             """,
-            (person_id, record["rank"], record.get("source_url") or None, record.get("seen_at") or _now()),
+            (
+                person_id,
+                record["rank"],
+                record.get("source_url") or None,
+                record.get("seen_at") or _now(),
+            ),
         )
     elif table == "emails":
         conn.execute(
@@ -399,7 +405,9 @@ def _apply(conn: sqlite3.Connection, table: str, record: dict[str, Any], person_
         from academia.core.models import Affiliation
         from academia.store import repository
 
-        inst_id = _institution_id(conn, record.get("institution", ""), record.get("country_code", ""))
+        inst_id = _institution_id(
+            conn, record.get("institution", ""), record.get("country_code", "")
+        )
         # Through the repository rather than a second copy of the SQL: an
         # undated affiliation cannot be upserted by ON CONFLICT, and one bug of
         # that shape is enough.

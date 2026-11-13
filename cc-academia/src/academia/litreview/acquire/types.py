@@ -96,8 +96,10 @@ class Attempt:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "url": self.url, "transport": self.transport,
-            "outcome": self.outcome.value, "detail": self.detail,
+            "url": self.url,
+            "transport": self.transport,
+            "outcome": self.outcome.value,
+            "detail": self.detail,
         }
 
     @classmethod
@@ -164,6 +166,8 @@ class DownloadRecord:
         if not self.attempts:
             # No attempt at all means nothing was even resolvable to try.
             return "no candidate URL — item has no pdf_url, html_url, doi, or title"
-        parts = [f"{a.url} -> {a.outcome.value}" + (f": {a.detail}" if a.detail else "")
-                 for a in self.attempts]
+        parts = [
+            f"{a.url} -> {a.outcome.value}" + (f": {a.detail}" if a.detail else "")
+            for a in self.attempts
+        ]
         return f"all {len(self.attempts)} attempt(s) failed: " + " | ".join(parts)

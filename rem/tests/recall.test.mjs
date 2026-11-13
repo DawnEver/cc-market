@@ -51,23 +51,23 @@ describe("tokenize", () => {
   });
 
   test("CJK runs are segmented into bigrams", () => {
-    const toks = tokenize("记住这个约定");
-    assert.ok(toks.includes("记住"));
-    assert.ok(toks.includes("约定"));
-    assert.ok(toks.includes("个约"));
-    assert.equal(toks.length, 5); // 记住 住这 这个 个约 约定
+    const toks = tokenize("\u8BB0\u4F4F\u8FD9\u4E2A\u7EA6\u5B9A");
+    assert.ok(toks.includes("\u8BB0\u4F4F"));
+    assert.ok(toks.includes("\u7EA6\u5B9A"));
+    assert.ok(toks.includes("\u4E2A\u7EA6"));
+    assert.equal(toks.length, 5); // the five overlapping bigrams of the six-character run
   });
 
   test("mixed CJK + latin prompt keeps both", () => {
-    const toks = tokenize("记住这个：不要 force-push 共享分支");
+    const toks = tokenize("\u8BB0\u4F4F\u8FD9\u4E2A\uFF1A\u4E0D\u8981 force-push \u5171\u4EAB\u5206\u652F");
     assert.ok(toks.includes("force"));
     assert.ok(toks.includes("push")); // "push" from "force-push" split on '-'
-    assert.ok(toks.includes("共享"));
-    assert.ok(toks.includes("分支"));
+    assert.ok(toks.includes("\u5171\u4EAB"));
+    assert.ok(toks.includes("\u5206\u652F"));
   });
 
   test("single CJK char is kept as a token", () => {
-    assert.deepEqual(tokenize("好"), ["好"]);
+    assert.deepEqual(tokenize("\u597D"), ["\u597D"]);
   });
 });
 
@@ -315,9 +315,9 @@ describe("recall.js CLI", () => {
   });
 
   test("emits additionalContext for a fully Chinese prompt (CJK recall)", () => {
-    mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "提交信息风格约定", "feedback"),
-      "使用约定式提交。");
-    const r = run({ prompt: "提交信息应该怎么写？", cwd: dir, session_id: "s1" });
+    mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "\u63D0\u4EA4\u4FE1\u606F\u98CE\u683C\u7EA6\u5B9A", "feedback"),
+      "\u4F7F\u7528\u7EA6\u5B9A\u5F0F\u63D0\u4EA4\u3002");
+    const r = run({ prompt: "\u63D0\u4EA4\u4FE1\u606F\u5E94\u8BE5\u600E\u4E48\u5199\uFF1F", cwd: dir, session_id: "s1" });
     assert.equal(r.status, 0);
     const out = JSON.parse(r.stdout);
     assert.match(out.hookSpecificOutput.additionalContext, /auto-recalled/);

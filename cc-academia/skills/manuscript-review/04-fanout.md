@@ -1,4 +1,4 @@
-# Step 04 — Fanout 锐评
+# Step 04 — Fanout sharp review
 
 Spawn one reviewer per angle **in parallel** via the `manuscript-review-fanout` workflow.
 

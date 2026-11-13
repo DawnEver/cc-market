@@ -31,21 +31,30 @@ PDF_BYTES = b"%PDF-1.4\n" + b"%padding\n" * 200 + b"trailer\n%%EOF\n"
 # Outcome classification
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("error,expected", [
-    (Blocked("captcha"), Outcome.BLOCKED),
-    (Denied("1020"), Outcome.DENIED),
-    (NotOpenAccess("no full text"), Outcome.NOT_OPEN_ACCESS),
-    (ValueError("bad pdf"), Outcome.ERROR),
-    (OSError("connection reset"), Outcome.ERROR),
-])
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (Blocked("captcha"), Outcome.BLOCKED),
+        (Denied("1020"), Outcome.DENIED),
+        (NotOpenAccess("no full text"), Outcome.NOT_OPEN_ACCESS),
+        (ValueError("bad pdf"), Outcome.ERROR),
+        (OSError("connection reset"), Outcome.ERROR),
+    ],
+)
 def test_outcome_of_classifies_errors(error, expected):
     assert outcome_of(error) is expected
 
 
 def test_only_downloaded_counts_as_success():
     assert Outcome.DOWNLOADED.is_success
-    for other in (Outcome.BLOCKED, Outcome.DENIED, Outcome.NOT_OPEN_ACCESS,
-                  Outcome.NOT_FOUND, Outcome.ERROR):
+    for other in (
+        Outcome.BLOCKED,
+        Outcome.DENIED,
+        Outcome.NOT_OPEN_ACCESS,
+        Outcome.NOT_FOUND,
+        Outcome.ERROR,
+    ):
         assert not other.is_success
 
 
@@ -60,18 +69,25 @@ def test_retryable_excludes_permanent_verdicts():
 # Ledger
 # ---------------------------------------------------------------------------
 
+
 def _record(cid="p1", outcome=Outcome.DOWNLOADED, pdf_path="", sha256="", attempts=None):
     return DownloadRecord(
-        candidate_id=cid, outcome=outcome, timestamp="2026-07-26T00:00:00+01:00",
-        title=f"Title {cid}", pdf_path=pdf_path, sha256=sha256, attempts=attempts or [],
+        candidate_id=cid,
+        outcome=outcome,
+        timestamp="2026-07-26T00:00:00+01:00",
+        title=f"Title {cid}",
+        pdf_path=pdf_path,
+        sha256=sha256,
+        attempts=attempts or [],
     )
 
 
 def test_ledger_roundtrips_records(tmp_path):
     path = tmp_path / "ledger.jsonl"
     ledger.append(path, _record("a"))
-    ledger.append(path, _record("b", Outcome.BLOCKED,
-                                attempts=[Attempt("u", "http", Outcome.BLOCKED, "cf")]))
+    ledger.append(
+        path, _record("b", Outcome.BLOCKED, attempts=[Attempt("u", "http", Outcome.BLOCKED, "cf")])
+    )
 
     records = ledger.read(path)
 
@@ -125,8 +141,12 @@ def test_verified_downloads_rejects_a_changed_file(tmp_path):
 def test_csv_mirror_is_derived_from_the_ledger(tmp_path):
     path = tmp_path / "ledger.jsonl"
     ledger.append(path, _record("a"))
-    ledger.append(path, _record("b", Outcome.DENIED,
-                                attempts=[Attempt("u", "researchgate", Outcome.DENIED, "1020")]))
+    ledger.append(
+        path,
+        _record(
+            "b", Outcome.DENIED, attempts=[Attempt("u", "researchgate", Outcome.DENIED, "1020")]
+        ),
+    )
 
     csv_text = ledger.write_csv_mirror(path).read_text(encoding="utf-8")
 
@@ -137,6 +157,7 @@ def test_csv_mirror_is_derived_from_the_ledger(tmp_path):
 # ---------------------------------------------------------------------------
 # Transport selection
 # ---------------------------------------------------------------------------
+
 
 def test_transports_are_ordered_cheapest_first():
     order = [t.name for t in default_transports(page=object())]
@@ -159,10 +180,13 @@ def test_researchgate_transport_only_handles_researchgate():
     assert not rg.can_handle(Source("https://arxiv.org/pdf/1"))
 
 
-@pytest.mark.parametrize("url,expected", [
-    ("https://ieeexplore.ieee.org/document/1", True),
-    ("https://repo.uni-hannover.de/bitstream/x/content", False),
-])
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://ieeexplore.ieee.org/document/1", True),
+        ("https://repo.uni-hannover.de/bitstream/x/content", False),
+    ],
+)
 def test_needs_browser_routing(url, expected):
     assert needs_browser(url) is expected
 
@@ -170,6 +194,7 @@ def test_needs_browser_routing(url, expected):
 # ---------------------------------------------------------------------------
 # download_one — the source x transport loop
 # ---------------------------------------------------------------------------
+
 
 class FakeTransport:
     def __init__(self, name, cost, behaviour):
@@ -197,7 +222,8 @@ def test_download_one_returns_on_first_success(tmp_path):
     record = download_one(
         {"candidate_id": "p1", "title": "T"},
         [Source("https://a/1"), Source("https://b/2")],
-        [transport], tmp_path / "o.pdf",
+        [transport],
+        tmp_path / "o.pdf",
     )
 
     assert record.outcome is Outcome.DOWNLOADED
@@ -206,12 +232,19 @@ def test_download_one_returns_on_first_success(tmp_path):
 
 
 def test_download_one_falls_through_sources(tmp_path):
-    transport = FakeTransport("t", 10, {
-        "https://a/1": Blocked("cf"), "https://b/2": "ok",
-    })
+    transport = FakeTransport(
+        "t",
+        10,
+        {
+            "https://a/1": Blocked("cf"),
+            "https://b/2": "ok",
+        },
+    )
     record = download_one(
-        {"candidate_id": "p1"}, [Source("https://a/1"), Source("https://b/2")],
-        [transport], tmp_path / "o.pdf",
+        {"candidate_id": "p1"},
+        [Source("https://a/1"), Source("https://b/2")],
+        [transport],
+        tmp_path / "o.pdf",
     )
 
     assert record.outcome is Outcome.DOWNLOADED
@@ -222,8 +255,9 @@ def test_download_one_tries_cheaper_transport_first(tmp_path):
     cheap = FakeTransport("cheap", 10, {"https://a/1": None})
     dear = FakeTransport("dear", 50, {"https://a/1": "ok"})
 
-    record = download_one({"candidate_id": "p1"}, [Source("https://a/1")],
-                          [cheap, dear], tmp_path / "o.pdf")
+    record = download_one(
+        {"candidate_id": "p1"}, [Source("https://a/1")], [cheap, dear], tmp_path / "o.pdf"
+    )
 
     assert cheap.calls and dear.calls
     assert record.outcome is Outcome.DOWNLOADED
@@ -231,39 +265,61 @@ def test_download_one_tries_cheaper_transport_first(tmp_path):
 
 def test_denied_disables_that_transport_for_the_rest_of_the_run(tmp_path):
     """An IP ban must not be rediscovered once per paper."""
-    banned = FakeTransport("rg", 90, {
-        "https://a/1": Denied("1020"), "https://a/2": Denied("1020"),
-    })
+    banned = FakeTransport(
+        "rg",
+        90,
+        {
+            "https://a/1": Denied("1020"),
+            "https://a/2": Denied("1020"),
+        },
+    )
     disabled: set[str] = set()
 
-    download_one({"candidate_id": "p1"}, [Source("https://a/1")], [banned],
-                 tmp_path / "o.pdf", disabled)
+    download_one(
+        {"candidate_id": "p1"}, [Source("https://a/1")], [banned], tmp_path / "o.pdf", disabled
+    )
     assert disabled == {"rg"}
 
-    download_one({"candidate_id": "p2"}, [Source("https://a/2")], [banned],
-                 tmp_path / "o2.pdf", disabled)
+    download_one(
+        {"candidate_id": "p2"}, [Source("https://a/2")], [banned], tmp_path / "o2.pdf", disabled
+    )
     assert banned.calls == ["https://a/1"]  # second paper never called it
 
 
 def test_record_reports_the_most_informative_verdict(tmp_path):
-    transport = FakeTransport("t", 10, {
-        "https://a/1": ValueError("boom"),
-        "https://a/2": Blocked("captcha"),
-    })
-    record = download_one({"candidate_id": "p1"},
-                          [Source("https://a/1"), Source("https://a/2")],
-                          [transport], tmp_path / "o.pdf")
+    transport = FakeTransport(
+        "t",
+        10,
+        {
+            "https://a/1": ValueError("boom"),
+            "https://a/2": Blocked("captcha"),
+        },
+    )
+    record = download_one(
+        {"candidate_id": "p1"},
+        [Source("https://a/1"), Source("https://a/2")],
+        [transport],
+        tmp_path / "o.pdf",
+    )
 
     assert record.outcome is Outcome.BLOCKED
 
 
 def test_denied_outranks_blocked_in_the_summary(tmp_path):
-    transport = FakeTransport("t", 10, {
-        "https://a/1": Blocked("captcha"), "https://a/2": Denied("1020"),
-    })
-    record = download_one({"candidate_id": "p1"},
-                          [Source("https://a/1"), Source("https://a/2")],
-                          [transport], tmp_path / "o.pdf")
+    transport = FakeTransport(
+        "t",
+        10,
+        {
+            "https://a/1": Blocked("captcha"),
+            "https://a/2": Denied("1020"),
+        },
+    )
+    record = download_one(
+        {"candidate_id": "p1"},
+        [Source("https://a/1"), Source("https://a/2")],
+        [transport],
+        tmp_path / "o.pdf",
+    )
 
     assert record.outcome is Outcome.DENIED
 
@@ -277,25 +333,38 @@ def test_no_sources_yields_not_found_with_an_explanation(tmp_path):
 
 def test_invalid_pdf_is_not_accepted_as_success(tmp_path):
     """A transport that writes HTML must not be recorded as a download."""
+
     class HtmlTransport(FakeTransport):
         def fetch(self, source, target):
             target.write_bytes(b"<html>login</html>")
             return source.url
 
-    record = download_one({"candidate_id": "p1"}, [Source("https://a/1")],
-                          [HtmlTransport("t", 10, {})], tmp_path / "o.pdf")
+    record = download_one(
+        {"candidate_id": "p1"},
+        [Source("https://a/1")],
+        [HtmlTransport("t", 10, {})],
+        tmp_path / "o.pdf",
+    )
 
     assert record.outcome is not Outcome.DOWNLOADED
     assert not (tmp_path / "o.pdf").exists()
 
 
 def test_failure_summary_lists_every_url_and_reason(tmp_path):
-    transport = FakeTransport("t", 10, {
-        "https://a/1": Blocked("captcha"), "https://a/2": Denied("banned"),
-    })
-    record = download_one({"candidate_id": "p1"},
-                          [Source("https://a/1"), Source("https://a/2")],
-                          [transport], tmp_path / "o.pdf")
+    transport = FakeTransport(
+        "t",
+        10,
+        {
+            "https://a/1": Blocked("captcha"),
+            "https://a/2": Denied("banned"),
+        },
+    )
+    record = download_one(
+        {"candidate_id": "p1"},
+        [Source("https://a/1"), Source("https://a/2")],
+        [transport],
+        tmp_path / "o.pdf",
+    )
 
     summary = record.failure_summary()
     assert "https://a/1" in summary and "captcha" in summary
@@ -305,6 +374,7 @@ def test_failure_summary_lists_every_url_and_reason(tmp_path):
 # ---------------------------------------------------------------------------
 # select_pending
 # ---------------------------------------------------------------------------
+
 
 def test_select_pending_skips_unapproved_and_completed():
     items = [
@@ -325,6 +395,7 @@ def test_select_pending_enforces_the_hard_limit():
 # ---------------------------------------------------------------------------
 # Browser transport ordering — the bug the old linear function had
 # ---------------------------------------------------------------------------
+
 
 class RecordingPage:
     """Records the order of interactions so preconditions can be asserted."""

@@ -74,7 +74,9 @@ def related(mode: str = "require", minimum: int = 3) -> Policy:
         **base.data["activity"],
         "related_journals": {"mode": mode, "min_publications": minimum},
     }
-    return Policy(data={**base.data, "activity": activity}, sources=base.sources, journal=base.journal)
+    return Policy(
+        data={**base.data, "activity": activity}, sources=base.sources, journal=base.journal
+    )
 
 
 # --------------------------------------------------------- restricted ----
@@ -158,7 +160,9 @@ def papers(*venue_types: str, position: str = "first") -> list[Evidence]:
 
 
 def test_enough_journal_papers_passes():
-    outcome = journal_record(papers("Journal", "journal-article", "JournalArticle"), related().constraint("related_journals")
+    outcome = journal_record(
+        papers("Journal", "journal-article", "JournalArticle"),
+        related().constraint("related_journals"),
     )
 
     assert outcome.passed
@@ -166,7 +170,8 @@ def test_enough_journal_papers_passes():
 
 
 def test_conference_papers_do_not_count_towards_the_floor():
-    outcome = journal_record(papers("Journal", "Conference", "Conference"), related().constraint("related_journals")
+    outcome = journal_record(
+        papers("Journal", "Conference", "Conference"), related().constraint("related_journals")
     )
 
     assert outcome.excluded
@@ -174,7 +179,8 @@ def test_conference_papers_do_not_count_towards_the_floor():
 
 
 def test_an_unresolved_venue_is_reported_rather_than_counted_against_anyone():
-    outcome = journal_record(papers("Journal", "Journal", ""), related().constraint("related_journals")
+    outcome = journal_record(
+        papers("Journal", "Journal", ""), related().constraint("related_journals")
     )
 
     assert not outcome.excluded
@@ -265,7 +271,8 @@ def test_an_unstated_venue_is_neither(monkeypatch):
 
 
 def test_openalex_articles_count_towards_the_floor():
-    outcome = journal_record(papers("article", "article", "review", "conference-paper"),
+    outcome = journal_record(
+        papers("article", "article", "review", "conference-paper"),
         related().constraint("related_journals"),
     )
 

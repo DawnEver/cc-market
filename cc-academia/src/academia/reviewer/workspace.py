@@ -231,7 +231,6 @@ def find_workspace_for(hash_of_title: str, *, excluding: str = "") -> str:
     return ""
 
 
-
 def list_workspaces() -> list[str]:
     root = workspace_root()
     if not root.exists():

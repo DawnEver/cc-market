@@ -47,15 +47,17 @@ def write_csv_mirror(path: Path) -> Path:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
         for record in read(path):
-            writer.writerow({
-                "candidate_id": record.candidate_id,
-                "status": record.outcome.value,
-                "pdf_path": record.pdf_path,
-                "sha256": record.sha256,
-                "source_url": record.source_url,
-                "timestamp": record.timestamp,
-                "error": record.failure_summary(),
-            })
+            writer.writerow(
+                {
+                    "candidate_id": record.candidate_id,
+                    "status": record.outcome.value,
+                    "pdf_path": record.pdf_path,
+                    "sha256": record.sha256,
+                    "source_url": record.source_url,
+                    "timestamp": record.timestamp,
+                    "error": record.failure_summary(),
+                }
+            )
     return csv_path
 
 

@@ -13,7 +13,7 @@ of this conversation's context, so give it what it needs to act, not a transcrip
 
 - **Goal**: What are we ultimately trying to accomplish? (1 sentence)
 - **Done so far**: What has actually been completed / decided / verified in this conversation.
-- **Left to do**: Outstanding work — everything intended but not yet done (应做未做), ranked by
+- **Left to do**: Outstanding work — everything intended but not yet done (should have been done, not yet done), ranked by
   priority, each specific (file paths, functions, concrete actions).
 - **Next step**: The single most immediate thing the next AI should pick up first.
 - **Current state**: Where exactly things stand right now — latest finding, blocker, or

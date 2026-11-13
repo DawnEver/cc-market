@@ -5,7 +5,7 @@
 Two paths:
 
 1. **Immediate (`remember.js`)** — when the user explicitly asks to remember something
-   ("remember this", "记住这个"), save it right away instead of waiting for `/rem`:
+   ("remember this", or the same in Chinese), save it right away instead of waiting for `/rem`:
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body "<text>"
    ```

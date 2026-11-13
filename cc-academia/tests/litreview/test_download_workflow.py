@@ -21,6 +21,7 @@ def _fetch_linked_pdf(page, target, base_url):
 def _needs_browser(url):
     return needs_browser(url)
 
+
 PDF_BYTES = b"%PDF-1.4\n" + b"%padding\n" * 200 + b"trailer\n%%EOF\n"
 
 
@@ -28,15 +29,19 @@ PDF_BYTES = b"%PDF-1.4\n" + b"%padding\n" * 200 + b"trailer\n%%EOF\n"
 # Source ranking — AGENTS.md priority: repo > preprint > aggregator > publisher
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("url,expected", [
-    ("https://repo.uni-hannover.de/bitstream/x/content", oa_resolve.RANK_REPOSITORY),
-    ("https://acris.aalto.fi/ws/portalfiles/portal/1/a.pdf", oa_resolve.RANK_REPOSITORY),
-    ("https://arxiv.org/pdf/2401.00001", oa_resolve.RANK_PREPRINT),
-    ("https://www.techrxiv.org/doi/pdf/10.1/x", oa_resolve.RANK_PREPRINT),
-    ("https://www.researchgate.net/publication/123_X", oa_resolve.RANK_AGGREGATOR),
-    ("https://link.springer.com/article/10.1007/x", oa_resolve.RANK_PUBLISHER),
-    ("https://ieeexplore.ieee.org/document/123", oa_resolve.RANK_PUBLISHER),
-])
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://repo.uni-hannover.de/bitstream/x/content", oa_resolve.RANK_REPOSITORY),
+        ("https://acris.aalto.fi/ws/portalfiles/portal/1/a.pdf", oa_resolve.RANK_REPOSITORY),
+        ("https://arxiv.org/pdf/2401.00001", oa_resolve.RANK_PREPRINT),
+        ("https://www.techrxiv.org/doi/pdf/10.1/x", oa_resolve.RANK_PREPRINT),
+        ("https://www.researchgate.net/publication/123_X", oa_resolve.RANK_AGGREGATOR),
+        ("https://link.springer.com/article/10.1007/x", oa_resolve.RANK_PUBLISHER),
+        ("https://ieeexplore.ieee.org/document/123", oa_resolve.RANK_PUBLISHER),
+    ],
+)
 def test_rank_url_follows_agent_priority(url, expected):
     assert oa_resolve.rank_url(url) == expected
 
@@ -71,10 +76,21 @@ def test_search_pages_are_ranked_last():
 # OA resolution by DOI
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_oa_urls_merges_providers(monkeypatch):
-    monkeypatch.setattr(oa_resolve, "_unpaywall_urls", lambda doi, **kw: ["https://repo.example.edu/bitstream/a/content"])
-    monkeypatch.setattr(oa_resolve, "_openalex_urls", lambda doi, **kw: ["https://arxiv.org/pdf/2401.1"])
-    monkeypatch.setattr(oa_resolve, "_semantic_scholar_urls", lambda doi, **kw: ["https://ieeexplore.ieee.org/document/1"])
+    monkeypatch.setattr(
+        oa_resolve,
+        "_unpaywall_urls",
+        lambda doi, **kw: ["https://repo.example.edu/bitstream/a/content"],
+    )
+    monkeypatch.setattr(
+        oa_resolve, "_openalex_urls", lambda doi, **kw: ["https://arxiv.org/pdf/2401.1"]
+    )
+    monkeypatch.setattr(
+        oa_resolve,
+        "_semantic_scholar_urls",
+        lambda doi, **kw: ["https://ieeexplore.ieee.org/document/1"],
+    )
 
     urls = oa_resolve.resolve_oa_urls("10.1/x")
 
@@ -88,7 +104,9 @@ def test_resolve_oa_urls_survives_provider_failure(monkeypatch):
         raise RuntimeError("network down")
 
     monkeypatch.setattr(oa_resolve, "_unpaywall_urls", boom)
-    monkeypatch.setattr(oa_resolve, "_openalex_urls", lambda doi, **kw: ["https://arxiv.org/pdf/2401.1"])
+    monkeypatch.setattr(
+        oa_resolve, "_openalex_urls", lambda doi, **kw: ["https://arxiv.org/pdf/2401.1"]
+    )
     monkeypatch.setattr(oa_resolve, "_semantic_scholar_urls", boom)
 
     assert oa_resolve.resolve_oa_urls("10.1/x") == ["https://arxiv.org/pdf/2401.1"]
@@ -102,9 +120,11 @@ def test_resolve_oa_urls_without_doi_is_empty():
 # candidate_urls — the per-item download plan
 # ---------------------------------------------------------------------------
 
+
 def test_candidate_urls_prefers_resolved_repository_over_queue_url(monkeypatch):
     monkeypatch.setattr(
-        oa_resolve, "resolve_oa_urls",
+        oa_resolve,
+        "resolve_oa_urls",
         lambda doi, title=None: ["https://repo.example.edu/bitstream/a/content"],
     )
     item = {
@@ -145,7 +165,10 @@ def test_candidate_urls_empty_item_is_empty():
 
 def test_candidate_urls_always_appends_researchgate_search_last():
     """Every paper gets an RG attempt, but only after cheaper sources."""
-    item = {"title": "Hairpin Winding Design", "pdf_url": "https://repo.example/bitstream/a/content"}
+    item = {
+        "title": "Hairpin Winding Design",
+        "pdf_url": "https://repo.example/bitstream/a/content",
+    }
     urls = candidate_urls(item, resolve=False)
     assert urls[0] == "https://repo.example/bitstream/a/content"
     assert "researchgate.net/search/publication" in urls[-1]
@@ -163,13 +186,15 @@ def test_candidate_urls_adds_only_one_researchgate_search():
 
 
 def test_candidate_urls_adds_no_researchgate_url_without_identifiers():
-    assert not any("researchgate" in u for u in candidate_urls({"pdf_url": "https://x/a.pdf"},
-                                                               resolve=False))
+    assert not any(
+        "researchgate" in u for u in candidate_urls({"pdf_url": "https://x/a.pdf"}, resolve=False)
+    )
 
 
 # ---------------------------------------------------------------------------
 # acquire_pdfs — multi-URL fallback and error reporting
 # ---------------------------------------------------------------------------
+
 
 def _queue(tmp_path, item):
     path = tmp_path / "queue.json"
@@ -180,7 +205,9 @@ def _queue(tmp_path, item):
 def test_acquire_falls_back_to_next_url_after_block(tmp_path):
     """The blocked publisher page must not end the item — the mirror is tried."""
     item = {
-        "candidate_id": "p1", "title": "Paper One", "approved": True,
+        "candidate_id": "p1",
+        "title": "Paper One",
+        "approved": True,
         "pdf_url": "https://ieeexplore.ieee.org/document/1",
         "html_url": "https://link.springer.com/article/10.1007/x",
     }
@@ -202,8 +229,11 @@ def test_acquire_falls_back_to_next_url_after_block(tmp_path):
 
 def test_acquire_records_real_error_detail_when_all_urls_fail(tmp_path):
     item = {
-        "candidate_id": "p1", "title": "Paper One", "approved": True,
-        "pdf_url": "https://publisher.example/doc", "html_url": "https://other.example/doc",
+        "candidate_id": "p1",
+        "title": "Paper One",
+        "approved": True,
+        "pdf_url": "https://publisher.example/doc",
+        "html_url": "https://other.example/doc",
     }
 
     def downloader(it, target, url):
@@ -232,8 +262,11 @@ def test_acquire_reports_no_source_when_item_has_no_urls(tmp_path):
 
 def test_acquire_stops_trying_urls_once_one_succeeds(tmp_path):
     item = {
-        "candidate_id": "p1", "title": "P", "approved": True,
-        "pdf_url": "https://repo.example/a.pdf", "html_url": "https://publisher.example/doc",
+        "candidate_id": "p1",
+        "title": "P",
+        "approved": True,
+        "pdf_url": "https://repo.example/a.pdf",
+        "html_url": "https://publisher.example/doc",
     }
     tried: list[str] = []
 
@@ -250,12 +283,16 @@ def test_acquire_stops_trying_urls_once_one_succeeds(tmp_path):
 # Browser layer: link extraction and host routing
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("url,expected", [
-    ("https://ieeexplore.ieee.org/document/1", True),
-    ("https://www.researchgate.net/publication/1", True),
-    ("https://repo.uni-hannover.de/bitstream/x/content", False),
-    ("https://arxiv.org/pdf/2401.1", False),
-])
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://ieeexplore.ieee.org/document/1", True),
+        ("https://www.researchgate.net/publication/1", True),
+        ("https://repo.uni-hannover.de/bitstream/x/content", False),
+        ("https://arxiv.org/pdf/2401.1", False),
+    ],
+)
 def test_needs_browser_routes_only_challenged_hosts(url, expected):
     assert _needs_browser(url) is expected
 
@@ -308,8 +345,10 @@ def test_fetch_linked_pdf_recovers_pdf_the_selectors_miss(tmp_path):
 def test_fetch_linked_pdf_skips_links_that_are_not_pdfs(tmp_path):
     page = _FakePage(
         '<a href="/files/1/cover.pdf">Cover</a><a href="/files/2/paper.pdf">Paper</a>',
-        {"https://repo.example/files/1/cover.pdf": b"<html>no</html>",
-         "https://repo.example/files/2/paper.pdf": PDF_BYTES},
+        {
+            "https://repo.example/files/1/cover.pdf": b"<html>no</html>",
+            "https://repo.example/files/2/paper.pdf": PDF_BYTES,
+        },
     )
     target = tmp_path / "o.pdf"
     assert _fetch_linked_pdf(page, target, page.url) == "https://repo.example/files/2/paper.pdf"
@@ -319,7 +358,8 @@ def test_fetch_linked_pdf_navigates_to_clear_cloudflare_then_retries(tmp_path):
     """A 403 on the file endpoint is cleared by visiting it in the browser."""
     pdf_url = "https://repo.example/files/1/paper.pdf"
     page = _FakePage(
-        '<a href="/files/1/paper.pdf">PDF</a>', {pdf_url: PDF_BYTES},
+        '<a href="/files/1/paper.pdf">PDF</a>',
+        {pdf_url: PDF_BYTES},
         needs_clearance=[pdf_url],
     )
     target = tmp_path / "o.pdf"
@@ -339,7 +379,9 @@ def test_acquire_records_researchgate_ban_without_crashing(tmp_path):
     from academia.litreview.acquire import researchgate
 
     item = {
-        "candidate_id": "p1", "title": "P", "approved": True,
+        "candidate_id": "p1",
+        "title": "P",
+        "approved": True,
         "pdf_url": "https://www.researchgate.net/search/publication?q=P",
     }
 
@@ -356,8 +398,11 @@ def test_acquire_records_researchgate_ban_without_crashing(tmp_path):
 def test_acquire_rejects_non_pdf_and_tries_next_url(tmp_path):
     """A downloader that writes HTML must not be accepted as success."""
     item = {
-        "candidate_id": "p1", "title": "P", "approved": True,
-        "pdf_url": "https://a.example/x", "html_url": "https://b.example/x",
+        "candidate_id": "p1",
+        "title": "P",
+        "approved": True,
+        "pdf_url": "https://a.example/x",
+        "html_url": "https://b.example/x",
     }
 
     def downloader(it, target, url):

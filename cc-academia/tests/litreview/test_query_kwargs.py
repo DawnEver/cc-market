@@ -52,8 +52,7 @@ def write_topic(
 
     if with_brief:
         (topic_dir / "research_brief.toml").write_text(
-            'artifact_version = 1\noriginal_request = "x"\n'
-            f"\n[constraints]\n{brief_constraints}\n",
+            f'artifact_version = 1\noriginal_request = "x"\n\n[constraints]\n{brief_constraints}\n',
             encoding="utf-8",
         )
 
@@ -93,7 +92,7 @@ def probe_url(monkeypatch, topic_dir: Path) -> str:
 
 
 def test_brief_constraints_become_the_default_year_range(tmp_path, monkeypatch):
-    write_topic(tmp_path, brief_constraints='year_from = 2015\nyear_to = 2021')
+    write_topic(tmp_path, brief_constraints="year_from = 2015\nyear_to = 2021")
 
     url = probe_url(monkeypatch, tmp_path)
 
@@ -200,9 +199,7 @@ def test_the_same_drop_is_announced_once_not_per_query(tmp_path, monkeypatch, ca
         for i in (1, 2, 3)
     )
     (tmp_path / "queries.toml").write_text(
-        "artifact_version = 1\n"
-        + queries
-        + '\n[constraints]\ncontent_types = ["Journals"]\n',
+        "artifact_version = 1\n" + queries + '\n[constraints]\ncontent_types = ["Journals"]\n',
         encoding="utf-8",
     )
     from academia.litreview.search import run_probe
@@ -221,7 +218,7 @@ def test_the_same_drop_is_announced_once_not_per_query(tmp_path, monkeypatch, ca
 
 def test_search_scope_is_never_forwarded(tmp_path, monkeypatch):
     """No source has ever accepted it, so it was only ever a way to fail."""
-    write_topic(tmp_path, query_extra="search_scope = \"title\"\n")
+    write_topic(tmp_path, query_extra='search_scope = "title"\n')
 
     url = probe_url(monkeypatch, tmp_path)
 

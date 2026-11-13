@@ -34,23 +34,54 @@ TIMEOUT = 15
 # markers catch the long tail of DSpace, Pure, and EPrints installations whose
 # hostnames we cannot enumerate.
 _REPOSITORY_HOSTS = (
-    ".edu", ".ac.uk", ".uni-", "repo.", "repository.", "eprints.", "dspace.",
-    "hal.science", "diva-portal.org", "zenodo.org", "figshare.com",
-    "europepmc.org", "ncbi.nlm.nih.gov", "core.ac.uk",
-    "hdl.handle.net", "research-information.", "pure.",
+    ".edu",
+    ".ac.uk",
+    ".uni-",
+    "repo.",
+    "repository.",
+    "eprints.",
+    "dspace.",
+    "hal.science",
+    "diva-portal.org",
+    "zenodo.org",
+    "figshare.com",
+    "europepmc.org",
+    "ncbi.nlm.nih.gov",
+    "core.ac.uk",
+    "hdl.handle.net",
+    "research-information.",
+    "pure.",
 )
 _REPOSITORY_PATHS = (
-    "/bitstream/", "/portalfiles/", "/ws/files/", "/eprint/", "/handle/",
+    "/bitstream/",
+    "/portalfiles/",
+    "/ws/files/",
+    "/eprint/",
+    "/handle/",
     "/server/api/core/bitstreams/",
 )
 _PREPRINT_HOSTS = (
-    "arxiv.org", "techrxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com",
-    "preprints.org", "osf.io", "hal.archives-ouvertes.fr",
+    "arxiv.org",
+    "techrxiv.org",
+    "biorxiv.org",
+    "medrxiv.org",
+    "ssrn.com",
+    "preprints.org",
+    "osf.io",
+    "hal.archives-ouvertes.fr",
 )
 _AGGREGATOR_HOSTS = ("researchgate.net", "academia.edu", "semanticscholar.org")
 _PUBLISHER_HOSTS = (
-    "ieee.org", "springer.com", "sciencedirect.com", "wiley.com", "acm.org",
-    "tandfonline.com", "mdpi.com", "iop.org", "sagepub.com", "elsevier.com",
+    "ieee.org",
+    "springer.com",
+    "sciencedirect.com",
+    "wiley.com",
+    "acm.org",
+    "tandfonline.com",
+    "mdpi.com",
+    "iop.org",
+    "sagepub.com",
+    "elsevier.com",
 )
 # Query/search endpoints return result lists, never a PDF.
 _SEARCH_MARKERS = ("/search/", "/search?", "?q=", "&q=", "/results")
@@ -63,7 +94,7 @@ def rank_url(url: str) -> int:
     lowered = url.lower()
     if any(marker in lowered for marker in _SEARCH_MARKERS):
         return RANK_SEARCH_PAGE
-    host = (urlparse(lowered).hostname or "")
+    host = urlparse(lowered).hostname or ""
     path = urlparse(lowered).path
 
     if any(fragment in host for fragment in _REPOSITORY_HOSTS):
@@ -97,9 +128,13 @@ def rank_urls(urls: list[str]) -> list[str]:
 # Providers — each returns candidate PDF/landing URLs for a DOI, or [] on miss
 # ---------------------------------------------------------------------------
 
+
 def _get_json(url: str, params: dict[str, str] | None = None) -> Any:
     response = net.get(
-        url, params=params, timeout=TIMEOUT, accept="application/json",
+        url,
+        params=params,
+        timeout=TIMEOUT,
+        accept="application/json",
     )
     if response.status_code != 200:
         return None
@@ -140,8 +175,7 @@ def _openalex_urls(doi: str) -> list[str]:
         if not isinstance(location, dict):
             continue
         urls.extend(
-            str(location.get(key) or "")
-            for key in ("pdf_url", "landing_page_url", "oa_url")
+            str(location.get(key) or "") for key in ("pdf_url", "landing_page_url", "oa_url")
         )
     return [u for u in urls if u]
 
@@ -157,7 +191,11 @@ def _semantic_scholar_urls(doi: str) -> list[str]:
     oa_pdf = data.get("openAccessPdf")
     if isinstance(oa_pdf, dict) and oa_pdf.get("url"):
         urls.append(str(oa_pdf["url"]))
-    arxiv_id = (data.get("externalIds") or {}).get("ArXiv") if isinstance(data.get("externalIds"), dict) else None
+    arxiv_id = (
+        (data.get("externalIds") or {}).get("ArXiv")
+        if isinstance(data.get("externalIds"), dict)
+        else None
+    )
     if arxiv_id:
         urls.append(f"https://arxiv.org/pdf/{arxiv_id}")
     return urls

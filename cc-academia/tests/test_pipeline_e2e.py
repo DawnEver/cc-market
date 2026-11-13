@@ -70,7 +70,9 @@ def _corpus():
     return [
         _paper("10.1109/a", "Torque ripple suppression in PMSM drives", [expert, junior]),
         _paper("10.1109/b", "Torque ripple analysis for traction motors", [expert]),
-        _paper("10.1109/c", "Torque ripple and recent joint work", [submitter, collaborator], year=2024),
+        _paper(
+            "10.1109/c", "Torque ripple and recent joint work", [submitter, collaborator], year=2024
+        ),
     ]
 
 
@@ -104,16 +106,26 @@ def test_unknown_reviewer_search_source_is_a_usage_error():
 
 
 def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, capsys):
-    assert run(
-        "init",
-        "--slug", "tie-demo",
-        "--title", "Torque ripple suppression in PMSM drives for traction",
-        "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
-        "--keywords", "Torque ripple,Electric Motor Design",
-        "--journal", "tie",
-        "--year", "2026",
-        "--authors", "Alice Author|Tsinghua University|CN; Bob Second|Tsinghua University|CN",
-    ) == 0
+    assert (
+        run(
+            "init",
+            "--slug",
+            "tie-demo",
+            "--title",
+            "Torque ripple suppression in PMSM drives for traction",
+            "--abstract",
+            "We propose a torque ripple suppression method for PMSM traction drives.",
+            "--keywords",
+            "Torque ripple,Electric Motor Design",
+            "--journal",
+            "tie",
+            "--year",
+            "2026",
+            "--authors",
+            "Alice Author|Tsinghua University|CN; Bob Second|Tsinghua University|CN",
+        )
+        == 0
+    )
 
     assert run("profile", "--slug", "tie-demo") == 0
     assert run("profile", "--slug", "tie-demo", "--approve") == 0
@@ -126,7 +138,15 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     assert run("report", "--slug", "tie-demo", "--json") == 0
 
     payload = json.loads(capsys.readouterr().out)
-    shortlist = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo" / "5-shortlist" / "shortlist.md"
+    shortlist = (
+        tmp_path
+        / "workspaces"
+        / "reviewer-discovery"
+        / "ongoing"
+        / "tie-demo"
+        / "5-shortlist"
+        / "shortlist.md"
+    )
     assert shortlist.exists()
 
     # The workbook is what the editor is handed, so the run has to produce it
@@ -143,9 +163,9 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
     at = heading.index("Homepage or paper") + 1
     links = [decision.cell(row=r, column=at) for r in range(2, decision.max_row + 1)]
     assert any(cell.hyperlink for cell in links), "nobody got a link to read about them"
-    assert all(
-        cell.hyperlink.target == cell.value for cell in links if cell.hyperlink
-    ), "a link cell must display the URL it opens"
+    assert all(cell.hyperlink.target == cell.value for cell in links if cell.hyperlink), (
+        "a link cell must display the URL it opens"
+    )
     assert not (case / "5-shortlist" / "contact-list-audit.xlsx").exists()
 
     text = shortlist.read_text(encoding="utf-8")
@@ -174,25 +194,49 @@ def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, c
 
 
 def test_the_raw_pdf_is_never_required_and_body_text_never_stored(tmp_path, stub_sources):
-    run("init", "--slug", "tie-demo", "--title", "A study", "--abstract", "Body.", "--journal", "tie")
+    run(
+        "init",
+        "--slug",
+        "tie-demo",
+        "--title",
+        "A study",
+        "--abstract",
+        "Body.",
+        "--journal",
+        "tie",
+    )
     run("profile", "--slug", "tie-demo")
 
     from academia.store import db
 
     with db.session() as conn:
         row = conn.execute("SELECT * FROM manuscripts").fetchone()
-        assert set(row.keys()) == {"ms_id", "journal", "title_hash", "origin_countries", "created_at"}
+        assert set(row.keys()) == {
+            "ms_id",
+            "journal",
+            "title_hash",
+            "origin_countries",
+            "created_at",
+        }
         assert "A study" not in json.dumps(dict(row))
 
 
 def test_a_manuscript_author_is_blocked_end_to_end(tmp_path, stub_sources, capsys):
     workspace_root = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo"
     run(
-        "init", "--slug", "tie-demo",
-        "--title", "Torque ripple suppression in PMSM drives",
-        "--abstract", "Torque ripple suppression for PMSM traction drives.",
-        "--keywords", "Torque ripple",
-        "--journal", "tie", "--year", "2026",
+        "init",
+        "--slug",
+        "tie-demo",
+        "--title",
+        "Torque ripple suppression in PMSM drives",
+        "--abstract",
+        "Torque ripple suppression for PMSM traction drives.",
+        "--keywords",
+        "Torque ripple",
+        "--journal",
+        "tie",
+        "--year",
+        "2026",
     )
     run("profile", "--slug", "tie-demo")
 
@@ -214,7 +258,9 @@ def test_a_manuscript_author_is_blocked_end_to_end(tmp_path, stub_sources, capsy
 
     verdicts = [
         json.loads(line)
-        for line in (workspace_root / "4-audit" / "coi.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (workspace_root / "4-audit" / "coi.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     blocked = [v for v in verdicts if v["status"] == "BLOCK"]
@@ -234,10 +280,21 @@ def test_lookup_attempts_make_unsearched_candidates_visible_in_report(
 ):
     monkeypatch.setattr("academia.reviewer.enrich.enrich", lambda conn, person: person)
     run(
-        "init", "--slug", "tie-lookups", "--title", "Torque ripple suppression",
-        "--abstract", "Torque ripple suppression for PMSM traction drives.",
-        "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026",
-        "--authors", "Alice Author|Tsinghua University|CN",
+        "init",
+        "--slug",
+        "tie-lookups",
+        "--title",
+        "Torque ripple suppression",
+        "--abstract",
+        "Torque ripple suppression for PMSM traction drives.",
+        "--keywords",
+        "Torque ripple",
+        "--journal",
+        "tie",
+        "--year",
+        "2026",
+        "--authors",
+        "Alice Author|Tsinghua University|CN",
     )
     run("profile", "--slug", "tie-lookups")
     run("profile", "--slug", "tie-lookups", "--approve")
@@ -268,7 +325,9 @@ def test_lookup_attempts_make_unsearched_candidates_visible_in_report(
     contacts = json.loads(capsys.readouterr().out)
     assert contacts["never_searched"] == contacts["missing"] - 2
     searched = {item["person_id"]: item for item in contacts["candidates"]}
-    assert all(searched[person_id]["last_outcome"] == "no_public_data" for person_id in searched_ids)
+    assert all(
+        searched[person_id]["last_outcome"] == "no_public_data" for person_id in searched_ids
+    )
 
     assert run("coi", "--slug", "tie-lookups") == 0
     assert run("report", "--slug", "tie-lookups", "--json") == 0
@@ -311,16 +370,38 @@ def test_candidates_are_written_in_evidence_order(tmp_path, stub_sources):
     Unordered, `enrich --limit 40` on a 200-candidate pool could miss every
     top-ranked person — which is exactly what a live run showed.
     """
-    run("init", "--slug", "tie-demo", "--title", "Torque ripple suppression in PMSM drives",
-        "--abstract", "Torque ripple suppression for PMSM traction drives.",
-        "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026")
+    run(
+        "init",
+        "--slug",
+        "tie-demo",
+        "--title",
+        "Torque ripple suppression in PMSM drives",
+        "--abstract",
+        "Torque ripple suppression for PMSM traction drives.",
+        "--keywords",
+        "Torque ripple",
+        "--journal",
+        "tie",
+        "--year",
+        "2026",
+    )
     run("profile", "--slug", "tie-demo")
     run("profile", "--slug", "tie-demo", "--approve")
     run("search", "--slug", "tie-demo")
     run("candidates", "--slug", "tie-demo")
 
-    path = tmp_path / "workspaces" / "reviewer-discovery" / "ongoing" / "tie-demo" / "3-candidates" / "candidates.jsonl"
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    path = (
+        tmp_path
+        / "workspaces"
+        / "reviewer-discovery"
+        / "ongoing"
+        / "tie-demo"
+        / "3-candidates"
+        / "candidates.jsonl"
+    )
+    rows = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     assert len(rows) >= 2
 
     def strength(row):
@@ -367,8 +448,17 @@ def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources)
 
 def _init_and_profile(slug):
     run(
-        "init", "--slug", slug, "--journal", "tie", "--title", "Torque Ripple In Machines",
-        "--abstract", "A study of torque ripple.", "--keywords", "torque ripple,machines",
+        "init",
+        "--slug",
+        slug,
+        "--journal",
+        "tie",
+        "--title",
+        "Torque Ripple In Machines",
+        "--abstract",
+        "A study of torque ripple.",
+        "--keywords",
+        "torque ripple,machines",
     )
     run("profile", "--slug", slug)
 
@@ -433,8 +523,10 @@ def test_a_second_workspace_for_the_same_manuscript_is_refused(tmp_path, stub_so
     """
     run("init", "--slug", "first", "--journal", "tie", "--title", "One Paper About Machines")
 
-    assert run("init", "--slug", "second", "--journal", "tie",
-               "--title", "One Paper About Machines") == 2
+    assert (
+        run("init", "--slug", "second", "--journal", "tie", "--title", "One Paper About Machines")
+        == 2
+    )
     err = capsys.readouterr().err
     assert "already has a workspace" in err
     assert "first" in err
@@ -444,8 +536,10 @@ def test_re_initialising_the_same_slug_is_still_allowed(tmp_path, stub_sources):
     """Re-running init on its own workspace is how a bad extraction is fixed."""
     run("init", "--slug", "again", "--journal", "tie", "--title", "One Paper About Machines")
 
-    assert run("init", "--slug", "again", "--journal", "tie",
-               "--title", "One Paper About Machines") == 0
+    assert (
+        run("init", "--slug", "again", "--journal", "tie", "--title", "One Paper About Machines")
+        == 0
+    )
 
 
 def test_a_refused_init_leaves_no_workspace_behind(tmp_path, stub_sources):
@@ -477,12 +571,23 @@ def test_coi_survives_a_workspace_that_arrived_from_another_machine(tmp_path, st
     from academia.core import paths
 
     for argv in (
-        ("init", "--slug", "tie-moved",
-         "--title", "Torque ripple suppression in PMSM drives for traction",
-         "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
-         "--keywords", "Torque ripple,Electric Motor Design",
-         "--journal", "tie", "--year", "2026",
-         "--authors", "Alice Author|Tsinghua University|CN"),
+        (
+            "init",
+            "--slug",
+            "tie-moved",
+            "--title",
+            "Torque ripple suppression in PMSM drives for traction",
+            "--abstract",
+            "We propose a torque ripple suppression method for PMSM traction drives.",
+            "--keywords",
+            "Torque ripple,Electric Motor Design",
+            "--journal",
+            "tie",
+            "--year",
+            "2026",
+            "--authors",
+            "Alice Author|Tsinghua University|CN",
+        ),
         ("profile", "--slug", "tie-moved"),
         ("profile", "--slug", "tie-moved", "--approve"),
         ("search", "--slug", "tie-moved"),
@@ -515,12 +620,23 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     from academia.store import repository as repo
 
     for argv in (
-        ("init", "--slug", "tie-two-addresses",
-         "--title", "Torque ripple suppression in PMSM drives for traction",
-         "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
-         "--keywords", "Torque ripple,Electric Motor Design",
-         "--journal", "tie", "--year", "2026",
-         "--authors", "Alice Author|Tsinghua University|CN"),
+        (
+            "init",
+            "--slug",
+            "tie-two-addresses",
+            "--title",
+            "Torque ripple suppression in PMSM drives for traction",
+            "--abstract",
+            "We propose a torque ripple suppression method for PMSM traction drives.",
+            "--keywords",
+            "Torque ripple,Electric Motor Design",
+            "--journal",
+            "tie",
+            "--year",
+            "2026",
+            "--authors",
+            "Alice Author|Tsinghua University|CN",
+        ),
         ("profile", "--slug", "tie-two-addresses"),
         ("profile", "--slug", "tie-two-addresses", "--approve"),
         ("search", "--slug", "tie-two-addresses"),
@@ -535,13 +651,19 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
 
     connection = db.connect(paths.database_path())
     repo.record_email(
-        connection, person_id, "old.address@previous.edu.example",
-        source="published_corresponding", source_url="https://doi.example/paper",
+        connection,
+        person_id,
+        "old.address@previous.edu.example",
+        source="published_corresponding",
+        source_url="https://doi.example/paper",
         confidence=0.95,
     )
     repo.record_email(
-        connection, person_id, "current.address@now.edu.example",
-        source="institutional_profile", source_url="https://now.edu.example/staff/x",
+        connection,
+        person_id,
+        "current.address@now.edu.example",
+        source="institutional_profile",
+        source_url="https://now.edu.example/staff/x",
         confidence=0.9,
     )
     repo.store_institution_for(
@@ -559,16 +681,18 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     # What enrich would have written: the address that won on precedence.
     workspace.write_jsonl(
         workspace.audit_dir / "enrichment.jsonl",
-        [{
-            "person_id": person_id,
-            "name": rows[0].get("name", ""),
-            "email": {
-                "email": "old.address@previous.edu.example",
-                "source": "published_corresponding",
-                "source_url": "https://doi.example/paper",
-                "confidence": 0.95,
-            },
-        }],
+        [
+            {
+                "person_id": person_id,
+                "name": rows[0].get("name", ""),
+                "email": {
+                    "email": "old.address@previous.edu.example",
+                    "source": "published_corresponding",
+                    "source_url": "https://doi.example/paper",
+                    "confidence": 0.95,
+                },
+            }
+        ],
     )
 
     assert run("report", "--slug", "tie-two-addresses") == 0
@@ -593,7 +717,9 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     assert not (workspace.shortlist_dir / "emails.csv").exists()
 
 
-def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, stub_sources, capsys):
+def test_candidates_says_so_when_the_papers_are_on_the_other_machine(
+    tmp_path, stub_sources, capsys
+):
     """Zero candidates from 277 stored papers is a broken machine, not a result.
 
     ``search`` writes papers to the workspace, which syncs, and to the database,
@@ -607,12 +733,23 @@ def test_candidates_says_so_when_the_papers_are_on_the_other_machine(tmp_path, s
     from academia.core import paths
 
     for argv in (
-        ("init", "--slug", "tie-no-papers",
-         "--title", "Torque ripple suppression in PMSM drives for traction",
-         "--abstract", "We propose a torque ripple suppression method for PMSM traction drives.",
-         "--keywords", "Torque ripple,Electric Motor Design",
-         "--journal", "tie", "--year", "2026",
-         "--authors", "Alice Author|Tsinghua University|CN"),
+        (
+            "init",
+            "--slug",
+            "tie-no-papers",
+            "--title",
+            "Torque ripple suppression in PMSM drives for traction",
+            "--abstract",
+            "We propose a torque ripple suppression method for PMSM traction drives.",
+            "--keywords",
+            "Torque ripple,Electric Motor Design",
+            "--journal",
+            "tie",
+            "--year",
+            "2026",
+            "--authors",
+            "Alice Author|Tsinghua University|CN",
+        ),
         ("profile", "--slug", "tie-no-papers"),
         ("profile", "--slug", "tie-no-papers", "--approve"),
         ("search", "--slug", "tie-no-papers"),

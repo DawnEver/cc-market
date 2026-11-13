@@ -84,7 +84,9 @@ def test_person_resolution_upgrades_when_a_better_identifier_arrives(conn):
     person_id = repo.upsert_person(conn, Author(name="Jian Wang", idx=0, s2_id="S2-1"))
     assert repo.get_person(conn, person_id)["resolution_method"] == "s2_id"
 
-    repo.upsert_person(conn, Author(name="Jian Wang", idx=0, s2_id="S2-1", orcid="0000-0002-1825-0097"))
+    repo.upsert_person(
+        conn, Author(name="Jian Wang", idx=0, s2_id="S2-1", orcid="0000-0002-1825-0097")
+    )
     row = repo.get_person(conn, person_id)
     assert row["resolution_method"] == "orcid"
     assert row["confidence"] == pytest.approx(0.99)
@@ -121,7 +123,14 @@ def test_corresponding_author_outweighs_a_middle_slot():
 
 @pytest.mark.parametrize(
     "idx,total,expected",
-    [(0, 5, "first"), (1, 5, "second"), (4, 5, "last"), (2, 5, "middle"), (0, 1, "first"), (1, 2, "last")],
+    [
+        (0, 5, "first"),
+        (1, 5, "second"),
+        (4, 5, "last"),
+        (2, 5, "middle"),
+        (0, 1, "first"),
+        (1, 2, "last"),
+    ],
 )
 def test_position_label(idx, total, expected):
     assert position_label(idx, total) == expected
@@ -174,7 +183,9 @@ def test_education_without_a_source_url_is_refused(conn):
     repo.upsert_institution(conn, inst)
 
     repo.record_education(
-        conn, person_id, Education(inst_id=inst.inst_id, degree="PhD", source="homepage", source_url="")
+        conn,
+        person_id,
+        Education(inst_id=inst.inst_id, degree="PhD", source="homepage", source_url=""),
     )
     assert conn.execute("SELECT count(*) FROM education").fetchone()[0] == 0
 
@@ -201,9 +212,7 @@ def test_editor_attestation_can_record_a_second_degree_at_the_same_institution(c
         Education(inst_id=inst.inst_id, degree="PhD", source="editor_attestation"),
     )
 
-    degrees = conn.execute(
-        "SELECT degree, source FROM education ORDER BY degree", ()
-    ).fetchall()
+    degrees = conn.execute("SELECT degree, source FROM education ORDER BY degree", ()).fetchall()
     assert [(row["degree"], row["source"]) for row in degrees] == [
         ("Master", "orcid"),
         ("PhD", "editor_attestation"),
@@ -229,7 +238,9 @@ def test_phd_year_and_academic_age(conn):
 def test_email_keeps_the_highest_confidence_source(conn):
     person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
     repo.record_email(conn, person_id, "a@uni.edu.example", source="lab_homepage", confidence=0.6)
-    repo.record_email(conn, person_id, "a@uni.edu.example", source="published_corresponding", confidence=0.95)
+    repo.record_email(
+        conn, person_id, "a@uni.edu.example", source="published_corresponding", confidence=0.95
+    )
     row = repo.emails_of(conn, person_id)[0]
     assert row["source"] == "published_corresponding"
     assert row["confidence"] == pytest.approx(0.95)
@@ -237,10 +248,14 @@ def test_email_keeps_the_highest_confidence_source(conn):
 
 def test_run_artifacts_are_scoped_to_a_run(conn):
     person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
-    repo.create_manuscript(conn, ms_id="ms1", journal="TIE", title_hash="abc", origin_countries=["CN"])
+    repo.create_manuscript(
+        conn, ms_id="ms1", journal="TIE", title_hash="abc", origin_countries=["CN"]
+    )
     repo.create_run(conn, run_id="run1", ms_id="ms1")
     repo.record_score(conn, "run1", person_id, 0.87, {"topic": 0.9})
-    repo.record_coi(conn, "run1", person_id, rule="recent_coauthor", status="BLOCK", evidence={"year": 2024})
+    repo.record_coi(
+        conn, "run1", person_id, rule="recent_coauthor", status="BLOCK", evidence={"year": 2024}
+    )
 
     verdicts = repo.coi_for(conn, "run1", person_id)
     assert len(verdicts) == 1 and verdicts[0]["status"] == "BLOCK"
@@ -248,7 +263,9 @@ def test_run_artifacts_are_scoped_to_a_run(conn):
 
 def test_manuscript_stores_no_title_text(conn):
     """Confidentiality: only a hash and the origin countries are persisted."""
-    repo.create_manuscript(conn, ms_id="ms1", journal="TIE", title_hash="deadbeef", origin_countries=["CN"])
+    repo.create_manuscript(
+        conn, ms_id="ms1", journal="TIE", title_hash="deadbeef", origin_countries=["CN"]
+    )
     row = conn.execute("SELECT * FROM manuscripts").fetchone()
     assert set(row.keys()) == {"ms_id", "journal", "title_hash", "origin_countries", "created_at"}
     assert row["title_hash"] == "deadbeef"
@@ -275,8 +292,14 @@ def test_current_employer_prefers_a_university_over_a_funder(conn):
         ("Jiangsu University", "education", "CN"),
     ):
         repo.store_institution_for(
-            conn, person_id, name=name, country_code=country,
-            year_from=2020, year_to=2026, is_current=True, kind=kind,
+            conn,
+            person_id,
+            name=name,
+            country_code=country,
+            year_from=2020,
+            year_to=2026,
+            is_current=True,
+            kind=kind,
         )
 
     person = repo.load_person(conn, person_id)
@@ -287,12 +310,24 @@ def test_current_employer_falls_back_to_the_most_recent_when_none_is_flagged(con
 
     person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
     repo.store_institution_for(
-        conn, person_id, name="Old University", country_code="GB",
-        year_from=2005, year_to=2010, is_current=False, kind="education",
+        conn,
+        person_id,
+        name="Old University",
+        country_code="GB",
+        year_from=2005,
+        year_to=2010,
+        is_current=False,
+        kind="education",
     )
     repo.store_institution_for(
-        conn, person_id, name="New University", country_code="GB",
-        year_from=2015, year_to=2024, is_current=False, kind="education",
+        conn,
+        person_id,
+        name="New University",
+        country_code="GB",
+        year_from=2015,
+        year_to=2024,
+        is_current=False,
+        kind="education",
     )
     person = repo.load_person(conn, person_id)
     assert person.current_affiliation.institution == "New University"
@@ -302,12 +337,24 @@ def test_between_two_current_universities_the_longer_tenure_wins(conn):
     """The primary employer is the long-running one, not the newest addition."""
     person_id = repo.upsert_person(conn, Author(name="A", idx=0, openalex_id="A1"))
     repo.store_institution_for(
-        conn, person_id, name="Recent Collaboration University", country_code="CN",
-        year_from=2023, year_to=2026, is_current=True, kind="education",
+        conn,
+        person_id,
+        name="Recent Collaboration University",
+        country_code="CN",
+        year_from=2023,
+        year_to=2026,
+        is_current=True,
+        kind="education",
     )
     repo.store_institution_for(
-        conn, person_id, name="Home University", country_code="CN",
-        year_from=2005, year_to=2026, is_current=True, kind="education",
+        conn,
+        person_id,
+        name="Home University",
+        country_code="CN",
+        year_from=2005,
+        year_to=2026,
+        is_current=True,
+        kind="education",
     )
     person = repo.load_person(conn, person_id)
     assert person.current_affiliation.institution == "Home University"
@@ -372,7 +419,9 @@ def test_person_topics_replace_rather_than_accumulate(conn):
     vocabulary, accumulated stale terms inflate a candidate's score on every
     later run, with nothing in the report to show why.
     """
-    person_id = repo.upsert_person(conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097"))
+    person_id = repo.upsert_person(
+        conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097")
+    )
     repo.set_person_topics(conn, person_id, ["axial flux", "acoustic noise"], source="openalex")
     repo.set_person_topics(conn, person_id, ["marine biology"], source="openalex")
 
@@ -380,7 +429,9 @@ def test_person_topics_replace_rather_than_accumulate(conn):
 
 
 def test_person_topics_from_one_source_do_not_clear_another(conn):
-    person_id = repo.upsert_person(conn, Author(name="Bo Second", idx=0, orcid="0000-0002-1825-0098"))
+    person_id = repo.upsert_person(
+        conn, Author(name="Bo Second", idx=0, orcid="0000-0002-1825-0098")
+    )
     repo.set_person_topics(conn, person_id, ["axial flux"], source="openalex")
     repo.set_person_topics(conn, person_id, ["vibration"], source="orcid")
 
@@ -395,8 +446,12 @@ def test_person_topics_survive_a_reload(conn):
     and method score components read empty and scored 0.00 for every candidate
     in a live run — a third of the ranking weight, silently inert.
     """
-    person_id = repo.upsert_person(conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097"))
-    repo.set_person_topics(conn, person_id, ["axial flux machine", "acoustic noise"], source="openalex")
+    person_id = repo.upsert_person(
+        conn, Author(name="Ada Researcher", idx=0, orcid="0000-0002-1825-0097")
+    )
+    repo.set_person_topics(
+        conn, person_id, ["axial flux machine", "acoustic noise"], source="openalex"
+    )
 
     reloaded = repo.load_person(conn, person_id)
     assert reloaded is not None

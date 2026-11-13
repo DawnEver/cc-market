@@ -70,8 +70,11 @@ def get(
     for attempt in range(retries):
         try:
             response = getter(
-                url, timeout=timeout, allow_redirects=True,
-                headers=default_headers(referer, accept), **kwargs,
+                url,
+                timeout=timeout,
+                allow_redirects=True,
+                headers=default_headers(referer, accept),
+                **kwargs,
             )
         except Exception as error:
             last_error = error
@@ -80,7 +83,7 @@ def get(
         if response is not None and response.status_code not in RETRY_STATUSES:
             return response
         if attempt < retries - 1:
-            time.sleep(BACKOFF_BASE_S * (2 ** attempt))
+            time.sleep(BACKOFF_BASE_S * (2**attempt))
 
     if response is not None:
         return response

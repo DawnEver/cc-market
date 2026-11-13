@@ -51,7 +51,7 @@ def main(argv: list[str]) -> int:
     if pyproject_states_a_version():
         raise SystemExit(
             "error: pyproject.toml states a literal version. It must stay "
-            'dynamic and derive from .claude-plugin/plugin.json, or the root '
+            "dynamic and derive from .claude-plugin/plugin.json, or the root "
             "release workflow will leave the two disagreeing."
         )
 

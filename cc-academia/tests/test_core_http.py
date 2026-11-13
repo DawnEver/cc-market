@@ -32,7 +32,9 @@ def test_network_errors_are_transient():
 @pytest.mark.parametrize(
     "raised",
     [
-        ConnectionResetError(10054, "An existing connection was forcibly closed by the remote host"),
+        ConnectionResetError(
+            10054, "An existing connection was forcibly closed by the remote host"
+        ),
         ConnectionAbortedError(10053, "An established connection was aborted by the software"),
         BrokenPipeError(32, "Broken pipe"),
         # No errno: CPython re-dispatches OSError by errno, so a bare
@@ -50,6 +52,7 @@ def test_a_socket_failure_mid_body_becomes_a_source_error(monkeypatch, raised):
     discarding the candidates already done — so the one thing this must do is
     convert, not propagate.
     """
+
     def boom(*args, **kwargs):
         raise raised
 

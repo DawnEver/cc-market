@@ -110,9 +110,7 @@ def test_openalex_normalises_a_work(openalex_works):
 
 
 def test_openalex_reconstructs_the_inverted_abstract(openalex_works):
-    with_abstract = [
-        r for r in openalex_works["results"] if r.get("abstract_inverted_index")
-    ]
+    with_abstract = [r for r in openalex_works["results"] if r.get("abstract_inverted_index")]
     if not with_abstract:
         pytest.skip("no abstract in this capture")
     paper = openalex.to_paper(with_abstract[0])

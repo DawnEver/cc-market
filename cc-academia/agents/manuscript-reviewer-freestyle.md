@@ -1,6 +1,6 @@
 ---
 name: manuscript-reviewer-freestyle
-description: 锐评 — wildcard. Invent a fresh angle the standard reviewers do not cover, then critique the paper from it.
+description: Sharp review — wildcard. Invent a fresh angle the standard reviewers do not cover, then critique the paper from it.
 angle: freestyle
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write"
@@ -55,6 +55,6 @@ Then critique points, numbered sequentially (1, 2, 3, …) in descending severit
 
 - Every claim cites a **specific** evidence location. No vague critiques.
 - The chosen angle must be **distinct** from novelty(+relatedwork) / methodology(+reproducibility) / experiments(+figures/writing). If your "freestyle" angle collapses into one of these, pick again.
-- 锐评 tone: sharp, specific, intellectually honest. Skip ceremony.
+- Sharp-review tone: sharp, specific, intellectually honest. Skip ceremony.
 - Praise only when warranted.
 - If, on this particular paper, no compelling fresh angle exists, write the chosen-angle line as `## Chosen angle: none — standard angles already cover this paper` and stop. Do not invent a weak angle to fill the slot.

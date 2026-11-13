@@ -21,11 +21,12 @@ from academia.core.http import open_web
 @dataclass
 class ModelSpec:
     """Descriptor for an AI model usable via litellm."""
-    provider: str                     # e.g. "ollama", "gemini", "openai"
-    model_name: str                   # e.g. "gpt-oss:20b", "gemini-2.5-flash"
+
+    provider: str  # e.g. "ollama", "gemini", "openai"
+    model_name: str  # e.g. "gpt-oss:20b", "gemini-2.5-flash"
     temperature: float = 0.1
     context_length: int = 64000
-    think: str | None = None          # "low" | "medium" | "high" — model-dependent
+    think: str | None = None  # "low" | "medium" | "high" — model-dependent
     extra_options: dict[str, Any] = field(default_factory=dict)
 
     def to_litellm_model(self) -> str:
@@ -90,12 +91,15 @@ MODELS: dict[str, ModelSpec] = {
     "gpt-oss:20b": ModelSpec(provider="ollama", model_name="gpt-oss:20b", think="medium"),
     "gemma3:27b": ModelSpec(provider="ollama", model_name="gemma3:27b", think="medium"),
     # Gemini
-    "gemini-2.5-flash-lite": ModelSpec(provider="gemini", model_name="gemini-2.5-flash-lite",
-                                        context_length=128000, think="medium"),
-    "gemini-2.5-flash": ModelSpec(provider="gemini", model_name="gemini-2.5-flash",
-                                   context_length=128000, think="medium"),
-    "gemini-2.5-pro": ModelSpec(provider="gemini", model_name="gemini-2.5-pro",
-                                 context_length=128000, think="medium"),
+    "gemini-2.5-flash-lite": ModelSpec(
+        provider="gemini", model_name="gemini-2.5-flash-lite", context_length=128000, think="medium"
+    ),
+    "gemini-2.5-flash": ModelSpec(
+        provider="gemini", model_name="gemini-2.5-flash", context_length=128000, think="medium"
+    ),
+    "gemini-2.5-pro": ModelSpec(
+        provider="gemini", model_name="gemini-2.5-pro", context_length=128000, think="medium"
+    ),
 }
 
 _CACHE_PATH = Path.home() / ".cache" / "lit-review" / "models.json"
@@ -204,11 +208,10 @@ def resolve_model(name: str) -> ModelSpec:
             raise KeyError(f"Unknown provider: {provider!r}. Known: {list(PROVIDERS)}")
         live = list_provider_models(provider)
         if live and bare not in live:
-            raise KeyError(
-                f"{bare!r} not in {provider}'s live model list. Available: {live}"
-            )
+            raise KeyError(f"{bare!r} not in {provider}'s live model list. Available: {live}")
         if not live:
             import warnings
+
             warnings.warn(
                 f"could not verify {bare!r} against {provider}'s /models "
                 f"(no API key or discovery failed); passing through unvalidated",
@@ -231,6 +234,7 @@ def resolve_model(name: str) -> ModelSpec:
 # ---------------------------------------------------------------------------
 # Chat interface
 # ---------------------------------------------------------------------------
+
 
 def chat(model: ModelSpec | str, messages: list[dict[str, str]]) -> str | None:
     """Send messages to an LLM via litellm and return assistant text.
@@ -256,6 +260,7 @@ def chat(model: ModelSpec | str, messages: list[dict[str, str]]) -> str | None:
     options = {"temperature": model.temperature, **model.extra_options}
 
     import os
+
     debug = os.environ.get("LIT_REVIEW_AI_DEBUG", "").lower() in ("1", "true", "yes")
     try:
         response = completion(model=model_str, messages=messages, stream=False, **options)
@@ -265,8 +270,11 @@ def chat(model: ModelSpec | str, messages: list[dict[str, str]]) -> str | None:
         # Silent None used to swallow the reason entirely; with debug on, say why.
         if debug:
             import sys
-            print(f"[ai.client] {model_str} call failed: {type(error).__name__}: {error}",
-                  file=sys.stderr)
+
+            print(
+                f"[ai.client] {model_str} call failed: {type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
         return None
 
 
@@ -292,8 +300,6 @@ def chat_structured(
 # ---------------------------------------------------------------------------
 
 
-
-
 def normalize_text(value: Any) -> str:
     """Convert an arbitrary value to a compact single-line string."""
     if value is None:
@@ -316,7 +322,7 @@ def strip_markdown_code_fence(text: str) -> str:
     cleaned = (text or "").strip()
     if cleaned.startswith("```"):
         first_nl = cleaned.find("\n")
-        cleaned = cleaned[first_nl + 1:] if first_nl != -1 else ""
+        cleaned = cleaned[first_nl + 1 :] if first_nl != -1 else ""
         cleaned = cleaned.removesuffix("```").strip()
     return cleaned
 
@@ -334,7 +340,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     if start == -1 or end == -1 or end <= start:
         return None
     try:
-        data = json.loads(cleaned[start:end + 1])
+        data = json.loads(cleaned[start : end + 1])
     except json.JSONDecodeError:
         return None
     return data if isinstance(data, dict) else None
@@ -354,7 +360,7 @@ def extract_json_list(text: str) -> list[dict[str, Any]]:
     if start == -1 or end == -1 or end <= start:
         return []
     try:
-        data = json.loads(cleaned[start:end + 1])
+        data = json.loads(cleaned[start : end + 1])
     except json.JSONDecodeError:
         return []
     return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []

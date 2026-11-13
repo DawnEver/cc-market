@@ -1,6 +1,6 @@
 ---
 name: manuscript-reviewer-experiments
-description: 锐评 — experimental adequacy + data distributions + figure/writing quality. Hunt missing baselines, cherry-picked benchmarks, unreported variance, misleading figures, captions that overclaim. Scrutinise distribution shapes, outliers, statistical test appropriateness, error bar semantics.
+description: Sharp review — experimental adequacy + data distributions + figure/writing quality. Hunt missing baselines, cherry-picked benchmarks, unreported variance, misleading figures, captions that overclaim. Scrutinise distribution shapes, outliers, statistical test appropriateness, error bar semantics.
 angle: experiments
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write"
@@ -72,6 +72,6 @@ The images in `1-paper-text/img/` are cropped automatically by a local PDF-parsi
 
 - Every claim cites a **specific** evidence location — section, table number, or image file.
 - When citing a figure, name the file (`img/sec3-experiments/figure3.png`) and describe what you saw.
-- 锐评 tone: sharp, specific, intellectually honest. Skip ceremony.
+- Sharp-review tone: sharp, specific, intellectually honest. Skip ceremony.
 - Praise plainly with specific examples when warranted.
 - Drop unsupported suspicions. Do not pad.

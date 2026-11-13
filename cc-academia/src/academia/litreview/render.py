@@ -90,23 +90,33 @@ def cards_to_csv(cards: list[PaperCard], path: Path) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
-        "candidate_id", "title", "verdict", "confidence", "one_sentence",
-        "technical_core", "limitations", "research_use", "next_action", "open_questions",
+        "candidate_id",
+        "title",
+        "verdict",
+        "confidence",
+        "one_sentence",
+        "technical_core",
+        "limitations",
+        "research_use",
+        "next_action",
+        "open_questions",
     ]
 
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         for card in cards:
-            writer.writerow({
-                "candidate_id": card.candidate_id,
-                "title": card.title,
-                "verdict": card.verdict,
-                "confidence": f"{card.confidence:.2f}",
-                "one_sentence": card.one_sentence,
-                "technical_core": "; ".join(card.technical_core),
-                "limitations": "; ".join(card.limitations),
-                "research_use": "; ".join(f"{ru.type}:{ru.note}" for ru in card.research_use),
-                "next_action": card.next_action,
-                "open_questions": "; ".join(card.open_questions),
-            })
+            writer.writerow(
+                {
+                    "candidate_id": card.candidate_id,
+                    "title": card.title,
+                    "verdict": card.verdict,
+                    "confidence": f"{card.confidence:.2f}",
+                    "one_sentence": card.one_sentence,
+                    "technical_core": "; ".join(card.technical_core),
+                    "limitations": "; ".join(card.limitations),
+                    "research_use": "; ".join(f"{ru.type}:{ru.note}" for ru in card.research_use),
+                    "next_action": card.next_action,
+                    "open_questions": "; ".join(card.open_questions),
+                }
+            )

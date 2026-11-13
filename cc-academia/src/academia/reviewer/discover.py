@@ -303,9 +303,7 @@ def build_candidates(
             continue
         evidence.sort(key=lambda e: -e.similarity)
         papers = sorted(record.get(person_id, evidence), key=lambda e: -e.similarity)
-        candidates.append(
-            Candidate(person=person, evidence=evidence[:10], relevant_papers=papers)
-        )
+        candidates.append(Candidate(person=person, evidence=evidence[:10], relevant_papers=papers))
 
     # Ordered by evidence strength, because every downstream `--limit` slices
     # this list. Unordered, enriching 40 of 200 candidates could miss all of the

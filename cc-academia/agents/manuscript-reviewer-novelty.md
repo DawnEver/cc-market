@@ -1,6 +1,6 @@
 ---
 name: manuscript-reviewer-novelty
-description: 锐评 — novelty + related-work coverage. Stress-test whether claimed contributions are genuinely new given the prior art the paper cites (and the prior art it doesn't).
+description: Sharp review — novelty + related-work coverage. Stress-test whether claimed contributions are genuinely new given the prior art the paper cites (and the prior art it doesn't).
 angle: novelty
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write,WebFetch,WebSearch"
@@ -41,6 +41,6 @@ Write to `ongoing/<slug>/2-review/critiques/novelty.md`. Number every point sequ
 ## Hard rules
 
 - Every claim cites a **specific** evidence location (file:section or URL). No vague "novelty is overstated".
-- 锐评 tone: sharp, specific, intellectually honest. Skip ceremony.
+- Sharp-review tone: sharp, specific, intellectually honest. Skip ceremony.
 - Praise plainly with evidence when warranted.
 - Drop unsupported suspicions. Do not pad.

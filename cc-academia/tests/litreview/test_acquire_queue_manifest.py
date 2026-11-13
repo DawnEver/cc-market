@@ -62,12 +62,16 @@ def _write_screening(workspace, rows):
 # Queue construction
 # ---------------------------------------------------------------------------
 
+
 def test_queue_includes_include_and_maybe_decisions(workspace):
-    screening = _write_screening(workspace, [
-        _screening_row("a", "include"),
-        _screening_row("b", "maybe"),
-        _screening_row("c", "exclude"),
-    ])
+    screening = _write_screening(
+        workspace,
+        [
+            _screening_row("a", "include"),
+            _screening_row("b", "maybe"),
+            _screening_row("c", "exclude"),
+        ],
+    )
     write_download_queue(screening, workspace / "download")
 
     queue = json.loads((workspace / "download" / "download_queue.json").read_text(encoding="utf-8"))
@@ -86,7 +90,9 @@ def test_queue_items_start_unapproved_and_carry_urls(workspace):
     screening = _write_screening(workspace, [_screening_row("a")])
     write_download_queue(screening, workspace / "download")
 
-    item = json.loads((workspace / "download" / "download_queue.json").read_text(encoding="utf-8"))["items"][0]
+    item = json.loads((workspace / "download" / "download_queue.json").read_text(encoding="utf-8"))[
+        "items"
+    ][0]
     assert item["approved"] is False
     assert item["doi"] == "10.1000/a"
     assert item["html_url"] == "https://example.org/a"
@@ -99,7 +105,9 @@ def test_approve_marks_only_named_candidates(workspace):
 
     approve_download_queue(queue_path, ["a"], "tester")
 
-    items = {i["candidate_id"]: i for i in json.loads(queue_path.read_text(encoding="utf-8"))["items"]}
+    items = {
+        i["candidate_id"]: i for i in json.loads(queue_path.read_text(encoding="utf-8"))["items"]
+    }
     assert items["a"]["approved"] is True
     assert items["b"]["approved"] is False
 
@@ -107,6 +115,7 @@ def test_approve_marks_only_named_candidates(workspace):
 # ---------------------------------------------------------------------------
 # Matching
 # ---------------------------------------------------------------------------
+
 
 def _approved_queue(workspace, cids):
     screening = _write_screening(workspace, [_screening_row(c) for c in cids])
@@ -119,11 +128,17 @@ def _approved_queue(workspace, cids):
 def _record_download(workspace, cid, pdf: Path):
     """Simulate what the downloader records for a successful fetch."""
     path = ledger.ledger_path(workspace)
-    ledger.append(path, DownloadRecord(
-        candidate_id=cid, outcome=Outcome.DOWNLOADED,
-        timestamp="2026-07-26T00:00:00+01:00", title=f"Paper {cid}",
-        pdf_path=str(pdf.resolve()), sha256=sha256_file(pdf),
-    ))
+    ledger.append(
+        path,
+        DownloadRecord(
+            candidate_id=cid,
+            outcome=Outcome.DOWNLOADED,
+            timestamp="2026-07-26T00:00:00+01:00",
+            title=f"Paper {cid}",
+            pdf_path=str(pdf.resolve()),
+            sha256=sha256_file(pdf),
+        ),
+    )
     return path
 
 
@@ -139,7 +154,7 @@ def test_manifest_rows_come_from_the_ledger(workspace):
 
     assert len(rows) == 1
     assert rows[0]["candidate_id"] == "a"
-    assert rows[0]["doi"] == "10.1000/a"       # joined from the queue
+    assert rows[0]["doi"] == "10.1000/a"  # joined from the queue
     assert rows[0]["pdf_path"] == str(pdf.resolve())
 
 
@@ -203,6 +218,7 @@ def test_manual_drop_is_empty_without_the_directory(workspace):
 # Manifest
 # ---------------------------------------------------------------------------
 
+
 def test_manifest_is_written_from_ledger_rows(workspace):
     queue_path = _approved_queue(workspace, ["a"])
     pdf = workspace / "pdfs" / "a_Paper a.pdf"
@@ -213,7 +229,9 @@ def test_manifest_is_written_from_ledger_rows(workspace):
     rows = manifest_rows(ledger.ledger_path(workspace), queue_path)
     count = write_download_manifest(rows, workspace / "handoff")
 
-    manifest = json.loads((workspace / "handoff" / "download_manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (workspace / "handoff" / "download_manifest.json").read_text(encoding="utf-8")
+    )
     assert count == 1
     assert manifest["papers"][0]["candidate_id"] == "a"
 
@@ -221,6 +239,7 @@ def test_manifest_is_written_from_ledger_rows(workspace):
 # ---------------------------------------------------------------------------
 # PDF validation must mean one thing across the codebase
 # ---------------------------------------------------------------------------
+
 
 def test_validate_pdf_rejects_truncated_stub(tmp_path):
     """A 300-byte stub must not pass download and then fail at manifest time."""
@@ -249,6 +268,7 @@ def test_validate_pdf_accepts_a_real_pdf(tmp_path):
 # Orchestrator wiring — the regression that disabled ingest
 # ---------------------------------------------------------------------------
 
+
 def test_run_acquire_produces_a_manifest(workspace, monkeypatch):
     """End-to-end: a successful download must yield handoff/download_manifest.json."""
     from academia.litreview import workflow_acquire
@@ -265,9 +285,7 @@ def test_run_acquire_produces_a_manifest(workspace, monkeypatch):
         _record_download(run_dir, "a", pdf)
         return [{"candidate_id": "a", "outcome": "downloaded"}]
 
-    monkeypatch.setattr(
-        "academia.litreview.acquire.engine.acquire_pdfs", fake_acquire_pdfs
-    )
+    monkeypatch.setattr("academia.litreview.acquire.engine.acquire_pdfs", fake_acquire_pdfs)
 
     result = workflow_acquire.run_acquire(workspace, approved_by="tester")
 

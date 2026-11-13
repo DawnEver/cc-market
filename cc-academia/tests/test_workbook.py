@@ -272,8 +272,13 @@ def every_fact_key() -> set[str]:
 
     papers = tuple(
         Evidence(
-            paper_id=f"p{y}", title="t", year=y, position="first",
-            position_weight=1.0, similarity=0.5, venue_type=t,
+            paper_id=f"p{y}",
+            title="t",
+            year=y,
+            position="first",
+            position_weight=1.0,
+            similarity=0.5,
+            venue_type=t,
         )
         for y, t in ((2025, "article"), (2024, "conference"), (2023, ""))
     )

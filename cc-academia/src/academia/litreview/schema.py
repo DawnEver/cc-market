@@ -16,6 +16,7 @@ def load_data(path: Path) -> Any:
             return rtoml.load(f)
         if path.suffix.lower() in {".yaml", ".yml"}:
             import yaml
+
             return yaml.safe_load(f)
         return json.load(f)
 

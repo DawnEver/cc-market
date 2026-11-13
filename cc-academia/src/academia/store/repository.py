@@ -124,7 +124,8 @@ def _find_person_id(conn: sqlite3.Connection, author: Author) -> str | None:
         if not value:
             continue
         row = conn.execute(
-            f"SELECT person_id FROM persons WHERE {column} = ?", (value,)  # noqa: S608 -- column is one of the literal identifier columns above; the value is bound as ?
+            f"SELECT person_id FROM persons WHERE {column} = ?",
+            (value,),  # noqa: S608 -- column is one of the literal identifier columns above; the value is bound as ?
         ).fetchone()
         if row:
             return row["person_id"]
@@ -247,7 +248,11 @@ def find_person_by_name(conn: sqlite3.Connection, name: str) -> list[sqlite3.Row
         JOIN person_names n ON n.person_id = p.person_id
         """
     ).fetchall()
-    return [r for r in rows if normalize_name(r["display_name"]) == key or _matches_variant(conn, r["person_id"], key)]
+    return [
+        r
+        for r in rows
+        if normalize_name(r["display_name"]) == key or _matches_variant(conn, r["person_id"], key)
+    ]
 
 
 def _matches_variant(conn: sqlite3.Connection, person_id: str, key: str) -> bool:
@@ -291,7 +296,9 @@ def record_authorships(conn: sqlite3.Connection, paper: Paper) -> list[str]:
     return person_ids
 
 
-def _update_coauthor_edges(conn: sqlite3.Connection, person_ids: Sequence[str], year: int | None) -> None:
+def _update_coauthor_edges(
+    conn: sqlite3.Connection, person_ids: Sequence[str], year: int | None
+) -> None:
     """Maintain an undirected co-authorship graph, stored once per unordered pair."""
     unique = sorted(set(person_ids))
     for i, a in enumerate(unique):
@@ -309,7 +316,9 @@ def _update_coauthor_edges(conn: sqlite3.Connection, person_ids: Sequence[str], 
             )
 
 
-def coauthors_of(conn: sqlite3.Connection, person_id: str, since_year: int | None = None) -> list[sqlite3.Row]:
+def coauthors_of(
+    conn: sqlite3.Connection, person_id: str, since_year: int | None = None
+) -> list[sqlite3.Row]:
     rows = conn.execute(
         """
         SELECT b_person_id AS other, paper_count, first_year, last_year
@@ -363,8 +372,7 @@ def record_output(
 def output_by_year(conn: sqlite3.Connection, person_id: str) -> dict[int, int]:
     """Works per year across every source that reported any, newest wins ties."""
     rows = conn.execute(
-        "SELECT year, max(works) AS works FROM person_output "
-        "WHERE person_id = ? GROUP BY year",
+        "SELECT year, max(works) AS works FROM person_output WHERE person_id = ? GROUP BY year",
         (person_id,),
     ).fetchall()
     return {int(row["year"]): int(row["works"]) for row in rows}
@@ -759,9 +767,7 @@ def add_manuscript_author(
 
 
 def manuscript_authors(conn: sqlite3.Connection, ms_id: str) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT * FROM manuscript_authors WHERE ms_id = ?", (ms_id,)
-    ).fetchall()
+    return conn.execute("SELECT * FROM manuscript_authors WHERE ms_id = ?", (ms_id,)).fetchall()
 
 
 def create_run(conn: sqlite3.Connection, *, run_id: str, ms_id: str, config_hash: str = "") -> str:
@@ -877,9 +883,7 @@ def store_institution_for(
     kind: str = "",
 ) -> str:
     """Convenience wrapper: create the institution then link the person to it."""
-    institution = Institution.build(
-        name=name, ror_id=ror_id, country_code=country_code, type=kind
-    )
+    institution = Institution.build(name=name, ror_id=ror_id, country_code=country_code, type=kind)
     upsert_institution(conn, institution)
     record_affiliation(
         conn,

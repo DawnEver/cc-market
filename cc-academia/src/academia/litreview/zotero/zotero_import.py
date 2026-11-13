@@ -137,8 +137,7 @@ def group_pdfs(files: list[tuple[Path, int]], doi_of: Any = None) -> list[PdfGro
     # in rather than import it twice (e.g. two england2021 scans).
     by_stem: dict[str, PdfGroup] = {}
     merged: list[PdfGroup] = []
-    for g in sorted(groups, key=lambda g:
-        g.doi is None):  # DOI groups first
+    for g in sorted(groups, key=lambda g: g.doi is None):  # DOI groups first
         stem = title_key(g.canonical.name)
         primary = by_stem.get(stem)
         if primary is None or (primary.doi and g.doi):
@@ -295,8 +294,9 @@ def import_workspace_pdfs(
         wanted = {c.strip() for c in candidate_ids if c and c.strip()}
         groups = [g for g in groups if _candidate_matches(g.canonical.stem, wanted)]
         if not groups:
-            print(f"warning: no workspace PDF matches candidate_ids={sorted(wanted)}",
-                  file=sys.stderr)
+            print(
+                f"warning: no workspace PDF matches candidate_ids={sorted(wanted)}", file=sys.stderr
+            )
 
     if dry_run:
         return [
@@ -320,9 +320,15 @@ def import_workspace_pdfs(
             rel = str(g.canonical.relative_to(workspace_dir))
             existing = {e.get("candidate_id"): e for e in registry}.get(cid)
             if existing and not force:
-                results.append(ImportResult(cid, rel, "skipped-registry",
-                                            zotero_key=existing.get("zotero_key", ""),
-                                            pdf_attached=bool(existing.get("pdf_attached"))))
+                results.append(
+                    ImportResult(
+                        cid,
+                        rel,
+                        "skipped-registry",
+                        zotero_key=existing.get("zotero_key", ""),
+                        pdf_attached=bool(existing.get("pdf_attached")),
+                    )
+                )
                 continue
             try:
                 item = _find_item_by_doi(zot, g.doi) if g.doi else None
@@ -358,9 +364,16 @@ def import_workspace_pdfs(
                     "tags": tags,
                 }
                 registry = upsert_registry(registry, entry)
-                results.append(ImportResult(cid, rel, action, zotero_key=key,
-                                            pdf_attached=pdf_ok,
-                                            duplicates=len(g.duplicates)))
+                results.append(
+                    ImportResult(
+                        cid,
+                        rel,
+                        action,
+                        zotero_key=key,
+                        pdf_attached=pdf_ok,
+                        duplicates=len(g.duplicates),
+                    )
+                )
             except Exception as e:
                 results.append(ImportResult(cid, rel, "error", detail=str(e)[:200]))
     finally:

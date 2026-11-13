@@ -89,6 +89,7 @@ class BrowserGetter:
                 return target.read_bytes(), "application/pdf", found
         return self._page.content(), "text/html", self._page.url or url
 
+
 #: How many of a candidate's papers to try. Each is a network fetch, and a
 #: candidate whose first few papers carry no address rarely has one on the tenth.
 MAX_PAPERS_PER_CANDIDATE = 4
@@ -310,7 +311,11 @@ def _unique_full_name_typo_match(
         local = email.split("@", 1)[0]
         if len(local) < 6 or not local.isalpha():
             continue
-        matched = [pid for pid, names in forms.items() if any(_within_one_edit(local, name) for name in names)]
+        matched = [
+            pid
+            for pid, names in forms.items()
+            if any(_within_one_edit(local, name) for name in names)
+        ]
         if matched == [person.person_id]:
             return email
     return ""
@@ -365,6 +370,7 @@ def hydrate_open_access_pdfs(
                 if not current or "repository" in url or "arxiv.org" in url:
                     found[doi] = url
             return found
+
     resolved = resolver(dois)
     changed = 0
     for doi, url in resolved.items():
@@ -400,9 +406,7 @@ def hydrate_recent_publications(
         # A person's current activity and their contact evidence have different
         # clocks. Recent works below prove activity; older papers are still
         # useful when OpenAlex explicitly marks this person as corresponding.
-        for paper in recent_corresponding_works(
-            [person.openalex_id for person in unresolved]
-        ):
+        for paper in recent_corresponding_works([person.openalex_id for person in unresolved]):
             store_repo.ingest_paper(conn, paper)
             added += 1
     for person in unresolved:
@@ -460,9 +464,7 @@ def email_from_publications(
             if not match and not row["is_corresponding"]:
                 match = _given_name_id_match(conn, row["paper_id"], addresses, person)
             if not match and not row["is_corresponding"]:
-                match = _unique_full_name_typo_match(
-                    conn, row["paper_id"], addresses, person
-                )
+                match = _unique_full_name_typo_match(conn, row["paper_id"], addresses, person)
             # The scholarly record sometimes marks the candidate as the
             # corresponding author while the address local part is an opaque
             # staff number. A sole non-publisher address on that exact paper is

@@ -74,7 +74,7 @@ def store(*, sync: bool = True):
         if enabled:
             try:
                 imported, skipped = facts.import_(conn, directory)
-                if (total := sum(imported.values())):
+                if total := sum(imported.values()):
                     log.detail(f"facts: merged {total} from {directory}")
                 if skipped:
                     log.detail(f"facts: skipped {skipped} unidentifiable record(s)")
@@ -161,12 +161,12 @@ def run_init(args: argparse.Namespace) -> int:
     # A PDF carries no submission year, and a year of 0 would widen the
     # co-authorship window to everything ever published.
     sanitized.year = args.year or sanitized.year or _now_year()
-    if (declared := _parse_authors(getattr(args, "authors", None))):
+    if declared := _parse_authors(getattr(args, "authors", None)):
         sanitized.authors = declared
 
     # One manuscript, one workspace. Two would mean two candidate pools and two
     # shortlists that can disagree, with nothing to say which is current.
-    if (existing := find_workspace_for(title_hash(sanitized.title), excluding=slug)):
+    if existing := find_workspace_for(title_hash(sanitized.title), excluding=slug):
         raise UsageError(
             f"this manuscript already has a workspace: {existing}\n"
             f"  Continue it:  rev-disc status --slug {existing}\n"
@@ -234,7 +234,7 @@ def run_profile(args: argparse.Namespace) -> int:
     # Regenerating invalidates any previous approval.
     state.approved_queries = ""
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         repo.create_manuscript(
             conn,
             ms_id=profile.manuscript_id,
@@ -323,7 +323,7 @@ def run_search(args: argparse.Namespace) -> int:
         year_from=args.year_from,
     )
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         stored = discover.store_papers(conn, outcome.papers)
 
     workspace.write_jsonl(
@@ -391,7 +391,7 @@ def run_candidates(args: argparse.Namespace) -> int:
         else policy.retrieval_int("top_papers", discover.DEFAULT_TOP_PAPERS)
     )
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         scores = discover.relevance(conn, profile, now_year=_now_year(), limit=pool)
         candidates = discover.build_candidates(
             conn, scores, top_papers=top_papers, min_evidence=args.min_evidence
@@ -492,24 +492,18 @@ def run_enrich(args: argparse.Namespace) -> int:
         from academia.litreview.acquire.download import playwright_page
 
         profile = Path(args.browser_profile) if args.browser_profile else None
-        page, close_browser = playwright_page(
-            profile=profile, browser_channel=args.browser_channel
-        )
+        page, close_browser = playwright_page(profile=profile, browser_channel=args.browser_channel)
         browser_getter = contact_module.BrowserGetter(page)
     fetcher = (
         None
         if args.no_email
         else enrich_module.PageFetcher(
-            delay=policy.retrieval_float(
-                "page_request_delay", enrich_module.PAGE_REQUEST_DELAY
-            ),
+            delay=policy.retrieval_float("page_request_delay", enrich_module.PAGE_REQUEST_DELAY),
             max_bytes=policy.retrieval_int("max_page_bytes", enrich_module.MAX_PAGE_BYTES),
             failure_budget=policy.retrieval_int(
                 "host_failure_budget", enrich_module.HOST_FAILURE_BUDGET
             ),
-            pdf_front_pages=policy.retrieval_int(
-                "pdf_front_pages", contact_module.PDF_FRONT_PAGES
-            ),
+            pdf_front_pages=policy.retrieval_int("pdf_front_pages", contact_module.PDF_FRONT_PAGES),
             fallback_getter=browser_getter,
         )
     )
@@ -549,7 +543,7 @@ def run_enrich(args: argparse.Namespace) -> int:
     seen_pages: dict[str, list[str]] = {}
 
     enriched: list[dict] = []
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         if not args.no_email:
             try:
                 from datetime import UTC, datetime
@@ -565,9 +559,7 @@ def run_enrich(args: argparse.Namespace) -> int:
                     year_from=datetime.now(UTC).year - 3,
                     limit=max_papers_per_candidate,
                 )
-                contact_module.hydrate_open_access_pdfs(
-                    conn, [row["person_id"] for row in subset]
-                )
+                contact_module.hydrate_open_access_pdfs(conn, [row["person_id"] for row in subset])
             except Exception as error:
                 log.warn(f"open-access PDF resolution failed: {error}")
         for row in subset:
@@ -594,9 +586,7 @@ def run_enrich(args: argparse.Namespace) -> int:
                 )
                 person = repo.load_person(conn, person.person_id) or person
             contact = (
-                enrich_module.Contact()
-                if args.no_email
-                else enrich_module.contact_for(person)
+                enrich_module.Contact() if args.no_email else enrich_module.contact_for(person)
             )
             finding = enrich_module.discover_email(
                 conn,
@@ -652,9 +642,7 @@ def run_enrich(args: argparse.Namespace) -> int:
             "host_failure_budget": policy.retrieval_int(
                 "host_failure_budget", enrich_module.HOST_FAILURE_BUDGET
             ),
-            "max_page_bytes": policy.retrieval_int(
-                "max_page_bytes", enrich_module.MAX_PAGE_BYTES
-            ),
+            "max_page_bytes": policy.retrieval_int("max_page_bytes", enrich_module.MAX_PAGE_BYTES),
             "email_precedence": list(email_precedence),
         },
     }
@@ -683,9 +671,7 @@ def _context(conn, profile: Profile) -> coi_module.ManuscriptContext:
     orcids = dict(zip(profile.author_names, profile.author_orcids, strict=False))
     recorded = [r["person_id"] for r in author_rows if r["person_id"]]
 
-    identities = coi_module.identify_authors(
-        conn, [(name, orcids.get(name, "")) for name in names]
-    )
+    identities = coi_module.identify_authors(conn, [(name, orcids.get(name, "")) for name in names])
     certain = [i.person_id for i in identities if i.certain]
     possible = [i.person_id for i in identities if not i.certain]
     for identity in identities:
@@ -732,7 +718,7 @@ def run_coi(args: argparse.Namespace) -> int:
     run_id = state.run_id or stable_id("run", profile.manuscript_id, policy.fingerprint())
     verdicts: list[dict] = []
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         # The workspace syncs between machines and the database does not, so a
         # stage marked done in run_state.json may have written its rows into a
         # database that is still on the other machine. The profile on disk
@@ -779,7 +765,10 @@ def run_coi(args: argparse.Namespace) -> int:
     state.mark("coi")
     workspace.save_state(state)
 
-    counts = {status: sum(1 for v in verdicts if v["status"] == status) for status in ("CLEAR", "REVIEW", "BLOCK")}
+    counts = {
+        status: sum(1 for v in verdicts if v["status"] == status)
+        for status in ("CLEAR", "REVIEW", "BLOCK")
+    }
     payload = {"run_id": run_id, "policy": policy.sources, "counts": counts}
     if args.json:
         log.emit(payload)
@@ -817,17 +806,17 @@ def run_report(args: argparse.Namespace) -> int:
 
     candidate_rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
     coi_rows = {
-        row["person_id"]: row
-        for row in workspace.read_jsonl(workspace.audit_dir / "coi.jsonl")
+        row["person_id"]: row for row in workspace.read_jsonl(workspace.audit_dir / "coi.jsonl")
     }
     try:
         email_rows = {
-            row["person_id"]: row for row in workspace.read_jsonl(workspace.audit_dir / "enrichment.jsonl")
+            row["person_id"]: row
+            for row in workspace.read_jsonl(workspace.audit_dir / "enrichment.jsonl")
         }
     except UsageError:
         email_rows = {}
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         candidates: list[rank.Candidate] = []
         for row in candidate_rows:
             person = repo.load_person(conn, row["person_id"])
@@ -916,7 +905,11 @@ def run_report(args: argparse.Namespace) -> int:
         for candidate in ordered:
             if not candidate.blocked:
                 repo.record_score(
-                    conn, state.run_id, candidate.person.person_id, candidate.score, candidate.components
+                    conn,
+                    state.run_id,
+                    candidate.person.person_id,
+                    candidate.score,
+                    candidate.components,
                 )
 
         unknown = [
@@ -1030,7 +1023,7 @@ def run_invite(args: argparse.Namespace) -> int:
     def tri(value: str) -> bool | None:
         return None if not value else value == "yes"
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         person = repo.load_person(conn, args.person)
         if person is None:
             raise UsageError(
@@ -1061,9 +1054,7 @@ def run_invite(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _record_doctorate(
-    conn, person, supplied: tuple[str, int | None, int | None, str]
-) -> None:
+def _record_doctorate(conn, person, supplied: tuple[str, int | None, int | None, str]) -> None:
     """Store doctorate years read off a bio, with the page that stated them.
 
     The doctoral-year floor can only be applied to someone whose enrolment year
@@ -1141,8 +1132,10 @@ def run_facts(args: argparse.Namespace) -> int:
     else:
         log.info(f"facts folder: {directory}  (device '{paths.device_id()}')")
         if imported:
-            log.info(f"  merged in : {sum(imported.values())} fact(s) from the folder "
-                f"(every device including this one — that is what rebuilds a lost store)")
+            log.info(
+                f"  merged in : {sum(imported.values())} fact(s) from the folder "
+                f"(every device including this one — that is what rebuilds a lost store)"
+            )
         if exported:
             log.info(f"  published : {sum(exported.values())} fact(s)")
         if skipped:
@@ -1197,7 +1190,7 @@ def run_contacts(args: argparse.Namespace) -> int:
     workspace = open_workspace(args.slug)
     rows = workspace.read_jsonl(workspace.candidate_dir / "candidates.jsonl")
 
-    with store(sync=not getattr(args, 'no_facts_sync', False)) as conn:
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         people = []
         resolved: set[str] = set()
         for row in rows:
@@ -1225,6 +1218,5 @@ def run_contacts(args: argparse.Namespace) -> int:
             log.info(f"{summary['never_searched']} candidates have never been searched")
         for item in items:
             log.info(f"  {item['person_id']}  {item['name']} — {item['institution'] or 'unknown'}")
-        log.info("Look these up, then: rev-disc enrich --slug "
-                 f"{args.slug} --homepages <file.json>")
+        log.info(f"Look these up, then: rev-disc enrich --slug {args.slug} --homepages <file.json>")
     return EXIT_OK

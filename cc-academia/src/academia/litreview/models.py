@@ -13,6 +13,7 @@ from typing import Any, get_args, get_origin, get_type_hints
 # Serialization base — typed round-trip across JSON boundaries
 # ---------------------------------------------------------------------------
 
+
 @cache
 def _class_hints(cls: type) -> dict[str, Any]:
     """Resolved type hints per class, cached — from_dict runs per record."""
@@ -65,8 +66,7 @@ class Serde:
             # type: ignore[arg-type]
             if f.name not in data or data[f.name] is None:
                 # Let the field default apply; required fields have none
-                if (f.default is dataclasses.MISSING
-                        and f.default_factory is dataclasses.MISSING):
+                if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
                     missing.append(f.name)
                 continue
             kwargs[f.name] = _coerce(hints.get(f.name, Any), data[f.name])
@@ -82,6 +82,7 @@ class Serde:
 # Shared primitives
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Approval(Serde):
     approved: bool = False
@@ -94,6 +95,7 @@ class Approval(Serde):
 # Workspace
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ZoteroBinding(Serde):
     """Flat collection per workspace — no nested subcollections in Zotero.
@@ -105,22 +107,24 @@ class ZoteroBinding(Serde):
       - The zotero_registry.jsonl file is the single source of truth for
         workspace↔Zotero linkage.
     """
+
     collection_key: str = ""
-    collection_name: str = ""   # derived from workspace slug; populated by init/sync
+    collection_name: str = ""  # derived from workspace slug; populated by init/sync
     group_id: str | None = None
     sync_notes: bool = True
-    sync_attachments: bool = True   # PDFs are the primary reason for Zotero
+    sync_attachments: bool = True  # PDFs are the primary reason for Zotero
     tags: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ZoteroRegistryEntry(Serde):
     """One row in a workspace's zotero_registry.jsonl — bridges workspace ↔ Zotero."""
+
     candidate_id: str
-    zotero_key: str          # 8-char Zotero item key
+    zotero_key: str  # 8-char Zotero item key
     title: str = ""
     doi: str = ""
-    date_synced: str = ""    # ISO timestamp
+    date_synced: str = ""  # ISO timestamp
     pdf_attached: bool = False
     notes_synced: bool = False
     zotero_collection: str = ""  # collection name this entry lives in
@@ -157,6 +161,7 @@ class Workspace(Serde):
 # ---------------------------------------------------------------------------
 # Research Brief
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Concept(Serde):
@@ -200,15 +205,21 @@ class ResearchBrief(Serde):
         # Accept both the flat layout and the nested 'constraints' layout
         constraints = data.get("constraints")
         if isinstance(constraints, dict):
-            data = {**data, **{k: constraints[k] for k in
-                               ("year_from", "year_to", "content_types", "preferred_venues")
-                               if k in constraints}}
+            data = {
+                **data,
+                **{
+                    k: constraints[k]
+                    for k in ("year_from", "year_to", "content_types", "preferred_venues")
+                    if k in constraints
+                },
+            }
         return super().from_dict(data)
 
 
 # ---------------------------------------------------------------------------
 # Candidate & Screening
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Candidate(Serde):
@@ -248,6 +259,7 @@ class ScreeningDecision(Serde):
 # Query Plan
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class QueryItem(Serde):
     query_id: str
@@ -272,6 +284,7 @@ class QueryPlan(Serde):
 # ---------------------------------------------------------------------------
 # Download & Ingest manifests
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class DownloadItem(Serde):
@@ -319,11 +332,12 @@ class IngestManifest(Serde):
 # Paper Card (deep reading output)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Evidence(Serde):
     claim: str
-    source: str = ""    # path to markdown file
-    locator: str = ""   # e.g. "Fig. 8, Table II"
+    source: str = ""  # path to markdown file
+    locator: str = ""  # e.g. "Fig. 8, Table II"
 
 
 @dataclass
@@ -350,6 +364,7 @@ class PaperCard(Serde):
 # ---------------------------------------------------------------------------
 # Reading Queue
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ScoreBreakdown(Serde):

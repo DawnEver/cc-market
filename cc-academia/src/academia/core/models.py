@@ -178,7 +178,9 @@ class Paper:
         self.doi = normalize_doi(self.doi)
 
     @classmethod
-    def build(cls, *, title: str, source: str, doi: str = "", source_id: str = "", **kwargs: Any) -> Paper:
+    def build(
+        cls, *, title: str, source: str, doi: str = "", source_id: str = "", **kwargs: Any
+    ) -> Paper:
         clean_doi = normalize_doi(doi)
         # Identity precedence: DOI, then the source's own id, then the title.
         # A title-only key is weak, so it is the last resort rather than the default.
@@ -291,7 +293,7 @@ class Person:
         from academia.reviewer.seniority import clean_title
 
         for affiliation in self._titled_affiliations:
-            if (title := clean_title(affiliation.role)):
+            if title := clean_title(affiliation.role):
                 return title
         return ""
 
@@ -312,7 +314,7 @@ class Person:
         # worked at, and the country it implies then feeds the geographic score.
         verified = [a for a in current if a.source in VERIFIED_AFFILIATION_SOURCES]
         if verified:
-            return max(verified, key=lambda a: (a.year_to or a.year_from or 0))
+            return max(verified, key=lambda a: a.year_to or a.year_from or 0)
         if current:
             return min(
                 current,

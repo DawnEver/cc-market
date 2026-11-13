@@ -32,30 +32,48 @@ from academia.litreview.acquire.verify import is_pdf_bytes
 # Hosts that answer plain HTTP with a challenge page: only a real browser
 # session gets through, so the cheap transport is skipped for them entirely.
 BROWSER_ONLY_HOSTS = (
-    "ieeexplore.ieee.org", "researchgate.net", "sciencedirect.com",
-    "onlinelibrary.wiley.com", "academia.edu", "dl.acm.org",
+    "ieeexplore.ieee.org",
+    "researchgate.net",
+    "sciencedirect.com",
+    "onlinelibrary.wiley.com",
+    "academia.edu",
+    "dl.acm.org",
 )
 
 CHALLENGE_MARKERS = (
-    "challenge-platform", "cf-challenge", "turnstile",
-    "verify you are human", "unusual traffic detected",
+    "challenge-platform",
+    "cf-challenge",
+    "turnstile",
+    "verify you are human",
+    "unusual traffic detected",
 )
 ACCESS_BLOCK_MARKERS = (
-    "access to ieee explore requires", "you are not authorized",
-    "please sign in to continue", "purchase this document",
+    "access to ieee explore requires",
+    "you are not authorized",
+    "please sign in to continue",
+    "purchase this document",
 )
 COOKIE_ACCEPT_SELECTORS = (
-    ".osano-cm-button--type_accept", ".osano-cm-button--type_accept-all",
-    "button:has-text('Accept all')", "button:has-text('Accept')",
+    ".osano-cm-button--type_accept",
+    ".osano-cm-button--type_accept-all",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept')",
     "button:has-text('I accept')",
 )
 PDF_BUTTON_SELECTORS = (
-    'a[href*="/stampPDF/"]', "xpl-download-pdf a", "a[xpl-download-pdf]",
+    'a[href*="/stampPDF/"]',
+    "xpl-download-pdf a",
+    "a[xpl-download-pdf]",
     ".xpl-btn-pdf",  # current IEEE Xplore download button (Angular, 2023+)
     'a[href*="/stamp/stamp.jsp"]',  # IEEE stamp.jsp PDF endpoint (current)
-    ".document-pdf-link a", ".c-pdf-download__link", 'a[href*="/content/pdf/"]',
-    "a:has-text('Download PDF')", "a:has-text('View PDF')",
-    'a[aria-label*="PDF"]', 'a[title*="PDF"]', ".pdf-btn",
+    ".document-pdf-link a",
+    ".c-pdf-download__link",
+    'a[href*="/content/pdf/"]',
+    "a:has-text('Download PDF')",
+    "a:has-text('View PDF')",
+    'a[aria-label*="PDF"]',
+    'a[title*="PDF"]',
+    ".pdf-btn",
 )
 
 CHALLENGE_RETRIES = 3
@@ -92,6 +110,7 @@ class Transport(Protocol):
 # 1. Plain HTTP — no browser, no JS
 # ---------------------------------------------------------------------------
 
+
 class HttpTransport:
     """Repositories and preprint servers need nothing more than this.
 
@@ -120,6 +139,7 @@ class HttpTransport:
 # ---------------------------------------------------------------------------
 # 2. Browser — session cookies, JS, and Cloudflare clearance
 # ---------------------------------------------------------------------------
+
 
 class BrowserTransport:
     """Drives a live Playwright page.
@@ -183,8 +203,10 @@ class BrowserTransport:
             self._prepare()  # banners + challenge, BEFORE any interaction
 
             for strategy in (
-                self._from_response, self._from_linked_pdf,
-                self._from_pdf_button, self._from_ieee_iframe,
+                self._from_response,
+                self._from_linked_pdf,
+                self._from_pdf_button,
+                self._from_ieee_iframe,
             ):
                 found = strategy(target, url, response, downloads)
                 if found:
@@ -288,7 +310,7 @@ class BrowserTransport:
     def _from_linked_pdf(self, target, url, response, downloads) -> str | None:
         """PDF linked in the HTML — the most reliable signal on repositories."""
         html, base = self._content(), self._url() or url
-        for link in http_fetch.extract_pdf_links(html, base)[:http_fetch.MAX_LINKS_PER_PAGE]:
+        for link in http_fetch.extract_pdf_links(html, base)[: http_fetch.MAX_LINKS_PER_PAGE]:
             body = self._request_bytes(link, referer=base)
             if body is None:
                 # Cloudflare-guarded file endpoint: an out-of-band context
@@ -327,18 +349,19 @@ class BrowserTransport:
         """Fetch IEEE's PDF endpoint from its current stamp link or old iframe."""
         stamp = ""
         with contextlib.suppress(Exception):
-            stamp = self.page.locator('a[href*="/stamp/stamp.jsp"]').first.get_attribute(
-                "href", timeout=3_000
-            ) or ""
+            stamp = (
+                self.page.locator('a[href*="/stamp/stamp.jsp"]').first.get_attribute(
+                    "href", timeout=3_000
+                )
+                or ""
+            )
         if stamp:
             query = parse_qs(urlparse(stamp).query)
             number = (query.get("arnumber") or [""])[0]
             if number:
                 pdf_url = urljoin(
                     self._url() or url,
-                    "/stampPDF/getPDF.jsp?" + urlencode(
-                        {"tp": "", "arnumber": number, "ref": ""}
-                    ),
+                    "/stampPDF/getPDF.jsp?" + urlencode({"tp": "", "arnumber": number, "ref": ""}),
                 )
                 body = self._request_bytes(pdf_url, referer=self._url() or url)
                 if body is not None:
@@ -421,6 +444,7 @@ class BrowserTransport:
 # 3. ResearchGate — a site driver, because one URL is not enough
 # ---------------------------------------------------------------------------
 
+
 class ResearchGateTransport:
     """Needs search -> publication -> /download, so it cannot be a plain fetch."""
 
@@ -435,9 +459,8 @@ class ResearchGateTransport:
         return researchgate.is_researchgate_url(source.url)
 
     def fetch(self, source: Source, target: Path) -> str | None:
-        query = (
-            researchgate.query_from_item(self.item)
-            or researchgate.query_from_item({"html_url": source.url})
+        query = researchgate.query_from_item(self.item) or researchgate.query_from_item(
+            {"html_url": source.url}
         )
         if not query:
             return None
@@ -452,8 +475,9 @@ class ResearchGateTransport:
         return found
 
 
-def default_transports(page: Any | None, item: dict[str, Any] | None = None,
-                      http_only: bool = False) -> list[Transport]:
+def default_transports(
+    page: Any | None, item: dict[str, Any] | None = None, http_only: bool = False
+) -> list[Transport]:
     """Transports in cost order. Without a page, only plain HTTP is possible.
 
     When *http_only* is True, browser and ResearchGate transports are skipped
