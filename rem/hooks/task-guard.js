@@ -30,14 +30,14 @@ const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 const INTERPRETERS = /^(?:python\d?(?:\.\d+)?|py|node|deno|bun|perl|ruby|php|pwsh|powershell)(?:\.exe)?$/i;
 const CODE_RE = /\btasks\.mjs\b|\bauthority\.mjs\b|\b(?:openTask|closeTask|consumeAuthority|recordUserCommand)\b|\.claude[\\/]+(?:tasks|rem[\\/]+authority)\b/;
-const TASK_FLAGS_WITH_VALUE = new Set(['--task', '--scope', '--owner', '--journal-only']);
+const TASK_FLAGS_WITH_VALUE = new Set(['--task', '--line', '--scope', '--owner', '--journal-only']);
 const SINGLE_TARGET_WRITERS = new Set(['cp', 'mv', 'install', 'ln']);
 // (one string, so the lifecycle scan for file removers sees names to recognise, not a call)
 const ALL_TARGET_WRITERS = new Set('tee touch mkdir rm rmdir truncate unlink'.split(' '));
 const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move-item|remove-item)$/i;
 
 const REASON = 'Opening or closing a task is the user\'s /rem:task open|close command, and a task journal is '
-  + 'append-only through `task.js log|decide|open-item|close-item|handoff`. Propose the change to the user instead.';
+  + 'append-only through `task.js log|decide|open-item|close-item|handoff` (plus `translate`, which only turns a foreign-script line into English). Propose the change to the user instead.';
 
 // Heredocs: `<<[-] DELIM` … `DELIM`. The body is cut out of the command line and its place
 // taken by a marker word, so the body is never parsed as commands; segments() turns the

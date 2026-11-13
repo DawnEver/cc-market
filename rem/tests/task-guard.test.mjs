@@ -66,3 +66,18 @@ describe('still allowed after the deeper parse', () => {
     'cd .claude && cd memory && echo > note.md',
   ]) it(JSON.stringify(cmd), () => assert.equal(shell(cmd), false));
 });
+
+describe('translate is a task.js verb; every other journal rewrite stays refused', () => {
+  it('allows task.js translate (flags before or after the verb)', () => {
+    assert.equal(shell('node task.js translate --task x --line 4 "- 2026-11-13 D1: use English"'), false);
+    assert.equal(shell('node task.js --line 4 --task x translate "- 2026-11-13 D1: use English"'), false);
+  });
+  it('planted control: --line before the verb cannot hide open/close', () => {
+    assert.equal(shell('node task.js --line 4 close x'), true);
+  });
+  it('planted control: a direct journal rewrite is still refused', () => {
+    assert.equal(shell("sed -i 's/a/b/' .claude/tasks/x/JOURNAL.md"), true);
+    const edit = decideTaskGuard({ tool_name: 'Edit', tool_input: { file_path: '/r/.claude/tasks/x/JOURNAL.md' } });
+    assert.equal(edit.deny, true);
+  });
+});

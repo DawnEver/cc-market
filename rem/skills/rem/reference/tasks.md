@@ -76,6 +76,17 @@ Each call appends ONE line `- <date> <tag>: <text>` (O_APPEND; earlier bytes are
 rewritten) to the bound task's journal only. Decisions and open items number themselves. A
 closed task's journal is final. Lines are English by default (`memory-conventions.md` § Language). Read with `task.js show [<slug>]` and `task.js list`.
 
+The one sanctioned rewrite is a translation, for a line written before the English policy:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js translate --line 7 "- 2026-11-01 D2: <English text>"
+```
+
+It replaces JOURNAL.md line 7 (1-based) only if that line holds foreign script, the replacement
+holds none, and the `- <date> <tag>: ` prefix is byte-identical; then it appends
+`- <today> progress: line 7 translated to English` as the audit record. Every other rewrite
+stays refused (the library and the PreToolUse guard).
+
 ## Close — distill, then archive (the user closes)
 
 1. **Distill** (any session, before the user closes): mechanism → the docs (`/refresh-docs`);

@@ -90,3 +90,67 @@ for (const [mode, refuses] of [[undefined, true], ['english', true], ['unrestric
     });
   });
 }
+
+// translate: the one sanctioned rewrite of a journal line -- a foreign-script line becomes its
+// English translation, prefix byte-identical, plus one appended audit line. Nothing else moves.
+describe('task.js translate', () => {
+  const setup = () => {
+    const root = repo('unrestricted');
+    assert.equal(task(root, 'open', 't', 'goal').status, 0);
+    assert.equal(task(root, 'log', 'plain english', '--task', 't').status, 0);
+    assert.equal(task(root, 'decide', `use ${HAN} here`, '--task', 't').status, 0);
+    fs.writeFileSync(path.join(root, '.claude', 'rem.json'), JSON.stringify({ language: 'english' }));
+    return root;
+  };
+  const lines = root => journal(root).split('\n');
+  const lineNo = (root, re) => lines(root).findIndex(l => re.test(l)) + 1;
+  const prefixOf = l => l.match(/^- \d{4}-\d{2}-\d{2} [^:]+: /)[0];
+
+  it('replaces a foreign-script line with its English translation and appends an audit line', () => {
+    const root = setup();
+    const n = lineNo(root, /D1:/);
+    const before = lines(root);
+    const english = `${prefixOf(before[n - 1])}use Chinese here (user, translated)`;
+    const r = task(root, 'translate', '--task', 't', '--line', String(n), english);
+    assert.equal(r.status, 0, r.stderr);
+    const after = lines(root);
+    assert.equal(after[n - 1], english);
+    assert.deepEqual(after.slice(0, n - 1), before.slice(0, n - 1));
+    assert.match(after[before.length - 1], new RegExp(`progress: line ${n} translated to English`));
+    assert.equal(after.length, before.length + 1);
+  });
+  it('planted control: refuses a line that holds no foreign script', () => {
+    const root = setup();
+    const n = lineNo(root, /progress: plain english/);
+    const before = journal(root);
+    const r = task(root, 'translate', '--task', 't', '--line', String(n), `${prefixOf(lines(root)[n - 1])}rewritten`);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /no foreign-script/);
+    assert.equal(journal(root), before);
+  });
+  it('planted control: refuses a replacement that still holds CJK', () => {
+    const root = setup();
+    const n = lineNo(root, /D1:/);
+    const before = journal(root);
+    const r = task(root, 'translate', '--task', 't', '--line', String(n), `${prefixOf(lines(root)[n - 1])}use ${KANA}`);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /U\+3072/);
+    assert.equal(journal(root), before);
+  });
+  it('planted control: refuses a changed prefix', () => {
+    const root = setup();
+    const n = lineNo(root, /D1:/);
+    const before = journal(root);
+    for (const bad of ['- 1999-01-01 D1: use Chinese', `- ${prefixOf(lines(root)[n - 1]).slice(2, 12)} D2: use Chinese`, 'use Chinese']) {
+      const r = task(root, 'translate', '--task', 't', '--line', String(n), bad);
+      assert.equal(r.status, 1, bad);
+      assert.match(r.stderr, /prefix/);
+    }
+    assert.equal(journal(root), before);
+  });
+  it('refuses a line number outside the journal', () => {
+    const root = setup();
+    const r = task(root, 'translate', '--task', 't', '--line', '99', '- x');
+    assert.equal(r.status, 1);
+  });
+});

@@ -12,6 +12,9 @@
 //   task.js log "<progress>"            task.js decide "<decision>"   → D<n>
 //   task.js open-item "<text>"          task.js close-item O<n> "<how>"
 //   task.js handoff "<text>"
+//   task.js translate --line <n> "<english line>"   the one sanctioned rewrite: line n must hold
+//     foreign script; the replacement holds none and keeps `- <date> <tag>: ` byte-identical;
+//     it then appends `- <date> progress: line <n> translated to English`
 // Read-only:
 //   task.js list                        task.js show [<slug>]         task.js bound
 //   task.js distill-status [<slug>]     (show finds an archived task too)
@@ -20,7 +23,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, appendJournal, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask,
+  openTask, appendJournal, translateJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask,
 } from './tasks.mjs';
 
 const PREFIX = '[task]';
@@ -63,6 +66,11 @@ export function main(argv) {
     const slug = bound(args);
     const [item, ...how] = args;
     console.log(appendJournal(cwd, slug, `close-item:${item}`, how.join(' ') || 'done'));
+  } else if (verb === 'translate') {
+    const slug = bound(args);
+    const n = flag(args, '--line');
+    if (!n || args.length !== 1) throw new Error('usage: task.js translate [--task <slug>] --line <n> "<english line>"');
+    console.log(translateJournalLine(cwd, slug, n, args[0]));
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) console.log(`${t.slug}\t${t.status}\t${t.goal}`);
   } else if (verb === 'bound') {
@@ -79,7 +87,7 @@ export function main(argv) {
     console.log(`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`);
     console.log(`open items: ${openItems.map(n => `O${n}`).join(', ') || '(none)'}`);
   } else {
-    throw new Error('usage: task.js open|close|log|decide|open-item|close-item|handoff|list|show|bound|distill-status (see the header)');
+    throw new Error('usage: task.js open|close|log|decide|open-item|close-item|handoff|translate|list|show|bound|distill-status (see the header)');
   }
 }
 
