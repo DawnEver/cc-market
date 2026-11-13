@@ -1,0 +1,350 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "CI",
+  "on": {
+    "push": {
+      "branches": [
+        "integrate/main"
+      ]
+    },
+    "pull_request": {
+      "types": [
+        "opened",
+        "synchronize",
+        "reopened",
+        "ready_for_review"
+      ]
+    },
+    "workflow_dispatch": {
+      "inputs": {
+        "smoke": {
+          "description": "a merge's smoke run: the PR's part set, no promote",
+          "type": "boolean",
+          "default": false
+        },
+        "pr": {
+          "description": "the pull request this run is, for a PR the job token opened (continue.yml)",
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "schedule": [
+      {
+        "cron": "0 2 * * *"
+      }
+    ]
+  },
+  "concurrency": {
+    "group": "ci-${{ (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}",
+    "cancel-in-progress": "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "env": {
+    "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
+    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
+    "PARTS_EVENT": "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}",
+    "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}"
+  },
+  "jobs": {
+    "parts": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "id": "pending",
+          "name": "Whether main still lacks the tip",
+          "if": "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}",
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate pending \"$HEAD_SHA\" >> \"$GITHUB_OUTPUT\""
+        },
+        {
+          "id": "matrix",
+          "name": "The parts and their runners",
+          "if": "${{ steps.pending.outputs.pending != 'false' }}",
+          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event \"$PARTS_EVENT\")\" >> \"$GITHUB_OUTPUT\""
+        }
+      ],
+      "outputs": {
+        "matrix": "${{ steps.matrix.outputs.matrix }}",
+        "event": "${{ env.PARTS_EVENT }}",
+        "pending": "${{ steps.pending.outputs.pending }}"
+      },
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) }}"
+    },
+    "part": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "needs": "parts",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (needs.parts.outputs.matrix != '') }}",
+      "name": "tests/${{ matrix.part }}",
+      "runs-on": "${{ matrix.runs-on }}",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Produce and post the part",
+          "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
+        }
+      ],
+      "permissions": {
+        "contents": "write",
+        "statuses": "write"
+      },
+      "strategy": {
+        "fail-fast": false,
+        "matrix": "${{ fromJSON(needs.parts.outputs.matrix) }}"
+      }
+    },
+    "absent-parts": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "needs": [
+        "parts",
+        "part"
+      ],
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '') }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Post every part no job settled",
+          "run": "uv run --no-sync python -m dev_lab.dev.jobparts absent \"$HEAD_SHA\" --event \"$PARTS_EVENT\""
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "actions": "read",
+        "statuses": "write"
+      }
+    },
+    "security": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((github.event_name == 'pull_request' || inputs.pr != '')) }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "tests/security",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge security run --pr \"$PR_NUMBER\""
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "read"
+      }
+    },
+    "head-gates": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((github.event_name == 'pull_request' || inputs.pr != '')) }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "head gates",
+          "run": "uv run --no-sync python -m dev_lab.dev.forge headgate run --pr \"$PR_NUMBER\""
+        }
+      ],
+      "permissions": {
+        "contents": "read",
+        "statuses": "write",
+        "pull-requests": "read"
+      }
+    },
+    "merge-ready": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "needs": [
+        "security",
+        "head-gates",
+        "part",
+        "absent-parts"
+      ],
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && (github.event_name == 'pull_request' || inputs.pr != '')) }}",
+      "runs-on": "ubuntu-latest",
+      "outputs": {
+        "due": "${{ steps.ready.outputs.due }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "id": "ready",
+          "name": "tests/merge-ready",
+          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr \"$PR_NUMBER\")\"; echo \"$said\"; case \"$said\" in *\"; merged\") echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
+        },
+        {
+          "name": "Run CI on the merged integration",
+          "if": "${{ steps.ready.outputs.merged == 'true' }}",
+          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref integrate/main -f smoke=true",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          }
+        }
+      ],
+      "permissions": {
+        "contents": "write",
+        "statuses": "write",
+        "pull-requests": "write",
+        "actions": "write"
+      }
+    },
+    "promote": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "needs": [
+        "parts",
+        "absent-parts"
+      ],
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (needs.parts.outputs.pending == 'true') }}",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-extras"
+        },
+        {
+          "name": "Promote main",
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote \"$HEAD_SHA\" && git push origin main"
+        },
+        {
+          "name": "Delete the branches integration now contains",
+          "if": "${{ !cancelled() }}",
+          "run": "uv run --no-sync python -m dev_lab.dev.branchprune sweep"
+        }
+      ],
+      "permissions": {
+        "contents": "write",
+        "statuses": "write",
+        "pull-requests": "write"
+      }
+    }
+  }
+}

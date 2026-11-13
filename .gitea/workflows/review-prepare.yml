@@ -1,0 +1,63 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "Review prepare",
+  "on": {
+    "pull_request_target": {
+      "types": [
+        "labeled"
+      ]
+    }
+  },
+  "concurrency": {
+    "group": "review-prepare-${{ github.event.pull_request.number }}-${{ github.event.label.name }}",
+    "cancel-in-progress": true
+  },
+  "env": {
+    "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+    "FAMILY_SOURCE": "https://github.com/DawnEver/",
+    "UV_PYTHON": "python3",
+    "UV_PYTHON_DOWNLOADS": "never",
+    "UV_CONCURRENT_INSTALLS": "1",
+    "UV_CONCURRENT_BUILDS": "1"
+  },
+  "jobs": {
+    "prepare": {
+      "permissions": {
+        "contents": "read",
+        "pull-requests": "read"
+      },
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event.label.name == 'review-due') }}",
+      "runs-on": "light",
+      "steps": [
+        {
+          "name": "Reach the forge on the runner's instance",
+          "run": "[ -n \"$ACTIONS_RUNTIME_URL\" ] || { echo \"ACTIONS_RUNTIME_URL is unset: the runner names no forge to fetch from\"; exit 1; }\necho \"FORGE_URL=${ACTIONS_RUNTIME_URL%/api/actions_pipeline/}\" >> \"$GITHUB_ENV\"\necho \"GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig\" >> \"$GITHUB_ENV\"\n"
+        },
+        {
+          "name": "Fetch the head",
+          "env": {
+            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.$FORGE_URL/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\ngit config --global url.\"$FORGE_URL/\".insteadOf \"${{ github.server_url }}/\"\ngit config --global pack.threads 1\ngit config --global core.hooksPath /dev/null\nREPO=\"$FORGE_URL/${{ github.repository }}.git\"\nMIRROR=\"$HOME/mirrors/${{ github.repository }}.git\"\nmkdir -p \"${MIRROR%/*}\"\n(\n  flock 9\n  if [ ! -d \"$MIRROR/objects\" ]; then\n    rm -rf \"$MIRROR.new\"\n    git clone -q --bare --template= --no-tags --filter=blob:none \"$REPO\" \"$MIRROR.new\"\n    mv \"$MIRROR.new\" \"$MIRROR\"\n  fi\n  find \"$MIRROR\" -maxdepth 2 -name '*.lock' -type f -delete\n  git -C \"$MIRROR\" remote set-url origin \"$REPO\"\n  git -C \"$MIRROR\" -c gc.auto=0 fetch -q --prune --no-tags --filter=blob:none origin '+refs/heads/*:refs/heads/*'\n  git -C \"$MIRROR\" repack -q -d --geometric=2\n) 9>\"$MIRROR.lock\"\ngit clone -q --shared --no-checkout --template= \"$MIRROR\" .\ngit remote set-url origin \"$REPO\"\ngit config core.repositoryformatversion 1\ngit config extensions.partialClone origin\ngit config remote.origin.promisor true\ngit config remote.origin.partialclonefilter blob:none\ngit fetch -q --no-tags --filter=blob:none origin '+refs/heads/*:refs/remotes/origin/*' \"+refs/pull/${{ github.event.pull_request.number || '*' }}/head:refs/remotes/origin/pull/${{ github.event.pull_request.number || '*' }}\"\ngit sparse-checkout set --cone\necho \"INTEGRATION_SHA=$(git rev-parse origin/integrate/main)\" >> \"$GITHUB_ENV\"\ngit checkout -q --detach \"${HEAD_SHA:-origin/integrate/main}\"\n"
+        },
+        {
+          "name": "Install the review door",
+          "run": "cd \"$RUNNER_TEMP\"\nexport GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=\"http.${FORGE_URL:-$GITHUB_SERVER_URL}/.extraHeader\" GIT_CONFIG_VALUE_0=\"Authorization: basic $(printf 'x-access-token:%s' \"${FAMILY_READ_TOKEN:-$GITHUB_TOKEN}\" | base64 -w0)\"\n[ -n \"$DOOR_SHA\" ] || { echo \"no commit names the door: no pull request base and no INTEGRATION_SHA\"; exit 1; }\n# A repo that locks no Python (a data repo) pins no door: the family's integration line is the door it runs.\nif ! git -C \"$GITHUB_WORKSPACE\" cat-file -e \"$DOOR_SHA:uv.lock\" 2>/dev/null; then DEV_LAB_REF=integrate/main; else\nDEV_LAB_REF=$(git -C \"$GITHUB_WORKSPACE\" show \"$DOOR_SHA:uv.lock\" | python3 -I -c 'import sys, tomllib\nlock = tomllib.loads(sys.stdin.read())\n(source,) = [p[\"source\"] for p in lock.get(\"package\", []) if p[\"name\"] == \"dev-lab\"] or sys.exit(\"the base lock pins no dev-lab\")\nif \"git\" in source:\n    print(source[\"git\"].rpartition(\"#\")[2])\nelif source.get(\"editable\") == \".\":\n    print(sys.argv[1])\nelse:\n    sys.exit(f\"dev-lab is locked from {source}, not a git revision\")' \"$DOOR_SHA\") || exit 1\nfi\ngit clone -q --no-tags --filter=blob:none --no-checkout \"${FAMILY_SOURCE}dev-lab.git\" \"$RUNNER_TEMP/dev-lab\"\ngit -C \"$RUNNER_TEMP/dev-lab\" fetch -q --no-tags origin \"$DEV_LAB_REF\"\ngit -C \"$RUNNER_TEMP/dev-lab\" checkout -q --detach FETCH_HEAD\npython3 -I -m venv \"$RUNNER_TEMP/review\" && \"$RUNNER_TEMP/review/bin/python\" -I -m pip install -q uv\n\"$RUNNER_TEMP/review/bin/uv\" export --no-config --project \"$RUNNER_TEMP/dev-lab\" --frozen --no-hashes --no-header --no-annotate --no-emit-project > \"$RUNNER_TEMP/review.txt\"\nif [ -n \"$DOOR_ONLY\" ]; then\ngrep -E \"^($DOOR_ONLY)( @ |==)\" \"$RUNNER_TEMP/review.txt\" > \"$RUNNER_TEMP/only.txt\" && [ \"$(wc -l < \"$RUNNER_TEMP/only.txt\")\" -eq \"$(echo \"$DOOR_ONLY\" | awk -F'|' '{print NF}')\" ] || { echo \"DOOR_ONLY=$DOOR_ONLY names a package the door's lock does not pin\"; exit 1; }\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --no-deps --python \"$RUNNER_TEMP/review/bin/python\" -r \"$RUNNER_TEMP/only.txt\"\nelse\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" -r \"$RUNNER_TEMP/review.txt\"\nfi\n\"$RUNNER_TEMP/review/bin/uv\" pip install --no-config --python \"$RUNNER_TEMP/review/bin/python\" --no-deps \"$RUNNER_TEMP/dev-lab\"\necho \"REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python\" >> \"$GITHUB_ENV\"\n",
+          "env": {
+            "DOOR_SHA": "${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}",
+            "FAMILY_READ_TOKEN": "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          }
+        },
+        {
+          "name": "Prepare the review bundle",
+          "run": "\"$REVIEW_PYTHON\" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo \"$GITHUB_WORKSPACE\"",
+          "env": {
+            "GITHUB_TOKEN": "${{ github.token }}"
+          }
+        }
+      ]
+    }
+  }
+}
