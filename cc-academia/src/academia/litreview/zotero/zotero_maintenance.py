@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from academia.core.http import open_web
+
 ARXIV_RE = re.compile(r"(?<![\d.])(\d{4}\.\d{4,5})(?!\d)")
 DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>)\]]+")
 ARXIV_API = "https://export.arxiv.org/api/query?id_list={}"
@@ -85,7 +87,7 @@ def parse_arxiv_atom(xml: str) -> dict[str, Any] | None:
 
     ns = {"a": "http://www.w3.org/2005/Atom"}
     try:
-        root = ET.fromstring(xml)
+        root = ET.fromstring(xml)  # noqa: S314 -- expat (>=2.4.1) caps entity expansion and ElementTree resolves no external entities; defusedxml is not a dependency
     except ET.ParseError:
         return None
     entry = root.find("a:entry", ns)
@@ -203,9 +205,8 @@ def _request(
         hdrs["Zotero-API-Key"] = api_key
     if headers:
         hdrs.update(headers)
-    req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with open_web(url, data=body, headers=hdrs, method=method, timeout=timeout) as resp:
             return resp.status, resp.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -534,7 +535,7 @@ def mirror_attachments(
             continue
         expected_md5 = (data.get("md5") or "").lower()
         if expected_md5:
-            got_md5 = hashlib.md5(raw).hexdigest()
+            got_md5 = hashlib.md5(raw, usedforsecurity=False).hexdigest()
             if got_md5 != expected_md5:
                 results.append(MirrorResult(key, filename, "error",
                                             f"md5 mismatch {got_md5} != {expected_md5}"))

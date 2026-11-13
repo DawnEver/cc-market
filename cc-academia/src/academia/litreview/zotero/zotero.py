@@ -35,6 +35,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from academia.core.http import open_web
+
 # ── Zotero schema constants ──────────────────────────────────────────
 ITEM_TYPE_JOURNAL = 22
 CREATOR_TYPE_AUTHOR = 8
@@ -113,13 +115,13 @@ class ZoteroMCPClient:
         payload = {"jsonrpc": "2.0", "id": self._next_id(), "method": method,
                     "params": params or {}}
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self._http_url}/mcp",
-            data=data, method="POST",
-            headers={"Content-Type": "application/json"},
-        )
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with open_web(
+                f"{self._http_url}/mcp",
+                data=data, method="POST",
+                headers={"Content-Type": "application/json"},
+                timeout=self._timeout,
+            ) as resp:
                 body = json.loads(resp.read().decode("utf-8", errors="replace"))
         except urllib.error.URLError as e:
             raise ZoteroMCPError(f"Connection failed: {e.reason}") from e
@@ -167,8 +169,7 @@ class ZoteroMCPClient:
         """
         # 1) Quick HTTP check
         try:
-            req = urllib.request.Request(f"{self._http_url}/mcp", method="HEAD")
-            with urllib.request.urlopen(req, timeout=2):
+            with open_web(f"{self._http_url}/mcp", method="HEAD", timeout=2):
                 pass
             # If reachable, do full initialize
             self._http_rpc("initialize", {
@@ -178,8 +179,8 @@ class ZoteroMCPClient:
             })
             self._initialized = True
             return True
-        except Exception:
-            pass
+        except (OSError, ValueError, ZoteroMCPError):
+            pass  # no HTTP server answering: fall through to the stdio spawn
 
         # 2) Try spawning stdio process
         try:
@@ -317,7 +318,7 @@ def _extract_key(result: dict[str, Any]) -> str | None:
 
 def _zotero_key() -> str:
     raw = uuid.uuid4().hex.encode()
-    return hashlib.md5(raw).hexdigest()[:8].upper()
+    return hashlib.md5(raw, usedforsecurity=False).hexdigest()[:8].upper()
 
 
 def _ensure_value(conn: sqlite3.Connection, value: str) -> int:
@@ -462,13 +463,13 @@ def _paper_to_bibtex(paper: dict[str, Any], cite_key: str) -> str:
 
 
 def _cayw_import(bibtex: str) -> bool:
-    req = urllib.request.Request(
-        f"{BBT_CAYW_URL}?progid=lit-review",
-        data=bibtex.encode("utf-8"),
-        headers={"Content-Type": "text/plain"}, method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10):
+        with open_web(
+            f"{BBT_CAYW_URL}?progid=lit-review",
+            data=bibtex.encode("utf-8"),
+            headers={"Content-Type": "text/plain"}, method="POST",
+            timeout=10,
+        ):
             return True
     except (urllib.error.HTTPError, OSError):
         return False

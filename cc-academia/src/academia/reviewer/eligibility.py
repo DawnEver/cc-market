@@ -96,7 +96,7 @@ class RuleOutcome:
 #: How one outcome reads in an audit column. A rule that abstains for want of
 #: evidence is not a pass and not a failure, and a preference that was not met
 #: excludes nobody — collapsing either into PASS/FAIL would misreport the run.
-PASS = "PASS"
+PASS = "PASS"  # noqa: S105 -- an audit outcome label, not a credential
 FILTERED = "FILTERED"
 VERIFY = "VERIFY"
 PREFERENCE_MISSED = "PREFERENCE_MISSED"

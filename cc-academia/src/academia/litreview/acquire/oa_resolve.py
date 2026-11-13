@@ -180,6 +180,6 @@ def resolve_oa_urls(doi: str, title: str | None = None) -> list[str]:
     for name in _PROVIDER_NAMES:
         try:
             collected.extend(globals()[name](doi))
-        except Exception:
+        except Exception:  # noqa: S112 -- provider fan-out: one failing OA provider must not sink the others; the ranked URLs from the rest are the answer
             continue
     return rank_urls(collected)
