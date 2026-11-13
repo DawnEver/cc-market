@@ -10,6 +10,7 @@
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync } from 'fs';
 import { join, basename, dirname } from 'path';
+import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
 import { parseFrontmatter, findAllScopes, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
@@ -177,6 +178,39 @@ export function translateJournalLine(start, slug, n, replacement, { date = today
   lines[i] = replacement + eol;
   writeFileSync(file, lines.join('\n'), 'utf8');
   return appendJournal(start, slug, 'progress', `line ${n} translated to English`, { date });
+}
+
+// The EXCEPTIONAL rewrite (user ruling 2026-11-13): a journal line that is WRONG -- a misstated
+// fact, a mistranslated quote -- is corrected in place, but only with a reason and the user's
+// words approving it. The `- <date> <tag>: ` prefix stays byte-identical, and one audit line
+// records the reason, the approval and the old line's digest. A changed MIND is a new decision,
+// never an amendment: this is for content that is wrong as written.
+export function amendJournalLine(start, slug, n, replacement, { reason, approved, date = todayISO() } = {}) {
+  if (!reason || !reason.trim()) throw new Error('an amendment names its reason (--reason)');
+  if (!approved || !approved.trim()) throw new Error('an amendment quotes the user approving it (--approved)');
+  if (/[\r\n"]/.test(reason + approved)) throw new Error('the reason and the approval are one line each, without "');
+  const task = readTask(start, slug);
+  if (!task) throw new Error(`no task ${slug}`);
+  if (task.status !== 'open') throw new Error(`task ${slug} is ${task.status}; its journal is final`);
+  const file = journalFile(start, slug);
+  const lines = readFileSync(file, 'utf8').split('\n');
+  const i = Number(n) - 1;
+  if (!Number.isInteger(i) || i < 0 || i >= lines.length) throw new Error(`line ${n} is not in ${slug}'s journal`);
+  const eol = lines[i].endsWith('\r') ? '\r' : '';
+  const old = lines[i].slice(0, lines[i].length - eol.length);
+  const m = old.match(LINE_RE);
+  if (!m) throw new Error(`line ${n} is not a journal line`);
+  if (!replacement || /[\r\n]/.test(replacement)) throw new Error('a journal line is one line of text');
+  const prefix = old.slice(0, old.length - m[6].length);
+  if (!replacement.startsWith(prefix) || !LINE_RE.test(replacement) || replacement === old) {
+    throw new Error(`the amendment must keep the prefix byte-identical ("${prefix}") and change the text`);
+  }
+  assertLanguage(start, replacement, 'the amended line');
+  const digest = createHash('sha256').update(old).digest('hex').slice(0, 12);
+  lines[i] = replacement + eol;
+  writeFileSync(file, lines.join('\n'), 'utf8');
+  return appendJournal(start, slug, 'progress',
+    `line ${n} amended: ${reason.trim()} -- approved: "${approved.trim()}" (was sha256:${digest})`, { date });
 }
 
 // Status is the one TASK.md field that moves after open; the user's close command moves it.

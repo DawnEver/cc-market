@@ -15,6 +15,10 @@
 //   task.js translate --line <n> "<english line>"   the one sanctioned rewrite: line n must hold
 //     foreign script; the replacement holds none and keeps `- <date> <tag>: ` byte-identical;
 //     it then appends `- <date> progress: line <n> translated to English`
+//   task.js amend --line <n> "<line>" --reason "<why>" --approved "<user's words>"   the EXCEPTION:
+//     a line that is WRONG as written, corrected with the user's approval; the prefix stays
+//     byte-identical and `- <date> progress: line <n> amended: <why> -- approved: "..." (was sha256:..)`
+//     is appended. A changed mind is a new decision, never an amendment.
 // Read-only:
 //   task.js list                        task.js show [<slug>]         task.js bound
 //   task.js distill-status [<slug>]     (show finds an archived task too)
@@ -23,7 +27,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, appendJournal, translateJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask,
+  openTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask,
 } from './tasks.mjs';
 
 const PREFIX = '[task]';
@@ -71,6 +75,15 @@ export function main(argv) {
     const n = flag(args, '--line');
     if (!n || args.length !== 1) throw new Error('usage: task.js translate [--task <slug>] --line <n> "<english line>"');
     console.log(translateJournalLine(cwd, slug, n, args[0]));
+  } else if (verb === 'amend') {
+    const slug = bound(args);
+    const n = flag(args, '--line');
+    const reason = flag(args, '--reason');
+    const approved = flag(args, '--approved');
+    if (!n || args.length !== 1) {
+      throw new Error('usage: task.js amend [--task <slug>] --line <n> "<line>" --reason "<why>" --approved "<user\'s words>"');
+    }
+    console.log(amendJournalLine(cwd, slug, n, args[0], { reason, approved }));
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) console.log(`${t.slug}\t${t.status}\t${t.goal}`);
   } else if (verb === 'bound') {
@@ -87,7 +100,7 @@ export function main(argv) {
     console.log(`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`);
     console.log(`open items: ${openItems.map(n => `O${n}`).join(', ') || '(none)'}`);
   } else {
-    throw new Error('usage: task.js open|close|log|decide|open-item|close-item|handoff|translate|list|show|bound|distill-status (see the header)');
+    throw new Error('usage: task.js open|close|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
   }
 }
 
