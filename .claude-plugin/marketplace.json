@@ -1,7 +1,7 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
   "name": "cc-market",
-  "version": "4.7.0",
+  "version": "4.8.0",
   "description": "A community marketplace of Claude Code plugins by DawnEver.",
   "owner": {
     "name": "Mingyang Bao"
@@ -14,7 +14,7 @@
       "name": "evolve",
       "source": "./evolve",
       "displayName": "Evolve",
-      "description": "Iterative TDD review\u00e2\u2020\u2019fix loop \u00e2\u20ac\u201d each round critiques the codebase, fans out fix agents over disjoint files, verifies, gates hard calls to the human, keeps tests green, and commits. Severity-based convergence with safety caps.",
+      "description": "Iterative TDD reviewâ†’fix loop â€” each round critiques the codebase, fans out fix agents over disjoint files, verifies, gates hard calls to the human, keeps tests green, and commits. Severity-based convergence with safety caps.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -33,7 +33,7 @@
       "name": "rem",
       "source": "./rem",
       "displayName": "REM",
-      "description": "REM sleep for Claude sessions \u00e2\u20ac\u201d consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
+      "description": "REM sleep for Claude sessions â€” consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -54,7 +54,7 @@
       "name": "sharp-review",
       "source": "./sharp-review",
       "displayName": "Sharp Review",
-      "description": "Post-feature sharp review \u00e2\u20ac\u201d 3 parallel reviewers with schema enforcement, merge findings, sync structured task list with memory cross-references.",
+      "description": "Post-feature sharp review â€” 3 parallel reviewers with schema enforcement, merge findings, sync structured task list with memory cross-references.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -73,7 +73,7 @@
       "name": "watch",
       "source": "./watch",
       "displayName": "Watch",
-      "description": "Unattended server & long-running task supervision \u00e2\u20ac\u201d the Claude front end over lab_commons.supervise. Health checks, anomaly detection, auto-repair and multi-channel alerting. One TOML config per project; the machinery is in the shared library.",
+      "description": "Unattended server & long-running task supervision â€” the Claude front end over lab_commons.supervise. Health checks, anomaly detection, auto-repair and multi-channel alerting. One TOML config per project; the machinery is in the shared library.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -92,7 +92,7 @@
       "name": "fabric",
       "source": "./fabric",
       "displayName": "Fabric",
-      "description": "Multi-provider agent fabric \u00e2\u20ac\u201d any agent (claude / codex / \u00e2\u20ac\u00a6) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), parallel fan_out, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
+      "description": "Multi-provider agent fabric â€” any agent (claude / codex / â€¦) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), parallel fan_out, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -115,7 +115,7 @@
       "name": "cc-latex",
       "source": "./cc-latex",
       "displayName": "cc-latex",
-      "description": "LaTeX writing assistant \u00e2\u20ac\u201d compile workflow, academic writing style, and word counting (texcount) for LaTeX documents. Per-section word counts with references excluded, targets and JSON output.",
+      "description": "LaTeX writing assistant â€” compile workflow, academic writing style, and word counting (texcount) for LaTeX documents. Per-section word counts with references excluded, targets and JSON output.",
       "author": {
         "name": "Mingyang Bao"
       },

@@ -3,7 +3,8 @@
 // The temp name is unique per write (pid + random), so two writers never share a
 // temp file; rename is atomic on one volume, so a reader sees the old bytes or the
 // new bytes, never a mix. On Windows a rename onto a file another process holds
-// open can fail transiently (EPERM/EBUSY): retry with a growing pause, then throw.
+// open can fail transiently (EPERM/EBUSY): retry with a growing pause (about 1 s in
+// all: four writers contending measured past the old 150 ms budget), then throw.
 // Whatever fails, the temp file is removed: a failed write leaves no partial file.
 
 import { writeFileSync, renameSync, unlinkSync, readFileSync, mkdirSync } from 'fs';
@@ -20,8 +21,8 @@ export function atomicWriteFile(file, payload) {
     for (let attempt = 0; ; attempt++) {
       try { renameSync(tmp, file); return; }
       catch (err) {
-        if (attempt >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
-        pause(10 * 2 ** attempt); // 10, 20, 40, 80 ms
+        if (attempt >= 9 || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+        pause(Math.min(10 * 2 ** attempt, 160)); // 10, 20, 40, 80, 160, ... ms
       }
     }
   } catch (err) {
