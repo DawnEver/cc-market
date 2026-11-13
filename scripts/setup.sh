@@ -1,33 +1,13 @@
 #!/usr/bin/env bash
-# cc-market setup: configure git hooks path.
+# cc-market setup: publish release tags with every push.
 set -e
 
-HOOKS_DIR="scripts/git-hooks"
-
-if [ ! -d "$HOOKS_DIR" ]; then
+if [ ! -d scripts/git-hooks ]; then
   echo "Error: run this from the cc-market repo root" >&2
   exit 1
 fi
 
-# core.hooksPath MUST stay relative. This repo is synced (e.g. via OneDrive) across
-# machines with different user dirs, and the value lives in per-clone .git/config — an
-# absolute path points at one machine's path and silently disables all hooks on the others
-# (no pre-commit tests or read-only pre-push release guard). Detect drift and reset.
-CURRENT="$(git config --get core.hooksPath || true)"
-
-case "$CURRENT" in
-  "$HOOKS_DIR")
-    echo "cc-market: hooks already configured (core.hooksPath = $HOOKS_DIR)"
-    ;;
-  /*|[A-Za-z]:[\\/]*)
-    git config core.hooksPath "$HOOKS_DIR"
-    echo "cc-market: reset absolute core.hooksPath ($CURRENT) -> $HOOKS_DIR"
-    ;;
-  *)
-    git config core.hooksPath "$HOOKS_DIR"
-    echo "cc-market: hooks configured (core.hooksPath = $HOOKS_DIR)"
-    ;;
-esac
+# The git hooks are the family's (pyproject.toml [tool.dev_lab.hooks]; install: AGENTS.md "Family flow").
 
 # Explicit releases create a local tag; publish it with the following ordinary push.
 if [ "$(git config --get push.followTags || true)" != "true" ]; then

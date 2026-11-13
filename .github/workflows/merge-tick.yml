@@ -1,0 +1,86 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "Merge tick",
+  "on": {
+    "status": {},
+    "schedule": [
+      {
+        "cron": "*/15 * * * *"
+      }
+    ],
+    "workflow_dispatch": {}
+  },
+  "concurrency": {
+    "group": "merge-tick",
+    "cancel-in-progress": false
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "env": {
+    "HEAD_SHA": "${{ github.sha }}",
+    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/"
+  },
+  "jobs": {
+    "merge-tick": {
+      "env": {
+        "GITHUB_TOKEN": "${{ github.token }}"
+      },
+      "if": "${{ github.event_name != 'status' || (startsWith(github.event.context, 'tests/') && github.event.context != 'tests/merge-ready' && github.event.state != 'pending') }}",
+      "runs-on": "ubuntu-latest",
+      "outputs": {
+        "due": "${{ steps.ready.outputs.due }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0
+          }
+        },
+        {
+          "uses": "actions/setup-node@v4",
+          "with": {
+            "node-version": 22
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-groups"
+        },
+        {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
+        },
+        {
+          "id": "ready",
+          "name": "tests/merge-ready",
+          "run": "said=\"$(uv run --no-sync python -m dev_lab.dev.forge merge ready)\"; echo \"$said\"; case \"$said\" in *\"; merged\"*) echo \"merged=true\" >> \"$GITHUB_OUTPUT\" ;; esac; case \"$said\" in *\"; review due\"*) echo \"due=true\" >> \"$GITHUB_OUTPUT\" ;; esac"
+        },
+        {
+          "name": "Run CI on the merged integration",
+          "if": "${{ steps.ready.outputs.merged == 'true' }}",
+          "run": "gh workflow run ci.yml --repo \"$GITHUB_REPOSITORY\" --ref main -f smoke=true",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          }
+        }
+      ],
+      "permissions": {
+        "contents": "write",
+        "statuses": "write",
+        "pull-requests": "write",
+        "actions": "write"
+      }
+    }
+  }
+}

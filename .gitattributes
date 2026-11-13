@@ -1,20 +1,11 @@
-# Normalize line endings: store and check out text as LF on every platform.
-# This stops core.autocrlf=true from rewriting CRLF on Windows checkout (the
-# "LF will be replaced by CRLF" warnings) and keeps rem's line-by-line task
-# parsing stable regardless of who commits.
+# Rendered by dev_lab.dev.famconfig from the family base for .gitattributes.
+# Hand edits RED. The base is data in dev_lab.dev._famconfig_rows;
+# this repo's own lines are its declared delta. Change one, re-render, commit.
+
+*.sh text eol=lf
+
+# --- cc-market delta, 8 of 8 allowed ---
 * text=auto eol=lf
-
-# Explicit text types (defensive; covered by the rule above).
-*.mjs  text eol=lf
-*.js   text eol=lf
-*.json text eol=lf
-*.md   text eol=lf
-*.sh   text eol=lf
-*.py   text eol=lf
-*.yml  text eol=lf
-*.yaml text eol=lf
-
-# Binaries: never normalize.
 *.png binary
 *.jpg binary
 *.jpeg binary
