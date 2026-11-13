@@ -1,5 +1,6 @@
 // The family principles page is a RENDER of dev_lab.dev.principles (the one source), never hand-edited.
-// Re-render: python -c "import pathlib; from dev_lab.dev.principles import write_page; write_page(pathlib.Path('.'))"
+// Re-render: python -m dev_lab.dev.famfiles --deltas <the repo's deltas module>, or with none: python -c "import pathlib;
+// from dev_lab.dev.principles import PAGE_REL, render; pathlib.Path(PAGE_REL).write_text(render(), encoding='utf-8', newline='')"
 // The drift check needs a Python that imports dev_lab (DEV_LAB_PYTHON, else `python`); without one it skips, saying so.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
