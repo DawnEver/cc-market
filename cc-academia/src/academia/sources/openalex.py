@@ -59,10 +59,10 @@ def resolve_open_access_pdfs(dois: list[str], *, timeout: int = 60) -> dict[str,
             doi = as_text(record.get("doi")).lower()
             doi = doi.removeprefix("https://doi.org/")
             locations = [item for item in record.get("locations") or [] if isinstance(item, dict)]
-            locations.sort(
-                key=lambda item: (item.get("source") or {}).get("type") != "repository"
+            locations.sort(key=lambda item: (item.get("source") or {}).get("type") != "repository")
+            pdf = next(
+                (as_text(item.get("pdf_url")) for item in locations if item.get("pdf_url")), ""
             )
-            pdf = next((as_text(item.get("pdf_url")) for item in locations if item.get("pdf_url")), "")
             if doi and pdf:
                 resolved[doi] = pdf
     return resolved
@@ -202,7 +202,8 @@ def _authors_from(record: dict[str, Any]) -> list[Author]:
                 name=as_text(person.get("display_name")),
                 idx=idx,
                 position=position_label(idx, total),
-                is_corresponding=bool(entry.get("is_corresponding")) or openalex_id in corresponding,
+                is_corresponding=bool(entry.get("is_corresponding"))
+                or openalex_id in corresponding,
                 orcid=normalize_orcid(person.get("orcid")),
                 openalex_id=openalex_id,
                 raw_affiliation=as_text(first_institution.get("display_name")),
@@ -279,7 +280,9 @@ def to_person(record: dict[str, Any]) -> Person:
     person.topics = [as_text(t.get("display_name")) for t in record.get("topics") or []][:8]
 
     last_known = {
-        _short_id(i.get("id")) for i in record.get("last_known_institutions") or [] if isinstance(i, dict)
+        _short_id(i.get("id"))
+        for i in record.get("last_known_institutions") or []
+        if isinstance(i, dict)
     }
     for entry in record.get("affiliations") or []:
         institution = entry.get("institution") or {}
@@ -398,7 +401,9 @@ class OpenAlex(PaperSource, AuthorSource):
             return None
         return self.get_author(f"https://orcid.org/{clean}", timeout=timeout)
 
-    def get_author_papers(self, author_id: str, *, limit: int = 50, timeout: int = 30) -> list[Paper]:
+    def get_author_papers(
+        self, author_id: str, *, limit: int = 50, timeout: int = 30
+    ) -> list[Paper]:
         url = build_url(
             WORKS_URL,
             _identified(

@@ -33,22 +33,61 @@ from academia.reviewer.rank import Candidate
 from academia.store import repository as repo
 
 EXPORT_COLUMNS = (
-    "rank", "reviewer", "person_id", "profile_url", "orcid", "openalex_id", "ieee_author_id",
-    "identity_method", "identity_confidence", "position", "position_source",
-    "current_institution", "current_country", "current_year_from", "current_year_to",
-    "current_source", "current_source_url", "historical_institution_count",
-    "historical_country_count", "education_count", "score", "blocked", "coi_status",
-    "coi_summary", "coi_finding_count", "evidence_count", "best_similarity",
-    "evidence_year_from", "evidence_year_to", "component_topic", "component_method",
-    "component_recent_expertise", "component_publication_evidence",
-    "component_geographic", "component_activity",
-    "email", "email_found",
-    "email_source", "email_confidence", "email_source_url",
+    "rank",
+    "reviewer",
+    "person_id",
+    "profile_url",
+    "orcid",
+    "openalex_id",
+    "ieee_author_id",
+    "identity_method",
+    "identity_confidence",
+    "position",
+    "position_source",
+    "current_institution",
+    "current_country",
+    "current_year_from",
+    "current_year_to",
+    "current_source",
+    "current_source_url",
+    "historical_institution_count",
+    "historical_country_count",
+    "education_count",
+    "score",
+    "blocked",
+    "coi_status",
+    "coi_summary",
+    "coi_finding_count",
+    "evidence_count",
+    "best_similarity",
+    "evidence_year_from",
+    "evidence_year_to",
+    "component_topic",
+    "component_method",
+    "component_recent_expertise",
+    "component_publication_evidence",
+    "component_geographic",
+    "component_activity",
+    "email",
+    "email_found",
+    "email_source",
+    "email_confidence",
+    "email_source_url",
     "email_affiliation_domain",
-    "email_alternate", "email_alternate_source", "email_alternate_source_url", "notes",
-    "data_quality_warning", "invitation_count", "response_count", "acceptance_count",
-    "institutions_json", "education_json", "emails_json", "evidence_json",
-    "coi_findings_json", "invitations_json",
+    "email_alternate",
+    "email_alternate_source",
+    "email_alternate_source_url",
+    "notes",
+    "data_quality_warning",
+    "invitation_count",
+    "response_count",
+    "acceptance_count",
+    "institutions_json",
+    "education_json",
+    "emails_json",
+    "evidence_json",
+    "coi_findings_json",
+    "invitations_json",
 )
 
 
@@ -163,18 +202,24 @@ def render_markdown(
     people = [row.candidate.person for row in rows]
     current = trajectory.country_exposure(people, historical=False)
     if current:
-        out.append("Current-affiliation countries: " +
-                   ", ".join(f"{country} {count}" for country, count in current.most_common()))
+        out.append(
+            "Current-affiliation countries: "
+            + ", ".join(f"{country} {count}" for country, count in current.most_common())
+        )
         out.append("")
     historical = trajectory.country_exposure(people, historical=True)
     if historical:
-        out.append("Historical institution-country evidence (people may count in multiple countries): " +
-                   ", ".join(f"{country} {count}" for country, count in historical.most_common()))
+        out.append(
+            "Historical institution-country evidence (people may count in multiple countries): "
+            + ", ".join(f"{country} {count}" for country, count in historical.most_common())
+        )
         out.append("")
     out.append("| " + " | ".join(EXPORT_COLUMNS) + " |")
     out.append("|" + "|".join(["---"] * len(EXPORT_COLUMNS)) + "|")
     for record in (_export_record(conn, row) for row in rows):
-        cells = [str(record[column] if record[column] is not None else "") for column in EXPORT_COLUMNS]
+        cells = [
+            str(record[column] if record[column] is not None else "") for column in EXPORT_COLUMNS
+        ]
         out.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
     out.append("")
     out.append(f"\\* Clear means **{CLEAR_WORDING}**. A bibliographic database cannot")
@@ -530,7 +575,12 @@ def email_coverage(rows: list[Row], policy: Policy) -> dict[str, Any]:
 #: Identity first, then the decision, then one block per rule. Order matters
 #: only for reading: the workbook groups on these names.
 AUDIT_IDENTITY = (
-    "rank", "reviewer", "email", "institution", "current_country", "profile_url",
+    "rank",
+    "reviewer",
+    "email",
+    "institution",
+    "current_country",
+    "profile_url",
 )
 
 #: Columns that state a policy threshold rather than a fact about a person.
@@ -653,8 +703,7 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     if person.orcid:
         out.append(f"- ORCID: https://orcid.org/{person.orcid}")
     out.append(
-        f"- Identity resolved by: {person.resolution_method} "
-        f"(confidence {person.confidence:.2f})"
+        f"- Identity resolved by: {person.resolution_method} (confidence {person.confidence:.2f})"
     )
     if row.email.found:
         out.append(f"- Email: {row.email.email}")
@@ -672,7 +721,9 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
         out.append("## Background")
         out.append("")
         for entry in person.education:
-            years = "–".join(str(y) for y in (entry.year_from, entry.year_to) if y) or "dates unknown"
+            years = (
+                "–".join(str(y) for y in (entry.year_from, entry.year_to) if y) or "dates unknown"
+            )
             degree = entry.degree or "degree unknown"
             out.append(f"- {degree}, {entry.institution or 'institution unknown'} ({years})")
             out.append(f"  - source: {entry.source} {entry.source_url}")
@@ -691,9 +742,7 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
         for step in steps:
             country = f", {step.country}" if step.country else ""
             source = f" — {step.source} {step.source_url}".rstrip() if step.source else ""
-            out.append(
-                f"- **{step.kind}**: {step.institution}{country} ({step.years}){source}"
-            )
+            out.append(f"- **{step.kind}**: {step.institution}{country} ({step.years}){source}")
         out.append("")
     if note := trajectory.quality_note(person):
         out.append(f"> Data-quality warning: {note}. OpenAlex history is publication-affiliation")
@@ -727,7 +776,9 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     if verdict is None or not verdict.findings:
         out.append(f"- {CLEAR_WORDING}")
         out.append("- checks run: manuscript authorship, exclusion list, co-authorship window,")
-        out.append("  institutional overlap, shared doctorate, advisor relationship, citation density")
+        out.append(
+            "  institutional overlap, shared doctorate, advisor relationship, citation density"
+        )
     else:
         for finding in verdict.findings:
             out.append(f"- **{finding.status}** {finding.rule}")
@@ -747,7 +798,11 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
         out.append("## Previous invitations")
         out.append("")
         for entry in history:
-            state = "accepted" if entry["accepted"] else ("responded" if entry["responded"] else "no response")
+            state = (
+                "accepted"
+                if entry["accepted"]
+                else ("responded" if entry["responded"] else "no response")
+            )
             out.append(f"- {entry['ms_id']} ({entry['invited_at']}): {state}")
         out.append("")
 

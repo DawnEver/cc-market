@@ -95,7 +95,9 @@ def test_exclusion_list_blocks(conn):
 def _coauthored(conn, year):
     a = Author(name="Candidate One", idx=0, openalex_id="A-cand")
     b = Author(name="Alice Author", idx=1, openalex_id="A-auth")
-    paper = Paper.build(title=f"Joint work {year}", source="openalex", doi=f"10.1/{year}", year=year)
+    paper = Paper.build(
+        title=f"Joint work {year}", source="openalex", doi=f"10.1/{year}", year=year
+    )
     paper.authors = [a, b]
     _, ids = repo.ingest_paper(conn, paper)
     return ids
@@ -143,7 +145,7 @@ def test_the_coauthor_window_is_journal_configurable(conn, tmp_path, monkeypatch
     person = make_person(person_id=cand_id)
     ctx = context(author_person_ids=[author_id], year=2026)
 
-    assert not coi.evaluate(conn, person, ctx, load_policy()).blocked   # 5-year window
+    assert not coi.evaluate(conn, person, ctx, load_policy()).blocked  # 5-year window
     assert coi.evaluate(conn, person, ctx, load_policy("wide")).blocked  # 8-year window
 
 
@@ -191,11 +193,23 @@ def test_a_shared_doctorate_in_overlapping_years_blocks(conn, policy):
     institution = Institution.build(name="Shared University")
     candidate = make_person()
     candidate.education.append(
-        Education(inst_id=institution.inst_id, institution="Shared University", degree="PhD", year_to=2015, source="orcid")
+        Education(
+            inst_id=institution.inst_id,
+            institution="Shared University",
+            degree="PhD",
+            year_to=2015,
+            source="orcid",
+        )
     )
     author = make_person(person_id="p-auth", name="Alice Author")
     author.education.append(
-        Education(inst_id=institution.inst_id, institution="Shared University", degree="PhD", year_to=2016, source="orcid")
+        Education(
+            inst_id=institution.inst_id,
+            institution="Shared University",
+            degree="PhD",
+            year_to=2016,
+            source="orcid",
+        )
     )
 
     verdict = coi.evaluate(conn, candidate, context(), policy, manuscript_people=[author])
@@ -232,7 +246,13 @@ def test_advisor_relationship_blocks_in_both_directions(conn, policy):
     author = make_person(person_id="p-auth", name="Alice Author")
     candidate = make_person()
     candidate.education.append(
-        Education(inst_id="inst-1", degree="PhD", advisor_person_id="p-auth", source="orcid", source_url="https://orcid.org/x")
+        Education(
+            inst_id="inst-1",
+            degree="PhD",
+            advisor_person_id="p-auth",
+            source="orcid",
+            source_url="https://orcid.org/x",
+        )
     )
     assert coi.evaluate(conn, candidate, context(), policy, manuscript_people=[author]).blocked
 
@@ -276,10 +296,16 @@ def test_every_rule_runs_even_after_the_first_block(conn, policy):
 
 
 def test_a_clean_verdict_still_leaves_an_audit_record(conn, policy):
-    repo.create_manuscript(conn, ms_id="ms1", journal="tie", title_hash="h", origin_countries=["CN"])
+    repo.create_manuscript(
+        conn, ms_id="ms1", journal="tie", title_hash="h", origin_countries=["CN"]
+    )
     repo.create_run(conn, run_id="run1", ms_id="ms1")
     repo.upsert_person(conn, Author(name="Candidate One", idx=0, openalex_id="A-cand"))
-    person = make_person(person_id=repo.upsert_person(conn, Author(name="Candidate One", idx=0, openalex_id="A-cand")))
+    person = make_person(
+        person_id=repo.upsert_person(
+            conn, Author(name="Candidate One", idx=0, openalex_id="A-cand")
+        )
+    )
 
     verdict = coi.evaluate(conn, person, context(), policy)
     coi.persist(conn, "run1", verdict)
@@ -430,9 +456,7 @@ def test_a_name_only_match_is_reported_but_does_not_block(conn, policy):
     cand_id, author_id = _coauthored(conn, 2024)
     person = make_person(person_id=cand_id)
 
-    verdict = coi.evaluate(
-        conn, person, context(possible_author_person_ids=[author_id]), policy
-    )
+    verdict = coi.evaluate(conn, person, context(possible_author_person_ids=[author_id]), policy)
     assert not verdict.blocked
     assert verdict.status == coi.REVIEW
     finding = next(f for f in verdict.findings if f.rule == "possible_recent_coauthor")

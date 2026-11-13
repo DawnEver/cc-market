@@ -90,12 +90,8 @@ def test_marketplace_lists_the_plugin_exactly_once(host: str) -> None:
     not MARKETPLACES["claude"].exists(), reason="running outside the cc-market checkout"
 )
 def test_marketplace_sources_point_at_this_directory() -> None:
-    claude = next(
-        p for p in _load(MARKETPLACES["claude"])["plugins"] if p["name"] == "cc-academia"
-    )
-    codex = next(
-        p for p in _load(MARKETPLACES["codex"])["plugins"] if p["name"] == "cc-academia"
-    )
+    claude = next(p for p in _load(MARKETPLACES["claude"])["plugins"] if p["name"] == "cc-academia")
+    codex = next(p for p in _load(MARKETPLACES["codex"])["plugins"] if p["name"] == "cc-academia")
     assert claude["source"] == "./cc-academia"
     assert codex["source"] == {"source": "local", "path": "./cc-academia"}
     assert (MARKET / "cc-academia").is_dir()

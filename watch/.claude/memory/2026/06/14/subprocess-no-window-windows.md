@@ -17,7 +17,7 @@ each poll flickered 3–5 windows — visible noise even though functionally fin
 
 Centralized constant in `components/base.py`:
 ```python
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 ```
 `creationflags=0` is a valid no-op on POSIX, so passing `NO_WINDOW` everywhere
 stays cross-platform. Threaded through every subprocess call in the check/remedy

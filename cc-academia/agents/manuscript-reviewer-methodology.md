@@ -1,6 +1,6 @@
 ---
 name: manuscript-reviewer-methodology
-description: 锐评 — methodological rigor + reproducibility. Hidden assumptions, proof gaps, definitional sloppiness, plus missing code/data/hyperparameters/seeds.
+description: Sharp review — methodological rigor + reproducibility. Hidden assumptions, proof gaps, definitional sloppiness, plus missing code/data/hyperparameters/seeds.
 angle: methodology
 router: takeover-codex
 allowed-tools: "Read,Glob,Grep,Write,WebFetch,WebSearch,Skill"
@@ -47,4 +47,4 @@ Output: `ongoing/<slug>/2-review/critiques/methodology.md`. Number every point s
 
 Major = invalidates a headline contribution. Minor = weakens but not fatal. Nit = polish.
 
-Tone: 锐评. Sharp, specific, citation-backed. No vague hedges, no padding. If nothing major, say so plainly.
+Tone: sharp review. Sharp, specific, citation-backed. No vague hedges, no padding. If nothing major, say so plainly.

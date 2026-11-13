@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 # Path helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -25,7 +26,9 @@ def _ensure(path: Path) -> Path:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
@@ -42,6 +45,7 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
 
 # 2. Acquire pipeline
 # ---------------------------------------------------------------------------
+
 
 def run_acquire(
     topic_dir: Path,
@@ -115,7 +119,9 @@ def run_acquire(
         write_download_queue(screening_path, download_dir)
     else:
         existing = json.loads(queue_path.read_text(encoding="utf-8"))
-        print(f"Queue up to date ({len(existing.get('items', []))} items, use --rebuild-queue to force).")
+        print(
+            f"Queue up to date ({len(existing.get('items', []))} items, use --rebuild-queue to force)."
+        )
 
     if queue_only:
         mark_step(topic_dir, "acquire", "queued", queue_path=result["queue_path"])
@@ -140,8 +146,10 @@ def run_acquire(
     print("=== Download PDFs ===")
     try:
         from academia.litreview.acquire.engine import HARD_LIMIT, acquire_pdfs
+
         rows = acquire_pdfs(
-            queue_path, topic_dir,
+            queue_path,
+            topic_dir,
             limit=limit if limit is not None else HARD_LIMIT,
             profile=Path(profile) if profile else None,
             browser_channel=browser_channel,
@@ -164,8 +172,7 @@ def run_acquire(
     rows = manifest_rows(ledger_path(topic_dir), queue_path)
     known = {row["candidate_id"] for row in rows}
     rows.extend(
-        row for row in match_manual_drop(queue_path, topic_dir)
-        if row["candidate_id"] not in known
+        row for row in match_manual_drop(queue_path, topic_dir) if row["candidate_id"] not in known
     )
     result["matched"] = len(rows)
 
@@ -175,10 +182,14 @@ def run_acquire(
         write_download_manifest(rows, handoff_dir, write_md=True)
         result["manifest_path"] = str(handoff_dir / "download_manifest.json")
 
-    mark_step(topic_dir, "acquire", "done",
-              downloaded=result["downloaded"],
-              matched=result["matched"],
-              manifest_path=result["manifest_path"])
+    mark_step(
+        topic_dir,
+        "acquire",
+        "done",
+        downloaded=result["downloaded"],
+        matched=result["matched"],
+        manifest_path=result["manifest_path"],
+    )
 
     return result
 

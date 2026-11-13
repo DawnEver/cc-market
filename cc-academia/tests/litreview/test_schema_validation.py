@@ -51,7 +51,14 @@ def test_models_instantiate():
     c = Candidate(candidate_id="c1", source_provider="ieee_xplore", title="Test Paper")
     assert c.candidate_id == "c1"
 
-    pc = PaperCard(candidate_id="c1", title="Test", verdict="deep-read",
-                   one_sentence="test", technical_core=["a"], evidence=[],
-                   limitations=[], research_use=[])
+    pc = PaperCard(
+        candidate_id="c1",
+        title="Test",
+        verdict="deep-read",
+        one_sentence="test",
+        technical_core=["a"],
+        evidence=[],
+        limitations=[],
+        research_use=[],
+    )
     assert pc.verdict == "deep-read"

@@ -63,7 +63,9 @@ def build_academia_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"cc-academia {__version__}")
     sub = parser.add_subparsers(dest="command")
 
-    doctor = sub.add_parser("doctor", help="Check the environment: paths, config, database, sources.")
+    doctor = sub.add_parser(
+        "doctor", help="Check the environment: paths, config, database, sources."
+    )
     _add_common(doctor)
 
     db = sub.add_parser("db", help="Manage the accumulating scholarly database.")
@@ -79,7 +81,9 @@ def build_academia_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _dispatch(parser: argparse.ArgumentParser, handlers: dict[str, Handler], argv: list[str]) -> int:
+def _dispatch(
+    parser: argparse.ArgumentParser, handlers: dict[str, Handler], argv: list[str]
+) -> int:
     _load_environment()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
@@ -133,7 +137,7 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     init.add_argument(
         "--authors",
         default="",
-        help='Submitting authors, used for conflict screening only: '
+        help="Submitting authors, used for conflict screening only: "
         '"Name|Institution|CC; Other Name". Read from the PDF when it has them.',
     )
     init.add_argument("--journal", default="", help="Journal slug, e.g. tie, tii, tte.")
@@ -202,8 +206,7 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
         "--homepage",
         action="append",
         metavar="PERSON_ID=URL",
-        help="A page to read for one candidate's address, when ORCID lists none. "
-        "Repeatable.",
+        help="A page to read for one candidate's address, when ORCID lists none. Repeatable.",
     )
     enrich.add_argument(
         "--homepages",
@@ -329,9 +332,7 @@ def lit_review_main(argv: list[str] | None = None) -> int:
     _configure_standard_streams()
     from academia.cli import lit_review
 
-    return _dispatch(
-        lit_review.build_parser(), lit_review.handlers(), argv or sys.argv[1:]
-    )
+    return _dispatch(lit_review.build_parser(), lit_review.handlers(), argv or sys.argv[1:])
 
 
 def ms_review_main(argv: list[str] | None = None) -> int:

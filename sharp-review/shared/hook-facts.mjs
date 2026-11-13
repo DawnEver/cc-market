@@ -74,7 +74,7 @@ export function normalizeHookFacts(transcript = [], input = {}) {
     }
   }
   if (typeof input.last_assistant_message === 'string') lastAssistantText = input.last_assistant_message;
-  return { hasEdits, lastAssistantText, waitingForInput: /[?？]$/.test(lastAssistantText.trim()), readPaths: [...readPaths], calledRem };
+  return { hasEdits, lastAssistantText, waitingForInput: /[?\uFF1F]$/.test(lastAssistantText.trim()), readPaths: [...readPaths], calledRem };
 }
 
 export const hasCodeEdits = transcript => normalizeHookFacts(transcript).hasEdits;

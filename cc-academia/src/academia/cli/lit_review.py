@@ -51,6 +51,7 @@ Post-acquisition (choose what you need):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _topic_dir(slug: str) -> Path:
     """Resolve a topic slug to its workspace directory."""
     d = ongoing_root("literature-review") / slug
@@ -73,6 +74,7 @@ def _topic_dir(slug: str) -> Path:
 # Parser
 # ---------------------------------------------------------------------------
 
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lit-review",
@@ -86,42 +88,87 @@ def build_parser() -> argparse.ArgumentParser:
     # === Pipeline: init ===
     p = sub.add_parser("init", help="Create a new workspace for a topic.")
     p.add_argument("topic", help="Topic name or slug.")
-    p.add_argument("--language", default="en", help='Output language for human-readable artifacts (BCP 47, e.g. "zh-CN"; default: en).')
+    p.add_argument(
+        "--language",
+        default="en",
+        help='Output language for human-readable artifacts (BCP 47, e.g. "zh-CN"; default: en).',
+    )
 
     # === Pipeline: search ===
-    p = sub.add_parser("search", help="End-to-end: queries -> probe -> search -> dedupe -> screening packet.")
+    p = sub.add_parser(
+        "search", help="End-to-end: queries -> probe -> search -> dedupe -> screening packet."
+    )
     p.add_argument("--topic", required=True, help="Topic slug (ongoing/<slug>).")
-    p.add_argument("--provider", action="append", help="Literature source provider (repeatable; default: all from workspace.toml).")
+    p.add_argument(
+        "--provider",
+        action="append",
+        help="Literature source provider (repeatable; default: all from workspace.toml).",
+    )
     p.add_argument("--max-pages", type=int, default=5)
     p.add_argument("--rows-per-page", type=int, default=DEFAULT_PAGE_SIZE)
     p.add_argument("--delay", type=float, default=1.0, help="Seconds between pages.")
-    p.add_argument("--probe-only", action="store_true", help="Stop after probe for query adjustment.")
-    p.add_argument("--skip-probe", action="store_true", help="Skip probe, go straight to full search.")
+    p.add_argument(
+        "--probe-only", action="store_true", help="Stop after probe for query adjustment."
+    )
+    p.add_argument(
+        "--skip-probe", action="store_true", help="Skip probe, go straight to full search."
+    )
 
     # === Pipeline: acquire ===
-    p = sub.add_parser("acquire", help="End-to-end: queue -> auth -> download -> match -> manifest.")
+    p = sub.add_parser(
+        "acquire", help="End-to-end: queue -> auth -> download -> match -> manifest."
+    )
     p.add_argument("--topic", required=True, help="Topic slug.")
     p.add_argument("--profile", help="Browser profile path for authenticated download.")
-    p.add_argument("--browser-channel", choices=["chrome", "chromium"], default="chrome", help="Browser to use (default: chrome for real Chrome with cookies).")
-    p.add_argument("--candidate-id", action="append", help="Approve specific candidate (repeatable).")
+    p.add_argument(
+        "--browser-channel",
+        choices=["chrome", "chromium"],
+        default="chrome",
+        help="Browser to use (default: chrome for real Chrome with cookies).",
+    )
+    p.add_argument(
+        "--candidate-id", action="append", help="Approve specific candidate (repeatable)."
+    )
     p.add_argument("--approved-by", default="user")
     p.add_argument("--queue-only", action="store_true", help="Only build the download queue.")
-    p.add_argument("--limit", type=int, default=None, help="Max PDFs to download this run (default: 20).")
-    p.add_argument("--no-resolve-oa", action="store_true", help="Skip DOI->open-access mirror lookup.")
-    p.add_argument("--http-only", action="store_true", help="HTTP-only mode: skip browser transports entirely. Publisher URLs will fail but are logged for manual retrieval.")
-    p.add_argument("--rebuild-queue", action="store_true", help="Force rebuild the download queue from screening (even if it already exists).")
-    p.add_argument("--dry-run", action="store_true", help="Print the source plan per paper; download nothing.")
+    p.add_argument(
+        "--limit", type=int, default=None, help="Max PDFs to download this run (default: 20)."
+    )
+    p.add_argument(
+        "--no-resolve-oa", action="store_true", help="Skip DOI->open-access mirror lookup."
+    )
+    p.add_argument(
+        "--http-only",
+        action="store_true",
+        help="HTTP-only mode: skip browser transports entirely. Publisher URLs will fail but are logged for manual retrieval.",
+    )
+    p.add_argument(
+        "--rebuild-queue",
+        action="store_true",
+        help="Force rebuild the download queue from screening (even if it already exists).",
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="Print the source plan per paper; download nothing."
+    )
 
     # === Pipeline: ingest ===
     p = sub.add_parser("ingest", help="On-demand PDF decomposition with cache reuse.")
     p.add_argument("--topic", required=True, help="Topic slug.")
-    p.add_argument("--paper", action="append", dest="paper_ids", help="Specific candidate ID (repeatable).")
-    p.add_argument("--dry-run", action="store_true", help="Show what would be decomposed without doing it.")
+    p.add_argument(
+        "--paper", action="append", dest="paper_ids", help="Specific candidate ID (repeatable)."
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="Show what would be decomposed without doing it."
+    )
 
     # === Agent support: import-screening ===
-    p = sub.add_parser("import-screening", help="Validate and merge agent-authored screening batches.")
+    p = sub.add_parser(
+        "import-screening", help="Validate and merge agent-authored screening batches."
+    )
     p.add_argument("--topic", required=True, help="Topic slug.")
-    p.add_argument("--batch", action="append", required=True, help="Path to batch result JSONL (repeatable).")
+    p.add_argument(
+        "--batch", action="append", required=True, help="Path to batch result JSONL (repeatable)."
+    )
 
     # === Post-acquisition: read ===
     p = sub.add_parser("read", help="Deep-read a paper with optional domain lens.")
@@ -133,14 +180,18 @@ def build_parser() -> argparse.ArgumentParser:
     # === Post-acquisition: synthesize ===
     p = sub.add_parser("synthesize", help="Cross-paper synthesis from reading cards.")
     p.add_argument("--topic", required=True, help="Topic slug.")
-    p.add_argument("--paper", action="append", dest="paper_ids", help="Specific candidate IDs (repeatable).")
+    p.add_argument(
+        "--paper", action="append", dest="paper_ids", help="Specific candidate IDs (repeatable)."
+    )
     p.add_argument("--model", help="Model override.")
 
     # === Post-acquisition: export ===
     p = sub.add_parser("export", help="Export paper cards to various formats.")
     p.add_argument("--topic", required=True, help="Topic slug.")
     p.add_argument("--format", default="markdown", choices=["markdown", "csv", "bibtex", "json"])
-    p.add_argument("--paper", action="append", dest="paper_ids", help="Specific candidate IDs (repeatable).")
+    p.add_argument(
+        "--paper", action="append", dest="paper_ids", help="Specific candidate IDs (repeatable)."
+    )
 
     # === Post-acquisition: stats ===
     p = sub.add_parser("stats", help="Summary statistics for the review.")
@@ -150,7 +201,9 @@ def build_parser() -> argparse.ArgumentParser:
     # === Zotero: sync ===
     p = sub.add_parser("zotero-sync", help="Batch sync papers to Zotero with registry maintenance.")
     p.add_argument("--topic", required=True, help="Topic slug.")
-    p.add_argument("--collection", help="Override Zotero collection name (default: workspace slug).")
+    p.add_argument(
+        "--collection", help="Override Zotero collection name (default: workspace slug)."
+    )
     p.add_argument("--force", action="store_true", help="Re-sync even if already in registry.")
 
     # === Zotero: status ===
@@ -163,8 +216,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Import workspace PDFs into the configured Zotero collection (DOI-deduped, registry-updated).",
     )
     p.add_argument("--topic", required=True, help="Topic slug.")
-    p.add_argument("--candidate-id", action="append",
-                   help="Import only this candidate's PDF (repeatable). Default: all workspace PDFs.")
+    p.add_argument(
+        "--candidate-id",
+        action="append",
+        help="Import only this candidate's PDF (repeatable). Default: all workspace PDFs.",
+    )
     p.add_argument("--dry-run", action="store_true", help="Show the dedupe/import plan only.")
     p.add_argument("--force", action="store_true", help="Re-import even if in the registry.")
 
@@ -173,24 +229,42 @@ def build_parser() -> argparse.ArgumentParser:
         "zotero-maintain",
         help="Enrich bare items (document/filename titles) and mirror PDFs into local storage.",
     )
-    p.add_argument("--topic", required=True, help="Topic slug (scopes to the workspace collection).")
-    p.add_argument("--collection", help="Override Zotero collection name (default: workspace.toml).")
-    p.add_argument("--all", dest="whole_library", action="store_true",
-                   help="Widen scope from registry items to the whole configured collection.")
+    p.add_argument(
+        "--topic", required=True, help="Topic slug (scopes to the workspace collection)."
+    )
+    p.add_argument(
+        "--collection", help="Override Zotero collection name (default: workspace.toml)."
+    )
+    p.add_argument(
+        "--all",
+        dest="whole_library",
+        action="store_true",
+        help="Widen scope from registry items to the whole configured collection.",
+    )
     p.add_argument("--dry-run", action="store_true", help="Plan only; no writes.")
 
     # === Utility: login ===
     p = sub.add_parser("login", help="Open a publisher site in a browser for authentication.")
     p.add_argument("--profile", default="ieee", help="Browser profile name.")
     p.add_argument("--url", default="https://ieeexplore.ieee.org/")
-    p.add_argument("--browser-channel", choices=sorted(SUPPORTED_BROWSER_CHANNELS), default=DEFAULT_BROWSER_CHANNEL)
+    p.add_argument(
+        "--browser-channel",
+        choices=sorted(SUPPORTED_BROWSER_CHANNELS),
+        default=DEFAULT_BROWSER_CHANNEL,
+    )
     p.add_argument("--completion", choices=sorted(COMPLETION_MODES), default="browser-close")
-    p.add_argument("--network-mode", choices=sorted(SUPPORTED_NETWORK_MODES), default=DEFAULT_NETWORK_MODE)
+    p.add_argument(
+        "--network-mode", choices=sorted(SUPPORTED_NETWORK_MODES), default=DEFAULT_NETWORK_MODE
+    )
 
     # === Utility: repair ===
-    p = sub.add_parser("repair", help="Scan files on disk and rebuild pipeline state (ledger, manifest, queue).")
+    p = sub.add_parser(
+        "repair", help="Scan files on disk and rebuild pipeline state (ledger, manifest, queue)."
+    )
     p.add_argument("--topic", required=True, help="Topic slug.")
-    p.add_argument("--dry-run", action="store_true", help="Report what would be done without making changes.")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Report what would be done without making changes."
+    )
 
     # === Micro-commands (kept for debugging / advanced use) ===
     p = sub.add_parser("probe", help="[Advanced] Probe queries against a provider.")
@@ -210,6 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
 # Handlers
 # ---------------------------------------------------------------------------
 
+
 def _handle_init(args: argparse.Namespace) -> int:
     """Create workspace directory and workspace.toml."""
     import re
@@ -223,7 +298,16 @@ def _handle_init(args: argparse.Namespace) -> int:
         return 0
 
     ws_dir.mkdir(parents=True, exist_ok=True)
-    for sub in ("search", "screening", "download", "handoff", "ingest", "reading", "notes", "export"):
+    for sub in (
+        "search",
+        "screening",
+        "download",
+        "handoff",
+        "ingest",
+        "reading",
+        "notes",
+        "export",
+    ):
         (ws_dir / sub).mkdir(exist_ok=True)
 
     toml_content = (
@@ -231,33 +315,33 @@ def _handle_init(args: argparse.Namespace) -> int:
         f'name = "{args.topic}"\n'
         f'description = ""\n'
         f'created_at = "{datetime.now(UTC).isoformat()}"\n'
-        f'\n'
-        f'lenses = []\n'
+        f"\n"
+        f"lenses = []\n"
         f'providers = ["openalex"]\n'
         f'pdf_store = ""\n'
         f'parent = ""\n'
-        f'\n'
-        f'# Language of human-readable outputs (briefs, screening notes, cards, synthesis).\n'
+        f"\n"
+        f"# Language of human-readable outputs (briefs, screening notes, cards, synthesis).\n"
         f'# BCP 47 tag, e.g. "zh-CN". Keys, enums, titles, authors and DOIs never change.\n'
-        f'[output]\n'
+        f"[output]\n"
         f'language = "{args.language}"\n'
-        f'\n'
-        f'# Zotero: one flat collection per workspace — no nested subcollections.\n'
-        f'# The workspace slug IS the collection name.\n'
-        f'# zotero_registry.jsonl tracks every paper\'s candidate_id ↔ zotero_key.\n'
-        f'[zotero]\n'
+        f"\n"
+        f"# Zotero: one flat collection per workspace — no nested subcollections.\n"
+        f"# The workspace slug IS the collection name.\n"
+        f"# zotero_registry.jsonl tracks every paper's candidate_id ↔ zotero_key.\n"
+        f"[zotero]\n"
         f'collection_key = ""\n'
         f'collection_name = "{slug}"\n'
         f'group_id = ""\n'
-        f'sync_notes = true\n'
-        f'sync_attachments = true\n'
-        f'tags = []\n'
-        f'\n'
-        f'[defaults]\n'
-        f'year_from = 2018\n'
-        f'year_to = 2026\n'
+        f"sync_notes = true\n"
+        f"sync_attachments = true\n"
+        f"tags = []\n"
+        f"\n"
+        f"[defaults]\n"
+        f"year_from = 2018\n"
+        f"year_to = 2026\n"
         f'content_types = ["Journals", "Conferences"]\n'
-        f'preferred_venues = []\n'
+        f"preferred_venues = []\n"
     )
     (ws_dir / "workspace.toml").write_text(toml_content, encoding="utf-8")
     print(f"Created workspace: {ws_dir}")
@@ -268,6 +352,7 @@ def _handle_search(args: argparse.Namespace) -> int:
     td = _topic_dir(args.topic)
     try:
         from academia.litreview.workflow_search import run_search as do_search
+
         result = do_search(
             td,
             provider=args.provider if args.provider else None,
@@ -299,7 +384,8 @@ def _handle_acquire(args: argparse.Namespace) -> int:
             if args.rebuild_queue or not (td / "download" / "download_queue.json").exists():
                 write_download_queue(td / "screening" / "screening_stage1.jsonl", td / "download")
             plans = plan_sources(
-                td / "download" / "download_queue.json", td,
+                td / "download" / "download_queue.json",
+                td,
                 limit=args.limit or HARD_LIMIT,
                 resolve_oa=not args.no_resolve_oa,
                 http_only=args.http_only,
@@ -314,6 +400,7 @@ def _handle_acquire(args: argparse.Namespace) -> int:
             return 0
 
         from academia.litreview.workflow_acquire import run_acquire as do_acquire
+
         result = do_acquire(
             td,
             profile=args.profile,
@@ -326,7 +413,9 @@ def _handle_acquire(args: argparse.Namespace) -> int:
             http_only=args.http_only,
             rebuild_queue=args.rebuild_queue,
         )
-        print(f"acquire: downloaded={result.get('downloaded', 0)}, manifest={result.get('manifest_path', 'none')}")
+        print(
+            f"acquire: downloaded={result.get('downloaded', 0)}, manifest={result.get('manifest_path', 'none')}"
+        )
         return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -337,15 +426,20 @@ def _handle_ingest(args: argparse.Namespace) -> int:
     td = _topic_dir(args.topic)
     try:
         from academia.litreview.workflow_ingest import run_ingest as do_ingest
+
         result = do_ingest(
             td,
             paper_ids=args.paper_ids,
             dry_run=args.dry_run,
         )
         if args.dry_run:
-            print(f"ingest (dry-run): pending={result.get('pending', 0)}, cached={result.get('skipped', 0)}")
+            print(
+                f"ingest (dry-run): pending={result.get('pending', 0)}, cached={result.get('skipped', 0)}"
+            )
         else:
-            print(f"ingest: ok={result.get('succeeded', 0)}, fail={result.get('failed', 0)}, skip={result.get('skipped', 0)}")
+            print(
+                f"ingest: ok={result.get('succeeded', 0)}, fail={result.get('failed', 0)}, skip={result.get('skipped', 0)}"
+            )
         return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -365,6 +459,7 @@ def _handle_import_screening(args: argparse.Namespace) -> int:
     # Downstream readers open that same path as a file, so leaving it behind
     # turns the next acquire/repair run into an IsADirectoryError.
     import shutil
+
     stale = out_dir / "screening_stage1.jsonl"
     if stale.is_dir():
         nested = stale / "screening_stage1.jsonl"
@@ -393,8 +488,11 @@ def _handle_read(args: argparse.Namespace) -> int:
     td = _topic_dir(args.topic)
     try:
         from academia.litreview.workflow_read import run_read as do_read
+
         card = do_read(td, args.paper, lens=args.lens, model=args.model)
-        print(f"read: verdict={card.get('verdict', '?')}, confidence={card.get('confidence', 0):.0%}")
+        print(
+            f"read: verdict={card.get('verdict', '?')}, confidence={card.get('confidence', 0):.0%}"
+        )
         return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -405,6 +503,7 @@ def _handle_synthesize(args: argparse.Namespace) -> int:
     td = _topic_dir(args.topic)
     try:
         from academia.litreview.workflow_read import run_synthesize as do_synth
+
         synthesis = do_synth(td, paper_ids=args.paper_ids, model=args.model)
         print(synthesis[:500] + ("..." if len(synthesis) > 500 else ""))
         return 0
@@ -417,6 +516,7 @@ def _handle_export(args: argparse.Namespace) -> int:
     td = _topic_dir(args.topic)
     try:
         from academia.litreview.workflow_export import run_export as do_export
+
         out = do_export(td, format=args.format, paper_ids=args.paper_ids)
         print(f"exported: {out}")
         return 0
@@ -429,8 +529,10 @@ def _handle_stats(args: argparse.Namespace) -> int:
     td = _topic_dir(args.topic)
     try:
         from academia.litreview.workflow_export import run_stats as do_stats
+
         stats = do_stats(td, plots=args.plots)
         import json
+
         print(json.dumps(stats, indent=2, ensure_ascii=True, default=str))
         return 0
     except Exception as exc:
@@ -453,6 +555,7 @@ def _handle_zotero_sync(args: argparse.Namespace) -> int:
             return 2
 
         import json
+
         screening = []
         for line in screening_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -462,10 +565,7 @@ def _handle_zotero_sync(args: argparse.Namespace) -> int:
                 screening.append(json.loads(line))
 
         # Only sync included/maybe papers
-        to_sync = [
-            s for s in screening
-            if s.get("decision") in ("include", "maybe")
-        ]
+        to_sync = [s for s in screening if s.get("decision") in ("include", "maybe")]
         if not to_sync:
             print("No papers with decision 'include' or 'maybe' to sync.")
             return 0
@@ -505,7 +605,9 @@ def _handle_zotero_status(args: argparse.Namespace) -> int:
             for e in summary["entries"]:
                 title = (e.get("title", "") or "")[:58]
                 pdf = "✓" if e.get("pdf_attached") else "—"
-                print(f"{e['candidate_id']:<24s} {e.get('zotero_key', ''):<10s} {title:<60s} {pdf:<5s}")
+                print(
+                    f"{e['candidate_id']:<24s} {e.get('zotero_key', ''):<10s} {title:<60s} {pdf:<5s}"
+                )
         return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -536,17 +638,25 @@ def _handle_zotero_import(args: argparse.Namespace) -> int:
     if not args.dry_run:
         collection_key = zconf.get("collection_key") or None
         if not collection_key and zconf.get("collection_name"):
-            collection_key = zm.find_collection_key(zconf["collection_name"], library_id,
-                                                    api_key, library_type)
+            collection_key = zm.find_collection_key(
+                zconf["collection_name"], library_id, api_key, library_type
+            )
             if not collection_key:
-                print(f"error: Zotero collection not found: {zconf['collection_name']!r}",
-                      file=sys.stderr)
+                print(
+                    f"error: Zotero collection not found: {zconf['collection_name']!r}",
+                    file=sys.stderr,
+                )
                 return 2
 
     results = import_workspace_pdfs(
-        td, library_id, api_key, library_type,
-        collection_key=collection_key, tags=tags,
-        dry_run=args.dry_run, force=args.force,
+        td,
+        library_id,
+        api_key,
+        library_type,
+        collection_key=collection_key,
+        tags=tags,
+        dry_run=args.dry_run,
+        force=args.force,
         candidate_ids=args.candidate_id,
     )
     for r in results:
@@ -563,7 +673,9 @@ def _handle_zotero_import(args: argparse.Namespace) -> int:
         counts[r.action] = counts.get(r.action, 0) + 1
     print(f"\nImport: {counts}")
     if not args.dry_run:
-        print("Next: lit-review zotero-maintain --topic <slug>, then zotero_update_search_database (MCP)")
+        print(
+            "Next: lit-review zotero-maintain --topic <slug>, then zotero_update_search_database (MCP)"
+        )
     return 0 if counts.get("error", 0) == 0 else 1
 
 
@@ -591,8 +703,7 @@ def _handle_zotero_maintain(args: argparse.Namespace) -> int:
     # Prefer an explicit key: collection names are not unique in Zotero.
     collection_key = zconf.get("collection_key") or None
     if not collection_key:
-        collection_key = zm.find_collection_key(collection_name, library_id,
-                                                api_key, library_type)
+        collection_key = zm.find_collection_key(collection_name, library_id, api_key, library_type)
     if not collection_key:
         print(f"error: Zotero collection not found: {collection_name!r}", file=sys.stderr)
         return 2
@@ -613,19 +724,25 @@ def _handle_zotero_maintain(args: argparse.Namespace) -> int:
 
     scope = "whole collection" if args.whole_library else "registry"
     print(f"Enriching bare items ({scope}){' [dry-run]' if args.dry_run else ''}...")
-    results = zm.enrich_items(library_id, api_key, library_type, collection_key,
-                              dry_run=args.dry_run, only_keys=only_keys)
+    results = zm.enrich_items(
+        library_id, api_key, library_type, collection_key, dry_run=args.dry_run, only_keys=only_keys
+    )
     for r in results:
         mark = "✓" if r.applied else ("·" if r.action == "no-match" else "✗")
-        print(f"  {mark} {r.key} [{r.action}] {r.title_before[:50]}"
-              + (f" -> {r.detail[:60]}" if r.detail and r.applied else ""))
+        print(
+            f"  {mark} {r.key} [{r.action}] {r.title_before[:50]}"
+            + (f" -> {r.detail[:60]}" if r.detail and r.applied else "")
+        )
     applied = sum(1 for r in results if r.applied)
-    print(f"Enrich: {applied} updated, {sum(1 for r in results if r.action == 'no-match')} no-match, "
-          f"{sum(1 for r in results if r.action == 'error')} errors")
+    print(
+        f"Enrich: {applied} updated, {sum(1 for r in results if r.action == 'no-match')} no-match, "
+        f"{sum(1 for r in results if r.action == 'error')} errors"
+    )
 
     print("Mirroring attachment files to local storage...")
-    mirrors = zm.mirror_attachments(library_id, api_key, library_type, collection_key,
-                                    dry_run=args.dry_run, only_keys=only_keys)
+    mirrors = zm.mirror_attachments(
+        library_id, api_key, library_type, collection_key, dry_run=args.dry_run, only_keys=only_keys
+    )
     for r in mirrors:
         if r.status in ("downloaded", "error"):
             print(f"  {r.status}: {r.key}/{r.filename} {r.detail}")
@@ -640,12 +757,14 @@ def _handle_login(args: argparse.Namespace) -> int:
     profile = Path(args.profile)
     if not profile.is_absolute():
         import os
+
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
         profile = Path(base) / "literature-review" / "browser-profiles" / args.profile
     from academia.litreview.acquire.download import open_login
 
     return open_login(
-        profile, args.url,
+        profile,
+        args.url,
         browser_channel=args.browser_channel,
         completion=args.completion,
         network_mode=args.network_mode,
@@ -671,8 +790,10 @@ def _handle_probe(args: argparse.Namespace) -> int:
     try:
         provider = get_source(args.provider)
         return run_probe(
-            queries_path=Path(args.queries), out_dir=Path(args.out),
-            provider=provider, query_id=args.query_id,
+            queries_path=Path(args.queries),
+            out_dir=Path(args.out),
+            provider=provider,
+            query_id=args.query_id,
             allow_unapproved_plan=True,
         )
     except Exception as exc:

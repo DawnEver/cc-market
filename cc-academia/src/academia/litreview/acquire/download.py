@@ -31,6 +31,7 @@ PROFILE_MARKER = ".lit-review-profile"
 
 def _start_playwright():
     from playwright.sync_api import sync_playwright
+
     return sync_playwright().start()
 
 
@@ -54,15 +55,21 @@ def _validate_dedicated_profile(profile: Path) -> None:
         raise ValueError(f"profile exists but is not a recognized browser profile: {profile}")
 
 
-def open_login(profile: Path, url: str = IEEE_HOME, browser_channel: str = "chromium",
-               completion: str = "browser-close", network_mode: str = "direct") -> int:
+def open_login(
+    profile: Path,
+    url: str = IEEE_HOME,
+    browser_channel: str = "chromium",
+    completion: str = "browser-close",
+    network_mode: str = "direct",
+) -> int:
     profile.mkdir(parents=True, exist_ok=True)
     _validate_dedicated_profile(profile)
     (profile / PROFILE_MARKER).touch()
     pw = _start_playwright()
     try:
         browser = pw.chromium.launch_persistent_context(
-            user_data_dir=str(profile), **_launch_options(browser_channel, network_mode),
+            user_data_dir=str(profile),
+            **_launch_options(browser_channel, network_mode),
         )
         page = browser.new_page()
         page.goto(url)
@@ -87,8 +94,10 @@ def open_login(profile: Path, url: str = IEEE_HOME, browser_channel: str = "chro
 AccessBlockedError = Blocked
 
 _PROFILE_LOCK_MARKERS = (
-    "existing browser", "profile appears to be in use",
-    "singletonlock", "failed to create a profilesyncdatatypecontroller",
+    "existing browser",
+    "profile appears to be in use",
+    "singletonlock",
+    "failed to create a profilesyncdatatypecontroller",
 )
 
 
@@ -122,7 +131,6 @@ def candidate_urls(item: dict[str, Any], resolve: bool = True) -> list[str]:
         urls.append(researchgate.search_url(query))
 
     return oa_resolve.rank_urls(urls)
-
 
 
 def _is_profile_lock_error(error: Exception) -> bool:
@@ -217,5 +225,3 @@ def playwright_page(
 
 # Public entry point lives in engine.py; re-exported so existing callers
 # (orchestrator, tests) keep importing it from here.
-
-

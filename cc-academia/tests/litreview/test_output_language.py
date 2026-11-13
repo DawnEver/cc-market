@@ -23,7 +23,9 @@ def captured(monkeypatch):
 
 
 def _brief() -> ResearchBrief:
-    return ResearchBrief.from_dict({"brief_id": "", "original_request": "", "research_objective": "o"})
+    return ResearchBrief.from_dict(
+        {"brief_id": "", "original_request": "", "research_objective": "o"}
+    )
 
 
 def test_english_default_adds_no_language_instruction(captured):
@@ -60,7 +62,9 @@ def test_synthesize_uses_workspace_language(tmp_path, captured):
     (tmp_path / "workspace.toml").write_text('[output]\nlanguage = "zh-CN"\n', encoding="utf-8")
     reading = tmp_path / "reading"
     reading.mkdir()
-    (reading / "a_card.json").write_text(json.dumps(PaperCard(candidate_id="a", title="T").to_dict()), encoding="utf-8")
+    (reading / "a_card.json").write_text(
+        json.dumps(PaperCard(candidate_id="a", title="T").to_dict()), encoding="utf-8"
+    )
     workflow_read.run_synthesize(tmp_path)
     assert "Simplified Chinese" in captured[0]["system"]
 

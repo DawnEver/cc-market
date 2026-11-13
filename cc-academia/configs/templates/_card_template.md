@@ -1,19 +1,19 @@
 # Paper Card Template — <ShortRef>
 
-> 用法:复制本文件为 `<shortref>_card.md`(shortref 见 `papers_registry.md`),填满各节。
-> 规则:文件名 = `<author-lastname>-<year>_card.md`(多名作者取首个,如 zhuang-2026);正文只用标题+作者,禁止 hash。
+> Usage: copy this file to `<shortref>_card.md` (for the shortref see `papers_registry.md`) and fill in every section.
+> Rule: filename = `<author-lastname>-<year>_card.md` (with several authors take the first, e.g. zhuang-2026); the body uses only title + authors, never the hash.
 
 - **ShortRef**: `<AuthorLastname> et al. <year>` (e.g. Zhuang et al. 2026)
-- **candidate_id** (仅内部,不写进叙述): `S2-<hash>`
-- **Title**: <完整标题>
-- **Authors**: <作者列表>
+- **candidate_id** (internal only, never in the narrative): `S2-<hash>`
+- **Title**: <full title>
+- **Authors**: <author list>
 - **Year / Venue**: <year> / <venue>
 
 ---
 
 ## One sentence
 
-<一句话:这篇论文的核心贡献是什么?>
+<One sentence: what is this paper's core contribution?>
 
 ## Verdict & confidence
 
@@ -22,30 +22,30 @@
 
 ## Technical core
 
-- <核心贡献 1>
-- <核心贡献 2>
-- <方法/实验要点>
+- <core contribution 1>
+- <core contribution 2>
+- <key points of method/experiments>
 
 ## Evidence
 
-- {claim: "<论文中的论断>", locator: "<章节/图表>"}
+- {claim: "<claim made in the paper>", locator: "<section/figure/table>"}
 - {claim: "...", locator: "..."}
 
 ## Limitations
 
-- <局限 1>
-- <局限 2>
+- <limitation 1>
+- <limitation 2>
 
-## Research use (相对当前 review 主题)
+## Research use (relative to the current review topic)
 
-- {type: `mechanism | method | context | gap`, note: "<与本 review 论点的关系>"}
+- {type: `mechanism | method | context | gap`, note: "<relation to this review's argument>"}
 - {type: ..., note: "..."}
 
 ## Next action
 
-<这篇论文下一步怎么用——实现、对比、或作为证据>
+<how this paper is used next -- implement it, compare against it, or cite it as evidence>
 
 ## Open questions
 
-- <悬而未决的问题>
+- <unresolved questions>
 - <...>

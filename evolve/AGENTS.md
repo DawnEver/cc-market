@@ -1,6 +1,6 @@
 # evolve Plugin — AGENTS.md
 
-A Claude-driven, iterative review→fix loop skill. Each round critiques the codebase (锐评),
+A Claude-driven, iterative review→fix loop skill. Each round critiques the codebase (sharp review),
 fans out fix subagents over disjoint file sets, reviews the un-fixed and judges why, gates
 hard calls to the human, keeps the test suite green, and commits — then loops. Skill-only
 plugin: invoked via `/evolve`, no hook.

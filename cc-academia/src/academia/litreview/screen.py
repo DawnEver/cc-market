@@ -37,6 +37,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 # Screening packet
 # ---------------------------------------------------------------------------
 
+
 def write_screening_packet(candidates_path: Path, out_dir: Path) -> int:
     """Create an abstract-only screening packet (JSONL + CSV)."""
     rows = [{k: v for k, v in r.items() if k not in _SKIP} for r in _load(candidates_path)]
@@ -49,13 +50,19 @@ def write_screening_packet(candidates_path: Path, out_dir: Path) -> int:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
         for row in rows:
-            w.writerow({k: json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v for k, v in row.items()})
+            w.writerow(
+                {
+                    k: json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+                    for k, v in row.items()
+                }
+            )
     return len(rows)
 
 
 # ---------------------------------------------------------------------------
 # Agent screening import
 # ---------------------------------------------------------------------------
+
 
 def _index(path: Path) -> tuple[list[str], dict[str, dict[str, Any]]]:
     rows = _read_jsonl(path)
@@ -93,8 +100,14 @@ def _validate(row: dict[str, Any], has_abstract: bool) -> dict[str, Any]:
             raise ValueError(f"{cid}: missing abstract cannot be included")
         if not lists["uncertainties"]:
             raise ValueError(f"{cid}: missing abstract requires at least one uncertainty")
-    decision = ScreeningDecision(candidate_id=cid, decision=d, confidence=float(cf),
-                                 abstract_available=has_abstract, download_priority=p, **lists)
+    decision = ScreeningDecision(
+        candidate_id=cid,
+        decision=d,
+        confidence=float(cf),
+        abstract_available=has_abstract,
+        download_priority=p,
+        **lists,
+    )
     return {"artifact_version": 1, **decision.to_dict()}
 
 
@@ -138,9 +151,13 @@ def import_agent_screening(candidates_path: Path, batch_paths: list[Path], out_d
 # Keyword filter (from AeroWdg pipeline_filter.py)
 # ---------------------------------------------------------------------------
 
+
 def filter_by_keywords(
-    candidates: list[Candidate], keywords: list[str],
-    *, mode: str = "any", field: str = "abstract",
+    candidates: list[Candidate],
+    keywords: list[str],
+    *,
+    mode: str = "any",
+    field: str = "abstract",
 ) -> list[Candidate]:
     """Filter candidates whose abstract/title contain given keywords.
 
@@ -153,6 +170,7 @@ def filter_by_keywords(
     if not keywords:
         return list(candidates)
     lowered = [kw.lower() for kw in keywords]
+
     def _matches(c: Candidate) -> bool:
         parts: list[str] = []
         if field in ("abstract", "both"):
@@ -161,4 +179,5 @@ def filter_by_keywords(
             parts.append(c.title)
         hs = " ".join(parts).lower()
         return all(kw in hs for kw in lowered) if mode == "all" else any(kw in hs for kw in lowered)
+
     return [c for c in candidates if _matches(c)]

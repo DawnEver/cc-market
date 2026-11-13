@@ -1,14 +1,14 @@
-# Papers Registry — 论文引用映射表
+# Papers Registry — paper citation map
 
-`generated: <date>` · **唯一引用源**。所有报告/卡片用 **ShortRef**(作者+年份)引用,禁用 hash。
+`generated: <date>` · **The single citation source**. Every report/card cites by **ShortRef** (author + year); never by hash.
 
-> **规则**
-> 1. 报告正文一律用 `[Author et al. YYYY]` 或 `Author (YYYY)`。
-> 2. 文件名 = `<author-lastname>-<year>_card.md`(多名作者取首个;同作者同年加后缀区分)。
-> 3. `candidate_id`(hash)只用于 CLI 操作(read/acquire/ingest),**绝不进入叙述性报告**。
-> 4. card 模板见 `../templates/_card_template.md`。
-> 5. 每加入一篇 include 论文,追加一行。
+> **Rules**
+> 1. Report bodies always use `[Author et al. YYYY]` or `Author (YYYY)`.
+> 2. Filename = `<author-lastname>-<year>_card.md` (with several authors take the first; same author and year get a distinguishing suffix).
+> 3. `candidate_id` (hash) is only for CLI operations (read/acquire/ingest) and **never enters a narrative report**.
+> 4. The card template is `../templates/_card_template.md`.
+> 5. Append one row for every included paper added.
 
-| ShortRef | Filename | candidate_id (仅内部) | Title | Authors | Year | Venue |
+| ShortRef | Filename | candidate_id (internal only) | Title | Authors | Year | Venue |
 |----------|----------|----------------------|-------|---------|------|-------|
 | **<AuthorLastname> et al. <year>** | `<lastname>-<year>_card.md` | S2-<hash> | <Title> | <Authors> | <year> | <venue> |

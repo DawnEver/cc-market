@@ -125,12 +125,13 @@ def _split_name(name: str) -> dict[str, str]:
     """
     parts = name.split()
     if len(parts) >= 3 and parts[-2].lower() in _NAME_PARTICLES:
-        return {"creatorType": "author",
-                "firstName": " ".join(parts[:-2]),
-                "lastName": f"{parts[-2]} {parts[-1]}"}
+        return {
+            "creatorType": "author",
+            "firstName": " ".join(parts[:-2]),
+            "lastName": f"{parts[-2]} {parts[-1]}",
+        }
     if len(parts) >= 2:
-        return {"creatorType": "author", "firstName": " ".join(parts[:-1]),
-                "lastName": parts[-1]}
+        return {"creatorType": "author", "firstName": " ".join(parts[:-1]), "lastName": parts[-1]}
     return {"creatorType": "author", "firstName": "", "lastName": name}
 
 
@@ -461,12 +462,21 @@ def enrich_items(
         fail_detail = ""
         if not dry_run:
             applied, fail_detail = update_item(
-                key, dict(update), item.get("version", 0),
-                library_id, api_key, library_type,
+                key,
+                dict(update),
+                item.get("version", 0),
+                library_id,
+                api_key,
+                library_type,
             )
         results.append(
-            EnrichResult(key, title_before, action, applied=applied or dry_run,
-                         detail=update.get("title", "") if (applied or dry_run) else fail_detail)
+            EnrichResult(
+                key,
+                title_before,
+                action,
+                applied=applied or dry_run,
+                detail=update.get("title", "") if (applied or dry_run) else fail_detail,
+            )
         )
     return results
 
@@ -508,8 +518,9 @@ def mirror_attachments(
     base = _library_base(library_id, library_type)
     results: list[MirrorResult] = []
 
-    attachments = iter_items(library_id, api_key, library_type, collection_key,
-                             item_type="attachment")
+    attachments = iter_items(
+        library_id, api_key, library_type, collection_key, item_type="attachment"
+    )
     for att in attachments:
         data = att.get("data", {})
         key = att["key"]
@@ -537,8 +548,11 @@ def mirror_attachments(
         if expected_md5:
             got_md5 = hashlib.md5(raw, usedforsecurity=False).hexdigest()
             if got_md5 != expected_md5:
-                results.append(MirrorResult(key, filename, "error",
-                                            f"md5 mismatch {got_md5} != {expected_md5}"))
+                results.append(
+                    MirrorResult(
+                        key, filename, "error", f"md5 mismatch {got_md5} != {expected_md5}"
+                    )
+                )
                 continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(raw)

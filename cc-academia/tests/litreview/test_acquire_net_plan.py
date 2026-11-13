@@ -22,6 +22,7 @@ class FakeResponse:
 # HTTP policy
 # ---------------------------------------------------------------------------
 
+
 def test_headers_identify_the_client_and_omit_empty_referer():
     headers = net.default_headers()
     assert "User-Agent" in headers and "X-Contact" in headers
@@ -95,6 +96,7 @@ def test_get_gives_up_after_max_retries_on_429(monkeypatch):
 # Dry-run plan
 # ---------------------------------------------------------------------------
 
+
 def _queue(tmp_path, items):
     path = tmp_path / "queue.json"
     path.write_text(json.dumps({"items": items}), encoding="utf-8")
@@ -103,7 +105,8 @@ def _queue(tmp_path, items):
 
 def test_plan_lists_sources_in_priority_order(tmp_path):
     item = {
-        "candidate_id": "a", "title": "Hairpin Windings",
+        "candidate_id": "a",
+        "title": "Hairpin Windings",
         "pdf_url": "https://ieeexplore.ieee.org/document/1",
         "html_url": "https://repo.uni-hannover.de/bitstream/x/content",
     }
@@ -123,8 +126,12 @@ def test_plan_labels_the_transport_each_source_needs(tmp_path):
 
 def test_plan_includes_unapproved_items(tmp_path):
     """The queue is still unapproved when a plan is previewed."""
-    item = {"candidate_id": "a", "title": "T", "approved": False,
-            "pdf_url": "https://repo.example/a.pdf"}
+    item = {
+        "candidate_id": "a",
+        "title": "T",
+        "approved": False,
+        "pdf_url": "https://repo.example/a.pdf",
+    }
     assert len(plan_sources(_queue(tmp_path, [item]), tmp_path, resolve_oa=False)) == 1
 
 
@@ -147,13 +154,21 @@ def test_plan_skips_papers_already_in_the_ledger(tmp_path):
 
     pdf = tmp_path / "a.pdf"
     pdf.write_bytes(b"%PDF-1.4\n" + b"%pad\n" * 300 + b"%%EOF\n")
-    ledger.append(ledger.ledger_path(tmp_path), DownloadRecord(
-        candidate_id="a", outcome=Outcome.DOWNLOADED, timestamp="t",
-        pdf_path=str(pdf), sha256=sha256_file(pdf),
-    ))
+    ledger.append(
+        ledger.ledger_path(tmp_path),
+        DownloadRecord(
+            candidate_id="a",
+            outcome=Outcome.DOWNLOADED,
+            timestamp="t",
+            pdf_path=str(pdf),
+            sha256=sha256_file(pdf),
+        ),
+    )
 
-    items = [{"candidate_id": "a", "pdf_url": "https://x/a.pdf"},
-             {"candidate_id": "b", "pdf_url": "https://x/b.pdf"}]
+    items = [
+        {"candidate_id": "a", "pdf_url": "https://x/a.pdf"},
+        {"candidate_id": "b", "pdf_url": "https://x/b.pdf"},
+    ]
     plans = plan_sources(_queue(tmp_path, items), tmp_path, resolve_oa=False)
 
     assert [p["candidate_id"] for p in plans] == ["b"]

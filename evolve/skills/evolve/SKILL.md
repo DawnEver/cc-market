@@ -62,7 +62,7 @@ it) and never hang on `AskUserQuestion`. Surface all deferred/gated items in the
 
 ## Per round (overview)
 
-1. **Critique (锐评)** — architecture + diff review → an OPEN findings list.
+1. **Critique (sharp review)** — architecture + diff review → an OPEN findings list.
 2. **Fan-out fix** — parallel subagents over disjoint file sets (≤ `maxAgents`).
 3. **Review the un-fixed** — classify each remaining finding's reason.
 4. **Human gate** — `AskUserQuestion` for architectural changes, won't-fix calls, or

@@ -60,7 +60,9 @@ def author_with_papers(conn, *years: int, name: str = "Candidate") -> Person:
         person_id = ids[0]
     if not person_id:
         person_id = repo.upsert_person(conn, Author(name=name, idx=0, openalex_id="A-" + name))
-    return Person(person_id=person_id, display_name=name, confidence=0.99, resolution_method="orcid")
+    return Person(
+        person_id=person_id, display_name=name, confidence=0.99, resolution_method="orcid"
+    )
 
 
 def doctoral(person: Person, *, start: int | None) -> Person:
@@ -110,7 +112,9 @@ def test_no_publication_years_never_excludes_anybody(conn, policy):
 
 def test_the_window_is_configurable(conn, policy):
     person = author_with_papers(conn, 2019, name="Older")
-    wide = tuned(policy, activity={**policy.data["activity"], "mode": "require", "recent_years": 10})
+    wide = tuned(
+        policy, activity={**policy.data["activity"], "mode": "require", "recent_years": 10}
+    )
     assert not assess(conn, person, wide, now_year=NOW).excluded
 
 
@@ -154,9 +158,7 @@ def test_the_seniority_ceiling_cannot_exclude_even_under_require(conn):
     with nobody to invite. The floor obeys the mode; the ceiling never does.
     """
     person = author_with_papers(conn, 2015, 2025, name="LongCareer")
-    required = tuned(
-        load_policy(), seniority={"mode": "require", "min_years": 3, "max_years": 10}
-    )
+    required = tuned(load_policy(), seniority={"mode": "require", "min_years": 3, "max_years": 10})
 
     assessment = assess(conn, person, required, now_year=NOW)
     outcome = next(o for o in assessment.outcomes if o.rule == "seniority")
@@ -169,9 +171,7 @@ def test_the_seniority_ceiling_cannot_exclude_even_under_require(conn):
 def test_the_seniority_floor_does_obey_require(conn):
     """The floor is the half of the axis that is allowed to bite."""
     person = author_with_papers(conn, 2025, name="Fresh")
-    required = tuned(
-        load_policy(), seniority={"mode": "require", "min_years": 3, "max_years": 0}
-    )
+    required = tuned(load_policy(), seniority={"mode": "require", "min_years": 3, "max_years": 0})
 
     assert assess(conn, person, required, now_year=NOW).excluded
 
@@ -194,10 +194,7 @@ def test_exactly_one_rule_measures_a_career_length(conn, policy):
     measured = [
         o
         for o in outcomes
-        if any(
-            k.endswith("_years") and not k.endswith(report.THRESHOLD_SUFFIXES)
-            for k in o.facts
-        )
+        if any(k.endswith("_years") and not k.endswith(report.THRESHOLD_SUFFIXES) for k in o.facts)
     ]
 
     assert [o.rule for o in measured] == ["seniority"]
@@ -211,16 +208,19 @@ def test_tte_requires_a_relevant_paper_in_the_last_three_years(conn):
     def outcome(*years):
         papers = [
             rank.Evidence(
-                paper_id=f"p{y}", title="t", year=y, position="first",
-                position_weight=1.0, similarity=0.5, venue_type="article",
+                paper_id=f"p{y}",
+                title="t",
+                year=y,
+                position="first",
+                position_weight=1.0,
+                similarity=0.5,
+                venue_type="article",
             )
             for y in years
         ]
         record = CandidateRecord.build(conn, person, relevant_papers=papers, now_year=NOW)
         return next(
-            o
-            for o in eligibility.assess(record, tte).outcomes
-            if o.rule == "relevant_activity"
+            o for o in eligibility.assess(record, tte).outcomes if o.rule == "relevant_activity"
         )
 
     assert outcome(2020, 2022).excluded
@@ -317,7 +317,6 @@ def test_the_career_threshold_is_configurable_and_there_is_only_one(conn, policy
         "seniority_minimum",
         "seniority_maximum",
     }
-
 
 
 # ----------------------------------------------------------------- wiring --
@@ -427,7 +426,9 @@ def test_several_papers_in_one_year_count_separately(conn, policy):
                 title=f"Extra {index}",
                 source="openalex",
                 year=2025,
-                authors=[Author(name="Prolific", idx=0, position="first", openalex_id="A-Prolific")],
+                authors=[
+                    Author(name="Prolific", idx=0, position="first", openalex_id="A-Prolific")
+                ],
             ),
         )
     demanding = tuned(
@@ -442,7 +443,9 @@ def test_an_invalid_mode_is_rejected_when_the_policy_loads(tmp_path, monkeypatch
     config = tmp_path / "configs"
     (config / "journals").mkdir(parents=True)
     source = Path(load().sources[0]).read_text(encoding="utf-8")
-    (config / "coi.toml").write_text(source.replace('mode = "prefer"', 'mode = "maybe"', 1), "utf-8")
+    (config / "coi.toml").write_text(
+        source.replace('mode = "prefer"', 'mode = "maybe"', 1), "utf-8"
+    )
     monkeypatch.setenv("ACADEMIA_CONFIG_DIR", str(config))
     with pytest.raises(UsageError):
         load()
@@ -459,7 +462,9 @@ def with_output(conn, person: Person, works_by_year: dict[int, int]) -> Person:
 
 def test_the_profile_record_beats_the_papers_this_run_happened_to_harvest(conn, policy):
     """A prolific author whose recent work is off-topic is not dormant."""
-    person = with_output(conn, author_with_papers(conn, 2018, name="Prolific2"), {2025: 12, 2024: 9})
+    person = with_output(
+        conn, author_with_papers(conn, 2018, name="Prolific2"), {2025: 12, 2024: 9}
+    )
     assessment = assess(conn, person, policy, now_year=NOW)
     assert not assessment.excluded
     assert assessment.score == 1.0

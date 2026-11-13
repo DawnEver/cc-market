@@ -96,7 +96,7 @@ one is refused by name; `label` defaults to the key, `weight` to 0.1, `framing` 
 
 ```json
 { "key": "arch-hygiene", "source": "codebase", "context": "explore", "weight": 0.3,
-  "framing": "…one-line intent…", "scope": ["bullet a", "bullet b"], "label": "整洁锐评" }
+  "framing": "…one-line intent…", "scope": ["bullet a", "bullet b"], "label": "clean-code sharp review" }
 ```
 
 Keep framings and scopes tight — low-signal instruction text degrades review quality.

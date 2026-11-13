@@ -64,12 +64,12 @@ EMAIL_PRECEDENCE = (
 )
 
 _ORCID_RECORD_URL = "https://orcid.org/{orcid}"
-_ORCID_URL_PATTERN = re.compile(r"^https?://(?:www\.)?orcid\.org/(\d{4}-\d{4}-\d{4}-[\dX]{4})/?$", re.I)
+_ORCID_URL_PATTERN = re.compile(
+    r"^https?://(?:www\.)?orcid\.org/(\d{4}-\d{4}-\d{4}-[\dX]{4})/?$", re.I
+)
 
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_GROUPED_EMAIL_PATTERN = re.compile(
-    r"\{([^{}]+)\}\s*@\s*([A-Za-z0-9.-]+\.[A-Za-z]{2,})"
-)
+_GROUPED_EMAIL_PATTERN = re.compile(r"\{([^{}]+)\}\s*@\s*([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 _EMAIL_LOCAL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+$")
 _CLOUDFLARE_EMAIL = re.compile(r"data-cfemail=[\"']([0-9a-f]{4,})[\"']", re.IGNORECASE)
 
@@ -115,15 +115,19 @@ def extract_emails(text: str) -> list[str]:
         try:
             key = int(encoded[:2], 16)
             cloudflare.append(
-                "".join(chr(int(encoded[index : index + 2], 16) ^ key) for index in range(2, len(encoded), 2))
+                "".join(
+                    chr(int(encoded[index : index + 2], 16) ^ key)
+                    for index in range(2, len(encoded), 2)
+                )
             )
         except ValueError:
             continue
-    source = html.unescape(raw).replace("＠", "@").replace("．", ".")
+    source = html.unescape(raw).replace("\uff20", "@").replace("\uff0e", ".")
     # Institutional CMSs sometimes wrap each visual fragment in its own span
     # or insert an HTML comment inside the address. The rendered text is still
     # public, so scan that representation as well as the source markup.
     rendered = visible_text(source)
+
     def normalize(value: str) -> str:
         value = re.sub(r"\s*[\[(]\s*at\s*[\])]\s*", "@", value, flags=re.IGNORECASE)
         value = re.sub(r"\s*[\[(]\s*dot\s*[\])]\s*", ".", value, flags=re.IGNORECASE)
@@ -171,11 +175,7 @@ def _name_parts(name: str) -> list[str]:
 
 
 def _name_tokens(person: Person) -> list[str]:
-    tokens = [
-        part
-        for name in [person.display_name, *person.names]
-        for part in _name_parts(name)
-    ]
+    tokens = [part for name in [person.display_name, *person.names] for part in _name_parts(name)]
     return list(dict.fromkeys(tokens))
 
 
@@ -244,9 +244,7 @@ def match_strength(email: str, person: Person) -> int:
     return 1 if hit == surname else _initials_strength(local, person)
 
 
-def match_email_to_person(
-    emails: list[str], person: Person, *, allow_weak: bool = True
-) -> str:
+def match_email_to_person(emails: list[str], person: Person, *, allow_weak: bool = True) -> str:
     """Pick the address most likely to belong to this person.
 
     Requires the local part to carry a piece of their name. Without that check a
@@ -269,8 +267,7 @@ def match_email_to_person(
         return weak[0]
     if weak:
         log.detail(
-            f"{person.display_name}: {len(weak)} addresses match the surname alone; "
-            "none attributed"
+            f"{person.display_name}: {len(weak)} addresses match the surname alone; none attributed"
         )
     return ""
 

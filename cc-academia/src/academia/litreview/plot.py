@@ -15,12 +15,14 @@ from academia.litreview.models import Candidate
 
 def _apply_style() -> None:
     """Apply a clean global style for figures."""
-    plt.rcParams.update({
-        "font.family": "sans-serif",
-        "font.size": 10,
-        "axes.titlesize": 12,
-        "axes.labelsize": 10,
-    })
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.size": 10,
+            "axes.titlesize": 12,
+            "axes.labelsize": 10,
+        }
+    )
 
 
 def plot_year_distribution(candidates: list[Candidate], path: Path) -> None:
@@ -36,6 +38,7 @@ def plot_year_distribution(candidates: list[Candidate], path: Path) -> None:
         years.append(str(y) if y else "Unknown")
 
     counts = Counter(years)
+
     # Sort numerically where possible, with 'Unknown' last
     def _sort_key(item: tuple[str, int]) -> tuple[int, str]:
         label = item[0]
@@ -59,8 +62,14 @@ def plot_year_distribution(candidates: list[Candidate], path: Path) -> None:
 
     # Annotate bar tops
     for bar, val in zip(bars, values, strict=False):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
-                str(val), ha="center", va="bottom", fontsize=8)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.3,
+            str(val),
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()

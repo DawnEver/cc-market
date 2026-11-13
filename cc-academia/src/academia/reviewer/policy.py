@@ -239,7 +239,9 @@ def load_policy(journal: str = "", *, exclusion_list: list[str] | None = None) -
     if journal:
         journal_path = paths.config_file("journals", f"{journal.lower()}.toml")
         if not journal_path.exists():
-            available = sorted(p.stem for p in (paths.default_config_dir() / "journals").glob("*.toml"))
+            available = sorted(
+                p.stem for p in (paths.default_config_dir() / "journals").glob("*.toml")
+            )
             raise UsageError(
                 f"unknown journal '{journal}'. Available: {', '.join(available) or 'none'}"
             )

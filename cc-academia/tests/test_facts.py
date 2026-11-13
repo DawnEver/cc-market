@@ -128,8 +128,13 @@ def test_only_verified_affiliations_travel(conn, tmp_path):
     """An OpenAlex affiliation comes back on its own; shipping it is noise."""
     person_id = a_person(conn)
     repo.store_institution_for(
-        conn, person_id, name="Guessed University", country_code="CN", is_current=True,
-        source="openalex", source_url="https://openalex.org/A1",
+        conn,
+        person_id,
+        name="Guessed University",
+        country_code="CN",
+        is_current=True,
+        source="openalex",
+        source_url="https://openalex.org/A1",
     )
     collected = facts.collect(conn)
     assert collected["affiliations"] == []

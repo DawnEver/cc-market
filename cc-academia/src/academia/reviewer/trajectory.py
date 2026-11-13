@@ -74,7 +74,9 @@ def build(person: Person) -> list[InstitutionStep]:
             )
         )
     order = {"current": 0, "employment": 1, "education": 2, "publication affiliation": 3}
-    return sorted(steps, key=lambda step: (order[step.kind], -(step.year_to or 0), step.institution))
+    return sorted(
+        steps, key=lambda step: (order[step.kind], -(step.year_to or 0), step.institution)
+    )
 
 
 def history_text(person: Person, *, limit: int = 3) -> str:

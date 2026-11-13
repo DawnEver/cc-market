@@ -147,4 +147,6 @@ class ArXiv(PaperSource):
                 and (not year_to or p.year <= year_to)
             ]
 
-        return SearchPage(source=SOURCE, query_id=query_id, page=page, total_count=total, papers=papers)
+        return SearchPage(
+            source=SOURCE, query_id=query_id, page=page, total_count=total, papers=papers
+        )

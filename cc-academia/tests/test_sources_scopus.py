@@ -86,7 +86,10 @@ def test_a_document_listing_no_authors_yields_no_first_author():
 def test_journal_typing_separates_an_article_from_a_conference_paper():
     article = {"subtypeDescription": "Article", "prism:aggregationType": "Journal"}
     review = {"subtypeDescription": "Review", "prism:aggregationType": "Journal"}
-    conference = {"subtypeDescription": "Conference Paper", "prism:aggregationType": "Conference Proceeding"}
+    conference = {
+        "subtypeDescription": "Conference Paper",
+        "prism:aggregationType": "Conference Proceeding",
+    }
     assert scopus.is_journal_article(article) and scopus.is_journal_article(review)
     assert not scopus.is_journal_article(conference)
 
@@ -210,7 +213,10 @@ def test_candidates_are_ranked_by_the_evidence_behind_them(searches):
 
 def test_a_profile_whose_own_spelling_disagrees_with_the_record_is_not_a_candidate(searches):
     _calls, answers = searches
-    answers["authors"] = [_author_entry("111", "Kumar", "Dinesh"), _author_entry("222", "Kumar", "Ravi")]
+    answers["authors"] = [
+        _author_entry("111", "Kumar", "Dinesh"),
+        _author_entry("222", "Kumar", "Ravi"),
+    ]
     answers["counts"] = {"111": 3, "222": 3}
     found = scopus.find_author_candidates("Kumar, Dinesh", corroborators=["Clare, J."])
     assert [c.scopus_id for c in found] == ["111"]
@@ -226,7 +232,9 @@ def test_a_two_word_surname_is_not_trimmed_to_its_first_word(searches):
     _calls, answers = searches
     answers["authors"] = [_author_entry("111", "Donoso Merlet", "Felipe")]
     answers["counts"] = {"111": 1}
-    found = scopus.find_author_candidates("Donoso Merlet, Felipe Octavio", corroborators=["Watson, A."])
+    found = scopus.find_author_candidates(
+        "Donoso Merlet, Felipe Octavio", corroborators=["Watson, A."]
+    )
     assert [c.scopus_id for c in found] == ["111"]
 
 

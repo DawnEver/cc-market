@@ -166,9 +166,7 @@ def test_a_found_address_records_where_it_came_from(conn):
     person = repo.load_person(conn, person_id)
 
     pages = {"https://www.uni.ac.uk/people/grace": "Email: grace.expert@uni.ac.uk.example"}
-    finding = enrich.find_email(
-        conn, person, page_fetcher=pages.get, homepage_urls=list(pages)
-    )
+    finding = enrich.find_email(conn, person, page_fetcher=pages.get, homepage_urls=list(pages))
     assert finding.email == "grace.expert@uni.ac.uk.example"
     assert finding.source == "institutional_profile"
     assert finding.source_url.startswith("https://www.uni.ac.uk")
@@ -198,8 +196,12 @@ def test_a_blocked_page_is_skipped_rather_than_retried(conn):
 def test_a_stored_address_is_reused_without_fetching(conn):
     person_id = repo.upsert_person(conn, Author(name="Grace Expert", idx=0, openalex_id="A1"))
     repo.record_email(
-        conn, person_id, "grace@uni.edu.example", source="published_corresponding",
-        source_url="https://doi.org/10.1/x", confidence=0.95,
+        conn,
+        person_id,
+        "grace@uni.edu.example",
+        source="published_corresponding",
+        source_url="https://doi.org/10.1/x",
+        confidence=0.95,
     )
     person = repo.load_person(conn, person_id)
 
@@ -628,7 +630,7 @@ def test_the_cover_author_block_ends_before_the_next_heading():
 
 
 def test_an_affiliation_bullet_is_never_read_as_a_name():
-    """"universit" cannot be followed by a word boundary, so for a while the
+    """ "universit" cannot be followed by a word boundary, so for a while the
     pattern that recognises an institution recognised no university at all and
     a second affiliation line became an author."""
     assert not ingest_pdf._looks_like_a_name("• Southwest Jiaotong University")

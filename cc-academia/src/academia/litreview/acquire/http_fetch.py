@@ -24,8 +24,15 @@ MAX_LINKS_PER_PAGE = 5
 
 # Path markers that identify a PDF payload even without a .pdf suffix.
 _PDF_PATH_MARKERS = (
-    "/bitstream/", "/bitstreams/", "/portalfiles/", "/files/", "/content/pdf/", "/stamppdf/",
-    "/ws/files/", "/pdf/", "/download",
+    "/bitstream/",
+    "/bitstreams/",
+    "/portalfiles/",
+    "/files/",
+    "/content/pdf/",
+    "/stamppdf/",
+    "/ws/files/",
+    "/pdf/",
+    "/download",
 )
 
 
@@ -35,7 +42,7 @@ def _get(url: str, session: Any = None, referer: str = "", **kwargs: Any) -> Any
 
 
 def _is_pdf_url(url: str) -> bool:
-    path = (urlparse(url.lower()).path or "")
+    path = urlparse(url.lower()).path or ""
     return path.endswith(".pdf") or any(marker in path for marker in _PDF_PATH_MARKERS)
 
 
@@ -47,12 +54,14 @@ def extract_pdf_links(html: str, base_url: str) -> list[str]:
     # us exactly where its PDF is. Always outranks link guessing.
     for match in re.finditer(
         r'<meta[^>]+name=["\']citation_pdf_url["\'][^>]+content=["\']([^"\']+)["\']',
-        html, re.IGNORECASE,
+        html,
+        re.IGNORECASE,
     ):
         found.append(urljoin(base_url, match.group(1)))
     for match in re.finditer(
         r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_pdf_url["\']',
-        html, re.IGNORECASE,
+        html,
+        re.IGNORECASE,
     ):
         found.append(urljoin(base_url, match.group(1)))
 
@@ -124,7 +133,11 @@ def fetch_pdf(
         if link == url:
             continue
         found = fetch_pdf(
-            link, target, follow_landing_page=False, session=session, referer=base,
+            link,
+            target,
+            follow_landing_page=False,
+            session=session,
+            referer=base,
         )
         if found is not None:
             return found

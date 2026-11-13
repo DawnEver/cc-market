@@ -1,9 +1,9 @@
 ---
 name: sharp-review
-description: Post-feature sharp review (锐评) —parallel reviewers, merge findings, sync task list
+description: Post-feature sharp review (sharp review) —parallel reviewers, merge findings, sync task list
 ---
 
-# Sharp Review (锐评)
+# Sharp Review (sharp review)
 
 Post-feature review: each run picks review profiles, gives each to a reviewer on a provider,
 and merges their schema-bound findings into one memory entry

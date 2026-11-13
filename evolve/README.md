@@ -1,11 +1,11 @@
 # evolve
 
-> *Join the glorious evolution — 加入光荣的进化吧！*
+> *Join the glorious evolution — join the glorious evolution! (the Chinese original of the tagline)*
 
 An iterative, test-driven **review→fix loop** skill. Each round drives the codebase closer
 to a clean state:
 
-1. **Critique (锐评)** the architecture and diff → an OPEN findings list.
+1. **Critique (sharp review)** the architecture and diff → an OPEN findings list.
 2. **Fan out subagents** to fix findings in parallel over disjoint file sets.
 3. **Review the un-fixed** and judge *why* each was left (false-positive / intentional /
    out-of-scope / needs-architecture-decision).

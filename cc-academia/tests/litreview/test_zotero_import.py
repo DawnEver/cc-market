@@ -81,14 +81,22 @@ def test_title_key_falls_back_when_stripping_leaves_little():
     # 'AllSAT_TACAS2005' is author-year-shaped but the whole name is the title;
     # stripping must not reduce it to ''.
     assert zi.title_key("AllSAT_TACAS2005.pdf") == "allsattacas2005"
-    assert zi.title_key("moggwalls2024_Automatic_Routing_of_Hairpin_End_Windings.pdf") == \
-        "automaticroutingofhairpinendwindings"
+    assert (
+        zi.title_key("moggwalls2024_Automatic_Routing_of_Hairpin_End_Windings.pdf")
+        == "automaticroutingofhairpinendwindings"
+    )
 
 
 def test_group_pdfs_merges_substring_stems_but_not_two_dois(tmp_path):
     a = _mk(tmp_path, "papers/moggwalls2024_Automatic_Routing_of_Hairpin_End_Windings.pdf")
-    b = _mk(tmp_path, "papers/moggwalls2024_Development_of_a_Tool_for_Automatic_Routing_of_Hairpin_End_Windings.pdf")
-    c = _mk(tmp_path, "papers/moggwalls2024_A_different_paper_on_Automatic_Routing_of_Hairpin_End_Windings.pdf")
+    b = _mk(
+        tmp_path,
+        "papers/moggwalls2024_Development_of_a_Tool_for_Automatic_Routing_of_Hairpin_End_Windings.pdf",
+    )
+    c = _mk(
+        tmp_path,
+        "papers/moggwalls2024_A_different_paper_on_Automatic_Routing_of_Hairpin_End_Windings.pdf",
+    )
     fake_doi = {a: None, b: "10.Z/3", c: "10.W/4"}
     groups = zi.group_pdfs([(a, 1), (b, 1), (c, 1)], doi_of=fake_doi.get)
     assert len(groups) == 2  # a merges into b; c stays separate (own DOI)
@@ -110,16 +118,28 @@ def test_group_pdfs_substring_merge_requires_same_author_year(tmp_path):
 
 class FakeZot:
     def item_template(self, item_type):
-        return {"itemType": item_type, "title": "", "creators": [], "tags": [],
-                "collections": [], "relations": {}}
+        return {
+            "itemType": item_type,
+            "title": "",
+            "creators": [],
+            "tags": [],
+            "collections": [],
+            "relations": {},
+        }
 
 
 def test_build_item_template_with_doi(monkeypatch):
-    monkeypatch.setattr(zi.zm, "fetch_crossref_doi", lambda doi: {
-        "itemType": "journalArticle", "title": "Real Title",
-        "creators": [{"creatorType": "author", "lastName": "Cygan", "firstName": "Marek"}],
-        "DOI": doi, "date": "2011",
-    })
+    monkeypatch.setattr(
+        zi.zm,
+        "fetch_crossref_doi",
+        lambda doi: {
+            "itemType": "journalArticle",
+            "title": "Real Title",
+            "creators": [{"creatorType": "author", "lastName": "Cygan", "firstName": "Marek"}],
+            "DOI": doi,
+            "date": "2011",
+        },
+    )
     g = zi.PdfGroup(key="doi:10.z/1", canonical=Path("x.pdf"), duplicates=[], doi="10.z/1")
     tmpl = zi.build_item_template(FakeZot(), g)
     assert tmpl["itemType"] == "journalArticle"
@@ -187,9 +207,14 @@ def test_import_filters_by_candidate_ids(tmp_path):
     ):
         _mk(tmp_path, f"papers/{name}")
     results = zi.import_workspace_pdfs(
-        tmp_path, "lib", "key", dry_run=True,
-        candidate_ids=["S2-c5f3ab59b6383b4a333431200ce3ff773d964c4e",
-                       "S2-fd75c6d3637078c5070cb4986a528428e6cee349"],
+        tmp_path,
+        "lib",
+        "key",
+        dry_run=True,
+        candidate_ids=[
+            "S2-c5f3ab59b6383b4a333431200ce3ff773d964c4e",
+            "S2-fd75c6d3637078c5070cb4986a528428e6cee349",
+        ],
     )
     assert len(results) == 2
     got = {r.canonical for r in results}

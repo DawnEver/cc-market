@@ -80,7 +80,7 @@ def test_pdf_spacing_and_fullwidth_at_are_normalized():
     from academia.reviewer.enrich import extract_emails
 
     assert extract_emails("alice.smith @ example . edu") == ["alice.smith@example.edu"]
-    assert extract_emails("alice.smith＠example.edu") == ["alice.smith@example.edu"]
+    assert extract_emails("alice.smith\uff20example.edu") == ["alice.smith@example.edu"]
 
 
 def test_html_entities_and_cloudflare_email_are_decoded():
@@ -88,9 +88,7 @@ def test_html_entities_and_cloudflare_email_are_decoded():
 
     assert extract_emails("alice&#64;example&#46;edu") == ["alice@example.edu"]
     encoded = "6b0a0702080e2b0e130a061b070e450e0f1e"
-    assert extract_emails(f'<a data-cfemail="{encoded}">protected</a>') == [
-        "alice@example.edu"
-    ]
+    assert extract_emails(f'<a data-cfemail="{encoded}">protected</a>') == ["alice@example.edu"]
 
 
 def test_email_split_across_html_elements_is_joined():
@@ -104,21 +102,21 @@ def test_email_split_across_html_elements_is_joined():
 def test_email_fragments_do_not_join_the_next_block_heading():
     from academia.reviewer.enrich import extract_emails
 
-    page = '<div><span>jad23</span><span>@example.edu</span></div><h2>Masters</h2>'
+    page = "<div><span>jad23</span><span>@example.edu</span></div><h2>Masters</h2>"
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
 def test_visible_email_fragments_are_normalized_after_markup_removal():
     from academia.reviewer.enrich import extract_emails
 
-    page = '<div>jad23</div><div>[at]</div><div>example.edu</div><h2>Masters</h2>'
+    page = "<div>jad23</div><div>[at]</div><div>example.edu</div><h2>Masters</h2>"
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
 def test_sentence_punctuation_does_not_turn_a_heading_into_a_domain():
     from academia.reviewer.enrich import extract_emails
 
-    page = '<p>jad23@example.edu.</p><h2>Masters</h2>'
+    page = "<p>jad23@example.edu.</p><h2>Masters</h2>"
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
@@ -160,11 +158,12 @@ def test_email_is_taken_from_the_candidates_own_paper(conn):
     _paper_with_author(
         conn, "p1", "Guohai Liu", corresponding=True, landing="https://doi.org/10.1/x"
     )
-    person = repo.load_person(conn, repo.upsert_person(conn, Author(name="Guohai Liu", idx=0, orcid="0000-0002-1825-0097")))
-
-    finding = contact.email_from_publications(
-        conn, person, fetcher=lambda url: SPRINGER_PAGE
+    person = repo.load_person(
+        conn,
+        repo.upsert_person(conn, Author(name="Guohai Liu", idx=0, orcid="0000-0002-1825-0097")),
     )
+
+    finding = contact.email_from_publications(conn, person, fetcher=lambda url: SPRINGER_PAGE)
 
     assert finding.email == "g.liu@ujs.edu.cn.example"
     assert finding.source == "published_corresponding"
@@ -176,11 +175,12 @@ def test_a_co_authors_address_is_not_attributed_to_the_candidate(conn):
     _paper_with_author(
         conn, "p1", "Wenxiang Zhao", corresponding=False, landing="https://doi.org/10.1/x"
     )
-    person = repo.load_person(conn, repo.upsert_person(conn, Author(name="Wenxiang Zhao", idx=0, orcid="0000-0002-1825-0097")))
-
-    finding = contact.email_from_publications(
-        conn, person, fetcher=lambda url: SPRINGER_PAGE
+    person = repo.load_person(
+        conn,
+        repo.upsert_person(conn, Author(name="Wenxiang Zhao", idx=0, orcid="0000-0002-1825-0097")),
     )
+
+    finding = contact.email_from_publications(conn, person, fetcher=lambda url: SPRINGER_PAGE)
 
     assert finding.email == ""
 
@@ -217,9 +217,7 @@ def test_unique_given_name_student_id_is_attributed_to_paper_author(conn):
     repo.ingest_paper(conn, paper)
     person = repo.load_person(
         conn,
-        repo.upsert_person(
-            conn, Author(name="Isiaka Shuaibu", idx=1, orcid="0000-0002-1825-0097")
-        ),
+        repo.upsert_person(conn, Author(name="Isiaka Shuaibu", idx=1, orcid="0000-0002-1825-0097")),
     )
 
     finding = contact.email_from_publications(
@@ -246,9 +244,7 @@ def test_unique_one_character_full_name_typo_is_attributed(conn):
     repo.ingest_paper(conn, paper)
     person = repo.load_person(
         conn,
-        repo.upsert_person(
-            conn, Author(name="Wei Wang", idx=0, orcid="0000-0002-1825-0097")
-        ),
+        repo.upsert_person(conn, Author(name="Wei Wang", idx=0, orcid="0000-0002-1825-0097")),
     )
 
     finding = contact.email_from_publications(
@@ -276,12 +272,8 @@ def test_a_sole_address_is_not_assigned_to_the_wrong_co_corresponding_author(con
     person_id = repo.upsert_person(
         conn, Author(name="Chunhua Liu", idx=1, orcid="0000-0001-0000-0002")
     )
-    repo.upsert_person(
-        conn, Author(name="Chun Hua Liu", idx=1, orcid="0000-0001-0000-0002")
-    )
-    repo.upsert_person(
-        conn, Author(name="Chun-Hua Liu", idx=1, orcid="0000-0001-0000-0002")
-    )
+    repo.upsert_person(conn, Author(name="Chun Hua Liu", idx=1, orcid="0000-0001-0000-0002"))
+    repo.upsert_person(conn, Author(name="Chun-Hua Liu", idx=1, orcid="0000-0001-0000-0002"))
     person = repo.load_person(conn, person_id)
 
     finding = contact.email_from_publications(
@@ -297,19 +289,21 @@ def test_papers_where_the_candidate_corresponded_are_tried_first(conn):
     """Fetches cost a second each; the paper most likely to carry their address wins."""
     _paper_with_author(conn, "p1", "Ada Lead", corresponding=False, landing="https://a/1")
     _paper_with_author(conn, "p2", "Ada Lead", corresponding=True, landing="https://a/2")
-    person = repo.load_person(conn, repo.upsert_person(conn, Author(name="Ada Lead", idx=0, orcid="0000-0002-1825-0097")))
+    person = repo.load_person(
+        conn, repo.upsert_person(conn, Author(name="Ada Lead", idx=0, orcid="0000-0002-1825-0097"))
+    )
 
     order = []
-    contact.email_from_publications(
-        conn, person, fetcher=lambda url: order.append(url) or ""
-    )
+    contact.email_from_publications(conn, person, fetcher=lambda url: order.append(url) or "")
 
     assert order[0] == "https://a/2"
 
 
 def test_nothing_is_fetched_without_a_landing_page(conn):
     _paper_with_author(conn, "p1", "Ada Lead", corresponding=True, landing="")
-    person = repo.load_person(conn, repo.upsert_person(conn, Author(name="Ada Lead", idx=0, orcid="0000-0002-1825-0097")))
+    person = repo.load_person(
+        conn, repo.upsert_person(conn, Author(name="Ada Lead", idx=0, orcid="0000-0002-1825-0097"))
+    )
 
     calls = []
     finding = contact.email_from_publications(
@@ -463,7 +457,11 @@ def test_a_directory_page_does_not_attribute_a_namesakes_address():
     from academia.reviewer.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    directory = ["wei.liu@ujs.edu.cn.example", "hui.liu@ujs.edu.cn.example", "zhang@ujs.edu.cn.example"]
+    directory = [
+        "wei.liu@ujs.edu.cn.example",
+        "hui.liu@ujs.edu.cn.example",
+        "zhang@ujs.edu.cn.example",
+    ]
 
     assert match_email_to_person(directory, person) == ""
 
@@ -472,7 +470,11 @@ def test_the_right_person_is_still_found_on_a_directory_page():
     from academia.reviewer.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
-    directory = ["wei.liu@ujs.edu.cn.example", "ghliu@ujs.edu.cn.example", "zhang@ujs.edu.cn.example"]
+    directory = [
+        "wei.liu@ujs.edu.cn.example",
+        "ghliu@ujs.edu.cn.example",
+        "zhang@ujs.edu.cn.example",
+    ]
 
     assert match_email_to_person(directory, person) == "ghliu@ujs.edu.cn.example"
 
@@ -489,9 +491,7 @@ def test_a_sole_surname_match_is_not_attributed_on_a_coauthored_paper():
     from academia.reviewer.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Syed Sabir Hussain Bukhari")
-    assert not match_email_to_person(
-        ["asif.hussain@example.edu"], person, allow_weak=False
-    )
+    assert not match_email_to_person(["asif.hussain@example.edu"], person, allow_weak=False)
 
 
 def test_a_page_on_the_institutions_own_domain_is_an_institutional_profile():
@@ -499,7 +499,9 @@ def test_a_page_on_the_institutions_own_domain_is_an_institutional_profile():
     from academia.reviewer.enrich import email_source_for
 
     assert (
-        email_source_for("https://www.eng.mcmaster.ca.example/ece/faculty/x", "bilginb@mcmaster.ca.example")
+        email_source_for(
+            "https://www.eng.mcmaster.ca.example/ece/faculty/x", "bilginb@mcmaster.ca.example"
+        )
         == "institutional_profile"
     )
     assert (
@@ -735,7 +737,9 @@ def test_publication_lookup_honours_the_configured_paper_budget(conn):
 
 
 def test_corresponding_author_accepts_the_sole_opaque_address(conn):
-    person_id = repo.upsert_person(conn, Author(name="Ada Researcher", idx=0, openalex_id="A-opaque"))
+    person_id = repo.upsert_person(
+        conn, Author(name="Ada Researcher", idx=0, openalex_id="A-opaque")
+    )
     paper = Paper.build(
         title="Opaque directory identifiers",
         source="openalex",
@@ -788,13 +792,14 @@ def test_the_fetcher_decodes_html_and_extracts_pdfs():
     assert "someone@uni.edu.example" in fetcher("https://repo.example/p.pdf")
 
     html = PageFetcher(
-        getter=lambda url, source, timeout=15: (b"<p>a@b.edu.example</p>", "text/html", url), delay=0
+        getter=lambda url, source, timeout=15: (b"<p>a@b.edu.example</p>", "text/html", url),
+        delay=0,
     )
     assert "a@b.edu.example" in html("https://example.edu/staff")
 
 
 def test_an_all_initials_local_part_is_a_weak_match():
-    """"gww" is Geng Wei Wei, and "ys" is Yilmaz Sozer.
+    """ "gww" is Geng Wei Wei, and "ys" is Yilmaz Sozer.
 
     An address that is nothing but the person's initials is the ordinary form on
     Chinese university staff pages and on plenty of US ones. Scoring it zero
@@ -830,7 +835,7 @@ def test_a_sole_initials_address_on_a_staff_page_is_accepted():
 
 
 def test_a_package_version_is_not_an_address():
-    """"bootstrap@5.1.3" sits in the <script> tags of most modern staff pages.
+    """ "bootstrap@5.1.3" sits in the <script> tags of most modern staff pages.
 
     It has the shape of an address and none of the substance. A real top-level
     domain is alphabetic, which is enough to tell the two apart.
@@ -875,9 +880,10 @@ def test_recent_publications_are_loaded_by_stable_author_id(conn):
         paper.authors = [Author(name="Ada Researcher", idx=0, openalex_id="A123")]
         return [paper]
 
-    assert contact.hydrate_recent_publications(
-        conn, [person], year_from=2023, limit=8, loader=load
-    ) == 1
+    assert (
+        contact.hydrate_recent_publications(conn, [person], year_from=2023, limit=8, loader=load)
+        == 1
+    )
     assert seen == {"author_id": "A123", "year_from": 2023, "limit": 8}
     assert conn.execute("SELECT count(*) FROM papers WHERE doi = '10.1/recent'").fetchone()[0] == 1
 
@@ -901,12 +907,16 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
     )
     person = Person(person_id=person_id, display_name="Zaixin Song")
     repo.record_email(
-        conn, person_id, "zaixisong2@cityu.edu.hk.example",
-        source="orcid_public", confidence=0.7,
+        conn,
+        person_id,
+        "zaixisong2@cityu.edu.hk.example",
+        source="orcid_public",
+        confidence=0.7,
     )
 
     finding = discover_email(
-        conn, person,
+        conn,
+        person,
         fetcher=lambda url: "zaixin.song@polyu.edu.hk.example",
         extra_urls=["https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/"],
     )
@@ -957,9 +967,9 @@ def test_author_proximity_uses_visible_html_not_markup():
     person = Person(person_id="person-sabir", display_name="Syed Sabir Hussain Bukhari")
     markup = "x" * 500
     page = (
-        '<section><h2>Syed Sabir Hussain Bukhari</h2>'
+        "<section><h2>Syed Sabir Hussain Bukhari</h2>"
         f'<div data-layout="{markup}" class="contact">'
-        '<span>Email</span>: sabir@iba-suk.edu.pk.example</div></section>'
+        "<span>Email</span>: sabir@iba-suk.edu.pk.example</div></section>"
     )
 
     assert match_email_in_text(page, person) == "sabir@iba-suk.edu.pk.example"
@@ -1042,7 +1052,10 @@ def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
         "https://songlab.example.org/team": "zaixisong2@cityu.edu.hk.example",
     }
     discover_email(
-        conn, person, fetcher=pages.get, extra_urls=list(pages),
+        conn,
+        person,
+        fetcher=pages.get,
+        extra_urls=list(pages),
     )
 
     stored = {row["email"] for row in repo.emails_of(conn, person_id)}
@@ -1068,8 +1081,12 @@ def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
     )
     person = Person(person_id=person_id, display_name="Ada Researcher")
     repo.record_email(
-        conn, person_id, "ada@uni.edu.example",
-        source="institutional_profile", source_url="https://uni.edu/ada", confidence=0.9,
+        conn,
+        person_id,
+        "ada@uni.edu.example",
+        source="institutional_profile",
+        source_url="https://uni.edu/ada",
+        confidence=0.9,
     )
 
     def refuse(*args, **kwargs):
@@ -1096,7 +1113,11 @@ def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
     )
     person = Person(person_id=person_id, display_name="Zaixin Song")
     repo.record_email(
-        conn, person_id, "zaixisong2@cityu.edu.hk.example", source="orcid_public", confidence=0.7,
+        conn,
+        person_id,
+        "zaixisong2@cityu.edu.hk.example",
+        source="orcid_public",
+        confidence=0.7,
     )
     monkeypatch.setattr(
         contact_module,
@@ -1105,7 +1126,8 @@ def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
     )
 
     finding = discover_email(
-        conn, person,
+        conn,
+        person,
         fetcher=lambda url: "zaixin.song@polyu.edu.hk.example",
         extra_urls=["https://www.polyu.edu.hk/ise/people/academic-staff/zaixin-song/"],
     )
@@ -1132,4 +1154,6 @@ def test_pdf_text_falls_back_when_the_layout_reader_is_absent(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", without_ingest)
 
-    assert "fallback@uni.edu.example" in contact.pdf_text(_one_page_pdf("write to fallback@uni.edu.example"))
+    assert "fallback@uni.edu.example" in contact.pdf_text(
+        _one_page_pdf("write to fallback@uni.edu.example")
+    )

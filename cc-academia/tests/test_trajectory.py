@@ -8,8 +8,12 @@ def person_with_history() -> Person:
         person_id="p1",
         display_name="Ada Researcher",
         affiliations=[
-            Affiliation("gb", "University B", "GB", year_from=2022, is_current=True, source="openalex"),
-            Affiliation("cn", "University A", "CN", year_from=2016, year_to=2021, source="openalex"),
+            Affiliation(
+                "gb", "University B", "GB", year_from=2022, is_current=True, source="openalex"
+            ),
+            Affiliation(
+                "cn", "University A", "CN", year_from=2016, year_to=2021, source="openalex"
+            ),
         ],
         education=[Education("edu", "University C", degree="PhD", year_to=2015, source="orcid")],
     )
@@ -43,8 +47,7 @@ def test_country_exposure_counts_each_person_once_per_country():
 def test_an_implausibly_broad_bibliographic_history_is_flagged():
     person = person_with_history()
     person.affiliations.extend(
-        Affiliation(f"i{i}", f"Institution {i}", "CN", source="openalex")
-        for i in range(21)
+        Affiliation(f"i{i}", f"Institution {i}", "CN", source="openalex") for i in range(21)
     )
     assert "requires verification" in trajectory.quality_note(person)
 

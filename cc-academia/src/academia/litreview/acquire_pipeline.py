@@ -15,10 +15,21 @@ ARTIFACT_VERSION = 1
 INCLUDED_DECISIONS = {"include", "maybe"}
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3, "": 3}
 CSV_FIELDS = [
-    "candidate_id", "title", "publication_year", "publication_title",
-    "doi", "html_url", "pdf_url", "decision", "confidence",
-    "inclusion_reasons", "exclusion_reasons", "uncertainties",
-    "abstract_available", "download_priority", "approved",
+    "candidate_id",
+    "title",
+    "publication_year",
+    "publication_title",
+    "doi",
+    "html_url",
+    "pdf_url",
+    "decision",
+    "confidence",
+    "inclusion_reasons",
+    "exclusion_reasons",
+    "uncertainties",
+    "abstract_available",
+    "download_priority",
+    "approved",
 ]
 
 
@@ -168,8 +179,7 @@ def write_download_queue(
     confirmation = {
         "confirmed": bool(confirmed_by_user),
         "confirmed_at": (
-            datetime.now().astimezone().isoformat(timespec="seconds")
-            if confirmed_by_user else None
+            datetime.now().astimezone().isoformat(timespec="seconds") if confirmed_by_user else None
         ),
         "confirmed_by": "user" if confirmed_by_user else None,
         "screening_sha256": _screening_digest(screening_path),
@@ -186,9 +196,7 @@ def write_download_queue(
     return 0
 
 
-def approve_download_queue(
-    queue_path: Path, candidate_ids: list[str], approved_by: str
-) -> int:
+def approve_download_queue(queue_path: Path, candidate_ids: list[str], approved_by: str) -> int:
     """Approve selected queue entries and record the approver identity."""
     if not approved_by.strip():
         raise ValueError("approved_by is required")
@@ -201,9 +209,13 @@ def approve_download_queue(
         raise ValueError(f"unknown candidate ids: {', '.join(sorted(missing))}")
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-    artifact.setdefault("screening_confirmation", {}).update({
-        "confirmed": True, "confirmed_at": timestamp, "confirmed_by": approved_by.strip(),
-    })
+    artifact.setdefault("screening_confirmation", {}).update(
+        {
+            "confirmed": True,
+            "confirmed_at": timestamp,
+            "confirmed_by": approved_by.strip(),
+        }
+    )
 
     count = 0
     for item in artifact.get("items", []):
@@ -256,23 +268,22 @@ def manifest_rows(ledger_path: Path, queue_path: Path) -> list[dict[str, Any]]:
     from academia.litreview.acquire import ledger as ledger_mod
 
     queue = json.loads(queue_path.read_text(encoding="utf-8")) if queue_path.exists() else {}
-    by_id = {
-        str(item.get("candidate_id") or ""): item
-        for item in queue.get("items", [])
-    }
+    by_id = {str(item.get("candidate_id") or ""): item for item in queue.get("items", [])}
 
     rows: list[dict[str, Any]] = []
     for cid, record in ledger_mod.verified_downloads(ledger_path).items():
         item = by_id.get(cid, {})
-        rows.append({
-            "candidate_id": cid,
-            "title": record.title or str(item.get("title") or ""),
-            "doi": str(item.get("doi") or ""),
-            "article_number": str(item.get("article_number") or ""),
-            "pdf_path": record.pdf_path,
-            "screening_reason": "; ".join(item.get("inclusion_reasons") or []),
-            "reading_questions": list(item.get("uncertainties") or []),
-        })
+        rows.append(
+            {
+                "candidate_id": cid,
+                "title": record.title or str(item.get("title") or ""),
+                "doi": str(item.get("doi") or ""),
+                "article_number": str(item.get("article_number") or ""),
+                "pdf_path": record.pdf_path,
+                "screening_reason": "; ".join(item.get("inclusion_reasons") or []),
+                "reading_questions": list(item.get("uncertainties") or []),
+            }
+        )
     return sorted(rows, key=lambda r: r["candidate_id"])
 
 
@@ -308,8 +319,9 @@ def match_manual_drop(queue_path: Path, run_dir: Path) -> list[dict[str, Any]]:
             score = 0
             if doi and doi.replace("/", "_") in haystack.replace("/", "_"):
                 score = 100
-            elif cid and re.search(rf"(?:^|[^a-z0-9]){re.escape(cid.lower())}(?:[^a-z0-9]|$)",
-                                   haystack):
+            elif cid and re.search(
+                rf"(?:^|[^a-z0-9]){re.escape(cid.lower())}(?:[^a-z0-9]|$)", haystack
+            ):
                 # Token boundaries matter: a short id like "a" would otherwise
                 # match any filename containing that letter.
                 score = 80
@@ -321,15 +333,17 @@ def match_manual_drop(queue_path: Path, run_dir: Path) -> list[dict[str, Any]]:
             continue
         cid = str(best.get("candidate_id") or "")
         claimed.add(cid)
-        rows.append({
-            "candidate_id": cid,
-            "title": str(best.get("title") or ""),
-            "doi": str(best.get("doi") or ""),
-            "article_number": str(best.get("article_number") or ""),
-            "pdf_path": str(pdf.resolve()),
-            "screening_reason": "; ".join(best.get("inclusion_reasons") or []),
-            "reading_questions": list(best.get("uncertainties") or []),
-        })
+        rows.append(
+            {
+                "candidate_id": cid,
+                "title": str(best.get("title") or ""),
+                "doi": str(best.get("doi") or ""),
+                "article_number": str(best.get("article_number") or ""),
+                "pdf_path": str(pdf.resolve()),
+                "screening_reason": "; ".join(best.get("inclusion_reasons") or []),
+                "reading_questions": list(best.get("uncertainties") or []),
+            }
+        )
     return rows
 
 
@@ -361,21 +375,24 @@ def _build_papers(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not isinstance(questions, list) or not all(isinstance(q, str) for q in questions):
             raise ValueError(f"reading_questions must be a string array for {cid}")
 
-        papers.append({
-            "candidate_id": cid,
-            "title": title,
-            "doi": str(row.get("doi") or "").strip(),
-            "article_number": str(row.get("article_number") or "").strip(),
-            "pdf_path": str(pdf_path),
-            "sha256": sha256_file(pdf_path),
-            "screening_reason": str(row.get("screening_reason") or "").strip(),
-            "reading_questions": questions,
-        })
+        papers.append(
+            {
+                "candidate_id": cid,
+                "title": title,
+                "doi": str(row.get("doi") or "").strip(),
+                "article_number": str(row.get("article_number") or "").strip(),
+                "pdf_path": str(pdf_path),
+                "sha256": sha256_file(pdf_path),
+                "screening_reason": str(row.get("screening_reason") or "").strip(),
+                "reading_questions": questions,
+            }
+        )
     return papers
 
 
-def write_download_manifest(source: Path | list[dict[str, Any]], out_dir: Path,
-                           write_md: bool = False) -> int:
+def write_download_manifest(
+    source: Path | list[dict[str, Any]], out_dir: Path, write_md: bool = False
+) -> int:
     """Create a validated pre-ingest PDF download manifest.
 
     Accepts either already-built rows (the ledger path) or a legacy match
@@ -408,25 +425,34 @@ def write_download_manifest(source: Path | list[dict[str, Any]], out_dir: Path,
 
     if write_md:
         lines = [
-            "# Download Manifest", "",
+            "# Download Manifest",
+            "",
             f"Validated PDFs: {len(papers)}",
-            f"Machine-readable manifest: `{manifest_path.resolve()}`", "",
+            f"Machine-readable manifest: `{manifest_path.resolve()}`",
+            "",
         ]
         for paper in papers:
-            lines.extend([
-                f"## {paper['candidate_id']}: {paper['title']}", "",
-                f"- PDF: `{paper['pdf_path']}`",
-                f"- SHA-256: `{paper['sha256']}`",
-                f"- Screening reason: {paper['screening_reason'] or 'Not recorded'}",
-            ])
+            lines.extend(
+                [
+                    f"## {paper['candidate_id']}: {paper['title']}",
+                    "",
+                    f"- PDF: `{paper['pdf_path']}`",
+                    f"- SHA-256: `{paper['sha256']}`",
+                    f"- Screening reason: {paper['screening_reason'] or 'Not recorded'}",
+                ]
+            )
             if paper["reading_questions"]:
                 lines.append("- Reading questions: " + "; ".join(paper["reading_questions"]))
             lines.append("")
-        lines.extend([
-            "## Handoff Gate", "",
-            "Do you want to decompose all validated PDFs with `paper_pdf_ingest` now?",
-            "No decomposition or detailed-reading work has been started.", "",
-        ])
+        lines.extend(
+            [
+                "## Handoff Gate",
+                "",
+                "Do you want to decompose all validated PDFs with `paper_pdf_ingest` now?",
+                "No decomposition or detailed-reading work has been started.",
+                "",
+            ]
+        )
         (out_dir / "download_manifest.md").write_text("\n".join(lines), encoding="utf-8")
         print(f"validated={len(papers)}; handoff gate reached")
         print("Do you want to decompose all validated PDFs with paper_pdf_ingest now?")

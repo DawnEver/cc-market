@@ -1,6 +1,6 @@
 # Step 04 — PDF decomposition (on-demand, cached)
 
-按需分解 PDF → 结构化 markdown。已分解的论文自动跳过（缓存复用）。
+Decompose PDFs on demand → structured markdown. Papers already decomposed are skipped automatically (the cache is reused).
 
 ## Core principle
 
