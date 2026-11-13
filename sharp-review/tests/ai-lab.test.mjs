@@ -57,9 +57,15 @@ test('a project without a dev-lab interpreter states no registry rules (empty, n
   assert.equal(projectRuleIds(dir), '');
 }));
 
+// `fallback: null`, never `undefined`: an undefined option takes the default, the machine's cached ai-lab interpreter.
 test('a project and an ai-lab without dev-lab state no principles (an empty list file, never omitted)', () => withDir((dir) => {
-  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: undefined }), 'utf8')), { principles: [] });
+  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: null }), 'utf8')), { principles: [] });
 }));
+
+test('control: this checkout, whose venv carries dev-lab, states its principles', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  assert.ok(JSON.parse(readFileSync(projectPrinciples(root, { fallback: null }), 'utf8')).principles.length > 0);
+});
 
 test('an interpreter without ai-lab cannot plan: no planner of our own', () => {
   assert.throws(() => planRun({ run_id: 'r' }, { python: process.execPath }),
