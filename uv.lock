@@ -4,8 +4,8 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "ai-lab"
-version = "0.0.1.dev362+ga1912f2f2"
-source = { git = "https://github.com/DawnEver/ai-lab.git?branch=integrate%2Fmain#a1912f2f284d6917278c88c2806c828cad54cb8c" }
+version = "0.0.1.dev366+ga02128300"
+source = { git = "https://github.com/DawnEver/ai-lab.git?branch=integrate%2Fmain#a02128300240930bf687289c926597b157918faa" }
 dependencies = [
     { name = "lab-commons", extra = ["paths"] },
 ]
@@ -281,8 +281,8 @@ wheels = [
 
 [[package]]
 name = "dev-lab"
-version = "0.0.1.dev3274+ge2d492ff9"
-source = { git = "https://github.com/DawnEver/dev-lab.git?branch=integrate%2Fmain#e2d492ff9b7c30280ba4633cc55d5be086a0256e" }
+version = "0.0.1.dev3415+g7a41b8f17"
+source = { git = "https://github.com/DawnEver/dev-lab.git?branch=integrate%2Fmain#7a41b8f1715f7cbbc225a298c6b95335eeefbb22" }
 dependencies = [
     { name = "cryptography" },
     { name = "lab-commons", extra = ["io", "paths", "structured", "units"] },
@@ -337,8 +337,8 @@ wheels = [
 
 [[package]]
 name = "lab-commons"
-version = "0.3.1.dev1470+gde715ae41"
-source = { git = "https://github.com/DawnEver/lab-commons.git#de715ae4191c5aa0a7522198aae7153a6b91d850" }
+version = "0.3.1.dev1500+g2915f2d36"
+source = { git = "https://github.com/DawnEver/lab-commons.git#2915f2d361a9867e29b866ab4a07dd7e1b86b284" }
 
 [package.optional-dependencies]
 io = [

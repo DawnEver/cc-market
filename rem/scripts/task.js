@@ -6,6 +6,9 @@
 //   task.js close <slug> ["<reason>"] [--journal-only D<n>,...]
 //     refuses while an item is open or a decision is undistilled, then archives the task
 //     (git mv) to .claude/memory/<close-date>/task-<slug>/
+// An agent's (user ruling 2026-11-15: an agent opens a task only under the user's authorization):
+//   task.js request <slug> "<goal>"   records a request with a code; the user's own prompt
+//     `approve <code>` (or `批准 <code>`) grants it, and then the agent may run task.js open
 // Before close, distill (any session): cite tasks/<slug>/JOURNAL.md#D<n> from a memory entry
 // (remember.js --from), a rule, or a bound doc. `task.js distill-status [<slug>]` lists what is left.
 // Any session, on its BOUND task (--task <slug>, else the worktree/branch name):
@@ -29,6 +32,7 @@ import { isMain } from '../shared/lib.mjs';
 import {
   openTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask,
 } from './tasks.mjs';
+import { requestAuthority } from './authority.mjs';
 
 const PREFIX = '[task]';
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -52,7 +56,13 @@ const JOURNAL_VERBS = { log: 'progress', decide: 'decision', 'open-item': 'open-
 export function main(argv) {
   const args = [...argv];
   const verb = args.shift();
-  if (verb === 'open') {
+  if (verb === 'request') {
+    const [slug, ...goal] = args;
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug || '')) throw new Error(`request needs a kebab-case slug, got ${slug}`);
+    const asked = requestAuthority(cwd, 'open', slug, goal.join(' '));
+    console.log(`${PREFIX} requested open ${slug}: ask the user to reply \`approve ${asked.code}\` (or \`批准 ${asked.code}\`); `
+      + `then run task.js open ${slug} "<goal>"`);
+  } else if (verb === 'open') {
     const scope = (flag(args, '--scope') || '').split(',').map(s => s.trim()).filter(Boolean);
     const owner = flag(args, '--owner') || 'user';
     const [slug, ...goal] = args;
