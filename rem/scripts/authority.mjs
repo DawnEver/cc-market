@@ -25,6 +25,13 @@ export const RECORD_TTL_MS = 30 * 60 * 1000;
 // The whole prompt must be the command: a prompt that merely mentions it is not one.
 const COMMAND_RE = /^\s*\/(?:rem:)?task\s+(open|close)\s+([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s|$)/;
 
+// The user's approval of an agent's request: the whole prompt is the verb and the code.
+const APPROVE_RE = /^\s*(?:\/(?:rem:)?task\s+)?(?:approve|批准|同意)\s+([0-9a-f]{6})\s*$/i;
+
+export function parseApproval(prompt) {
+  return String(prompt || '').match(APPROVE_RE)?.[1]?.toLowerCase() ?? null;
+}
+
 export function parseTaskCommand(prompt) {
   const m = String(prompt || '').match(COMMAND_RE);
   return m ? { verb: m[1], slug: m[2] } : null;
@@ -55,9 +62,29 @@ export function readHistory(start) {
 
 const append = (file, event) => appendFileSync(file, JSON.stringify(event) + '\n', { encoding: 'utf8', mode: 0o600 });
 
+// An agent's request to open or close a task, recorded with a short code the user approves.
+// It grants nothing by itself: only recordUserCommand (the user's own prompt) turns it into a grant.
+export function requestAuthority(start, verb, slug, goal = '', now = Date.now()) {
+  const file = historyFile(start);
+  const request = { event: 'requested', code: randomBytes(3).toString('hex'), verb, slug, goal: String(goal), at: now };
+  withLock(file, () => append(file, request));
+  return request;
+}
+
+function approvedRequest(start, code, now) {
+  const events = readHistory(start);
+  const used = new Set(events.filter(e => e.event === 'granted' && e.code).map(e => e.code));
+  return events.filter(e => e.event === 'requested' && e.code === code && !used.has(code) && now - e.at < RECORD_TTL_MS)
+    .sort((a, b) => b.at - a.at)[0] ?? null;
+}
+
 // Called by the UserPromptSubmit hook only. Returns the grant, or null for any other prompt.
+// A grant comes from the user's `/rem:task open|close <slug>`, or from the user's
+// `approve <code>` naming a live request an agent made (user ruling 2026-11-15).
 export function recordUserCommand(start, prompt, session = '', now = Date.now()) {
-  const cmd = parseTaskCommand(prompt);
+  const code = parseApproval(prompt);
+  const asked = code ? approvedRequest(start, code, now) : null;
+  const cmd = parseTaskCommand(prompt) ?? (asked && { verb: asked.verb, slug: asked.slug, code });
   if (!cmd) return null;
   const file = historyFile(start);
   const grant = {
@@ -77,7 +104,10 @@ export function consumeAuthority(start, verb, slug, now = Date.now()) {
     const spent = new Set(events.filter(e => e.event === 'consumed').map(e => e.id));
     const hit = events.filter(e => e.event === 'granted' && !spent.has(e.id) && e.verb === verb && e.slug === slug && now - e.at < RECORD_TTL_MS)
       .sort((a, b) => b.at - a.at)[0];
-    if (!hit) throw new Error(`no user authority to ${verb} task ${slug}: the user types /rem:task ${verb} ${slug} …`);
+    if (!hit) {
+      throw new Error(`no user authority to ${verb} task ${slug}: run \`task.js request ${slug} "<goal>"\` `
+        + `and ask the user to approve its code, or the user types /rem:task ${verb} ${slug} …`);
+    }
     append(file, { event: 'consumed', id: hit.id, verb, slug, at: now });
     return hit.id;
   });
