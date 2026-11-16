@@ -160,7 +160,7 @@ describe('an archived task has the memory architecture', () => {
     const r = spawnSync(process.execPath, [RECALL], { input: JSON.stringify({ prompt: 'zebra copy', cwd: root }), encoding: 'utf8', cwd: root });
     const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
     assert.match(ctx, /zebra copy reasons/);
-    assert.doesNotMatch(ctx, /Bound task/);
+    assert.doesNotMatch(ctx, /^task alpha:/m);
   });
 
   it('stays readable by provenance: task.js show finds the archived task', () => {

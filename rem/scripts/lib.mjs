@@ -238,34 +238,39 @@ export const byteOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // path date, scope to the directory holding .claude/memory/.
 export function listEntries(scopeRoot) {
   const memDir = join(scopeRoot, '.claude', 'memory');
-  const entries = [];
-  for (const abs of collectMemoryFiles(memDir)) {
-    const rel = relative(memDir, abs).replace(/\\/g, '/');
-    const taskDir = rel.match(TASK_DIR_RE)?.[1];
-    if (!taskDir && !ENTRY_FILE_RE.test(rel)) continue;
-    const path = taskDir || rel;
-    let content = '';
-    try { content = readFileSync(abs, 'utf8'); } catch { continue; }
-    const { fields } = parseFrontmatter(content);
-    const typeMatch = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m);
-    const date = path.slice(0, 10).replace(/\//g, '-');
-    entries.push({
-      path,
-      date,
-      kind: taskDir ? 'task' : (fields.kind || 'entry'),
-      name: fields.name || basename(path, '.md'),
-      description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
-      type: typeMatch ? typeMatch[1] : null,
-      task: fields.task || null,
-      created: fields.created || date,
-      from: parseList(content, 'from'),
-      mergedFrom: parseRefs(content, 'merged_from'),
-      supersedes: parseRefs(content, 'supersedes'),
-      corrects: parseRefs(content, 'corrects'),
-    });
-  }
-  entries.sort((a, b) => byteOrder(b.date, a.date) || byteOrder(a.path, b.path));
-  return entries;
+  const entries = collectMemoryFiles(memDir)
+    .map(abs => readEntry(relative(memDir, abs).replace(/\\/g, '/'), abs))
+    .filter(Boolean);
+  return sortEntries(entries);
+}
+
+export const sortEntries = entries => entries.sort((a, b) => byteOrder(b.date, a.date) || byteOrder(a.path, b.path));
+
+// The entry the memory file at `rel` (relative to .claude/memory/, `/`-separated) holds, or null
+// when it is not one (outside a dated directory, unreadable).
+export function readEntry(rel, abs) {
+  const taskDir = rel.match(TASK_DIR_RE)?.[1];
+  if (!taskDir && !ENTRY_FILE_RE.test(rel)) return null;
+  const path = taskDir || rel;
+  let content = '';
+  try { content = readFileSync(abs, 'utf8'); } catch { return null; }
+  const { fields } = parseFrontmatter(content);
+  const typeMatch = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m);
+  const date = path.slice(0, 10).replace(/\//g, '-');
+  return {
+    path,
+    date,
+    kind: taskDir ? 'task' : (fields.kind || 'entry'),
+    name: fields.name || basename(path, '.md'),
+    description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
+    type: typeMatch ? typeMatch[1] : null,
+    task: fields.task || null,
+    created: fields.created || date,
+    from: parseList(content, 'from'),
+    mergedFrom: parseRefs(content, 'merged_from'),
+    supersedes: parseRefs(content, 'supersedes'),
+    corrects: parseRefs(content, 'corrects'),
+  };
 }
 
 // Entries a newer entry names in `merged_from` or `supersedes` (their content has a

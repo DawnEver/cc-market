@@ -81,8 +81,8 @@ Recall (`scripts/recall.js`) is scoped by the binding, on every prompt:
 - the bound task as ONE line of at most 200 bytes (`task <slug>: N open, M decisions, last D<n>
   (MM-DD) "..."; detail: task.js status`), only when it changed since the session last saw it
   (and again after a compaction); `task.js status` (at most 2 KB) and `task.js show` go deeper;
-- entries tagged with the bound task rank first; untagged entries of the scope of cwd and of
-  the task's `scope:` paths; the bound docs (`doc_source`) covering those paths;
+- entries tagged with the bound task rank first; then the untagged entries of the root's memory, and
+  the bound docs (`doc_source`) covering the task's `scope:` paths (every bound doc when it has none);
 - an entry tagged with ANOTHER task never comes in, unless the prompt names that task.
 
 `remember.js` tags each entry it writes with `task: <slug>` of the bound task.

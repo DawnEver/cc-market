@@ -8,8 +8,8 @@
 // works on ONE task, bound by the user's instruction (--task) or by the user's `task: <slug>`
 // prompt (recorded by dev-lab, read here), and appends only to that task's journal.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync } from 'fs';
+import { join, dirname, resolve, basename } from 'path';
 import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
@@ -135,8 +135,31 @@ export function listTasks(start) {
     .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 }
 
-// The main checkout of the repository at `start` (where its tasks live, from any worktree).
+// Slug and status of every task, reading TASK.md only (no journal): what recall needs per prompt.
+export function listTaskHeads(start) {
+  const dir = tasksDir(start);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && SLUG_RE.test(e.name) && existsSync(join(dir, e.name, 'TASK.md')))
+    .map(e => ({ slug: e.name, status: parseFrontmatter(readFileSync(join(dir, e.name, 'TASK.md'), 'utf8')).fields.status || 'open' }));
+}
+
+// The main checkout of the repository at `start` (where its tasks live, from any worktree):
+// read from the files git keeps (.git, or a worktree's gitdir and its commondir) -- no process
+// spawn on the per-prompt path; git itself answers only a layout those files do not explain.
 export function mainCheckout(start) {
+  const root = findProjectRoot(start);
+  try {
+    const dotGit = join(root, '.git');
+    if (statSync(dotGit).isDirectory()) return root;
+    const gitDir = resolve(root, readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m)[1].trim());
+    const common = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
+    if (basename(common) === '.git') return dirname(common);
+  } catch { /* not a plain checkout or worktree: ask git */ }
+  return mainCheckoutByGit(start);
+}
+
+function mainCheckoutByGit(start) {
   const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
     { cwd: findProjectRoot(start), encoding: 'utf8' });
   return r.status === 0 ? dirname(r.stdout.trim()) : findProjectRoot(start);
