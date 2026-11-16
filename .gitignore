@@ -49,7 +49,6 @@ output/
 !**/.claude/output-styles/**
 !**/.claude/docs/
 !**/.claude/docs/**
-**/.claude/rules/MEMORY.md
 **/_meta.json
 !**/attic/**
 **/.claude/**/__pycache__/
