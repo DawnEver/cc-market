@@ -68,14 +68,29 @@ function memoryFiles(root) {
   return gitList(root, ['--', ':(glob)**/.claude/memory/**/*.md']).filter(p => !FROZEN_RE.test(p));
 }
 
-// Retired generated files, tracked or not (an ignored one too): `{ path, tracked }`.
+// Retired generated files, tracked or not (an ignored one too): `{ path, tracked }`. They sit in
+// a `.claude/` beside tracked ones (the root's, a child scope's), so those directories are
+// checked on disk -- a walk of every untracked file would cost minutes in a large checkout.
 export function orphanedFiles(root) {
-  const specs = ['--', ':(glob)**/.claude/rules/MEMORY.md', ':(glob)**/.claude/meta/**', ':(glob)**/.claude/memory-index.md'];
-  const tracked = new Set(gitList(root, specs));
-  return [...new Set([...tracked, ...gitList(root, ['--others', ...specs])])]
-    .filter(p => !FROZEN_RE.test(p) && (ORPHAN_RE.test(p) || CHILD_INDEX_RE.test(p)))
-    .sort()
-    .map(path => ({ path, tracked: tracked.has(path) }));
+  const tracked = new Set(gitList(root, ['--', ':(glob)**/.claude/**']));
+  const homes = new Set(['']);
+  for (const p of tracked) {
+    const i = p.indexOf('/.claude/');
+    if (i > 0) homes.add(p.slice(0, i));
+  }
+  const found = new Set([...tracked].filter(p => ORPHAN_RE.test(p) || CHILD_INDEX_RE.test(p)));
+  const filesUnder = rel => {
+    const abs = join(root, rel);
+    if (!existsSync(abs)) return [];
+    return readdirSync(abs, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? filesUnder(`${rel}/${e.name}`) : [`${rel}/${e.name}`]));
+  };
+  for (const home of homes) {
+    const claude = home ? `${home}/.claude` : '.claude';
+    if (existsSync(join(root, claude, 'rules', 'MEMORY.md'))) found.add(`${claude}/rules/MEMORY.md`);
+    for (const f of filesUnder(`${claude}/meta`)) found.add(f);
+    if (home && existsSync(join(root, claude, 'memory-index.md'))) found.add(`${claude}/memory-index.md`);
+  }
+  return [...found].filter(p => !FROZEN_RE.test(p)).sort().map(path => ({ path, tracked: tracked.has(path) }));
 }
 
 // The child scopes' tracked memory files: `{ path, scope, rel }`.
