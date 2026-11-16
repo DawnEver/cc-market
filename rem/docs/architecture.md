@@ -21,7 +21,7 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
   /rem skill:
-    ├── main loop: run the user-gated crystallize check first (a fork can't prompt; a decline waits a full advisory step)
+    ├── main loop: run the user-gated crystallize check first (a fork can't prompt; one decline is permanent)
     ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
     │   keeps prep/memory-write noise out of the main session) → returns a one-line recap
     ├── rem-prep.js — read-only: entries read this session, visible / hidden counts, advisory
@@ -34,7 +34,7 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
     ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
     └── close <slug>          → task.js close: refuse until distilled, then git mv into
                                 .claude/memory/<date>/task-<slug>/ (hidden, kept)
-  task.js log|decide|open-item|close-item|handoff → append to the bound task's JOURNAL.md
+  task.js <append verb> → append to the bound task's JOURNAL.md (every verb: task.js help)
 
   /todo skill (the one backlog):
     ├── /todo        → todo.js report  (read-only: task open items, backlog, stale docs)

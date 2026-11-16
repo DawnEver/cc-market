@@ -2,7 +2,7 @@
 // Crystallize: distill memory entries into a rule; the entries stay on disk, hidden.
 //
 //   node crystallize.js --check      → exit 0 when live entries reach CRYSTALLIZE_ADVISORY
-//   node crystallize.js --decline    → the user said no: ask again only after another CRYSTALLIZE_ADVISORY
+//   node crystallize.js --decline    → the user said no: never asked again (one decline is permanent)
 //   node crystallize.js --propose    → JSON of every live entry, oldest first, for review
 //   node crystallize.js --validate   → list .claude/rules/rem/ rules
 //   node crystallize.js --execute --rule <file.md> --distilled <a.md,b.md,...>
@@ -51,17 +51,16 @@ if (mode === '--check') {
   const needed = crystallizeDue(n);
   const declined = n >= CRYSTALLIZE_ADVISORY && !needed;
   console.log(`[crystallize] ${n} live entries (${n >= CRYSTALLIZE_ADVISORY ? '≥' : '<'}${CRYSTALLIZE_ADVISORY}) — `
-    + (needed ? 'crystallize needed' : declined ? 'declined by the user; asked again after another '
-      + `${CRYSTALLIZE_ADVISORY} entries` : 'not needed'));
+    + (needed ? 'crystallize needed' : declined ? 'declined by the user (permanent)' : 'not needed'));
   process.exit(needed ? 0 : 1);
 }
 
 if (mode === '--decline') {
   const n = liveEntries().length;
   const state = loadState();
-  state.crystallize = { ...(state.crystallize || {}), declinedAt: n };
+  state.crystallize = { declined: true };
   saveState(state);
-  console.log(`[crystallize] declined at ${n} live entries; /rem asks again at ${n + CRYSTALLIZE_ADVISORY}`);
+  console.log(`[crystallize] declined at ${n} live entries; /rem never asks again`);
   process.exit(0);
 }
 

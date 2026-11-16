@@ -46,7 +46,7 @@ describe('the derived index', () => {
 
   it('two machines deriving the same tree write the same bytes', () => {
     // Machine A: LF files written oldest first. Machine B: CRLF checkout, written in
-    // reverse order, different mtimes, a different cwd and a child scope found later.
+    // reverse order, different mtimes, a different cwd and a leftover child scope.
     const files = {
       '2026/01/02/Zeta.md': entryText('Zeta'),
       '2026/01/02/alpha.md': entryText('alpha'),
@@ -75,7 +75,7 @@ describe('the derived index', () => {
     // Byte order, not locale order: '_' < 'a' < 'z', and 'Z' < '_'.
     assert.ok(ia.indexOf('Zeta.md') < ia.indexOf('_under.md'));
     assert.ok(ia.indexOf('_under.md') < ia.indexOf('alpha.md'));
-    assert.ok(ia.indexOf('Lib/') < ia.indexOf('pkg/'));
+    assert.doesNotMatch(ia, /Lib\/|pkg\//, 'a child scope is migrated, never indexed');
   });
 
   it('lists every visible entry, hides superseded and merged ones, flags corrected ones', () => {

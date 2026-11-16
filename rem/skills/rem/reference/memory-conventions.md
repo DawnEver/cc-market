@@ -138,20 +138,15 @@ OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
 
 ## Recall
 
-`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task, the visible entries of
-the scope(s) being worked on (cwd, plus the bound task's `scope:` paths) and the bound docs of
-those paths. An entry tagged `task: <other>` stays out unless the prompt names that task. A
-corrected entry is injected together with its correction. Details → `tasks.md`.
+`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task's one-line summary, the
+visible entries of the root's memory and the bound docs of the task's `scope:` paths. An entry
+tagged `task: <other>` stays out unless the prompt names that task. A corrected entry is injected
+together with its correction. Details → `tasks.md`.
 
 ## Memory lives at the root
 
-Every write lands in the repo root's `.claude/memory/` (user ruling 2026-11-16: the task system
-replaced scope-split; a task, not a directory, is the unit of work). `memoryRoot()` is the project
-root; `remember.js`, `merge-memory.js`, `crystallize.js` and memo all write there.
-
-- A child `.claude/memory/` that already exists (an older scope) stays READABLE: `findAllScopes()`
-  still finds it, so `index-memory.js`, `rem-prep.js` and recall cover it, and the root index's
-  `## Scoped` section links its index. Nothing writes into it; its entries keep their paths.
+All memory is the repo root's `.claude/memory/` (a task, not a directory, is the unit of work); a
+child `.claude/memory/` is moved there once by `migrations/migrate.mjs`, and scope-validate refuses one.
 
 ## Convergence
 

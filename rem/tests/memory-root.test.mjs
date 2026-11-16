@@ -1,6 +1,6 @@
 /**
  * All memory is gathered at the repo root (user ruling 2026-11-16: the task system replaced
- * scope-split). Writes never land in a child scope; crystallize is never re-asked after a decline.
+ * scope-split). Writes never land in a child scope; one decline of crystallize is permanent.
  * Run: node --test rem/tests/memory-root.test.mjs
  */
 import { test, describe } from "node:test";
@@ -44,12 +44,11 @@ describe("remember writes at the root", () => {
   });
 });
 
-describe("crystallize is asked once per advisory step", () => {
-  test("below the advisory it is never due", () => assert.equal(crystallizeDue(CRYSTALLIZE_ADVISORY - 1, undefined), false));
-  test("at the advisory with no decline it is due", () => assert.equal(crystallizeDue(CRYSTALLIZE_ADVISORY, undefined), true));
-  test("after a decline it stays quiet until another advisory accrues", () => {
-    assert.equal(crystallizeDue(6051, 6051), false);
-    assert.equal(crystallizeDue(6051 + CRYSTALLIZE_ADVISORY - 1, 6051), false);
-    assert.equal(crystallizeDue(6051 + CRYSTALLIZE_ADVISORY, 6051), true, "PLANTED CONTROL: it does come back");
+describe("one decline of crystallize is permanent", () => {
+  test("below the advisory it is never due", () => assert.equal(crystallizeDue(CRYSTALLIZE_ADVISORY - 1, false), false));
+  test("PLANTED CONTROL: at the advisory with no decline it is due", () => assert.equal(crystallizeDue(CRYSTALLIZE_ADVISORY, false), true));
+  test("after a decline it is never due again, however many entries accrue", () => {
+    assert.equal(crystallizeDue(6051, true), false);
+    assert.equal(crystallizeDue(6051 + 100 * CRYSTALLIZE_ADVISORY, true), false);
   });
 });

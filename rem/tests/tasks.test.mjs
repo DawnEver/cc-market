@@ -8,7 +8,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { readTask, listTasks, resolveTask, readSessionBinding, sessionOf, tasksDir, BINDINGS } from '../scripts/tasks.mjs';
+import { readTask, listTasks, resolveTask, readSessionBinding, sessionOf, tasksDir, BINDINGS, taskSummary, SUMMARY_BYTES, STATUS_BYTES } from '../scripts/tasks.mjs';
+import { VERBS } from '../scripts/task-verbs.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -69,6 +70,29 @@ describe('journal', () => {
     assert.match(before, /^- \S+ O1 closed: ported in abc123$/m);
     assert.match(before, /^- \S+ handoff: next: rerun the gate$/m);
     assert.deepEqual(readTask(root, 't').openItems, []);
+  });
+
+  it('numbers the next decision max+1, never count+1 (PLANTED: a gap would repeat an ID)', () => {
+    const root = repo();
+    run(root, 'open', 't', 'goal');
+    fs.appendFileSync(path.join(tasksDir(root), 't', 'JOURNAL.md'), `- ${today} D1: a
+- ${today} D3: c
+`);
+    assert.equal(run(root, 'decide', 'd', '--task', 't').status, 0);
+    assert.match(journal(root, 't'), /^- \S+ D4: d$/m, 'count+1 would have written a second D3');
+  });
+
+  it('allocates unique IDs under a lock when sessions append at once', async () => {
+    const root = repo();
+    run(root, 'open', 't', 'goal');
+    const { spawn } = await import('node:child_process');
+    const one = (i) => new Promise((done) => spawn(process.execPath, [TASK, i % 2 ? 'decide' : 'open-item', `x${i}`, '--task', 't'],
+      { cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root } }).on('exit', done));
+    const codes = await Promise.all(Array.from({ length: 10 }, (_, i) => one(i)));
+    assert.deepEqual(codes, Array(10).fill(0));
+    const ids = journal(root, 't').match(/^- \S+ (D\d+|O\d+ open):/gm).map((l) => l.split(' ')[2]);
+    assert.equal(ids.length, 10);
+    assert.equal(new Set(ids).size, 10, `duplicate IDs: ${ids.join(' ')}`);
   });
 
   it('refuses to write without a bound task, and never to a closed one', () => {
@@ -155,9 +179,8 @@ describe('binding', () => {
     assert.deepEqual(listTasks(root).map(t => t.slug), ['feature-x'], 'the bindings directory is not a task');
   });
 
-
-  it('task.js bound names the door when nothing is bound', () => {
-    const r = run(repo(), 'bound');
+  it('task.js status names the door when nothing is bound', () => {
+    const r = run(repo(), 'status');
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /no task bound/);
     assert.match(r.stdout, /`task: <slug>`/);
@@ -258,21 +281,21 @@ describe('the ledger is repo state, one place for every worktree (cc-market #20)
     assert.deepEqual(listTasks(b).map(t => t.slug), ['toolchain']);
     assert.equal(runAs(b, 'sess-b', 'log', 'orphan').status, 1, 'PLANTED CONTROL: an unbound session is refused');
     bindIn(b, 'sess-b', 'toolchain');
-    assert.equal(runAs(b, 'sess-b', 'bound').stdout.trim(), 'task toolchain');
+    assert.match(runAs(b, 'sess-b', 'status').stdout, /^task toolchain [(]open/m);
     const logged = runAs(b, 'sess-b', 'log', 'progress from b');
     assert.equal(logged.status, 0, logged.stderr);
     assert.match(journal(a, 'toolchain'), /progress: progress from b$/m, 'B journaled into the one ledger');
-    assert.equal(runAs(a, 'sess-b', 'bound').stdout.trim(), 'task toolchain', 'the same binding from tree A');
+    assert.match(runAs(a, 'sess-b', 'status').stdout, /^task toolchain [(]open/m, 'the same binding from tree A');
   });
 
   it('PLANTED CONTROL: a closed task is refused from every tree', () => {
     const { main, a, b } = twoTrees();
     run(a, 'open', 'toolchain', 'g');
     bindIn(a, 'sess-a', 'toolchain');
-    assert.equal(runAs(b, 'sess-a', 'bound').stdout.trim(), 'task toolchain');
+    assert.match(runAs(b, 'sess-a', 'status').stdout, /^task toolchain [(]open/m);
     run(b, 'close', 'toolchain');
     for (const tree of [main, a, b]) {
-      assert.match(runAs(tree, 'sess-a', 'bound').stdout, /no task bound/);
+      assert.match(runAs(tree, 'sess-a', 'status').stdout, /no task bound/);
       assert.equal(runAs(tree, 'sess-a', 'log', 'late').status, 1);
     }
   });
@@ -332,5 +355,56 @@ describe('place: a task a worktree holds in its own tree moves into the ledger (
     const none = run(wt, 'place', 'nothing-open');
     assert.equal(none.status, 1);
     assert.match(none.stderr, /never opens one/);
+  });
+});
+
+describe('progressive disclosure', () => {
+  const big = () => {
+    const root = repo();
+    run(root, 'open', 't', 'goal '.repeat(30).trim());
+    const lines = [];
+    for (let i = 1; i <= 30; i++) lines.push(`- ${today} O${i} open: ${'item text '.repeat(20)}${i}`);
+    for (let i = 1; i <= 120; i++) lines.push(`- ${today} D${i}: decision ${'word '.repeat(40)}${i}`);
+    lines.push(`- ${today} handoff: next: rerun the gate`);
+    fs.appendFileSync(path.join(tasksDir(root), 't', 'JOURNAL.md'), lines.join('\n') + '\n');
+    return root;
+  };
+
+  it('the per-prompt summary is one line within SUMMARY_BYTES, counts only, pointing at status', () => {
+    const line = taskSummary(readTask(big(), 't'));
+    assert.ok(Buffer.byteLength(line) <= SUMMARY_BYTES, `${Buffer.byteLength(line)} B: ${line}`);
+    assert.match(line, /^task t: 30 open, 120 decisions, last D120 \(\d\d-\d\d\) ".*"; detail: task\.js status$/);
+    assert.doesNotMatch(line, /item text/, 'no item text rides on every prompt');
+  });
+
+  it('task.js status fits STATUS_BYTES and names what it cut (PLANTED: 30 long items would not fit)', () => {
+    const r = run(big(), 'status', 't');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(Buffer.byteLength(r.stdout.trimEnd()) <= STATUS_BYTES, `${Buffer.byteLength(r.stdout)} B`);
+    assert.match(r.stdout, /^open items: 30$/m);
+    assert.match(r.stdout, /^ {2}\+\d+ more \(task\.js show t\)$/m, 'the cut is named, with its door');
+    assert.match(r.stdout, /^ {2}D120 /m);
+    assert.match(r.stdout, /^last handoff \(\S+\): next: rerun the gate$/m);
+  });
+
+  it('VERBS is the one verb list: every entry dispatches and a verb outside it points at help', () => {
+    const root = repo();
+    for (const { verb } of VERBS) {
+      assert.doesNotMatch(run(root, verb).stderr, /unknown verb/, `${verb} is in VERBS but task.js does not dispatch it`);
+    }
+    const r = run(root, 'bound');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unknown verb bound; every verb: task\.js help/, 'PLANTED: a verb outside VERBS is refused');
+    assert.deepEqual(JSON.parse(run(root, 'verbs', '--json').stdout).map((v) => v.verb), VERBS.map((v) => v.verb));
+  });
+
+  it('no doc restates the journal verb list or names a retired verb', () => {
+    const docs = ['README.md', 'AGENTS.md', 'commands/task.md', 'docs/architecture.md',
+      'skills/rem/reference/tasks.md', 'skills/rem/reference/scripts.md'];
+    for (const doc of docs) {
+      const text = fs.readFileSync(path.join(REM, doc), 'utf8');
+      assert.doesNotMatch(text, /log\|decide|`log`, `decide`/, `${doc} restates the verb list`);
+      assert.doesNotMatch(text, /distill-status|task\.js bound/, `${doc} names a retired verb`);
+    }
   });
 });

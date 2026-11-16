@@ -13,27 +13,39 @@
 // same from every worktree, so a task opened in one worktree is found from all of them. It is
 // never committed on a feature branch; close archives a task into memory, which is.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync } from 'fs';
+import { join, dirname, resolve, basename } from 'path';
 import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
-import { parseFrontmatter, findAllScopes, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
+import { withLock } from '../shared/lock.mjs';
+import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-// The main checkout of the repository at `start`, from any of its worktrees (its own root outside
-// git). Asked of git once per root per process: a hook reads the ledger many times per prompt.
+// THE ONE answer to "which checkout holds the ledger": the main checkout of the repository at
+// `start`, from any of its worktrees (its own root outside git) -- the parent of git's common dir,
+// read from the files git keeps (.git, or a worktree's gitdir and its commondir) so the per-prompt
+// path spawns nothing; git itself answers only a layout those files do not explain. Cached per root.
 const checkouts = new Map();
 export function mainCheckout(start) {
   const root = findProjectRoot(start);
-  if (!checkouts.has(root)) {
-    const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
-    checkouts.set(root, r.status === 0 ? join(dirname(r.stdout.trim())) : root);
-  }
+  if (!checkouts.has(root)) checkouts.set(root, mainCheckoutOf(root));
   return checkouts.get(root);
+}
+
+function mainCheckoutOf(root) {
+  try {
+    const dotGit = join(root, '.git');
+    if (statSync(dotGit).isDirectory()) return root;
+    const gitDir = resolve(root, readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m)[1].trim());
+    const common = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
+    if (basename(common) === '.git') return dirname(common);
+  } catch { /* not a plain checkout or worktree: ask git */ }
+  const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? dirname(r.stdout.trim()) : root;
 }
 
 // THE ONE RESOLVER of the task ledger (dev_lab.dev.taskbinding.ledger is its twin): every read and write goes through it.
@@ -70,6 +82,18 @@ export function parseJournal(text) {
   return { decisions, items: [...items.values()] };
 }
 
+// IDs a journal mints more than once (a Dn line, or an `On open` line, seen twice).
+export function duplicateIds(text) {
+  const seen = new Set(), dup = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(LINE_RE);
+    const id = m?.[3] ? `D${m[3]}` : m?.[5] === 'open' ? `O${m[4]}` : null;
+    if (id && seen.has(id)) dup.add(id);
+    if (id) seen.add(id);
+  }
+  return [...dup];
+}
+
 export function readTask(start, slug) {
   const file = taskFile(start, slug);
   if (!SLUG_RE.test(slug) || !existsSync(file)) return null;
@@ -92,6 +116,50 @@ export function readTask(start, slug) {
   };
 }
 
+// ── Progressive disclosure: one line per prompt, status on demand, show for the whole record ──
+
+const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 3)}...` : text);
+export const SUMMARY_BYTES = 200;
+export const STATUS_BYTES = 2048;
+
+// The per-prompt line (<= SUMMARY_BYTES): counts and the newest decision, never item texts.
+export function taskSummary(task) {
+  const last = task.decisions.at(-1);
+  const head = `task ${task.slug}: ${task.openItems.length} open, ${task.decisions.length} decisions`;
+  const tail = '; detail: task.js status';
+  if (!last) return head + tail;
+  const lead = `, last D${last.n} (${last.date.slice(5)}) "`;
+  const room = Math.max(0, SUMMARY_BYTES - Buffer.byteLength(head + lead + '"' + tail));
+  let text = clip(last.text, Math.min(60, room));
+  while (Buffer.byteLength(text) > room) text = text.slice(0, -1);
+  return `${head}${lead}${text}"${tail}`;
+}
+
+// `task.js status` (<= STATUS_BYTES): goal, scope, authority, open items one line each, the
+// newest 3 decisions and the last handoff. `undistilled` (from distillStatus) adds that line.
+export function taskStatus(task, { undistilled } = {}) {
+  let journal = '';
+  try { journal = readFileSync(join(task.dir, 'JOURNAL.md'), 'utf8'); } catch { /* none yet */ }
+  const handoff = journal.split(/\r?\n/).map(l => l.match(LINE_RE)).filter(m => m?.[2] === 'handoff').at(-1);
+  const head = [
+    `task ${task.slug} (${task.status}, authority ${task.authority || 'none'}, owner ${task.owner || 'user'}): ${clip(task.goal, 300)}`,
+    ...(task.scope.length ? [`scope: ${task.scope.join(', ')}`] : []),
+  ];
+  const tail = [
+    `decisions: ${task.decisions.length}${task.decisions.length ? ', newest:' : ''}`,
+    ...task.decisions.slice(-3).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...(handoff ? [`last handoff (${handoff[1]}): ${clip(handoff[6], 160)}`] : []),
+    ...(undistilled ? [`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`] : []),
+    `whole record: task.js show ${task.slug}`,
+  ];
+  const items = task.openItems.map(i => `  O${i.n} ${clip(i.text, 100)}`);
+  let shown = items.length;
+  const render = () => [...head, `open items: ${items.length}`, ...items.slice(0, shown),
+    ...(shown < items.length ? [`  +${items.length - shown} more (task.js show ${task.slug})`] : []), ...tail].join('\n');
+  while (shown > 0 && Buffer.byteLength(render()) > STATUS_BYTES) shown--;
+  return render();
+}
+
 export function listTasks(start) {
   const dir = tasksDir(start);
   if (!existsSync(dir)) return [];
@@ -100,6 +168,15 @@ export function listTasks(start) {
     .map(e => readTask(start, e.name))
     .filter(Boolean)
     .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+}
+
+// Slug and status of every task, reading TASK.md only (no journal): what recall needs per prompt.
+export function listTaskHeads(start) {
+  const dir = tasksDir(start);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && SLUG_RE.test(e.name) && existsSync(join(dir, e.name, 'TASK.md')))
+    .map(e => ({ slug: e.name, status: parseFrontmatter(readFileSync(join(dir, e.name, 'TASK.md'), 'utf8')).fields.status || 'open' }));
 }
 
 // The door that binds a session, named wherever none is bound (dev_lab.dev.taskbinding.DOOR).
@@ -166,15 +243,20 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
 }
 
-// Append ONE line. O_APPEND: earlier bytes are never rewritten.
-export function appendJournal(start, slug, tag, text, { date = todayISO(), allowClosed = false } = {}) {
+// Append ONE line. O_APPEND: earlier bytes are never rewritten. The read that numbers the line
+// and the append run under one lock, and IDs are max+1, so two sessions never mint the same Dn/On.
+export function appendJournal(start, slug, tag, text, opts = {}) {
+  return withLock(journalFile(start, slug), () => appendJournalLocked(start, slug, tag, text, opts));
+}
+
+function appendJournalLocked(start, slug, tag, text, { date = todayISO(), allowClosed = false } = {}) {
   const task = readTask(start, slug);
   if (!task) throw new Error(`no task ${slug}`);
   if (task.status !== 'open' && !allowClosed) throw new Error(`task ${slug} is ${task.status}; its journal is final`);
   if (!text || /[\r\n]/.test(text)) throw new Error('a journal line is one line of text');
   assertLanguage(start, text, 'the journal line');
   let label = tag;
-  if (tag === 'decision') label = `D${task.decisions.length + 1}`;
+  if (tag === 'decision') label = `D${Math.max(0, ...task.decisions.map(d => d.n)) + 1}`;
   else if (tag === 'open-item') label = `O${Math.max(0, ...task.items.map(i => i.n)) + 1} open`;
   else if (tag.startsWith('close-item:')) {
     const n = Number(tag.slice('close-item:'.length).replace(/^O/, ''));
@@ -187,7 +269,7 @@ export function appendJournal(start, slug, tag, text, { date = todayISO(), allow
   return line.trimEnd();
 }
 
-// The ONE sanctioned rewrite of a journal line: translating it into English. Line n (1-based)
+// One of the two audited rewrites of a journal line (with amend): translating it into English. Line n (1-based)
 // must be a journal line holding foreign script; the replacement must hold none and keep the
 // `- <date> <tag>: ` prefix byte-identical. One audit line is then appended. Nothing else moves.
 export function translateJournalLine(start, slug, n, replacement, { date = todayISO() } = {}) {
@@ -285,7 +367,7 @@ export function distillStatus(start, slug) {
   const cite = new RegExp(`tasks/${slug}/JOURNAL\\.md#D(\\d+)\\b`, 'g');
   const cited = new Set();
   const homes = [
-    ...findAllScopes(root).flatMap(s => filesUnder(join(s, '.claude', 'memory'))),
+    ...filesUnder(join(root, '.claude', 'memory')),
     ...filesUnder(join(root, '.claude', 'rules')),
     ...collectBoundDocs(root).map(d => d.full),
   ];
@@ -332,14 +414,11 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   return dest;
 }
 
-// An archived task: .claude/memory/<date>/task-<slug>/ in any scope.
+// An archived task: .claude/memory/<date>/task-<slug>/.
 export function findArchivedTask(start, slug) {
   const root = findProjectRoot(start);
-  for (const scope of findAllScopes(root)) {
-    const hit = listEntries(scope).find(e => e.kind === 'task' && e.task === slug);
-    if (hit) return join(scope, '.claude', 'memory', hit.path);
-  }
-  return null;
+  const hit = listEntries(root).find(e => e.kind === 'task' && e.task === slug);
+  return hit ? join(root, '.claude', 'memory', hit.path) : null;
 }
 
 // Place a task this WORKTREE holds in its own tree (written before the ledger was repo state, or

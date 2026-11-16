@@ -25,6 +25,7 @@
 // File tools are refused when they write a TASK.md / JOURNAL.md or the authority store.
 
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
+import { verbsOf } from '../scripts/task-verbs.mjs';
 
 // A task's record, or a session binding (written only by dev-lab's `task: <slug>` prompt door).
 const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/](?:[^\\/]+[\\/](TASK|JOURNAL)\.md$|\.bindings(?:[\\/]|$))/;
@@ -41,10 +42,10 @@ const ALL_TARGET_WRITERS = new Set('tee touch mkdir rm rmdir truncate unlink'.sp
 const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move-item|remove-item)$/i;
 
 const CODE_FLAG = /^(?:-e|-E|--eval|-p|--print|-c|-command)(?:=(.*))?$/i;
-const DOOR = 'Door: append to a journal through `task.js log|decide|open-item|close-item|handoff` '
-  + '(`translate` only turns a foreign-script line into English); the ledger is repo state, never committed on a branch, '
-  + 'and a session binding is written only by the user\'s `task: <slug>` prompt; read a task file with cat/grep; '
-  + 'opening or closing a task is the user\'s /rem:task open|close command -- propose it to the user.';
+const DOOR = `Door: task.js ${verbsOf("append").join("|")} appends to the bound task's journal and ${verbsOf("rewrite").join("|")} rewrites one line `
+  + "(every verb: task.js help); the ledger is repo state, never committed on a branch, and a session binding is written only by the user's `task: <slug>` prompt; "
+  + "read a task with cat/grep or task.js status; opening or closing a task is the user's /rem:task "
+  + "open|close command -- propose it to the user.";
 const refuse = cause => `task-guard: ${cause}. ${DOOR}`;
 
 // Heredocs: `<<[-] DELIM` … `DELIM`. The body is cut out of the command line and its place

@@ -17,92 +17,21 @@ export const rulesDir = join(repoRoot, '.claude', 'rules');
 export const remRulesDir = join(rulesDir, 'rem');
 export const stateFile = join(repoRoot, '.claude', '.rem-state.json');
 
-// ── Scope-aware paths ──
+// ── The memory root ──
 
-// Every write lands in the repo root's memory (user ruling 2026-11-16: the task system replaced
-// scope-split; all memory is gathered at the root). Older child scopes stay readable, never written.
+// Every entry lives in the repo root's .claude/memory/: a task, not a directory, is the unit of
+// work. A child .claude/memory/ from the retired scope-split is moved here once by the rem migration
+// (migrations/migrate.mjs); nothing reads one, and scope-validate refuses one naming that door.
 export function memoryRoot() {
   return findProjectRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 }
 
-// Convert a simple glob (supporting `*` and `?`) to an anchored RegExp.
-function globToRegExp(glob) {
-  const escaped = glob
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  return new RegExp('^' + escaped + '$');
-}
-
-// True if a directory should be skipped during scope discovery. `name` is the
-// directory's basename, `rel` its path relative to the scan root. Patterns without
-// a `/` match the basename; patterns with a `/` match the relative path. Both forms
-// support `*` and `?` globs.
-export function isScopeIgnored(name, rel, patterns) {
-  if (!patterns || !patterns.length) return false;
-  const relNorm = rel.split(sep).join('/');
-  return patterns.some((p) => {
-    const re = globToRegExp(p);
-    return p.includes('/') ? re.test(relNorm) : re.test(name);
-  });
-}
-
-// Resolve ignore patterns: explicit arg wins, else read from .rem-state.json.
-function resolveIgnore(ignore) {
-  if (ignore) return ignore;
-  try { return loadState().scopes?.ignore || []; } catch { return []; }
-}
-
-export function findAllScopes(base, ignore) {
-  const root = base || repoRoot;
-  const patterns = resolveIgnore(ignore);
-  const scopes = [root];
-  function walk(dir, depth) {
-    if (depth > 4) return;
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          const sub = join(dir, entry.name);
-          if (isScopeIgnored(entry.name, relative(root, sub), patterns)) continue;
-          if (existsSync(join(sub, '.claude', 'memory'))) scopes.push(sub);
-          walk(sub, depth + 1);
-        }
-      }
-    } catch { /* permissions, etc. */ }
-  }
-  walk(root, 0);
-  return scopes;
-}
-
-export function findChildScopes(scopeRoot, ignore) {
-  const patterns = resolveIgnore(ignore);
-  const children = [];
-  function walk(dir, depth) {
-    if (depth > 4) return;
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          const sub = join(dir, entry.name);
-          if (isScopeIgnored(entry.name, relative(scopeRoot, sub), patterns)) continue;
-          if (existsSync(join(sub, '.claude', 'memory'))) children.push(sub);
-          walk(sub, depth + 1);
-        }
-      }
-    } catch { /* permissions */ }
-  }
-  walk(scopeRoot, 0);
-  return children;
-}
-
-
 export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
 
-// Whether /rem should propose crystallize for `live` entries. A user who declined
-// (`crystallize.js --decline`, recorded as the live count then) is asked again only after
-// another CRYSTALLIZE_ADVISORY entries accrue -- never on every session (user ruling 2026-11-16).
-export function crystallizeDue(live, declinedAt = loadState().crystallize?.declinedAt) {
-  if (live < CRYSTALLIZE_ADVISORY) return false;
-  return !Number.isInteger(declinedAt) || live - declinedAt >= CRYSTALLIZE_ADVISORY;
+// Whether /rem should propose crystallize for `live` entries. ONE decline is permanent
+// (`crystallize.js --decline` records `crystallize.declined: true`); only the user lifts it.
+export function crystallizeDue(live, declined = loadState().crystallize?.declined === true) {
+  return live >= CRYSTALLIZE_ADVISORY && !declined;
 }
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -240,34 +169,39 @@ export const byteOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // path date, scope to the directory holding .claude/memory/.
 export function listEntries(scopeRoot) {
   const memDir = join(scopeRoot, '.claude', 'memory');
-  const entries = [];
-  for (const abs of collectMemoryFiles(memDir)) {
-    const rel = relative(memDir, abs).replace(/\\/g, '/');
-    const taskDir = rel.match(TASK_DIR_RE)?.[1];
-    if (!taskDir && !ENTRY_FILE_RE.test(rel)) continue;
-    const path = taskDir || rel;
-    let content = '';
-    try { content = readFileSync(abs, 'utf8'); } catch { continue; }
-    const { fields } = parseFrontmatter(content);
-    const typeMatch = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m);
-    const date = path.slice(0, 10).replace(/\//g, '-');
-    entries.push({
-      path,
-      date,
-      kind: taskDir ? 'task' : (fields.kind || 'entry'),
-      name: fields.name || basename(path, '.md'),
-      description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
-      type: typeMatch ? typeMatch[1] : null,
-      task: fields.task || null,
-      created: fields.created || date,
-      from: parseList(content, 'from'),
-      mergedFrom: parseRefs(content, 'merged_from'),
-      supersedes: parseRefs(content, 'supersedes'),
-      corrects: parseRefs(content, 'corrects'),
-    });
-  }
-  entries.sort((a, b) => byteOrder(b.date, a.date) || byteOrder(a.path, b.path));
-  return entries;
+  const entries = collectMemoryFiles(memDir)
+    .map(abs => readEntry(relative(memDir, abs).replace(/\\/g, '/'), abs))
+    .filter(Boolean);
+  return sortEntries(entries);
+}
+
+export const sortEntries = entries => entries.sort((a, b) => byteOrder(b.date, a.date) || byteOrder(a.path, b.path));
+
+// The entry the memory file at `rel` (relative to .claude/memory/, `/`-separated) holds, or null
+// when it is not one (outside a dated directory, unreadable).
+export function readEntry(rel, abs) {
+  const taskDir = rel.match(TASK_DIR_RE)?.[1];
+  if (!taskDir && !ENTRY_FILE_RE.test(rel)) return null;
+  const path = taskDir || rel;
+  let content = '';
+  try { content = readFileSync(abs, 'utf8'); } catch { return null; }
+  const { fields } = parseFrontmatter(content);
+  const typeMatch = content.match(/^metadata:\s*\r?\n(?:\s+.*\r?\n)*?\s+type:\s*(\w+)/m);
+  const date = path.slice(0, 10).replace(/\//g, '-');
+  return {
+    path,
+    date,
+    kind: taskDir ? 'task' : (fields.kind || 'entry'),
+    name: fields.name || basename(path, '.md'),
+    description: (fields.description || '').replace(/^['"]|['"]$/g, ''),
+    type: typeMatch ? typeMatch[1] : null,
+    task: fields.task || null,
+    created: fields.created || date,
+    from: parseList(content, 'from'),
+    mergedFrom: parseRefs(content, 'merged_from'),
+    supersedes: parseRefs(content, 'supersedes'),
+    corrects: parseRefs(content, 'corrects'),
+  };
 }
 
 // Entries a newer entry names in `merged_from` or `supersedes` (their content has a
@@ -330,14 +264,6 @@ export function formatIndexEntry(e) {
 export function renderIndex(scopeRoot, entries = listEntries(scopeRoot)) {
   const visible = visibleEntries(entries);
   const lines = [INDEX_HEADER];
-  const children = findChildScopes(scopeRoot)
-    .map(child => relative(scopeRoot, child).replace(/\\/g, '/'))
-    .sort(byteOrder);
-  if (children.length) {
-    lines.push('## Scoped\n');
-    for (const rel of children) lines.push(`- ${rel} → see ${rel}/.claude/memory-index.md`);
-    lines.push('');
-  }
   lines.push(`## Entries (${visible.length} visible of ${entries.length})\n`);
   if (!visible.length) lines.push('_(no entries)_');
   for (const e of visible) lines.push(formatIndexEntry(e));

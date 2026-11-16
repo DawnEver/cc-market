@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
 import { scopedContext } from '../scripts/recall.js';
+import { forgetSession } from '../scripts/session-record.mjs';
 import { readTask } from '../scripts/tasks.mjs';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -57,16 +58,15 @@ describe('scoped recall', () => {
     assert.match(recall(root, 'what did alpha decide about the zebra migration'), /body of zebra-migration/);
   });
 
-  it("injects the bound task's goal, open items and latest journal lines on every turn", () => {
+  it("injects the bound task as one counted line, never its item texts", () => {
     const root = repo();
     task(root, 'open', 'beta', 'tune the lion cache');
     task(root, 'open-item', 'measure p95', '--task', 'beta');
     task(root, 'decide', 'keep the LRU', '--task', 'beta');
     bind(root, 'beta');
     const ctx = recall(root, 'continue');
-    assert.match(ctx, /Bound task: beta — tune the lion cache/);
-    assert.match(ctx, /O1 open: measure p95/);
-    assert.match(ctx, /D1: keep the LRU/);
+    assert.equal(ctx, 'task beta: 1 open, 1 decisions, last D1 (' + ctx.match(/\((\d\d-\d\d)\)/)[1] + ') "keep the LRU"; detail: task.js status');
+    assert.doesNotMatch(ctx, /measure p95/);
   });
 
   it("ranks the bound task's own entry above an equally matching untagged one", () => {
@@ -94,13 +94,17 @@ describe('scoped recall', () => {
     assert.doesNotMatch(ctx, /lion store mechanism/);
   });
 
-  it('recalls entries of the scope a task works in', () => {
+  it('a session sees the task line once, again when it changes, and again after its record is dropped', () => {
     const root = repo();
-    put(root, 'pkg/x.js', '');
-    put(root, 'pkg/.claude/memory/2026/01/01/zebra-pkg.md', entry('zebra-pkg', 'zebra pkg notes'));
-    assert.doesNotMatch(recall(root, 'zebra pkg'), /body of zebra-pkg/);
-    task(root, 'open', 'alpha', 'zebra work', '--scope', 'pkg');
-    bind(root, 'alpha');
-    assert.match(recall(root, 'zebra pkg'), /body of zebra-pkg/);
+    task(root, 'open', 'beta', 'tune the lion cache');
+    bind(root, 'beta');
+    const session = `scoped-${Date.now()}-${Math.random()}`;
+    const said = () => scopedContext('continue', root, Date.now(), { session, binding: () => bindings.get(root) }) || '';
+    assert.match(said(), /^task beta: 0 open, 0 decisions/);
+    assert.equal(said(), '', 'an unchanged line is not repeated on every prompt');
+    task(root, 'decide', 'keep the LRU', '--task', 'beta');
+    assert.match(said(), /^task beta: 0 open, 1 decisions, last D1/);
+    forgetSession(session); // SessionStart / PostCompact
+    assert.match(said(), /^task beta: 0 open, 1 decisions/, 'a compacted context gets it again');
   });
 });
