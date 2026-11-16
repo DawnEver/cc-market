@@ -31,7 +31,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 import { listEntries, visibleEntries } from "./lib.mjs";
-import { readTask, listTasks, resolveTask } from "./tasks.mjs";
+import { readTask, listTasks, resolveTask, readSessionBinding } from "./tasks.mjs";
 import { collectBoundDocs } from "./doc-freshness.js";
 import { isMain, findProjectRoot } from "../shared/lib.mjs";
 import { atomicWriteFile } from "../shared/atomic-write.mjs";
@@ -481,7 +481,9 @@ function main() {
   const prompt = payload.prompt || payload.user_prompt || "";
   const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
 
-  const context = scopedContext(prompt, cwd);
+  const session = typeof payload.session_id === "string" ? payload.session_id : undefined;
+  const binding = (start) => readSessionBinding(start, session ? { session } : {});
+  const context = scopedContext(prompt, cwd, Date.now(), { binding });
   if (!context) return;
 
   process.stdout.write(

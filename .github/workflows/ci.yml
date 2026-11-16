@@ -26,6 +26,16 @@
           "description": "the pull request this run is, for a PR the job token opened (continue.yml)",
           "type": "string",
           "default": ""
+        },
+        "measurement_paths": {
+          "description": "MEASUREMENT only: JSON array of repository-relative test file or node selectors",
+          "type": "string",
+          "default": ""
+        },
+        "measurement_sha": {
+          "description": "MEASUREMENT only: exact 40-hex SHA that the dispatched ref must check out",
+          "type": "string",
+          "default": ""
         }
       }
     },
@@ -36,8 +46,8 @@
     ]
   },
   "concurrency": {
-    "group": "ci-${{ (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}",
-    "cancel-in-progress": "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
+    "group": "ci-${{ inputs.measurement_paths == '' && inputs.measurement_sha == '' && (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}",
+    "cancel-in-progress": "${{ inputs.measurement_paths == '' && inputs.measurement_sha == '' && (github.event_name == 'pull_request' || inputs.pr != '') }}"
   },
   "permissions": {
     "contents": "read"
@@ -49,6 +59,71 @@
     "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}"
   },
   "jobs": {
+    "measurement": {
+      "name": "MEASUREMENT (selected tests, not a part)",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (github.event_name == 'workflow_dispatch' && (inputs.measurement_paths != '' || inputs.measurement_sha != '')) }}",
+      "runs-on": "ubuntu-latest",
+      "permissions": {
+        "contents": "read"
+      },
+      "env": {
+        "MEASUREMENT_PATHS": "${{ inputs.measurement_paths }}",
+        "MEASUREMENT_SHA": "${{ inputs.measurement_sha }}",
+        "MEASUREMENT_PR": "${{ inputs.pr }}",
+        "MEASUREMENT_SMOKE": "${{ inputs.smoke }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ env.HEAD_SHA }}",
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-node@v4",
+          "with": {
+            "node-version": 22
+          }
+        },
+        {
+          "name": "Install uv",
+          "uses": "astral-sh/setup-uv@v5",
+          "with": {
+            "enable-cache": true
+          }
+        },
+        {
+          "name": "Sync the environment",
+          "run": "uv sync --frozen --all-groups"
+        },
+        {
+          "name": "Record the provider cache",
+          "shell": "bash",
+          "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
+        },
+        {
+          "name": "Install the normal measurement hooks",
+          "run": "uv run --no-sync python -m dev_lab.dev.hook_install --repo . --install"
+        },
+        {
+          "id": "measurement",
+          "name": "Measure the exact requested selection",
+          "run": "uv run --no-sync python -m dev_lab.dev.jobmeasure"
+        },
+        {
+          "name": "Retain measurement evidence, including incomplete output",
+          "if": "${{ always() && steps.measurement.outputs.artifacts != '' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "measurement-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path": "${{ steps.measurement.outputs.artifacts }}/receipt.json\n${{ steps.measurement.outputs.artifacts }}/stdout.log\n${{ steps.measurement.outputs.artifacts }}/verify.log",
+            "if-no-files-found": "warn"
+          }
+        }
+      ]
+    },
     "parts": {
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
@@ -102,14 +177,14 @@
         "event": "${{ env.PARTS_EVENT }}",
         "pending": "${{ steps.pending.outputs.pending }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) }}"
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '')) }}"
     },
     "part": {
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
       "needs": "parts",
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (needs.parts.outputs.matrix != '') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (needs.parts.outputs.matrix != '')) }}",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
       "steps": [
@@ -164,7 +239,7 @@
         "parts",
         "part"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '')) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -211,7 +286,7 @@
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((github.event_name == 'pull_request' || inputs.pr != '')) }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && ((github.event_name == 'pull_request' || inputs.pr != ''))) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -258,7 +333,7 @@
       "env": {
         "GITHUB_TOKEN": "${{ github.token }}"
       },
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((github.event_name == 'pull_request' || inputs.pr != '')) }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && ((github.event_name == 'pull_request' || inputs.pr != ''))) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
@@ -311,7 +386,7 @@
         "part",
         "absent-parts"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (always() && (github.event_name == 'pull_request' || inputs.pr != '')) }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (always() && (github.event_name == 'pull_request' || inputs.pr != ''))) }}",
       "runs-on": "ubuntu-latest",
       "outputs": {
         "due": "${{ steps.ready.outputs.due }}"
@@ -375,7 +450,7 @@
         "parts",
         "absent-parts"
       ],
-      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && (needs.parts.outputs.pending == 'true') }}",
+      "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (needs.parts.outputs.pending == 'true')) }}",
       "runs-on": "ubuntu-latest",
       "steps": [
         {
