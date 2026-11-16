@@ -2,16 +2,15 @@
 // REM preparation — read-only report that runs before the /rem skill:
 //   1. Memory entries this session read (from the transcript) — the candidates to
 //      merge into, supersede, or crystallize, since they are what the session used.
-//   2. Per scope: visible entries, entries hidden by a newer entry's `merged_from`
+//   2. The root's memory: visible entries, entries hidden by a newer entry's `merged_from`
 //      (kept on disk), and the crystallize advisory.
 // It never writes: reading memory leaves no trace in the tree or in any state file.
 //
 // Usage: node rem-prep.js [--transcript <path>]
 
 import { readFileSync, existsSync } from 'fs';
-import { relative } from 'path';
 import { normalizeHookFacts } from '../shared/hook-facts.mjs';
-import { findAllScopes, listEntries, hiddenEntries, crystallizeDue } from './lib.mjs';
+import { memoryRoot, listEntries, hiddenEntries, crystallizeDue } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const at = args.indexOf('--transcript');
@@ -38,14 +37,13 @@ const reads = transcriptPath && existsSync(transcriptPath)
 if (!reads.length) console.log('  (none)');
 for (const p of reads) console.log(`  ${p}`);
 
-console.log('\n─── Scopes ───');
-for (const scope of findAllScopes()) {
-  const entries = listEntries(scope);
+console.log('\n─── Memory ───');
+{
+  const entries = listEntries(memoryRoot());
   const hidden = hiddenEntries(entries);
   const live = entries.length - hidden.size;
-  const label = relative(process.cwd(), scope).replace(/\\/g, '/') || '.';
   const advice = crystallizeDue(live) ? ' — crystallize recommended' : '';
-  console.log(`  ${label}: ${live} visible, ${hidden.size} hidden${advice}`);
+  console.log(`  .: ${live} visible, ${hidden.size} hidden${advice}`);
 }
 
 console.log('\n[rem-prep] done');

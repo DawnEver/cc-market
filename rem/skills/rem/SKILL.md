@@ -68,10 +68,6 @@ Exit 0 = needed, exit 1 = skip. **If needed**, follow the full user-gated distil
 **`reference/crystallize.md`** (propose → classify → user-confirm → distill into `.claude/rules/rem/`
 → cleanup → check-docs), then continue with the standard REM session below.
 
-## Memory lives at the root
-
-Every entry is written to the repo root's `.claude/memory/` (user ruling 2026-11-16: the task system
-replaced scope-split). Older child scopes stay readable and are never written; there is no split step.
 
 ## Lightweight (doc-only or non-code session)
 

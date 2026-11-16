@@ -17,83 +17,14 @@ export const rulesDir = join(repoRoot, '.claude', 'rules');
 export const remRulesDir = join(rulesDir, 'rem');
 export const stateFile = join(repoRoot, '.claude', '.rem-state.json');
 
-// ── Scope-aware paths ──
+// ── The memory root ──
 
-// Every write lands in the repo root's memory (user ruling 2026-11-16: the task system replaced
-// scope-split; all memory is gathered at the root). Older child scopes stay readable, never written.
+// Every entry lives in the repo root's .claude/memory/: a task, not a directory, is the unit of
+// work. A child .claude/memory/ from the retired scope-split is moved here once by the rem migration
+// (migrations/migrate.mjs); nothing reads one, and scope-validate refuses one naming that door.
 export function memoryRoot() {
   return findProjectRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 }
-
-// Convert a simple glob (supporting `*` and `?`) to an anchored RegExp.
-function globToRegExp(glob) {
-  const escaped = glob
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  return new RegExp('^' + escaped + '$');
-}
-
-// True if a directory should be skipped during scope discovery. `name` is the
-// directory's basename, `rel` its path relative to the scan root. Patterns without
-// a `/` match the basename; patterns with a `/` match the relative path. Both forms
-// support `*` and `?` globs.
-export function isScopeIgnored(name, rel, patterns) {
-  if (!patterns || !patterns.length) return false;
-  const relNorm = rel.split(sep).join('/');
-  return patterns.some((p) => {
-    const re = globToRegExp(p);
-    return p.includes('/') ? re.test(relNorm) : re.test(name);
-  });
-}
-
-// Resolve ignore patterns: explicit arg wins, else read from .rem-state.json.
-function resolveIgnore(ignore) {
-  if (ignore) return ignore;
-  try { return loadState().scopes?.ignore || []; } catch { return []; }
-}
-
-export function findAllScopes(base, ignore) {
-  const root = base || repoRoot;
-  const patterns = resolveIgnore(ignore);
-  const scopes = [root];
-  function walk(dir, depth) {
-    if (depth > 4) return;
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          const sub = join(dir, entry.name);
-          if (isScopeIgnored(entry.name, relative(root, sub), patterns)) continue;
-          if (existsSync(join(sub, '.claude', 'memory'))) scopes.push(sub);
-          walk(sub, depth + 1);
-        }
-      }
-    } catch { /* permissions, etc. */ }
-  }
-  walk(root, 0);
-  return scopes;
-}
-
-export function findChildScopes(scopeRoot, ignore) {
-  const patterns = resolveIgnore(ignore);
-  const children = [];
-  function walk(dir, depth) {
-    if (depth > 4) return;
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          const sub = join(dir, entry.name);
-          if (isScopeIgnored(entry.name, relative(scopeRoot, sub), patterns)) continue;
-          if (existsSync(join(sub, '.claude', 'memory'))) children.push(sub);
-          walk(sub, depth + 1);
-        }
-      }
-    } catch { /* permissions */ }
-  }
-  walk(scopeRoot, 0);
-  return children;
-}
-
 
 export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
 
@@ -333,14 +264,6 @@ export function formatIndexEntry(e) {
 export function renderIndex(scopeRoot, entries = listEntries(scopeRoot)) {
   const visible = visibleEntries(entries);
   const lines = [INDEX_HEADER];
-  const children = findChildScopes(scopeRoot)
-    .map(child => relative(scopeRoot, child).replace(/\\/g, '/'))
-    .sort(byteOrder);
-  if (children.length) {
-    lines.push('## Scoped\n');
-    for (const rel of children) lines.push(`- ${rel} → see ${rel}/.claude/memory-index.md`);
-    lines.push('');
-  }
   lines.push(`## Entries (${visible.length} visible of ${entries.length})\n`);
   if (!visible.length) lines.push('_(no entries)_');
   for (const e of visible) lines.push(formatIndexEntry(e));

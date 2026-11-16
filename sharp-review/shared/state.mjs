@@ -19,12 +19,6 @@ export const DEFAULT_STATE = {
     lastTouched: null,
     taskActiveUntil: null,
   },
-  scopes: {
-    // Glob/name patterns for directories findAllScopes/findChildScopes skip during
-    // scope discovery. Bare names (no `/`) match a directory's basename; patterns
-    // with `/` match the path relative to the scan root. Supports `*` and `?`.
-    ignore: [],
-  },
   docs: {
     // Device-local CACHE of where bound docs (frontmatter `doc_source`) were
     // discovered — NOT config. Source of truth stays the frontmatter signatures;

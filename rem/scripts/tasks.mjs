@@ -14,7 +14,7 @@ import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
 import { withLock } from '../shared/lock.mjs';
-import { parseFrontmatter, findAllScopes, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
+import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
 
@@ -358,7 +358,7 @@ export function distillStatus(start, slug) {
   const cite = new RegExp(`tasks/${slug}/JOURNAL\\.md#D(\\d+)\\b`, 'g');
   const cited = new Set();
   const homes = [
-    ...findAllScopes(root).flatMap(s => filesUnder(join(s, '.claude', 'memory'))),
+    ...filesUnder(join(root, '.claude', 'memory')),
     ...filesUnder(join(root, '.claude', 'rules')),
     ...collectBoundDocs(root).map(d => d.full),
   ];
@@ -405,14 +405,11 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   return dest;
 }
 
-// An archived task: .claude/memory/<date>/task-<slug>/ in any scope.
+// An archived task: .claude/memory/<date>/task-<slug>/.
 export function findArchivedTask(start, slug) {
   const root = findProjectRoot(start);
-  for (const scope of findAllScopes(root)) {
-    const hit = listEntries(scope).find(e => e.kind === 'task' && e.task === slug);
-    if (hit) return join(scope, '.claude', 'memory', hit.path);
-  }
-  return null;
+  const hit = listEntries(root).find(e => e.kind === 'task' && e.task === slug);
+  return hit ? join(root, '.claude', 'memory', hit.path) : null;
 }
 
 // Place an OPEN task of this checkout into the main checkout, where dev-lab's binding reads it
