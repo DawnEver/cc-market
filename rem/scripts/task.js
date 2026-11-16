@@ -11,7 +11,8 @@
 //     `approve <code>` (or `批准 <code>`) grants it, and then the agent may run task.js open
 // Before close, distill (any session): cite tasks/<slug>/JOURNAL.md#D<n> from a memory entry
 // (remember.js --from), a rule, or a bound doc. `task.js distill-status [<slug>]` lists what is left.
-// Any session, on its BOUND task (--task <slug>, else the worktree/branch name):
+// Any session, on its BOUND task (--task <slug>, else the user's `task: <slug>` prompt binding,
+// read through `python -m dev_lab.dev.taskbinding status`; rem never writes it):
 //   task.js log "<progress>"            task.js decide "<decision>"   → D<n>
 //   task.js open-item "<text>"          task.js close-item O<n> "<how>"
 //   task.js handoff "<text>"
@@ -30,7 +31,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask,
+  openTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, BIND_DOOR,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 
@@ -47,7 +48,7 @@ function flag(args, name) {
 
 function bound(args) {
   const slug = resolveTask(cwd, { task: flag(args, '--task') });
-  if (!slug) throw new Error('no open task is bound: pass --task <slug>, or work in a worktree/branch named after the task');
+  if (!slug) throw new Error(`no open task is bound: pass --task <slug>, or ${BIND_DOOR}`);
   return slug;
 }
 
@@ -68,6 +69,8 @@ export function main(argv) {
     const [slug, ...goal] = args;
     openTask(cwd, slug, goal.join(' '), { scope, owner });
     console.log(`${PREFIX} opened ${slug} → .claude/tasks/${slug}/`);
+    console.log(`${PREFIX} to work on it, bind a session with a prompt whose first line is \`task: ${slug}\`; `
+      + `its branches are pr/${slug}/<feature>, never a bare pr/${slug}`);
   } else if (verb === 'close') {
     const journalOnly = (flag(args, '--journal-only') || '').split(',').map(s => s.trim()).filter(Boolean);
     const [slug, ...reason] = args;
@@ -97,7 +100,8 @@ export function main(argv) {
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) console.log(`${t.slug}\t${t.status}\t${t.goal}`);
   } else if (verb === 'bound') {
-    console.log(resolveTask(cwd, { task: flag(args, '--task') }) || '(none)');
+    const slug = resolveTask(cwd, { task: flag(args, '--task') });
+    console.log(slug ? `task ${slug}` : `no task bound: ${BIND_DOOR}`);
   } else if (verb === 'show') {
     const slug = args[0] || bound(args);
     const dir = readTask(cwd, slug)?.dir || findArchivedTask(cwd, slug);
