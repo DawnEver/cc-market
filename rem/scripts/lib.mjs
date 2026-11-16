@@ -19,16 +19,10 @@ export const stateFile = join(repoRoot, '.claude', '.rem-state.json');
 
 // ── Scope-aware paths ──
 
-export function findMemoryScope() {
-  let dir = process.cwd();
-  const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  while (dir.startsWith(root)) {
-    if (existsSync(join(dir, '.claude', 'memory'))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return root;
+// Every write lands in the repo root's memory (user ruling 2026-11-16: the task system replaced
+// scope-split; all memory is gathered at the root). Older child scopes stay readable, never written.
+export function memoryRoot() {
+  return findProjectRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 }
 
 // Convert a simple glob (supporting `*` and `?`) to an anchored RegExp.
@@ -100,11 +94,16 @@ export function findChildScopes(scopeRoot, ignore) {
   return children;
 }
 
-export const scopeRoot = findMemoryScope();
-export const scopeMemoryDir = join(scopeRoot, '.claude', 'memory');
-export const scopeRulesDir = join(scopeRoot, '.claude', 'rules');
 
 export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
+
+// Whether /rem should propose crystallize for `live` entries. A user who declined
+// (`crystallize.js --decline`, recorded as the live count then) is asked again only after
+// another CRYSTALLIZE_ADVISORY entries accrue -- never on every session (user ruling 2026-11-16).
+export function crystallizeDue(live, declinedAt = loadState().crystallize?.declinedAt) {
+  if (live < CRYSTALLIZE_ADVISORY) return false;
+  return !Number.isInteger(declinedAt) || live - declinedAt >= CRYSTALLIZE_ADVISORY;
+}
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 // ── Frontmatter ──
@@ -438,149 +437,13 @@ export function collectMemoryFiles(dir) {
   return results;
 }
 
-// ── Scope split (make a child scope for a cluster; nothing moves) ──
-//
-// Generic and structure-agnostic: a candidate child scope must correspond to a real
-// subdirectory that the clustered entries reference. No assumption about repo layout
-// (monorepo, flat, src/, packages/*) — the algorithm degrades to silence wherever no
-// internal module boundary exists. All paths normalized to POSIX for cross-platform
-// determinism (identical index across macOS, Linux, Windows).
-
-export const SPLIT_DEFAULTS = {
-  minOwnEntries: 30,        // size-pressure gate: own (non-child) indexed entries
-  minClusterEntries: 5,     // a subdir must own at least this many entries to split
-  maxBytes: 500 * 1024,     // alternate size-pressure gate: total own memory bytes
-};
-
-// Resolve thresholds: explicit opts win, else `.rem-state.json` scopes.split, else defaults.
-export function resolveSplitConfig(opts) {
-  let fromState = {};
-  try { fromState = loadState().scopes?.split || {}; } catch { /* defaults */ }
-  return { ...SPLIT_DEFAULTS, ...fromState, ...(opts || {}) };
-}
-
-// Liberal extraction of path-like tokens from memory content. Existence checks
-// downstream filter out non-paths, so over-matching here is harmless.
-const REF_PATH_RE = /(?<![\w.\/])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+)/g;
-export function extractReferencedPaths(content) {
-  if (!content) return [];
-  const out = [];
-  let m;
-  while ((m = REF_PATH_RE.exec(content)) !== null) {
-    const tok = m[1];
-    if (/^[a-z]+:/i.test(tok) || tok.includes('://')) continue; // urls/schemes
-    out.push(tok);
-  }
-  return out;
-}
-
-// The directory portion of a path token: drop the basename only if it looks like a file.
-function dirSegments(p) {
-  const segs = p.split('/').filter(Boolean);
-  const last = segs[segs.length - 1];
-  if (last && last.includes('.')) segs.pop();
-  return segs;
-}
-
-// Longest common leading directory shared by every path (POSIX). '' if none.
-export function longestCommonDirPrefix(paths) {
-  if (!paths || !paths.length) return '';
-  const segLists = paths.map(dirSegments);
-  const first = segLists[0];
-  let i = 0;
-  for (; i < first.length; i++) {
-    if (!segLists.every((s) => s[i] === first[i])) break;
-  }
-  return first.slice(0, i).join('/');
-}
+// ── Containment ──
 
 // True if `absPath` is `parent` or a descendant of it (rejects traversal/siblings).
 export function isInsideDir(parent, absPath) {
   const p = resolve(parent);
   const a = resolve(absPath);
   return a === p || a.startsWith(p + sep);
-}
-
-// Infer the child scope a single entry belongs to: the deepest existing directory,
-// strictly below `scopeRoot`, shared by all paths the entry references. null when
-// the owner is absent, ambiguous (references span unrelated modules), or unreferenced.
-export function inferEntrySubdir(scopeRoot, content) {
-  const refs = extractReferencedPaths(content);
-  if (!refs.length) return null;
-  let prefix = longestCommonDirPrefix(refs);
-  while (prefix) {
-    const abs = join(scopeRoot, prefix);
-    try {
-      if (existsSync(abs) && statSync(abs).isDirectory()) return prefix;
-    } catch { /* fall through to trim */ }
-    const idx = prefix.lastIndexOf('/');
-    prefix = idx >= 0 ? prefix.slice(0, idx) : '';
-  }
-  return null;
-}
-
-// Group entry rel-paths (POSIX, relative to the scope memory dir) by inferred subdir.
-// Entries with no clear owner are omitted. Returns Map<subdir, relPath[]>.
-export function clusterBySubdir(scopeRoot, entryRelPaths) {
-  const memDir = join(scopeRoot, '.claude', 'memory');
-  const clusters = new Map();
-  for (const rel of entryRelPaths) {
-    const abs = join(memDir, rel);
-    let content = '';
-    try { content = readFileSync(abs, 'utf8'); } catch { continue; }
-    const subdir = inferEntrySubdir(scopeRoot, content);
-    if (!subdir) continue;
-    if (!clusters.has(subdir)) clusters.set(subdir, []);
-    clusters.get(subdir).push(rel);
-  }
-  return clusters;
-}
-
-// Propose child-scope splits for `scopeRoot`. Returns [] unless size pressure is met
-// (own entry count ≥ minOwnEntries OR total own bytes > maxBytes) AND a real subdir
-// owns ≥ minClusterEntries entries, is not already a scope, and is not ignored.
-export function proposeScopeSplits(scopeRoot, opts) {
-  const cfg = resolveSplitConfig(opts);
-  const memDir = join(scopeRoot, '.claude', 'memory');
-  const own = [];
-  let totalBytes = 0;
-  for (const { path: rel } of listEntries(scopeRoot)) {
-    own.push(rel);
-    try { totalBytes += statSync(join(memDir, rel)).size; } catch { /* gone */ }
-  }
-
-  const sizePressure = own.length >= cfg.minOwnEntries || totalBytes > cfg.maxBytes;
-  if (!sizePressure) return [];
-
-  const patterns = resolveIgnore();
-  const clusters = clusterBySubdir(scopeRoot, own);
-  const candidates = [];
-  for (const [subdir, entries] of clusters) {
-    if (entries.length < cfg.minClusterEntries) continue;
-    if (existsSync(join(scopeRoot, subdir, '.claude', 'memory'))) continue; // already a scope
-    const base = subdir.split('/').pop();
-    if (isScopeIgnored(base, subdir, patterns)) continue;
-    candidates.push({
-      scope: subdir,
-      entryCount: entries.length,
-      entries,
-      rationale: `${entries.length} entries reference ${subdir}/**; subdir exists and is not yet a scope`,
-    });
-  }
-  candidates.sort((a, b) => b.entryCount - a.entryCount);
-  return candidates;
-}
-
-// Make `subdirRel` a child scope. NOTHING moves: an entry's path is part of its identity
-// (citations name it), so existing entries stay in the parent, which recall reads from
-// inside the child too. New entries written under the child land in its own tree.
-export function executeScopeSplit(scopeRoot, subdirRel) {
-  const childRoot = resolve(scopeRoot, subdirRel);
-  if (childRoot === resolve(scopeRoot) || !isInsideDir(scopeRoot, childRoot)) throw new Error(`not a subdirectory of the scope: ${subdirRel}`);
-  mkdirSync(join(childRoot, '.claude', 'memory'), { recursive: true });
-  rebuildIndex(childRoot);
-  rebuildIndex(scopeRoot);
-  return { scope: subdirRel.replace(/\\/g, '/') };
 }
 
 // ── State management (delegates to shared/state.mjs) ──

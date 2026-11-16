@@ -15,7 +15,7 @@ import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
 import { parseFrontmatter, findAllScopes, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
-import { consumeAuthority } from './authority.mjs';
+import { consumeAuthority, authorityProblem } from './authority.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -328,4 +328,31 @@ export function findArchivedTask(start, slug) {
     if (hit) return join(scope, '.claude', 'memory', hit.path);
   }
   return null;
+}
+
+// Place an OPEN task of this checkout into the main checkout, where dev-lab's binding reads it
+// (cc-market #18: a worktree's task was unreachable when main lacked it, and no door remained).
+// It copies the user's record verbatim and opens nothing: the task must be open here with an
+// authority the local history does not contradict. The main checkout gets it only when absent or
+// byte-identical; a differing copy is refused, never overwritten. Returns what it did.
+export function placeTask(start, slug, { main = mainCheckout(start) } = {}) {
+  const task = readTask(start, slug);
+  if (task?.status !== 'open') throw new Error(`no open task ${slug} in this checkout: place copies an open task, it never opens one`);
+  const problem = authorityProblem(start, slug, task.authority);
+  if (problem?.level === 'error') throw new Error(`task ${slug} cannot be placed: ${problem.msg}`);
+  const here = join(tasksDir(start), slug);
+  const there = join(main, '.claude', 'tasks', slug);
+  if (here === there) return `task ${slug} is already in the main checkout`;
+  const files = ['TASK.md', 'JOURNAL.md'].filter(f => existsSync(join(here, f)));
+  const differing = files.filter(f => existsSync(join(there, f))
+    && readFileSync(join(there, f), 'utf8') !== readFileSync(join(here, f), 'utf8'));
+  if (differing.length) {
+    throw new Error(`the main checkout holds a different ${differing.join(' and ')} for ${slug}: refused, never overwritten`
+      + ' -- the user decides which record stands');
+  }
+  const missing = files.filter(f => !existsSync(join(there, f)));
+  if (!missing.length) return `task ${slug} is already placed in the main checkout`;
+  mkdirSync(there, { recursive: true });
+  for (const f of missing) writeFileSync(join(there, f), readFileSync(join(here, f), 'utf8'));
+  return `placed ${slug} (${missing.join(', ')}) in ${there}`;
 }

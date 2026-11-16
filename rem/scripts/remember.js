@@ -3,7 +3,7 @@
 // (works on Claude Code and Codex alike, since it's just a CLI the agent runs).
 //
 //   node remember.js --name <kebab-slug> --type <user|feedback|project|reference>
-//                    --body <text> [--scope <dir|auto>] [--description <text>]
+//                    --body <text> [--description <text>]
 //                    [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]
 //   (body may also be piped on stdin instead of --body; <paths> is a comma list of
 //    YYYY/MM/DD/<slug>.md entries of the same scope)
@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import {
-  findMemoryScope, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs, writeOnce, assertLanguage,
+  memoryRoot, rebuildIndex, isInsideDir, dateToPath, listEntries, formatRefs, writeOnce, assertLanguage,
 } from './lib.mjs';
 import { resolveTask } from './tasks.mjs';
 
@@ -38,7 +38,7 @@ function yamlScalar(s) {
 
 function usage(msg) {
   if (msg) console.error(`[remember] ${msg}`);
-  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--scope <dir|auto>] [--description <text>] [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]');
+  console.error('Usage: node remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body <text> [--description <text>] [--corrects <paths>] [--supersedes <paths>] [--task <slug>] [--from <cites>]');
   process.exit(1);
 }
 
@@ -51,7 +51,6 @@ function argValue(flag) {
 const list = flag => (argValue(flag) || '').split(',').map(s => s.trim()).filter(Boolean);
 const name = argValue('--name');
 const type = argValue('--type');
-const scopeArg = argValue('--scope') || 'auto';
 const description = argValue('--description');
 const refs = { corrects: list('--corrects'), supersedes: list('--supersedes') };
 const taskArg = argValue('--task');
@@ -75,7 +74,7 @@ if (VOLATILE_RE.test(body)) {
 }
 
 // ── Scope & path security ──
-const scopeRoot = scopeArg === 'auto' ? findMemoryScope() : resolve(scopeArg);
+const scopeRoot = memoryRoot(); // every entry lands in the root's memory (user ruling 2026-11-16)
 const memDir = join(scopeRoot, '.claude', 'memory');
 const relPath = `${dateToPath()}/${name}.md`;
 const file = resolve(memDir, relPath);

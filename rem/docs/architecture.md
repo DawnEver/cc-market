@@ -21,7 +21,7 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
   /rem skill:
-    ├── main loop: run user-gated crystallize/scope-split checks first (a fork can't prompt)
+    ├── main loop: run the user-gated crystallize check first (a fork can't prompt; a decline waits a full advisory step)
     ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
     │   keeps prep/memory-write noise out of the main session) → returns a one-line recap
     ├── rem-prep.js — read-only: entries read this session, visible / hidden counts, advisory
@@ -29,7 +29,6 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
     ├── index-memory.js (derived .claude/memory-index.md, written only on change)
     ├── If visible entries ≥ CRYSTALLIZE_ADVISORY → crystallize into .claude/rules/rem/ (ledger hides the sources)
     │   └── check-docs.js — audit doc freshness after crystallization
-    ├── If scope large + a subdir owns a cluster → scope-split into a child scope (user-gated)
 
   /rem:task command (the user's; an agent is refused by default, a bypass is detected):
     ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
@@ -75,7 +74,7 @@ excerpts the saved facts were paid for.
 rem/
 ├── hooks/          hooks.json + rem-hook.js + task-guard.js + task-authority.js + session-context.js
 ├── commands/       task.md (/rem:task, the user's command)
-├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs, scope-split.js,
+├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, rules-context.js, recall.js, memo.js, todo.js, todo-lib.mjs, scope-validate.mjs
 ├── skills/         rem/SKILL.md + todo/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md
 ├── migrations/     migrate.mjs (one-shot move to the tree-only lifecycle; --dry-run)

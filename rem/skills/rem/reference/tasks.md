@@ -68,6 +68,12 @@ binds nothing. No python, no dev-lab, or no binding means no task -- nothing is 
 worktree or branch named after a task binds nothing. A bound session resolves its task from any
 worktree and branch. `task.js bound` prints `task <slug>`, or `no task bound:` and the door.
 
+When the main checkout lacks the task (it sits on a branch without it) while this checkout holds
+it OPEN, `task.js place <slug>` copies TASK.md and JOURNAL.md there verbatim (cc-market #18). It
+opens nothing: the task must be open here with an authority the local history does not contradict.
+It writes only where the main checkout has no copy; a differing copy is refused, never overwritten.
+Any session may run it; the task guard refuses only `open` and `close`.
+
 Branches derive from the task: a session bound to `<slug>` names its branches
 `pr/<slug>/<feature>`, never a bare `pr/<slug>`.
 
