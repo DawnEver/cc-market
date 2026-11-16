@@ -9,9 +9,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
+import { scopedContext } from '../scripts/recall.js';
+import { readTask } from '../scripts/tasks.mjs';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
-const RECALL = path.join(REM, 'scripts', 'recall.js');
 const TASK = path.join(REM, 'scripts', 'task.js');
 
 function repo() {
@@ -32,11 +33,10 @@ const task = (root, ...args) => {
   const r = spawnSync(process.execPath, [TASK, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
   assert.equal(r.status, 0, r.stderr);
 };
-function recall(root, prompt) {
-  const r = spawnSync(process.execPath, [RECALL], { input: JSON.stringify({ prompt, cwd: root }), encoding: 'utf8', cwd: root });
-  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '';
-}
-const branch = (root, name) => spawnSync('git', ['-C', root, 'checkout', '-q', '-b', name]);
+// The user's `task: <slug>` binding (dev-lab's record, which rem only reads), planted per repo.
+const bindings = new Map();
+const bind = (root, slug) => bindings.set(root, { slug, authority: readTask(root, slug).authority });
+const recall = (root, prompt) => scopedContext(prompt, root, Date.now(), { binding: () => bindings.get(root) || null }) || '';
 
 describe('scoped recall', () => {
   it("never injects another task's entries into an unrelated task's turn", () => {
@@ -44,7 +44,7 @@ describe('scoped recall', () => {
     task(root, 'open', 'alpha', 'migrate the zebra store');
     task(root, 'open', 'beta', 'tune the lion cache');
     put(root, '.claude/memory/2026/01/01/zebra-migration.md', entry('zebra-migration', 'zebra migration notes', 'task: alpha\n'));
-    branch(root, 'pr/beta');
+    bind(root, 'beta');
     assert.doesNotMatch(recall(root, 'zebra migration'), /body of zebra-migration/);
   });
 
@@ -53,7 +53,7 @@ describe('scoped recall', () => {
     task(root, 'open', 'alpha', 'migrate the zebra store');
     task(root, 'open', 'beta', 'tune the lion cache');
     put(root, '.claude/memory/2026/01/01/zebra-migration.md', entry('zebra-migration', 'zebra migration notes', 'task: alpha\n'));
-    branch(root, 'pr/beta');
+    bind(root, 'beta');
     assert.match(recall(root, 'what did alpha decide about the zebra migration'), /body of zebra-migration/);
   });
 
@@ -62,7 +62,7 @@ describe('scoped recall', () => {
     task(root, 'open', 'beta', 'tune the lion cache');
     task(root, 'open-item', 'measure p95', '--task', 'beta');
     task(root, 'decide', 'keep the LRU', '--task', 'beta');
-    branch(root, 'pr/beta');
+    bind(root, 'beta');
     const ctx = recall(root, 'continue');
     assert.match(ctx, /Bound task: beta — tune the lion cache/);
     assert.match(ctx, /O1 open: measure p95/);
@@ -74,7 +74,7 @@ describe('scoped recall', () => {
     task(root, 'open', 'beta', 'tune the lion cache');
     put(root, '.claude/memory/2026/01/01/lion-cache-a.md', entry('lion-cache-a', 'lion cache sizing'));
     put(root, '.claude/memory/2026/01/01/lion-cache-b.md', entry('lion-cache-b', 'lion cache sizing', 'task: beta\n'));
-    branch(root, 'pr/beta');
+    bind(root, 'beta');
     const ctx = recall(root, 'lion cache sizing');
     assert.ok(ctx.indexOf('body of lion-cache-b') >= 0);
     assert.ok(ctx.indexOf('body of lion-cache-b') < ctx.indexOf('body of lion-cache-a'));
@@ -88,7 +88,7 @@ describe('scoped recall', () => {
     put(root, 'docs/lion-store.md', '---\nname: lion-store\ndescription: how the lion zebra store works\ndoc_source: [src/lion/]\n---\n\nlion store mechanism\n');
     assert.match(recall(root, 'zebra store'), /zebra store mechanism/);
     task(root, 'open', 'alpha', 'migrate the zebra store', '--scope', 'src/zebra');
-    branch(root, 'pr/alpha');
+    bind(root, 'alpha');
     const ctx = recall(root, 'zebra store');
     assert.match(ctx, /zebra store mechanism/);
     assert.doesNotMatch(ctx, /lion store mechanism/);
@@ -100,7 +100,7 @@ describe('scoped recall', () => {
     put(root, 'pkg/.claude/memory/2026/01/01/zebra-pkg.md', entry('zebra-pkg', 'zebra pkg notes'));
     assert.doesNotMatch(recall(root, 'zebra pkg'), /body of zebra-pkg/);
     task(root, 'open', 'alpha', 'zebra work', '--scope', 'pkg');
-    branch(root, 'pr/alpha');
+    bind(root, 'alpha');
     assert.match(recall(root, 'zebra pkg'), /body of zebra-pkg/);
   });
 });

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { readTask, listTasks, resolveTask, tasksDir } from '../scripts/tasks.mjs';
+import { readTask, listTasks, resolveTask, parseBindingStatus, tasksDir } from '../scripts/tasks.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -81,24 +81,80 @@ describe('journal', () => {
 });
 
 describe('binding', () => {
-  it('an explicit task wins; else the worktree or branch names it; a closed or unknown task binds nothing', () => {
+  const bindTo = (slug, authority) => () => ({ slug, authority });
+  const authorityOf = (root, slug) => readTask(root, slug).authority;
+  const commit = root => spawnSync('git', ['-C', root, 'commit', '-q', '--allow-empty', '-m', 'x'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  const worktree = (root, name, branch) => {
+    const wt = path.join(path.dirname(root), `${path.basename(root)}-wt`, name);
+    fs.mkdirSync(path.dirname(wt), { recursive: true });
+    spawnSync('git', ['-C', root, 'worktree', 'add', '-q', '-b', branch, wt]);
+    return wt;
+  };
+
+  it('an explicit task wins; else the user\'s session binding names it; else nothing', () => {
     const root = repo();
     run(root, 'open', 'feature-x', 'g');
     run(root, 'open', 'other', 'g');
-    assert.equal(resolveTask(root, { task: 'other' }), 'other');
-    assert.equal(resolveTask(root, {}), null);
-    spawnSync('git', ['-C', root, 'checkout', '-q', '-b', 'pr/feature-x']);
-    assert.equal(resolveTask(root, {}), 'feature-x');
-    const wt = path.join(path.dirname(root), `${path.basename(root)}-wt`, 'other');
-    fs.mkdirSync(path.dirname(wt), { recursive: true });
-    spawnSync('git', ['-C', root, 'commit', '-q', '--allow-empty', '-m', 'x'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
-    spawnSync('git', ['-C', root, 'worktree', 'add', '-q', '-b', 'scratch', wt]);
-    fs.cpSync(path.join(root, '.claude'), path.join(wt, '.claude'), { recursive: true });
-    assert.equal(resolveTask(wt, {}), 'other');
-    run(root, 'close', 'feature-x');
-    assert.equal(resolveTask(root, {}), null);
+    const bound = bindTo('feature-x', authorityOf(root, 'feature-x'));
+    assert.equal(resolveTask(root, { task: 'other', binding: bound }), 'other');
+    assert.equal(resolveTask(root, { binding: () => null }), null);
+    assert.equal(resolveTask(root, { binding: bound }), 'feature-x');
     assert.equal(resolveTask(root, { task: 'nope' }), null);
-    assert.deepEqual(listTasks(root).map(t => `${t.slug}:${t.status}`), ['other:open'], 'a closed task is archived out of .claude/tasks/');
+  });
+
+  it('a bound session resolves its task in any worktree and on any branch', () => {
+    const root = repo();
+    run(root, 'open', 'feature-x', 'g');
+    commit(root);
+    const wt = worktree(root, 'unrelated-name', 'lane/whatever');
+    assert.equal(resolveTask(wt, { binding: bindTo('feature-x', authorityOf(root, 'feature-x')) }), 'feature-x',
+      'the task is read under the main checkout, not the worktree');
+  });
+
+  it('a worktree or branch named after a task binds nothing without the user\'s binding', () => {
+    const root = repo();
+    run(root, 'open', 'feature-x', 'g');
+    commit(root);
+    spawnSync('git', ['-C', root, 'checkout', '-q', '-b', 'pr/feature-x']);
+    assert.equal(resolveTask(root, { binding: () => null }), null);
+    const wt = worktree(root, 'feature-x', 'feature-x');
+    fs.cpSync(path.join(root, '.claude'), path.join(wt, '.claude'), { recursive: true });
+    assert.equal(resolveTask(wt, { binding: () => null }), null);
+    assert.equal(resolveTask(wt, {}), null, 'without a dev-lab python the binding is unread, never guessed');
+  });
+
+  it('a binding to a closed task, or under another authority, resolves nothing', () => {
+    const root = repo();
+    run(root, 'open', 'feature-x', 'g');
+    const authority = authorityOf(root, 'feature-x');
+    assert.ok(authority);
+    assert.equal(resolveTask(root, { binding: bindTo('feature-x', 'forged') }), null);
+    run(root, 'close', 'feature-x');
+    assert.equal(resolveTask(root, { binding: bindTo('feature-x', authority) }), null);
+    assert.deepEqual(listTasks(root), [], 'a closed task is archived out of .claude/tasks/');
+  });
+
+  it('reads dev-lab\'s status line, and nothing else, as a binding', () => {
+    assert.deepEqual(parseBindingStatus('task feature-x@abc123\n'), { slug: 'feature-x', authority: 'abc123' });
+    assert.equal(parseBindingStatus('no task bound: the user binds ...'), null);
+    assert.equal(parseBindingStatus(''), null);
+    assert.equal(parseBindingStatus('task Bad_Slug@x'), null);
+    assert.equal(parseBindingStatus('task feature-x'), null);
+  });
+
+  it('task.js bound names the door when nothing is bound', () => {
+    const r = run(repo(), 'bound');
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /no task bound/);
+    assert.match(r.stdout, /`task: <slug>`/);
+  });
+
+  it('task.js open tells the user how to bind and name branches', () => {
+    const r = run(repo(), 'open', 'feature-x', 'g');
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /first line is `task: feature-x`/);
+    assert.match(r.stdout, /pr\/feature-x\/<feature>/);
+    assert.match(r.stdout, /never a bare pr\/feature-x/);
   });
 
   it('remember.js tags the entry with the bound task', () => {
