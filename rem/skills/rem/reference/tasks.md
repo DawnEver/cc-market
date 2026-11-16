@@ -57,10 +57,19 @@ use it for this check only and unset it after. Start a session with
 
 A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/tasks.mjs`):
 1. the user's instruction, passed as `--task <slug>`;
-2. else the worktree directory name;
-3. else the branch's last segment (`pr/<slug>`, `lane/<slug>`, …).
+2. else the session's binding: the user's prompt whose FIRST line is `task: <slug>` binds the
+   session (user decision D5, 2026-11-15). dev-lab records it (`dev_lab.dev.taskbinding`, in the
+   per-machine consent state no agent tool writes); rem only READS it, through the main
+   checkout's `.venv` python `-m dev_lab.dev.taskbinding status` (`task <slug>@<authority>`).
 
-Only an OPEN task binds; nothing else is guessed. `task.js bound` prints the binding.
+The binding counts only while `.claude/tasks/<slug>/TASK.md` under the MAIN checkout is `status:
+open` with the same `authority:`; a closed task, or a reopened one under another authority,
+binds nothing. No python, no dev-lab, or no binding means no task -- nothing is guessed: a
+worktree or branch named after a task binds nothing. A bound session resolves its task from any
+worktree and branch. `task.js bound` prints `task <slug>`, or `no task bound:` and the door.
+
+Branches derive from the task: a session bound to `<slug>` names its branches
+`pr/<slug>/<feature>`, never a bare `pr/<slug>`.
 
 Recall (`scripts/recall.js`) is scoped by the binding, on every prompt:
 - the bound task's goal, scope, open items and latest journal lines;

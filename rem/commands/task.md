@@ -7,8 +7,9 @@ disable-model-invocation: true
 
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/task.js" $ARGUMENTS`
 
-Show the user the output above verbatim. If it opened a task, the session that works on it
-binds by `--task <slug>` or by a worktree/branch named after it, and records progress only
+Show the user the output above verbatim. If it opened a task, the user binds the session that
+works on it with a prompt whose first line is `task: <slug>` (its branches are
+`pr/<slug>/<feature>`, never a bare `pr/<slug>`); that session records progress only
 through `task.js log|decide|open-item|close-item|handoff` -- in English unless `.claude/rem.json`
 sets `"language": "unrestricted"` (translate the user's words; mark quotes `(user, translated)`).
 Do not run `task.js open` or

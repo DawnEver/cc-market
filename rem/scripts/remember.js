@@ -13,7 +13,7 @@
 // entry that names the old one (`corrects:` keeps it visible and flags it,
 // `supersedes:` hides it). An identical re-run is a no-op; a different body under an
 // existing name is refused. The entry carries `task: <slug>` of the bound task (--task, else
-// the worktree/branch name; see tasks.mjs). --from records where the entry was distilled from,
+// the user's `task: <slug>` binding; see tasks.mjs). --from records where the entry was distilled from,
 // e.g. tasks/<slug>/JOURNAL.md#D3 (task close counts that decision as distilled).
 // Prints the created file path.
 

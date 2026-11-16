@@ -4,7 +4,7 @@
  *
  * Reads the hook payload on stdin (user prompt, cwd, session_id) and injects, as
  * `additionalContext`, a SCOPED view:
- *   - the bound task (tasks.mjs resolveTask: worktree/branch name) — goal, open
+ *   - the bound task (tasks.mjs resolveTask: the user's `task: <slug>` binding) — goal, open
  *     items and the latest journal lines, on every turn;
  *   - the top 1–3 visible memory entries and bound docs scoring against the prompt
  *     (pure heuristic, no model call), drawn from the scope of cwd plus the scopes
@@ -425,10 +425,10 @@ function readStdinPayload() {
 /**
  * The scoped context for one prompt in `cwd`, or null. Read-only toward the repo.
  */
-export function scopedContext(prompt, cwd, now = Date.now()) {
+export function scopedContext(prompt, cwd, now = Date.now(), { binding } = {}) {
   const root = findProjectRoot(cwd);
   const tasks = listTasks(root);
-  const bound = resolveTask(root, {});
+  const bound = resolveTask(root, { binding });
   const task = bound ? readTask(root, bound) : null;
   const queried = queriedTasks(prompt, tasks.map((t) => t.slug));
   const active = new Set(tasks.filter((t) => t.status === "open").map((t) => t.slug));

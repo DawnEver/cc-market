@@ -5,11 +5,11 @@
 //   JOURNAL.md  append-only: dated progress, decisions Dn, open items On, handoffs
 // Opening/closing needs the user's authority record (authority.mjs): refused by default,
 // detectable when bypassed, not preventable by the same OS user. A session
-// works on ONE task, bound by the user's instruction (--task) or by its worktree/branch
-// name, and appends only to that task's journal.
+// works on ONE task, bound by the user's instruction (--task) or by the user's `task: <slug>`
+// prompt (recorded by dev-lab, read here), and appends only to that task's journal.
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { join, dirname } from 'path';
 import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
@@ -57,6 +57,7 @@ export function readTask(start, slug) {
     goal: (fields.description || '').replace(/^"|"$/g, ''),
     status: fields.status || 'open',
     opened_by: fields.opened_by || null,
+    authority: fields.authority || null,
     owner: fields.owner || null,
     created: fields.created || null,
     scope: (fields.scope || '').split(',').map(s => s.trim()).filter(Boolean),
@@ -77,20 +78,47 @@ export function listTasks(start) {
     .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 }
 
-function gitBranch(cwd) {
-  const r = spawnSync('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd, encoding: 'utf8' });
-  return r.status === 0 ? r.stdout.trim() : '';
+// The main checkout of the repository at `start` (where its tasks live, from any worktree).
+export function mainCheckout(start) {
+  const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { cwd: findProjectRoot(start), encoding: 'utf8' });
+  return r.status === 0 ? dirname(r.stdout.trim()) : findProjectRoot(start);
 }
 
-// The ONE open task a session in `start` works on: the user's explicit --task, else the
-// worktree directory name, else the branch's last segment (pr/<slug>, lane/<slug>, ...).
-// null when none names an open task — nothing is guessed beyond that.
-export function resolveTask(start, { task } = {}) {
-  const open = slug => readTask(start, slug)?.status === 'open';
-  if (task) return open(task) ? task : null;
-  const root = findProjectRoot(start);
-  const candidates = [basename(root), gitBranch(root).split('/').pop()];
-  return candidates.find(s => s && SLUG_RE.test(s) && open(s)) || null;
+// The door that binds a session, named wherever none is bound (dev_lab.dev.taskbinding.DOOR).
+export const BIND_DOOR = 'the user binds this session with a prompt whose first line is `task: <slug>` '
+  + '(an open task; a new one is opened by the user with /rem:task open <slug> "<goal>")';
+
+// `python -m dev_lab.dev.taskbinding status` prints `task <slug>@<authority>` or `no task bound: ...`.
+export function parseBindingStatus(text) {
+  const m = String(text || '').trim().match(/^task ([^@\s]+)@(\S+)$/);
+  return m && SLUG_RE.test(m[1]) ? { slug: m[1], authority: m[2] } : null;
+}
+
+// The checkout's own venv python (the family doors' `.venv/Scripts/python.exe | .venv/bin/python`), or null.
+function devLabPython(root) {
+  return [join(root, '.venv', 'Scripts', 'python.exe'), join(root, '.venv', 'bin', 'python')].find(existsSync) || null;
+}
+
+// The session's binding as dev-lab records it (rem never writes it), or null when none is
+// bound or dev-lab cannot be asked — never guessed.
+export function readSessionBinding(start) {
+  const root = mainCheckout(start);
+  const python = devLabPython(root);
+  if (!python) return null;
+  const r = spawnSync(python, ['-m', 'dev_lab.dev.taskbinding', 'status'], { cwd: root, encoding: 'utf8', timeout: 15000 });
+  return r.status === 0 ? parseBindingStatus(r.stdout) : null;
+}
+
+// The ONE open task a session in `start` works on: the user's explicit --task, else the task
+// the user bound the session to (`task: <slug>`, read by `binding`), valid only while that
+// task is open under the main checkout with the same authority. null otherwise.
+export function resolveTask(start, { task, binding = readSessionBinding } = {}) {
+  if (task) return readTask(start, task)?.status === 'open' ? task : null;
+  const bound = binding(start);
+  if (!bound) return null;
+  const found = readTask(mainCheckout(start), bound.slug);
+  return found?.status === 'open' && found.authority === bound.authority ? bound.slug : null;
 }
 
 // ── Writes (task.js is the only caller) ──
