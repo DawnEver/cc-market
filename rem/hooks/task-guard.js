@@ -27,7 +27,8 @@
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
 import { verbsOf } from '../scripts/task-verbs.mjs';
 
-const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/][^\\/]+[\\/](TASK|JOURNAL)\.md$/;
+// A task's record, or a session binding (written only by dev-lab's `task: <slug>` prompt door).
+const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/](?:[^\\/]+[\\/](TASK|JOURNAL)\.md$|\.bindings(?:[\\/]|$))/;
 const STORE_RE = /(?:^|[\\/])\.claude[\\/]rem[\\/]authority(?:[\\/]|$)/;
 const PROTECTED_RE = /(?:^|[\\/])\.claude[\\/]tasks(?:[\\/]|$)/;
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
@@ -42,7 +43,7 @@ const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move
 
 const CODE_FLAG = /^(?:-e|-E|--eval|-p|--print|-c|-command)(?:=(.*))?$/i;
 const DOOR = `Door: task.js ${verbsOf("append").join("|")} appends to the bound task's journal and ${verbsOf("rewrite").join("|")} rewrites one line `
-  + "(every verb: task.js help); the bound session takes the user's record into its worktree with task.js commit-record <slug>; "
+  + "(every verb: task.js help); the ledger is repo state, never committed on a branch, and a session binding is written only by the user's `task: <slug>` prompt; "
   + "read a task with cat/grep or task.js status; opening or closing a task is the user's /rem:task "
   + "open|close command -- propose it to the user.";
 const refuse = cause => `task-guard: ${cause}. ${DOOR}`;

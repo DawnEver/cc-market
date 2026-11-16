@@ -10,7 +10,7 @@
 
 export const VERBS = [
   { verb: 'open', who: 'user', kind: 'write', args: '<slug> "<goal>" [--scope <paths>] [--owner <who>]',
-    does: 'open a task: .claude/tasks/<slug>/{TASK,JOURNAL}.md' },
+    does: 'open a task: <ledger>/<slug>/{TASK,JOURNAL}.md (the ledger is <main checkout>/.claude/tasks/)' },
   { verb: 'close', who: 'user', kind: 'write', args: '<slug> ["<reason>"] [--journal-only D<n>,...]',
     does: 'refuse until every item is closed and every decision distilled, then archive into memory' },
   { verb: 'request', who: 'agent', kind: 'write', args: '<slug> "<goal>"',
@@ -25,9 +25,7 @@ export const VERBS = [
   { verb: 'amend', who: 'bound', kind: 'rewrite', args: '--line <n> "<line>" --reason "<why>" --approved "<user\'s words>"',
     does: 'correct a line that is WRONG as written, with the user\'s approval (a changed mind is a new decision)' },
   { verb: 'place', who: 'agent', kind: 'write', args: '<slug>',
-    does: 'copy an open task of this checkout into the main checkout when absent there' },
-  { verb: 'commit-record', who: 'bound', kind: 'write', args: '<slug>',
-    does: 'copy the open task\'s record from the main checkout into this worktree to commit it' },
+    does: 'copy an OPEN task this worktree holds in its own tree into the ledger when absent there; never opens or overwrites' },
   { verb: 'status', who: 'agent', kind: 'read', args: '[<slug>] [--distill]',
     does: 'the bound (or named) task in <=2 KB; --distill adds the undistilled decisions' },
   { verb: 'list', who: 'agent', kind: 'read', args: '', does: 'every task: slug, status, open items, decisions, goal' },

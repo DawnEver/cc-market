@@ -1,12 +1,17 @@
 // tasks.mjs — the tasks layer: what is being done, and how far.
 //
-// A task is a directory .claude/tasks/<slug>/ at the project root:
+// A task is a directory <slug>/ of the repository's task LEDGER (tasksDir):
 //   TASK.md     goal, scope, owner, status — written only by the user's /rem:task command
 //   JOURNAL.md  append-only: dated progress, decisions Dn, open items On, handoffs
 // Opening/closing needs the user's authority record (authority.mjs): refused by default,
 // detectable when bypassed, not preventable by the same OS user. A session
 // works on ONE task, bound by the user's instruction (--task) or by the user's `task: <slug>`
 // prompt (recorded by dev-lab, read here), and appends only to that task's journal.
+//
+// The ledger and the session bindings are REPO state, not branch state (cc-market #20): ONE
+// directory, <main checkout>/.claude/tasks/, the parent of `git rev-parse --git-common-dir`, the
+// same from every worktree, so a task opened in one worktree is found from all of them. It is
+// never committed on a feature branch; close archives a task into memory, which is.
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync } from 'fs';
 import { join, dirname, resolve, basename } from 'path';
@@ -20,9 +25,39 @@ import { consumeAuthority, authorityProblem } from './authority.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-export function tasksDir(start) {
-  return join(findProjectRoot(start), '.claude', 'tasks');
+// THE ONE answer to "which checkout holds the ledger": the main checkout of the repository at
+// `start`, from any of its worktrees (its own root outside git) -- the parent of git's common dir,
+// read from the files git keeps (.git, or a worktree's gitdir and its commondir) so the per-prompt
+// path spawns nothing; git itself answers only a layout those files do not explain. Cached per root.
+const checkouts = new Map();
+export function mainCheckout(start) {
+  const root = findProjectRoot(start);
+  if (!checkouts.has(root)) checkouts.set(root, mainCheckoutOf(root));
+  return checkouts.get(root);
 }
+
+function mainCheckoutOf(root) {
+  try {
+    const dotGit = join(root, '.git');
+    if (statSync(dotGit).isDirectory()) return root;
+    const gitDir = resolve(root, readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m)[1].trim());
+    const common = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
+    if (basename(common) === '.git') return dirname(common);
+  } catch { /* not a plain checkout or worktree: ask git */ }
+  const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? dirname(r.stdout.trim()) : root;
+}
+
+// THE ONE RESOLVER of the task ledger (dev_lab.dev.taskbinding.ledger is its twin): every read and write goes through it.
+export function tasksDir(start) {
+  return join(mainCheckout(start), '.claude', 'tasks');
+}
+
+// Where dev-lab's `task: <slug>` prompt door writes a session's binding; rem owns the format and only reads it:
+// `<ledger>/.bindings/<session>.json` = {"session": "<id>", "task": "<slug>@<authority>"}.
+export const BINDINGS = '.bindings';
+// The environment keys a native harness names its session id in (the primaries of dev_lab.dev.native_session's catalog).
+export const SESSION_ENV = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'];
 
 const taskFile = (start, slug) => join(tasksDir(start), slug, 'TASK.md');
 const journalFile = (start, slug) => join(tasksDir(start), slug, 'JOURNAL.md');
@@ -144,60 +179,34 @@ export function listTaskHeads(start) {
     .map(e => ({ slug: e.name, status: parseFrontmatter(readFileSync(join(dir, e.name, 'TASK.md'), 'utf8')).fields.status || 'open' }));
 }
 
-// The main checkout of the repository at `start` (where its tasks live, from any worktree):
-// read from the files git keeps (.git, or a worktree's gitdir and its commondir) -- no process
-// spawn on the per-prompt path; git itself answers only a layout those files do not explain.
-export function mainCheckout(start) {
-  const root = findProjectRoot(start);
-  try {
-    const dotGit = join(root, '.git');
-    if (statSync(dotGit).isDirectory()) return root;
-    const gitDir = resolve(root, readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m)[1].trim());
-    const common = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
-    if (basename(common) === '.git') return dirname(common);
-  } catch { /* not a plain checkout or worktree: ask git */ }
-  return mainCheckoutByGit(start);
-}
-
-function mainCheckoutByGit(start) {
-  const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-    { cwd: findProjectRoot(start), encoding: 'utf8' });
-  return r.status === 0 ? dirname(r.stdout.trim()) : findProjectRoot(start);
-}
-
 // The door that binds a session, named wherever none is bound (dev_lab.dev.taskbinding.DOOR).
 export const BIND_DOOR = 'the user binds this session with a prompt whose first line is `task: <slug>` '
   + '(an open task; a new one is opened by the user with /rem:task open <slug> "<goal>")';
 
-// `python -m dev_lab.dev.taskbinding status` prints `task <slug>@<authority>` or `no task bound: ...`.
-export function parseBindingStatus(text) {
-  const m = String(text || '').trim().match(/^task ([^@\s]+)@(\S+)$/);
+// The native session id the harness names in `env`, or ''.
+export function sessionOf(env = process.env) {
+  return SESSION_ENV.map(k => env[k]).find(v => typeof v === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(v)) || '';
+}
+
+// The binding of `session` (default: this process's) as dev-lab's prompt door wrote it into the
+// ledger -- one file, read directly, no process spawned -- or null when none is bound. Never guessed.
+export function readSessionBinding(start, { session = sessionOf() } = {}) {
+  if (!session || !/^[A-Za-z0-9._-]{1,128}$/.test(session)) return null;
+  let record;
+  try { record = JSON.parse(readFileSync(join(tasksDir(start), BINDINGS, `${session}.json`), 'utf8')); }
+  catch { return null; }
+  const m = record?.session === session && String(record.task || '').match(/^([^@\s]+)@(\S+)$/);
   return m && SLUG_RE.test(m[1]) ? { slug: m[1], authority: m[2] } : null;
-}
-
-// The checkout's own venv python (the family doors' `.venv/Scripts/python.exe | .venv/bin/python`), or null.
-function devLabPython(root) {
-  return [join(root, '.venv', 'Scripts', 'python.exe'), join(root, '.venv', 'bin', 'python')].find(existsSync) || null;
-}
-
-// The session's binding as dev-lab records it (rem never writes it), or null when none is
-// bound or dev-lab cannot be asked — never guessed.
-export function readSessionBinding(start) {
-  const root = mainCheckout(start);
-  const python = devLabPython(root);
-  if (!python) return null;
-  const r = spawnSync(python, ['-m', 'dev_lab.dev.taskbinding', 'status'], { cwd: root, encoding: 'utf8', timeout: 15000 });
-  return r.status === 0 ? parseBindingStatus(r.stdout) : null;
 }
 
 // The ONE open task a session in `start` works on: the user's explicit --task, else the task
 // the user bound the session to (`task: <slug>`, read by `binding`), valid only while that
-// task is open under the main checkout with the same authority. null otherwise.
+// task is open in the ledger with the same authority. null otherwise.
 export function resolveTask(start, { task, binding = readSessionBinding } = {}) {
   if (task) return readTask(start, task)?.status === 'open' ? task : null;
   const bound = binding(start);
   if (!bound) return null;
-  const found = readTask(mainCheckout(start), bound.slug);
+  const found = readTask(start, bound.slug);
   return found?.status === 'open' && found.authority === bound.authority ? bound.slug : null;
 }
 
@@ -412,63 +421,31 @@ export function findArchivedTask(start, slug) {
   return hit ? join(root, '.claude', 'memory', hit.path) : null;
 }
 
-// Place an OPEN task of this checkout into the main checkout, where dev-lab's binding reads it
-// (cc-market #18: a worktree's task was unreachable when main lacked it, and no door remained).
-// It copies the user's record verbatim and opens nothing: the task must be open here with an
-// authority the local history does not contradict. The main checkout gets it only when absent or
-// byte-identical; a differing copy is refused, never overwritten. Returns what it did.
-export function placeTask(start, slug, { main = mainCheckout(start) } = {}) {
-  const task = readTask(start, slug);
-  if (task?.status !== 'open') throw new Error(`no open task ${slug} in this checkout: place copies an open task, it never opens one`);
-  const problem = authorityProblem(start, slug, task.authority);
+// Place a task this WORKTREE holds in its own tree (written before the ledger was repo state, or
+// committed on a branch) into the ledger, where every worktree finds it (cc-market #18, #20). It
+// copies the user's record verbatim and opens nothing: the task must be open there with an
+// authority the local history does not contradict. The ledger gets it only when absent or
+// byte-identical; a differing copy is refused, never overwritten -- the user decides which record
+// stands. Returns what it did.
+export function placeTask(start, slug) {
+  const here = join(findProjectRoot(start), '.claude', 'tasks', slug);
+  const there = join(tasksDir(start), slug);
+  if (here === there) return `task ${slug} is already in the ledger`;
+  const fields = SLUG_RE.test(slug || '') && existsSync(join(here, 'TASK.md'))
+    ? parseFrontmatter(readFileSync(join(here, 'TASK.md'), 'utf8')).fields : null;
+  if (fields?.status !== 'open') throw new Error(`no open task ${slug} in this worktree: place copies an open task, it never opens one`);
+  const problem = authorityProblem(start, slug, fields.authority);
   if (problem?.level === 'error') throw new Error(`task ${slug} cannot be placed: ${problem.msg}`);
-  const here = join(tasksDir(start), slug);
-  const there = join(main, '.claude', 'tasks', slug);
-  if (here === there) return `task ${slug} is already in the main checkout`;
   const files = ['TASK.md', 'JOURNAL.md'].filter(f => existsSync(join(here, f)));
   const differing = files.filter(f => existsSync(join(there, f))
     && readFileSync(join(there, f), 'utf8') !== readFileSync(join(here, f), 'utf8'));
   if (differing.length) {
-    throw new Error(`the main checkout holds a different ${differing.join(' and ')} for ${slug}: refused, never overwritten`
+    throw new Error(`the ledger holds a different ${differing.join(' and ')} for ${slug}: refused, never overwritten`
       + ' -- the user decides which record stands');
   }
   const missing = files.filter(f => !existsSync(join(there, f)));
-  if (!missing.length) return `task ${slug} is already placed in the main checkout`;
+  if (!missing.length) return `task ${slug} is already placed in the ledger`;
   mkdirSync(there, { recursive: true });
   for (const f of missing) writeFileSync(join(there, f), readFileSync(join(here, f), 'utf8'));
   return `placed ${slug} (${missing.join(', ')}) in ${there}`;
-}
-
-// The opposite direction of place: the user's /rem:task open writes the record into the MAIN
-// checkout, untracked, and only the session bound to the task may commit it on its own
-// pr/<slug>/<feature> branch -- from its worktree, where the task guard refuses every other
-// write into .claude/tasks. This copies the open task's TASK.md and JOURNAL.md byte for byte
-// into the worktree at `start`, so that session can `git add` them. It opens nothing; it refuses
-// a task not open in the main checkout, a session not bound to it (`binding`, as resolveTask
-// reads it), and a worktree holding a different copy. Returns what it did.
-export function commitRecord(start, slug, { main = mainCheckout(start), binding = readSessionBinding } = {}) {
-  const task = SLUG_RE.test(slug || '') ? readTask(main, slug) : null;
-  if (task?.status !== 'open') {
-    throw new Error(`no open task ${slug} in the main checkout: commit-record copies an open task, it never opens one`);
-  }
-  const bound = binding(start);
-  if (bound?.slug !== slug || bound.authority !== task.authority) {
-    throw new Error(`this session is not bound to task ${slug}: only its bound session commits its record; ${BIND_DOOR}`);
-  }
-  const here = join(tasksDir(start), slug);
-  if (here === task.dir) {
-    throw new Error(`this is the main checkout: commit ${slug}'s record from the bound session's worktree, on pr/${slug}/<feature>`);
-  }
-  const files = ['TASK.md', 'JOURNAL.md'].filter(f => existsSync(join(task.dir, f)));
-  const differing = files.filter(f => existsSync(join(here, f))
-    && !readFileSync(join(here, f)).equals(readFileSync(join(task.dir, f))));
-  if (differing.length) {
-    throw new Error(`this worktree holds a different ${differing.join(' and ')} for ${slug}: refused, never overwritten`
-      + ' -- the user decides which record stands');
-  }
-  const missing = files.filter(f => !existsSync(join(here, f)));
-  if (!missing.length) return `this worktree already holds ${slug}'s record: git add .claude/tasks/${slug} and commit it`;
-  mkdirSync(here, { recursive: true });
-  for (const f of missing) writeFileSync(join(here, f), readFileSync(join(task.dir, f)));
-  return `copied ${slug} (${missing.join(', ')}) into ${here}: git add .claude/tasks/${slug} and commit it on pr/${slug}/<feature>`;
 }

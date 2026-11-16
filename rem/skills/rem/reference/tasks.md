@@ -5,10 +5,18 @@ replaces state spread over dated memory files. Present only where a repo has
 `.claude/tasks/` (scale by presence: small repos never see it).
 
 ```
-.claude/tasks/<slug>/
-  TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
-  JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
+<main checkout>/.claude/tasks/            the LEDGER: one per repository
+  <slug>/TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
+  <slug>/JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
+  .bindings/<session>.json   {"session", "task": "<slug>@<authority>"} — written only by dev-lab's prompt door
 ```
+
+**The ledger is REPO state, not branch state** (cc-market #20, 2026-11-16). Every read and write
+resolves through ONE resolver, `tasksDir()` (`scripts/tasks.mjs`; dev-lab's twin is
+`dev_lab.dev.taskbinding.ledger`): the parent of `git rev-parse --git-common-dir`, i.e. the main
+checkout's `.claude/tasks/`, the same directory from every worktree. A task opened in one worktree
+is found, bound, journaled and admitted from every other. The ledger is never committed on a
+feature branch; `close` archives a task into the closing tree's memory, which is committed.
 
 ## Open — refused by default, detectable when bypassed
 
@@ -58,21 +66,25 @@ use it for this check only and unset it after. Start a session with
 A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/tasks.mjs`):
 1. the user's instruction, passed as `--task <slug>`;
 2. else the session's binding: the user's prompt whose FIRST line is `task: <slug>` binds the
-   session (user decision D5, 2026-11-15). dev-lab records it (`dev_lab.dev.taskbinding`, in the
-   per-machine consent state no agent tool writes); rem only READS it, through the main
-   checkout's `.venv` python `-m dev_lab.dev.taskbinding status` (`task <slug>@<authority>`).
+   session (user decision D5, 2026-11-15). dev-lab's `UserPromptSubmit` door
+   (`dev_lab.dev.taskbinding bind`) writes it as `<ledger>/.bindings/<session>.json`; rem owns
+   that format and READS the one file directly (`readSessionBinding`, the session id from the
+   harness: the hook payload's `session_id`, else `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID`).
+   No process is spawned and no project venv is needed. The task guard refuses an agent's write to it.
 
-The binding counts only while `.claude/tasks/<slug>/TASK.md` under the MAIN checkout is `status:
-open` with the same `authority:`; a closed task, or a reopened one under another authority,
-binds nothing. No python, no dev-lab, or no binding means no task -- nothing is guessed: a
-worktree or branch named after a task binds nothing. A bound session resolves its task from any
-worktree and branch. `task.js status` prints the bound task, or `no task bound:` and the door.
+The binding counts only while the ledger's `<slug>/TASK.md` is `status: open` with the same
+`authority:`; a closed task, or a reopened one under another authority, binds nothing. No binding
+means no task -- nothing is guessed: a worktree or branch named after a task binds nothing. A
+bound session resolves its task from any worktree and branch. `task.js status` prints the bound
+task, or `no task bound:` and the door.
 
-When the main checkout lacks the task (it sits on a branch without it) while this checkout holds
-it OPEN, `task.js place <slug>` copies TASK.md and JOURNAL.md there verbatim (cc-market #18). It
-opens nothing: the task must be open here with an authority the local history does not contradict.
-It writes only where the main checkout has no copy; a differing copy is refused, never overwritten.
-Any session may run it; the task guard refuses only `open` and `close`.
+A worktree that still holds an OPEN task in its own tree (written before the ledger was repo
+state, or committed on a branch) moves it into the ledger with `task.js place <slug>`: it copies
+TASK.md and JOURNAL.md verbatim (cc-market #18). It opens nothing: the task must be open there with
+an authority the local history does not contradict. It writes only where the ledger has no copy;
+a differing copy is refused, never overwritten -- the user decides which record stands. Any
+session may run it; the task guard refuses only `open` and `close`. `task.js commit-record` is
+retired (`RETIRED_VERBS` in `scripts/task.js`): nothing commits the ledger on a branch.
 
 Branches derive from the task: a session bound to `<slug>` names its branches
 `pr/<slug>/<feature>`, never a bare `pr/<slug>`.

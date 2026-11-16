@@ -1,6 +1,5 @@
 // session-record.mjs — recall's device-local record of one session (tmpdir, one JSON file):
-// `root` + `binding` (dev-lab's answer, asked once per session) and `seen` (the task line last
-// injected). recall.js reads and writes it; session-context.js drops it on SessionStart and
+// `seen`, the task line last injected. recall.js reads and writes it; session-context.js drops it on SessionStart and
 // PostCompact. Dependency-light, so a hook can drop a record without loading recall.
 
 import fs from 'node:fs';

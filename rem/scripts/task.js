@@ -2,18 +2,26 @@
 // task.js -- the tasks layer CLI. Its verbs, who may run each and what each does are ONE table,
 // task-verbs.mjs (`task.js help`, `task.js verbs --json`); the mechanism is
 // skills/rem/reference/tasks.md. A bound verb acts on --task <slug>, else on the task the user
-// bound the session to with a `task: <slug>` prompt (read from dev-lab; rem never writes it).
+// bound the session to with a `task: <slug>` prompt (dev-lab's prompt door writes it into the
+// ledger; rem only reads it). THE LEDGER IS REPO STATE (cc-market #20): every verb reads and
+// writes <main checkout>/.claude/tasks/ (tasks.mjs tasksDir) from any worktree; nothing commits
+// it on a branch. Retired verbs are refused naming why (RETIRED_VERBS).
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, commitRecord, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, BIND_DOOR,
+  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, BIND_DOOR,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 import { VERBS, helpText } from './task-verbs.mjs';
 
 const PREFIX = '[task]';
+// Retired verbs, each refused naming why and what replaced it (every wall teaches).
+export const RETIRED_VERBS = {
+  'commit-record': 'retired 2026-11-16 (cc-market #20): the ledger is repo state in the main checkout, read from every '
+    + 'worktree, and never committed on a feature branch -- nothing to copy or commit',
+};
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 function flag(args, name) {
@@ -37,6 +45,7 @@ const JOURNAL_VERBS = { log: 'progress', decide: 'decision', 'open-item': 'open-
 export function main(argv) {
   const args = [...argv];
   const verb = args.shift();
+  if (Object.hasOwn(RETIRED_VERBS, verb)) throw new Error(`task.js ${verb} is ${RETIRED_VERBS[verb]}`);
   if (verb === 'request') {
     const [slug, ...goal] = args;
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug || '')) throw new Error(`request needs a kebab-case slug, got ${slug}`);
@@ -48,7 +57,7 @@ export function main(argv) {
     const owner = flag(args, '--owner') || 'user';
     const [slug, ...goal] = args;
     openTask(cwd, slug, goal.join(' '), { scope, owner });
-    console.log(`${PREFIX} opened ${slug} → .claude/tasks/${slug}/`);
+    console.log(`${PREFIX} opened ${slug} → ${join(tasksDir(cwd), slug)} (the ledger every worktree reads)`);
     console.log(`${PREFIX} to work on it, bind a session with a prompt whose first line is \`task: ${slug}\`; `
       + `its branches are pr/${slug}/<feature>, never a bare pr/${slug}`);
   } else if (verb === 'close') {
@@ -75,10 +84,10 @@ export function main(argv) {
     const approved = flag(args, '--approved');
     if (!n || args.length !== 1) throw usage(verb);
     console.log(amendJournalLine(cwd, slug, n, args[0], { reason, approved }));
-  } else if (verb === 'place' || verb === 'commit-record') {
+  } else if (verb === 'place') {
     const [slug] = args;
     if (!slug) throw usage(verb);
-    console.log(`${PREFIX} ${(verb === 'place' ? placeTask : commitRecord)(cwd, slug)}`);
+    console.log(`${PREFIX} ${placeTask(cwd, slug)}`);
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) {
       console.log(`${t.slug}\t${t.status}\t${t.openItems.length} open\t${t.decisions.length} decisions\t${t.goal}`);

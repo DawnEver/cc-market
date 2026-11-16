@@ -14,7 +14,7 @@
  * Nothing to say → exit 0 silently.
  *
  * Every prompt waits for this hook, so its warm path spawns no process and stats no memory
- * file: the binding is asked once per session, the main checkout is read from git's files,
+ * file: the binding is one ledger file, the main checkout is read from git's files,
  * and the candidate index is kept per directory, re-reading only a directory that moved.
  *
  * Read-only toward the repo: recall never writes the memory tree or any state
@@ -35,7 +35,7 @@ import { readTask, listTaskHeads, resolveTask, readSessionBinding, taskSummary }
 import { collectBoundDocs } from "./doc-freshness.js";
 import { isMain, findProjectRoot } from "../shared/lib.mjs";
 import { atomicWriteFile } from "../shared/atomic-write.mjs";
-import { readSession, writeSession, forgetSession } from "./session-record.mjs";
+import { readSession, writeSession } from "./session-record.mjs";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
 // inside), captures everything else. Used by the telemetry ring.
@@ -163,30 +163,11 @@ export function docCovers(doc, workPaths) {
   }));
 }
 
-// ── The session record: its binding and the task line it last saw ──
-// One device-local file per session (tmpdir). The binding is dev-lab's (a python process,
-// 1-2 s): it is asked once per session and cached, and asked again only after a prompt that can
-// change it -- one whose first line is `task: <slug>`, which drops the record (dev-lab's own
-// hook may still be writing the new binding). `seen` is the task line last injected: it is
+// ── The session record: the task line it last saw ──
+// One device-local file per session (tmpdir). `seen` is the task line last injected: it is
 // injected again only when it changes, and session-context.js drops the record on SessionStart
-// and PostCompact, so a fresh or compacted context gets it once more.
-
-const BIND_PROMPT = /^[ \t]*task:[ \t]*[a-z0-9]+(?:-[a-z0-9]+)*[ \t]*(?:\r?\n|$)/;
-
-// A `binding` reader for resolveTask that asks `read` (dev-lab) at most once per session.
-export function sessionBinding(session, prompt, { read = readSessionBinding, info } = {}) {
-  return (start) => {
-    const ask = () => { if (info) info.asked = true; return read(start); };
-    if (!session) return ask();
-    if (BIND_PROMPT.test(String(prompt))) { forgetSession(session); return ask(); }
-    const key = path.resolve(start);
-    const record = readSession(session);
-    if (record.root === key && "binding" in record) return record.binding;
-    const binding = ask();
-    writeSession(session, { ...readSession(session), root: key, binding });
-    return binding;
-  };
-}
+// and PostCompact, so a fresh or compacted context gets it once more. The binding itself needs
+// no cache: it is one ledger file (tasks.mjs readSessionBinding), read with no process spawned.
 
 // The task line for this prompt, or null when this session already saw this exact line.
 function taskLineOnce(task, session) {
@@ -356,7 +337,7 @@ function printTelemetry() {
     if (r.done === false) {
       console.log(`${r.t}  KILLED mid-run (hook timeout or crash)`);
     } else {
-      console.log(`${r.t}  ${String(r.ms).padStart(5)}ms  cache=${r.cache ? "hit " : "MISS"}  fast=${r.fast ? "yes" : " no"}  bind=${r.asked ? "asked" : "cached"}  cands=${r.cands}  injected=${r.injected}`);
+      console.log(`${r.t}  ${String(r.ms).padStart(5)}ms  cache=${r.cache ? "hit " : "MISS"}  fast=${r.fast ? "yes" : " no"}  cands=${r.cands}  injected=${r.injected}`);
     }
   }
   const times = rows.filter((r) => r.done !== false).map((r) => r.ms).sort((a, b) => a - b);
@@ -445,13 +426,13 @@ function readStdinPayload() {
 
 /**
  * The scoped context for one prompt in `cwd`, or null. Read-only toward the repo.
- * `binding` reads the session's binding (default: dev-lab, asked once per `session`).
+ * `binding` reads the session's binding (default: its one ledger file, tasks.mjs readSessionBinding).
  */
 export function scopedContext(prompt, cwd, now = Date.now(), { binding, session } = {}) {
   const root = findProjectRoot(cwd);
   const info = {};
   const heads = listTaskHeads(root);
-  const bound = resolveTask(root, { binding: binding || sessionBinding(session, prompt, { info }) });
+  const bound = resolveTask(root, { binding: binding || ((start) => readSessionBinding(start, session ? { session } : {})) });
   const task = bound ? readTask(root, bound) : null;
   const queried = queriedTasks(prompt, heads.map((t) => t.slug));
   const active = new Set(heads.filter((t) => t.status === "open").map((t) => t.slug));
@@ -477,7 +458,6 @@ export function scopedContext(prompt, cwd, now = Date.now(), { binding, session 
       ms: Date.now() - T0,
       cache: info.cacheHit !== false,
       fast: info.fast === true,
-      asked: info.asked === true,
       cands: candidates.length,
       injected: Boolean(recalled),
     });

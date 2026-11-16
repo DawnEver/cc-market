@@ -16,7 +16,6 @@ import {
   tokenize,
   isSkippable,
   scopedContext,
-  sessionBinding,
   collectCandidates,
   scopeFingerprint,
   scoreEntry,
@@ -382,20 +381,6 @@ describe("the per-prompt budget", () => {
   const session = () => `budget-${crypto.randomUUID()}`;
   const counter = (answer) => { const read = () => { read.calls++; return answer; }; read.calls = 0; return read; };
 
-  test("dev-lab's binding is asked once per session, and again after a `task:` prompt", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rem-budget-"));
-    const read = counter({ slug: "alpha", authority: "a" });
-    const s = session();
-    for (let i = 0; i < 5; i++) assert.deepEqual(sessionBinding(s, "continue", { read })(root), { slug: "alpha", authority: "a" });
-    assert.equal(read.calls, 1, "five prompts, one python spawn");
-    sessionBinding(s, "task: beta\nwork on it", { read })(root);
-    sessionBinding(s, "continue", { read })(root);
-    assert.equal(read.calls, 3, "a binding prompt drops the record; the next prompt asks again");
-    const unkeyed = counter(null);
-    for (let i = 0; i < 3; i++) sessionBinding(null, "continue", { read: unkeyed })(root);
-    assert.equal(unkeyed.calls, 3, "PLANTED CONTROL: without a session record every prompt asks");
-  });
-
   test("the fingerprint stats directories, never the 6000 entry files", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "rem-budget-"));
     for (let d = 1; d <= 60; d++) {
@@ -442,13 +427,13 @@ describe("the per-prompt budget", () => {
     }
     const read = counter(null);
     const s = session();
-    scopedContext("topic7 detail", root, Date.now(), { session: s, binding: sessionBinding(s, "x", { read }) }); // cold: builds the cache
+    scopedContext("topic7 detail", root, Date.now(), { session: s, binding: read }); // cold: builds the cache
     const t0 = Date.now();
     // An hour later: the TTL has lapsed, so the fingerprint walk runs -- the common case.
-    const ctx = scopedContext("topic7 detail", root, Date.now() + 3_600_000, { session: s, binding: sessionBinding(s, "x", { read }) });
+    const ctx = scopedContext("topic7 detail", root, Date.now() + 3_600_000, { session: s, binding: read });
     const elapsed = Date.now() - t0;
     assert.match(ctx || "", /Relevant memories/);
-    assert.equal(read.calls, 1, "the warm prompt spawned nothing");
+    assert.equal(read.calls, 2, "one ledger read per prompt, nothing spawned");
     assert.ok(elapsed < 1000, `a warm prompt took ${elapsed}ms (budget 1000ms in-process; hook p95 target < 2 s)`);
   });
 });
