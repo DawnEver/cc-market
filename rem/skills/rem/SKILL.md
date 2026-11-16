@@ -17,8 +17,7 @@ equivalent substitute. Do not spawn a second CLI session to reconstruct live con
 
 1. **Main loop first** runs the user-gated checks (a background fork can't prompt):
    `crystallize.js --check` — if it fires, do its interactive procedure (`reference/crystallize.md`)
-   inline before forking. A user who declines: run `crystallize.js --decline`; it is not asked again
-   until another advisory step of entries accrues.
+   inline before forking. A user who declines: run `crystallize.js --decline`; it is never asked again.
 2. **Then dispatch one `fork`** for the standard pass (rem-prep → summarize → write
    memory → index), returning a one-line recap. The fork must not re-fork or
    touch crystallize.

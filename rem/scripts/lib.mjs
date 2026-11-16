@@ -97,12 +97,10 @@ export function findChildScopes(scopeRoot, ignore) {
 
 export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
 
-// Whether /rem should propose crystallize for `live` entries. A user who declined
-// (`crystallize.js --decline`, recorded as the live count then) is asked again only after
-// another CRYSTALLIZE_ADVISORY entries accrue -- never on every session (user ruling 2026-11-16).
-export function crystallizeDue(live, declinedAt = loadState().crystallize?.declinedAt) {
-  if (live < CRYSTALLIZE_ADVISORY) return false;
-  return !Number.isInteger(declinedAt) || live - declinedAt >= CRYSTALLIZE_ADVISORY;
+// Whether /rem should propose crystallize for `live` entries. ONE decline is permanent
+// (`crystallize.js --decline` records `crystallize.declined: true`); only the user lifts it.
+export function crystallizeDue(live, declined = loadState().crystallize?.declined === true) {
+  return live >= CRYSTALLIZE_ADVISORY && !declined;
 }
 export const DAY_MS = 24 * 60 * 60 * 1000;
 

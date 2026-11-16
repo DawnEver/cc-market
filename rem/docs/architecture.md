@@ -21,7 +21,7 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
   /rem skill:
-    ├── main loop: run the user-gated crystallize check first (a fork can't prompt; a decline waits a full advisory step)
+    ├── main loop: run the user-gated crystallize check first (a fork can't prompt; one decline is permanent)
     ├── then use a context-inheriting fork or Codex inline pass (first-hand session summary,
     │   keeps prep/memory-write noise out of the main session) → returns a one-line recap
     ├── rem-prep.js — read-only: entries read this session, visible / hidden counts, advisory
