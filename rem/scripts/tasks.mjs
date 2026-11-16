@@ -81,6 +81,50 @@ export function readTask(start, slug) {
   };
 }
 
+// ── Progressive disclosure: one line per prompt, status on demand, show for the whole record ──
+
+const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 3)}...` : text);
+export const SUMMARY_BYTES = 200;
+export const STATUS_BYTES = 2048;
+
+// The per-prompt line (<= SUMMARY_BYTES): counts and the newest decision, never item texts.
+export function taskSummary(task) {
+  const last = task.decisions.at(-1);
+  const head = `task ${task.slug}: ${task.openItems.length} open, ${task.decisions.length} decisions`;
+  const tail = '; detail: task.js status';
+  if (!last) return head + tail;
+  const lead = `, last D${last.n} (${last.date.slice(5)}) "`;
+  const room = Math.max(0, SUMMARY_BYTES - Buffer.byteLength(head + lead + '"' + tail));
+  let text = clip(last.text, Math.min(60, room));
+  while (Buffer.byteLength(text) > room) text = text.slice(0, -1);
+  return `${head}${lead}${text}"${tail}`;
+}
+
+// `task.js status` (<= STATUS_BYTES): goal, scope, authority, open items one line each, the
+// newest 3 decisions and the last handoff. `undistilled` (from distillStatus) adds that line.
+export function taskStatus(task, { undistilled } = {}) {
+  let journal = '';
+  try { journal = readFileSync(join(task.dir, 'JOURNAL.md'), 'utf8'); } catch { /* none yet */ }
+  const handoff = journal.split(/\r?\n/).map(l => l.match(LINE_RE)).filter(m => m?.[2] === 'handoff').at(-1);
+  const head = [
+    `task ${task.slug} (${task.status}, authority ${task.authority || 'none'}, owner ${task.owner || 'user'}): ${clip(task.goal, 300)}`,
+    ...(task.scope.length ? [`scope: ${task.scope.join(', ')}`] : []),
+  ];
+  const tail = [
+    `decisions: ${task.decisions.length}${task.decisions.length ? ', newest:' : ''}`,
+    ...task.decisions.slice(-3).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...(handoff ? [`last handoff (${handoff[1]}): ${clip(handoff[6], 160)}`] : []),
+    ...(undistilled ? [`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`] : []),
+    `whole record: task.js show ${task.slug}`,
+  ];
+  const items = task.openItems.map(i => `  O${i.n} ${clip(i.text, 100)}`);
+  let shown = items.length;
+  const render = () => [...head, `open items: ${items.length}`, ...items.slice(0, shown),
+    ...(shown < items.length ? [`  +${items.length - shown} more (task.js show ${task.slug})`] : []), ...tail].join('\n');
+  while (shown > 0 && Buffer.byteLength(render()) > STATUS_BYTES) shown--;
+  return render();
+}
+
 export function listTasks(start) {
   const dir = tasksDir(start);
   if (!existsSync(dir)) return [];
@@ -193,7 +237,7 @@ function appendJournalLocked(start, slug, tag, text, { date = todayISO(), allowC
   return line.trimEnd();
 }
 
-// The ONE sanctioned rewrite of a journal line: translating it into English. Line n (1-based)
+// One of the two audited rewrites of a journal line (with amend): translating it into English. Line n (1-based)
 // must be a journal line holding foreign script; the replacement must hold none and keep the
 // `- <date> <tag>: ` prefix byte-identical. One audit line is then appended. Nothing else moves.
 export function translateJournalLine(start, slug, n, replacement, { date = todayISO() } = {}) {

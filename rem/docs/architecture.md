@@ -34,7 +34,7 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
     ├── open <slug> "<goal>"  → task.js open  → .claude/tasks/<slug>/{TASK,JOURNAL}.md
     └── close <slug>          → task.js close: refuse until distilled, then git mv into
                                 .claude/memory/<date>/task-<slug>/ (hidden, kept)
-  task.js log|decide|open-item|close-item|handoff → append to the bound task's JOURNAL.md
+  task.js <append verb> → append to the bound task's JOURNAL.md (every verb: task.js help)
 
   /todo skill (the one backlog):
     ├── /todo        → todo.js report  (read-only: task open items, backlog, stale docs)

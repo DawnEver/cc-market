@@ -8,7 +8,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { readTask, listTasks, resolveTask, parseBindingStatus, tasksDir, commitRecord } from '../scripts/tasks.mjs';
+import { readTask, listTasks, resolveTask, parseBindingStatus, tasksDir, commitRecord, taskSummary, SUMMARY_BYTES, STATUS_BYTES } from '../scripts/tasks.mjs';
+import { VERBS } from '../scripts/task-verbs.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -165,8 +166,8 @@ describe('binding', () => {
     assert.equal(parseBindingStatus('task feature-x'), null);
   });
 
-  it('task.js bound names the door when nothing is bound', () => {
-    const r = run(repo(), 'bound');
+  it('task.js status names the door when nothing is bound', () => {
+    const r = run(repo(), 'status');
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /no task bound/);
     assert.match(r.stdout, /`task: <slug>`/);
@@ -329,5 +330,56 @@ describe('commit-record: the bound session takes the main checkout\'s record int
     assert.equal(d.deny, false);
     const refused = decideTaskGuard({ tool_name: 'Bash', tool_input: { command: 'cp a/TASK.md .claude/tasks/toolchain/TASK.md' } });
     assert.match(refused.reason, /task\.js commit-record <slug>/);
+  });
+});
+
+describe('progressive disclosure', () => {
+  const big = () => {
+    const root = repo();
+    run(root, 'open', 't', 'goal '.repeat(30).trim());
+    const lines = [];
+    for (let i = 1; i <= 30; i++) lines.push(`- ${today} O${i} open: ${'item text '.repeat(20)}${i}`);
+    for (let i = 1; i <= 120; i++) lines.push(`- ${today} D${i}: decision ${'word '.repeat(40)}${i}`);
+    lines.push(`- ${today} handoff: next: rerun the gate`);
+    fs.appendFileSync(path.join(tasksDir(root), 't', 'JOURNAL.md'), lines.join('\n') + '\n');
+    return root;
+  };
+
+  it('the per-prompt summary is one line within SUMMARY_BYTES, counts only, pointing at status', () => {
+    const line = taskSummary(readTask(big(), 't'));
+    assert.ok(Buffer.byteLength(line) <= SUMMARY_BYTES, `${Buffer.byteLength(line)} B: ${line}`);
+    assert.match(line, /^task t: 30 open, 120 decisions, last D120 \(\d\d-\d\d\) ".*"; detail: task\.js status$/);
+    assert.doesNotMatch(line, /item text/, 'no item text rides on every prompt');
+  });
+
+  it('task.js status fits STATUS_BYTES and names what it cut (PLANTED: 30 long items would not fit)', () => {
+    const r = run(big(), 'status', 't');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(Buffer.byteLength(r.stdout.trimEnd()) <= STATUS_BYTES, `${Buffer.byteLength(r.stdout)} B`);
+    assert.match(r.stdout, /^open items: 30$/m);
+    assert.match(r.stdout, /^ {2}\+\d+ more \(task\.js show t\)$/m, 'the cut is named, with its door');
+    assert.match(r.stdout, /^ {2}D120 /m);
+    assert.match(r.stdout, /^last handoff \(\S+\): next: rerun the gate$/m);
+  });
+
+  it('VERBS is the one verb list: every entry dispatches and a verb outside it points at help', () => {
+    const root = repo();
+    for (const { verb } of VERBS) {
+      assert.doesNotMatch(run(root, verb).stderr, /unknown verb/, `${verb} is in VERBS but task.js does not dispatch it`);
+    }
+    const r = run(root, 'bound');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unknown verb bound; every verb: task\.js help/, 'PLANTED: a verb outside VERBS is refused');
+    assert.deepEqual(JSON.parse(run(root, 'verbs', '--json').stdout).map((v) => v.verb), VERBS.map((v) => v.verb));
+  });
+
+  it('no doc restates the journal verb list or names a retired verb', () => {
+    const docs = ['README.md', 'AGENTS.md', 'commands/task.md', 'docs/architecture.md',
+      'skills/rem/reference/tasks.md', 'skills/rem/reference/scripts.md'];
+    for (const doc of docs) {
+      const text = fs.readFileSync(path.join(REM, doc), 'utf8');
+      assert.doesNotMatch(text, /log\|decide|`log`, `decide`/, `${doc} restates the verb list`);
+      assert.doesNotMatch(text, /distill-status|task\.js bound/, `${doc} names a retired verb`);
+    }
   });
 });

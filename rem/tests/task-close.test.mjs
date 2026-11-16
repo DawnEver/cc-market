@@ -90,7 +90,7 @@ describe('remember.js --from distills a decision', () => {
       { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
     assert.equal(r.status, 0, r.stderr);
     assert.match(fs.readFileSync(r.stdout.trim(), 'utf8'), /^from:\n {2}- tasks\/alpha\/JOURNAL\.md#D1$/m);
-    assert.match(ok(task(root, 'distill-status', 'alpha')).stdout, /undistilled: D2$/m);
+    assert.match(ok(task(root, 'status', 'alpha', '--distill')).stdout, /undistilled: D2$/m);
   });
 });
 
