@@ -8,12 +8,12 @@ replaces state spread over dated memory files. Present only where a repo has
 <main checkout>/.claude/tasks/            the LEDGER: one per repository
   <slug>/TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
   <slug>/JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
-  .bindings/<session>.json   {"session", "task": "<slug>@<authority>"} — written only by dev-lab's prompt door
+  .bindings/<session>.json   the session's binding — written only by rem's UserPromptSubmit hook (§ Bind)
 ```
 
 **The ledger is REPO state, not branch state** (cc-market #20, 2026-11-16). Every read and write
-resolves through ONE resolver, `tasksDir()` (`scripts/tasks.mjs`; dev-lab's twin is
-`dev_lab.dev.taskbinding.ledger`): the parent of `git rev-parse --git-common-dir`, i.e. the main
+resolves through ONE resolver, `tasksDir()` (`scripts/tasks.mjs`): the parent of
+`git rev-parse --git-common-dir`, i.e. the main
 checkout's `.claude/tasks/`, the same directory from every worktree. A task opened in one worktree
 is found, bound, journaled and admitted from every other. The ledger is never committed on a
 feature branch; `close` archives a task into the closing tree's memory, which is committed.
@@ -25,7 +25,8 @@ feature branch; `close` archives a task into the closing tree's memory, which is
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
-grant that the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit) appends a
+grant that the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit, the one task
+hook: it also binds, § Bind) appends a
 `granted` event for a prompt that IS `/rem:task open|close <slug> …` (verb, slug, prompt hash,
 session, time) to `~/.claude/rem/authority/<project>.jsonl` (directory 0o700, owner checked on
 POSIX; never a shared temp dir). A grant matches exactly one verb and slug, is live for 30
@@ -66,11 +67,25 @@ use it for this check only and unset it after. Start a session with
 A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/tasks.mjs`):
 1. the user's instruction, passed as `--task <slug>`;
 2. else the session's binding: the user's prompt whose FIRST line is `task: <slug>` binds the
-   session (user decision D5, 2026-11-15). dev-lab's `UserPromptSubmit` door
-   (`dev_lab.dev.taskbinding bind`) writes it as `<ledger>/.bindings/<session>.json`; rem owns
-   that format and READS the one file directly (`readSessionBinding`, the session id from the
-   harness: the hook payload's `session_id`, else `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID`).
-   No process is spawned and no project venv is needed. The task guard refuses an agent's write to it.
+   session (user decision D5, 2026-11-15). rem's ONE task hook, `hooks/task-authority.js`
+   (UserPromptSubmit), writes it (`bindSession`) and tells the session its task and PR heads, or
+   why nothing was bound (no open task: the door is `/rem:task open`). rem READS the one file
+   directly (`readSessionBinding`). Node only: no process is spawned and no project venv takes
+   part, so a broken interpreter cannot stop a binding. The task guard refuses an agent's write to it.
+
+**The binding file -- the contract other tools read.** rem owns it and is its only writer; a
+git-side gate (another tool's pre-push hook) reads it and never writes it:
+
+- the ledger: `<parent of git rev-parse --path-format=absolute --git-common-dir>/.claude/tasks/`;
+- the binding: `<ledger>/.bindings/<session>.json` = `{"session": "<id>", "task": "<slug>@<authority>"}`,
+  exactly those two keys; `<id>` is the harness's session as a process inside it sees it --
+  `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex (the executing thread, never
+  a parent's id);
+- valid only while `<ledger>/<slug>/TASK.md` has frontmatter `status: open` and the same
+  `authority: <authority>`; anything else binds nothing.
+
+Pinned by `tests/task-bind.test.mjs`. Changing a key or a path is a contract change: readers move
+with it.
 
 The binding counts only while the ledger's `<slug>/TASK.md` is `status: open` with the same
 `authority:`; a closed task, or a reopened one under another authority, binds nothing. No binding

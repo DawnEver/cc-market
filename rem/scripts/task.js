@@ -2,8 +2,8 @@
 // task.js -- the tasks layer CLI. Its verbs, who may run each and what each does are ONE table,
 // task-verbs.mjs (`task.js help`, `task.js verbs --json`); the mechanism is
 // skills/rem/reference/tasks.md. A bound verb acts on --task <slug>, else on the task the user
-// bound the session to with a `task: <slug>` prompt (dev-lab's prompt door writes it into the
-// ledger; rem only reads it). THE LEDGER IS REPO STATE (cc-market #20): every verb reads and
+// bound the session to with a `task: <slug>` prompt (rem's prompt hook, hooks/task-authority.js,
+// writes it into the ledger). THE LEDGER IS REPO STATE (cc-market #20): every verb reads and
 // writes <main checkout>/.claude/tasks/ (tasks.mjs tasksDir) from any worktree; nothing commits
 // it on a branch. Retired verbs are refused naming why (RETIRED_VERBS).
 

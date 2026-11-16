@@ -27,7 +27,7 @@
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
 import { verbsOf } from '../scripts/task-verbs.mjs';
 
-// A task's record, or a session binding (written only by dev-lab's `task: <slug>` prompt door).
+// A task's record, or a session binding (written only by the user's `task: <slug>` prompt, through task-authority.js).
 const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/](?:[^\\/]+[\\/](TASK|JOURNAL)\.md$|\.bindings(?:[\\/]|$))/;
 const STORE_RE = /(?:^|[\\/])\.claude[\\/]rem[\\/]authority(?:[\\/]|$)/;
 const PROTECTED_RE = /(?:^|[\\/])\.claude[\\/]tasks(?:[\\/]|$)/;
