@@ -12,7 +12,7 @@
 // Before close, distill (any session): cite tasks/<slug>/JOURNAL.md#D<n> from a memory entry
 // (remember.js --from), a rule, or a bound doc. `task.js distill-status [<slug>]` lists what is left.
 // Any session, on its BOUND task (--task <slug>, else the user's `task: <slug>` prompt binding,
-// read through `python -m dev_lab.dev.taskbinding status`; rem never writes it):
+// which dev-lab's prompt door writes into the ledger and rem reads directly; rem never writes it):
 //   task.js log "<progress>"            task.js decide "<decision>"   → D<n>
 //   task.js open-item "<text>"          task.js close-item O<n> "<how>"
 //   task.js handoff "<text>"
@@ -23,10 +23,11 @@
 //     a line that is WRONG as written, corrected with the user's approval; the prefix stays
 //     byte-identical and `- <date> progress: line <n> amended: <why> -- approved: "..." (was sha256:..)`
 //     is appended. A changed mind is a new decision, never an amendment.
-// Any session (cc-market #18): task.js place <slug> copies an OPEN task of this checkout into the
-//   main checkout (where the binding reads it) when absent there; it never opens or overwrites.
-// The BOUND session: task.js commit-record <slug> copies the open task's record from the main
-//   checkout into its worktree, byte for byte, so it commits it on pr/<slug>/<feature>.
+// THE LEDGER IS REPO STATE (cc-market #20): every verb reads and writes the one ledger,
+//   <main checkout>/.claude/tasks/ (tasks.mjs tasksDir), from any worktree; nothing commits it on a branch.
+// Any session (cc-market #18): task.js place <slug> copies an OPEN task this worktree holds in its
+//   own tree into the ledger when absent there; it never opens or overwrites.
+// Retired (RETIRED_VERBS): commit-record -- the ledger is never committed on a feature branch.
 // Read-only:
 //   task.js list                       task.js show [<slug>]         task.js bound
 //   task.js distill-status [<slug>]     (show finds an archived task too)
@@ -35,11 +36,16 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, commitRecord, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, BIND_DOOR,
+  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, tasksDir, BIND_DOOR,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 
 const PREFIX = '[task]';
+// Retired verbs, each refused naming why and what replaced it (every wall teaches).
+export const RETIRED_VERBS = {
+  'commit-record': 'retired 2026-11-16 (cc-market #20): the ledger is repo state in the main checkout, read from every '
+    + 'worktree, and never committed on a feature branch -- nothing to copy or commit',
+};
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 function flag(args, name) {
@@ -61,6 +67,7 @@ const JOURNAL_VERBS = { log: 'progress', decide: 'decision', 'open-item': 'open-
 export function main(argv) {
   const args = [...argv];
   const verb = args.shift();
+  if (Object.hasOwn(RETIRED_VERBS, verb)) throw new Error(`task.js ${verb} is ${RETIRED_VERBS[verb]}`);
   if (verb === 'request') {
     const [slug, ...goal] = args;
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug || '')) throw new Error(`request needs a kebab-case slug, got ${slug}`);
@@ -72,7 +79,7 @@ export function main(argv) {
     const owner = flag(args, '--owner') || 'user';
     const [slug, ...goal] = args;
     openTask(cwd, slug, goal.join(' '), { scope, owner });
-    console.log(`${PREFIX} opened ${slug} → .claude/tasks/${slug}/`);
+    console.log(`${PREFIX} opened ${slug} → ${join(tasksDir(cwd), slug)} (the ledger every worktree reads)`);
     console.log(`${PREFIX} to work on it, bind a session with a prompt whose first line is \`task: ${slug}\`; `
       + `its branches are pr/${slug}/<feature>, never a bare pr/${slug}`);
   } else if (verb === 'close') {
@@ -105,10 +112,6 @@ export function main(argv) {
     const [slug] = args;
     if (!slug) throw new Error('usage: task.js place <slug>');
     console.log(`${PREFIX} ${placeTask(cwd, slug)}`);
-  } else if (verb === 'commit-record') {
-    const [slug] = args;
-    if (!slug) throw new Error('usage: task.js commit-record <slug>');
-    console.log(`${PREFIX} ${commitRecord(cwd, slug)}`);
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) console.log(`${t.slug}\t${t.status}\t${t.goal}`);
   } else if (verb === 'bound') {
@@ -126,7 +129,7 @@ export function main(argv) {
     console.log(`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`);
     console.log(`open items: ${openItems.map(n => `O${n}`).join(', ') || '(none)'}`);
   } else {
-    throw new Error('usage: task.js open|close|place|commit-record|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
+    throw new Error('usage: task.js open|close|place|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
   }
 }
 

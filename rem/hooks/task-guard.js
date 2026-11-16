@@ -26,7 +26,8 @@
 
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
 
-const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/][^\\/]+[\\/](TASK|JOURNAL)\.md$/;
+// A task's record, or a session binding (written only by dev-lab's `task: <slug>` prompt door).
+const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/](?:[^\\/]+[\\/](TASK|JOURNAL)\.md$|\.bindings(?:[\\/]|$))/;
 const STORE_RE = /(?:^|[\\/])\.claude[\\/]rem[\\/]authority(?:[\\/]|$)/;
 const PROTECTED_RE = /(?:^|[\\/])\.claude[\\/]tasks(?:[\\/]|$)/;
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
@@ -41,8 +42,8 @@ const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move
 
 const CODE_FLAG = /^(?:-e|-E|--eval|-p|--print|-c|-command)(?:=(.*))?$/i;
 const DOOR = 'Door: append to a journal through `task.js log|decide|open-item|close-item|handoff` '
-  + '(`translate` only turns a foreign-script line into English); the bound session takes the user\'s untracked record into its worktree to commit '
-  + 'with `task.js commit-record <slug>`; read a task file with cat/grep; '
+  + '(`translate` only turns a foreign-script line into English); the ledger is repo state, never committed on a branch, '
+  + 'and a session binding is written only by the user\'s `task: <slug>` prompt; read a task file with cat/grep; '
   + 'opening or closing a task is the user\'s /rem:task open|close command -- propose it to the user.';
 const refuse = cause => `task-guard: ${cause}. ${DOOR}`;
 

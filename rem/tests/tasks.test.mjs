@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { readTask, listTasks, resolveTask, parseBindingStatus, tasksDir, commitRecord } from '../scripts/tasks.mjs';
+import { readTask, listTasks, resolveTask, readSessionBinding, sessionOf, tasksDir, BINDINGS } from '../scripts/tasks.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -120,7 +120,7 @@ describe('binding', () => {
     const wt = worktree(root, 'feature-x', 'feature-x');
     fs.cpSync(path.join(root, '.claude'), path.join(wt, '.claude'), { recursive: true });
     assert.equal(resolveTask(wt, { binding: () => null }), null);
-    assert.equal(resolveTask(wt, {}), null, 'without a dev-lab python the binding is unread, never guessed');
+    assert.equal(resolveTask(wt, {}), null, 'with no binding file nothing is bound, never guessed');
   });
 
   it('a binding to a closed task, or under another authority, resolves nothing', () => {
@@ -134,13 +134,27 @@ describe('binding', () => {
     assert.deepEqual(listTasks(root), [], 'a closed task is archived out of .claude/tasks/');
   });
 
-  it('reads dev-lab\'s status line, and nothing else, as a binding', () => {
-    assert.deepEqual(parseBindingStatus('task feature-x@abc123\n'), { slug: 'feature-x', authority: 'abc123' });
-    assert.equal(parseBindingStatus('no task bound: the user binds ...'), null);
-    assert.equal(parseBindingStatus(''), null);
-    assert.equal(parseBindingStatus('task Bad_Slug@x'), null);
-    assert.equal(parseBindingStatus('task feature-x'), null);
+  it('reads the binding dev-lab wrote into the ledger, one file, for this session only', () => {
+    const root = repo();
+    run(root, 'open', 'feature-x', 'g');
+    const authority = authorityOf(root, 'feature-x');
+    const dir = path.join(tasksDir(root), BINDINGS);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 's-1.json'), JSON.stringify({ session: 's-1', task: `feature-x@${authority}` }));
+    assert.deepEqual(readSessionBinding(root, { session: 's-1' }), { slug: 'feature-x', authority });
+    assert.equal(resolveTask(root, { binding: start => readSessionBinding(start, { session: 's-1' }) }), 'feature-x');
+    assert.equal(readSessionBinding(root, { session: 's-2' }), null, 'PLANTED CONTROL: another session is unbound');
+    fs.writeFileSync(path.join(dir, 's-3.json'), JSON.stringify({ session: 's-1', task: `feature-x@${authority}` }));
+    assert.equal(readSessionBinding(root, { session: 's-3' }), null, 'a record naming another session binds nothing');
+    fs.writeFileSync(path.join(dir, 's-4.json'), 'not json');
+    assert.equal(readSessionBinding(root, { session: 's-4' }), null);
+    assert.equal(readSessionBinding(root, { session: '../s-1' }), null, 'a session id is never a path');
+    assert.equal(sessionOf({ CLAUDE_CODE_SESSION_ID: 's-1' }), 's-1');
+    assert.equal(sessionOf({ CODEX_THREAD_ID: 't-1' }), 't-1');
+    assert.equal(sessionOf({}), '');
+    assert.deepEqual(listTasks(root).map(t => t.slug), ['feature-x'], 'the bindings directory is not a task');
   });
+
 
   it('task.js bound names the door when nothing is bound', () => {
     const r = run(repo(), 'bound');
@@ -212,33 +226,103 @@ describe('an agent opening a task is refused', () => {
   });
 });
 
-describe('place (cc-market #18)', () => {
-  function withWorktree() {
+describe('the ledger is repo state, one place for every worktree (cc-market #20)', () => {
+  function twoTrees() {
+    const main = repo();
+    spawnSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'root']);
+    const trees = ['a', 'b'].map(name => {
+      const wt = path.join(main, '.claude', 'worktrees', name);
+      spawnSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', `pr/toolchain/${name}`, wt]);
+      fs.mkdirSync(path.join(wt, '.claude', 'memory'), { recursive: true });
+      return wt;
+    });
+    return { main, a: trees[0], b: trees[1] };
+  }
+  const bindIn = (root, session, slug) => {
+    const dir = path.join(tasksDir(root), BINDINGS);
+    fs.mkdirSync(dir, { recursive: true });
+    const task = `${slug}@${readTask(root, slug).authority}`;
+    fs.writeFileSync(path.join(dir, `${session}.json`), JSON.stringify({ session, task }));
+  };
+  const runAs = (root, session, ...args) => spawnSync(process.execPath, [TASK, ...args], {
+    cwd: root, encoding: 'utf8',
+    env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, CODEX_THREAD_ID: '', CLAUDE_PROJECT_DIR: root },
+  });
+
+  it('a task opened in worktree A is resolved, bound and journaled from worktree B', () => {
+    const { main, a, b } = twoTrees();
+    assert.equal(run(a, 'open', 'toolchain', 'finish the toolchain').status, 0);
+    assert.equal(tasksDir(a), tasksDir(b));
+    assert.equal(tasksDir(a), tasksDir(main));
+    assert.equal(fs.existsSync(path.join(a, '.claude', 'tasks')), false, 'nothing lands in the opening tree');
+    assert.deepEqual(listTasks(b).map(t => t.slug), ['toolchain']);
+    assert.equal(runAs(b, 'sess-b', 'log', 'orphan').status, 1, 'PLANTED CONTROL: an unbound session is refused');
+    bindIn(b, 'sess-b', 'toolchain');
+    assert.equal(runAs(b, 'sess-b', 'bound').stdout.trim(), 'task toolchain');
+    const logged = runAs(b, 'sess-b', 'log', 'progress from b');
+    assert.equal(logged.status, 0, logged.stderr);
+    assert.match(journal(a, 'toolchain'), /progress: progress from b$/m, 'B journaled into the one ledger');
+    assert.equal(runAs(a, 'sess-b', 'bound').stdout.trim(), 'task toolchain', 'the same binding from tree A');
+  });
+
+  it('PLANTED CONTROL: a closed task is refused from every tree', () => {
+    const { main, a, b } = twoTrees();
+    run(a, 'open', 'toolchain', 'g');
+    bindIn(a, 'sess-a', 'toolchain');
+    assert.equal(runAs(b, 'sess-a', 'bound').stdout.trim(), 'task toolchain');
+    run(b, 'close', 'toolchain');
+    for (const tree of [main, a, b]) {
+      assert.match(runAs(tree, 'sess-a', 'bound').stdout, /no task bound/);
+      assert.equal(runAs(tree, 'sess-a', 'log', 'late').status, 1);
+    }
+  });
+
+  it('commit-record is retired, refused naming why', () => {
+    const { b } = twoTrees();
+    const r = run(b, 'commit-record', 'toolchain');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /commit-record is retired .*never committed on a feature branch/);
+  });
+
+  it('the task guard refuses an agent writing a binding, and admits task.js place', () => {
+    const write = file => decideTaskGuard({ tool_name: 'Write', tool_input: { file_path: file } }).deny;
+    assert.ok(write('/r/.claude/tasks/.bindings/s.json'));
+    assert.ok(write('C:\\r\\.claude\\tasks\\.bindings\\s.json'));
+    assert.ok(!write('/r/.claude/tasks/x/notes.txt'), 'PLANTED CONTROL: the file rule names only records and bindings');
+    const shell = command => decideTaskGuard({ tool_name: 'Bash', tool_input: { command } }).deny;
+    assert.ok(shell('echo {} > .claude/tasks/.bindings/s.json'));
+    assert.equal(shell(`node ${TASK} place toolchain`), false);
+  });
+});
+
+describe('place: a task a worktree holds in its own tree moves into the ledger (cc-market #18)', () => {
+  function legacy() {
     const main = repo();
     spawnSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'root']);
     const wt = path.join(main, '.claude', 'worktrees', 'lane');
     spawnSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', 'lane', wt]);
-    fs.mkdirSync(path.join(wt, '.claude', 'memory'), { recursive: true });
-    return { main, wt };
+    assert.equal(run(main, 'open', 'toolchain', 'finish the toolchain').status, 0);
+    const own = path.join(wt, '.claude', 'tasks', 'toolchain');
+    fs.cpSync(path.join(tasksDir(main), 'toolchain'), own, { recursive: true }); // the worktree's own record
+    fs.rmSync(path.join(tasksDir(main), 'toolchain'), { recursive: true });
+    return { main, wt, own };
   }
 
-  it('copies an open task of a worktree into the main checkout, once, byte for byte', () => {
-    const { main, wt } = withWorktree();
-    assert.equal(run(wt, 'open', 'toolchain', 'finish the toolchain').status, 0);
-    assert.equal(readTask(main, 'toolchain'), null);
+  it('copies the worktree\'s open task into the ledger, once, byte for byte', () => {
+    const { main, wt, own } = legacy();
+    assert.equal(readTask(wt, 'toolchain'), null, 'the worktree copy is not the ledger');
     const r = run(wt, 'place', 'toolchain');
     assert.equal(r.status, 0, r.stderr);
     for (const f of ['TASK.md', 'JOURNAL.md']) {
-      assert.equal(fs.readFileSync(path.join(tasksDir(main), 'toolchain', f), 'utf8'),
-        fs.readFileSync(path.join(tasksDir(wt), 'toolchain', f), 'utf8'));
+      const placed = fs.readFileSync(path.join(tasksDir(main), 'toolchain', f), 'utf8');
+      assert.equal(placed, fs.readFileSync(path.join(own, f), 'utf8'));
     }
-    assert.equal(readTask(main, 'toolchain').status, 'open');
+    assert.equal(readTask(wt, 'toolchain').status, 'open');
     assert.match(run(wt, 'place', 'toolchain').stdout, /already placed/);
   });
 
   it('PLANTED CONTROL: never overwrites a differing copy and never opens a task that is not open', () => {
-    const { main, wt } = withWorktree();
-    run(wt, 'open', 'toolchain', 'finish the toolchain');
+    const { main, wt } = legacy();
     fs.mkdirSync(path.join(tasksDir(main), 'toolchain'), { recursive: true });
     fs.writeFileSync(path.join(tasksDir(main), 'toolchain', 'TASK.md'), 'a different record\n');
     const clash = run(wt, 'place', 'toolchain');
@@ -248,63 +332,5 @@ describe('place (cc-market #18)', () => {
     const none = run(wt, 'place', 'nothing-open');
     assert.equal(none.status, 1);
     assert.match(none.stderr, /never opens one/);
-  });
-
-  it('the task guard lets an agent run task.js place', () => {
-    assert.equal(decideTaskGuard({ tool_name: 'Bash', tool_input: { command: `node ${TASK} place toolchain` } }).deny, false);
-  });
-});
-
-describe('commit-record: the bound session takes the main checkout\'s record into its worktree', () => {
-  function opened() {
-    const main = repo();
-    spawnSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'root']);
-    const wt = path.join(main, '.claude', 'worktrees', 'lane');
-    spawnSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', 'pr/toolchain/x', wt]);
-    assert.equal(run(main, 'open', 'toolchain', 'finish the toolchain').status, 0);
-    const binding = () => ({ slug: 'toolchain', authority: readTask(main, 'toolchain').authority });
-    return { main, wt, binding };
-  }
-  const file = (root, f) => fs.readFileSync(path.join(tasksDir(root), 'toolchain', f));
-
-  it('copies TASK.md and JOURNAL.md byte for byte into the worktree, idempotently', () => {
-    const { main, wt, binding } = opened();
-    assert.match(commitRecord(wt, 'toolchain', { binding }), /copied toolchain \(TASK\.md, JOURNAL\.md\).*git add/);
-    for (const f of ['TASK.md', 'JOURNAL.md']) assert.deepEqual(file(wt, f), file(main, f));
-    assert.match(commitRecord(wt, 'toolchain', { binding }), /already holds/);
-  });
-
-  it('PLANTED CONTROL: a modified copy in the worktree is refused, never overwritten', () => {
-    const { wt, binding } = opened();
-    fs.mkdirSync(path.join(tasksDir(wt), 'toolchain'), { recursive: true });
-    fs.writeFileSync(path.join(tasksDir(wt), 'toolchain', 'JOURNAL.md'), 'edited\n');
-    assert.throws(() => commitRecord(wt, 'toolchain', { binding }), /different JOURNAL\.md.*never overwritten/);
-    assert.equal(file(wt, 'JOURNAL.md').toString(), 'edited\n');
-  });
-
-  it('PLANTED CONTROL: an unbound session, or one bound elsewhere, is refused', () => {
-    const { wt, main } = opened();
-    assert.throws(() => commitRecord(wt, 'toolchain', { binding: () => null }), /not bound to task toolchain/);
-    assert.throws(() => commitRecord(wt, 'toolchain', { binding: () => ({ slug: 'other', authority: 'x' }) }), /not bound to task toolchain/);
-    const stale = () => ({ slug: 'toolchain', authority: 'not-the-record' });
-    assert.throws(() => commitRecord(wt, 'toolchain', { binding: stale }), /not bound to task toolchain/);
-    assert.equal(fs.existsSync(path.join(tasksDir(wt), 'toolchain')), false);
-    const cli = run(wt, 'commit-record', 'toolchain'); // no dev-lab venv here: no binding can be read
-    assert.equal(cli.status, 1);
-    assert.match(cli.stderr, /not bound to task toolchain/);
-    assert.ok(readTask(main, 'toolchain'));
-  });
-
-  it('PLANTED CONTROL: a task that is not open in the main checkout is refused', () => {
-    const { wt } = opened();
-    const binding = () => ({ slug: 'nothing-open', authority: 'x' });
-    assert.throws(() => commitRecord(wt, 'nothing-open', { binding }), /no open task nothing-open in the main checkout/);
-  });
-
-  it('the task guard admits task.js commit-record and names it as the door', () => {
-    const d = decideTaskGuard({ tool_name: 'Bash', tool_input: { command: `node ${TASK} commit-record toolchain` } });
-    assert.equal(d.deny, false);
-    const refused = decideTaskGuard({ tool_name: 'Bash', tool_input: { command: 'cp a/TASK.md .claude/tasks/toolchain/TASK.md' } });
-    assert.match(refused.reason, /task\.js commit-record <slug>/);
   });
 });
