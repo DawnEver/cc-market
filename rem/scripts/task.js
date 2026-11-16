@@ -25,6 +25,8 @@
 //     is appended. A changed mind is a new decision, never an amendment.
 // Any session (cc-market #18): task.js place <slug> copies an OPEN task of this checkout into the
 //   main checkout (where the binding reads it) when absent there; it never opens or overwrites.
+// The BOUND session: task.js commit-record <slug> copies the open task's record from the main
+//   checkout into its worktree, byte for byte, so it commits it on pr/<slug>/<feature>.
 // Read-only:
 //   task.js list                       task.js show [<slug>]         task.js bound
 //   task.js distill-status [<slug>]     (show finds an archived task too)
@@ -33,7 +35,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, BIND_DOOR,
+  openTask, placeTask, commitRecord, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, BIND_DOOR,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 
@@ -103,6 +105,10 @@ export function main(argv) {
     const [slug] = args;
     if (!slug) throw new Error('usage: task.js place <slug>');
     console.log(`${PREFIX} ${placeTask(cwd, slug)}`);
+  } else if (verb === 'commit-record') {
+    const [slug] = args;
+    if (!slug) throw new Error('usage: task.js commit-record <slug>');
+    console.log(`${PREFIX} ${commitRecord(cwd, slug)}`);
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) console.log(`${t.slug}\t${t.status}\t${t.goal}`);
   } else if (verb === 'bound') {
@@ -120,7 +126,7 @@ export function main(argv) {
     console.log(`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`);
     console.log(`open items: ${openItems.map(n => `O${n}`).join(', ') || '(none)'}`);
   } else {
-    throw new Error('usage: task.js open|close|place|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
+    throw new Error('usage: task.js open|close|place|commit-record|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
   }
 }
 

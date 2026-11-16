@@ -41,7 +41,8 @@ const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move
 
 const CODE_FLAG = /^(?:-e|-E|--eval|-p|--print|-c|-command)(?:=(.*))?$/i;
 const DOOR = 'Door: append to a journal through `task.js log|decide|open-item|close-item|handoff` '
-  + '(`translate` only turns a foreign-script line into English); read a task file with cat/grep; '
+  + '(`translate` only turns a foreign-script line into English); the bound session takes the user\'s untracked record into its worktree to commit '
+  + 'with `task.js commit-record <slug>`; read a task file with cat/grep; '
   + 'opening or closing a task is the user\'s /rem:task open|close command -- propose it to the user.';
 const refuse = cause => `task-guard: ${cause}. ${DOOR}`;
 
