@@ -6,7 +6,8 @@
 // Opening/closing needs the user's authority record (authority.mjs): refused by default,
 // detectable when bypassed, not preventable by the same OS user. A session
 // works on ONE task, bound by the user's instruction (--task) or by the user's `task: <slug>`
-// prompt (recorded by dev-lab, read here), and appends only to that task's journal.
+// prompt (bindSession, run by rem's UserPromptSubmit hook hooks/task-authority.js), and appends
+// only to that task's journal.
 //
 // The ledger and the session bindings are REPO state, not branch state (cc-market #20): ONE
 // directory, <main checkout>/.claude/tasks/, the parent of `git rev-parse --git-common-dir`, the
@@ -19,6 +20,7 @@ import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
 import { withLock } from '../shared/lock.mjs';
+import { atomicWriteFile } from '../shared/atomic-write.mjs';
 import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
@@ -48,16 +50,22 @@ function mainCheckoutOf(root) {
   return r.status === 0 ? dirname(r.stdout.trim()) : root;
 }
 
-// THE ONE RESOLVER of the task ledger (dev_lab.dev.taskbinding.ledger is its twin): every read and write goes through it.
+// THE ONE RESOLVER of the task ledger: every read and write goes through it. A git-side reader (another tool's hook)
+// derives the same directory from git (skills/rem/reference/tasks.md § The binding file).
 export function tasksDir(start) {
   return join(mainCheckout(start), '.claude', 'tasks');
 }
 
-// Where dev-lab's `task: <slug>` prompt door writes a session's binding; rem owns the format and only reads it:
+// Where rem writes a session's binding (bindSession) and reads it back (readSessionBinding). rem OWNS the format,
+// and other tools read it as a documented contract (skills/rem/reference/tasks.md § The binding file):
 // `<ledger>/.bindings/<session>.json` = {"session": "<id>", "task": "<slug>@<authority>"}.
 export const BINDINGS = '.bindings';
-// The environment keys a native harness names its session id in (the primaries of dev_lab.dev.native_session's catalog).
+// The environment keys a native harness names its session id in, as a git hook run inside that session sees it.
 export const SESSION_ENV = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'];
+// A session id is a plain id, never a path: it names the binding file.
+const SESSION_RE = /^[A-Za-z0-9._-]{1,128}$/;
+// The user's binding prompt: its FIRST line is exactly `task: <slug>`.
+const BIND_PROMPT_RE = /^[ \t]*task:[ \t]*([a-z0-9]+(?:-[a-z0-9]+)*)[ \t]*(?:\r?\n|$)/;
 
 const taskFile = (start, slug) => join(tasksDir(start), slug, 'TASK.md');
 const journalFile = (start, slug) => join(tasksDir(start), slug, 'JOURNAL.md');
@@ -179,19 +187,39 @@ export function listTaskHeads(start) {
     .map(e => ({ slug: e.name, status: parseFrontmatter(readFileSync(join(dir, e.name, 'TASK.md'), 'utf8')).fields.status || 'open' }));
 }
 
-// The door that binds a session, named wherever none is bound (dev_lab.dev.taskbinding.DOOR).
+// The door that binds a session, named wherever none is bound.
 export const BIND_DOOR = 'the user binds this session with a prompt whose first line is `task: <slug>` '
   + '(an open task; a new one is opened by the user with /rem:task open <slug> "<goal>")';
 
 // The native session id the harness names in `env`, or ''.
 export function sessionOf(env = process.env) {
-  return SESSION_ENV.map(k => env[k]).find(v => typeof v === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(v)) || '';
+  return SESSION_ENV.map(k => env[k]).find(v => typeof v === 'string' && SESSION_RE.test(v)) || '';
 }
 
-// The binding of `session` (default: this process's) as dev-lab's prompt door wrote it into the
-// ledger -- one file, read directly, no process spawned -- or null when none is bound. Never guessed.
+// The slug a user prompt binds the session to -- its FIRST line is exactly `task: <slug>` -- or null.
+export function parseBindPrompt(prompt) {
+  return String(prompt || '').match(BIND_PROMPT_RE)?.[1] ?? null;
+}
+
+// Bind `session` to the OPEN task `slug` of the ledger at `start`: write its one binding file and return the task
+// id `<slug>@<authority>`. Called only by the UserPromptSubmit hook, on the USER's prompt. Throws naming the door
+// when the task is not open with a user authority, or the session id is not a plain id.
+export function bindSession(start, session, slug) {
+  if (!SESSION_RE.test(String(session || ''))) throw new Error('the harness named no plain session id to bind');
+  const task = readTask(start, slug);
+  if (task?.status !== 'open' || !task.authority) {
+    throw new Error(`no open task ${slug} in the ledger (${tasksDir(start)}). `
+      + `Door: the user opens it with /rem:task open ${slug} "<goal>", then binds with \`task: ${slug}\``);
+  }
+  const id = `${slug}@${task.authority}`;
+  atomicWriteFile(join(tasksDir(start), BINDINGS, `${session}.json`), JSON.stringify({ session, task: id }));
+  return id;
+}
+
+// The binding of `session` (default: this process's) as bindSession wrote it into the ledger -- one
+// file, read directly, no process spawned -- or null when none is bound. Never guessed.
 export function readSessionBinding(start, { session = sessionOf() } = {}) {
-  if (!session || !/^[A-Za-z0-9._-]{1,128}$/.test(session)) return null;
+  if (!session || !SESSION_RE.test(session)) return null;
   let record;
   try { record = JSON.parse(readFileSync(join(tasksDir(start), BINDINGS, `${session}.json`), 'utf8')); }
   catch { return null; }

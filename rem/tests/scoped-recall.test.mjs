@@ -34,7 +34,7 @@ const task = (root, ...args) => {
   const r = spawnSync(process.execPath, [TASK, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
   assert.equal(r.status, 0, r.stderr);
 };
-// The user's `task: <slug>` binding (dev-lab's record, which rem only reads), planted per repo.
+// The user's `task: <slug>` binding (rem's own record, bound by its prompt hook), planted per repo.
 const bindings = new Map();
 const bind = (root, slug) => bindings.set(root, { slug, authority: readTask(root, slug).authority });
 const recall = (root, prompt) => scopedContext(prompt, root, Date.now(), { binding: () => bindings.get(root) || null }) || '';

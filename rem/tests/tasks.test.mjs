@@ -158,7 +158,7 @@ describe('binding', () => {
     assert.deepEqual(listTasks(root), [], 'a closed task is archived out of .claude/tasks/');
   });
 
-  it('reads the binding dev-lab wrote into the ledger, one file, for this session only', () => {
+  it('reads the binding file from the ledger, one file, for this session only', () => {
     const root = repo();
     run(root, 'open', 'feature-x', 'g');
     const authority = authorityOf(root, 'feature-x');
