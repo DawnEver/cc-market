@@ -23,15 +23,17 @@
 //     a line that is WRONG as written, corrected with the user's approval; the prefix stays
 //     byte-identical and `- <date> progress: line <n> amended: <why> -- approved: "..." (was sha256:..)`
 //     is appended. A changed mind is a new decision, never an amendment.
+// Any session (cc-market #18): task.js place <slug> copies an OPEN task of this checkout into the
+//   main checkout (where the binding reads it) when absent there; it never opens or overwrites.
 // Read-only:
-//   task.js list                        task.js show [<slug>]         task.js bound
+//   task.js list                       task.js show [<slug>]         task.js bound
 //   task.js distill-status [<slug>]     (show finds an archived task too)
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, BIND_DOOR,
+  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, BIND_DOOR,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 
@@ -97,6 +99,10 @@ export function main(argv) {
       throw new Error('usage: task.js amend [--task <slug>] --line <n> "<line>" --reason "<why>" --approved "<user\'s words>"');
     }
     console.log(amendJournalLine(cwd, slug, n, args[0], { reason, approved }));
+  } else if (verb === 'place') {
+    const [slug] = args;
+    if (!slug) throw new Error('usage: task.js place <slug>');
+    console.log(`${PREFIX} ${placeTask(cwd, slug)}`);
   } else if (verb === 'list') {
     for (const t of listTasks(cwd)) console.log(`${t.slug}\t${t.status}\t${t.goal}`);
   } else if (verb === 'bound') {
@@ -114,7 +120,7 @@ export function main(argv) {
     console.log(`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`);
     console.log(`open items: ${openItems.map(n => `O${n}`).join(', ') || '(none)'}`);
   } else {
-    throw new Error('usage: task.js open|close|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
+    throw new Error('usage: task.js open|close|place|log|decide|open-item|close-item|handoff|translate|amend|list|show|bound|distill-status (see the header)');
   }
 }
 

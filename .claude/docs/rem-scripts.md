@@ -18,7 +18,7 @@ in this file's frontmatter.
 
 - `lib.mjs` — single source of truth for paths, dates, entries, derived visibility, the derived index.
 - `todo.js` / `todo-lib.mjs` — `/todo`, the one backlog; `task.js` / `tasks.mjs` — the tasks layer.
-- `merge-memory.js`, `crystallize.js`, `index-memory.js`, `scope-split.js` — memory lifecycle.
+- `merge-memory.js`, `crystallize.js`, `index-memory.js` — memory lifecycle (every write at the root).
 
 <!-- rem:manual -->
 NOTE (human): this block must survive any automated refresh verbatim — it is the

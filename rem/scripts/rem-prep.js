@@ -11,7 +11,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { relative } from 'path';
 import { normalizeHookFacts } from '../shared/hook-facts.mjs';
-import { findAllScopes, listEntries, hiddenEntries, CRYSTALLIZE_ADVISORY } from './lib.mjs';
+import { findAllScopes, listEntries, hiddenEntries, crystallizeDue } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const at = args.indexOf('--transcript');
@@ -44,7 +44,7 @@ for (const scope of findAllScopes()) {
   const hidden = hiddenEntries(entries);
   const live = entries.length - hidden.size;
   const label = relative(process.cwd(), scope).replace(/\\/g, '/') || '.';
-  const advice = live >= CRYSTALLIZE_ADVISORY ? ' — crystallize recommended' : '';
+  const advice = crystallizeDue(live) ? ' — crystallize recommended' : '';
   console.log(`  ${label}: ${live} visible, ${hidden.size} hidden${advice}`);
 }
 

@@ -20,7 +20,7 @@
 // honest option, so it refuses.
 //
 // The store is <scope>/.claude/memo/ (gitignored via migrations/migrate.mjs),
-// resolved by findMemoryScope() — a CACHE, not a record: losing it costs one
+// resolved by memoryRoot() — a CACHE, not a record: losing it costs one
 // re-read. It lives under the scope's own .claude/, so a worktree and its main
 // checkout each keep their own store — an absolute or shared path would answer
 // FRESH in a tree about a file it never read.
@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { join, resolve } from 'path';
 import { atomicWriteFile } from '../shared/atomic-write.mjs';
-import { findMemoryScope, isInsideDir } from './lib.mjs';
+import { memoryRoot, isInsideDir } from './lib.mjs';
 import { isMain } from "../shared/lib.mjs";
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -37,7 +37,7 @@ const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 // The operator's git via PATH — resolved by the OS, never a guessed absolute path.
 const GIT = 'git';
 
-export function storeDir(scopeRoot = findMemoryScope()) {
+export function storeDir(scopeRoot = memoryRoot()) {
   return join(scopeRoot, '.claude', 'memo');
 }
 

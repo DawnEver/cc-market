@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import {
-  findMemoryScope, parseFrontmatter, rebuildIndex, dateToPath, formatRefs, listEntries, writeOnce,
+  memoryRoot, parseFrontmatter, rebuildIndex, dateToPath, formatRefs, listEntries, writeOnce,
 } from './lib.mjs';
 
 const PREFIX = '[merge-memory]';
@@ -54,7 +54,7 @@ function main(argv) {
     console.error(`${PREFIX} usage: --name <kebab-slug> --from <a.md,b.md> [--description <text>] [--dry-run]`);
     process.exit(1);
   }
-  const scope = findMemoryScope();
+  const scope = memoryRoot();
   const memDir = join(scope, '.claude', 'memory');
   const known = new Set(listEntries(scope).map(e => e.path));
   const sources = from.map(p => {

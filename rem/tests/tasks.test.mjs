@@ -211,3 +211,46 @@ describe('an agent opening a task is refused', () => {
     assert.match(text, /!`node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/task\.js" \$ARGUMENTS`/);
   });
 });
+
+describe('place (cc-market #18)', () => {
+  function withWorktree() {
+    const main = repo();
+    spawnSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'root']);
+    const wt = path.join(main, '.claude', 'worktrees', 'lane');
+    spawnSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', 'lane', wt]);
+    fs.mkdirSync(path.join(wt, '.claude', 'memory'), { recursive: true });
+    return { main, wt };
+  }
+
+  it('copies an open task of a worktree into the main checkout, once, byte for byte', () => {
+    const { main, wt } = withWorktree();
+    assert.equal(run(wt, 'open', 'toolchain', 'finish the toolchain').status, 0);
+    assert.equal(readTask(main, 'toolchain'), null);
+    const r = run(wt, 'place', 'toolchain');
+    assert.equal(r.status, 0, r.stderr);
+    for (const f of ['TASK.md', 'JOURNAL.md']) {
+      assert.equal(fs.readFileSync(path.join(tasksDir(main), 'toolchain', f), 'utf8'),
+        fs.readFileSync(path.join(tasksDir(wt), 'toolchain', f), 'utf8'));
+    }
+    assert.equal(readTask(main, 'toolchain').status, 'open');
+    assert.match(run(wt, 'place', 'toolchain').stdout, /already placed/);
+  });
+
+  it('PLANTED CONTROL: never overwrites a differing copy and never opens a task that is not open', () => {
+    const { main, wt } = withWorktree();
+    run(wt, 'open', 'toolchain', 'finish the toolchain');
+    fs.mkdirSync(path.join(tasksDir(main), 'toolchain'), { recursive: true });
+    fs.writeFileSync(path.join(tasksDir(main), 'toolchain', 'TASK.md'), 'a different record\n');
+    const clash = run(wt, 'place', 'toolchain');
+    assert.equal(clash.status, 1);
+    assert.match(clash.stderr, /different TASK\.md .* never overwritten/);
+    assert.equal(fs.readFileSync(path.join(tasksDir(main), 'toolchain', 'TASK.md'), 'utf8'), 'a different record\n');
+    const none = run(wt, 'place', 'nothing-open');
+    assert.equal(none.status, 1);
+    assert.match(none.stderr, /never opens one/);
+  });
+
+  it('the task guard lets an agent run task.js place', () => {
+    assert.equal(decideTaskGuard({ tool_name: 'Bash', tool_input: { command: `node ${TASK} place toolchain` } }).deny, false);
+  });
+});
