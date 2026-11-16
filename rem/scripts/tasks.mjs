@@ -356,3 +356,37 @@ export function placeTask(start, slug, { main = mainCheckout(start) } = {}) {
   for (const f of missing) writeFileSync(join(there, f), readFileSync(join(here, f), 'utf8'));
   return `placed ${slug} (${missing.join(', ')}) in ${there}`;
 }
+
+// The opposite direction of place: the user's /rem:task open writes the record into the MAIN
+// checkout, untracked, and only the session bound to the task may commit it on its own
+// pr/<slug>/<feature> branch -- from its worktree, where the task guard refuses every other
+// write into .claude/tasks. This copies the open task's TASK.md and JOURNAL.md byte for byte
+// into the worktree at `start`, so that session can `git add` them. It opens nothing; it refuses
+// a task not open in the main checkout, a session not bound to it (`binding`, as resolveTask
+// reads it), and a worktree holding a different copy. Returns what it did.
+export function commitRecord(start, slug, { main = mainCheckout(start), binding = readSessionBinding } = {}) {
+  const task = SLUG_RE.test(slug || '') ? readTask(main, slug) : null;
+  if (task?.status !== 'open') {
+    throw new Error(`no open task ${slug} in the main checkout: commit-record copies an open task, it never opens one`);
+  }
+  const bound = binding(start);
+  if (bound?.slug !== slug || bound.authority !== task.authority) {
+    throw new Error(`this session is not bound to task ${slug}: only its bound session commits its record; ${BIND_DOOR}`);
+  }
+  const here = join(tasksDir(start), slug);
+  if (here === task.dir) {
+    throw new Error(`this is the main checkout: commit ${slug}'s record from the bound session's worktree, on pr/${slug}/<feature>`);
+  }
+  const files = ['TASK.md', 'JOURNAL.md'].filter(f => existsSync(join(task.dir, f)));
+  const differing = files.filter(f => existsSync(join(here, f))
+    && !readFileSync(join(here, f)).equals(readFileSync(join(task.dir, f))));
+  if (differing.length) {
+    throw new Error(`this worktree holds a different ${differing.join(' and ')} for ${slug}: refused, never overwritten`
+      + ' -- the user decides which record stands');
+  }
+  const missing = files.filter(f => !existsSync(join(here, f)));
+  if (!missing.length) return `this worktree already holds ${slug}'s record: git add .claude/tasks/${slug} and commit it`;
+  mkdirSync(here, { recursive: true });
+  for (const f of missing) writeFileSync(join(here, f), readFileSync(join(task.dir, f)));
+  return `copied ${slug} (${missing.join(', ')}) into ${here}: git add .claude/tasks/${slug} and commit it on pr/${slug}/<feature>`;
+}

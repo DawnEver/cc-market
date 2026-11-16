@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { readTask, listTasks, resolveTask, parseBindingStatus, tasksDir } from '../scripts/tasks.mjs';
+import { readTask, listTasks, resolveTask, parseBindingStatus, tasksDir, commitRecord } from '../scripts/tasks.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
@@ -252,5 +252,59 @@ describe('place (cc-market #18)', () => {
 
   it('the task guard lets an agent run task.js place', () => {
     assert.equal(decideTaskGuard({ tool_name: 'Bash', tool_input: { command: `node ${TASK} place toolchain` } }).deny, false);
+  });
+});
+
+describe('commit-record: the bound session takes the main checkout\'s record into its worktree', () => {
+  function opened() {
+    const main = repo();
+    spawnSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'root']);
+    const wt = path.join(main, '.claude', 'worktrees', 'lane');
+    spawnSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', 'pr/toolchain/x', wt]);
+    assert.equal(run(main, 'open', 'toolchain', 'finish the toolchain').status, 0);
+    const binding = () => ({ slug: 'toolchain', authority: readTask(main, 'toolchain').authority });
+    return { main, wt, binding };
+  }
+  const file = (root, f) => fs.readFileSync(path.join(tasksDir(root), 'toolchain', f));
+
+  it('copies TASK.md and JOURNAL.md byte for byte into the worktree, idempotently', () => {
+    const { main, wt, binding } = opened();
+    assert.match(commitRecord(wt, 'toolchain', { binding }), /copied toolchain \(TASK\.md, JOURNAL\.md\).*git add/);
+    for (const f of ['TASK.md', 'JOURNAL.md']) assert.deepEqual(file(wt, f), file(main, f));
+    assert.match(commitRecord(wt, 'toolchain', { binding }), /already holds/);
+  });
+
+  it('PLANTED CONTROL: a modified copy in the worktree is refused, never overwritten', () => {
+    const { wt, binding } = opened();
+    fs.mkdirSync(path.join(tasksDir(wt), 'toolchain'), { recursive: true });
+    fs.writeFileSync(path.join(tasksDir(wt), 'toolchain', 'JOURNAL.md'), 'edited\n');
+    assert.throws(() => commitRecord(wt, 'toolchain', { binding }), /different JOURNAL\.md.*never overwritten/);
+    assert.equal(file(wt, 'JOURNAL.md').toString(), 'edited\n');
+  });
+
+  it('PLANTED CONTROL: an unbound session, or one bound elsewhere, is refused', () => {
+    const { wt, main } = opened();
+    assert.throws(() => commitRecord(wt, 'toolchain', { binding: () => null }), /not bound to task toolchain/);
+    assert.throws(() => commitRecord(wt, 'toolchain', { binding: () => ({ slug: 'other', authority: 'x' }) }), /not bound to task toolchain/);
+    const stale = () => ({ slug: 'toolchain', authority: 'not-the-record' });
+    assert.throws(() => commitRecord(wt, 'toolchain', { binding: stale }), /not bound to task toolchain/);
+    assert.equal(fs.existsSync(path.join(tasksDir(wt), 'toolchain')), false);
+    const cli = run(wt, 'commit-record', 'toolchain'); // no dev-lab venv here: no binding can be read
+    assert.equal(cli.status, 1);
+    assert.match(cli.stderr, /not bound to task toolchain/);
+    assert.ok(readTask(main, 'toolchain'));
+  });
+
+  it('PLANTED CONTROL: a task that is not open in the main checkout is refused', () => {
+    const { wt } = opened();
+    const binding = () => ({ slug: 'nothing-open', authority: 'x' });
+    assert.throws(() => commitRecord(wt, 'nothing-open', { binding }), /no open task nothing-open in the main checkout/);
+  });
+
+  it('the task guard admits task.js commit-record and names it as the door', () => {
+    const d = decideTaskGuard({ tool_name: 'Bash', tool_input: { command: `node ${TASK} commit-record toolchain` } });
+    assert.equal(d.deny, false);
+    const refused = decideTaskGuard({ tool_name: 'Bash', tool_input: { command: 'cp a/TASK.md .claude/tasks/toolchain/TASK.md' } });
+    assert.match(refused.reason, /task\.js commit-record <slug>/);
   });
 });
