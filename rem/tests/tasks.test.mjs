@@ -71,6 +71,29 @@ describe('journal', () => {
     assert.deepEqual(readTask(root, 't').openItems, []);
   });
 
+  it('numbers the next decision max+1, never count+1 (PLANTED: a gap would repeat an ID)', () => {
+    const root = repo();
+    run(root, 'open', 't', 'goal');
+    fs.appendFileSync(path.join(tasksDir(root), 't', 'JOURNAL.md'), `- ${today} D1: a
+- ${today} D3: c
+`);
+    assert.equal(run(root, 'decide', 'd', '--task', 't').status, 0);
+    assert.match(journal(root, 't'), /^- \S+ D4: d$/m, 'count+1 would have written a second D3');
+  });
+
+  it('allocates unique IDs under a lock when sessions append at once', async () => {
+    const root = repo();
+    run(root, 'open', 't', 'goal');
+    const { spawn } = await import('node:child_process');
+    const one = (i) => new Promise((done) => spawn(process.execPath, [TASK, i % 2 ? 'decide' : 'open-item', `x${i}`, '--task', 't'],
+      { cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root } }).on('exit', done));
+    const codes = await Promise.all(Array.from({ length: 10 }, (_, i) => one(i)));
+    assert.deepEqual(codes, Array(10).fill(0));
+    const ids = journal(root, 't').match(/^- \S+ (D\d+|O\d+ open):/gm).map((l) => l.split(' ')[2]);
+    assert.equal(ids.length, 10);
+    assert.equal(new Set(ids).size, 10, `duplicate IDs: ${ids.join(' ')}`);
+  });
+
   it('refuses to write without a bound task, and never to a closed one', () => {
     const root = repo();
     assert.equal(run(root, 'log', 'orphan').status, 1);

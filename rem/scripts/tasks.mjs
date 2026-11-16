@@ -13,6 +13,7 @@ import { join, dirname } from 'path';
 import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
+import { withLock } from '../shared/lock.mjs';
 import { parseFrontmatter, findAllScopes, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
@@ -44,6 +45,18 @@ export function parseJournal(text) {
     }
   }
   return { decisions, items: [...items.values()] };
+}
+
+// IDs a journal mints more than once (a Dn line, or an `On open` line, seen twice).
+export function duplicateIds(text) {
+  const seen = new Set(), dup = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(LINE_RE);
+    const id = m?.[3] ? `D${m[3]}` : m?.[5] === 'open' ? `O${m[4]}` : null;
+    if (id && seen.has(id)) dup.add(id);
+    if (id) seen.add(id);
+  }
+  return [...dup];
 }
 
 export function readTask(start, slug) {
@@ -154,15 +167,20 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
 }
 
-// Append ONE line. O_APPEND: earlier bytes are never rewritten.
-export function appendJournal(start, slug, tag, text, { date = todayISO(), allowClosed = false } = {}) {
+// Append ONE line. O_APPEND: earlier bytes are never rewritten. The read that numbers the line
+// and the append run under one lock, and IDs are max+1, so two sessions never mint the same Dn/On.
+export function appendJournal(start, slug, tag, text, opts = {}) {
+  return withLock(journalFile(start, slug), () => appendJournalLocked(start, slug, tag, text, opts));
+}
+
+function appendJournalLocked(start, slug, tag, text, { date = todayISO(), allowClosed = false } = {}) {
   const task = readTask(start, slug);
   if (!task) throw new Error(`no task ${slug}`);
   if (task.status !== 'open' && !allowClosed) throw new Error(`task ${slug} is ${task.status}; its journal is final`);
   if (!text || /[\r\n]/.test(text)) throw new Error('a journal line is one line of text');
   assertLanguage(start, text, 'the journal line');
   let label = tag;
-  if (tag === 'decision') label = `D${task.decisions.length + 1}`;
+  if (tag === 'decision') label = `D${Math.max(0, ...task.decisions.map(d => d.n)) + 1}`;
   else if (tag === 'open-item') label = `O${Math.max(0, ...task.items.map(i => i.n)) + 1} open`;
   else if (tag.startsWith('close-item:')) {
     const n = Number(tag.slice('close-item:'.length).replace(/^O/, ''));

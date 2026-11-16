@@ -4,11 +4,13 @@
 //   --fix: regenerate stale indexes
 // Errors: a scope without .claude/memory/; a task whose TASK.md lacks the user authority id
 // that /rem:task open records (TASK.md written around the library).
+// Warnings: a task journal minting one ID twice.
 // Warnings: a leftover _meta.json (nothing reads it), a stale or missing index, an entry outside YYYY/MM/DD/, a child-scope state file.
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 import { authorityProblem } from './authority.mjs';
+import { duplicateIds } from './tasks.mjs';
 import { findAllScopes, collectFiles, renderIndex, rebuildIndex, indexFilePath, DATED_RE } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -55,6 +57,8 @@ function taskAuthorityIssues(root) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const read = f => { try { return readFileSync(join(dir, e.name, f), 'utf8'); } catch { return ''; } };
+    const dup = duplicateIds(read('JOURNAL.md'));
+    if (dup.length) out.push({ level: 'warn', msg: `task ${e.name}: duplicate journal IDs ${dup.join(', ')} -- a citation of one is ambiguous; correct with task.js amend` });
     const id = read('TASK.md').match(/^authority: ([0-9a-f]{12})\s*$/m)?.[1];
     const opened = id && new RegExp(`^- \\d{4}-\\d{2}-\\d{2} opened: .*\\(authority ${id}\\)\\s*$`, 'm').test(read('JOURNAL.md'));
     if (!opened) { out.push({ level: 'error', msg: `task ${e.name} has no user authority — its TASK.md was not written by /rem:task open` }); continue; }
