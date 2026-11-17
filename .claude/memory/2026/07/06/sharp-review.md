@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-07-06 (session) — docs review + diff review
+## Review 2026-07-06 (session) — docs review (docs sharp review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -156,3 +156,5 @@ listMarkdownFiles builds `${r}/*.md` patterns; reviewer flags nested bound docs 
 - **Suggestion:** Handle colons in values, inline arrays with quoted commas, tab indentation, and inline comments — or document these as unsupported and validate on write.
 
 parseFrontmatter mishandles values containing ':' (URLs), tab vs space indentation (char-count mixing), quoted commas in inline arrays, and inline comments; a valid doc then parses as unbound and is silently skipped.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

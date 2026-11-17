@@ -11,7 +11,7 @@ metadata:
 
 
 
-## Review 2026-07-08 (session) — docs review + diff review
+## Review 2026-07-08 (session) — docs review (docs sharp review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -254,7 +254,7 @@ Noting the portability dependency of the new recursive bundle step in the pre-pu
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — diff review + adversarial review
+## Review 2026-07-08 (session) — diff review + adversarial review (adversarial review)
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -365,7 +365,7 @@ The MCP 'run_task' tool table lists parameters (provider, prompt, model?, observ
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — architecture hygiene + diff review
+## Review 2026-07-08 (session) — architecture hygiene (clean-code sharp review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -487,7 +487,7 @@ This commit added `{ sseIdleTimeoutMs }` as an 8th slot after `images = null, st
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — adversarial review + diff review
+## Review 2026-07-08 (session) — adversarial review (adversarial review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -510,7 +510,7 @@ The new close handler uses `parsed.text || stdout.trim()`. That fixes non-NDJSON
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — security audit + architecture hygiene
+## Review 2026-07-08 (session) — security audit (security sharp review) + architecture hygiene
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -545,7 +545,7 @@ parseStreamJsonOutput sets parsedAny = true immediately after JSON.parse(line) s
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — adversarial review + diff review
+## Review 2026-07-08 (session) — adversarial review (adversarial review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -740,3 +740,5 @@ if (!_pool || _pool.size !== size || _pool.createClient !== createClient) { _poo
 - **Suggestion:** Confirm each CodexAppServerClient owns its own transport/notification dispatch, so clearing handlers at start/end of a call that exclusively holds that client cannot race a concurrent call holding a different client.
 
 The pool lends each client to exactly one call at a time, so clearing handlers at start+end per client is race-free per client, which is the design's saving grace over the old shared mutex. It breaks only if notification handlers are registered on some shared/global app-server object rather than the individual client; then call A clearing handlers would clobber call B on a different client. Not verifiable from the diff, flag for confirmation.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

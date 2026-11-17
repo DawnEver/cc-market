@@ -37,8 +37,7 @@ directory name, plugin root variable, hook event contract, and the runtime assum
 
 ## 3. Overall strategy: single source + generated derivatives
 
-Do not maintain two plugin trees. `scripts/setup/setup.js` (and `/migrate`) gains a **codex generation step**
-that produces the Codex artifacts from the authoritative Claude-flavoured plugins. Rationale: cc-market already
+Do not maintain two plugin trees. `scripts/setup/setup.js` (and `/migrate`) gains a **codex generation step** that produces the Codex artifacts from the authoritative Claude-flavoured plugins. Rationale: cc-market already
 follows "edit in one place, distribute by symlink"; extending it to "edit in one place -> generate -> distribute to
 two hosts" costs the least and avoids two copies drifting.
 
@@ -75,8 +74,7 @@ Landed in three layers:
 | **evolve** | Medium-low (**must do**) | Depends on Workflow / subagent fan-out | Same as above, degrade to sequential review->fix rounds |
 | **traceme** | Partial | Reads the Claude transcript JSONL; Codex sessions are in sqlite | Manifest **already generated** (`gen-codex.mjs` produces it too, keeping the marketplace complete), but **runtime observation is not ported**: Codex sessions are stored in sqlite, a new ingester is needed, left for a separate later project |
 
-Design principle: **capability degradation must be explicitly `log`ged**, never silently cut a feature (consistent
-with cc-market's existing "no silent caps" convention).
+Design principle: **capability degradation must be explicitly `log`ged**, never silently cut a feature (consistent with cc-market's existing "no silent caps" convention).
 
 ## 5. Phased implementation
 
@@ -290,3 +288,5 @@ guard falls back to the `taskActiveUntil` time window; multi-turn skills running
 > 2026-06-22 related Node tests rerun passing: 57/57.
 > Remaining gap: no current blocker. MCP exposure is fixed by the repo-level Codex-only MCP manifest generation; §7.5 item 4
 > (coexistence without interference) is covered by the real-install smoke test's same-directory `.claude-plugin/` + `.codex-plugin/` install chain.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

@@ -10,7 +10,7 @@ metadata:
 
 
 
-## Review 2026-07-29 (session) — adversarial review + diff review
+## Review 2026-07-29 (session) — adversarial review (adversarial review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -188,7 +188,7 @@ The diff adds byte-identical lock.mjs to all 7 plugin shared/ dirs plus identica
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review + adversarial review
+## Review 2026-07-29 (session) — docs review (docs sharp review) + adversarial review (adversarial review)
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -388,7 +388,7 @@ The diff itself demonstrates the pattern: one lock.mjs copied six times verbatim
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review + adversarial review
+## Review 2026-07-29 (session) — docs review (docs sharp review) + adversarial review (adversarial review)
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -544,7 +544,7 @@ The comment assumes the lock is only used in sync CLI scripts that are short-liv
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review
+## Review 2026-07-29 (session) — docs review (docs sharp review)
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -622,7 +622,7 @@ shared/lock.mjs exports withLock with four tuned defaults and two distinct timeo
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review
+## Review 2026-07-29 (session) — docs review (docs sharp review)
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -833,7 +833,7 @@ The header paragraph explaining why lockfiles live in os.tmpdir() misspells 'mut
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review
+## Review 2026-07-29 (session) — docs review (docs sharp review)
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -973,3 +973,5 @@ AGENTS.md enumerates 7 suites; disk has 10. The three missing cover exactly the 
 - **Suggestion:** Delete the empty `codex 2` directory; consider having the bundle-integrity test flag unexpected entries in */shared/.
 
 Empty directory, documented nowhere, classic OneDrive conflict-copy suffix. All six bundled shared/*.mjs copies are otherwise byte-identical to cc-market/shared/ across every plugin — no bundle drift.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

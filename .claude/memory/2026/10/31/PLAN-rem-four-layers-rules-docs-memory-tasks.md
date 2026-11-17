@@ -102,3 +102,5 @@ no backward compatibility. A first attempt (cc-market 1ac2468) deleted entries a
 - P7 a one-shot migration per repo (strip volatile fields; HANDOFF- / PLAN- / DECISIONS- into tasks or archived
   tasks; todo files moved; NOTHING deleted): a dry run on <project> is shown to the user and applied after approval.
 - The first task under the new layer is `integrator`: the D1..D121 journal moves to `.claude/tasks/integrator/JOURNAL.md`.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

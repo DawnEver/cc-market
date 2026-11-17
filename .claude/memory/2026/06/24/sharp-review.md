@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-06-24 (session) — architecture hygiene
+## Review 2026-06-24 (session) — architecture hygiene (clean-code sharp review)
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -288,3 +288,5 @@ AGENTS.md owns the diagram, SKILL.md owns the steps; README need not be a third 
 - **Suggestion:** Keep the architecture flow diagram; drop the file-structure tree — the filesystem is the source of truth for layout
 
 Per-file descriptions must be kept in sync with actual files and add nothing an ls wouldn't provide; each file already has its own docs.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"
