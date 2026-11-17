@@ -484,7 +484,7 @@
         },
         {
           "name": "Promote main",
-          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote \"$HEAD_SHA\" && git push origin main"
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote --newest \"$HEAD_SHA\" && git push origin main"
         },
         {
           "name": "Delete the branches integration now contains",
