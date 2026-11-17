@@ -29,7 +29,7 @@ export async function authorityContext(p) {
   const prompt = String(p.prompt || p.user_prompt || '');
   const cwd = typeof p.cwd === 'string' ? p.cwd : process.cwd();
   const probing = process.env.REM_AUTHORITY_PROBE === '1';
-  if (!probing && !/task|approve|批准|同意/i.test(prompt)) return null;
+  if (!probing && !/task|approve|\u6279\u51c6|\u540c\u610f/i.test(prompt)) return null;
   try {
     const { recordUserCommand, probe } = await import('../scripts/authority.mjs');
     if (probing) probe(prompt);
