@@ -14,7 +14,7 @@
 // same from every worktree, so a task opened in one worktree is found from all of them. It is
 // never committed on a feature branch; close archives a task into memory, which is.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync, realpathSync } from 'fs';
 import { join, dirname, resolve, basename } from 'path';
 import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
@@ -34,9 +34,13 @@ export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const checkouts = new Map();
 export function mainCheckout(start) {
   const root = findProjectRoot(start);
-  if (!checkouts.has(root)) checkouts.set(root, mainCheckoutOf(root));
+  if (!checkouts.has(root)) checkouts.set(root, canonical(mainCheckoutOf(root)));
   return checkouts.get(root);
 }
+
+// One spelling per directory: git reports a worktree's common dir in long form while a Windows temp path may arrive
+// as an 8.3 short name (RUNNER~1), so the ledger path is canonicalised once, here.
+const canonical = p => { try { return realpathSync.native(p); } catch { return p; } };
 
 function mainCheckoutOf(root) {
   try {
