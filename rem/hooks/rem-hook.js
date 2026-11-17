@@ -127,7 +127,7 @@ export function decideSessionStop(state, input, now, env = {}) {
   for (const [id, record] of Object.entries(state.hook.sessions))
     if (now - (record.lastTouched || 0) > SESSION_EXPIRY_MS) delete state.hook.sessions[id];
   const session = state.hook.sessions[key] ?? { sessionKey: null, lastTouched: 0 };
-  if (state.reviewGate?.pending?.expiresAt > now || hasRemReservation(state.hook, now, key))
+  if (hasRemReservation(state.hook, now, key))
     return { state, decision: 'allow' };
   const view = { hook: { ...session, taskActiveUntil: Math.max(session.taskActiveUntil || 0, state.hook.taskActiveUntil || 0) } };
   if (view.hook.remPending && !(view.hook.requestExpiresAt > now)) view.hook.remPending = false;
