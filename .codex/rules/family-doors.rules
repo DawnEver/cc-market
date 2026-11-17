@@ -179,6 +179,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "hold"],
+    decision = "allow",
+    justification = "Holding a pull request from the merge tick with the hold label, where its draft is refused.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "release"],
+    decision = "allow",
+    justification = "Releasing a held pull request back to the merge tick.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "close"],
     decision = "allow",
     justification = "Closing a pull request with its reason posted first; its branch is never deleted.",
