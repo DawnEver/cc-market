@@ -12,10 +12,10 @@ v3 three-column split (machines | sessions | chat, `280px 360px 1fr`).
 The operator's three scenarios are NOT three regions of one screen — they are three
 attention modes of one sequential funnel:
 
-1. "全部机器有无预警?" — global scan, seconds, wants SPARSE output (only anomalies).
-2. "按 project/machine 梳理 session 现状" — single-point compare, minutes, wants DENSE
+1. "Do any machines have warnings?" — global scan, seconds, wants SPARSE output (only anomalies).
+2. "Lay out session status by project/machine" — single-point compare, minutes, wants DENSE
    columns (facts comparable across sessions).
-3. "跟这个 session 工作" — converged focus, tens of minutes, wants everything else gone.
+3. "Work with this session" — converged focus, tens of minutes, wants everything else gone.
 
 Attention narrows monotonically, so each stage gets the full screen; a static 3-column
 layout kept charging screen-tax for stages already passed. Scale constraint from the
@@ -90,7 +90,7 @@ positive style, auto-FIT machine grid (small fleets stretch, full grids identica
 Palette goes through CSS variables, so the four rendered candidates (Console Dark /
 Paper / Solar warm-paper / Mission deep-indigo) were a variable swap each; the gallery
 (screenshot per candidate on one composite page) is how the user picked — render
-options, don't describe them. **User picked Paper** (light neutral): the "黑乎乎" dark
+options, don't describe them. **User picked Paper** (light neutral): the "murky black" dark
 was explicitly rejected. A second theme later = one variable block, no restyle.
 
 Known honesty wrinkle: attaching the SAME native session twice (attach → reload →
@@ -136,3 +136,5 @@ in the attention list. New `uniqueSessions(fleet)` (keyed `nativeId ?? id`, firs
 wins — fleet order puts the drivable handle first) backs both `aggregateFleet` and the
 per-session attention loop. First dogfood: host-a flagged itself "mem 0% free" (94 MB of
 32 GB) — the attention model works.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

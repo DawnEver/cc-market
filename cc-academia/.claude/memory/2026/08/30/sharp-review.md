@@ -7,7 +7,7 @@ metadata:
 
 
 
-## Review 2026-08-30 (session) — diff review + docs review (文档锐评)
+## Review 2026-08-30 (session) — diff review + docs review (docs review)
 
 ### Reviewer Status
 - Reviewer claude (claude): OK
@@ -241,7 +241,7 @@ SKILL.md says a journal config sets the eligibility floors and 06-report.md says
 
 ## Review 2026-08-30 (follow-up)
 
-## Review 2026-08-30 (session) — docs review (文档锐评)
+## Review 2026-08-30 (session) — docs review (docs review)
 
 ### Reviewer Status
 - Reviewer claude (claude): OK
@@ -354,7 +354,7 @@ rank._seniority_note appends a note and nothing else; there is no exclusion path
 
 ## Review 2026-08-30 (follow-up)
 
-## Review 2026-08-30 (session) — diff review + security audit (安全锐评)
+## Review 2026-08-30 (session) — diff review + security audit (security review)
 
 ### Reviewer Status
 - Reviewer claude (claude): skipped
@@ -386,3 +386,5 @@ adapt_expression removes the literal NOT token but leaves its operand. For examp
 - **Suggestion:** Validate at policy load that precedence contains every supported/configured confidence source exactly once, or rank unknown/missing sources with a safe fallback instead of calling tuple.index directly.
 
 Stored email rows are admitted based on membership in confidence, but selection calls precedence.index(finding.source). A journal overlay can legally replace the precedence array while the recursively merged confidence table still contains all default sources, causing ValueError once an omitted source is present. The new retrieval configuration is not validated by load_policy.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

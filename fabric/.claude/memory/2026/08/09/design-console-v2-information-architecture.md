@@ -9,14 +9,14 @@ shape. Derived not from features but from the five questions an operator actuall
 
 ## The five questions, and what each demands
 
-**Q1 "我的算力在哪、状态如何?"** → A FLEET of MACHINES, not "nodes + local". This
+**Q1 "Where is my compute, and what state is it in?"** → A FLEET of MACHINES, not "nodes + local". This
 machine IS one of the machines; today it appears twice ("local" spawn target + node host-a
 card). v2 unifies: the console detects which configured node is THIS box (hostname match
 against serve.byHost, else a loopback status probe) and renders ONE card badged
 `this machine`. Spawn target "local" disappears — you always pick a machine, and the
 this-machine pick routes to a local spawn (no TLS hop) transparently.
 
-**Q2 "每台机器上在跑什么?"** → The drill-down is **Node → Project → Session**, and
+**Q2 "What is running on each machine?"** → The drill-down is **Node → Project → Session**, and
 selection is a FILTER, never a navigation: no selection = everything, clicking a node
 narrows to it, clicking a project narrows further, click-again clears. One list, three
 zoom levels — the operator never loses the whole-fleet picture to look at one box.
@@ -26,7 +26,7 @@ node/status reverse-maps cwd → the node's project aliases and returns
 `{project, cwd}` per session, plus the node's own `projects` list (so an idle project
 still shows, with zero sessions).
 
-**Q3 "我能开什么?"** → The capability CATALOGUE must be probed, never hardcoded, and
+**Q3 "What can I open?"** → The capability CATALOGUE must be probed, never hardcoded, and
 must state IDENTITY, not aliases:
 - **claude** → probe `claude --version`; auth identity read from the CLI's stored
   credentials/config (subscription type + account email when available). Label:
@@ -43,13 +43,13 @@ must state IDENTITY, not aliases:
   read), each with a `probed_at` timestamp shown in the UI — a stale catalogue must
   look stale.
 
-**Q4 "我要跟它说话"** → chat, unchanged in mechanism (same send chain), but scope made
+**Q4 "I want to talk to it"** → chat, unchanged in mechanism (same send chain), but scope made
 VISIBLE: console-owned sessions get a chat view; foreign sessions (spawned by other
 connections/processes, visible via node/status) render as observe-only cards saying WHY
 ("owned by another connection — node/send is owner-restricted"). An unexplained
 disabled button is a scope-lie.
 
-**Q5 "有没有没人管的?"** → orphans (journal reconcile), unchanged, but moved under the
+**Q5 "Is anything unattended?"** → orphans (journal reconcile), unchanged, but moved under the
 machine they belong to in the drill-down (a remote orphan shows on its node's card),
 with a "clear record" action for dead ones.
 
@@ -86,7 +86,9 @@ this scale; SSE only if the 2.5 s chat poll ever feels laggy.
 
 ## Review questions for the user
 
-1. Node→Project→Session with filter-not-navigation — 符合预期?
-2. "this machine" 合并后不再有单独的 local 目标 — 接受?
-3. Catalogue 的身份标注(订阅类型/实际模型 ID/探测时间戳)够不够,还缺什么?
-4. Foreign session 只可观察(owner 限制如实展示)— 接受,还是需要"接管"能力(那是一个更大的安全设计)?
+1. Node→Project→Session with filter-not-navigation — as expected?
+2. "this machine" merged, so there is no separate local target any more — acceptable?
+3. Is the catalogue's identity labelling (subscription type / actual model ID / probe timestamp) enough, or what is missing?
+4. Foreign sessions are observe-only (owner restriction shown as-is) — acceptable, or is a "take over" capability needed (that is a bigger security design)?
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"
