@@ -34,7 +34,7 @@ runs `sharp-review` and reads its backlog; sharp-review handles fan-out internal
 invokes the skill directly rather than via a slash-command.
 
 Claude-driven (not a background workflow) so human gates and commits work. Runs in any git
-repo but **hard-depends on cc-market's `sharp-review`, `rem`, and `todo`** — Setup verifies
+repo but **hard-depends on cc-market's `sharp-review` and `rem`** — Setup verifies
 they are installed and aborts if any is missing; there are no built-in fallbacks.
 
 A real `scripts/evolve.mjs` helper now backs state, finding-grouping, and termination — no
