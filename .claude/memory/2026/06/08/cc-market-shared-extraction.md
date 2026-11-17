@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-# cc-market/shared — 提取共享工具库
+# cc-market/shared — extract the shared utility library
 
 Eliminated duplicated code across rem, sharp-review, takeover, watch by creating `cc-market/shared/`.
 

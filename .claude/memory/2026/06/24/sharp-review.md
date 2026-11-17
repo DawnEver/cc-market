@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-06-24 (session) — architecture hygiene (整洁锐评)
+## Review 2026-06-24 (session) — architecture hygiene
 
 ### Reviewer Status
 - Reviewer A (Codex): OK

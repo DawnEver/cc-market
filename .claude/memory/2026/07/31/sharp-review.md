@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-07-31 (session) — diff review + security audit (安全锐评)
+## Review 2026-07-31 (session) — diff review + security audit
 
 ### Reviewer Status
 - Reviewer claude (claude): skipped

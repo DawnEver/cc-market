@@ -5,8 +5,8 @@ status: approved
 ---
 # PLAN: rem becomes four layers -- rules, docs, memory, tasks
 
-Approved by the user 2026-10-31 ("其他都同意 ... 坚决执行直到完成全部") after two rulings the same day:
-"禁止删除!" (no memory is ever deleted) and "我指定才能开任务" (only the user opens a task). Principles: first
+Approved by the user 2026-10-31 ("I agree with everything else ... execute resolutely until all of it is done" (user, translated)) after two rulings the same day:
+"Deleting is forbidden!" (user, translated) (no memory is ever deleted) and "Only I can designate opening a task" (user, translated) (only the user opens a task). Principles: first
 principles, discard historical baggage, Occam, single source of truth, layered decoupling, names match behaviour,
 no backward compatibility. A first attempt (cc-market 1ac2468) deleted entries and was reverted (e283e5e).
 

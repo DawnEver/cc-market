@@ -10,7 +10,7 @@ metadata:
 
 
 
-## Review 2026-07-29 (session) — adversarial review (对抗性审查) + diff review
+## Review 2026-07-29 (session) — adversarial review + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -150,7 +150,7 @@ The new crystallize.md § Drift verification step 0 states: 'When the user confi
 - **Confidence:** single-reviewer
 - **Suggestion:** Keep CJK sequences as tokens (e.g. split on /[^\p{L}\p{N}]+/u or add a /[\u4e00-\u9fff]+/ extraction pass) so Chinese prompts can match Chinese memory names/descriptions
 
-`tokenize` lowercases and splits on /[^a-z0-9]+/, dropping every CJK character; a prompt like '记住这个：不要 force-push' yields only latin tokens, and a fully Chinese prompt yields [] → main() returns silently. The bundled memory rem/.claude/memory/2026/07/29/rem-vs-cc-codex-memory.md is largely Chinese, and the feature memory explicitly targets '记住这个' phrasing for remember.js, so the recall half of the feature is dead for the same language the project documents in. No test covers a non-ASCII prompt.
+`tokenize` lowercases and splits on /[^a-z0-9]+/, dropping every CJK character; a prompt like '<CJK: "remember this: don't force-push">' yields only latin tokens, and a fully Chinese prompt yields [] → main() returns silently. The bundled memory rem/.claude/memory/2026/07/29/rem-vs-cc-codex-memory.md is largely Chinese, and the feature memory explicitly targets '<CJK: "remember this">' phrasing for remember.js, so the recall half of the feature is dead for the same language the project documents in. No test covers a non-ASCII prompt.
 
 ---
 
@@ -188,7 +188,7 @@ The diff adds byte-identical lock.mjs to all 7 plugin shared/ dirs plus identica
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review (文档锐评) + adversarial review (对抗性审查)
+## Review 2026-07-29 (session) — docs review + adversarial review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -272,7 +272,7 @@ The comment frames this as a feature ('never a reason to block a hook indefinite
 - **Confidence:** single-reviewer
 - **Suggestion:** Extend tokenize to keep CJK characters (e.g. split on /[^\p{L}\p{N}]+/u with a lower min length for CJK, or bigram CJK runs), and add a test with a Chinese prompt matching a Chinese-named memory.
 
-`split(/[^a-z0-9]+/)` plus `tok.length < 3` means '记住这个约定' tokenizes to [] — main() then returns silently ('no tokens'). The project's own committed memory file is in Chinese, the user says '记住这个' in the docs, and memory-conventions.md explicitly documents the Chinese trigger phrase — yet the recall hook can never recall anything for those prompts. This is a blind spot created by testing only with English fixtures ('git commit messages'). The failure mode is perfectly silent: exit 0, no output, feature simply absent for a whole language family.
+`split(/[^a-z0-9]+/)` plus `tok.length < 3` means '<CJK: "remember this convention">' tokenizes to [] — main() then returns silently ('no tokens'). The project's own committed memory file is in Chinese, the user says '<CJK: "remember this">' in the docs, and memory-conventions.md explicitly documents the Chinese trigger phrase — yet the recall hook can never recall anything for those prompts. This is a blind spot created by testing only with English fixtures ('git commit messages'). The failure mode is perfectly silent: exit 0, no output, feature simply absent for a whole language family.
 
 ---
 
@@ -361,7 +361,7 @@ Previously appendEvent returned saveState's return value; now it returns undefin
 - **Confidence:** single-reviewer
 - **Suggestion:** Add a test spawning two child node processes that contend on one lock with interleaved critical sections and assert serialized modification of a shared counter file; add a test that a >staleMs critical section does not corrupt a second acquirer's lock.
 
-49 new tests and not one exercises two OS processes. The tests verify reentrancy, stale-steal in-process, and timeout fallback — the easy paths — while the commit message's core claim (防多会话/多设备竞态) rests on behavior that only manifests across processes with real timing. The conspicuously absent tests are exactly the ones that would catch finding #1. This is test theater around the riskiest new primitive.
+49 new tests and not one exercises two OS processes. The tests verify reentrancy, stale-steal in-process, and timeout fallback — the easy paths — while the commit message's core claim (preventing multi-session/multi-device races) rests on behavior that only manifests across processes with real timing. The conspicuously absent tests are exactly the ones that would catch finding #1. This is test theater around the riskiest new primitive.
 
 ---
 
@@ -388,7 +388,7 @@ The diff itself demonstrates the pattern: one lock.mjs copied six times verbatim
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review (文档锐评) + adversarial review (对抗性审查)
+## Review 2026-07-29 (session) — docs review + adversarial review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -506,7 +506,7 @@ remember.js produces frontmatter like `metadata.type: feedback`. prune-memory.js
 - **Confidence:** single-reviewer
 - **Suggestion:** Either support Unicode script detection or document/fallback gracefully. Consider `\p{L}` with a flag, or at least emit a debug note if the prompt appears non-ASCII.
 
-Using `/[^a-z0-9]+/` as split will treat any non-ASCII character as separator; CJK text like `'你好世界'` will result in no tokens ≥3 chars, so no recall occurs. The feature is marketed as 'heuristic recall' but silently fails for many Claude Code users using non-English prompts.
+Using `/[^a-z0-9]+/` as split will treat any non-ASCII character as separator; CJK text like `'<CJK: "hello world">'` will result in no tokens ≥3 chars, so no recall occurs. The feature is marketed as 'heuristic recall' but silently fails for many Claude Code users using non-English prompts.
 
 ---
 
@@ -544,7 +544,7 @@ The comment assumes the lock is only used in sync CLI scripts that are short-liv
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review (文档锐评)
+## Review 2026-07-29 (session) — docs review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -622,7 +622,7 @@ shared/lock.mjs exports withLock with four tuned defaults and two distinct timeo
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review (文档锐评)
+## Review 2026-07-29 (session) — docs review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -833,7 +833,7 @@ The header paragraph explaining why lockfiles live in os.tmpdir() misspells 'mut
 
 ## Review 2026-07-29 (follow-up)
 
-## Review 2026-07-29 (session) — docs review (文档锐评)
+## Review 2026-07-29 (session) — docs review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped

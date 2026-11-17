@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-07-06 (session) — docs review (文档锐评) + diff review
+## Review 2026-07-06 (session) — docs review + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK

@@ -11,7 +11,7 @@ metadata:
 
 
 
-## Review 2026-07-08 (session) — docs review (文档锐评) + diff review
+## Review 2026-07-08 (session) — docs review + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -254,7 +254,7 @@ Noting the portability dependency of the new recursive bundle step in the pre-pu
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — diff review + adversarial review (对抗性审查)
+## Review 2026-07-08 (session) — diff review + adversarial review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -365,7 +365,7 @@ The MCP 'run_task' tool table lists parameters (provider, prompt, model?, observ
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — architecture hygiene (整洁锐评) + diff review
+## Review 2026-07-08 (session) — architecture hygiene + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -487,7 +487,7 @@ This commit added `{ sseIdleTimeoutMs }` as an 8th slot after `images = null, st
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — adversarial review (对抗性审查) + diff review
+## Review 2026-07-08 (session) — adversarial review + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -510,7 +510,7 @@ The new close handler uses `parsed.text || stdout.trim()`. That fixes non-NDJSON
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — security audit (安全锐评) + architecture hygiene (整洁锐评)
+## Review 2026-07-08 (session) — security audit + architecture hygiene
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -545,7 +545,7 @@ parseStreamJsonOutput sets parsedAny = true immediately after JSON.parse(line) s
 
 ## Review 2026-07-08 (follow-up)
 
-## Review 2026-07-08 (session) — adversarial review (对抗性审查) + diff review
+## Review 2026-07-08 (session) — adversarial review + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
