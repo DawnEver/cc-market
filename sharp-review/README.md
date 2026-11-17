@@ -41,7 +41,6 @@ Fabric/provider authentication.
 - `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (ai-lab's `findings-output.schema.json`)
 - `output/logs/YY/MM/DD/sharp-review/sharp-review.md` — the run's report (regenerable output; keep a finding by moving it into `.claude/memory/`)
 - `.claude/rules/MEMORY.md` — one index entry per session (upserted in-process via the bundled shared stamp module)
-- `todo` / `todo report` — scan memory directly; no derived `tasks.md`
 
 ### Resolving Findings
 

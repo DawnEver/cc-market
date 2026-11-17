@@ -86,15 +86,14 @@ Only when a human asks to **triage now** route OPEN findings through `shared/att
 
 ## Resolving findings
 
-A kept finding is a rem backlog item: close it where it lives — the issue (repos with
-`.claude/rem.json` `backlog: issues`) or `todo.js close <id> "<how>"`. A report under
+A kept finding is a forge issue: close it there. A report under
 `output/logs/` can be re-derived with `post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>`.
 File ownership → `reference/task-system.md`.
 
 ## Phase 2 — Task Audit
 
-1. Run `todo` — review the open backlog items against code changed this session.
-2. For each item you fixed AND verified this session, close it now (the issue, or `todo.js close <id>`).
+1. Review the repo's open forge issues against code changed this session.
+2. For each issue you fixed AND verified this session, close it now.
 3. Check in-flight tasks with the host's available task/agent status tools before calling
    a feature complete; do not assume Claude's `TaskGet` exists on Codex.
 

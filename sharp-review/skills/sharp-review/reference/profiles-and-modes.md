@@ -78,7 +78,7 @@ track context cost. The plan reports `stats` and `excludedSummary`.
 ## Attention boundary (Step 4, consumer-aware)
 
 - **AI consumer** (e.g. `evolve`): reads findings from the backlog; the skill never prompts.
-- **Human consumer**: findings land in `sharp-review.md` for async triage via `todo`; only the
+- **Human consumer**: findings land in `sharp-review.md` for async triage; only the
   one-line summary reaches chat.
 
 To **triage now**, route OPEN findings through `shared/attention.mjs`: `route(items, {
