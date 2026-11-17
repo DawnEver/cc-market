@@ -7,25 +7,27 @@ metadata:
 
 cc-market `watch` commit **5e1082f**. Predecessor to [[reorg-and-deploy-hardening]].
 
-### 新增声明式 action 形式(`components/base.py` + `core/actions.py`)
-`Action` 加字段,执行器在 `_execute_action` 处理,**向后兼容**旧 `kill`/`start`/`command`:
-- **managed-service**:`kill_port`(int|str|list)、`kill_pattern`、`start_cmd`、`start_dir`、
-  `start_log`(后两者相对 project-dir)。执行器从 `Path(__file__).parents[..]/'scripts'/'helpers'`
-  解析 bundled `kill-server.py`/`start-server.py`,**不再** glob `~/.claude/plugins/...`
-  (安装根 / 缓存布局脆弱)。新增 `_SCRIPTS_DIR`、`_run_script()`、`_exec_managed()`。
-- **composition**:`steps: [action_name, ...]` 按序跑其它具名 action(`registry.get_action`)。
-- 配置解析无需改:`registry.py` 已 `Action(**{k:v ... if k in __dataclass_fields__})`,新字段自动认。
-- deploy gate 也走 `_execute_action`(`git_version_deploy._run_restart` / test_start/kill_action),
-  故 managed/steps 在部署链同样可用。
-- 测试 `tests/test_actions.py`(5)。
+### New declarative action forms (`components/base.py` + `core/actions.py`)
+`Action` gains fields, handled by the executor in `_execute_action`, **backward compatible** with the old `kill`/`start`/`command`:
+- **managed-service**: `kill_port` (int|str|list), `kill_pattern`, `start_cmd`, `start_dir`,
+  `start_log` (the latter two relative to project-dir). The executor resolves from `Path(__file__).parents[..]/'scripts'/'helpers'`
+  the bundled `kill-server.py`/`start-server.py`, and **no longer** globs `~/.claude/plugins/...`
+  (install root / cache layout is fragile). New `_SCRIPTS_DIR`, `_run_script()`, `_exec_managed()`.
+- **composition**: `steps: [action_name, ...]` runs other named actions in order (`registry.get_action`).
+- Config parsing needs no change: `registry.py` already does `Action(**{k:v ... if k in __dataclass_fields__})`, so new fields are picked up automatically.
+- The deploy gate also goes through `_execute_action` (`git_version_deploy._run_restart` / test_start/kill_action),
+  so managed/steps are available in the deploy chain too.
+- Tests `tests/test_actions.py` (5).
 
-### 消除的重复
-- `scripts/watch.py:_pid_alive` 删 → import `core.pidfile.pid_alive`(原逐字复制)。
-- `daemon.py:_log` 与 `trigger-watch.py:_log` 的 body 抽到 `core/log.py:log_event(
-  project_dir, log_file, level, msg)`;两处留瘦签名适配。
-- `daemon.py:_load_config` 包装删;`_project_dir` 注入上移到 `core/config.py:load_config`
-  (所有调用方统一拿到,旧版仅 daemon 注入)。
-- README「Actions」段记录三种形式。
+### Duplication removed
+- `scripts/watch.py:_pid_alive` deleted → import `core.pidfile.pid_alive` (was a verbatim copy).
+- The bodies of `daemon.py:_log` and `trigger-watch.py:_log` extracted to `core/log.py:log_event(
+  project_dir, log_file, level, msg)`; both keep thin-signature adapters.
+- `daemon.py:_load_config` wrapper deleted; `_project_dir` injection moved up into `core/config.py:load_config`
+  (every caller gets it; previously only daemon injected it).
+- README "Actions" section documents the three forms.
 
-> 路径以 commit 5e1082f 时为准;[[reorg-and-deploy-hardening]] 之后脚本移到
-> `scripts/cli|daemon|helpers`、组件移到 `components/health|resources|versioning|progress`。
+> Paths are as of commit 5e1082f; after [[reorg-and-deploy-hardening]] scripts moved to
+> `scripts/cli|daemon|helpers`, components moved to `components/health|resources|versioning|progress`.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

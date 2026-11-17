@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-06-25 (session) — docs review (文档锐评)
+## Review 2026-06-25 (session) — docs review (docs review)
 
 ### Reviewer Status
 - Reviewer A (Codex): skipped
@@ -298,3 +298,5 @@ scope-split.md documents scopes.split overrides. lib.mjs resolveSplitConfig() re
 - **Suggestion:** Change `_memory/` to `.claude/memory/` in the INDEX_HEADER comment at line 294-295
 
 The generated MEMORY.md files inherit this typo. The actual _meta.json files live under `.claude/memory/`, not `_memory/`.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"
