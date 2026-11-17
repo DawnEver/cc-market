@@ -170,3 +170,62 @@ describe('an archived task has the memory architecture', () => {
     assert.match(r.stdout, /status: closed/);
   });
 });
+
+// The declared close command (.claude/rem.json "onClose"): rem names no consumer; the repo declares an
+// argv whose "{slug}" is the closed task. It runs only after every refusal, never blocks the close, and
+// the closed line records what it said. PLANTED: a stub that prunes two heads and keeps one by name.
+describe('close runs the repo-declared onClose command', () => {
+  function declared(root, script) {
+    put(root, 'prune.js', script);
+    put(root, '.claude/rem.json', JSON.stringify({ onClose: [process.execPath, 'prune.js', '{slug}'] }));
+    worked(root);
+    ok(task(root, 'close-item', 'O1', 'measured', '--task', 'alpha'));
+  }
+  const archivedJournal = (root) => fs.readFileSync(path.join(root, '.claude', 'memory', ...todayPath.split('/'), 'task-alpha', 'JOURNAL.md'), 'utf8');
+
+  it('passes the slug, prints its output and records it on the closed line', () => {
+    const root = repo();
+    declared(root, "console.log(`task ${process.argv[2]}: 2 of 2 head(s) pruned`);");
+    const r = ok(task(root, 'close', 'alpha', 'shipped', '--journal-only', 'D1,D2'));
+    assert.match(r.stdout, /on close, exit 0: task alpha: 2 of 2 head\(s\) pruned/);
+    assert.match(archivedJournal(root), /^- \S+ closed: shipped .*\(authority [0-9a-f]{12}\) \(on close, exit 0: task alpha: 2 of 2 head\(s\) pruned\)$/m);
+  });
+
+  it('a failing command never blocks the close; what it kept, and why, is on the closed line', () => {
+    const root = repo();
+    declared(root, "console.log('pr/alpha/open: refused -- it is an open PR head, never deleted');"
+      + "console.log('task alpha: 1 of 2 head(s) pruned; kept: pr/alpha/open'); process.exit(1);");
+    const r = ok(task(root, 'close', 'alpha', 'shipped', '--journal-only', 'D1,D2'));
+    assert.match(r.stdout, /closed alpha/);
+    assert.match(archivedJournal(root), /\(on close, exit 1: pr\/alpha\/open: refused -- it is an open PR head, never deleted; task alpha: 1 of 2 head\(s\) pruned; kept: pr\/alpha\/open\)$/m);
+  });
+
+  it('a refused close never runs it', () => {
+    const root = repo();
+    put(root, 'prune.js', "require('fs').writeFileSync('ran', '');");
+    put(root, '.claude/rem.json', JSON.stringify({ onClose: [process.execPath, 'prune.js', '{slug}'] }));
+    worked(root);
+    assert.equal(task(root, 'close', 'alpha').status, 1);
+    assert.equal(fs.existsSync(path.join(root, 'ran')), false);
+  });
+
+  it('without the declaration nothing extra runs or is recorded', () => {
+    const root = repo();
+    worked(root);
+    ok(task(root, 'close-item', 'O1', 'measured', '--task', 'alpha'));
+    const r = ok(task(root, 'close', 'alpha', 'shipped', '--journal-only', 'D1,D2'));
+    assert.doesNotMatch(r.stdout, /on close/);
+    assert.doesNotMatch(archivedJournal(root), /on close/);
+  });
+
+  it('a declaration that is not an argv array refuses before any write', () => {
+    const root = repo();
+    put(root, '.claude/rem.json', JSON.stringify({ onClose: 'prune {slug}' }));
+    worked(root);
+    ok(task(root, 'close-item', 'O1', 'measured', '--task', 'alpha'));
+    const r = task(root, 'close', 'alpha', 'shipped', '--journal-only', 'D1,D2');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /onClose must be an argv array/);
+    assert.match(ok(task(root, 'show', 'alpha')).stdout, /status: open/);
+  });
+});
