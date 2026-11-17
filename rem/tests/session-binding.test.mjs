@@ -51,6 +51,16 @@ function plantRetired(root, session, task) {
   return path.join(dir, `${session}.json`);
 }
 
+describe('the machine home value holds on every machine (D41)', () => {
+  it('expands a leading ~ with the homedir of this machine and uses an absolute value as is', () => {
+    for (const v of ['~/.x', '~\\.x']) assert.equal(path.resolve(machineHome({ [HOME_ENV]: v })), path.join(os.homedir(), '.x'));
+    assert.equal(machineHome({ [HOME_ENV]: '~' }), os.homedir());
+    const abs = path.join(os.tmpdir(), 'abs-home');
+    assert.equal(machineHome({ [HOME_ENV]: abs }), abs);
+    assert.equal(machineHome({ [HOME_ENV]: '~x/.y' }), '~x/.y', 'PLANTED CONTROL: only a bare leading ~ expands');
+  });
+});
+
 describe('the cross-language fixture (byte-identical in dev-lab tests/_rem_fixtures/)', () => {
   it('is the path, the repo key and the record rem writes', () => {
     const home = path.join(os.tmpdir(), 'fixture-home');
