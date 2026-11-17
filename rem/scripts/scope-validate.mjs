@@ -1,29 +1,28 @@
 #!/usr/bin/env node
-// scope-validate.mjs — verify each memory scope's integrity.
+// scope-validate.mjs — rem's doctor: verify the root memory's integrity.
 //   --check (default): print issues, exit 1 on an error
-//   --fix: regenerate stale indexes
-// Errors: a scope without .claude/memory/; a task whose TASK.md lacks the user authority id
-// that /rem:task open records (TASK.md written around the library).
-// Warnings: a leftover _meta.json (nothing reads it), a stale or missing index, an entry outside YYYY/MM/DD/, a child-scope state file.
+//   --fix: regenerate a stale index
+// Errors: no .claude/memory/; a task whose TASK.md lacks the user authority id that /rem:task
+// open records (TASK.md written around the library); a child scope's memory or a retired
+// generated index (`.claude/rules/MEMORY.md`, `.claude/meta/`) -- each names the rem migration.
+// Warnings: a leftover _meta.json (nothing reads it), a stale or missing index, an entry outside
+// YYYY/MM/DD/, a task journal minting one ID twice.
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 import { authorityProblem } from './authority.mjs';
-import { findAllScopes, collectFiles, renderIndex, rebuildIndex, indexFilePath, DATED_RE } from './lib.mjs';
+import { duplicateIds } from './tasks.mjs';
+import { memoryRoot, collectFiles, renderIndex, rebuildIndex, indexFilePath, DATED_RE } from './lib.mjs';
+import { childScopeFiles, orphanedFiles, MIGRATE_DOOR } from '../migrations/migrate.mjs';
 
 const args = process.argv.slice(2);
 const fixMode = args.includes('--fix');
 const checkMode = args.includes('--check') || (!fixMode);
 
-function findMemoryScopes() {
-  return findAllScopes();
-}
-
-function validateScope(scopeRoot, isRepoRoot) {
+function validateRoot(root) {
   const issues = [];
-  const memDir = join(scopeRoot, '.claude', 'memory');
-  const indexFile = indexFilePath(scopeRoot);
-  const add = (level, msg) => issues.push({ scope: scopeRoot, level, msg });
+  const memDir = join(root, '.claude', 'memory');
+  const add = (level, msg) => issues.push({ level, msg });
 
   if (!existsSync(memDir)) { add('error', '.claude/memory/ missing'); return issues; }
 
@@ -34,15 +33,20 @@ function validateScope(scopeRoot, isRepoRoot) {
   }
 
   let current = null;
-  try { current = readFileSync(indexFile, 'utf8'); } catch { /* missing */ }
+  try { current = readFileSync(indexFilePath(root), 'utf8'); } catch { /* missing */ }
   if (current === null) add('warn', '.claude/memory-index.md missing');
-  else if (current !== renderIndex(scopeRoot)) add('warn', '.claude/memory-index.md stale');
+  else if (current !== renderIndex(root)) add('warn', '.claude/memory-index.md stale');
 
-  if (isRepoRoot) for (const { level, msg } of taskAuthorityIssues(scopeRoot)) add(level, msg);
-
-  if (!isRepoRoot && existsSync(join(scopeRoot, '.claude', '.rem-state.json'))) {
-    add('warn', '.claude/.rem-state.json should only exist in repo root scope');
+  const scopes = [...new Set(childScopeFiles(root).map(f => f.scope))];
+  if (scopes.length) {
+    add('error', `child-scope memory in ${scopes.join(', ')}: memory lives at the root and nothing reads a child scope. Door: ${MIGRATE_DOOR} moves it once`);
   }
+  const orphans = orphanedFiles(root).map(o => o.path);
+  if (orphans.length) {
+    add('error', `retired generated index(es) ${orphans.join(', ')}: nothing rebuilds them, and rules/MEMORY.md loads on every turn. Door: ${MIGRATE_DOOR} deletes them`);
+  }
+
+  for (const { level, msg } of taskAuthorityIssues(root)) add(level, msg);
   return issues;
 }
 
@@ -55,6 +59,8 @@ function taskAuthorityIssues(root) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const read = f => { try { return readFileSync(join(dir, e.name, f), 'utf8'); } catch { return ''; } };
+    const dup = duplicateIds(read('JOURNAL.md'));
+    if (dup.length) out.push({ level: 'warn', msg: `task ${e.name}: duplicate journal IDs ${dup.join(', ')} -- a citation of one is ambiguous; correct with task.js amend` });
     const id = read('TASK.md').match(/^authority: ([0-9a-f]{12})\s*$/m)?.[1];
     const opened = id && new RegExp(`^- \\d{4}-\\d{2}-\\d{2} opened: .*\\(authority ${id}\\)\\s*$`, 'm').test(read('JOURNAL.md'));
     if (!opened) { out.push({ level: 'error', msg: `task ${e.name} has no user authority — its TASK.md was not written by /rem:task open` }); continue; }
@@ -64,49 +70,24 @@ function taskAuthorityIssues(root) {
   return out;
 }
 
-function fixScope(scopeRoot, issues) {
-  if (issues.some(i => i.msg.startsWith('.claude/memory-index.md'))) {
-    rebuildIndex(scopeRoot);
-    console.log(`  [fix] regenerated memory-index.md for ${relative(process.cwd(), scopeRoot) || '.'}`);
-  }
-}
-
 // ── Main ──
-const scopes = findMemoryScopes();
-const allIssues = [];
+const root = memoryRoot();
+const issues = validateRoot(root);
 
-for (const scope of scopes) {
-  const issues = validateScope(scope, scope === scopes[0]);
-  allIssues.push(...issues);
-}
-
-if (allIssues.length === 0) {
-  console.log(`[scope-validate] ${scopes.length} scope(s) — clean`);
+if (issues.length === 0) {
+  console.log('[scope-validate] .claude/memory — clean');
   process.exit(0);
 }
 
-const label = checkMode ? 'issues' : 'fixing';
-console.log(`[scope-validate] ${allIssues.length} ${label} across ${scopes.length} scope(s):`);
-
-for (const issue of allIssues) {
-  const relScope = relative(process.cwd(), issue.scope).replace(/\\/g, '/') || '.';
-  console.log(`  [${issue.level}] ${relScope}: ${issue.msg}`);
-}
+console.log(`[scope-validate] ${issues.length} ${checkMode ? 'issues' : 'fixing'}:`);
+for (const issue of issues) console.log(`  [${issue.level}] ${issue.msg}`);
 
 if (fixMode) {
-  // Group issues by scope
-  const byScope = new Map();
-  for (const issue of allIssues) {
-    if (!byScope.has(issue.scope)) byScope.set(issue.scope, []);
-    byScope.get(issue.scope).push(issue);
-  }
-  for (const [scope, issues] of byScope) {
-    fixScope(scope, issues);
+  if (issues.some(i => i.msg.startsWith('.claude/memory-index.md'))) {
+    rebuildIndex(root);
+    console.log('  [fix] regenerated .claude/memory-index.md');
   }
   console.log('[scope-validate] fixes applied');
 }
 
-if (checkMode) {
-  const errors = allIssues.filter(i => i.level === 'error');
-  process.exit(errors.length > 0 ? 1 : 0);
-}
+if (checkMode) process.exit(issues.some(i => i.level === 'error') ? 1 : 0);

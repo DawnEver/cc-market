@@ -140,8 +140,8 @@ describe('deepMerge', async () => {
 
   it('preserves array from partial (replaces default)', () => {
     const file = tmp('arr.json');
-    writeFileSync(file, JSON.stringify({ scopes: { ignore: ['a'] } }));
-    assert.deepEqual(loadState(file).scopes.ignore, ['a']);
+    writeFileSync(file, JSON.stringify({ docs: { roots: ['a'] } }));
+    assert.deepEqual(loadState(file).docs.roots, ['a']);
   });
 
   it('handles non-object value for object-key in partial', () => {

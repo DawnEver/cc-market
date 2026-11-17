@@ -2,6 +2,7 @@
 // Crystallize: distill memory entries into a rule; the entries stay on disk, hidden.
 //
 //   node crystallize.js --check      → exit 0 when live entries reach CRYSTALLIZE_ADVISORY
+//   node crystallize.js --decline    → the user said no: never asked again (one decline is permanent)
 //   node crystallize.js --propose    → JSON of every live entry, oldest first, for review
 //   node crystallize.js --validate   → list .claude/rules/rem/ rules
 //   node crystallize.js --execute --rule <file.md> --distilled <a.md,b.md,...>
@@ -16,16 +17,18 @@ import { SR_ID_RE } from '../shared/lib.mjs';
 import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import {
-  remRulesDir, scopeMemoryDir as memoryDir, scopeRoot, CRYSTALLIZE_ADVISORY,
-  listEntries, hiddenEntries, rebuildIndex, dateToPath, formatRefs, writeOnce,
+  remRulesDir, memoryRoot, CRYSTALLIZE_ADVISORY, crystallizeDue,
+  listEntries, hiddenEntries, rebuildIndex, dateToPath, formatRefs, writeOnce, loadState, saveState,
 } from './lib.mjs';
 
 const args = process.argv.slice(2);
+const root = memoryRoot();
+const memoryDir = join(root, '.claude', 'memory');
 const mode = args[0] || '--check';
 const arg = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
 
 function liveEntries() {
-  const entries = listEntries(scopeRoot);
+  const entries = listEntries(root);
   const hidden = hiddenEntries(entries);
   return entries.filter(e => !hidden.has(e.path));
 }
@@ -45,9 +48,20 @@ export function ledgerEntry(rule, paths, date) {
 
 if (mode === '--check') {
   const n = liveEntries().length;
-  const needed = n >= CRYSTALLIZE_ADVISORY;
-  console.log(`[crystallize] ${n} live entries (${needed ? '≥' : '<'}${CRYSTALLIZE_ADVISORY}) — ${needed ? 'crystallize needed' : 'not needed'}`);
+  const needed = crystallizeDue(n);
+  const declined = n >= CRYSTALLIZE_ADVISORY && !needed;
+  console.log(`[crystallize] ${n} live entries (${n >= CRYSTALLIZE_ADVISORY ? '≥' : '<'}${CRYSTALLIZE_ADVISORY}) — `
+    + (needed ? 'crystallize needed' : declined ? 'declined by the user (permanent)' : 'not needed'));
   process.exit(needed ? 0 : 1);
+}
+
+if (mode === '--decline') {
+  const n = liveEntries().length;
+  const state = loadState();
+  state.crystallize = { declined: true };
+  saveState(state);
+  console.log(`[crystallize] declined at ${n} live entries; /rem never asks again`);
+  process.exit(0);
 }
 
 if (mode === '--propose') {
@@ -96,7 +110,7 @@ if (mode === '--execute') {
     console.error(`[crystallize] ${relPath} exists — one crystallize per rule per day`);
     process.exit(1);
   }
-  rebuildIndex(scopeRoot);
+  rebuildIndex(root);
   console.log(`[crystallize] ${relPath} records the rule; ${paths.length} entr${paths.length === 1 ? 'y' : 'ies'} hidden, kept on disk`);
   if (srIds.size) console.log(`[crystallize] SR findings now in the rule: ${[...srIds].join(', ')}`);
   process.exit(0);

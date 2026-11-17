@@ -90,7 +90,7 @@ describe('remember.js --from distills a decision', () => {
       { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
     assert.equal(r.status, 0, r.stderr);
     assert.match(fs.readFileSync(r.stdout.trim(), 'utf8'), /^from:\n {2}- tasks\/alpha\/JOURNAL\.md#D1$/m);
-    assert.match(ok(task(root, 'distill-status', 'alpha')).stdout, /undistilled: D2$/m);
+    assert.match(ok(task(root, 'status', 'alpha', '--distill')).stdout, /undistilled: D2$/m);
   });
 });
 
@@ -160,7 +160,7 @@ describe('an archived task has the memory architecture', () => {
     const r = spawnSync(process.execPath, [RECALL], { input: JSON.stringify({ prompt: 'zebra copy', cwd: root }), encoding: 'utf8', cwd: root });
     const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
     assert.match(ctx, /zebra copy reasons/);
-    assert.doesNotMatch(ctx, /Bound task/);
+    assert.doesNotMatch(ctx, /^task alpha:/m);
   });
 
   it('stays readable by provenance: task.js show finds the archived task', () => {

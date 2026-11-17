@@ -1,16 +1,12 @@
 ---
 description: Open or close a task — the user's command (refused by default for an agent) — rem's tasks layer
-argument-hint: open <slug> "<goal>" [--scope <paths>] | close <slug> ["<reason>"]
+argument-hint: open <slug> "<goal>" [--scope <paths>] [--owner <who>] | close <slug> ["<reason>"] [--journal-only D<n>,...]
 allowed-tools: Bash(node:*)
 disable-model-invocation: true
 ---
 
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/task.js" $ARGUMENTS`
 
-Show the user the output above verbatim. If it opened a task, the session that works on it
-binds by `--task <slug>` or by a worktree/branch named after it, and records progress only
-through `task.js log|decide|open-item|close-item|handoff` -- in English unless `.claude/rem.json`
-sets `"language": "unrestricted"` (translate the user's words; mark quotes `(user, translated)`).
-Do not run `task.js open` or
-`task.js close` yourself: without this command's authority record it is refused, and a
-workaround is detected by scope-validate.
+Show the user the output above verbatim. Do not run `task.js open` or `task.js close` yourself:
+without this command's authority record it is refused, and a workaround is detected by
+scope-validate. Every other verb: `task.js help`; the mechanism: `skills/rem/reference/tasks.md`.

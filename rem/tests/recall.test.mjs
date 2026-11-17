@@ -14,8 +14,8 @@ import crypto from "node:crypto";
 
 import {
   tokenize,
-  findScopeForCwd,
   isSkippable,
+  scopedContext,
   collectCandidates,
   scopeFingerprint,
   scoreEntry,
@@ -140,11 +140,13 @@ describe("recall over a fixture scope", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test("findScopeForCwd walks up from a nested cwd", () => {
-    const deep = path.join(dir, "a", "b");
-    fs.mkdirSync(deep, { recursive: true });
-    assert.equal(findScopeForCwd(deep), dir);
-    assert.equal(findScopeForCwd(path.join(os.tmpdir(), "no-scope-here-" + Date.now())), null);
+  test("recall reads the root's memory only, from any cwd (a child scope is migrated, never read)", () => {
+    fs.mkdirSync(path.join(dir, ".git"));
+    mkMemory(dir, "2026/07/01", "zebra-root", FM("zebra-root", "zebra notes", "project"), "root body");
+    mkMemory(path.join(dir, "pkg"), "2026/07/01", "zebra-child", FM("zebra-child", "zebra notes", "project"), "child body");
+    const ctx = scopedContext("zebra notes", path.join(dir, "pkg"), Date.now(), { binding: () => null }) || "";
+    assert.match(ctx, /root body/, "PLANTED CONTROL: the root entry matches the same prompt");
+    assert.doesNotMatch(ctx, /child body/);
   });
 
   test("collectCandidates reads frontmatter type and skips retired/tasks", () => {
@@ -368,6 +370,71 @@ describe("recall.js CLI", () => {
     const elapsed = Date.now() - t0;
     assert.equal(r.status, 0);
     assert.ok(elapsed < 3 * baseline + 1000, `took ${elapsed}ms against a ${baseline}ms bare node start`);
+  });
+});
+
+// ── the per-prompt budget ────────────────────────────────────────────────────
+// Every prompt waits for recall (it was p95 10.5 s, a third killed at the 15 s timeout). Its
+// warm path spawns no process and stats no memory file; these hold that, each beside its plant.
+
+describe("the per-prompt budget", () => {
+  const session = () => `budget-${crypto.randomUUID()}`;
+  const counter = (answer) => { const read = () => { read.calls++; return answer; }; read.calls = 0; return read; };
+
+  test("the fingerprint stats directories, never the 6000 entry files", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rem-budget-"));
+    for (let d = 1; d <= 60; d++) {
+      const day = path.join(root, ".claude", "memory", "2026", "07", String(d).padStart(2, "0"));
+      fs.mkdirSync(day, { recursive: true });
+      for (let i = 0; i < 100; i++) fs.writeFileSync(path.join(day, `e${i}.md`), "---\nname: e\n---\n");
+    }
+    const stat = fs.statSync;
+    let calls = 0;
+    fs.statSync = (...a) => { calls++; return stat(...a); };
+    try { scopeFingerprint(root); } finally { fs.statSync = stat; }
+    assert.ok(calls > 0, "PLANTED CONTROL: the spy sees the walk");
+    assert.ok(calls <= 70, `${calls} stats for 60 directories and 6000 files`);
+  });
+
+  test("a new entry re-reads only its own directory, never the whole tree", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rem-budget-"));
+    const day = (d) => path.join(root, ".claude", "memory", "2026", "07", String(d).padStart(2, "0"));
+    for (let d = 1; d <= 20; d++) {
+      fs.mkdirSync(day(d), { recursive: true });
+      for (let i = 0; i < 50; i++) fs.writeFileSync(path.join(day(d), `e${i}.md`), `---\nname: e${d}-${i}\n---\n`);
+    }
+    const T0 = Date.now() + 86_400_000; // past any stamp an earlier run left
+    const cold = {};
+    collectCandidates(root, { now: T0, info: cold });
+    assert.equal(cold.read, 1000, "PLANTED CONTROL: the first build reads every file");
+    fs.writeFileSync(path.join(day(7), "fresh.md"), "---\nname: fresh\n---\n");
+    const warm = {};
+    const cands = collectCandidates(root, { now: T0 + 60_000, info: warm });
+    assert.equal(warm.read, 51, "one directory moved, so only its 51 files are read");
+    assert.ok(cands.some((c) => c.name === "fresh"));
+    assert.equal(cands.length, 1001);
+  });
+
+  test("a warm prompt over 6000 entries stays inside the budget", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rem-budget-"));
+    fs.mkdirSync(path.join(root, ".git"));
+    for (let d = 1; d <= 60; d++) {
+      const day = path.join(root, ".claude", "memory", "2026", "07", String(d).padStart(2, "0"));
+      fs.mkdirSync(day, { recursive: true });
+      for (let i = 0; i < 100; i++) {
+        fs.writeFileSync(path.join(day, `n${d}-${i}.md`), `---\nname: note-${d}-${i}\ndescription: topic${i} detail\n---\n\nbody\n`);
+      }
+    }
+    const read = counter(null);
+    const s = session();
+    scopedContext("topic7 detail", root, Date.now(), { session: s, binding: read }); // cold: builds the cache
+    const t0 = Date.now();
+    // An hour later: the TTL has lapsed, so the fingerprint walk runs -- the common case.
+    const ctx = scopedContext("topic7 detail", root, Date.now() + 3_600_000, { session: s, binding: read });
+    const elapsed = Date.now() - t0;
+    assert.match(ctx || "", /Relevant memories/);
+    assert.equal(read.calls, 2, "one ledger read per prompt, nothing spawned");
+    assert.ok(elapsed < 1000, `a warm prompt took ${elapsed}ms (budget 1000ms in-process; hook p95 target < 2 s)`);
   });
 });
 

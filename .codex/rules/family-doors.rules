@@ -321,3 +321,15 @@ prefix_rule(
     decision = "allow",
     justification = "Running one of the ops account's fixed verbs on a declared server the integrator deploys: install, a unit's status, restart, reload or logs, or a daemon reload, with the user's one-time code at the login.",
 )
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "drift-fleet"],
+    decision = "allow",
+    justification = "Reading, read-only, what each selected cluster account holds that its config source cannot render; it writes no file and touches no crontab (user ruling 2026-11-16).",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "drift"],
+    decision = "allow",
+    justification = "Reading, read-only and on the account itself, what that account holds that its config source cannot render (user ruling 2026-11-16).",
+)

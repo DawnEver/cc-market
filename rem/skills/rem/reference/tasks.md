@@ -5,10 +5,18 @@ replaces state spread over dated memory files. Present only where a repo has
 `.claude/tasks/` (scale by presence: small repos never see it).
 
 ```
-.claude/tasks/<slug>/
-  TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
-  JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
+<main checkout>/.claude/tasks/            the LEDGER: one per repository
+  <slug>/TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
+  <slug>/JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
+  .bindings/<session>.json   the session's binding — written only by rem's UserPromptSubmit hook (§ Bind)
 ```
+
+**The ledger is REPO state, not branch state** (cc-market #20, 2026-11-16). Every read and write
+resolves through ONE resolver, `tasksDir()` (`scripts/tasks.mjs`): the parent of
+`git rev-parse --git-common-dir`, i.e. the main
+checkout's `.claude/tasks/`, the same directory from every worktree. A task opened in one worktree
+is found, bound, journaled and admitted from every other. The ledger is never committed on a
+feature branch; `close` archives a task into the closing tree's memory, which is committed.
 
 ## Open — refused by default, detectable when bypassed
 
@@ -17,7 +25,8 @@ replaces state spread over dated memory files. Present only where a repo has
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
-grant that the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit) appends a
+grant that the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit, the one task
+hook: it also binds, § Bind) appends a
 `granted` event for a prompt that IS `/rem:task open|close <slug> …` (verb, slug, prompt hash,
 session, time) to `~/.claude/rem/authority/<project>.jsonl` (directory 0o700, owner checked on
 POSIX; never a shared temp dir). A grant matches exactly one verb and slug, is live for 30
@@ -57,43 +66,66 @@ use it for this check only and unset it after. Start a session with
 
 A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/tasks.mjs`):
 1. the user's instruction, passed as `--task <slug>`;
-2. else the worktree directory name;
-3. else the branch's last segment (`pr/<slug>`, `lane/<slug>`, …).
+2. else the session's binding: the user's prompt whose FIRST line is `task: <slug>` binds the
+   session (user decision D5, 2026-11-15). rem's ONE task hook, `hooks/task-authority.js`
+   (UserPromptSubmit), writes it (`bindSession`) and tells the session its task and PR heads, or
+   why nothing was bound (no open task: the door is `/rem:task open`). rem READS the one file
+   directly (`readSessionBinding`). Node only: no process is spawned and no project venv takes
+   part, so a broken interpreter cannot stop a binding. The task guard refuses an agent's write to it.
 
-Only an OPEN task binds; nothing else is guessed. `task.js bound` prints the binding.
+**The binding file -- the contract other tools read.** rem owns it and is its only writer; a
+git-side gate (another tool's pre-push hook) reads it and never writes it:
+
+- the ledger: `<parent of git rev-parse --path-format=absolute --git-common-dir>/.claude/tasks/`;
+- the binding: `<ledger>/.bindings/<session>.json` = `{"session": "<id>", "task": "<slug>@<authority>"}`,
+  exactly those two keys; `<id>` is the harness's session as a process inside it sees it --
+  `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex (the executing thread, never
+  a parent's id);
+- valid only while `<ledger>/<slug>/TASK.md` has frontmatter `status: open` and the same
+  `authority: <authority>`; anything else binds nothing.
+
+Pinned by `tests/task-bind.test.mjs`. Changing a key or a path is a contract change: readers move
+with it.
+
+The binding counts only while the ledger's `<slug>/TASK.md` is `status: open` with the same
+`authority:`; a closed task, or a reopened one under another authority, binds nothing. No binding
+means no task -- nothing is guessed: a worktree or branch named after a task binds nothing. A
+bound session resolves its task from any worktree and branch. `task.js status` prints the bound
+task, or `no task bound:` and the door.
+
+A worktree that still holds an OPEN task in its own tree (written before the ledger was repo
+state, or committed on a branch) moves it into the ledger with `task.js place <slug>`: it copies
+TASK.md and JOURNAL.md verbatim (cc-market #18). It opens nothing: the task must be open there with
+an authority the local history does not contradict. It writes only where the ledger has no copy;
+a differing copy is refused, never overwritten -- the user decides which record stands. Any
+session may run it; the task guard refuses only `open` and `close`. `task.js commit-record` is
+retired (`RETIRED_VERBS` in `scripts/task.js`): nothing commits the ledger on a branch.
+
+Branches derive from the task: a session bound to `<slug>` names its branches
+`pr/<slug>/<feature>`, never a bare `pr/<slug>`.
 
 Recall (`scripts/recall.js`) is scoped by the binding, on every prompt:
-- the bound task's goal, scope, open items and latest journal lines;
-- entries tagged with the bound task rank first; untagged entries of the scope of cwd and of
-  the task's `scope:` paths; the bound docs (`doc_source`) covering those paths;
+- the bound task as ONE line of at most 200 bytes (`task <slug>: N open, M decisions, last D<n>
+  (MM-DD) "..."; detail: task.js status`), only when it changed since the session last saw it
+  (and again after a compaction); `task.js status` (at most 2 KB) and `task.js show` go deeper;
+- entries tagged with the bound task rank first; then the untagged entries of the root's memory, and
+  the bound docs (`doc_source`) covering the task's `scope:` paths (every bound doc when it has none);
 - an entry tagged with ANOTHER task never comes in, unless the prompt names that task.
 
 `remember.js` tags each entry it writes with `task: <slug>` of the bound task.
 
 ## Run — the journal is append-only
 
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js log "merged lane 3; gate green"     # progress
-node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js decide "take the newer structure"    # → D<n>
-node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js open-item "port the helper"          # → O<n> open
-node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js close-item O3 "ported in abc123"     # → O3 closed
-node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js handoff "next: rerun the gate"
-```
+The verbs are one table, `scripts/task-verbs.mjs`: `node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js help`.
 
-Each call appends ONE line `- <date> <tag>: <text>` (O_APPEND; earlier bytes are never
-rewritten) to the bound task's journal only. Decisions and open items number themselves. A
-closed task's journal is final. Lines are English by default (`memory-conventions.md` § Language). Read with `task.js show [<slug>]` and `task.js list`.
+An `append` verb adds ONE line `- <date> <tag>: <text>` (O_APPEND; earlier bytes are never
+rewritten) to the bound task's journal only. Decisions and open items number themselves, max+1,
+under a lock, so two sessions never mint one ID twice. A closed task's journal is final. Lines are
+English by default (`memory-conventions.md` § Language).
 
-The one sanctioned rewrite is a translation, for a line written before the English policy:
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/task.js translate --line 7 "- 2026-11-01 D2: <English text>"
-```
-
-It replaces JOURNAL.md line 7 (1-based) only if that line holds foreign script, the replacement
-holds none, and the `- <date> <tag>: ` prefix is byte-identical; then it appends
-`- <today> progress: line 7 translated to English` as the audit record. Every other rewrite
-stays refused (the library and the PreToolUse guard).
+A `rewrite` verb (translate, amend) replaces one line in place, keeping its `- <date> <tag>: `
+prefix byte-identical, and appends an audit line; so the journal is append-only except for those
+two audited rewrites. Every other rewrite stays refused (the library and the PreToolUse guard).
 
 ## Close — distill, then archive (the user closes)
 
@@ -102,7 +134,7 @@ stays refused (the library and the PreToolUse guard).
    entries that cite their decision, e.g.
    `remember.js --name <slug> --type project --body "…" --from tasks/<slug>/JOURNAL.md#D3`.
    A rule or bound doc that mentions `tasks/<slug>/JOURNAL.md#D3` distills D3 as well.
-   `task.js distill-status [<slug>]` lists the undistilled decisions and open items.
+   `task.js status [<slug>] --distill` lists the undistilled decisions and the open items.
 2. **Close** — `/rem:task close <slug> ["<reason>"] [--journal-only D<n>,...]` refuses while an item
    is open or a decision is neither distilled nor named in `--journal-only` (kept only in the
    archived journal). It appends `closed: <reason>`, sets `status: closed`, then ARCHIVES:

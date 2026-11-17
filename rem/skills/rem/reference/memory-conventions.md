@@ -133,31 +133,20 @@ OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
   (every new entry would otherwise be a merge conflict).
 - Each line: `- [YYYY-MM-DD name](memory/YYYY/MM/DD/slug.md) — description`, plus
   ` (corrected by memory/…)` for a corrected entry.
-- Writers (`remember.js`, `merge-memory.js`, `crystallize.js`, `scope-split.js`) and
+- Writers (`remember.js`, `merge-memory.js`, `crystallize.js`) and
   `index-memory.js` regenerate it; no hook does. Recall reads the tree, never the index.
 
 ## Recall
 
-`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task, the visible entries of
-the scope(s) being worked on (cwd, plus the bound task's `scope:` paths) and the bound docs of
-those paths. An entry tagged `task: <other>` stays out unless the prompt names that task. A
-corrected entry is injected together with its correction. Details → `tasks.md`.
+`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task's one-line summary, the
+visible entries of the root's memory and the bound docs of the task's `scope:` paths. An entry
+tagged `task: <other>` stays out unless the prompt names that task. A corrected entry is injected
+together with its correction. Details → `tasks.md`.
 
-## Scoped memory (monorepo / multi-project)
+## Memory lives at the root
 
-Any directory containing its own `.claude/memory/` is an independent memory **scope**
-with its own derived index — e.g. each `cc-market/<plugin>/` alongside the repo root.
-
-- `findMemoryScope()` walks up from `cwd` to the nearest ancestor (within
-  `CLAUDE_PROJECT_DIR`) containing `.claude/memory/` — that's `scopeRoot` /
-  `scopeMemoryDir`, the scope `remember.js` and `crystallize.js` operate on by default.
-- `findAllScopes()` walks the whole repo tree to find *every* `.claude/memory/`
-  directory — `index-memory.js` and `rem-prep.js` cover them all.
-- The index's `## Scoped` section links each child scope's index; it is derived from the
-  scopes on disk.
-- `/rem` always operates on the scope for the **current working directory** — if you
-  modified files in another scope this session, run rem-prep for that scope too
-  (see "Cross-project check" in SKILL.md).
+All memory is the repo root's `.claude/memory/` (a task, not a directory, is the unit of work); a
+child `.claude/memory/` is moved there once by `migrations/migrate.mjs`, and scope-validate refuses one.
 
 ## Convergence
 

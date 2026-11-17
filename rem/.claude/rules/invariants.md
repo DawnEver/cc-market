@@ -9,7 +9,7 @@ state exists beside the files. NOTHING deletes a file under `.claude/memory/` (u
 2026-10-31; `tests/lifecycle.test.mjs` scans every script for a file-removing call). An entry
 is never edited either: a correction or restatement is a NEW entry naming the old one
 (`corrects:` flags it; `supersedes:` / `merged_from:` hide it) — visibility is derived, the file stays.
-`scope-split.js` moves nothing: an entry's path is part of its identity.
+Every write lands in the root's memory; an older child scope is read, never written or moved: an entry's path is part of its identity.
 
 ## Opening/closing a task: refused by default, detectable when bypassed; a journal is append-only
 

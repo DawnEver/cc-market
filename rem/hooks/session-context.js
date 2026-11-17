@@ -3,6 +3,7 @@
 // fresh or compacted context lacks.
 //   - Codex SessionStart (not resume/fork, whose context persists): the host project's
 //     .claude/rules (scripts/rules-context.js) — Claude Code auto-loads them itself.
+//   - Both hosts: recall's session record is dropped, so the next prompt re-injects the task line.
 //   - Both hosts: the saved memos with FRESH/STALE (scripts/memo.js memoLines) — after a
 //     compaction dropped the excerpts those facts were paid for. Nothing saved: no output.
 // Codex restores on SessionStart source=compact; its PostCompact takes no context.
@@ -17,6 +18,11 @@ export function isResume(payload) { return ['resume', 'fork'].includes(payload?.
 /** The hook's stdout for this payload ('' for none). `codex` is the host. */
 export async function sessionContext(payload, codex = isCodexHost()) {
   const event = payload.hook_event_name || payload.hookEventName || 'SessionStart';
+  if (payload.session_id && !isResume(payload)) {
+    // recall.js injects the bound task's line only when it changed; a fresh or compacted context
+    // lacks it, so the session's record is dropped and the next prompt carries the line again.
+    try { (await import('../scripts/session-record.mjs')).forgetSession(payload.session_id); } catch { /* none */ }
+  }
   if (codex && event === 'PostCompact') return '';
   const parts = [];
   if (codex && !isResume(payload)) {

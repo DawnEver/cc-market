@@ -20,14 +20,7 @@
       }
     }
   },
-  "scopes": {
-    "ignore": ["vendor", "test-*", "packages/legacy"],
-    "split": {
-      "minOwnEntries": 30,
-      "minClusterEntries": 5,
-      "maxBytes": 524288
-    }
-  }
+  "crystallize": { "declined": true }
 }
 ```
 
@@ -45,10 +38,7 @@ are rejected. Any live REM or review reservation owns continuation for this chec
 other sessions defer without advancing their counters. Completion or expiry permits
 the next ordinary Stop to dispatch deferred work. A Stop continuation does not recurse.
 
-`scopes.ignore` — glob/name patterns for directories that `findAllScopes` /
-`findChildScopes` skip during scope discovery (and skip their descendants). A bare
-pattern (no `/`) matches a directory's basename; a pattern containing `/` matches the
-path relative to the scan root. Both support `*` and `?`. Empty by default.
+`crystallize.declined` — set by `crystallize.js --decline`; one decline is permanent.
 
 Useful for debugging hook gating (e.g. why `/rem` did or didn't trigger). The state file holds
 no memory bookkeeping: memory lifecycle lives entirely in the memory tree.

@@ -81,3 +81,48 @@ describe('translate is a task.js verb; every other journal rewrite stays refused
     assert.equal(edit.deny, true);
   });
 });
+
+// O4: a script's ARGUMENTS are data, not interpreter code; a journal item's free text is data.
+describe('O4: citing a task path or a verb word is not doing it', () => {
+  const reason = (command, tool = 'Bash') => decideTaskGuard({ tool_name: tool, tool_input: { command } }).reason;
+  for (const cmd of [
+    'python -m dev_lab.dev.walls record --evidence .claude/tasks/x/JOURNAL.md "cause"',
+    'node rem/scripts/walls.js record --evidence .claude/tasks/x/JOURNAL.md "the guard refused"',
+    'python scripts/report.py .claude/tasks/x/TASK.md > /tmp/out.txt',
+    'node task.js log "close the loop: the user will close the session" --task x',
+    'node task.js log --task x "open question; then close"',
+    'node task.js log "never > .claude/tasks/x/JOURNAL.md by hand; tee or cp it" --task x',
+  ]) it(`allows ${JSON.stringify(cmd)}`, () => assert.equal(shell(cmd), false));
+  for (const cmd of [
+    'node task.js log "close the session" --task x 2>&1',
+  ]) it(`allows under PowerShell ${JSON.stringify(cmd)}`, () => assert.equal(shell(cmd, 'PowerShell'), false));
+
+  it('planted control: interpreter CODE naming a task path is still refused', () => {
+    assert.equal(shell(`python -c "open('.claude/tasks/x/JOURNAL.md','a')"`), true);
+    assert.equal(shell(`node --eval "require('fs').appendFileSync('.claude/tasks/x/JOURNAL.md','')"`), true);
+    assert.equal(shell(`node -e "1" && python -c "import tasks; tasks.closeTask()"`), true);
+  });
+  it('planted control: a real write beside a citation is still refused', () => {
+    assert.equal(shell('python -m dev_lab.dev.walls record .claude/tasks/x/JOURNAL.md > .claude/tasks/x/JOURNAL.md'), true);
+    assert.equal(shell('node walls.js record x | tee -a .claude/tasks/x/JOURNAL.md'), true);
+  });
+  it('planted control: the close VERB is still refused after a log', () => {
+    assert.equal(shell('node task.js log "done" --task x && node task.js close x'), true);
+  });
+
+  it('every refusal names its cause and its door', () => {
+    const verb = reason('node task.js close x');
+    assert.match(verb, /task\.js close/);
+    assert.match(verb, /\/rem:task close/);
+    const write = reason('echo hi >> .claude/tasks/x/JOURNAL.md');
+    assert.match(write, /\.claude\/tasks\/x\/JOURNAL\.md/);
+    assert.match(write, /task\.js log/);
+    const code = reason(`python -c "open('.claude/tasks/x/TASK.md','w')"`);
+    assert.match(code, /python/);
+    assert.match(code, /task\.js log/);
+    const file = decideTaskGuard({ tool_name: 'Write', tool_input: { file_path: '/r/.claude/tasks/x/TASK.md' } }).reason;
+    assert.match(file, /TASK\.md/);
+    assert.match(file, /\/rem:task/);
+    assert.equal(decideTaskGuard({ tool_name: 'Bash', tool_input: { command: 'ls' } }).reason, undefined);
+  });
+});
