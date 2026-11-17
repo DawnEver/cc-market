@@ -14,7 +14,7 @@ Every write lands in the root's memory; an older child scope is read, never writ
 ## Opening/closing a task: refused by default, detectable when bypassed; a journal is append-only
 
 `openTask` / `closeTask` refuse without an authority record that the user's own
-`/rem:task open|close <slug>` prompt creates (`hooks/task-authority.js`, `scripts/authority.mjs`);
+`/rem:task open|close <slug>` prompt creates (`hooks/task-authority.js` via `hooks/user-prompt.js`, `scripts/authority.mjs`);
 never add a path around that check. A bypass is detectable: `scope-validate.mjs` checks every
 task's `authority:` id against the append-only history in `~/.claude/rem/authority/`, and git
 history shows who wrote TASK.md. Limit: the hook and an agent's shell run as the same OS user, so a determined agent can

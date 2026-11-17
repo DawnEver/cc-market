@@ -96,6 +96,16 @@ export function buildDispatchInstruction(sources, target = resolveReviewWorkerTa
 let projectDir;
 let unifiedStateFile;
 
+// Every hook finishes under 5 s, and so does every hook of one event together (user ruling D24).
+// This trigger is a DECISION the Stop must answer now (a continuation or not), so it cannot be
+// handed to the background: its git reads and its state lock share one budget instead. A call
+// past it reads as "no change" or "no claim" and the next Stop judges again -- the diff stays in
+// the tree, so nothing is lost. Measured 2026-11-17 on a 30k-file repo: git status 0.4-1.0 s,
+// diff 0.4 s, rev-parse 0.1 s.
+export const STOP_BUDGET_MS = 2500;
+let deadline = Infinity;
+const budgetLeft = () => Math.max(1, Math.min(5000, deadline - Date.now()));
+
 const DEFAULT_THRESHOLDS = {
   wave0: { lines: 300, files: 5 },
   wave1: { lines: 1000, files: 15 },
@@ -106,7 +116,7 @@ function loadUnifiedState() { return _loadState(unifiedStateFile); }
 
 function getChangedFiles() {
   try {
-    const out = execFileSync('git', ['status', '--porcelain', '-z'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('git', ['status', '--porcelain', '-z'], { cwd: projectDir, timeout: budgetLeft(), stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     const entries = out.split('\0'), files = [];
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
@@ -122,20 +132,20 @@ function getChangedFiles() {
 
 function getCurrentHead() {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, timeout: budgetLeft(), stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
   } catch { return null; }
 }
 
 function gitRefExists(ref) {
   try {
-    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: 5000, stdio: 'ignore' });
+    execFileSync('git', ['cat-file', '-t', ref], { cwd: projectDir, timeout: budgetLeft(), stdio: 'ignore' });
     return true;
   } catch { return false; }
 }
 
 function getDiffStat(sinceRef) {
   try {
-    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const out = execFileSync('git', ['diff', '--shortstat', sinceRef], { cwd: projectDir, timeout: budgetLeft(), stdio: ['ignore', 'pipe', 'ignore'] }).toString();
     const m = out.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/);
     if (!m) return { lines: 0, files: 0 };
     const files = parseInt(m[1], 10) || 0;
@@ -167,6 +177,7 @@ export function reviewBlocked(input, facts, state, now = Date.now(), env = {}) {
 
 /** One Stop event in a project whose Stop hook is switched on (`reviewCfg` is its config). */
 export function review(input, root, reviewCfg) {
+  deadline = Date.now() + STOP_BUDGET_MS;
   projectDir = root;
   unifiedStateFile = path.join(projectDir, '.claude', '.rem-state.json');
   const transcript = input.transcript_path ? readTranscriptTail(input.transcript_path) : [];
@@ -208,7 +219,7 @@ export function review(input, root, reviewCfg) {
     }, { token: randomUUID(), now });
     state.reviewGate = result.gate;
     if (result.dispatch) pending = result.gate.pending;
-  }, { onTimeout: 'throw' });
+  }, { onTimeout: 'throw', timeoutMs: budgetLeft() });
   if (!saved?.persisted || !pending) return;
 
   const instruction = buildDispatchInstruction(pending.sources.join(','),

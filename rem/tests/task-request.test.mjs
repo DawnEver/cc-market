@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 void TEST_HOME;
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const TASK = path.join(REM, 'scripts', 'task.js');
-const AUTHORITY_HOOK = path.join(REM, 'hooks', 'task-authority.js');
+const AUTHORITY_HOOK = path.join(REM, 'hooks', 'user-prompt.js');
 
 function repo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-req-'));

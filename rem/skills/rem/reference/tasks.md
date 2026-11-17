@@ -25,7 +25,7 @@ feature branch; `close` archives a task into the closing tree's memory, which is
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
-grant that the user's own prompt creates. `hooks/task-authority.js` (UserPromptSubmit, the one task
+grant that the user's own prompt creates. `hooks/task-authority.js` (the task half of rem's one UserPromptSubmit hook `hooks/user-prompt.js`, the one task
 hook: it also binds, § Bind) appends a
 `granted` event for a prompt that IS `/rem:task open|close <slug> …` (verb, slug, prompt hash,
 session, time) to `~/.claude/rem/authority/<project>.jsonl` (directory 0o700, owner checked on
@@ -67,7 +67,7 @@ use it for this check only and unset it after. Start a session with
 A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/tasks.mjs`):
 1. the user's instruction, passed as `--task <slug>`;
 2. else the session's binding: the user's prompt whose FIRST line is `task: <slug>` binds the
-   session (user decision D5, 2026-11-15). rem's ONE task hook, `hooks/task-authority.js`
+   session (user decision D5, 2026-11-15). rem's ONE task hook, `hooks/task-authority.js` (run by `hooks/user-prompt.js`)
    (UserPromptSubmit), writes it (`bindSession`) and tells the session its task and PR heads, or
    why nothing was bound (no open task: the door is `/rem:task open`). rem READS the one file
    directly (`readSessionBinding`). Node only: no process is spawned and no project venv takes

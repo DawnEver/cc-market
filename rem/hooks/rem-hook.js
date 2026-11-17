@@ -14,6 +14,10 @@ const MIN_STOP_COUNT = 3;
 const MIN_SESSION_MS = 2 * 60 * 1000;
 const MIN_SESSION_MS_SUBSTANTIVE = 30 * 1000; // 30s if real code changes happened
 const SESSION_EXPIRY_MS = 30 * 60 * 1000;
+// Every hook finishes under 5 s (user ruling D24). The state lock is held for milliseconds by any
+// healthy writer, so a longer wait means a stuck holder: the stop is allowed and the next Stop
+// decides again, instead of the default 5000 ms wait running into the hook's ceiling.
+export const STATE_LOCK_WAIT_MS = 1500;
 
 // ── Pure helpers ──
 
@@ -158,7 +162,7 @@ if (isMain(import.meta)) {
   const now = Date.now();
   let result;
   try {
-    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw' });
+    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw', timeoutMs: STATE_LOCK_WAIT_MS });
     if (!saved?.persisted) process.exit(0);
   } catch { process.exit(0); }
   const { code, stderr } = resolveHookExit(result?.decision);

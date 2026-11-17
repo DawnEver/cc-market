@@ -108,6 +108,32 @@ test('Codex Stop reevaluates later edits, dispatches once, and does not invoke a
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('a held state lock costs the switched-on Stop hook its shared budget, never the 5 s ceiling', async () => {
+  const { lockFilePath } = await import('../shared/lock.mjs');
+  const { STOP_BUDGET_MS } = await import('../scripts/stop-review.mjs');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sr-stop-lock-')));
+  const hook = fileURLToPath(new URL('../hooks/sharp-review-hook.js', import.meta.url));
+  const lock = lockFilePath(path.join(dir, '.claude', '.rem-state.json'));
+  try {
+    execFileSync('git', ['init', '--quiet', dir], { windowsHide: true });
+    for (const n of ['a', 'b', 'c', 'd', 'e', 'f']) fs.writeFileSync(path.join(dir, `${n}.md`), n);
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, JSON.stringify({ pid: 999999, at: Date.now(), token: 'other' }));
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, [hook], {
+      cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, CLAUDE_PLUGIN_ROOT: '', CODEX_HOME: '', CODEX_THREAD_ID: '', SHARP_REVIEW_STOP_HOOK: '1' },
+      input: JSON.stringify({ session_id: 's1', turn_id: 't', hook_event_name: 'Stop' }), encoding: 'utf8', windowsHide: true,
+    });
+    const elapsed = Date.now() - t0;
+    assert.equal(r.status, 0, 'no claim without the lock: the stop proceeds and the next Stop judges again');
+    assert.match(r.stderr, /could not acquire/, 'PLANTED CONTROL: the hook reached the held lock');
+    assert.ok(STOP_BUDGET_MS <= 2500 && elapsed < STOP_BUDGET_MS + 2500, `the Stop hook took ${elapsed}ms`);
+  } finally {
+    fs.rmSync(lock, { force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('stopHookEnabled: off by default, the committed key turns it on, the env overrides both', async () => {
   const { stopHookEnabled } = await import('../scripts/lib/config.mjs');
   assert.equal(stopHookEnabled({}, {}), false, 'off by default');

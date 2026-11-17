@@ -138,7 +138,7 @@ OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
 
 ## Recall
 
-`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task's one-line summary, the
+`recall.js` (run in-process by rem's one UserPromptSubmit hook, `hooks/user-prompt.js`) reads only a ready device-local index -- a missing or stale one starts a detached `recall.js --build` for the next prompt -- and is read-only and scoped: the bound task's one-line summary, the
 visible entries of the root's memory and the bound docs of the task's `scope:` paths. An entry
 tagged `task: <other>` stays out unless the prompt names that task. A corrected entry is injected
 together with its correction. Details → `tasks.md`.

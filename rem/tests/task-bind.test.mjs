@@ -1,5 +1,5 @@
 // task-bind.test.mjs — rem owns the session binding: the user's `task: <slug>` prompt binds through
-// rem's ONE UserPromptSubmit task hook (hooks/task-authority.js), which also records the /rem:task
+// rem's ONE UserPromptSubmit hook (hooks/user-prompt.js, its task half hooks/task-authority.js), which also records the /rem:task
 // authority. The binding file is a contract other tools read (skills/rem/reference/tasks.md § The
 // binding file); it is pinned here byte-for-shape. No other process -- no project venv -- takes part.
 import { TEST_HOME } from './user-grant.mjs';
@@ -14,7 +14,7 @@ import { tasksDir, BINDINGS, parseBindPrompt, readSessionBinding } from '../scri
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
-const HOOK = path.join(REM, 'hooks', 'task-authority.js');
+const HOOK = path.join(REM, 'hooks', 'user-prompt.js');
 const TASK = path.join(REM, 'scripts', 'task.js');
 const NATIVE_KEYS = ['CLAUDE_PLUGIN_ROOT', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_SESSION_ID', 'CODEX_HOME', 'CODEX_SANDBOX',
   'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'HARNESS_AGENT'];
@@ -131,8 +131,8 @@ describe('rem binds the session on the user\'s `task: <slug>` prompt', () => {
     open(root, 'feature-x');
     assert.ok(fs.existsSync(path.join(tasksDir(root), 'feature-x', 'TASK.md')));
     const hooks = JSON.parse(fs.readFileSync(path.join(REM, 'hooks', 'hooks.json'), 'utf8')).hooks.UserPromptSubmit;
-    const taskHooks = hooks.flatMap(g => g.hooks).filter(h => /task-/.test(h.command));
-    assert.deepEqual(taskHooks.map(h => path.basename(h.command.replace(/"/g, ''))), ['task-authority.js']);
+    const taskHooks = hooks.flatMap(g => g.hooks);
+    assert.deepEqual(taskHooks.map(h => path.basename(h.command.replace(/"/g, ''))), ['user-prompt.js']);
   });
 
   it('an agent still cannot write a binding: the guard refuses it', () => {
