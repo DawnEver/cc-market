@@ -5,27 +5,29 @@ metadata:
   type: project
 ---
 
-watch **v1.0.42**. 同 commit 与 [[action-start-dir-env]] 同期。
+watch **v1.0.42**. Same commit, contemporaneous with [[action-start-dir-env]].
 
-### 症状
-`/watch:check`(跑 `watch.py --json`)在 Windows 控制台**产出空白**。`--json` 与人类
-`_print_report` 都受影响。
+### Symptom
+`/watch:check` (runs `watch.py --json`) **produces blank output** on the Windows console. Both `--json` and the human
+`_print_report` are affected.
 
-### 根因
-打印状态字形 `✓`(✓)/ em-dash `—` 到默认 **cp1252** stdout 时抛 `UnicodeEncodeError`
-→ 进程崩溃,捕获 stdout 的调用方(Bash 工具)只见空串。
+### Root cause
+Printing the status glyph `✓` (✓) / em-dash `—` to the default **cp1252** stdout raises `UnicodeEncodeError`
+→ the process crashes, and a caller capturing stdout (the Bash tool) sees only an empty string.
 
-### 修复
-`scripts/bootstrap.py` 新增 `_force_utf8_io()`,在 `ensure()` 顶部调用一次:
-对 `sys.stdout`/`sys.stderr` 做 `reconfigure(encoding='utf-8', errors='replace')`,
-`(AttributeError, ValueError)` 降级为 no-op。因**所有** CLI + daemon 入口都
-`import bootstrap; bootstrap.ensure()`(且 re-exec 进 venv 后再次执行),一处修全部。
-`errors='replace'` 保证即使遇不可映射字符也不再崩。
+### Fix
+`scripts/bootstrap.py` adds `_force_utf8_io()`, called once at the top of `ensure()`:
+`reconfigure(encoding='utf-8', errors='replace')` on `sys.stdout`/`sys.stderr`,
+degrading to a no-op on `(AttributeError, ValueError)`. Because **every** CLI + daemon entry point does
+`import bootstrap; bootstrap.ensure()` (and runs it again after re-exec into the venv), one place fixes all.
+`errors='replace'` guarantees no crash even on unmappable characters.
 
-### 测试
-`tests/test_bootstrap.py`(3):重配为 utf-8 / 不可映射字形写入不抛 / 无 reconfigure 属性时降级。
-> fixture 替换 `sys.stdout` 会干扰 pytest 全量跑的输出捕获 —— 单独跑该文件,或全量跑时
-> `--ignore=tests/test_bootstrap.py` 再单跑它。
+### Tests
+`tests/test_bootstrap.py` (3): reconfigured to utf-8 / writing an unmappable glyph does not raise / degrades when there is no reconfigure attribute.
+> The fixture replacing `sys.stdout` interferes with pytest output capture in a full run — run that file alone, or in a full run
+> `--ignore=tests/test_bootstrap.py` and then run it alone.
 
-### 旁注
-`test_components_progress.py::test_complete_status_end_to_end` 为 order/timing flaky(隔离通过)。
+### Aside
+`test_components_progress.py::test_complete_status_end_to_end` is order/timing flaky (passes in isolation).
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"
