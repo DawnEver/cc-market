@@ -29,7 +29,7 @@ only after every required REM step succeeds, in the same project cwd. The comman
 `node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-session.js complete --session <id> --request <id>`.
 Never acknowledge failed, interrupted, user-blocked or merely scheduled work. Manual REM
 without a pending request needs no acknowledgement. A continuation already in progress
-does not request another REM pass; review and REM share a transaction-locked reservation.
+does not request another REM pass; one transaction-locked reservation per checkout.
 
 ## Memory Mechanism (global conventions)
 

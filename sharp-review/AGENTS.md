@@ -4,18 +4,15 @@ Post-feature code review plugin for Claude Code and Codex. The review METHOD —
 
 ## Architecture
 
-Full flow: Stop hook → deterministic source gate and atomic claim → main loop dispatches **one worker subagent** → worker runs
-`/sharp-review` Steps 0-4 → memory entry → worker returns only `Sharp review: <summary>`.
+Full flow: `/sharp-review` (or a workflow such as evolve) → main loop dispatches **one worker subagent** → worker runs
+Steps 0-4 → report → worker returns only `Sharp review: <summary>`.
 Diagram and per-step detail → **`skills/sharp-review/SKILL.md`** (see Execution-mode preamble).
-The gate has no Claude CLI/model classification dependency. Runtime claims coordinate with
-REM under the shared state lock; only successful post-review completion credits content.
-REM reservations are checkout-wide too, and expired review claims cannot credit content.
-Bundled execution identity normalizes native Codex thread fields before consulting REM
-slots or attributing a review claim; parent lineage is never a substitute thread key.
+The plugin ships no hooks (`tests/hook-timeouts.test.mjs` `SHIPS_NO_HOOKS`, user ruling
+2026-11-17): a review runs only on demand.
 
 ### Subagent execution (context isolation)
 
-The standard trigger runs the **entire** review inside a dispatched `sharp-review:sharp-review`
+A review runs **entirely** inside a dispatched `sharp-review:sharp-review`
 worker subagent, so none of the diff/reviewer/merge noise touches the main session — only the
 one-line summary returns. The dedicated agent (`agents/sharp-review.md`) has a focused
 system prompt that runs `SKILL.md` (the one procedure), avoiding the `general-purpose` agent's broad
@@ -29,12 +26,7 @@ the worker (Claude) or Codex worker only calls each planned reviewer via the fab
 tool (listed in the worker's `tools:` allowlist) and records the raw results, which
 `post-review.js` has ai-lab merge. Procedure → **`skills/sharp-review/SKILL.md`**
 Step 2 → **`reference/direct-fanout.md`**. Method/executor split → `docs/architecture.md`.
-
-### Wave Gate
-
-Reviews gated by change accumulation, not per-session. Thresholds, delta-comparison mechanics
-(`lastReviewRef`/`lastReviewDiff`/ref-vanished fallback), and config keys →
-**`skills/sharp-review/reference/profiles-and-modes.md`**.
+Config keys → **`skills/sharp-review/reference/profiles-and-modes.md`**.
 
 ## Orientation
 

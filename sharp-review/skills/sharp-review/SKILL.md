@@ -9,24 +9,24 @@ Post-feature review: each run picks review profiles, gives each to a reviewer on
 and merges their schema-bound findings into one memory entry
 `output/logs/YY/MM/DD/sharp-review/sharp-review.md`. The METHOD (profiles, prompts, finding schema,
 status and merge rules) is ai-lab's data, planned and merged by ai-lab; the scripts collect the
-manifest and the raw results and write the report sink. Normally
-invoked by the Stop hook (Wave Gate); `/sharp-review` runs it manually. Gate, profile and
-config detail → **`reference/profiles-and-modes.md`**.
+manifest and the raw results and write the report sink. It runs on demand: `/sharp-review`
+(Codex: invoke the skill), or a workflow such as evolve that invokes it. Profile and config
+detail → **`reference/profiles-and-modes.md`**.
 
 ## Execution mode (read first)
 
 Review runs on git state, not the conversation, so the main loop **dispatches one
 `sharp-review:sharp-review` subagent** (Codex: built-in `worker` told to use this skill)
-to run Steps 0–4 and return only the `Sharp review: <summary>` line. Pass the hook's
-`firedSources`, plugin root and `gateToken`, when supplied. The worker fans out
-reviewers itself and must not re-dispatch.
+to run Steps 0–4 and return only the `Sharp review: <summary>` line. Pass it the plugin
+root and any Step 1 options the request names. The worker fans out reviewers itself and
+must not re-dispatch.
 
 ## Execution
 
 ### Step 0 — Plugin root
 
-`<root>` is the absolute plugin root: the `plugin root:` the dispatch instruction names (the
-Stop hook resolves and checks it), else `$CLAUDE_PLUGIN_ROOT`, else two directories above this
+`<root>` is the absolute plugin root: the `plugin root:` the dispatch names, else
+`$CLAUDE_PLUGIN_ROOT`, else two directories above this
 `SKILL.md` (`<root>/skills/sharp-review/SKILL.md`). It must contain `scripts/plan.js`; if it
 does not, report `Sharp review: plugin root not found` and stop.
 
@@ -37,24 +37,13 @@ Call `mcp__plugin_fabric_fabric__list_providers` and pass the keys on its last l
 provider listed `[no defaults set]` fails every call and must never be a reviewer:
 
 ```powershell
-node "<root>/scripts/plan.js" --sources <firedSources> --available <key1,key2,...>
+node "<root>/scripts/plan.js" --available <key1,key2,...>
 ```
-
-For a hook-triggered run, add `--gate-token <gateToken>` exactly as dispatched. The plan
-carries this token to `post-review.js`; only a persisted run with a successful reviewer
-credits the source hashes. Do not invent a token for manual runs. If Fabric is unavailable
-or the run fails before post-review, release the claim with:
-
-```powershell
-node "<root>/scripts/post-review.js" --release-gate <gateToken>
-```
-
-Release is not completion. A plan with no runnable reviewers releases automatically. A
-crashed worker's claim expires after 30 minutes; the Stop hook never loops indefinitely.
 
 Options: `--providers <a,b>` requests a provider set instead of the rotation (a requested
-provider that is not available is planned `unavailable`, never replaced); `--profile <key>`
-forces one profile; `--range "main...HEAD"` / `--path <dir>` scope
+provider that is not available is planned `unavailable`, never replaced); `--sources <a,b>`
+draws only profiles whose source is named (`diff`, `codebase`, `deps`, `docs`; default all);
+`--profile <key>` forces one profile; `--range "main...HEAD"` / `--path <dir>` scope
 the diff (default: uncommitted changes vs HEAD). Never run raw `git diff` or paste diff text —
 the plan carries the diff inside each prompt. Capture the plan JSON: `run_id`, `plan_file`,
 `profiles`, and `reviewers: [{ name, provider, status, call_mode, model?, prompt }]`.
