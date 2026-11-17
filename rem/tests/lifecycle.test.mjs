@@ -14,6 +14,9 @@ import {
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const RECALL = path.join(REM, 'scripts', 'recall.js');
+const PROMPT_HOOK = path.join(REM, 'hooks', 'user-prompt.js'); // rem's one UserPromptSubmit hook
+// The index the hook's detached build leaves; the hook itself only reads it.
+const buildRecall = (root) => spawnSync(process.execPath, [RECALL, '--build', root], { windowsHide: true });
 
 function scope() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-life-'));
@@ -114,8 +117,9 @@ describe('reading never writes', () => {
     const root = scope();
     entry(root, '2026/01/01/zebra-migration.md', { description: 'zebra migration notes' });
     fs.writeFileSync(path.join(root, '.claude', '.rem-state.json'), '{}');
+    buildRecall(root);
     const before = snapshot(root);
-    const r = spawnSync(process.execPath, [RECALL], {
+    const r = spawnSync(process.execPath, [PROMPT_HOOK], {
       input: JSON.stringify({ prompt: 'zebra migration', cwd: root }), encoding: 'utf8', cwd: root,
     });
     assert.match(r.stdout, /zebra-migration/);

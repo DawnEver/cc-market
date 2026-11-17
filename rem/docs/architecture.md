@@ -7,8 +7,9 @@ that area.
 ## Architecture
 
 ```
-UserPromptSubmit → task-authority.js (the one task hook: records the user's own /rem:task open|close
-               prompt, and binds the session on a `task: <slug>` first line)
+UserPromptSubmit → user-prompt.js (rem's ONE prompt process, every hook < 5 s per event, user ruling D24):
+               1. task-authority.js records the user's own /rem:task open|close prompt and binds the
+                  session on a `task: <slug>` first line; 2. then recall (below), in the same process
 PreToolUse → task-guard.js (refuses an agent opening/closing a task or rewriting its files)
 SessionStart → session-context.js (one process: on Codex, host .claude/rules via rules-context.js;
                on both, saved memos with FRESH/STALE vs their sources' blob hashes; nothing saved → silent)
@@ -16,8 +17,10 @@ PostCompact → session-context.js (memos; Claude only — Codex restores via Se
      ↓
  [Claude reads/writes .claude/memory/ files]
      ↓
-  UserPromptSubmit → recall.js (both hosts; read-only; SCOPED: the bound task's goal/open items/journal tail,
-                     then entries + bound docs of the scope(s) worked on; another task's entries only when named)
+  UserPromptSubmit → recall.js scopedContext (both hosts; read-only; SCOPED: the bound task's line,
+                     then entries + bound docs of the scope(s) worked on; another task's entries only when named).
+                     It reads a READY device-local index; a missing/stale one starts ONE detached
+                     `recall.js --build` (lease-guarded) that runs to completion for the next prompt
      ↓
   Stop → rem-hook.js (session-scoped locked gate; explicit successful-work acknowledgement)
      ↓
@@ -73,7 +76,7 @@ excerpts the saved facts were paid for.
 
 ```
 rem/
-├── hooks/          hooks.json + rem-hook.js + task-guard.js + task-authority.js + session-context.js
+├── hooks/          hooks.json + rem-hook.js + task-guard.js + user-prompt.js (task-authority.js + recall) + session-context.js
 ├── commands/       task.md (/rem:task, the user's command)
 ├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, crystallize.js, task.js, tasks.mjs,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, rules-context.js, recall.js, memo.js, todo.js, todo-lib.mjs, scope-validate.mjs

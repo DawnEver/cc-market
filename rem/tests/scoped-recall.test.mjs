@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { scopedContext } from '../scripts/recall.js';
+import { scopedContext, buildIndex } from '../scripts/recall.js';
 import { forgetSession } from '../scripts/session-record.mjs';
 import { readTask } from '../scripts/tasks.mjs';
 
@@ -37,7 +37,11 @@ const task = (root, ...args) => {
 // The user's `task: <slug>` binding (rem's own record, bound by its prompt hook), planted per repo.
 const bindings = new Map();
 const bind = (root, slug) => bindings.set(root, { slug, authority: readTask(root, slug).authority });
-const recall = (root, prompt) => scopedContext(prompt, root, Date.now(), { binding: () => bindings.get(root) || null }) || '';
+// A warm prompt: the background build has run (buildIndex), so the hook reads a ready index.
+const recall = (root, prompt) => {
+  buildIndex(root);
+  return scopedContext(prompt, root, Date.now(), { binding: () => bindings.get(root) || null, refresh: () => {} }) || '';
+};
 
 describe('scoped recall', () => {
   it("never injects another task's entries into an unrelated task's turn", () => {

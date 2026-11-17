@@ -170,7 +170,9 @@ describe('recall carries corrections', () => {
     const root = scope();
     put(root, '2026/01/01/zebra-rate.md', entryText('zebra-rate', '', 'The zebra rate is 5.'));
     put(root, '2026/01/05/rate-fix.md', entryText('rate-fix', 'corrects: 2026/01/01/zebra-rate.md\n', 'It is 7.'));
-    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'recall.js')], {
+    // The index the hook's detached build leaves, then rem's one UserPromptSubmit hook reads it.
+    spawnSync(process.execPath, [path.join(SCRIPTS, 'recall.js'), '--build', root], { windowsHide: true });
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, '..', 'hooks', 'user-prompt.js')], {
       input: JSON.stringify({ prompt: 'zebra rate', cwd: root }), encoding: 'utf8', cwd: root,
     });
     const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;

@@ -10,7 +10,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const HOOK = fileURLToPath(new URL('../hooks/task-authority.js', import.meta.url));
+const HOOK = fileURLToPath(new URL('../hooks/user-prompt.js', import.meta.url));
 export const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-home-'));
 process.env.HOME = TEST_HOME;
 process.env.USERPROFILE = TEST_HOME;

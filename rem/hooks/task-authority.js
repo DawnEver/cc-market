@@ -1,6 +1,5 @@
-#!/usr/bin/env node
-// task-authority.js — THE ONE UserPromptSubmit task hook: the user's own prompt is the only authority
-// over tasks, and this hook records each form of it. Never blocks.
+// task-authority.js — the task half of rem's ONE UserPromptSubmit hook (hooks/user-prompt.js): the
+// user's own prompt is the only authority over tasks, and this records each form of it. Never blocks.
 //   - `/rem:task open|close <slug> …`, or `approve <code>` for an agent's live request: record that
 //     authority (scripts/authority.mjs) so openTask/closeTask may proceed once;
 //   - a FIRST line `task: <slug>`: bind this session to that open task (tasks.mjs bindSession) -- the
@@ -12,8 +11,6 @@
 // REM_AUTHORITY_PROBE=1 also logs the raw prompt to the store's probe.jsonl (live check).
 // Every prompt runs this: a prompt that cannot be the command (no "task" nor an approval word) returns
 // before the authority library (crypto, locking) is even loaded.
-
-import { readStdinJSON, isMain } from '../shared/lib.mjs';
 
 // What a binding prompt tells the session: its task and PR heads, or why nothing was bound.
 async function bind(cwd, payload, slug) {
@@ -27,27 +24,22 @@ async function bind(cwd, payload, slug) {
   }
 }
 
-if (isMain(import.meta.url)) {
-  let p = {};
-  try { p = readStdinJSON() || {}; } catch { /* no payload: nothing to record */ }
+/** Record the authority a prompt carries; the context a binding prompt tells the session, else null. */
+export async function authorityContext(p) {
   const prompt = String(p.prompt || p.user_prompt || '');
   const cwd = typeof p.cwd === 'string' ? p.cwd : process.cwd();
   const probing = process.env.REM_AUTHORITY_PROBE === '1';
-  if (probing || /task|approve|批准|同意/i.test(prompt)) {
-    try {
-      const { recordUserCommand, probe } = await import('../scripts/authority.mjs');
-      if (probing) probe(prompt);
-      recordUserCommand(cwd, prompt, p.session_id || '');
-    } catch { /* a hook never breaks the session */ }
-    // Only a prompt that starts `task:` loads the task library; parseBindPrompt is the definition.
-    if (/^[ \t]*task:/.test(prompt)) try {
-      const { parseBindPrompt } = await import('../scripts/tasks.mjs');
-      const slug = parseBindPrompt(prompt);
-      if (slug) {
-        process.stdout.write(JSON.stringify({
-          hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: await bind(cwd, p, slug) },
-        }));
-      }
-    } catch { /* a hook never breaks the session */ }
-  }
+  if (!probing && !/task|approve|批准|同意/i.test(prompt)) return null;
+  try {
+    const { recordUserCommand, probe } = await import('../scripts/authority.mjs');
+    if (probing) probe(prompt);
+    recordUserCommand(cwd, prompt, p.session_id || '');
+  } catch { /* a hook never breaks the session */ }
+  // Only a prompt that starts `task:` loads the task library; parseBindPrompt is the definition.
+  if (!/^[ \t]*task:/.test(prompt)) return null;
+  try {
+    const { parseBindPrompt } = await import('../scripts/tasks.mjs');
+    const slug = parseBindPrompt(prompt);
+    return slug ? await bind(cwd, p, slug) : null;
+  } catch { return null; /* a hook never breaks the session */ }
 }
