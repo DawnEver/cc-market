@@ -19,8 +19,7 @@
         "requestExpiresAt": 1780501800000
       }
     }
-  },
-  "crystallize": { "declined": true }
+  }
 }
 ```
 
@@ -37,8 +36,6 @@ matching request through `rem-session.js complete`; expired or replayed acknowle
 are rejected. Any live REM or review reservation owns continuation for this checkout;
 other sessions defer without advancing their counters. Completion or expiry permits
 the next ordinary Stop to dispatch deferred work. A Stop continuation does not recurse.
-
-`crystallize.declined` — set by `crystallize.js --decline`; one decline is permanent.
 
 Useful for debugging hook gating (e.g. why `/rem` did or didn't trigger). The state file holds
 no memory bookkeeping: memory lifecycle lives entirely in the memory tree.
