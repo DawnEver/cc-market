@@ -11,7 +11,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, BIND_DOOR,
+  openTask, setNeeds, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, BIND_DOOR,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 import { VERBS, helpText } from './task-verbs.mjs';
@@ -54,9 +54,10 @@ export function main(argv) {
       + `then run task.js open ${slug} "<goal>"`);
   } else if (verb === 'open') {
     const scope = (flag(args, '--scope') || '').split(',').map(s => s.trim()).filter(Boolean);
+    const needs = (flag(args, '--needs') || '').split(',').map(s => s.trim()).filter(Boolean);
     const owner = flag(args, '--owner') || 'user';
     const [slug, ...goal] = args;
-    openTask(cwd, slug, goal.join(' '), { scope, owner });
+    openTask(cwd, slug, goal.join(' '), { scope, needs, owner });
     console.log(`${PREFIX} opened ${slug} → ${join(tasksDir(cwd), slug)} (the ledger every worktree reads)`);
     console.log(`${PREFIX} to work on it, bind a session with a prompt whose first line is \`task: ${slug}\`; `
       + `its branches are pr/${slug}/<feature>, never a bare pr/${slug}`);
@@ -84,6 +85,11 @@ export function main(argv) {
     const approved = flag(args, '--approved');
     if (!n || args.length !== 1) throw usage(verb);
     console.log(amendJournalLine(cwd, slug, n, args[0], { reason, approved }));
+  } else if (verb === 'needs') {
+    const slug = bound(args);
+    const [sub, list = ''] = args;
+    if (sub !== 'set' || args.length > 2) throw usage(verb);
+    console.log(setNeeds(cwd, slug, list));
   } else if (verb === 'place') {
     const [slug] = args;
     if (!slug) throw usage(verb);
