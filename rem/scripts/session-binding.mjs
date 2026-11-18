@@ -32,11 +32,15 @@ const SESSION_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const CASELESS = new Set(['win32', 'darwin']);
 const posix = p => String(p).replace(/\\/g, '/');
 
-// The machine home: $LAB_COMMONS_HOME (a leading ~ expanded). Unset throws HOME_DOOR.
+// The machine home: $LAB_COMMONS_HOME (a leading ~ expanded). Unset throws HOME_DOOR. The value is shared
+// across machines through synced settings, so the rest after `~` is split on either separator and joined
+// with this machine's: `~\.x` written on Windows resolves on Linux too.
 export function machineHome(env = process.env) {
   const home = env[HOME_ENV];
   if (!home) throw new Error(HOME_DOOR);
-  return home.replace(/^~(?=$|[\\/])/, homedir());
+  const tilde = /^~(?:$|[\\/]+(.*))$/s.exec(home);
+  if (!tilde) return home;
+  return tilde[1] ? join(homedir(), ...tilde[1].split(/[\\/]+/).filter(Boolean)) : homedir();
 }
 
 // THE ONE PATH of `session`'s binding, the same from every repo.
