@@ -56,7 +56,8 @@
     "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
     "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
     "PARTS_EVENT": "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}",
-    "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}"
+    "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}",
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"host\", \"tests\": \"ci\"}"
   },
   "jobs": {
     "measurement": {
