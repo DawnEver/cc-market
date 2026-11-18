@@ -1,6 +1,6 @@
 /**
  * All memory is gathered at the repo root (user ruling 2026-11-16: the task system replaced
- * scope-split). Writes never land in a child scope; one decline of crystallize is permanent.
+ * scope-split). Writes never land in a child scope.
  * Run: node --test rem/tests/memory-root.test.mjs
  */
 import { test, describe } from "node:test";
@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { isInsideDir, crystallizeDue, CRYSTALLIZE_ADVISORY } from "../scripts/lib.mjs";
+import { isInsideDir } from "../scripts/lib.mjs";
 
 const SCRIPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts");
 
@@ -44,11 +44,3 @@ describe("remember writes at the root", () => {
   });
 });
 
-describe("one decline of crystallize is permanent", () => {
-  test("below the advisory it is never due", () => assert.equal(crystallizeDue(CRYSTALLIZE_ADVISORY - 1, false), false));
-  test("PLANTED CONTROL: at the advisory with no decline it is due", () => assert.equal(crystallizeDue(CRYSTALLIZE_ADVISORY, false), true));
-  test("after a decline it is never due again, however many entries accrue", () => {
-    assert.equal(crystallizeDue(6051, true), false);
-    assert.equal(crystallizeDue(6051 + 100 * CRYSTALLIZE_ADVISORY, true), false);
-  });
-});

@@ -102,7 +102,6 @@ describe('rem migration plan (four layers)', () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-plan-'));
     spawnSync('git', ['init', '-q'], { cwd: root });
     write('.claude/memory/2026/10/01/an-entry.md', '---\nname: an-entry\ndescription: d\naccessed: 2026-10-28\ntier: hot\ncount: 3\ncreated: 2026-10-01\n---\n\naccessed: body text stays\n');
-    write('.claude/memory/2026/10/02/manual-tasks.md', '---\nname: manual\n---\n\n- [ ] M-1 [HIGH] Open one (2026-10-02)\n- [x] M-2 [LOW] Closed one (2026-10-02)\n');
     write('.claude/memory/2026/10/03/HANDOFF-x.md', '---\nname: h\n---\nb\n');
     write('.claude/memory/2026/10/03/PLAN-y.md', '---\nname: p\n---\nb\n');
     write('src/.claude/memory/2026/10/04/DECISIONS-z.md', '---\nname: z\naccessed: 2026-10-04\n---\nb\n');
@@ -110,7 +109,7 @@ describe('rem migration plan (four layers)', () => {
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  test('a dry run plans the strip, the adoption and the classes, and writes nothing', async () => {
+  test('a dry run plans the strip and the classes, and writes nothing', async () => {
     const before = snapshot();
     const { plan } = await migrate(root, { dryRun: true });
     assert.deepEqual(snapshot(), before, 'a dry run writes nothing');
@@ -118,7 +117,6 @@ describe('rem migration plan (four layers)', () => {
       ['.claude/memory/2026/10/01/an-entry.md', ['accessed', 'tier', 'count']],
       ['src/.claude/memory/2026/10/04/DECISIONS-z.md', ['accessed']],
     ]);
-    assert.deepEqual(plan.legacyTodos, [{ path: '.claude/memory/2026/10/02/manual-tasks.md', open: 1, closed: 1 }]);
     assert.deepEqual(plan.classified.map(c => [c.path, c.prefix]), [
       ['.claude/memory/2026/10/03/HANDOFF-x.md', 'HANDOFF'],
       ['.claude/memory/2026/10/03/PLAN-y.md', 'PLAN'],
@@ -212,7 +210,7 @@ describe('the retired scope-split and generated indexes migrate ONCE', () => {
     }
     assert.ok(!has('.claude/meta'), 'the emptied meta/ directory is gone');
     assert.ok(has('attic/old/.claude/rules/MEMORY.md'), 'PLANTED CONTROL: attic/ is frozen source');
-    assert.deepEqual(JSON.parse(read('.claude/.rem-state.json')), { crystallize: { declined: true }, docs: { roots: null } });
+    assert.deepEqual(JSON.parse(read('.claude/.rem-state.json')), { docs: { roots: null } });
   });
 
   test('a second run plans nothing (the format migrates once)', async () => {

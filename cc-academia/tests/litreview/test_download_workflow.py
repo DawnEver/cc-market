@@ -7,10 +7,10 @@ import json
 import pytest
 
 from academia.litreview.acquire import oa_resolve
-from academia.litreview.acquire.download import AccessBlockedError, candidate_urls
+from academia.litreview.acquire.download import candidate_urls
 from academia.litreview.acquire.engine import acquire_pdfs
 from academia.litreview.acquire.transport import BrowserTransport, needs_browser
-from academia.litreview.acquire.types import Outcome
+from academia.litreview.acquire.types import Blocked, Outcome
 
 
 def _fetch_linked_pdf(page, target, base_url):
@@ -216,7 +216,7 @@ def test_acquire_falls_back_to_next_url_after_block(tmp_path):
     def downloader(it, target, url):
         tried.append(url)
         if "ieee" in url:
-            raise AccessBlockedError("cloudflare")
+            raise Blocked("cloudflare")
         target.write_bytes(PDF_BYTES)
         return url
 
@@ -237,7 +237,7 @@ def test_acquire_records_real_error_detail_when_all_urls_fail(tmp_path):
     }
 
     def downloader(it, target, url):
-        raise AccessBlockedError(f"turnstile on {url}")
+        raise Blocked(f"turnstile on {url}")
 
     acquire_pdfs(_queue(tmp_path, item), tmp_path, downloader=downloader)
 
