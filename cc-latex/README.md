@@ -1,6 +1,6 @@
 # cc-latex
 
-LaTeX writing assistant — compile workflow, academic writing style, and word counting
+LaTeX writing assistant — compile workflow, academic writing style, and field-reading before drafting, and word counting
 for LaTeX documents (reports, theses, papers). No hooks; works on both Claude Code and
 Codex (skills only, one helper script).
 
@@ -15,6 +15,7 @@ Codex (skills only, one helper script).
 | Skill | What it does |
 |---|---|
 | `cc-latex:latex` | LaTeX writing conventions: `pdflatex`/`bibtex` compile workflow, figure/table placement, citations, and academic writing style (concise plain English, cohesion, semantic line breaks) |
+| `cc-latex:field-reading` | Before drafting in a new field or venue: read a wide sample of the field's papers and record its section moves, sentence templates and conventions as a field writing profile (rule 38); shipped profiles in `skills/latex/reference/fields/` |
 | `cc-latex:count-tex` | Word counts per section plus grand total via `texcount` — references excluded; compare against a target (e.g. `--target 8000`) |
 
 ## count-tex example

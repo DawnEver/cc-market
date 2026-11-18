@@ -22,9 +22,17 @@ Procedure (rule 32 order: L1 argument > L2 position > L3 sentence > L4 wording):
    phrase-plus-comma openings in a row, runs of identical openers, banned words, metaphors for terms,
    two names for one concept, absolute values in the abstract, introduction or conclusion, overstated
    or unsupported claims.
-4. Consistency: changed terms, symbols and claims match the figures, captions, abstract and conclusion.
-5. Approved text: a change of meaning in text the user has approved (the project rules name it) is
+4. Field profile (writing-style rule 38): if the project has `.claude/field-style.md` or the field
+   matches a profile in `skills/latex/reference/fields/`, check each drafted section against its moves
+   (missing or misordered move: FIX) and its user-settled conventions. A drafted section with no
+   profile for its field is FIX: run the `field-reading` skill first. A run of more than six words
+   matching one corpus paper is BLOCK (stock formulae common to the field excepted).
+5. Consistency: changed terms, symbols and claims match the figures, captions, abstract and conclusion.
+6. Approved text: a change of meaning in text the user has approved (the project rules name it) is
    BLOCK, however well written; it goes to the user.
+7. Revision granularity (writing-style rule 37): outside the draft stage, a paragraph replaced as a
+   whole, rather than sentence by sentence with a per-sentence change log, is BLOCK; it goes back to
+   the writer to be redone sentence by sentence.
 
 Output: a table `file:line | OK / FIX / BLOCK | rule | problem | suggested wording`, then one line with
 the overall verdict. Do not edit files.
