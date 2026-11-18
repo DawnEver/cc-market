@@ -39,7 +39,7 @@ and duplicate registrations can run the same lifecycle work twice.
 > context-inheriting fork is unavailable; an empty worker is not equivalent.
 > Codex gates use the actual execution thread, not a shared parent `session_id`.
 > When no execution identity is available, the hook does not request continuation.
-> A live REM or review reservation excludes other continuations in the same checkout;
+> A live REM reservation excludes other continuations in the same checkout;
 > per-thread counters remain independent and deferred work waits for an eligible Stop.
 
 ## Usage

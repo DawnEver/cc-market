@@ -5,7 +5,7 @@ metadata:
   type: feedback
 ---
 
-The `/todo` skill (rem) was wrongly triggered by the user saying "去做" / "go do X" —
+The `/todo` skill (rem) was wrongly triggered by the user saying "go do it" / "go do X" —
 a direct request to act, not a task-list operation. Root cause: the skill `description`
 read "Manage the project task list — view, add, check, and resolve tasks." The phrase
 "resolve tasks" / generic task verbs made the model classify any "do this task" intent as
@@ -21,4 +21,6 @@ confusable phrasing.
 artifact it operates on, and add a "do NOT trigger when…" clause quoting the phrasing that
 caused the false positive. Keep it short. Final /todo wording: "List, add, mark, or remove
 entries in the persisted `/todo` task backlog. Only for explicit operations on that stored
-list — not for 'go do X' requests to act ('去做', '做一下')."
+list — not for 'go do X' requests to act ('go do', 'do it')."
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

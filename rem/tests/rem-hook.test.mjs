@@ -390,12 +390,6 @@ test('a Stop continuation cannot recursively trigger a fresh REM request', () =>
   assert.equal(decideStop(state, { session_id: 'a', stop_hook_active: true }, 200000).decision, 'allow');
 });
 
-test('an in-flight review reservation defers REM without advancing counters', () => {
-  const state = { hook: {}, reviewGate: { pending: { expiresAt: 2000 } } };
-  assert.equal(decideSessionStop(state, { session_id: 'a' }, 1000).decision, 'allow');
-  assert.equal(state.hook.sessions.a, undefined);
-});
-
 test('Codex siblings sharing a parent retain separate REM gates and completion keys', () => {
   const state = { hook: {} };
   const env = { CODEX_THREAD_ID: 'stale' };

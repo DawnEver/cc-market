@@ -179,6 +179,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "hold"],
+    decision = "allow",
+    justification = "Holding a pull request from the merge tick with the hold label, where its draft is refused.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "release"],
+    decision = "allow",
+    justification = "Releasing a held pull request back to the merge tick.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "close"],
     decision = "allow",
     justification = "Closing a pull request with its reason posted first; its branch is never deleted.",
@@ -272,12 +284,6 @@ prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.branchprune", "delete"],
     decision = "allow",
     justification = "Deleting a remote branch only when every commit on it is already on the integration branch or on another live branch or open pull request; never a force push and never a lossy delete.",
-)
-
-prefix_rule(
-    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.branchprune", "delete-tag"],
-    decision = "allow",
-    justification = "Deleting a remote tag the user approved in their own words, only when its commit is on the integration branch or the trunk; never a lossy delete.",
 )
 
 prefix_rule(

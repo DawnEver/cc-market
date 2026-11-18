@@ -80,7 +80,7 @@ never read/write directly. Every save is tmp+rename with a unique temp name
 ### deepMerge preserves foreign keys
 
 `deepMerge` must preserve keys in `partial` that are not in `DEFAULT_STATE`. Other plugins
-(e.g. sharp-review) store their state under the same file — silent drop on load→save would
+(e.g. evolve) store their state under the same file — silent drop on load→save would
 lose their data. When adding a new key to `DEFAULT_STATE`, add it here first, then propagate
 to all `*/shared/state.mjs` copies. Bundle integrity test enforces per-plugin copies stay in
 sync with `cc-market/shared/`.

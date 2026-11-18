@@ -45,7 +45,7 @@ describe('every shipped hook declares a timeout of at most 5 s', () => {
   });
 
   it('the scan sees every plugin that ships hooks', () => {
-    for (const name of ['rem', 'sharp-review', 'cc-academia']) assert.ok(plugins.includes(name), `${name}/hooks/hooks.json not scanned`);
+    for (const name of ['rem', 'cc-academia']) assert.ok(plugins.includes(name), `${name}/hooks/hooks.json not scanned`);
   });
 
   for (const name of plugins) {
@@ -76,5 +76,31 @@ describe('a plugin starts at most one hook process per event', () => {
     it(`${name}/hooks/hooks.json`, () => {
       assert.deepEqual(eventsWithSeveralProcesses(JSON.parse(readFileSync(join(ROOT, name, 'hooks', 'hooks.json'), 'utf8'))), []);
     });
+  }
+});
+
+// A plugin declared hook-free declares a hook nowhere a host reads one: no hooks/hooks.json and
+// no `hooks` key in either manifest (user ruling 2026-11-17: sharp-review's Stop hook is retired;
+// its skill and worker agent stay and run on demand).
+export const SHIPS_NO_HOOKS = ['sharp-review'];
+
+/** Where the plugin at *dir* declares hooks: its hooks/hooks.json and any manifest `hooks` key. */
+export function hookDeclarations(dir) {
+  const out = [];
+  if (existsSync(join(dir, 'hooks', 'hooks.json'))) out.push('hooks/hooks.json');
+  for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
+    const file = join(dir, manifest);
+    if (existsSync(file) && JSON.parse(readFileSync(file, 'utf8')).hooks !== undefined) out.push(`${manifest} hooks`);
+  }
+  return out;
+}
+
+describe('a plugin declared hook-free ships no hooks', () => {
+  it('PLANTED CONTROL: rem ships hooks, and the probe sees them', () => {
+    assert.deepEqual(hookDeclarations(join(ROOT, 'rem')), ['hooks/hooks.json']);
+  });
+
+  for (const name of SHIPS_NO_HOOKS) {
+    it(name, () => assert.deepEqual(hookDeclarations(join(ROOT, name)), []));
   }
 });

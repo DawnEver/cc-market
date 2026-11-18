@@ -1,20 +1,14 @@
-// config.mjs — tracked, shareable sharp-review config (NOT device-local runtime state).
+// config.mjs — tracked, shareable sharp-review config.
 //
-// Static review config — profile weights, custom profiles, trigger thresholds — lives in a
+// Static review config — profile weights, custom profiles, diff limit, providers — lives in a
 // COMMITTED `.claude/sharp-review.json` so it travels with the repo (a team/repo decision like
 // "this codebase leans on architecture surveys" must be shared, not stuck on one machine).
-// Volatile runtime state (sessionId, wave, lastReviewRef, reviewCount, …) stays in the
-// gitignored `.claude/.rem-state.json` under `reviewGate` — the two are deliberately separate.
 //
 // Shape of `.claude/sharp-review.json` (every key optional):
 //   {
-//     "stopHook":            boolean,  // true: the Stop hook may review here on its own (default false; env SHARP_REVIEW_STOP_HOOK=1|0 overrides); /sharp-review always runs
 //     "profileWeights":      { "<profileKey>": number, ... },   // retune built-in weights / opt out (0)
 //     "customProfiles":      [ { key, source, context, scope, weight?, framing?, label? } ],  // ai-lab's method profiles.json shape
-//     "thresholds":          { "wave0": { lines, files }, "wave1": { lines, files } },
 //     "inlineDiffLimit":     number,   // chars; review→agent mode cutover
-//     "docsThreshold":       number,   // doc-file count that fires the docs source
-//     "codebaseIntervalMin": number,   // minutes between codebase surveys
 //     "providers":           { "<run mode>": ["<provider>", ...] }  // overrides the method's run_modes
 //   }
 import { readFileSync } from 'node:fs';
@@ -31,13 +25,4 @@ export function loadReviewConfig(root) {
   } catch {
     return {};
   }
-}
-
-// The Stop hook reviews only where it is switched on: `stopHook: true` in the tracked
-// .claude/sharp-review.json, or SHARP_REVIEW_STOP_HOOK=1 (=0 forces it off). Default off -- a forge
-// or the user reviews; /sharp-review always works.
-export function stopHookEnabled(config, env = {}) {
-  if (env.SHARP_REVIEW_STOP_HOOK === '1') return true;
-  if (env.SHARP_REVIEW_STOP_HOOK === '0') return false;
-  return config?.stopHook === true;
 }
