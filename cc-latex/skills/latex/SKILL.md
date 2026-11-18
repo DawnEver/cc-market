@@ -41,7 +41,8 @@ Write fluent, concise academic English: short clear sentences, plain direct word
 cohesive flow, and semantic line breaks (roughly one sentence per source line). One claim
 per sentence: split any sentence that combines a definition aside with a consequence.
 The full style rules with examples are in `reference/writing-style.md` — load it before
-drafting or rewriting prose.
+drafting or rewriting prose. Rules P1-P24 from published style guides (IEEE, Gopen and Swan,
+Mensh and Kording) are in `reference/style-sources.md` and bind as well (rule 39).
 
 ## Review chain (mandatory for every prose edit)
 

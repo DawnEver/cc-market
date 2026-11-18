@@ -281,16 +281,30 @@ sentence copied from one of them.
     write: the moves of each section, slot templates of recurring sentences, and conventions (verbs,
     tense, hedging, gap statements, where numbers appear, contribution lists). The `field-reading` skill
     runs this procedure; shipped profiles live in `fields/`, the project's own in `.claude/field-style.md`.
-    Draft each section move by move from the profile; the rules above then shape every sentence. Where
-    the field's practice conflicts with one of these rules, the user decides, and the ruling enters the
-    project's writing rules. Learn structure, never wording: no run of more than six words is taken
+    Draft each section move by move from the profile; the rules above then shape every sentence. The field
+    profile only adds constraints and never relaxes a rule: where the field's practice is looser than one
+    of these rules (contribution lists, announced novelty, ", which" tails, personified verbs), the rule
+    holds without exception and without asking; where the field is stricter or adds a convention the
+    rules do not cover, the field's practice is adopted. Learn structure, never wording: no run of more than six words is taken
     from any one paper; stock formulae shared by many papers ("to the best of our knowledge") are
     conventions, not copying.
 
+39. **Published style guides bind as well.** Rules P1-P24 in `style-sources.md` come from the IEEE
+    Editorial Style Manual, the IEEE Transactions template, Gopen and Swan's "The Science of Scientific
+    Writing", Mensh and Kording's "Ten simple rules for structuring papers" and Schulzrinne's guide. They
+    cover sentence positions (subject next to its verb, old information first, new information last),
+    paragraph shape (context, content, conclusion), abstract format, and IEEE forms for citations,
+    figures, equations, numbers and units. They are binding; where one tightens a rule above, the stricter
+    form applies. A guide is added only for a constraint that makes these rules stricter.
+
 ## Self-check before finishing a section
 
+- Each sentence passes P1-P4 of `style-sources.md` (subject next to verb, new information last, old
+  information first, action in the verb); each paragraph closes on its answer (P6); IEEE forms hold (P14,
+  P24) (rule 39).
+
 - A field writing profile exists for this field and venue and was re-read before drafting; the
-  section follows its moves, and every divergence from these rules has a user ruling (rule 38).
+  section follows its moves, and no looser field habit has relaxed a rule (rule 38).
 
 - Search for " while ", " although ", ", but ", and for commas between a subject and its verb;
   each hit is either kept for a reason or rewritten (rule 36).
