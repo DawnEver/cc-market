@@ -24,6 +24,6 @@ atomically and preserves the other top-level keys rem owns. This schema is here 
 ```
 
 `saveState` only replaces the `evolveState` key — it must preserve all other top-level keys
-(`hook`, `prune`, `reviewGate`, …) shared with rem. State writes never block the loop: on a
+(`hook`, `prune`, `docs`, …) shared with rem. State writes never block the loop: on a
 Windows/OneDrive rename flake `saveState` returns `{ persisted: false }` and the round
 continues in memory.

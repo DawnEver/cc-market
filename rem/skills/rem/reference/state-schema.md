@@ -34,7 +34,7 @@ protected task is active. Reads, gate decisions and writes run under `withStateL
 Inactive slots expire after 30 minutes; a pending request has a separate 30-minute lease.
 Another Stop is not completion evidence. The successful REM workflow acknowledges the
 matching request through `rem-session.js complete`; expired or replayed acknowledgements
-are rejected. Any live REM or review reservation owns continuation for this checkout;
+are rejected. Any live REM reservation owns continuation for this checkout;
 other sessions defer without advancing their counters. Completion or expiry permits
 the next ordinary Stop to dispatch deferred work. A Stop continuation does not recurse.
 

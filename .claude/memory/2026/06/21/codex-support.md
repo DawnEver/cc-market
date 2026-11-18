@@ -1,290 +1,292 @@
 ---
 name: codex-support
-description: cc-market 双宿主 (Claude Code + Codex) 支持设计与分阶段实施 — 单一来源生成派生工件、运行时归一、能力降级,含阶段 0 Codex CLI 调研发现
+description: cc-market dual-host (Claude Code + Codex) support design and phased implementation -- single source generating derived artifacts, runtime normalization, capability degradation; includes phase 0 Codex CLI research findings
 metadata:
   type: design
 ---
 
-# cc-market 双宿主支持设计 (Claude Code + Codex)
+# cc-market dual-host support design (Claude Code + Codex)
 
-> 状态:阶段 0 完成 + 阶段 1 落地 (manifest/marketplace 生成器 + takeover E2E) · 2026-06-21
-> 范围:让 cc-market 的插件在 Claude Code 和 Codex 两个宿主上运行。
-> 本文是方案文档,不含实现。实现按"分阶段"章节推进。
+> Status: phase 0 complete + phase 1 landed (manifest/marketplace generator + takeover E2E) · 2026-06-21
+> Scope: make cc-market's plugins run on both hosts, Claude Code and Codex.
+> This is a design document and contains no implementation. Implementation proceeds per the "phased" section.
 
-## 1. 背景与结论
+## 1. Background and conclusion
 
-Codex 已内置一套与 Claude Code **高度同构**的插件 / 技能系统。因此"同时支持 Codex"
-不是重写,而是**适配 + 派生生成**:以现有 Claude 版插件为唯一权威来源 (single source
-of truth),通过 setup/migrate 步骤生成 Codex 工件,并对少数深绑 Claude 运行时的部分
-做适配层或降级。
+Codex already ships a plugin / skill system that is **highly isomorphic** to Claude Code's. So "also support Codex"
+is not a rewrite but **adaptation + derived generation**: treat the existing Claude-flavoured plugins as the single
+authoritative source (single source of truth), generate Codex artifacts through a setup/migrate step, and add an
+adaptation layer or a degradation for the few parts deeply bound to the Claude runtime.
 
-核心判断:**清单与技能基本同构,鸿沟集中在 4 处** —— 清单目录名、插件 root 变量、
-hook 事件契约、个别插件的运行时假设。
+Core judgement: **manifests and skills are essentially isomorphic; the gap concentrates in 4 places** -- manifest
+directory name, plugin root variable, hook event contract, and the runtime assumptions of individual plugins.
 
-## 2. 宿主能力对照
+## 2. Host capability comparison
 
-| 维度 | Claude Code (现状) | Codex | 差异级别 |
+| Dimension | Claude Code (current) | Codex | Difference level |
 |---|---|---|---|
-| 插件清单 | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json`(同 schema + `interface` 块) | 低(机械转译) |
-| 市场清单 | `cc-market/.claude-plugin/marketplace.json` | `~/.agents/plugins/marketplace.json` 或 `<repo>/.agents/plugins/marketplace.json` | 低 |
-| 技能 | `skills/<n>/SKILL.md` | `skills/<n>/SKILL.md`(frontmatter 几乎一致;可选 `metadata.short-description` + `agents/openai.yaml` 接口文件) | 低 |
-| MCP | `.mcp.json` | `.mcp.json` | 无 |
-| 插件 root 变量 | `${CLAUDE_PLUGIN_ROOT}`(26 处) | 无同名变量;Codex 用 `CODEX_HOME` 作为家目录,插件 root 注入变量待核实 | 中 |
-| Hooks | `hooks/hooks.json` + Claude 事件名/payload | 支持 `hooks/` 目录,但**事件名与 payload 契约未在系统技能中公开** | 高(最大未知数) |
-| Workflow 原语 | `Workflow` 工具 + subagent | 无对应原语 | 高(需降级) |
-| 会话/transcript 存储 | JSONL transcript | sqlite (`logs_2.sqlite`/`state_5.sqlite` 等) | 高(需独立 ingester) |
-| 安装迭代 | marketplace 引用 + symlink | marketplace 引用 + `update_plugin_cachebuster.py` cachebuster | 中 |
+| Plugin manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` (same schema + `interface` block) | Low (mechanical translation) |
+| Marketplace manifest | `cc-market/.claude-plugin/marketplace.json` | `~/.agents/plugins/marketplace.json` or `<repo>/.agents/plugins/marketplace.json` | Low |
+| Skills | `skills/<n>/SKILL.md` | `skills/<n>/SKILL.md` (frontmatter nearly identical; optional `metadata.short-description` + `agents/openai.yaml` interface file) | Low |
+| MCP | `.mcp.json` | `.mcp.json` | None |
+| Plugin root variable | `${CLAUDE_PLUGIN_ROOT}` (26 occurrences) | No variable of the same name; Codex uses `CODEX_HOME` as its home directory, plugin root injection variable to be verified | Medium |
+| Hooks | `hooks/hooks.json` + Claude event names/payload | Supports a `hooks/` directory, but **event names and payload contract are not published in the system skills** | High (biggest unknown) |
+| Workflow primitive | `Workflow` tool + subagent | No corresponding primitive | High (needs degradation) |
+| Session/transcript storage | JSONL transcript | sqlite (`logs_2.sqlite`/`state_5.sqlite` etc.) | High (needs a separate ingester) |
+| Install iteration | marketplace reference + symlink | marketplace reference + `update_plugin_cachebuster.py` cachebuster | Medium |
 
-## 3. 总体策略:单一来源 + 生成派生物
+## 3. Overall strategy: single source + generated derivatives
 
-不维护两套插件目录。`scripts/setup/setup.js`(及 `/migrate`)新增一个 **codex 生成步骤**,
-从权威的 Claude 版插件产出 Codex 工件。理由:cc-market 已是"一处编辑、symlink 分发"模式,
-扩展为"一处编辑 → 生成 → 分发到两个宿主"代价最小,且避免双份漂移。
+Do not maintain two plugin trees. `scripts/setup/setup.js` (and `/migrate`) gains a **codex generation step** that produces the Codex artifacts from the authoritative Claude-flavoured plugins. Rationale: cc-market already
+follows "edit in one place, distribute by symlink"; extending it to "edit in one place -> generate -> distribute to
+two hosts" costs the least and avoids two copies drifting.
 
-分三层落地:
+Landed in three layers:
 
-### 3.1 清单层(纯机械,低风险)
-- 每个插件:从 `.claude-plugin/plugin.json` 生成 `.codex-plugin/plugin.json`,补 `interface`
-  字段(`displayName`/`shortDescription`/`category`/`defaultPrompt` 等)。
-- 生成 `<repo>/.agents/plugins/marketplace.json`,从现有 `marketplace.json` 转译,
-  `source.path` 指向各插件目录。
-- 迭代时跑 Codex 的 `update_plugin_cachebuster.py` 触发重新摄取。
-- 完全可自动化,纳入 setup。
+### 3.1 Manifest layer (purely mechanical, low risk)
+- Per plugin: generate `.codex-plugin/plugin.json` from `.claude-plugin/plugin.json`, adding the `interface`
+  fields (`displayName`/`shortDescription`/`category`/`defaultPrompt` etc.).
+- Generate `<repo>/.agents/plugins/marketplace.json`, translated from the existing `marketplace.json`,
+  with `source.path` pointing at each plugin directory.
+- On iteration, run Codex's `update_plugin_cachebuster.py` to trigger re-ingestion.
+- Fully automatable; folded into setup.
 
-### 3.2 运行时归一层(中风险,关键)
-- **插件 root 变量**:不要硬替换 26 处 `${CLAUDE_PLUGIN_ROOT}`。在脚本入口读
-  `process.env.CLAUDE_PLUGIN_ROOT || process.env.<CODEX_PLUGIN_ROOT>`,或在 hook 命令串里
-  用一个归一化前缀。**前置任务:核实 Codex 注入的插件 root 变量名**(`CODEX_HOME` 是家目录,
-  非插件 root)。
-- **Hook 适配(最大不确定性)**:`rem-hook.js` 依赖 Claude 的 `SessionStart`/`Stop` 事件,
-  以及输入里的 `session_id`、`background_tasks`、`taskActiveUntil` 等字段。必须先验证 Codex 的
-  事件名与 payload 形态,再写一个 **thin adapter** 把 Codex payload 翻译成现有脚本期望的形状
-  —— **改适配层,不改脚本核心逻辑**。
+### 3.2 Runtime normalization layer (medium risk, key)
+- **Plugin root variable**: do not hard-replace the 26 `${CLAUDE_PLUGIN_ROOT}` occurrences. At the script entry read
+  `process.env.CLAUDE_PLUGIN_ROOT || process.env.<CODEX_PLUGIN_ROOT>`, or use a normalized prefix in the hook
+  command string. **Prerequisite: verify the name of the plugin root variable Codex injects** (`CODEX_HOME` is the
+  home directory, not the plugin root).
+- **Hook adaptation (largest uncertainty)**: `rem-hook.js` depends on Claude's `SessionStart`/`Stop` events,
+  and on fields in the input such as `session_id`, `background_tasks`, `taskActiveUntil`. First verify Codex's
+  event names and payload shape, then write a **thin adapter** translating the Codex payload into the shape the
+  existing scripts expect -- **change the adaptation layer, not the scripts' core logic**.
 
-### 3.3 能力降级层(按插件区分,见第 4 节)
+### 3.3 Capability degradation layer (per plugin, see section 4)
 
-## 4. 各插件可移植性评估
+## 4. Per-plugin portability assessment
 
-| 插件 | 可移植性 | 关键障碍 | 建议路径 |
+| Plugin | Portability | Key obstacle | Suggested path |
 |---|---|---|---|
-| **takeover** | 高 | 纯 MCP server,`.mcp.json` 两边通用 | 几乎零改;**首个验证目标** |
-| **watch** | 高 | Python,宿主无关;仅看守逻辑 | 清单转译即可 |
-| **rem** | 中 | hook payload 适配 + 内存路径 | hook adapter;`.claude/memory` 作为唯一权威库,codex hook 也指向它(不要分叉成 `.codex/memory`) |
-| **sharp-review** | 中低(**必做**) | 依赖 `Workflow` 工具 + 并行 reviewer | skill 降级为顺序执行 reviewer;hook 分类逻辑可复用 |
-| **evolve** | 中低(**必做**) | 依赖 Workflow / subagent fan-out | 同上,降级为顺序 review→fix 轮次 |
-| **traceme** | 部分 | 读 Claude transcript JSONL;Codex 会话在 sqlite | 清单**已生成**(`gen-codex.mjs` 一并产出,保持市场完整),但**运行时观测未移植**:Codex 会话存 sqlite,需新写 ingester,留待后续独立立项 |
+| **takeover** | High | Pure MCP server, `.mcp.json` works on both sides | Almost no changes; **first validation target** |
+| **watch** | High | Python, host-agnostic; only watchdog logic | Manifest translation is enough |
+| **rem** | Medium | Hook payload adaptation + memory path | Hook adapter; `.claude/memory` is the single authoritative store, the codex hook points at it too (do not fork into `.codex/memory`) |
+| **sharp-review** | Medium-low (**must do**) | Depends on the `Workflow` tool + parallel reviewers | Skill degrades to running reviewers sequentially; hook classification logic is reusable |
+| **evolve** | Medium-low (**must do**) | Depends on Workflow / subagent fan-out | Same as above, degrade to sequential review->fix rounds |
+| **traceme** | Partial | Reads the Claude transcript JSONL; Codex sessions are in sqlite | Manifest **already generated** (`gen-codex.mjs` produces it too, keeping the marketplace complete), but **runtime observation is not ported**: Codex sessions are stored in sqlite, a new ingester is needed, left for a separate later project |
 
-设计原则:**能力降级要显式 `log`**,不要静默砍功能(与 cc-market 现有"no silent caps"约定一致)。
+Design principle: **capability degradation must be explicitly `log`ged**, never silently cut a feature (consistent with cc-market's existing "no silent caps" convention).
 
-## 5. 分阶段实施
+## 5. Phased implementation
 
-**阶段 0 — 消除未知数(阻塞项)**
-- 核实 Codex 插件 root 注入变量名。
-- 核实 Codex hook 事件名集合与 payload schema(是否有 SessionStart/Stop 对应物、字段命名)。
-- 产出:一页 hook 契约对照表,补进本文第 2 节。
+**Phase 0 -- eliminate the unknowns (blocking)**
+- Verify the name of the plugin root variable Codex injects.
+- Verify Codex's set of hook event names and payload schema (whether SessionStart/Stop counterparts exist, field naming).
+- Output: a one-page hook contract comparison table, added to section 2 of this document.
 
-**阶段 1 — 管线打通(✅ 已完成)**
-- ✅ `scripts/gen-codex.mjs`:从权威 Claude 清单生成每插件 `.codex-plugin/plugin.json`
-  (裁掉 `commands`/`hooks`,合成 `interface`,接 `mcpServers`/`skills`)+
-  `.agents/plugins/marketplace.json`。单元测试 `tests/gen-codex.test.mjs`(9 例)。
-- ✅ `scripts/codex-e2e.sh`:隔离 `CODEX_HOME` 下校验全部 6 个清单 → `marketplace add` →
-  `plugin add takeover` 全通过;`.mcp.json` 的 `${CLAUDE_PLUGIN_ROOT}` 原样保留。
-- ✅ 顺带修复 `takeover/skills/codex-image-result/SKILL.md` 缺失的 `name`(Codex 严校验暴露)。
-- 待办:`codex exec` 实跑验证 MCP tool 可发现性(需 codex 登录)。
+**Phase 1 -- pipeline through (✅ done)**
+- ✅ `scripts/gen-codex.mjs`: from the authoritative Claude manifests, generates each plugin's `.codex-plugin/plugin.json`
+  (strips `commands`/`hooks`, synthesizes `interface`, wires `mcpServers`/`skills`) +
+  `.agents/plugins/marketplace.json`. Unit tests `tests/gen-codex.test.mjs` (9 cases).
+- ✅ `scripts/codex-e2e.sh`: under an isolated `CODEX_HOME`, validates all 6 manifests -> `marketplace add` ->
+  `plugin add takeover`, all passing; `${CLAUDE_PLUGIN_ROOT}` in `.mcp.json` is preserved verbatim.
+- ✅ Incidentally fixed the missing `name` in `takeover/skills/codex-image-result/SKILL.md` (exposed by Codex's strict validation).
+- TODO: a real `codex exec` run to verify MCP tool discoverability (needs codex login).
 
-**阶段 2 — hook 适配**
-- 写 hook adapter,验证 **rem** 在 Codex 下的 SessionStart/Stop 行为。
-- ✅ **`.claude/rules` 注入**(Codex 不原生加载 Claude 自动注入的 `.claude/rules/`):
-  rem 新增 SessionStart hook `scripts/inject-rules.js` —— 插件级通用机制(随 rem 的
-  `hooks.json` 一次性下发,对 Codex 打开的**任意**项目生效,读取该项目自身的
-  `.claude/rules/**/*.md` 并经 `hookSpecificOutput.additionalContext` 注入),**非逐项目插入**。
-  宿主探测用已替换的 `${CLAUDE_PLUGIN_ROOT}`(Codex 在 `.codex/plugins/…` 下,Claude 在
-  `.claude/plugins/…` 下);Claude 宿主下为 no-op(避免与原生自动加载重复)。测试
-  `rem/tests/inject-rules.test.mjs`(9 例)。
+**Phase 2 -- hook adaptation**
+- Write the hook adapter, verify **rem**'s SessionStart/Stop behaviour under Codex.
+- ✅ **`.claude/rules` injection** (Codex does not natively load the `.claude/rules/` that Claude auto-injects):
+  rem adds a SessionStart hook `scripts/inject-rules.js` -- a generic plugin-level mechanism (shipped once with rem's
+  `hooks.json`, effective for **any** project Codex opens, reading that project's own
+  `.claude/rules/**/*.md` and injecting it via `hookSpecificOutput.additionalContext`), **not inserted per project**.
+  Host detection uses the already-substituted `${CLAUDE_PLUGIN_ROOT}` (Codex lives under `.codex/plugins/…`, Claude under
+  `.claude/plugins/…`); under the Claude host it is a no-op (avoiding duplication with native auto-loading). Tests
+  `rem/tests/inject-rules.test.mjs` (9 cases).
 
-**阶段 3 — 宿主自适应并行 fan-out(✅ 已落地)** —— ⚠️ 原"顺序降级"前提已被 §7.5.3 推翻:
-Codex 有原生并行 `spawn_agent`,**不降级**。设计要点:
-- **不是降级**:Claude 走 `Workflow`/`Agent`,Codex 走 `spawn_agent`(并行)或 takeover
-  `call_model`。两者都并行,无能力损失。
-- **唯一真实差异 = Workflow VM**:Claude 的 `sharp-review-workflow.js` 在沙箱 VM 里跑
-  (无 import/FS,这正是 `buildDedupKey` 内联而非 import 的原因)。Codex 无此 VM,主 agent
-  直接 `spawn_agent` + 跑普通 node 脚本。
-- **共用化改造(enabler)**:把 merge+render 纯逻辑从 Workflow VM 抽进 `sharp-review/lib.mjs`
-  (`mergeFindings`/`renderReviewMarkdown`/`buildDedupKey`,可单测)。两条路径都把"每 reviewer
-  的原始 findings"喂给同一套合并逻辑(经 `post-review.js`):
-  - Claude:Workflow 并行 reviewer → 返回原始 findings → `post-review.js` 合并+渲染+写盘。
-  - Codex:`spawn_agent` 并行 reviewer → 原始 findings → 同一 `post-review.js`。
-  - 唯一宿主差异是 fan-out 工具名;merge/render/写盘 100% 共用,且终于可单测。
-- evolve 同理:fix-agent fan-out 在 Codex 用 `spawn_agent`,纯 JS(groupFindings/
-  checkTermination)不变。
+**Phase 3 -- host-adaptive parallel fan-out (✅ landed)** -- ⚠️ the original "sequential degradation" premise was overturned by §7.5.3:
+Codex has native parallel `spawn_agent`, **no degradation**. Design points:
+- **Not a degradation**: Claude goes through `Workflow`/`Agent`, Codex through `spawn_agent` (parallel) or takeover
+  `call_model`. Both are parallel, no capability loss.
+- **The only real difference = the Workflow VM**: Claude's `sharp-review-workflow.js` runs in a sandboxed VM
+  (no import/FS, which is exactly why `buildDedupKey` is inlined rather than imported). Codex has no such VM; the main agent
+  calls `spawn_agent` directly + runs ordinary node scripts.
+- **Sharing refactor (enabler)**: extract the pure merge+render logic from the Workflow VM into `sharp-review/lib.mjs`
+  (`mergeFindings`/`renderReviewMarkdown`/`buildDedupKey`, unit-testable). Both paths feed "each reviewer's
+  raw findings" into the same merge logic (via `post-review.js`):
+  - Claude: Workflow parallel reviewers -> return raw findings -> `post-review.js` merges + renders + writes to disk.
+  - Codex: `spawn_agent` parallel reviewers -> raw findings -> the same `post-review.js`.
+  - The only host difference is the fan-out tool name; merge/render/write are 100% shared, and finally unit-testable.
+- evolve likewise: the fix-agent fan-out uses `spawn_agent` in Codex; the pure JS (groupFindings/
+  checkTermination) is unchanged.
 
-**阶段 3 落地清单(2026-06-21):**
-- ✅ `post-review.js --raw`:接收每 reviewer 原始 findings + reviewer 元数据,经共享
-  `mergeFindings`/`renderReviewMarkdown` 合并渲染写盘 —— 宿主无关入口(Codex / 任何无 Workflow
-  VM 的宿主走此路);`--findings`/`--markdown` 保留给 Claude Workflow 与外部 content 调用方。
-  测试 `tests/post-review-raw.test.mjs`(2 例 E2E)+ 既有 `merge-render.test.mjs`(8 例)。
-- ✅ `sharp-review/SKILL.md`:Step 3 拆为 **3a(Claude Workflow)/ 3b(Codex 直接并行
-  `spawn_agent`/takeover `call_model` → `post-review.js --raw`)**;Step 4 双形态写盘。
-- ✅ `evolve/reference/round-protocol.md` + `AGENTS.md`:evolve 仅 **step 2 fan-out fix** 宿主
-  感知(`Agent`→`spawn_agent`,这是 evolve 自有的子代理编排原语,不可约)。**step 1 critique
-  宿主无关** —— evolve 只"跑 sharp-review skill + 读 backlog OPEN findings"(`seedFromSharpReview`),
-  Workflow-vs-raw-fan-out 的分叉只活在 sharp-review 一处,不泄漏到 evolve。
-- ✅ Codex E2E 提示词 `scripts/codex-e2e-prompts.md`(需 codex 登录的手动 `codex exec` 部分:
-  MCP 工具可发现性、`.claude/rules` 注入、sharp-review/evolve 宿主分支、跨宿主产物对齐)。
-  → 留给用户实跑(本期 headless 不验证)。
+**Phase 3 landing list (2026-06-21):**
+- ✅ `post-review.js --raw`: accepts each reviewer's raw findings + reviewer metadata, merges, renders and writes via the
+  shared `mergeFindings`/`renderReviewMarkdown` -- a host-agnostic entry (Codex / any host without a Workflow
+  VM takes this path); `--findings`/`--markdown` are kept for Claude Workflow and external content callers.
+  Tests `tests/post-review-raw.test.mjs` (2 E2E cases) + the existing `merge-render.test.mjs` (8 cases).
+- ✅ `sharp-review/SKILL.md`: Step 3 split into **3a (Claude Workflow) / 3b (Codex direct parallel
+  `spawn_agent`/takeover `call_model` -> `post-review.js --raw`)**; Step 4 writes in both forms.
+- ✅ `evolve/reference/round-protocol.md` + `AGENTS.md`: in evolve only **step 2 fan-out fix** is host-
+  aware (`Agent`->`spawn_agent`, evolve's own subagent orchestration primitive, irreducible). **Step 1 critique
+  is host-agnostic** -- evolve only "runs the sharp-review skill + reads backlog OPEN findings" (`seedFromSharpReview`);
+  the Workflow-vs-raw-fan-out fork lives only in sharp-review and does not leak into evolve.
+- ✅ Codex E2E prompts `scripts/codex-e2e-prompts.md` (the manual `codex exec` part that needs codex login:
+  MCP tool discoverability, `.claude/rules` injection, sharp-review/evolve host branches, cross-host artifact alignment).
+  -> Left for the user to run (not verified headless this round).
 
-> **traceme 本期不做**(见第 4 节),不在阶段计划内 —— Codex 工件已移除,README 标注 Claude-only。
+> **traceme is out of scope this round** (see section 4), not in the phase plan -- its Codex artifacts are removed, README marks it Claude-only.
 
-## 6. 测试与约束
+## 6. Testing and constraints
 
-### 6.1 分层测试
-- **单元/集成**:沿用 cc-market 的 per-plugin 约定(`node --test`)。新增 codex 清单/hook
-  生成器需配套测试 —— 转译正确性、idempotence、TOML 格式、路径绝对化。
-- **E2E(关键,覆盖宿主集成)**:用**真实 CLI** 驱动,验证生成的工件能被两个宿主真正摄取与触发,
-  而非只测生成器输出的字符串:
-  - **Codex**:`codex exec`(非交互)+ `codex plugin add/list` 验证插件被发现;在临时
-    `CODEX_HOME` 下注入生成的 marketplace + 插件,跑一个最小 prompt,断言 SessionStart/Stop
-    hook 确实执行(hook 脚本落地一个 sentinel 文件 / 退出码),并处理 7.3 的信任登记。
-  - **Claude Code**:`claude -p "<prompt>"`(headless / print 模式)在临时 `CLAUDE_HOME`
-    或临时项目下挂载同一插件,断言对应 hook 触发 —— 保证"单一来源"在两宿主上行为对齐。
-  - **takeover** 走 MCP:两宿主都用 `codex mcp` / Claude 的 MCP 注册各起一次,断言 tool 可发现可调用。
-  - 旧隔离脚本 `scripts/codex-e2e.sh` 已被真实安装 smoke test
-    `scripts/codex-e2e-live.sh` 取代:需要先 `codex login`,会把 takeover/rem/sharp-review/evolve
-    安装进真实 `~/.codex` 并保留,再探测 hook 触发、`.claude/rules` 注入、技能摄取与
-    takeover MCP 可发现性。脚本会明确打印卸载命令。
-  - 所有子进程遵守 `windowsHide: true`(见下);CLI 调用设超时,避免交互式挂起
-    (`codex exec` / `claude -p` 均非交互)。
+### 6.1 Layered testing
+- **Unit/integration**: follow cc-market's per-plugin convention (`node --test`). New codex manifest/hook
+  generators need matching tests -- translation correctness, idempotence, TOML format, path absolutization.
+- **E2E (key, covers host integration)**: driven by the **real CLI**, verifying the generated artifacts are truly ingested and triggered by both hosts,
+  not just testing the generator's output strings:
+  - **Codex**: `codex exec` (non-interactive) + `codex plugin add/list` to verify the plugin is discovered; under a temporary
+    `CODEX_HOME` inject the generated marketplace + plugins, run a minimal prompt, assert the SessionStart/Stop
+    hook really ran (the hook script drops a sentinel file / exit code), and handle the trust registration of 7.3.
+  - **Claude Code**: `claude -p "<prompt>"` (headless / print mode) mounts the same plugin under a temporary `CLAUDE_HOME`
+    or temporary project, asserting the corresponding hook fires -- guaranteeing the "single source" behaves the same on both hosts.
+  - **takeover** goes through MCP: on both hosts start it once via `codex mcp` / Claude's MCP registration, asserting the tool is discoverable and callable.
+  - The old isolated script `scripts/codex-e2e.sh` has been replaced by the real-install smoke test
+    `scripts/codex-e2e-live.sh`: it needs a prior `codex login`, installs takeover/rem/sharp-review/evolve
+    into the real `~/.codex` and keeps them, then probes hook firing, `.claude/rules` injection, skill ingestion and
+    takeover MCP discoverability. The script explicitly prints the uninstall commands.
+  - Every subprocess obeys `windowsHide: true` (see below); CLI calls get timeouts to avoid interactive hangs
+    (`codex exec` / `claude -p` are both non-interactive).
 
-### 6.2 约束
-- 遵守 `cc-market/.claude/rules/invariants.md` 的 dev/runtime 边界。
-- 遵守 `no-terminal-flash`(任何新 spawn 加 `windowsHide: true`)。
-- cc-market 是独立 git 仓库:相关改动用 `git -C cc-market` 提交。
+### 6.2 Constraints
+- Obey the dev/runtime boundary in `cc-market/.claude/rules/invariants.md`.
+- Obey `no-terminal-flash` (every new spawn adds `windowsHide: true`).
+- cc-market is a separate git repository: commit related changes with `git -C cc-market`.
 
-## 7. 阶段 0 调研发现 (Codex CLI 0.140.0)
+## 7. Phase 0 research findings (Codex CLI 0.140.0)
 
-> 数据来源:本地 Codex 原生二进制
-> (`@openai/codex-darwin-arm64/.../bin/codex`)的内嵌 schema/字符串 + 系统技能
-> `plugin-creator`。以下为可据以设计的事实,推翻了第 2 节"hook 契约未知"的悲观假设。
+> Data source: the embedded schema/strings of the local native Codex binary
+> (`@openai/codex-darwin-arm64/.../bin/codex`) + the system skill
+> `plugin-creator`. The following are facts a design can rest on; they overturn section 2's pessimistic "hook contract unknown" assumption.
 
-### 7.1 Hook 系统:与 Claude 高度同构 ✅
-- **事件全集(10 个)**:`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PreCompact`、
-  `PostCompact`、`SessionStart`、`UserPromptSubmit`、`SubagentStart`、`SubagentStop`、`Stop`。
-  → **rem 依赖的 `SessionStart` + `Stop` 两个都在,基本 1:1 对应 Claude。**
-- **Hook 输入 payload 字段**(与 Claude 几乎同名,经 stdin JSON 传入):
-  `session_id`、`transcript_path`、`cwd`、`hook_event_name`、`permission_mode`、`source`、
-  `turn_id`、`agent_transcript_path`、`agent_type`、`last_assistant_message`、`prompt`。
-- **Hook 输出**:`SessionStartHookSpecificOutputWire` / `PreToolUseDecisionWire` /
-  `PreToolUsePermissionDecisionWire` 等 —— 与 Claude 的 `hookSpecificOutput` / decision 模式同构。
-- **⚠️ 注意**:Codex payload **未见 `background_tasks` 字段**。`rem-hook.js` 的
-  "pending-work guard"依赖它 → Codex 路径需退回 `taskActiveUntil` 时间窗,或用 `turn_id` 近似。
+### 7.1 Hook system: highly isomorphic to Claude ✅
+- **Full event set (10)**: `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`,
+  `PostCompact`, `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`, `Stop`.
+  -> **Both `SessionStart` + `Stop`, which rem depends on, are present, essentially 1:1 with Claude.**
+- **Hook input payload fields** (almost the same names as Claude, passed as stdin JSON):
+  `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `permission_mode`, `source`,
+  `turn_id`, `agent_transcript_path`, `agent_type`, `last_assistant_message`, `prompt`.
+- **Hook output**: `SessionStartHookSpecificOutputWire` / `PreToolUseDecisionWire` /
+  `PreToolUsePermissionDecisionWire` etc. -- isomorphic to Claude's `hookSpecificOutput` / decision pattern.
+- **⚠️ Note**: the Codex payload **shows no `background_tasks` field**. `rem-hook.js`'s
+  "pending-work guard" depends on it -> the Codex path must fall back to the `taskActiveUntil` time window, or approximate with `turn_id`.
 
-### 7.2 重大发现:Codex 内建 Claude 插件兼容层 ✅(推翻原"障碍 1/2")
-原先担心的"无 `${PLUGIN_ROOT}` 变量""hook 必须手写 TOML"**均不成立**。二进制字符串证实
-Codex 刻意做了 Claude 兼容摄取:
-- **直接读 `hooks.json`**(Claude 格式),内部再归一化为 TOML
-  (`"normalized hook identity should serialize to TOML"`)。无需手写 Codex TOML。
-- **识别并替换 `${CLAUDE_PLUGIN_ROOT}`、`${PLUGIN_ROOT}`、`${CLAUDE_PLUGIN_DATA}`、
-  `${PLUGIN_DATA}`** —— 现有 26 处 `${CLAUDE_PLUGIN_ROOT}` 与 `.mcp.json` 里的同名变量
-  **大概率原样可用,无需绝对化路径**。
-- Hook 事件 JSON 名(snake_case,与 Claude 一致):`pre_tool_use`、`permission_request`、
-  `post_tool_use`、`pre_compact`、`post_compact`、`session_start`、`user_prompt_submit`、
-  `subagent_start`、`subagent_stop`、`stop`(camelCase 为内部 TOML 形式)。
+### 7.2 Major finding: Codex has a built-in Claude plugin compatibility layer ✅ (overturns the original "obstacles 1/2")
+The earlier worries "no `${PLUGIN_ROOT}` variable" and "hooks must be hand-written TOML" **both do not hold**. Binary strings confirm
+Codex deliberately does Claude-compatible ingestion:
+- **Reads `hooks.json` directly** (Claude format), normalizing internally to TOML
+  (`"normalized hook identity should serialize to TOML"`). No hand-written Codex TOML needed.
+- **Recognizes and substitutes `${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`,
+  `${PLUGIN_DATA}`** -- the existing 26 `${CLAUDE_PLUGIN_ROOT}` occurrences and the same-named variable in `.mcp.json`
+  **most likely work verbatim, no path absolutization needed**.
+- Hook event JSON names (snake_case, consistent with Claude): `pre_tool_use`, `permission_request`,
+  `post_tool_use`, `pre_compact`, `post_compact`, `session_start`, `user_prompt_submit`,
+  `subagent_start`, `subagent_stop`, `stop` (camelCase is the internal TOML form).
 
-### 7.3 hook 信任 + 清单字段差异(仅剩的真实差异)
-- **信任机制**:`HookStateToml.trusted_hash`、`HookMetadata.trustStatus`/`currentHash`
-  → 插件 hook 仍需一次**信任批准(hash 比对)**才执行;E2E 需处理(交互或可脚本化,待实测)。
-- **清单字段裁剪**(validator 实测,见 7.4):`.codex-plugin/plugin.json` 拒绝 `commands`、
-  `hooks` 字段 —— 但 `hooks.json` 走**自动发现**(无需在清单声明),`.mcp.json` 同理。
-  takeover 的 `commands` 字段需在 Codex 清单中删去(Codex 用 skills 暴露能力)。
+### 7.3 Hook trust + manifest field differences (the only real differences left)
+- **Trust mechanism**: `HookStateToml.trusted_hash`, `HookMetadata.trustStatus`/`currentHash`
+  -> plugin hooks still need a one-time **trust approval (hash comparison)** before running; E2E must handle it (interactive or scriptable, to be measured).
+- **Manifest field trimming** (measured by the validator, see 7.4): `.codex-plugin/plugin.json` rejects the `commands` and
+  `hooks` fields -- but `hooks.json` goes through **auto-discovery** (no declaration in the manifest needed), likewise `.mcp.json`.
+  takeover's `commands` field must be removed from the Codex manifest (Codex exposes capabilities through skills).
 
-### 7.4 清单/市场 E2E 实测通过 ✅(隔离 `CODEX_HOME`,`codex` 0.140.0)
-用 `scripts/codex-e2e.sh` 在临时 `CODEX_HOME` 跑通了完整链路(零污染用户配置):
-1. `validate_plugin.py` 通过 —— 确认 `.codex-plugin/plugin.json` **必填**:`name`、`version`
-   (严格 semver)、`description`、`author.name`、`interface.{displayName, shortDescription,
-   longDescription, developerName, category, capabilities[], defaultPrompt[]}`。
-   **允许字段集**:`id, name, version, description, skills, apps, mcpServers, interface,
-   author, homepage, repository, license, keywords` —— `commands`/`hooks` **不在内,会被拒**。
-2. 市场布局:`marketplace add <root>` 期望 `<root>/.agents/plugins/marketplace.json`;
-   插件 `source: {source:"local", path:"./plugins/<n>"}` 相对 `<root>` 解析;每条 entry 必须含
-   `policy.{installation, authentication}` + `category`。
-3. `codex plugin add <n>@<market>` 把插件装到
-   `$CODEX_HOME/plugins/cache/<market>/<n>/<version>/`,`.mcp.json` 一并落地;
-   `config.toml` 写入 `[marketplaces.<m>]` 与 `[plugins."<n>@<m>"] enabled=true`。
-- 技能:`skills/<n>/SKILL.md` 同构;Codex 额外读 `agents/openai.yaml`(interface)与可选
-  `SKILL.json`(优先于 frontmatter 的 `short_description`)。
+### 7.4 Manifest/marketplace E2E measured passing ✅ (isolated `CODEX_HOME`, `codex` 0.140.0)
+Ran the full chain with `scripts/codex-e2e.sh` under a temporary `CODEX_HOME` (zero pollution of the user's config):
+1. `validate_plugin.py` passes -- confirming `.codex-plugin/plugin.json` **requires**: `name`, `version`
+   (strict semver), `description`, `author.name`, `interface.{displayName, shortDescription,
+   longDescription, developerName, category, capabilities[], defaultPrompt[]}`.
+   **Allowed field set**: `id, name, version, description, skills, apps, mcpServers, interface,
+   author, homepage, repository, license, keywords` -- `commands`/`hooks` **are not in it and are rejected**.
+2. Marketplace layout: `marketplace add <root>` expects `<root>/.agents/plugins/marketplace.json`;
+   plugin `source: {source:"local", path:"./plugins/<n>"}` resolves relative to `<root>`; every entry must contain
+   `policy.{installation, authentication}` + `category`.
+3. `codex plugin add <n>@<market>` installs the plugin to
+   `$CODEX_HOME/plugins/cache/<market>/<n>/<version>/`, landing `.mcp.json` with it;
+   `config.toml` gets `[marketplaces.<m>]` and `[plugins."<n>@<m>"] enabled=true`.
+- Skills: `skills/<n>/SKILL.md` isomorphic; Codex additionally reads `agents/openai.yaml` (interface) and the optional
+  `SKILL.json` (takes precedence over the frontmatter's `short_description`).
 
-### 7.5 实测结果(2026-06-22,codex 0.141,`scripts/codex-e2e-live.sh` 真实 `~/.codex` 安装实跑)
-**5/6 通过 —— 双宿主核心机制全部验证;唯一缺口是 `codex exec` 下 MCP 工具不可发现。**
-1. ✅ **已确认实跑**:`codex exec` 下 hook 端到端触发(probe 日志可见 `hook: Stop` /
-   `hook: Stop Completed`)。`--dangerously-bypass-hook-trust` 跳过一次性 hash 信任(交互式会话仍弹一次)。
-2. ✅ **MCP 工具在 `codex exec` 下可发现(已修复)** —— 2026-06-22 Windows/Codex 0.141
-   最初复现 `TOOL_NOT_FOUND`;根因是 Codex 插件 MCP 加载没有可靠使用 Claude 源 `.mcp.json`
-   中的 `${CLAUDE_PLUGIN_ROOT}`。修复是仓库级双宿主契约,不是 takeover/Windows 特例:
-   - 保留各插件 Claude Code 源 `.mcp.json` 原样,不干扰 Claude Code。
-   - `gen-codex.mjs` 为带 `.mcp.json` 的插件生成 `.codex-plugin/mcp.json`,只把
-     `${CLAUDE_PLUGIN_ROOT}` / `${PLUGIN_ROOT}` 前缀路径归一为 forward-slash 的插件相对路径
-     (如 `./scripts/mcp-server.mjs`),并补 `cwd: "."`;普通命令和非插件路径不改写。
-   - `.codex-plugin/plugin.json` 的 `mcpServers` 指向 `./.codex-plugin/mcp.json`。
-   复测结果:`codex exec` 日志出现 `mcp: takeover/list_models started` /
-   `mcp: takeover/list_models (completed)`,最终返回模型列表 JSON,不再是 `TOOL_NOT_FOUND`。
-   先前排除项仍成立:
-   takeover MCP server 本地直驱 JSON-RPC 正常 boot 并列出 3 工具(`call_model`/`list_models`/
-   `codex_status`)。
-2b. ✅ **`.claude/rules` 注入实跑通过** —— probe 项目放 `.claude/rules/probe.md`,`codex exec`
-   下模型答出注入短语(`PROBE-RULE-OK-7Q`),证明 rem `inject-rules` SessionStart hook 在 Codex
-   生效(Codex 不原生加载 `.claude/rules`)。2026-06-22 在当前登录态复测仍返回
-   `PROBE-RULE-OK-7Q`;日志中同一 SessionStart 上一个 hook 失败、一个完成,不影响
-   `inject-rules` 产出。✅ **技能摄取**:`sharp-review`/`evolve`/`rem`/`takeover`
-   全部可见。
-3. ✅ **已确认 — Codex 有原生并行 subagent**(推翻"降级为顺序"前提)。二进制证据:
-   - **`spawn_agent` 工具**:`"Spawns an agent to work on the specified task. If your current
+### 7.5 Measured results (2026-06-22, codex 0.141, real `~/.codex` install run via `scripts/codex-e2e-live.sh`)
+**5/6 pass -- all core dual-host mechanisms verified; the only gap is MCP tools not discoverable under `codex exec`.**
+1. ✅ **Confirmed by a real run**: hooks fire end to end under `codex exec` (probe log shows `hook: Stop` /
+   `hook: Stop Completed`). `--dangerously-bypass-hook-trust` skips the one-time hash trust (an interactive session still prompts once).
+2. ✅ **MCP tools discoverable under `codex exec` (fixed)** -- 2026-06-22 Windows/Codex 0.141
+   initially reproduced `TOOL_NOT_FOUND`; the root cause was that Codex plugin MCP loading did not reliably use the `${CLAUDE_PLUGIN_ROOT}`
+   in the Claude source `.mcp.json`. The fix is a repo-level dual-host contract, not a takeover/Windows special case:
+   - Keep each plugin's Claude Code source `.mcp.json` verbatim, not disturbing Claude Code.
+   - `gen-codex.mjs` generates `.codex-plugin/mcp.json` for plugins that have `.mcp.json`, normalizing only
+     `${CLAUDE_PLUGIN_ROOT}` / `${PLUGIN_ROOT}`-prefixed paths into forward-slash plugin-relative paths
+     (e.g. `./scripts/mcp-server.mjs`), and adds `cwd: "."`; ordinary commands and non-plugin paths are not rewritten.
+   - `mcpServers` in `.codex-plugin/plugin.json` points at `./.codex-plugin/mcp.json`.
+   Retest result: the `codex exec` log shows `mcp: takeover/list_models started` /
+   `mcp: takeover/list_models (completed)`, finally returning the model-list JSON, no longer `TOOL_NOT_FOUND`.
+   Earlier exclusions still hold:
+   the takeover MCP server, driven locally over JSON-RPC, boots normally and lists 3 tools (`call_model`/`list_models`/
+   `codex_status`).
+2b. ✅ **`.claude/rules` injection passes in a real run** -- the probe project holds `.claude/rules/probe.md`; under `codex exec`
+   the model answered with the injected phrase (`PROBE-RULE-OK-7Q`), proving rem's `inject-rules` SessionStart hook takes effect
+   in Codex (Codex does not natively load `.claude/rules`). A 2026-06-22 retest under the current login still returned
+   `PROBE-RULE-OK-7Q`; in the log, for the same SessionStart one hook failed and one completed, not affecting
+   the `inject-rules` output. ✅ **Skill ingestion**: `sharp-review`/`evolve`/`rem`/`takeover`
+   all visible.
+3. ✅ **Confirmed -- Codex has native parallel subagents** (overturns the "degrade to sequential" premise). Binary evidence:
+   - **`spawn_agent` tool**: `"Spawns an agent to work on the specified task. If your current
      task is /root/task1 and you spawn_agent with task_name "task_3" the agent will have
-     canonical task name /root/task1/task_3"`,并带 `Available models:`(可指定模型)。
-   - **并行**:`"there may be multiple workers making changes in parallel … be aware of each
-     other's work"` + 委派指引(`Designing delegated subtasks` / `After you delegate` /
-     `Do not redo delegated subagent tasks yourself`);另见 `SubAgentSource`、
-     `subAgentThreadSpawn`、`process/spawn`。
-   - **takeover MCP `call_model` 在 Codex 下同样可用**(takeover 本就是 Codex 首验目标)。
-   → **结论:sharp-review / evolve 不需要"顺序降级"。** Phase 3 改为"宿主自适应并行 fan-out":
-     Claude 用 `Workflow`/`Agent`,Codex 用 `spawn_agent`(仍并行)或 takeover `call_model`。
-     唯一真实差异:Codex 无 Workflow **VM**(沙箱无 import/FS),故 merge/render 纯逻辑须以普通
-     Node 步骤运行(Codex 主 agent 直接跑 node 脚本即可,无沙箱限制)—— 这正是把 merge/render
-     抽进 `sharp-review/lib.mjs`(宿主无关、可单测)的动因,两宿主共用。
-4. 同一目录并存 `.claude-plugin/` 与 `.codex-plugin/` 时两宿主是否互不干扰(实测验证)。
+     canonical task name /root/task1/task_3"`, with `Available models:` (a model can be specified).
+   - **Parallel**: `"there may be multiple workers making changes in parallel … be aware of each
+     other's work"` + delegation guidance (`Designing delegated subtasks` / `After you delegate` /
+     `Do not redo delegated subagent tasks yourself`); see also `SubAgentSource`,
+     `subAgentThreadSpawn`, `process/spawn`.
+   - **takeover MCP `call_model` is equally available under Codex** (takeover was Codex's first validation target anyway).
+   -> **Conclusion: sharp-review / evolve need no "sequential degradation".** Phase 3 becomes "host-adaptive parallel fan-out":
+     Claude uses `Workflow`/`Agent`, Codex uses `spawn_agent` (still parallel) or takeover `call_model`.
+     The only real difference: Codex has no Workflow **VM** (sandbox without import/FS), so the pure merge/render logic must run as an ordinary
+     Node step (the Codex main agent can just run the node script directly, no sandbox restriction) -- which is exactly the motive for extracting merge/render
+     into `sharp-review/lib.mjs` (host-agnostic, unit-testable), shared by both hosts.
+4. Whether the two hosts leave each other alone when `.claude-plugin/` and `.codex-plugin/` coexist in the same directory (verified by measurement).
 
-### 7.6 Codex 兼容性边界(已确认,gen-codex 已处理)
+### 7.6 Codex compatibility boundary (confirmed, handled by gen-codex)
 
-**(a) 插件 slash-command 不是 Codex 概念。** Codex 的插件组件只有 skills / hooks / mcpServers /
-apps(`commands` 字段被 validator 拒绝,二进制中也无插件命令自动发现)。因此 `gen-codex.mjs`
-丢弃 `commands` 字段。影响:
-- takeover(`/takeover:continue|models|summary`)、watch(`/watch:watch|check|setup`)的
-  **slash 入口在 Codex 下不存在**;但其底层能力仍可达 —— takeover 经 MCP 工具
-  (`call_model`/`list_models`/`codex_status`),技能经 `skills/`。
-- Codex 另有用户级 `~/.codex/prompts` 自定义提示,与插件命令是不同机制,不在本期映射范围。
+**(a) Plugin slash-commands are not a Codex concept.** Codex's plugin components are only skills / hooks / mcpServers /
+apps (the `commands` field is rejected by the validator, and the binary has no plugin-command auto-discovery). So `gen-codex.mjs`
+drops the `commands` field. Impact:
+- The **slash entries** of takeover (`/takeover:continue|models|summary`) and watch (`/watch:watch|check|setup`)
+  **do not exist under Codex**; but their underlying capabilities stay reachable -- takeover through MCP tools
+  (`call_model`/`list_models`/`codex_status`), skills through `skills/`.
+- Codex also has user-level `~/.codex/prompts` custom prompts, a different mechanism from plugin commands, outside this round's mapping scope.
 
-**(b) Hook 事件兼容性。** Codex 支持 10 个 hook 事件(`PreToolUse`、`PermissionRequest`、
-`PostToolUse`、`PreCompact`、`PostCompact`、`SessionStart`、`UserPromptSubmit`、
-`SubagentStart`、`SubagentStop`、`Stop`)。Claude 独有、**Codex 不支持**的 `Notification`、
-`SessionEnd` 在 Codex 下静默不触发。各插件实测:
+**(b) Hook event compatibility.** Codex supports 10 hook events (`PreToolUse`, `PermissionRequest`,
+`PostToolUse`, `PreCompact`, `PostCompact`, `SessionStart`, `UserPromptSubmit`,
+`SubagentStart`, `SubagentStop`, `Stop`). The Claude-only `Notification` and
+`SessionEnd`, **unsupported by Codex**, silently never fire under Codex. Per-plugin measurement:
 
-| 插件 | hooks.json 事件 | Codex 兼容 |
+| Plugin | hooks.json events | Codex compatible |
 |---|---|---|
-| rem | SessionStart, Stop | ✅ 全兼容 |
+| rem | SessionStart, Stop | ✅ fully compatible |
 | sharp-review | Stop | ✅ |
-| takeover / evolve | (无 hooks.json) | ✅ |
-| watch | **Notification**, Stop | ⚠️ Notification 不触发(告警退化为 Stop-only) |
-| traceme | SessionStart, Stop, **SessionEnd** | ⚠️ SessionEnd 不触发(本就 out-of-scope) |
+| takeover / evolve | (no hooks.json) | ✅ |
+| watch | **Notification**, Stop | ⚠️ Notification does not fire (alerts degrade to Stop-only) |
+| traceme | SessionStart, Stop, **SessionEnd** | ⚠️ SessionEnd does not fire (out-of-scope anyway) |
 
-→ **本期必做的 4 个插件(takeover/rem/sharp-review/evolve)hook 全兼容。** `gen-codex.mjs`
-现在在生成时对 watch/traceme 的不支持事件**打印 warning**(`unsupportedHookEvents()`),把
-静默运行时退化前置为生成期可见警告。watch/traceme 的 Codex hook 适配留待各自后续工作。
+-> **The hooks of the 4 must-do plugins this round (takeover/rem/sharp-review/evolve) are fully compatible.** `gen-codex.mjs`
+now **prints a warning** at generation time for watch/traceme's unsupported events (`unsupportedHookEvents()`), moving
+a silent runtime degradation forward into a generation-time visible warning. Codex hook adaptation for watch/traceme is left to their own later work.
 
-**(c) `background_tasks` 缺失。** Codex hook payload 无此字段(见 7.1)。rem 的 pending-work
-guard 退回 `taskActiveUntil` 时间窗;在 Codex 下运行的多轮技能(evolve/sharp-review)须在起始
-设 `taskActiveUntil`(evolve 已遵守),否则 Stop hook 可能中途触发。
+**(c) `background_tasks` missing.** The Codex hook payload has no such field (see 7.1). rem's pending-work
+guard falls back to the `taskActiveUntil` time window; multi-turn skills running under Codex (evolve/sharp-review) must set
+`taskActiveUntil` at the start (evolve already does), otherwise the Stop hook may fire midway.
 
-> 状态:清单/市场契约由生成器测试与 live smoke test 锁定(7.4/7.5),`${CLAUDE_PLUGIN_ROOT}`
-> 兼容性由二进制证实(7.2),命令/hook 事件兼容边界已厘清并由 gen-codex 自动告警(7.6)。
-> 2026-06-22 相关 Node 测试复跑通过:57/57。
-> 剩余缺口:无当前阻塞项。MCP 暴露已由仓库级 Codex-only MCP manifest 生成修复;§7.5 第 4 项
-> 并存互不干扰已由真实安装 smoke test 的同目录 `.claude-plugin/` + `.codex-plugin/` 安装链路覆盖。
+> Status: the manifest/marketplace contract is locked by generator tests and the live smoke test (7.4/7.5); `${CLAUDE_PLUGIN_ROOT}`
+> compatibility is confirmed by the binary (7.2); the command/hook event compatibility boundary is clarified and auto-warned by gen-codex (7.6).
+> 2026-06-22 related Node tests rerun passing: 57/57.
+> Remaining gap: no current blocker. MCP exposure is fixed by the repo-level Codex-only MCP manifest generation; §7.5 item 4
+> (coexistence without interference) is covered by the real-install smoke test's same-directory `.claude-plugin/` + `.codex-plugin/` install chain.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

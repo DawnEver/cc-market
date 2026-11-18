@@ -50,7 +50,7 @@ export function main(argv) {
     const [slug, ...goal] = args;
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug || '')) throw new Error(`request needs a kebab-case slug, got ${slug}`);
     const asked = requestAuthority(cwd, 'open', slug, goal.join(' '));
-    console.log(`${PREFIX} requested open ${slug}: ask the user to reply \`approve ${asked.code}\` (or \`批准 ${asked.code}\`); `
+    console.log(`${PREFIX} requested open ${slug}: ask the user to reply \`approve ${asked.code}\` (or \`\u6279\u51c6 ${asked.code}\`); `
       + `then run task.js open ${slug} "<goal>"`);
   } else if (verb === 'open') {
     const scope = (flag(args, '--scope') || '').split(',').map(s => s.trim()).filter(Boolean);

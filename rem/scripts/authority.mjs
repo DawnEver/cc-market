@@ -26,7 +26,7 @@ export const RECORD_TTL_MS = 30 * 60 * 1000;
 const COMMAND_RE = /^\s*\/(?:rem:)?task\s+(open|close)\s+([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s|$)/;
 
 // The user's approval of an agent's request: the whole prompt is the verb and the code.
-const APPROVE_RE = /^\s*(?:\/(?:rem:)?task\s+)?(?:approve|批准|同意)\s+([0-9a-f]{6})\s*$/i;
+const APPROVE_RE = /^\s*(?:\/(?:rem:)?task\s+)?(?:approve|\u6279\u51c6|\u540c\u610f)\s+([0-9a-f]{6})\s*$/i;
 
 export function parseApproval(prompt) {
   return String(prompt || '').match(APPROVE_RE)?.[1]?.toLowerCase() ?? null;

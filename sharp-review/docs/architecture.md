@@ -24,14 +24,11 @@ conformance fixtures ship with the method and run in ai-lab's suite. Two executo
 ```
 sharp-review/
 ├── agents/sharp-review.md        Worker subagent: reads SKILL.md and runs it
-├── hooks/sharp-review-hook.js    Stop hook entry: reads the stopHook switch, loads stop-review.mjs only when on
-├── scripts/stop-review.mjs       Stop review trigger: wave gate, sources, dispatch
+├── migrations/migrate.mjs        Idempotent project-format migrations (run by the root /migrate skill)
 ├── skills/sharp-review/          SKILL.md (procedure) + reference/*.md
 ├── scripts/
 │   ├── plan.js                   Collect the manifest, have ai-lab plan the run → plan file
 │   ├── post-review.js            Merge raw results through ai-lab, write the report sink; --rescan
-│   ├── gate.mjs                  Atomic review-claim lifecycle; only successful completion credits content
-│   ├── sources.mjs               Trigger adapters (pure): diff | codebase | deps | docs
 │   ├── lib.mjs                   Barrel: findings, manifest, config + shared frontmatter helpers
 │   └── lib/
 │       ├── ai-lab.mjs            The planner and the merge: `python -m ai_lab.review.plan` / `.merge`
@@ -42,9 +39,9 @@ sharp-review/
 └── tests/                        node:test
 ```
 
-## Config vs runtime state
+## Config, and no runtime state
 
-Static review config (`profileWeights`, `customProfiles`, `thresholds`, `inlineDiffLimit`,
-`docsThreshold`, `codebaseIntervalMin`) lives in the tracked `.claude/sharp-review.json`;
-volatile runtime state stays in the gitignored `.claude/.rem-state.json` under `reviewGate`.
-`migrations/migrate.mjs` relocates legacy config out of `reviewGate`.
+Static review config (`profileWeights`, `customProfiles`, `inlineDiffLimit`, `providers`) lives
+in the tracked `.claude/sharp-review.json`. The plugin keeps no runtime state: the retired Stop
+hook's `reviewGate` slice of `.claude/.rem-state.json` and its trigger keys are removed by
+`migrations/migrate.mjs`.

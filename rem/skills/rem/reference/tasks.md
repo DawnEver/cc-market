@@ -36,7 +36,7 @@ written into `TASK.md` (`authority:`) and the journal's opened/closed line.
 
 An agent may open a task itself, but only under the user's authorization (user ruling
 2026-11-15): `task.js request <slug> "<goal>"` records a `requested` event with a six-hex code
-and prints it. The user's prompt that IS `approve <code>` (or `批准 <code>`, `同意 <code>`,
+and prints it. The user's prompt that IS `approve <code>` (or its Chinese forms `\u6279\u51c6 <code>`, `\u540c\u610f <code>`,
 optionally after `/rem:task`) makes the same hook append a `granted` event for that request's verb
 and slug; the agent then runs `task.js open`, which consumes it as above. A request grants
 nothing by itself, a prompt that merely mentions the code is not an approval, and a code is

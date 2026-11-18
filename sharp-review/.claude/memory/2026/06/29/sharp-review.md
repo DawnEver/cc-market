@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-06-29 (session) — docs review (文档锐评) + diff review
+## Review 2026-06-29 (session) — docs review (docs review) + diff review
 
 ### Reviewer Status
 - Reviewer A (Codex): OK
@@ -112,3 +112,5 @@ agents/sharp-review.md spells out the precise null definition; direct-fanout.md 
 - **Suggestion:** State that parsed-from-prose findings must be validated against the schema (drop entries missing required severity/summary/category) before merging; note prose parsing may invent or mis-severity findings.
 
 'YOU parse the prose into the findings schema' with no validation means free-form severity language is mapped to HIGH/MEDIUM/LOW/INFO by guesswork and file fields may be fabricated; no guard ensures required fields are present before merge.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

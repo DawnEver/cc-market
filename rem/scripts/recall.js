@@ -73,7 +73,7 @@ const STOPWORDS = new Set([
 // CJK runs (Han, Kana, Hangul) have no spaces to split on — segment them into
 // bigrams (single chars kept as-is) so Chinese/Japanese/Korean prompts can
 // match CJK memory names/descriptions instead of tokenizing to nothing.
-const CJK_RE = /[㐀-䶿一-鿿豈-﫿぀-ヿ가-힯]+/gu;
+const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]+/gu;
 
 export function tokenize(text) {
   if (!text) return [];
