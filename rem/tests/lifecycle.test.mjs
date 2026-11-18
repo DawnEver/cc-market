@@ -146,8 +146,9 @@ describe('no memory entry is ever deleted', () => {
   // The named removers: todo-lib's removeBacklogItem (a closed .claude/todo/ item, after its
   // archive exists in memory), guarded by its own path check below; and the one-time migration,
   // which removes only retired generated indexes and a child-scope copy byte-identical to its
-  // root entry (held by migrations.test.mjs).
-  const ALLOWED = new Set(['scripts/todo-lib.mjs', 'migrations/migrate.mjs']);
+  // root entry (held by migrations.test.mjs); and session-binding's one-shot migration, which
+  // removes a retired binding record (not a memory entry) only after its session file holds it.
+  const ALLOWED = new Set(['scripts/todo-lib.mjs', 'migrations/migrate.mjs', 'scripts/session-binding.mjs']);
 
   it('no rem script, hook or migration calls a file-removing API, except the named ones', () => {
     const offenders = sources(REM)
@@ -159,5 +160,8 @@ describe('no memory entry is ever deleted', () => {
     assert.match(text, /function removeBacklogItem\(file\) \{\n {2}if \(!\/.*todo.*\.test\(file\)\) throw/);
     const migrate = fs.readFileSync(path.join(REM, 'migrations', 'migrate.mjs'), 'utf8');
     assert.equal(migrate.match(/\brmSync\(|'rm', '-q'/g).length, 2, 'migrate removes plan.deletes only, in one loop');
+    const binding = fs.readFileSync(path.join(REM, 'scripts', 'session-binding.mjs'), 'utf8');
+    assert.deepEqual(binding.match(/\brm(?:dir)?Sync\([^)]*\)/g), ['rmSync(old)', 'rmSync(old)', 'rmdirSync(dir)'],
+      'session-binding removes only retired binding records and their empty store');
   });
 });
