@@ -28,6 +28,13 @@ passes resolve references and cross-references. Re-run after any change.
   when the following text starts a new topic; a "where ..."-style explanation or a
   sentence continuing the equation stays attached, with no blank line.
 
+## Before the first draft: read the field
+
+Before drafting in a field or for a venue the project has no writing profile for, run the
+`field-reading` skill: read widely in the field's published papers and record their section
+moves, sentence templates and conventions. Shipped profiles: `reference/fields/`. Rule 38 in
+`reference/writing-style.md`.
+
 ## Writing style
 
 Write fluent, concise academic English: short clear sentences, plain direct wording,

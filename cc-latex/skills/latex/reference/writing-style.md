@@ -13,6 +13,9 @@ the paper uses, how sections are organized) live in the project itself — its
 CLAUDE.md, a project-local style guide, or the document's own comments. Examples in a
 generic skill illustrate the principle; they are never instructions to apply that
 content verbatim.
+Field profiles in `fields/` are field-level, not project-level: they hold section moves,
+slot templates and conventions abstracted from a wide sample of published papers, never a
+sentence copied from one of them.
 
 ## Core rules
 
@@ -272,7 +275,22 @@ content verbatim.
     whole paragraph, section or abstract with a rewritten block during revision, even when every
     sentence would change; the reviewer treats such a block replacement as BLOCK (rule 34).
 
+38. **Read the field before writing in it.** Before the first draft in a field or for a venue the
+    project has no writing profile for, read widely in that field's published papers (at least 20 full
+    texts, at least 5 from the target venue, at least 5 highly cited ones as models) and record how they
+    write: the moves of each section, slot templates of recurring sentences, and conventions (verbs,
+    tense, hedging, gap statements, where numbers appear, contribution lists). The `field-reading` skill
+    runs this procedure; shipped profiles live in `fields/`, the project's own in `.claude/field-style.md`.
+    Draft each section move by move from the profile; the rules above then shape every sentence. Where
+    the field's practice conflicts with one of these rules, the user decides, and the ruling enters the
+    project's writing rules. Learn structure, never wording: no run of more than six words is taken
+    from any one paper; stock formulae shared by many papers ("to the best of our knowledge") are
+    conventions, not copying.
+
 ## Self-check before finishing a section
+
+- A field writing profile exists for this field and venue and was re-read before drafting; the
+  section follows its moves, and every divergence from these rules has a user ruling (rule 38).
 
 - Search for " while ", " although ", ", but ", and for commas between a subject and its verb;
   each hit is either kept for a reason or rewritten (rule 36).
