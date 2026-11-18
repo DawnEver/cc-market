@@ -10,6 +10,9 @@
 //     every turn and nothing rebuilds it), every `.claude/meta/` copy, and a child scope's
 //     `memory-index.md`. attic/, output/ and .claude/worktrees/ are never touched.
 //   - The device-local state drops the retired `scopes` and `crystallize` keys.
+//   - The retired per-repo session bindings (`<ledger>/.bindings/<session>.json`) move ONCE into the machine
+//     home's session store, `state/sessions/<session>.json`, naming the ledger they were found in (D34,
+//     scripts/session-binding.mjs); the old files and their directory are deleted. Readers never read the old store.
 //   - Reported, never acted on here: HANDOFF-/PLAN-/DECISIONS- files (they stay as history; a
 //     live one becomes a task only when the USER opens it).
 //   node migrate.mjs [--dry-run] [<root>]   prints the plan as JSON; --dry-run writes nothing.
@@ -17,6 +20,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync
 import { join, resolve, dirname, posix } from 'path';
 import { spawnSync } from 'child_process';
 import { isMain } from '../shared/lib.mjs';
+import { mainCheckout, tasksDir } from '../scripts/tasks.mjs';
+import { migrateRetiredBindings } from '../scripts/session-binding.mjs';
 
 // rem owns ONLY the ignores for artefacts it generates or that earlier rem versions
 // generated: the derived memory-index.md, the old _meta.json shards, and the device-local memo
@@ -156,6 +161,7 @@ export function planMigration(root) {
   plan.deletes = [...drops.map(path => ({ path, tracked: true, why: 'identical to the root entry' })),
     ...orphanedFiles(root).map(o => ({ ...o, why: 'retired generated index' }))];
   plan.state = migratedState(root) !== null;
+  plan.bindings = migrateRetiredBindings(mainCheckout(root), tasksDir(root), { dryRun: true });
   return plan;
 }
 
@@ -215,7 +221,14 @@ export async function migrate(projectRoot, { dryRun = false } = {}) {
     writeFileSync(stateFileOf(projectRoot), JSON.stringify(state, null, 2) + '\n', 'utf8');
     summary.push('state: the retired scopes and crystallize keys dropped');
   }
-  const did = changed || plan.strip.length > 0 || moves.length > 0 || plan.deletes.length > 0 || Boolean(state);
+  const bindings = migrateRetiredBindings(mainCheckout(projectRoot), tasksDir(projectRoot));
+  const settled = bindings.moved.length + bindings.dropped.length;
+  if (settled) summary.push(`moved ${bindings.moved.length} session binding(s) into the machine home's session store `
+    + `(state/sessions/) and dropped ${bindings.dropped.length} already there`);
+  for (const { old, kept } of bindings.conflicts) summary.push(`binding conflict, both kept: ${old} names another task than ${kept}`);
+  for (const bad of bindings.bad) summary.push(`unreadable binding left in place: ${bad}`);
+  plan.bindings = bindings;
+  const did = changed || plan.strip.length > 0 || moves.length > 0 || plan.deletes.length > 0 || Boolean(state) || settled > 0;
   return { changed: did, summary, plan };
 }
 

@@ -9,10 +9,11 @@
 // prompt (bindSession, run by rem's UserPromptSubmit hook hooks/task-authority.js), and appends
 // only to that task's journal.
 //
-// The ledger and the session bindings are REPO state, not branch state (cc-market #20): ONE
-// directory, <main checkout>/.claude/tasks/, the parent of `git rev-parse --git-common-dir`, the
-// same from every worktree, so a task opened in one worktree is found from all of them. It is
-// never committed on a feature branch; close archives a task into memory, which is.
+// The ledger is REPO state, not branch state (cc-market #20): ONE directory, <main checkout>/.claude/tasks/,
+// the parent of `git rev-parse --git-common-dir`, the same from every worktree, so a task opened in one
+// worktree is found from all of them. It is never committed on a feature branch; close archives a task into
+// memory, which is. A session's binding is SESSION state (D34): one file in the machine home naming the
+// ledger its task lives in (session-binding.mjs), so every repo reads the same binding.
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync, realpathSync } from 'fs';
 import { join, dirname, resolve, basename } from 'path';
@@ -24,6 +25,7 @@ import { atomicWriteFile } from '../shared/atomic-write.mjs';
 import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
+import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -60,10 +62,6 @@ export function tasksDir(start) {
   return join(mainCheckout(start), '.claude', 'tasks');
 }
 
-// Where rem writes a session's binding (bindSession) and reads it back (readSessionBinding). rem OWNS the format,
-// and other tools read it as a documented contract (skills/rem/reference/tasks.md § The binding file):
-// `<ledger>/.bindings/<session>.json` = {"session": "<id>", "task": "<slug>@<authority>"}.
-export const BINDINGS = '.bindings';
 // The environment keys a native harness names its session id in, as a git hook run inside that session sees it.
 export const SESSION_ENV = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'];
 // A session id is a plain id, never a path: it names the binding file.
@@ -216,19 +214,34 @@ export function bindSession(start, session, slug) {
       + `Door: the user opens it with /rem:task open ${slug} "<goal>", then binds with \`task: ${slug}\``);
   }
   const id = `${slug}@${task.authority}`;
-  atomicWriteFile(join(tasksDir(start), BINDINGS, `${session}.json`), JSON.stringify({ session, task: id }));
+  writeBinding(session, id, ledgerOf(mainCheckout(start), tasksDir(start)));
   return id;
 }
 
-// The binding of `session` (default: this process's) as bindSession wrote it into the ledger -- one
-// file, read directly, no process spawned -- or null when none is bound. Never guessed.
+// The binding of `session` (default: this process's) as bindSession wrote it -- one file in the machine
+// home, read directly, no process spawned -- when it binds a task of the ledger at `start`; null otherwise
+// (none bound, or bound to another repo's task: rem's journal verbs act only on this repo's ledger). Never guessed.
 export function readSessionBinding(start, { session = sessionOf() } = {}) {
   if (!session || !SESSION_RE.test(session)) return null;
-  let record;
-  try { record = JSON.parse(readFileSync(join(tasksDir(start), BINDINGS, `${session}.json`), 'utf8')); }
-  catch { return null; }
-  const m = record?.session === session && String(record.task || '').match(/^([^@\s]+)@(\S+)$/);
-  return m && SLUG_RE.test(m[1]) ? { slug: m[1], authority: m[2] } : null;
+  const bound = readBinding(session);
+  return bound && sameLedger(bound.ledger, tasksDir(start)) ? { slug: bound.slug, authority: bound.authority } : null;
+}
+
+// Why no task of the ledger at `start` is bound to `session`, with its door: bound in another repo's ledger, still
+// in the retired per-repo store (refused by name, never read), or not bound at all.
+export function unboundReason(start, { session = sessionOf() } = {}) {
+  try { bindingFile('probe'); } catch (unset) { return unset.message; }
+  const bound = session && SESSION_RE.test(session) ? readBinding(session) : null;
+  if (bound) {
+    return `this session is bound to task ${bound.slug}@${bound.authority} of another repo's ledger (${bound.ledger}); `
+      + 'its journal verbs run from that repo';
+  }
+  const old = session ? retiredBinding(tasksDir(start), session) : null;
+  if (old) {
+    return `session ${session} is bound only in the retired per-repo store ${old}; the one store every repo reads is `
+      + `${bindingFile(session)}, which holds none. Door: ${MIGRATE_BINDINGS_DOOR}`;
+  }
+  return BIND_DOOR;
 }
 
 // The ONE open task a session in `start` works on: the user's explicit --task, else the task

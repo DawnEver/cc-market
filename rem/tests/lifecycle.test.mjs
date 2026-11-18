@@ -143,16 +143,21 @@ describe('no memory entry is ever deleted', () => {
     assert.match('fs.rmSync(dir, { recursive: true });', DELETES);
   });
 
-  // The one named remover: the one-time migration, which removes only retired generated
-  // indexes and a child-scope copy byte-identical to its root entry (held by migrations.test.mjs).
-  const ALLOWED = new Set(['migrations/migrate.mjs']);
+  // The named removers: the one-time migration, which removes only retired generated indexes and a
+  // child-scope copy byte-identical to its root entry (held by migrations.test.mjs); and
+  // session-binding's one-shot migration, which removes a retired binding record (not a memory
+  // entry) only after its session file holds it.
+  const ALLOWED = new Set(['migrations/migrate.mjs', 'scripts/session-binding.mjs']);
 
-  it('no rem script, hook or migration calls a file-removing API, except the named one', () => {
+  it('no rem script, hook or migration calls a file-removing API, except the named ones', () => {
     const offenders = sources(REM)
       .filter(f => DELETES.test(fs.readFileSync(f, 'utf8')))
       .map(f => path.relative(REM, f).replace(/\\/g, '/'));
     assert.deepEqual(offenders.filter(f => !ALLOWED.has(f)), []);
     const migrate = fs.readFileSync(path.join(REM, 'migrations', 'migrate.mjs'), 'utf8');
     assert.equal(migrate.match(/\brmSync\(|'rm', '-q'/g).length, 2, 'migrate removes plan.deletes only, in one loop');
+    const binding = fs.readFileSync(path.join(REM, 'scripts', 'session-binding.mjs'), 'utf8');
+    assert.deepEqual(binding.match(/\brm(?:dir)?Sync\([^)]*\)/g), ['rmSync(old)', 'rmSync(old)', 'rmdirSync(dir)'],
+      'session-binding removes only retired binding records and their empty store');
   });
 });
