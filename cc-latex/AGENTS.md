@@ -8,6 +8,8 @@ helper script, no hooks.
 
 - `skills/latex/` — `latex` skill: compile workflow, figure/table placement, citations,
   and writing style. Full style rules live in `reference/writing-style.md`.
+- `skills/latex/reference/style-sources.md` — rules P1-P24 drawn from published style guides
+  (IEEE, Gopen and Swan, Mensh and Kording), with sources; binding by writing-style rule 39.
 - `skills/latex/reference/fields/` — field writing profiles (section moves, slot templates,
   conventions) learned from published papers; field-level only, never copied sentences.
 - `skills/field-reading/` — `field-reading` skill: builds a field writing profile from a

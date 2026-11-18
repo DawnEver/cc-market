@@ -49,8 +49,8 @@ conclusion in full; skim the method. Record, with counts ("17/24 papers"):
    how the gap is stated, where numbers and operating points appear, how prior work
    is compared, contribution lists, figure and equation referencing, abstract length.
 4. **Divergences** — every place where the field's practice differs from a rule in
-   `../latex/reference/writing-style.md`, with the rule number. Report the
-   divergence; do not resolve it here (step 4).
+   `../latex/reference/writing-style.md`, with the rule number. A looser field habit
+   is recorded only as a pattern to avoid; a stricter one becomes a convention (step 4).
 5. **Weak patterns** — habits in the corpus that the generic rules reject, without
    author names.
 
@@ -58,9 +58,10 @@ The shipped profiles in `../latex/reference/fields/` show the format.
 
 ## 4. Settle divergences and land the profile
 
-A divergence goes to the user, one line each: the field's practice, the conflicting
-rule, a recommendation. The user's ruling goes into the project's writing rules (the
-project wins over the generic rules, as everywhere in cc-latex). Write the profile to
+The profile can only tighten the rules, never relax them. A field habit looser than a
+rule in `writing-style.md` is listed under weak patterns and the rule holds; it is not
+put to the user. A field convention stricter than the rules, or one they do not cover
+(venue section names, abstract length, figure referencing), is adopted. Write the profile to
 the project's `.claude/field-style.md` (not an auto-loaded rules file: it is long and
 read on demand), and add one line to the project's writing rules pointing to it. A
 profile that is field-level rather than paper-level, and built from at least 20

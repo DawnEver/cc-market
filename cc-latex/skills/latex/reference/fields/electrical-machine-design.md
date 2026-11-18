@@ -33,9 +33,9 @@ Exemplary papers:
 1. Application demand opener citing review/market sources -- 58/67.
 2. Candidate technology and its known benefit with citations -- 60/67.
 3. Survey of prior approaches grouped by method, each with a drawback -- 57/67.
-4. Gap: "However, ..." contrast naming what prior studies lack -- 61/67.
+4. Gap: "However, ..." contrast naming what prior studies lack -- 61/67 (avoid the "However" form: rule 36).
 5. Purpose: "Therefore/In this paper ..." -- 64/67.
-6. Contribution list, numbered (1)-(3) or "First ... Second ..." -- 24/67 (more in 2025-26 papers).
+6. Contribution list, numbered (1)-(3) or "First ... Second ..." -- 24/67 (more in 2025-26 papers; avoid: rules 7, 23).
 7. Roadmap paragraph by section -- 30/67 (rare in 4-page digests, standard in journals).
 
 ### Method / model
@@ -53,7 +53,7 @@ Exemplary papers:
 4. Efficiency maps / drive-cycle energy -- 21/67 (traction papers).
 5. Mechanical stress or rotordynamic check -- 25/67.
 6. Experimental validation vs FEA with a percent discrepancy -- 22/67 (journals 4/5, digests ~18/62).
-7. Limitation or caveat ("It should be noted that ...") -- 28/67.
+7. Limitation or caveat ("It should be noted that ...") -- 28/67 (avoid the opener: rule 2).
 
 ### Conclusion
 1. Restate what was proposed -- 60/67.
@@ -69,65 +69,67 @@ Exemplary papers:
 
 ## 2. Sentence templates
 
+Every template obeys rules 1-37; slots hold nouns or noun phrases only.
+
 Abstract
-- [Application] demands [property], which drives interest in [machine type].
-- Conventional [method/shape] relies on [few parameters/simplification], which limits [freedom/accuracy].
+- Electrification of [application] is raising the required [property] of [machine type].
+- [Few parameters/simplification] in conventional [method/shape] limits the [design freedom/accuracy].
 - This paper presents [method] for [machine/component] based on [principle].
-- The [method] is applied to [machine] and compared with [baseline] under [equal constraint].
-- Compared with [baseline], [design] reduces [metric] by [x] % and raises [metric] by [y] %.
-- A prototype is built and tested; measured [quantity] agrees with FEA within [x] %.
-- The results give [designers] a basis for choosing [option] in [application].
+- The [method] is applied to [machine] and compared with [baseline] under equal [constraint].
+- [Design] has [x] % lower [metric] than [baseline].
+- Measured [quantity] on a prototype agrees with FEA within [x] %.
+- On this basis, [option] is the preferred choice for [application] under [condition].
 
 Introduction: context and prior work
 - [Machine type] is widely used in [application] owing to its [benefit] [refs].
-- Reliance on [material] exposes [industry] to [risk], motivating [alternative] [refs].
-- [Approach A] is accurate but costly in [time/computation] [ref].
-- Analytical models of [phenomenon] are fast but neglect [effect] [ref].
+- The supply risk of [material] raises interest in [alternative] for [industry] [refs].
+- [Approach A] predicts [quantity] accurately at a high [time/computation] cost [ref].
+- Analytical models of [phenomenon] shorten the computation by neglecting [effect] [ref].
 - In [ref], [quantity] was reduced by [x] % through [measure].
 - [Refs] studied [aspect] for [machine class] at [condition].
 
 Introduction: gap and purpose
-- These studies treat [aspect A] and [aspect B] separately; their combined effect on [metric] remains open.
-- Prior comparisons used unequal [PM volume/envelope], so [effect] cannot be isolated.
-- [Method] has been applied to [machine A]; its use in [machine B] is less documented.
-- This paper investigates [question] for [machine] in [application].
-- The objective is to determine how [factor] affects [metric] of [system].
-- Section II describes [x]; Section III [y]; Section IV concludes.
+- The studies in [refs] treat [aspect A] and [aspect B] separately.
+- The comparisons in [refs] use designs with unequal [PM volume/envelope].
+- [Method] has been applied to [machine A] in [refs].
+- This paper investigates the effect of [factor] on [metric] of [machine] for [application].
+- This paper compares [option A] and [option B] under equal [constraint].
+- Section [n] [outlines/derives/compares] [role of the section in the argument].
 
 Method / model
 - The main specifications of [machine] are listed in Table [n].
 - The [barrier/end] shape is defined by [n] control points, as shown in Fig. [n].
 - [Loss] is computed from (n), where [symbol] is [definition].
-- The following assumptions are made: [list].
+- [Effect] is neglected in the model.
 - To ensure a fair comparison, [quantity] is kept equal for all designs.
-- The optimisation minimises [objective] subject to [constraints], using [algorithm] with [population] individuals over [generations] generations.
-- [Model] is replaced by a [surrogate] trained on [n] FEA samples.
+- The optimisation minimises [objective] subject to [constraints] with [algorithm], [population] individuals and [generations] generations.
+- The [surrogate] for [quantity] is fitted to [n] FEA samples.
 
 Results and discussion
 - Fig. [n] compares [quantity] of [design A] and [design B] at [operating point].
-- [Design] yields [x] % lower [metric] than [baseline], owing to [mechanism].
-- The reduction stems from [physical cause], visible in the flux-density map of Fig. [n].
+- [Design] has [x] % lower [metric] than [baseline] at [operating point].
+- The flux-density map in Fig. [n] shows [physical cause] in [region].
 - As [parameter] increases, [metric] rises until [value] and then saturates.
-- The Pareto front in Fig. [n] shows a trade-off between [objective 1] and [objective 2].
+- The Pareto front in Fig. [n] shows the trade-off between [objective 1] and [objective 2].
 - The selected design satisfies [constraint] with a margin of [x] %.
-- Measured and simulated [quantity] differ by less than [x] %, attributed to [cause].
-- It should be noted that [result] holds only under [condition].
+- Measured and simulated [quantity] differ by less than [x] %.
+- [Result] holds only under [condition].
 
 Conclusion
 - This paper has presented [method] for [machine] in [application].
-- [Design] improves [metric] by [x] % relative to [baseline] at the cost of [penalty].
-- The comparison indicates that [option] suits [use case], and [other option] suits [other case].
-- Future work will address [thermal/fatigue/prototype] and [operating range].
+- [Design] lowers [metric] by [x] % relative to [baseline] at the cost of [y] % higher [penalty].
+- [Option] gives the lower [metric] for [use case].
+- Future work extends the analysis to [thermal/fatigue/prototype] and [operating range].
 
 ## 3. Conventions
 
 - Reporting verbs: present tense for this paper's content ("this paper proposes", "Fig. 5 shows");
   past tense for cited work ("[12] compared", "was shown in [14]"); "results show/indicate/reveal"
-  dominant. "Demonstrate" is common in abstracts for validated claims.
+  dominant (avoid: rules 26, 31). "Demonstrate" is common in abstracts for validated claims (avoid: rules 26, 31).
 - Hedging: light. "slightly", "approximately", "up to [x] %" (very common in abstracts, inflating
-  best-case figures); "It should be noted that" is the standard caveat opener.
-- Gaps: overwhelmingly "However, [prior work] [lacks/neglects/does not consider] ..."; a minority
-  use "to the best of the authors' knowledge, ... has not been ..."; strongest papers name the
+  best-case figures; avoid: rule 15); "It should be noted that" is the standard caveat opener (avoid: rule 2).
+- Gaps: overwhelmingly "However, [prior work] [lacks/neglects/does not consider] ..." (avoid: rules 31, 36); a minority
+  use "to the best of the authors' knowledge, ... has not been ..." (avoid: rule 23); strongest papers name the
   physical effect or the unfair comparison condition omitted by prior work.
 - Numbers: journal abstracts carry 1-3 percentages (often to two decimals); digests often give
   one headline percent; operating points and absolute values appear mainly in results.
@@ -136,12 +138,12 @@ Conclusion
 - Figures/tables: "Fig. 3" mid-sentence, "Table I" Roman numerals (IEEE); "as shown in Fig. n"
   very frequent; captions short, descriptive nouns.
 - Symbols: italic quantities with subscripts (T_ph, D_si, K_h); units in text with a space;
-  speeds in r/min, rpm and krpm all occur; acronyms defined at first use in abstract and again in text.
+  speeds in r/min, rpm and krpm all occur (avoid: rule 4); acronyms defined at first use in abstract and again in text.
 - Abstract length: 120-250 words, single paragraph; keywords line in IEEE conference format.
-- First person: "we" rare (under 10 %); "the authors" in acknowledgements and novelty claims.
+- First person: "we" rare (under 10 %; avoid: rule 17); "the authors" in acknowledgements and novelty claims (avoid: rule 23).
 - Equipment and software named freely (JMAG, Motor-CAD, ANSYS, KISSsoft) in method and acknowledgements.
 
-## 4. Divergences from cc-latex rules (report only)
+## 4. Field habits looser than cc-latex (avoid; the rule holds, rule 38)
 
 - Rule 23: novelty is announced in most papers ("novel" in title/abstract, "main contributions
   are", "for the first time", "to the best of the authors' knowledge").

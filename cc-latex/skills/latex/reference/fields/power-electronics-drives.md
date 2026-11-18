@@ -66,71 +66,78 @@ Conclusion:
 
 ## 2. Sentence templates
 
+Every template obeys cc-latex rules 1-37; field wording looser than those rules is excluded (rule 38).
+
 Context
 - [Machine class] is widely used in [application] because of its [merit] and [merit] [refs].
 - [Machine class] is usually supplied by [converter type] to control [quantity] over a wide [range].
-- [Configuration] offers [merit] over [baseline], so it suits [application] [refs].
-- The trend towards [design trend] lowers [parameter] and hence raises [ripple or loss quantity] [ref].
+- [Configuration] offers [merit] over [baseline] and hence suits [application] [refs].
+- [Design trend] lowers [parameter] and hence raises [ripple or loss quantity] [ref].
 Problem
 - The [harmonic type] produced by [source] induces additional [loss component] in [part].
-- [Loss component] is small relative to [total]; it still limits [rating] because [thermal reason].
-- In [multiphase machine], [harmonic component] maps onto [plane], where only [impedance] limits the current.
+- [Loss component] limits [rating] because [thermal reason].
+- In [multiphase machine], only [impedance] limits the [harmonic component] current in [plane].
 Literature and gap
-- [Method class] has been applied to [problem] [refs], and [variant] extends it to [condition] [ref].
+- [Method class] has been applied to [problem] [refs].
 - The study in [ref] computed [quantity] with [method] and reported [finding].
-- These methods take [quantity] as [input type]; [effect] at [condition] is therefore neglected.
-- Prior studies of [quantity] covered [case A] and [case B] [refs]; [case C] was outside their scope.
-- [Approach] is accurate, but its computation time restricts it to [few points / task].
+- With [quantity] imposed as [input type], [method class] omits [effect] at [condition].
+- Prior studies of [quantity] covered [case A] and [case B] [refs].
+- [Approach] requires [time] per operating point and is therefore limited to [few points / task].
 Purpose and contribution
-- This paper [investigates/proposes] [method] to [compute/reduce] [quantity] in [machine] under [supply].
+- This paper [investigates/proposes] [method] to [compute/reduce] [quantity] in [machine] for [application].
 - The [model] is checked against [FEA type] and against measurements on a [rating] prototype.
-- The contributions are: 1) [model]; 2) [mechanism or analysis]; 3) [validation or guideline].
 Method
 - The [quantity] is expressed with the [transformation or integral] [ref] as (n).
-- [Plane or component] contains only [parameters]; therefore [consequence for the current].
-- The [model] assumes [assumption], valid when [condition].
-- The [field solver] is coupled with the [circuit or control model], and [inverter] imposes the winding voltage.
+- [Plane or component] contains only [parameters], so [consequence for the current].
+- The [model] assumes [assumption] and holds for [condition].
+- The [field solver] is coupled with the [circuit or control model] through [coupling scheme].
 - Table [n] lists the parameters of the studied machine.
 Results
-- Fig. [n] shows the [waveform] at [operating point]; its spectrum contains sidebands around [fc] and [2fc].
+- The spectrum of [waveform] at [operating point] contains sidebands around [fc] and [2fc] (Fig. [n]).
 - Compared with [baseline], [method] reduces [quantity] by [x] % at [operating point].
 - [Quantity] from [method A] is [x] % lower than from [method B] because [mechanism].
-- [Quantity] increases with [parameter] since [mechanism] and levels off above [threshold].
+- [Quantity] increases with [parameter] because [mechanism].
 - The discrepancy between [model] and [reference] stays within [x] % over [range].
-- At high [frequency], [effect] limits [quantity]; neglecting it overestimates [loss] by [x] %.
-- [Quantity] measured and calculated agree within [x] %, except at [condition], where [cause] dominates.
-- Computation time falls from [t1] to [t2] for a deviation below [x] %.
+- A model without [effect] overestimates [loss] by [x] % at high [frequency].
+- Measured and calculated [quantity] agree within [x] % over [range].
+- Computation time falls from [t1] to [t2] for a discrepancy below [x] %.
 Conclusion
 - This paper has [proposed/investigated] [method] for [quantity] in [machine class] fed by [converter].
-- [Quantity] is mainly produced by [source]; [design variable] should be [rule] to reduce it.
+- [Quantity] arises mainly from [source].
 - [Method] reduces [quantity] by [x] % relative to [baseline] without [penalty].
-- Future work will extend the analysis to [condition] and [component].
+- Future work extends the analysis to [condition] and [component].
 
 ## 3. Conventions
 
-- Self-reference: "this paper" (conferences, MDPI) and "this article" (IEEE Trans. since about 2020, house style);
-  "this work" or "this study" in about 12/46; first person "we" in about 8/46 (industrial authors, some IEEE TIA).
+Counts describe the field; every habit marked "avoid" is looser than cc-latex and is not used (rule 38).
+
+- Self-reference: "this paper" (conferences, MDPI) and "this article" (IEEE Trans. since about 2020, house style;
+  avoid: rule 17); "this work" or "this study" in about 12/46 (avoid: rule 17); first person "we" in about 8/46
+  (avoid: rule 17).
 - Tense: cited methods in present ("[n] proposes"), cited findings in past ("[n] reported"); own method in present
   passive ("is derived", "is proposed"); own results in present or past; conclusions in present perfect.
-- Hedging: weak. Findings are asserted ("is proved", "is verified", "effectively suppresses", "significantly");
-  "may" and "can" appear mainly in motivation. "Novel", "superior", "accurate" are frequent self-descriptions.
+- Hedging: weak. Findings are asserted ("is proved", "is verified", "effectively suppresses", "significantly";
+  avoid unquantified intensifiers: rule 2); "may" and "can" appear mainly in motivation. "Novel", "superior",
+  "accurate" are frequent self-descriptions (avoid: rules 2 and 23).
 - Gap strength: from soft ("few studies", "has not been well discussed") to absolute ("remains lacking", "has not
-  been reported nor compared yet"); "However" opens the gap sentence in about 30/46.
+  been reported nor compared yet"; avoid: rule 22, state what prior work covered); "However" opens the gap sentence
+  in about 30/46 (avoid: project rule; rule 36 contrasts take their own sentence).
 - Numbers: IEEE Trans. and MDPI abstracts give 1-3 headline numbers (percent reduction, error bound, rating,
-  sometimes the operating point); magnetics and conference abstracts give none. Results attach the full operating
-  point (r/min, N.m or A, Vdc, fc, M) to every figure.
+  sometimes the operating point; avoid in the abstract and introduction: rule 15); magnetics and conference
+  abstracts give none. Results attach the full operating point (r/min, N.m or A, Vdc, fc, M) to every figure.
 - Prior work is compared method against baseline inside the same paper ("compared with conventional SVPWM",
   "with reference to the transient solver"); numeric comparison with another paper's values is rare.
 - Figures and tables: "Fig. 7(a) shows", "as shown in Fig. 5", "listed in Table II" (IEEE); "Figure 7" (MDPI);
   equations cited as "(12)".
 - Nomenclature: IEEE Trans. control papers often carry a NOMENCLATURE block (6/46). Acronyms are dense (VSI, SVPWM,
-  CPS-PWM, VSD, THD, TSFEA) and paper-specific coinages are frequent; subspace names vary (xy, z1z2, Z1Z2).
+  CPS-PWM, VSD, THD, TSFEA) and paper-specific coinages are frequent (avoid: rule 16); subspace names vary (xy,
+  z1z2, Z1Z2; avoid variation: rule 4).
 - Symbols: fc, f0 or f1, M for modulation index, theta_c for carrier phase; sidebands "fc +/- 2f0", "2fc +/- f0".
   Speed units: r/min (IEEE) versus rpm or min^-1 (others).
 - Validation hierarchy expected: analytical -> 2D FEA -> (3D FEA) -> experiment; papers without tests say so and
   defer them to future work.
 
-## 4. Divergences from cc-latex rules 1-37 (reported, not resolved)
+## 4. Field habits looser than cc-latex (avoid; the rule holds, rule 38)
 
 - Rule 15 (detail follows position): 24/46 abstracts and 26/46 conclusions give percent or absolute numbers, some with
   operating points; IEEE Trans. control papers expect them. The field is looser.
@@ -139,7 +146,7 @@ Conclusion
   (14/46) are standard in IEEE Trans.
 - Rule 18 (open broad, narrow by one level): 12/46 abstracts open on the method ("This paper presents ...").
 - Rule 19 (cite textbook material): about 30/46 papers re-derive VSD matrices, double Fourier integrals or MTPA equations.
-- Rule 16 (no coined terms): paper-specific acronyms for single concepts are common and tolerated.
+- Rule 16 (no coined terms): paper-specific acronyms for single concepts are common in the field.
 - Rule 23 (no announced novelty): "novel" or "main contribution and novelty" appear in about 20/46.
 - Rules 29, 31, 36 (no relative tails, no "that/which" on nouns, no "while/although/but" contrasts, no "whereas"):
   ", which ..." tails and "while" contrasts occur in almost every paper; "whereas" in about 10/46.

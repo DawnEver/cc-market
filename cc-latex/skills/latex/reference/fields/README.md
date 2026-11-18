@@ -16,8 +16,8 @@ corpus (`cc-academia` reviews), 2026-11-18. Counts are approximate.
 
 All four fields keep the same section skeleton: context, specific problem, prior work, gap,
 this paper, then findings. They differ in register and in where numbers go. Five practices
-appear in every field and conflict with the generic rules. Rule 38 sends each one to the user
-for a ruling per project, and the generic rules stay as they are.
+appear in every field and are looser than the generic rules. Under rule 38 a field profile
+only tightens the rules, so each of the five is a pattern to avoid, and the rule holds.
 
 1. Numbered contribution lists and "organized as follows" roadmaps (rules 7, 24, 25).
 2. Announced novelty: "novel", "to the best of our knowledge" (rule 23).
@@ -28,5 +28,5 @@ for a ruling per project, and the generic rules stay as they are.
    strongest in IEEE Transactions and in MIR benchmark reporting.
 
 The generic rules are therefore deliberately stricter than field practice. They aim at a
-clear sentence, not at the field average. Field profiles decide the moves, the register and
-the venue conventions; the generic rules decide the sentence.
+clear sentence, not at the field average. Field profiles add the moves and the venue
+conventions; they never relax a rule.

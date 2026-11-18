@@ -51,24 +51,24 @@ Conclusion:
 2. Two to four findings, with numbers mostly in IEEE papers -- 25/35.
 3. Limitations and future work, often headed "Conclusions and outlook" -- 22/35.
 
-## 2. Sentence templates (slots in brackets)
+## 2. Sentence templates (slots in brackets; each template obeys cc-latex rules 1-37)
 
 Context and gap:
-- [Design task] conventionally relies on [template / parameterisation], which restricts the result to [shape class].
+- [Design task] conventionally relies on [template / parameterisation]. This parameterisation restricts the result to [shape class].
 - [Method family] has been applied to [object] in [refs], mainly for [objective].
-- These approaches require [costly step: remeshing / mesh deformation / dual mesh] when [condition].
-- A remedy for [impasse] is to [augment / couple / project] [space or field] with [ingredient].
-- Accurate [quantity] depends on [geometric feature], which [classical method] represents only approximately.
+- With [method family], every [condition] requires [costly step: remeshing / mesh deformation / dual mesh].
+- Augmenting [space or field] with [ingredient] removes [impasse].
+- Accurate [quantity] depends on [geometric feature]. [Classical method] represents [geometric feature] only approximately.
 
 Purpose and contribution:
-- This [paper] proposes a [adjective] [method] for [object] based on [ingredient].
-- The contribution of this [article] is [method] with [property] and without [costly step].
-- In this work, we [adopt / extend / evaluate] [technique] for [new setting].
-- The aim is to [improve objective] with [constraint quantity] kept below [limit].
-- Compared with [ref], the present formulation additionally accounts for [effect].
+- This paper proposes a [method family] [method] for [object] based on [ingredient].
+- The [method] of this paper combines [property] with the absence of [costly step].
+- This paper [adopts / extends / evaluates] [technique] for [new setting].
+- The aim of this paper is to [improve objective] with [constraint quantity] below [limit].
+- [Ref] covered [effect A]. In contrast, the present formulation also includes [effect B].
 
 Roadmap:
-- Section [n] introduces [governing problem]; Section [m] derives [sensitivities]; Section [k] reports [examples].
+- Section [n] [introduces / derives / reports] [governing problem / sensitivities / examples].
 
 Equations:
 - On [domain], the [field] satisfies [equation (n)], where [symbol] denotes [meaning].
@@ -83,34 +83,34 @@ Numerical set-up:
 - All runs use [solver / hardware / thread count] for an equal timing comparison.
 
 Results:
-- Fig. [n] shows [error measure] versus [DOF / h] for degrees [p].
+- Fig. [n] plots [error measure] against [DOF / h] for degrees [p].
 - The error decreases at rate [r], in agreement with [theory / ref].
 - For the same [DOF / torque], [method A] gives [lower error / lower stress] than [method B].
-- The optimised layout forms [feature]; [feature] [raises / lowers] [objective] through [physical effect].
-- Without [constraint], the optimiser produces [infeasible feature]; adding [constraint] removes it.
+- The optimised layout contains [feature]. [Feature] [raises / lowers] [objective] through [physical effect].
+- Without [constraint], the optimised layout contains [infeasible feature]. Adding [constraint] removes [infeasible feature].
 - The objective converges within [n] iterations with all constraints satisfied.
 - Relative to [baseline], [quantity] changes by [x] % at [condition].
 
 Conclusion:
 - This paper presented [method] for [object] and demonstrated it on [example].
-- The results show [main finding with direction or number].
+- [Quantity] [rises / falls] by [number] relative to [baseline].
 - The approach [avoids / reduces] [cost] because of [mechanism].
 - Future work will address [extension 1] and [extension 2].
 
 ## 3. Conventions
 
-- Reporting verbs: propose, present, develop, introduce, derive, demonstrate, validate, compare; results "show / indicate / reveal".
+- Reporting verbs: propose, present, develop, introduce, derive, demonstrate, validate, compare; results "show / indicate / reveal" (avoid: rules 26, 31; state the quantity and its change).
 - Tense: present for method and figures; past or present perfect in conclusions.
-- Person: "we" in all mathematics/IGA papers and about 60 % of IEEE TO papers; passive ("is employed", "is used") for set-up.
+- Person: "we" in all mathematics/IGA papers and about 60 % of IEEE TO papers (avoid: rule 17; use "this paper" or the passive); passive ("is employed", "is used") for set-up.
 - Hedging: light ("can", "may"); strength comes from comparisons, not adverbs.
-- Gap statements: mostly a limitation of a named method family; explicit "not studied" claims are rare (3/35).
+- Gap statements: mostly a limitation of a named method family; explicit "not studied" claims are rare (3/35) (avoid: rule 23 and project rules; state what prior studies covered).
 - Numbers: none in mathematics-venue abstracts; one or two percentages in IEEE application abstracts; results sections carry tables of torque, ripple, stress, error, DOF and CPU time.
-- Comparison with prior methods: "the proposed method" versus "a geometric template-based optimisation" or "classical FEM", with fairness conditions stated (same DOF, same torque, single thread).
+- Comparison with prior methods: "the proposed method" (avoid: rule 23; name the method) versus "a geometric template-based optimisation" or "classical FEM", with fairness conditions stated (same DOF, same torque, single thread).
 - Equations: numbered, punctuated as part of the sentence, followed by a "where" list; vectors bold; curl, div, grad roman; material densities rho with per-material subscripts.
-- Figures: "Fig. [n] shows ..." or "(see Fig. [n])"; "Section II" (IEEE) versus "Section 2" (journals).
+- Figures: "Fig. [n] shows ..." (avoid: rules 26, 31; "Fig. [n] plots ...") or "(see Fig. [n])"; "Section II" (IEEE) versus "Section 2" (journals).
 - Acronyms defined in the abstract and again at first use: SIMP, MMA, GCMMA, IGA, NURBS, DOF, TO.
 
-## 4. Divergences from cc-latex rules 1-37 (report only)
+## 4. Field habits looser than cc-latex (avoid; the rule holds, rule 38)
 
 - Rules 7, 24, 25: a full roadmap paragraph (25/35), "first / then / finally" step lists in abstracts, and section openers "In this section, ...".
 - Rules 15, 18: abstracts often open with the method limitation, not the broadest context; IEEE abstracts carry numbers.

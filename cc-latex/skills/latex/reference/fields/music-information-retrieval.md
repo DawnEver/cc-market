@@ -61,80 +61,88 @@ qualitative finding, and future work; often an ethics statement (ISMIR) and ackn
 
 ## 2. Sentence templates
 
+Every template obeys rules 1-37: one claim each, no relative clauses or tails, contrasts split, "this paper" as the
+only self-reference, passive or a concrete subject for procedures.
+
 Abstract
 - [Task] is [an important / a widely studied] problem in [field], with uses in [application A] and [application B].
 - Progress on [task] is limited by [obstacle], because [cause].
-- Existing [systems/datasets] [do not capture X / are small in scope], so models trained on them [consequence].
-- In this paper, we [propose / present] [name], a [type] that [core mechanism].
-- We evaluate [name] on [dataset(s)] against [baseline].
-- Experiments show that [intervention] [improves / matches] [metric family] relative to [baseline].
+- Existing [systems/datasets] [omit X / hold only [size] of annotated data].
+- This paper [proposes / presents] [name], a [type] with [core mechanism].
+- [Name] is evaluated on [dataset(s)] against [baseline].
+- [Intervention] [raises / matches] [metric family] relative to [baseline].
 - [Name] reaches [value] [metric] on [test set], compared with [value] for [baseline].
 
 Introduction
 - [Umbrella task] estimates [target] from [input] [cite survey].
 - [Specific task] additionally requires [extra output], because [instrument property].
-- This extra information matters for [user group], who [use of the output].
-- [Specific task] has advanced more slowly than [sister task], mainly owing to [obstacle].
-- Datasets with [annotation type], such as [D1] and [D2], contain only [size], so [consequence].
-- We hypothesise that [factor] improves [property] of [model class].
-- Our contributions are: (1) [artefact]; (2) [method]; (3) [evaluation showing claim].
+- [User group] apply this extra information to [use of the output].
+- Results on [specific task] trail those on [sister task], mainly owing to [obstacle].
+- Datasets with [annotation type], such as [D1] and [D2], contain only [size].
+- This paper tests the hypothesis of [factor] improving [property] of [model class].
+- This paper provides [artefact] and [method] for [task].
 - The [dataset/code] is released at [URL] under [licence].
 
 Related work
-- [Author] et al. [cite] [proposed / introduced] [system], which [key idea].
-- [Approach family] [improves X] but [limitation relevant to this paper].
+- [Author] et al. [cite] introduced [system] with [key idea].
+- [Approach family] [raises X] on [condition] [cite].
+- In contrast, [metric Y] of [approach family] drops on [condition relevant to this paper].
 - This paper extends [prior system] by [change].
 
 Method
-- Given [input representation] of [length], the model predicts [output] for each [frame/string].
-- We reformulate [component] as [new formulation], so that [property] can be enforced.
+- For [input representation] of [length], the network outputs [output] for each [frame/string].
+- [Component] is reformulated as [new formulation] to enforce [property].
 - The [loss] penalises [event], weighted by [quantity estimated from data].
-- [Component] follows [prior work] [cite], except that [difference].
+- [Component] follows [prior work] [cite] except for [difference].
 
 Experiments
-- To evaluate [claim], we train [model] on [data] and test it on [held-out data].
-- [Dataset] [cite] comprises [size] of [content], annotated by [procedure].
-- Following [cite], we use [k]-fold cross-validation split by [player/session].
-- We report [metric list] computed with [toolkit] [cite], at [frame/note] level.
-- We train with [optimiser] at a learning rate of [value] for [iterations].
-- In the ablation, we change one design choice at a time: [list].
+- To evaluate [claim], [model] is trained on [data] and tested on [held-out data].
+- [Dataset] [cite] comprises [size] of [content] with [procedure] annotations.
+- Following [cite], the data are split by [player/session] for [k]-fold cross-validation.
+- [Metric list] are computed with [toolkit] [cite] at [frame/note] level.
+- [Model] is trained with [optimiser] at a learning rate of [value] for [iterations].
+- In the ablation, one design choice is changed at a time: [list].
 
 Results
-- Table [n] lists [metrics] for [models]; [model] scores highest on [metric].
-- [Model A] and [Model B] perform comparably on [in-domain set], but differ on [out-of-domain set].
-- Removing [component] lowers [metric] by [value] points, the largest drop among the ablations.
-- The gain comes mainly from [recall/precision], which suggests that [interpretation].
-- This difference may be due to [cause]; [test] would separate the two explanations.
+- [Model] scores highest on [metric] in Table [n].
+- [Model A] and [Model B] score within [value] points of each other on [in-domain set].
+- In contrast, on [out-of-domain set] [Model A] exceeds [Model B] by [value] points.
+- Without [component], [metric] falls by [value] points.
+- The gain comes mainly from [recall/precision].
+- This difference is likely due to [cause].
 
 Conclusion
 - This paper [presented / proposed] [name] for [task].
 - [Intervention] [improved / did not change] [property], in particular on [condition].
-- Future work will [extend to X / study parameter Y / test on Z].
+- Future work concerns [extension to X / parameter Y / tests on Z].
 
 ## 3. Conventions
 
-- **"We"**: first person plural throughout, also by single authors; "this paper" and "this work" alternate
-  freely. Passive voice appears in dataset descriptions.
-- **Tense**: present for the method and what tables show; past for experiments run; present perfect in conclusions
-  ("we have shown").
-- **Contribution bullets**: numbered lists or inline "(1) ... (2) ..." in about half the papers; dataset papers
-  list artefacts (dataset, augmentation strategy, baseline results).
-- **Hedging**: moderate; "likely", "could be due to", "preliminary results", "we hypothesise". Novelty claims use
-  "to the best of our knowledge, the first ..." (3/11) and "first large-scale ...".
+Descriptive counts of field practice; a habit marked "(avoid: rule N)" is looser than cc-latex and is not adopted.
+
+- **Self-reference**: first person plural throughout, also by single authors (avoid: rule 17); "this paper" and
+  "this work" alternate freely (avoid: rule 17). Passive voice appears in dataset descriptions.
+- **Tense**: present for the method and what tables show; past for experiments run; present perfect in conclusions.
+- **Contribution bullets**: numbered lists or inline "(1) ... (2) ..." in about half the papers (avoid: rules 7, 24);
+  dataset papers list artefacts (dataset, augmentation strategy, baseline results).
+- **Hedging**: moderate; "likely", "could be due to", "preliminary results", stated hypotheses. Novelty claims with
+  "to the best of our knowledge, the first ..." (3/11) and "first large-scale ..." (avoid: rule 23).
 - **Gap statements**: almost always data scarcity or a missing output dimension (techniques, strings, continuous
-  pitch), stated as limitation of existing datasets/systems, often with "However,".
-- **Metrics and baselines**: precision, recall, F1 at frame and note level; tablature-specific metrics (TDR);
-  baseline is a public reference model; percentages or 0-1 values with bold best; mean +/- std over seeds only in
-  the newest papers; significance tests rare.
+  pitch), stated as limitation of existing datasets/systems, often opened with "However," (avoid: project ruling,
+  rule 36).
+- **Metrics and baselines**: precision, recall, F1 at frame and note level; tablature-specific metrics (TDR, abbreviated:
+  avoid: rule 14 in tables); baseline is a public reference model; percentages or 0-1 values with bold best;
+  mean +/- std over seeds only in the newest papers; significance tests rare.
 - **Ablations**: one design choice removed or swapped at a time, reported in the main table and ranked in prose.
 - **Dataset description**: hours, number of tracks/players, recording hardware, annotation procedure, split, licence;
   summary table and distribution figures (pitch, tempo, technique counts).
 - **Numbers in abstract**: mostly absent in ICASSP/ISMIR abstracts (direction only); present in dataset sizes
-  ("5.9 hours") and in the less disciplined papers (long numeric abstracts).
-- **Acronyms**: heavy (AMT, MIR, MPE, GTT, AGT); systems and datasets get a capitalised acronym name.
+  ("5.9 hours") and in the less disciplined papers (long numeric abstracts; avoid: rule 15).
+- **Acronyms**: heavy (AMT, MIR, MPE, GTT, AGT); systems and datasets get a capitalised acronym name (avoid acronyms
+  for descriptive coinages: rule 16).
 - **Reproducibility**: code and data links in footnotes; ISMIR adds an ethics statement.
 
-## 4. Divergences from cc-latex rules 1-37 (reported, not resolved)
+## 4. Field habits looser than cc-latex (avoid; the rule holds, rule 38)
 
 - Rule 7 / 24: numbered contribution lists in the introduction are a field norm; a separate section roadmap is
   usually absent in short papers.
