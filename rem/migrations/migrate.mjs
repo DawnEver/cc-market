@@ -9,20 +9,17 @@
 //   - The retired generated indexes are deleted: every `.claude/rules/MEMORY.md` (it loaded on
 //     every turn and nothing rebuilds it), every `.claude/meta/` copy, and a child scope's
 //     `memory-index.md`. attic/, output/ and .claude/worktrees/ are never touched.
-//   - The device-local state drops `scopes` and turns a crystallize `declinedAt` count into the
-//     permanent `declined: true`.
+//   - The device-local state drops the retired `scopes` and `crystallize` keys.
 //   - The retired per-repo session bindings (`<ledger>/.bindings/<session>.json`) move ONCE into the machine
 //     home's session store, `state/sessions/<session>.json`, naming the ledger they were found in (D34,
 //     scripts/session-binding.mjs); the old files and their directory are deleted. Readers never read the old store.
-//   - Reported, never acted on here: legacy checkbox files (adopt them with `todo.js adopt`;
-//     the originals stay byte-identical) and HANDOFF-/PLAN-/DECISIONS- files (they stay as
-//     history; a live one becomes a task only when the USER opens it).
+//   - Reported, never acted on here: HANDOFF-/PLAN-/DECISIONS- files (they stay as history; a
+//     live one becomes a task only when the USER opens it).
 //   node migrate.mjs [--dry-run] [<root>]   prints the plan as JSON; --dry-run writes nothing.
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, rmdirSync } from 'fs';
 import { join, resolve, dirname, posix } from 'path';
 import { spawnSync } from 'child_process';
 import { isMain } from '../shared/lib.mjs';
-import { parseLegacyItems } from '../scripts/todo-lib.mjs';
 import { mainCheckout, tasksDir } from '../scripts/tasks.mjs';
 import { migrateRetiredBindings } from '../scripts/session-binding.mjs';
 
@@ -145,21 +142,17 @@ const stateFileOf = root => join(root, '.claude', '.rem-state.json');
 function migratedState(root) {
   let state;
   try { state = JSON.parse(readFileSync(stateFileOf(root), 'utf8')); } catch { return null; }
-  const declinedAt = state.crystallize?.declinedAt;
-  if (!('scopes' in state) && declinedAt === undefined) return null;
-  const { scopes: _retired, ...rest } = state;
-  if (declinedAt !== undefined) rest.crystallize = { declined: true };
+  if (!('scopes' in state) && !('crystallize' in state)) return null;
+  const { scopes: _scopes, crystallize: _crystallize, ...rest } = state;
   return rest;
 }
 
 export function planMigration(root) {
-  const plan = { gitignore: missingIgnores(root), strip: [], legacyTodos: [], classified: [], moves: [], deletes: [], state: false };
+  const plan = { gitignore: missingIgnores(root), strip: [], classified: [], moves: [], deletes: [], state: false };
   for (const rel of memoryFiles(root)) {
     const text = readFileSync(join(root, rel), 'utf8');
     const { fields } = stripVolatile(text);
     if (fields.length) plan.strip.push({ path: rel, fields });
-    const items = parseLegacyItems(text);
-    if (items.length) plan.legacyTodos.push({ path: rel, open: items.filter(i => i.open).length, closed: items.filter(i => !i.open).length });
     const prefix = rel.split('/').pop().match(CLASSED_RE)?.[1];
     if (prefix) plan.classified.push({ path: rel, prefix });
   }
@@ -226,7 +219,7 @@ export async function migrate(projectRoot, { dryRun = false } = {}) {
   const state = migratedState(projectRoot);
   if (state) {
     writeFileSync(stateFileOf(projectRoot), JSON.stringify(state, null, 2) + '\n', 'utf8');
-    summary.push('state: scopes dropped; a crystallize decline is now permanent');
+    summary.push('state: the retired scopes and crystallize keys dropped');
   }
   const bindings = migrateRetiredBindings(mainCheckout(projectRoot), tasksDir(projectRoot));
   const settled = bindings.moved.length + bindings.dropped.length;

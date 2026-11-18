@@ -143,21 +143,17 @@ describe('no memory entry is ever deleted', () => {
     assert.match('fs.rmSync(dir, { recursive: true });', DELETES);
   });
 
-  // The named removers: todo-lib's removeBacklogItem (a closed .claude/todo/ item, after its
-  // archive exists in memory), guarded by its own path check below; and the one-time migration,
-  // which removes only retired generated indexes and a child-scope copy byte-identical to its
-  // root entry (held by migrations.test.mjs); and session-binding's one-shot migration, which
-  // removes a retired binding record (not a memory entry) only after its session file holds it.
-  const ALLOWED = new Set(['scripts/todo-lib.mjs', 'migrations/migrate.mjs', 'scripts/session-binding.mjs']);
+  // The named removers: the one-time migration, which removes only retired generated indexes and a
+  // child-scope copy byte-identical to its root entry (held by migrations.test.mjs); and
+  // session-binding's one-shot migration, which removes a retired binding record (not a memory
+  // entry) only after its session file holds it.
+  const ALLOWED = new Set(['migrations/migrate.mjs', 'scripts/session-binding.mjs']);
 
   it('no rem script, hook or migration calls a file-removing API, except the named ones', () => {
     const offenders = sources(REM)
       .filter(f => DELETES.test(fs.readFileSync(f, 'utf8')))
       .map(f => path.relative(REM, f).replace(/\\/g, '/'));
     assert.deepEqual(offenders.filter(f => !ALLOWED.has(f)), []);
-    const text = fs.readFileSync(path.join(REM, 'scripts', 'todo-lib.mjs'), 'utf8');
-    assert.equal(text.match(/unlinkSync\(/g).length, 1, 'todo-lib removes in exactly one place');
-    assert.match(text, /function removeBacklogItem\(file\) \{\n {2}if \(!\/.*todo.*\.test\(file\)\) throw/);
     const migrate = fs.readFileSync(path.join(REM, 'migrations', 'migrate.mjs'), 'utf8');
     assert.equal(migrate.match(/\brmSync\(|'rm', '-q'/g).length, 2, 'migrate removes plan.deletes only, in one loop');
     const binding = fs.readFileSync(path.join(REM, 'scripts', 'session-binding.mjs'), 'utf8');

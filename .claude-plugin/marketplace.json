@@ -33,7 +33,7 @@
       "name": "rem",
       "source": "./rem",
       "displayName": "REM",
-      "description": "REM sleep for Claude sessions â€” consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
+      "description": "REM sleep for Claude sessions â€” consolidate learnings into memory that converges without deletion: read-only recall, a derived index, task journals. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
       "author": {
         "name": "Mingyang Bao"
       },

@@ -26,9 +26,7 @@ never a delete (`closeTask()`).
 
 ## One backlog, no checkboxes in memory
 
-A task's open items are journal lines; a repo backlog item is an issue (`.claude/rem.json`
-`{"backlog": "issues"}` makes `todo.js` a read-only view) or one `.claude/todo/<id>.md` file, archived
-into memory when closed (written whole, O_EXCL; only then does the `.claude/todo/` item go). Nothing writes a checkbox or a status into a memory entry.
+A task's open items are journal lines; a repo backlog item is an issue in the repo's tracker. Nothing writes a checkbox or a status into a memory entry.
 
 ## Hook pending-work gate
 
