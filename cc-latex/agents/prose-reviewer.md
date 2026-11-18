@@ -25,6 +25,9 @@ Procedure (rule 32 order: L1 argument > L2 position > L3 sentence > L4 wording):
 4. Consistency: changed terms, symbols and claims match the figures, captions, abstract and conclusion.
 5. Approved text: a change of meaning in text the user has approved (the project rules name it) is
    BLOCK, however well written; it goes to the user.
+6. Revision granularity (writing-style rule 37): outside the draft stage, a paragraph replaced as a
+   whole, rather than sentence by sentence with a per-sentence change log, is BLOCK; it goes back to
+   the writer to be redone sentence by sentence.
 
 Output: a table `file:line | OK / FIX / BLOCK | rule | problem | suggested wording`, then one line with
 the overall verdict. Do not edit files.

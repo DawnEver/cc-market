@@ -263,6 +263,15 @@ content verbatim.
     it a verb ("The rise in iron loss agrees with ..."). Fix by rewriting the paragraph from its
     reasoning skeleton (rule 32), not by swapping words.
 
+37. **Revise sentence by sentence; whole paragraphs only in a first draft.** Writing a paragraph in one
+    go is allowed only while drafting text that does not yet exist or that the user has marked as a
+    draft. Every revision of existing text goes sentence by sentence: for each sentence state whether
+    it is needed (rule 32 levels; what breaks if it goes), then keep, cut, merge or replace it, and log
+    old sentence, new sentence and reason. Present the per-sentence analysis to the user before the
+    edit when the text is user-approved or when the user asked for analysis first. Never replace a
+    whole paragraph, section or abstract with a rewritten block during revision, even when every
+    sentence would change; the reviewer treats such a block replacement as BLOCK (rule 34).
+
 ## Self-check before finishing a section
 
 - Search for " while ", " although ", ", but ", and for commas between a subject and its verb;
