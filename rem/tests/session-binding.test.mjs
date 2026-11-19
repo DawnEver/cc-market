@@ -59,6 +59,23 @@ describe('the machine home value holds on every machine (D41)', () => {
     assert.equal(machineHome({ [HOME_ENV]: abs }), abs);
     assert.equal(machineHome({ [HOME_ENV]: '~x/.y' }), '~x/.y', 'PLANTED CONTROL: only a bare leading ~ expands');
   });
+
+  it('falls back to ~/.claude/settings.json env.LAB_COMMONS_HOME on non-Claude hosts (Codex, Antigravity)', () => {
+    const fakeUser = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-u-'));
+    fs.mkdirSync(path.join(fakeUser, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(fakeUser, '.claude', 'settings.json'), JSON.stringify({ env: { [HOME_ENV]: '~/.motronics-test' } }));
+    const savedHome = process.env.LAB_COMMONS_HOME;
+    const savedCfg = process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.LAB_COMMONS_HOME;
+    process.env.CLAUDE_CONFIG_DIR = path.join(fakeUser, '.claude');
+    try {
+      assert.equal(path.resolve(machineHome(process.env)), path.join(os.homedir(), '.motronics-test'));
+    } finally {
+      if (savedHome !== undefined) process.env.LAB_COMMONS_HOME = savedHome;
+      if (savedCfg !== undefined) process.env.CLAUDE_CONFIG_DIR = savedCfg; else delete process.env.CLAUDE_CONFIG_DIR;
+      fs.rmSync(fakeUser, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the cross-language fixture (byte-identical in dev-lab tests/_rem_fixtures/)', () => {
