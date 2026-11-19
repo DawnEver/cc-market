@@ -15,6 +15,7 @@ import {
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 import { VERBS, helpText } from './task-verbs.mjs';
+import { keptEventsText } from './feed-events.mjs';
 
 const PREFIX = '[task]';
 // Retired verbs, each refused naming why and what replaced it (every wall teaches).
@@ -101,6 +102,8 @@ export function main(argv) {
     const task = readTask(cwd, slug);
     if (!task) throw new Error(`no task ${slug}`);
     console.log(taskStatus(task, distill ? { undistilled: distillStatus(cwd, slug).undistilled } : {}));
+    const kept = keptEventsText(slug);
+    if (kept) console.log(kept);
   } else if (verb === 'show') {
     const slug = args[0] || bound(args);
     const dir = readTask(cwd, slug)?.dir || findArchivedTask(cwd, slug);
