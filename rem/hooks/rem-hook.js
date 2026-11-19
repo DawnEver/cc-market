@@ -3,7 +3,8 @@
 // Requests REM after 3+ stops AND sufficient session age; requests are not completion.
 // State tracked in unified .claude/.rem-state.json
 
-import { stateFile } from "../scripts/lib.mjs";
+import { join } from 'node:path';
+import { stateFile, findProjectRoot } from "../scripts/lib.mjs";
 import { withStateLock } from '../shared/state.mjs';
 import { normalizeHookFacts, isCodexHost, hookSessionKey, hasRemReservation, isAgyHost, normalizeHookInput, hookOutput, emitHookOutput } from '../shared/hook-facts.mjs';
 import { fileURLToPath } from 'node:url';
@@ -167,10 +168,13 @@ if (isMain(import.meta)) {
   if (host === 'agy' && raw.terminationReason && raw.terminationReason !== 'NO_TOOL_CALL') allow();
   else {
     const now = Date.now();
+    const targetState = typeof input.cwd === 'string' && input.cwd
+      ? join(findProjectRoot(input.cwd), '.claude', '.rem-state.json')
+      : stateFile;
     let result;
     let saved;
     try {
-      saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw', timeoutMs: STATE_LOCK_WAIT_MS });
+      saved = withStateLock(targetState, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw', timeoutMs: STATE_LOCK_WAIT_MS });
     } catch { saved = null; }
     if (!saved?.persisted) allow();
     else {
