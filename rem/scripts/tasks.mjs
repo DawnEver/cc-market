@@ -109,8 +109,7 @@ export function readTask(start, slug) {
   const file = taskFile(start, slug);
   if (!SLUG_RE.test(slug) || !existsSync(file)) return null;
   const { fields } = parseFrontmatter(readFileSync(file, 'utf8'));
-  const journal = existsSync(journalFile(start, slug)) ? readFileSync(journalFile(start, slug), 'utf8') : '';
-  const { decisions, items } = parseJournal(journal);
+  const { decisions, items } = parseJournal(journalText(join(tasksDir(start), slug)));
   return {
     slug,
     goal: (fields.description || '').replace(/^"|"$/g, ''),
@@ -126,6 +125,102 @@ export function readTask(start, slug) {
     openItems: items.filter(i => i.open),
     dir: join(tasksDir(start), slug),
   };
+}
+
+// ── Chapters: the journal's older lines, moved verbatim by `task.js distill` ──
+// <task>/chapters/<date>.md holds that date's lines; chapters/distilled.md holds decisions an agent's plan
+// distilled, each followed by its pointer. Every Dn/On keeps its id: the whole journal is the chapters
+// (oldest first) followed by JOURNAL.md, so numbering, items and lookups read one record.
+export const CHAPTERS = 'chapters';
+export const DISTILLED = 'distilled.md';
+export const KEEP_DECISIONS = 3;
+const DAY_MS = 86400000;
+function chapterFiles(dir) {
+  const at = join(dir, CHAPTERS);
+  if (!existsSync(at)) return [];
+  return readdirSync(at).filter(f => f.endsWith('.md')).sort().map(f => join(at, f));
+}
+export function journalText(dir) {
+  const read = f => { try { return readFileSync(f, 'utf8'); } catch { return ''; } };
+  return [...chapterFiles(dir), join(dir, 'JOURNAL.md')].map(read).join('\n');
+}
+
+// Where decision Dn lives now: JOURNAL.md, chapters/<date>.md, or chapters/distilled.md (with its pointer).
+export function findDecision(start, slug, n) {
+  const dir = join(tasksDir(start), slug);
+  for (const file of [join(dir, 'JOURNAL.md'), ...chapterFiles(dir)]) {
+    let lines;
+    try { lines = readFileSync(file, 'utf8').split(/\r?\n/); } catch { continue; }
+    const i = lines.findIndex(l => l.match(LINE_RE)?.[3] === String(n));
+    if (i < 0) continue;
+    return { file, line: lines[i], pointer: lines[i + 1]?.match(/^ {2}-> (.*)$/)?.[1] ?? null };
+  }
+  return null;
+}
+
+// MECHANICAL distill, deterministic: every JOURNAL.md line dated before `before` (default: `keepDays` before
+// `date`) moves verbatim to chapters/<its date>.md, except the `opened` line, the open line of a still-open
+// item and the newest `keep` decisions. It judges nothing; distillByPlan applies an agent's judgment.
+export function distillJournal(start, slug, { keep = KEEP_DECISIONS, keepDays = 14, before, date = todayISO() } = {}) {
+  const cut = before || new Date(Date.parse(date) - keepDays * DAY_MS).toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cut)) throw new Error(`--before needs YYYY-MM-DD, got ${cut}`);
+  if (!Number.isInteger(keep) || keep < 0) throw new Error(`--keep needs a whole number of decisions, got ${keep}`);
+  return withLock(journalFile(start, slug), () => {
+    const task = readTask(start, slug);
+    if (!task) throw new Error(`no task ${slug}`);
+    const open = new Set(task.openItems.map(i => i.n));
+    const live = new Set(keep ? task.decisions.slice(-keep).map(d => d.n) : []);
+    const stays = [], moved = new Map();
+    for (const line of readFileSync(journalFile(start, slug), 'utf8').split(/\r?\n/)) {
+      const m = line.match(LINE_RE);
+      const held = !m || m[1] >= cut || m[2] === 'opened' || (m[3] && live.has(Number(m[3])))
+        || (m[5] === 'open' && open.has(Number(m[4])));
+      if (held) { stays.push(line); continue; }
+      if (!moved.has(m[1])) moved.set(m[1], []);
+      moved.get(m[1]).push(line);
+    }
+    const dir = join(task.dir, CHAPTERS);
+    if (moved.size) mkdirSync(dir, { recursive: true });
+    for (const [day, lines] of moved) appendFileSync(join(dir, `${day}.md`), lines.join('\n') + '\n', 'utf8');
+    atomicWriteFile(journalFile(start, slug), stays.join('\n'));
+    const n = [...moved.values()].reduce((a, l) => a + l.length, 0);
+    return `moved ${n} line(s) dated before ${cut} into ${moved.size} chapter(s) under ${dir}`;
+  });
+}
+
+// SEMANTIC distill, applied: `plan` is an agent's judgment, {"distill":[{"id":"D12","pointer":"<rule id or memory
+// path>"}]}. Each named decision's line moves verbatim to chapters/distilled.md with its pointer, and JOURNAL.md
+// records the move. Validated first: an unknown id, a missing pointer or a repeat refuses the whole plan by name.
+export function distillByPlan(start, slug, plan, { date = todayISO() } = {}) {
+  const rows = plan?.distill;
+  if (!Array.isArray(rows) || !rows.length) throw new Error('a distill plan is {"distill":[{"id":"D<n>","pointer":"<where it is captured>"}]}');
+  return withLock(journalFile(start, slug), () => {
+    const task = readTask(start, slug);
+    if (!task) throw new Error(`no task ${slug}`);
+    const seen = new Set();
+    const found = rows.map(r => {
+      const n = Number(String(r?.id ?? '').match(/^D(\d+)$/)?.[1]);
+      if (!n || !task.decisions.some(d => d.n === n)) throw new Error(`plan names ${r?.id}, which is no decision of ${slug}`);
+      if (seen.has(n)) throw new Error(`plan names D${n} twice`);
+      seen.add(n);
+      const pointer = String(r.pointer ?? '').trim();
+      if (!pointer || /[\r\n]/.test(pointer)) throw new Error(`plan row D${n} needs a one-line pointer to where it is captured`);
+      const at = findDecision(start, slug, n);
+      if (at.file.endsWith(DISTILLED)) throw new Error(`D${n} is already distilled (-> ${at.pointer})`);
+      return { n, pointer, at };
+    });
+    const dir = join(task.dir, CHAPTERS);
+    mkdirSync(dir, { recursive: true });
+    const byFile = new Map();
+    for (const f of found) { if (!byFile.has(f.at.file)) byFile.set(f.at.file, new Set()); byFile.get(f.at.file).add(f.at.line); }
+    for (const [file, drop] of byFile) {
+      atomicWriteFile(file, readFileSync(file, 'utf8').split(/\r?\n/).filter(l => !drop.has(l)).join('\n'));
+    }
+    appendFileSync(join(dir, DISTILLED), found.map(f => `${f.at.line}\n  -> ${f.pointer}`).join('\n') + '\n', 'utf8');
+    const ids = found.map(f => `D${f.n}`).join(', ');
+    appendJournalLocked(start, slug, 'progress', `distilled ${ids} by plan (${CHAPTERS}/${DISTILLED})`, { date });
+    return `distilled ${ids} into ${join(dir, DISTILLED)}`;
+  });
 }
 
 // ── Progressive disclosure: one line per prompt, status on demand, show for the whole record ──
@@ -149,7 +244,7 @@ export function taskSummary(task) {
 
 // `task.js status` (<= STATUS_BYTES): goal, scope, authority, open items one line each, the
 // newest 3 decisions and the last handoff. `undistilled` (from distillStatus) adds that line.
-export function taskStatus(task, { undistilled } = {}) {
+export function taskStatus(task, { undistilled, decisions: keep = KEEP_DECISIONS } = {}) {
   let journal = '';
   try { journal = readFileSync(join(task.dir, 'JOURNAL.md'), 'utf8'); } catch { /* none yet */ }
   const handoff = journal.split(/\r?\n/).map(l => l.match(LINE_RE)).filter(m => m?.[2] === 'handoff').at(-1);
@@ -159,7 +254,8 @@ export function taskStatus(task, { undistilled } = {}) {
   ];
   const tail = [
     `decisions: ${task.decisions.length}${task.decisions.length ? ', newest:' : ''}`,
-    ...task.decisions.slice(-3).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...task.decisions.slice(keep ? -keep : task.decisions.length).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...(chapterFiles(task.dir).length ? [`older lines: ${join(task.dir, CHAPTERS)} (any Dn: task.js status D<n>)`] : []),
     ...(handoff ? [`last handoff (${handoff[1]}): ${clip(handoff[6], 160)}`] : []),
     ...(undistilled ? [`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`] : []),
     `whole record: task.js show ${task.slug}`,
@@ -169,7 +265,9 @@ export function taskStatus(task, { undistilled } = {}) {
   const render = () => [...head, `open items: ${items.length}`, ...items.slice(0, shown),
     ...(shown < items.length ? [`  +${items.length - shown} more (task.js show ${task.slug})`] : []), ...tail].join('\n');
   while (shown > 0 && Buffer.byteLength(render()) > STATUS_BYTES) shown--;
-  return render();
+  let out = render();
+  while (Buffer.byteLength(out) > STATUS_BYTES) out = out.slice(0, -1); // the cap holds even when the head alone is long
+  return out;
 }
 
 export function listTasks(start) {
@@ -514,6 +612,10 @@ export function distillStatus(start, slug) {
     try { text = readFileSync(file, 'utf8'); } catch { continue; }
     for (const m of text.replace(/\\/g, '/').matchAll(cite)) cited.add(Number(m[1]));
   }
+  // A decision a plan distilled (chapters/distilled.md) names where it is captured: it counts as distilled.
+  try {
+    for (const d of parseJournal(readFileSync(join(task.dir, CHAPTERS, DISTILLED), 'utf8')).decisions) cited.add(d.n);
+  } catch { /* nothing distilled by plan */ }
   return {
     undistilled: task.decisions.map(d => d.n).filter(n => !cited.has(n)),
     openItems: task.openItems.map(i => i.n),

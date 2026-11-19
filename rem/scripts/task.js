@@ -11,7 +11,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, unboundReason, boundCheckout,
+  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, distillJournal, distillByPlan, findDecision, journalText, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, unboundReason, boundCheckout,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 import { VERBS, helpText } from './task-verbs.mjs';
@@ -97,15 +97,42 @@ export function main(argv) {
     for (const t of listTasks(cwd)) {
       console.log(`${t.slug}\t${t.status}\t${t.openItems.length} open\t${t.decisions.length} decisions\t${t.goal}`);
     }
+  } else if (verb === 'distill') {
+    const [slug, at] = bound(args);
+    const plan = flag(args, '--plan');
+    if (plan) {
+      let parsed;
+      try { parsed = JSON.parse(readFileSync(plan, 'utf8')); } catch (e) { throw new Error(`cannot read the plan ${plan}: ${e.message}`); }
+      console.log(`${PREFIX} ${distillByPlan(at, slug, parsed)}`);
+    } else {
+      const keep = flag(args, '--keep');
+      const days = flag(args, '--keep-days');
+      const before = flag(args, '--before');
+      console.log(`${PREFIX} ${distillJournal(at, slug, {
+        ...(keep !== null ? { keep: Number(keep) } : {}), ...(days !== null ? { keepDays: Number(days) } : {}), ...(before ? { before } : {}),
+      })}`);
+    }
   } else if (verb === 'status') {
     const distill = args.includes('--distill');
     const rest = args.filter(a => a !== '--distill');
+    const decisionsFlag = flag(rest, '--decisions');
+    if (rest[0] && /^D\d+$/.test(rest[0])) {
+      const slug = resolveTask(cwd, { task: flag(rest, '--task') });
+      if (!slug) throw new Error(`no task bound to look ${rest[0]} up in: pass --task <slug>`);
+      const hit = findDecision(cwd, slug, Number(rest[0].slice(1)));
+      if (!hit) throw new Error(`${rest[0]} is no decision of ${slug}`);
+      console.log(`${hit.line}\n  in ${hit.file}${hit.pointer ? `\n  -> ${hit.pointer}` : ''}`);
+      return;
+    }
     const named = rest[0] && !rest[0].startsWith('--') ? rest[0] : null;
     const slug = named || resolveTask(cwd, { task: flag(rest, '--task') });
     if (!slug) { console.log(`no task bound: ${unboundReason(cwd)}`); return; }
     const task = readTask(cwd, slug);
     if (!task) throw new Error(`no task ${slug}`);
-    console.log(taskStatus(task, distill ? { undistilled: distillStatus(cwd, slug).undistilled } : {}));
+    console.log(taskStatus(task, {
+      ...(distill ? { undistilled: distillStatus(cwd, slug).undistilled } : {}),
+      ...(decisionsFlag !== null ? { decisions: Number(decisionsFlag) } : {}),
+    }));
     const kept = keptEventsText(slug);
     if (kept) console.log(kept);
   } else if (verb === 'show') {
@@ -113,7 +140,7 @@ export function main(argv) {
     const dir = readTask(cwd, slug)?.dir || findArchivedTask(cwd, slug);
     if (!dir) throw new Error(`no task ${slug}`);
     process.stdout.write(readFileSync(join(dir, 'TASK.md'), 'utf8'));
-    process.stdout.write('\n' + readFileSync(join(dir, 'JOURNAL.md'), 'utf8'));
+    process.stdout.write('\n' + journalText(dir));
   } else if (verb === 'help') {
     console.log(helpText());
   } else if (verb === 'verbs') {

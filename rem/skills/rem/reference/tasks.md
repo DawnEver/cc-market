@@ -8,6 +8,9 @@ replaces state spread over dated memory files. Present only where a repo has
 <main checkout>/.claude/tasks/            the LEDGER: one per repository
   <slug>/TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
   <slug>/JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
+  <slug>/chapters/    older journal lines moved verbatim by `task.js distill` (<date>.md), and decisions an
+                      agent's plan distilled with their pointers (distilled.md); ids never change, and the
+                      journal a verb reads is chapters + JOURNAL.md
 <machine home>/state/sessions/<session>.json   the session's binding — written only by rem's
                                                UserPromptSubmit hook (§ Bind); one per session, every repo
 ```
