@@ -70,7 +70,7 @@ excerpts the saved facts were paid for.
 ```
 rem/
 ├── hooks/          hooks.json + rem-hook.js + task-guard.js + user-prompt.js (task-authority.js + recall) + session-context.js
-├── commands/       task.md (/rem:task, the user's command)
+├── claude-commands/       task.md (/rem:task, the user's command)
 ├── scripts/        lib.mjs, index-memory.js, remember.js, merge-memory.js, task.js, tasks.mjs,
 │                   rem-prep.js, check-docs.js, doc-freshness.js, rules-context.js, recall.js, memo.js, scope-validate.mjs
 ├── skills/         rem/SKILL.md + investigate/SKILL.md + refresh-docs/SKILL.md

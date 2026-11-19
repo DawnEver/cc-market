@@ -2,7 +2,13 @@
 name: takeover
 description: Hand off the current task to another AI model — use when the user wants a different model to take over investigation, debugging, or a substantial coding task
 # model: inherited from session (context-gathering only; remote model selected server-side)
-tools: mcp__plugin_fabric_fabric__call, mcp__plugin_fabric_fabric__list_providers, Bash, Read, Glob, Grep
+tools:
+  - mcp__plugin_fabric_fabric__call
+  - mcp__plugin_fabric_fabric__list_providers
+  - Bash
+  - Read
+  - Glob
+  - Grep
 skills:
   - takeover-result
 ---

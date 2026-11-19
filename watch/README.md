@@ -24,7 +24,7 @@ installs by depending on `lab-commons`. A server gets it the ordinary way.
 
 ```
 project            deploy/supervise.toml + systemd units     the target's own facts
-cc-market/watch    commands/ + skills/ + plugin.json         THIS — Claude-only, zero logic
+cc-market/watch    claude-commands/ + skills/ + plugin.json         THIS — Claude-only, zero logic
 lab_commons        supervise/                                the machine
 ```
 

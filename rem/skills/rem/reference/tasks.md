@@ -36,7 +36,7 @@ and a forge lookup refuse naming it. The verbs and their JSON: `scripts/task-for
 ## Open — refused by default, detectable when bypassed
 
 `/rem:task open <slug> "<goal>" [--scope <paths>] [--owner <who>]` — a user slash command
-(`commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
+(`claude-commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a

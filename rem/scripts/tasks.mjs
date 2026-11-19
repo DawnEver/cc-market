@@ -64,7 +64,7 @@ export function tasksDir(start) {
 }
 
 // The environment keys a native harness names its session id in, as a git hook run inside that session sees it.
-export const SESSION_ENV = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'];
+export const SESSION_ENV = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'ANTIGRAVITY_CONVERSATION_ID'];
 // A session id is a plain id, never a path: it names the binding file.
 const SESSION_RE = /^[A-Za-z0-9._-]{1,128}$/;
 // The user's binding prompt: its FIRST line is exactly `task: <slug>`.
