@@ -4,7 +4,7 @@ description: Sharp review — methodological rigor + reproducibility. Hidden ass
 angle: methodology
 router: takeover-codex
 allowed-tools: "Read,Glob,Grep,Write,WebFetch,WebSearch,Skill"
-model: sonnet
+model: inherit
 ---
 
 # Reviewer — Methodology + Reproducibility

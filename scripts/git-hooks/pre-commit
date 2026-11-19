@@ -23,7 +23,7 @@ node scripts/check-public-hygiene.mjs --staged
 # Host-project artifacts (.claude/rules/, a project AGENTS.md) ARE injected at runtime and
 # are fine; this regex only flags deferrals to a bare AGENTS/CLAUDE doc.
 runtime_re='(AGENTS|CLAUDE)\.md[[:space:]]*§|→[[:space:]]*(AGENTS|CLAUDE)'
-runtime_re_file='/(skills/[^/]+/(SKILL\.md|reference/.*\.md)|commands/.*\.md|prompts/.*\.md|agents/.*\.md)$'
+runtime_re_file='/(agy-skills/[^/]+/SKILL\.md|skills/[^/]+/(SKILL\.md|reference/.*\.md)|(claude-)?commands/.*\.md|prompts/.*\.md|agents/.*\.md)$'
 runtime_violations=""
 while IFS= read -r f; do
   printf '%s\n' "$f" | grep -qE "$runtime_re_file" || continue
@@ -70,7 +70,7 @@ fi
 
 selected=()
 if [ "$run_bundle" -eq 1 ]; then
-  selected+=("tests/bundle-integrity.test.mjs" "tests/gen-codex.test.mjs")
+  selected+=("tests/bundle-integrity.test.mjs" "tests/gen-codex.test.mjs" "tests/gen-agy.test.mjs")
 fi
 # shared/ owns the canonical modules bundled into every plugin — run its own suite when touched.
 { has shared || has tests; } && selected+=("shared/tests/*.test.mjs")

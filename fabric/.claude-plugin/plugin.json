@@ -6,9 +6,9 @@
     "name": "Mingyang Bao"
   },
   "commands": [
-    "./commands/continue.md",
-    "./commands/models.md",
-    "./commands/handoff.md"
+    "./claude-commands/continue.md",
+    "./claude-commands/models.md",
+    "./claude-commands/handoff.md"
   ],
   "codexInterface": {
     "defaultPrompt": [

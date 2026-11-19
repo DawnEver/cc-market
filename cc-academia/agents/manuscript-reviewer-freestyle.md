@@ -4,7 +4,7 @@ description: Sharp review — wildcard. Invent a fresh angle the standard review
 angle: freestyle
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write"
-model: sonnet
+model: inherit
 ---
 
 # Reviewer — Freestyle

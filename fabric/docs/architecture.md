@@ -27,7 +27,7 @@ fabric/
 │   │                        wrapper), callers (codex/API adapters), trace
 │   └── codex/{review,image}.mjs  L1 codex policy: adversarial review · image gen/edit
 ├── prompts/{task,review}.md L1 system prompts (mode → prompt)
-├── commands/                L2: continue.md · models.md · handoff.md
+├── claude-commands/                L2: continue.md · models.md · handoff.md
 ├── agents/takeover.md       L2: handoff subagent (context-gather → one call)
 ├── skills/                  L2: takeover-result (verbatim) · codex-image-result (SAVED paths)
 ├── tests/                   node:test suites

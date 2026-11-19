@@ -4,7 +4,7 @@ description: Sharp review — significance. Stress-test the increment over prior
 angle: significance
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write,WebFetch,WebSearch"
-model: sonnet
+model: inherit
 ---
 
 # Reviewer — Significance: Increment, Takeaway, Generality

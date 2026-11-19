@@ -13,7 +13,7 @@
 //
 // Layering: L0 mechanism = engine/ (providers, spawn-child, ai-lab-call, codex,
 // observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
-// shaping, <command> parsing, result shaping). L2 ergonomics = commands/
+// shaping, <command> parsing, result shaping). L2 ergonomics = claude-commands/
 // skills/agents. This file wires L1 onto L0.
 
 import { fileURLToPath } from "node:url";

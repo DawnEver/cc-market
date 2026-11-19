@@ -5,6 +5,7 @@
   "author": {
     "name": "Mingyang Bao"
   },
+  "commands": "./claude-commands/",
   "keywords": [
     "rem",
     "memory",

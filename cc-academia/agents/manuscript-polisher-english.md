@@ -2,7 +2,7 @@
 name: manuscript-polisher-english
 description: Polish a rough user draft into publishable English reviewer comments — plain text, venue-review register
 allowed-tools: "Read,Write"
-model: sonnet
+model: inherit
 ---
 
 # Polisher — English Reviewer Comments

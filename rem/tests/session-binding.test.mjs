@@ -33,7 +33,7 @@ function repo(name) {
   return root;
 }
 
-const env = () => ({ ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME, CLAUDE_CODE_SESSION_ID: '', CODEX_THREAD_ID: '' });
+const env = () => ({ ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME, CLAUDE_CODE_SESSION_ID: '', CODEX_THREAD_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '' });
 const prompt = (root, text) => spawnSync(process.execPath, [HOOK], {
   input: JSON.stringify({ prompt: text, cwd: root, session_id: SESSION, hook_event_name: 'UserPromptSubmit' }),
   encoding: 'utf8', env: env(),

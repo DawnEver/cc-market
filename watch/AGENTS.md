@@ -8,7 +8,7 @@ now lives in `lab_commons.supervise`, a tier-2 subpackage of the family's shared
 
 ```
 project            deploy/supervise.toml, systemd units        the target's own facts
-cc-market/watch    commands/, skills/, plugin.json             THIS — Claude-only, zero logic
+cc-market/watch    claude-commands/, skills/, plugin.json             THIS — Claude-only, zero logic
 lab_commons        supervise/                                  the machine
 lab_commons        log, paths, proc, liveness, resources       the foundation
 ```
@@ -24,7 +24,7 @@ family's, and it admitted three separate state stores with two spellings of the 
 
 | Path | What |
 |---|---|
-| `commands/{check,watch,setup}.md` | The three user-facing verbs |
+| `claude-commands/{check,watch,setup}.md` | The three user-facing verbs |
 | `skills/watch/SKILL.md` | The decision tree over the library's output |
 | `.claude-plugin/plugin.json` | Plugin manifest |
 
@@ -47,6 +47,6 @@ the daemon and the AI loop each carried their own copy of the remedy chain.
 
 ## Invariants
 
-- **Config decides, not the command.** A rule restated in a `commands/*.md` is a second copy of it.
+- **Config decides, not the command.** A rule restated in a `claude-commands/*.md` is a second copy of it.
 - **`config/` is gitignored in this family.** A target's supervision config goes in `deploy/`.
 - **Nothing here starts a daemon.** Supervision runs under systemd on the target's host.

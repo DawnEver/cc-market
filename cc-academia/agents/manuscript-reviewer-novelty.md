@@ -4,7 +4,7 @@ description: Sharp review — novelty + related-work coverage. Stress-test wheth
 angle: novelty
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write,WebFetch,WebSearch"
-model: sonnet
+model: inherit
 ---
 
 # Reviewer — Novelty + Related Work

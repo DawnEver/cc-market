@@ -4,7 +4,7 @@ description: Sharp review — experimental adequacy + data distributions + figur
 angle: experiments
 router: sonnet-vision
 allowed-tools: "Read,Glob,Grep,Write"
-model: sonnet
+model: inherit
 ---
 
 # Reviewer — Experiments + Figures + Writing

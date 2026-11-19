@@ -102,14 +102,17 @@ export function createStdioServer({
 
   async function handleRpcRequest(req, transport = LINE) {
     const { id, method, params = {} } = req;
+    if (id === undefined) return;
     try {
       switch (method) {
         case "initialize":
           return send({ jsonrpc: "2.0", id, result: { protocolVersion: params.protocolVersion || "2024-11-05", capabilities: { tools: {} }, serverInfo } }, transport);
         case "ping":
           return send({ jsonrpc: "2.0", id, result: {} }, transport);
-        case "notifications/initialized":
-          return;
+        case "resources/list":
+          return send({ jsonrpc: "2.0", id, result: { resources: [] } }, transport);
+        case "prompts/list":
+          return send({ jsonrpc: "2.0", id, result: { prompts: [] } }, transport);
         case "tools/list":
           return send({ jsonrpc: "2.0", id, result: { tools } }, transport);
         case "tools/call":
