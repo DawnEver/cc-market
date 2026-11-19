@@ -177,6 +177,7 @@ describe('binding', () => {
     assert.equal(readSessionBinding(root, { session: '../s-1' }), null, 'a session id is never a path');
     assert.equal(sessionOf({ CLAUDE_CODE_SESSION_ID: 's-1' }), 's-1');
     assert.equal(sessionOf({ CODEX_THREAD_ID: 't-1' }), 't-1');
+    assert.equal(sessionOf({ ANTIGRAVITY_CONVERSATION_ID: 'c-1' }), 'c-1');
     assert.equal(sessionOf({}), '');
     assert.deepEqual(listTasks(root).map(t => t.slug), ['feature-x'], 'the bindings directory is not a task');
   });
@@ -245,7 +246,7 @@ describe('an agent opening a task is refused', () => {
   });
 
   it('the /rem:task command is user-only and runs task.js', () => {
-    const text = fs.readFileSync(path.join(REM, 'commands', 'task.md'), 'utf8');
+    const text = fs.readFileSync(path.join(REM, 'claude-commands', 'task.md'), 'utf8');
     assert.match(text, /^disable-model-invocation: true$/m);
     assert.match(text, /!`node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/task\.js" \$ARGUMENTS`/);
   });
@@ -268,7 +269,7 @@ describe('the ledger is repo state, one place for every worktree (cc-market #20)
   };
   const runAs = (root, session, ...args) => spawnSync(process.execPath, [TASK, ...args], {
     cwd: root, encoding: 'utf8',
-    env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, CODEX_THREAD_ID: '', CLAUDE_PROJECT_DIR: root },
+    env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, CODEX_THREAD_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', CLAUDE_PROJECT_DIR: root },
   });
 
   it('a task opened in worktree A is resolved, bound and journaled from worktree B', () => {
@@ -402,7 +403,7 @@ describe('progressive disclosure', () => {
   });
 
   it('no doc restates the journal verb list or names a retired verb', () => {
-    const docs = ['README.md', 'AGENTS.md', 'commands/task.md', 'docs/architecture.md',
+    const docs = ['README.md', 'AGENTS.md', 'claude-commands/task.md', 'docs/architecture.md',
       'skills/rem/reference/tasks.md', 'skills/rem/reference/scripts.md'];
     for (const doc of docs) {
       const text = fs.readFileSync(path.join(REM, doc), 'utf8');

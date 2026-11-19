@@ -6,9 +6,9 @@
     "name": "Mingyang Bao"
   },
   "commands": [
-    "./commands/watch.md",
-    "./commands/check.md",
-    "./commands/setup.md"
+    "./claude-commands/watch.md",
+    "./claude-commands/check.md",
+    "./claude-commands/setup.md"
   ],
   "keywords": [
     "watch",

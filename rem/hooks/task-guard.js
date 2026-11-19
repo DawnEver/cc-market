@@ -25,6 +25,7 @@
 // File tools are refused when they write a TASK.md / JOURNAL.md or the authority store.
 
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
+import { isAgyHost, normalizeHookInput, hookOutput, emitHookOutput } from '../shared/hook-facts.mjs';
 import { join } from 'path';
 import { verbsOf } from '../scripts/task-verbs.mjs';
 import { machineHome } from '../scripts/session-binding.mjs';
@@ -236,10 +237,8 @@ function judgeCommandLine(command, cwd, depth) {
 if (isMain(import.meta.url)) {
   let payload = {};
   try { payload = readStdinJSON() || {}; } catch { /* no payload: allow */ }
+  const host = isAgyHost(payload) ? 'agy' : 'claude';
+  payload = normalizeHookInput(payload);
   const decision = decideTaskGuard(payload);
-  if (decision.deny) {
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: decision.reason },
-    }));
-  }
+  emitHookOutput(hookOutput({ host, event: 'PreToolUse', kind: decision.deny ? 'deny' : 'none', reason: decision.reason || '' }));
 }

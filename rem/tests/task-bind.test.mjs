@@ -18,7 +18,7 @@ const REM = fileURLToPath(new URL('..', import.meta.url));
 const HOOK = path.join(REM, 'hooks', 'user-prompt.js');
 const TASK = path.join(REM, 'scripts', 'task.js');
 const NATIVE_KEYS = ['CLAUDE_PLUGIN_ROOT', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_SESSION_ID', 'CODEX_HOME', 'CODEX_SANDBOX',
-  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'HARNESS_AGENT'];
+  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'HARNESS_AGENT', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'PLUGIN_ROOT'];
 
 // The process environment with no harness identity of its own, plus `extra`.
 function envWith(extra = {}) {
@@ -171,5 +171,31 @@ describe('a Codex session binds under its own thread', () => {
     const codex = envWith({ CODEX_HOME: path.join(TEST_HOME, '.codex') });
     prompt(root, 'task: feature-x', { session_id: 'parent-session', transcript_path: `/x/rollout-2026-11-16T10-00-00-${thread}.jsonl` }, codex);
     assert.ok(fs.existsSync(bindingFile(root, thread)));
+  });
+
+  it('an Antigravity PreInvocation prompt strips <USER_REQUEST> and binds conversationId', () => {
+    const root = repo();
+    const authority = open(root, 'feature-x');
+    const r = spawnSync(process.execPath, [HOOK, '--host', 'agy'], {
+      input: JSON.stringify({
+        conversationId: 'agy-conv-1',
+        hookEventName: 'PreInvocation',
+        workspacePaths: [root],
+        lastUserInput: '<USER_REQUEST>\ntask: feature-x\nimplement it\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\n{}\n</ADDITIONAL_METADATA>',
+      }),
+      encoding: 'utf8',
+      env: envWith({ ANTIGRAVITY_CONVERSATION_ID: 'agy-conv-1', ANTIGRAVITY_AGENT: '1' }),
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.match(out.injectSteps[0].systemMessage.systemMessage, new RegExp(`task feature-x@${authority}`));
+    const record = JSON.parse(fs.readFileSync(bindingFile(root, 'agy-conv-1'), 'utf8'));
+    assert.deepEqual([record.session, record.task], ['agy-conv-1', `feature-x@${authority}`]);
+    const second = spawnSync(process.execPath, [HOOK, '--host', 'agy'], {
+      input: JSON.stringify({ conversationId: 'agy-conv-1', hookEventName: 'PreInvocation', invocationNum: 1, workspacePaths: [root], lastUserInput: 'next' }),
+      encoding: 'utf8',
+      env: envWith({ ANTIGRAVITY_CONVERSATION_ID: 'agy-conv-1', ANTIGRAVITY_AGENT: '1' }),
+    });
+    assert.equal(second.stdout, '{}');
   });
 });
