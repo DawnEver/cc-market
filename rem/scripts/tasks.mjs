@@ -25,7 +25,8 @@ import { atomicWriteFile } from '../shared/atomic-write.mjs';
 import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
-import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
+import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, recordLedger, knownLedgers, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
+import { forgeCommand, findTaskIssues, openTaskIssue, closeTaskIssue, issueNumber, label } from './task-forge.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -116,6 +117,7 @@ export function readTask(start, slug) {
     status: fields.status || 'open',
     opened_by: fields.opened_by || null,
     authority: fields.authority || null,
+    issue: fields.issue || null,
     owner: fields.owner || null,
     created: fields.created || null,
     scope: (fields.scope || '').split(',').map(s => s.trim()).filter(Boolean),
@@ -203,19 +205,127 @@ export function parseBindPrompt(prompt) {
   return String(prompt || '').match(BIND_PROMPT_RE)?.[1] ?? null;
 }
 
-// Bind `session` to the OPEN task `slug` of the ledger at `start`: write its one binding file and return the task
-// id `<slug>@<authority>`. Called only by the UserPromptSubmit hook, on the USER's prompt. Throws naming the door
-// when the task is not open with a user authority, or the session id is not a plain id.
-export function bindSession(start, session, slug) {
+// Bind `session` to the OPEN task `slug`: write its one binding file naming the ledger the task was FOUND in
+// (findTaskForBinding), never the cwd's, and return the task id `<slug>@<authority>`. Called only by the
+// UserPromptSubmit hook, on the USER's prompt. A session started in repo Y so binds a task hosted in repo X
+// (D88, cc-market #44). Throws naming the door otherwise.
+export function bindSession(start, session, slug, { env = process.env, date = todayISO() } = {}) {
   if (!SESSION_RE.test(String(session || ''))) throw new Error('the harness named no plain session id to bind');
-  const task = readTask(start, slug);
-  if (task?.status !== 'open' || !task.authority) {
-    throw new Error(`no open task ${slug} in the ledger (${tasksDir(start)}). `
-      + `Door: the user opens it with /rem:task open ${slug} "<goal>", then binds with \`task: ${slug}\``);
-  }
+  const { checkout, task } = findTaskForBinding(start, slug, { env, date });
   const id = `${slug}@${task.authority}`;
-  writeBinding(session, id, ledgerOf(mainCheckout(start), tasksDir(start)));
+  writeBinding(session, id, ledgerOf(checkout, tasksDir(checkout)), env);
   return id;
+}
+
+const ledgerCheckout = path => String(path).replace(/\\/g, '/').match(/^(.*)\/\.claude\/tasks\/?$/)?.[1] ?? null;
+const pathKey = p => { const t = String(p).replace(/\\/g, '/').replace(/\/+$/, ''); return /^(win32|darwin)$/.test(process.platform) ? t.toLowerCase() : t; };
+
+// This machine's known main checkouts: `start`'s first, then every checkout whose ledger the machine home records
+// (recordLedger, at open and adopt) or a session binding names, each once. Nothing is guessed.
+export function knownCheckouts(start, env = process.env) {
+  const seen = new Map();
+  const add = c => { if (!seen.has(pathKey(c))) seen.set(pathKey(c), c); };
+  add(mainCheckout(start));
+  let paths = [];
+  try { paths = knownLedgers(env); } catch { /* no machine home: this repo only */ }
+  for (const checkout of paths.map(ledgerCheckout)) if (checkout && existsSync(checkout)) add(checkout);
+  return [...seen.values()];
+}
+
+// Record the ledger of `checkout` in the machine home so other repos' sessions find its tasks. No machine home:
+// nothing to record into, and binding from this repo itself still works (its cwd is always searched first).
+function recordHere(checkout, env = process.env) {
+  try { recordLedger(ledgerOf(checkout, tasksDir(checkout)), env); } catch { /* HOME_DOOR is named where a binding needs it */ }
+}
+
+// Where `task: <slug>` finds its task: {checkout, task}. This repo's ledger first; then this machine's other known
+// ledgers; then the task:<slug> issue on each known repo's forge -- an OPEN one is adopted into that repo's ledger
+// here (adoptTask). Refused by name, each with its door: a task not open, a closed issue, more than one open issue,
+// no forge door, or nothing anywhere.
+export function findTaskForBinding(start, slug, { env = process.env, date = todayISO() } = {}) {
+  if (!SLUG_RE.test(String(slug || ''))) throw new Error(`a task slug is kebab-case, got ${slug}`);
+  const checkouts = knownCheckouts(start, env);
+  const shut = [];
+  for (const checkout of checkouts) {
+    const task = readTask(checkout, slug);
+    if (task?.status === 'open' && task.authority) return { checkout, task };
+    if (task) shut.push(`${task.dir} (${task.status})`);
+  }
+  const ledgers = checkouts.map(c => tasksDir(c)).join(', ');
+  if (shut.length) {
+    throw new Error(`task ${slug} is not open here: ${shut.join('; ')}. Door: the user opens a new task with `
+      + '/rem:task open <slug> "<goal>"');
+  }
+  try { forgeCommand(env); } catch (unset) {
+    throw new Error(`no task ${slug} in this machine's ledgers (${ledgers}), and its forge issue cannot be looked up: ${unset.message}`);
+  }
+  for (const checkout of checkouts) {
+    const issues = findTaskIssues(checkout, slug, env);
+    const open = issues.filter(i => String(i.state).toLowerCase() === 'open');
+    if (open.length > 1) {
+      throw new Error(`the forge of ${checkout} holds ${open.length} open ${label(slug)} issues (${open.map(i => i.url).join(', ')}); `
+        + 'a task is ONE issue. Door: the user closes the duplicates, then binds again');
+    }
+    if (open.length) return { checkout, task: adoptTask(checkout, slug, open[0], { date }) };
+    shut.push(...issues.map(i => i.url));
+  }
+  if (shut.length) {
+    throw new Error(`task ${slug} was closed: its issue (${shut.join(', ')}) is not open. Door: the user opens a new `
+      + 'task with /rem:task open <slug> "<goal>"');
+  }
+  throw new Error(`no task ${slug}: no ledger of this machine holds it (${ledgers}) and no ${label(slug)} issue is on `
+    + `the forge of ${checkouts.join(', ')}. Door: the user opens it with /rem:task open ${slug} "<goal>" in the repo `
+    + `that hosts it, then binds with \`task: ${slug}\``);
+}
+
+// This machine's ledger of a task whose identity is the open forge issue `issue` (D88): TASK.md names the issue as
+// `issue:` and takes it as its authority (`issue-<n>`); the journal records the adoption. The user's `task:` prompt
+// is what adopts it; the issue, opened under the user's authority on the host that opened it, is the task's.
+export function adoptTask(checkout, slug, issue, { date = todayISO() } = {}) {
+  const goal = String(issue.title || '').replace(/^task:\s*[a-z0-9-]+\s*(?:--\s*)?/, '').replace(/[\r\n]+/g, ' ').trim() || slug;
+  mkdirSync(join(tasksDir(checkout), slug), { recursive: true });
+  writeFileSync(taskFile(checkout, slug),
+    taskHead(slug, goal, { authority: `issue-${issue.number}`, issue: issue.url, owner: 'user', date }), { flag: 'wx' });
+  appendJournal(checkout, slug, 'opened', `${goal} (adopted on this machine from ${issue.url})`, { date, allowClosed: true });
+  recordHere(checkout);
+  return readTask(checkout, slug);
+}
+
+function taskHead(slug, goal, { authority, issue, owner, date, scope = [] }) {
+  return [
+    '---',
+    `name: ${slug}`,
+    `description: ${JSON.stringify(goal)}`,
+    'kind: task',
+    `task: ${slug}`,
+    'opened_by: user',
+    `authority: ${authority}`,
+    `issue: ${issue}`,
+    `owner: ${owner}`,
+    `created: ${date}`,
+    'status: open',
+    ...(scope.length ? [`scope: ${scope.join(', ')}`] : []),
+    '---',
+    '',
+    `# ${slug}`,
+    '',
+    `Goal: ${goal}`,
+    '',
+    `Identity: ${issue} -- every machine's ledger of this task journals this one issue.`,
+    '',
+    'Progress, decisions (Dn), open items (On) and handoffs are in JOURNAL.md (append-only).',
+    '',
+  ].join('\n');
+}
+
+// The main checkout of the ledger `session` is bound to when that is another repo's than `start`'s; else null.
+// A session started in repo Y and bound to a task of repo X runs that task's journal verbs against X's ledger.
+export function boundCheckout(start, { session = sessionOf() } = {}) {
+  if (!session || !SESSION_RE.test(session)) return null;
+  const bound = readBinding(session);
+  if (!bound || sameLedger(bound.ledger, tasksDir(start))) return null;
+  const checkout = ledgerCheckout(bound.ledger);
+  return checkout && existsSync(checkout) ? checkout : null;
 }
 
 // The binding of `session` (default: this process's) as bindSession wrote it -- one file in the machine
@@ -262,30 +372,13 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
   assertLanguage(start, goal, 'the task goal');
   if (existsSync(taskFile(start, slug))) throw new Error(`task ${slug} exists`);
+  forgeCommand(); // the identity is a forge issue: no forge door, nothing opens (checked before the authority is spent)
   const authority = consumeAuthority(start, 'open', slug); // the user's /rem:task prompt grants it
+  const issue = openTaskIssue(mainCheckout(start), slug, goal);
   mkdirSync(join(tasksDir(start), slug), { recursive: true });
-  writeFileSync(taskFile(start, slug), [
-    '---',
-    `name: ${slug}`,
-    `description: ${JSON.stringify(goal)}`,
-    'kind: task',
-    `task: ${slug}`,
-    'opened_by: user',
-    `authority: ${authority}`,
-    `owner: ${owner}`,
-    `created: ${date}`,
-    'status: open',
-    ...(scope.length ? [`scope: ${scope.join(', ')}`] : []),
-    '---',
-    '',
-    `# ${slug}`,
-    '',
-    `Goal: ${goal}`,
-    '',
-    'Progress, decisions (Dn), open items (On) and handoffs are in JOURNAL.md (append-only).',
-    '',
-  ].join('\n'), { flag: 'wx' });
+  writeFileSync(taskFile(start, slug), taskHead(slug, goal, { authority, issue: issue.url, owner, date, scope }), { flag: 'wx' });
   appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
+  recordHere(mainCheckout(start));
 }
 
 // Append ONE line. O_APPEND: earlier bytes are never rewritten. The read that numbers the line
@@ -449,7 +542,9 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
   const line = `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`;
   if (/[\r\n]/.test(line)) throw new Error('a close reason is one line');
+  if (task.issue) forgeCommand(); // its identity closes with it: no forge door, the task stays open
   const authority = consumeAuthority(start, 'close', slug); // the user's /rem:task prompt grants it
+  if (task.issue) closeTaskIssue(mainCheckout(start), issueNumber(task.issue));
 
   appendJournal(start, slug, 'closed', `${line} (authority ${authority})`, { date });
   setTaskStatus(start, slug, 'closed');

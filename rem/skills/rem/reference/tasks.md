@@ -19,6 +19,17 @@ checkout's `.claude/tasks/`, the same directory from every worktree. A task open
 is found, bound, journaled and admitted from every other. The ledger is never committed on a
 feature branch; `close` archives a task into the closing tree's memory, which is committed.
 
+**A task's identity is ONE forge issue** (D88, cc-market #44): labelled `task:<slug>` on the forge of
+the repo that hosts the task. `open` opens it and records its URL as `issue:` in `TASK.md`; `close`
+closes it. A ledger is one machine's journal of that identity, so two machines' ledgers of one task
+name the same issue. `task: <slug>` looks in this repo's ledger, then in this machine's other ledgers
+(recorded in `<machine home>/state/ledgers/`, and those session bindings name), then for the open
+`task:<slug>` issue on those repos' forges, which it adopts into a ledger here (`authority: issue-<n>`);
+the binding names the ledger the task was FOUND in, so a session started in repo Y binds a task of repo
+X, and its journal verbs write there. rem reaches the forge through ONE door, `REM_FORGE` (a JSON argv
+prefix of the family's forge CLI, written by `python -m dev_lab.dev.remhome --install`); unset, `open`
+and a forge lookup refuse naming it. The verbs and their JSON: `scripts/task-forge.mjs`.
+
 ## Open — refused by default, detectable when bypassed
 
 `/rem:task open <slug> "<goal>" [--scope <paths>] [--owner <who>]` — a user slash command
@@ -90,7 +101,7 @@ git-side gate (another tool's pre-push hook) reads it and never writes it:
   `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex (the executing thread, never
   a parent's id);
 - valid only while `<ledger>/<slug>/TASK.md` has frontmatter `status: open` and the same
-  `authority: <authority>`; anything else binds nothing. rem's own journal verbs act only in that ledger's repo.
+  `authority: <authority>`; anything else binds nothing. rem's own journal verbs act in that ledger, from any repo.
 - the retired per-repo store `<ledger>/.bindings/<session>.json` is never read: `migrations/migrate.mjs
   <main checkout>` moves its records ONCE (a second run is a no-op), and a record still there is refused by
   name with that migration.

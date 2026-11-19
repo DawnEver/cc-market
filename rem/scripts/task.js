@@ -11,7 +11,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, unboundReason,
+  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, unboundReason, boundCheckout,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 import { VERBS, helpText } from './task-verbs.mjs';
@@ -33,10 +33,14 @@ function flag(args, name) {
   return v ?? null;
 }
 
+// The task a journal verb acts on and the checkout whose ledger holds it: --task in this repo, else the session's
+// binding -- in this repo's ledger, or in the ledger of the repo the user bound it in (a task hosted elsewhere, D88).
 function bound(args) {
-  const slug = resolveTask(cwd, { task: flag(args, '--task') });
-  if (!slug) throw new Error(`no open task is bound: pass --task <slug>, or ${unboundReason(cwd)}`);
-  return slug;
+  const task = flag(args, '--task');
+  const at = task ? cwd : boundCheckout(cwd) || cwd;
+  const slug = resolveTask(at, { task });
+  if (!slug) throw new Error(`no open task is bound: pass --task <slug>, or ${unboundReason(at)}`);
+  return [slug, at];
 }
 
 const usage = verb => new Error(`usage: task.js ${verb} ${VERBS.find(v => v.verb === verb).args}`);
@@ -58,7 +62,7 @@ export function main(argv) {
     const owner = flag(args, '--owner') || 'user';
     const [slug, ...goal] = args;
     openTask(cwd, slug, goal.join(' '), { scope, owner });
-    console.log(`${PREFIX} opened ${slug} → ${join(tasksDir(cwd), slug)} (the ledger every worktree reads)`);
+    console.log(`${PREFIX} opened ${slug} → ${join(tasksDir(cwd), slug)} (the ledger every worktree reads); its identity: ${readTask(cwd, slug).issue}`);
     console.log(`${PREFIX} to work on it, bind a session with a prompt whose first line is \`task: ${slug}\`; `
       + `its branches are pr/${slug}/<feature>, never a bare pr/${slug}`);
   } else if (verb === 'close') {
@@ -67,24 +71,24 @@ export function main(argv) {
     const dest = closeTask(cwd, slug, reason.join(' '), { journalOnly });
     console.log(`${PREFIX} closed ${slug}; archived to ${dest}`);
   } else if (JOURNAL_VERBS[verb]) {
-    const slug = bound(args);
-    console.log(appendJournal(cwd, slug, JOURNAL_VERBS[verb], args.join(' ')));
+    const [slug, at] = bound(args);
+    console.log(appendJournal(at, slug, JOURNAL_VERBS[verb], args.join(' ')));
   } else if (verb === 'close-item') {
-    const slug = bound(args);
+    const [slug, at] = bound(args);
     const [item, ...how] = args;
-    console.log(appendJournal(cwd, slug, `close-item:${item}`, how.join(' ') || 'done'));
+    console.log(appendJournal(at, slug, `close-item:${item}`, how.join(' ') || 'done'));
   } else if (verb === 'translate') {
-    const slug = bound(args);
+    const [slug, at] = bound(args);
     const n = flag(args, '--line');
     if (!n || args.length !== 1) throw usage(verb);
-    console.log(translateJournalLine(cwd, slug, n, args[0]));
+    console.log(translateJournalLine(at, slug, n, args[0]));
   } else if (verb === 'amend') {
-    const slug = bound(args);
+    const [slug, at] = bound(args);
     const n = flag(args, '--line');
     const reason = flag(args, '--reason');
     const approved = flag(args, '--approved');
     if (!n || args.length !== 1) throw usage(verb);
-    console.log(amendJournalLine(cwd, slug, n, args[0], { reason, approved }));
+    console.log(amendJournalLine(at, slug, n, args[0], { reason, approved }));
   } else if (verb === 'place') {
     const [slug] = args;
     if (!slug) throw usage(verb);
