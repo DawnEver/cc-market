@@ -63,7 +63,7 @@ const DEFAULT_MAX_LIGHT_CONCURRENCY = sanitizeConcurrency(process.env.FABRIC_MCP
 // introspection is microseconds and gets its own pool, so it can never sit in the queue
 // behind a wedged model call (sharp-review SR-050).
 export const LIGHTWEIGHT_TOOLS = new Set([
-  "list_providers", "resolve_model", "codex_status",
+  "list_providers", "resolve_model", "codex_status", "agy_status",
 ]);
 
 /**

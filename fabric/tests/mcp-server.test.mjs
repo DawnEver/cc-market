@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
-  API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
+  API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, AGY_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
 } from "../scripts/mcp-server.mjs";
 import { providerCacheFixture, fixtureKeySource } from "./fixtures/provider-cache.mjs";
 import { _setKeySource } from "../engine/providers.mjs";
@@ -61,7 +61,7 @@ function runServer(input) {
 describe("TOOLS registry", () => {
   test("registers the expected tool names", () => {
     assert.deepEqual(TOOLS.map((t) => t.name).sort(),
-      ["call", "codex_status", "fan_out", "list_providers", "resolve_model"]);
+      ["agy_status", "call", "codex_status", "fan_out", "list_providers", "resolve_model"]);
   });
 
   test("call schema: prompt required, mode enum, options present", () => {
@@ -127,6 +127,8 @@ describe("call primitive", () => {
   test("rejects image modes for non-codex providers", async () => {
     await assert.rejects(() => handleCall({ provider: "claude", prompt: "x", mode: "image-generate" }),
       (e) => e.kind === "unsupported" && /not supported for provider/.test(e.message));
+    await assert.rejects(() => handleCall({ provider: "agy", prompt: "x", mode: "image-generate" }),
+      (e) => e.kind === "unsupported" && /not supported for provider/.test(e.message));
     // API provider: fixture keeps this hermetic (no host claude_env_settings.json needed).
     await withConfigFixture(ACME_FIXTURE, () =>
       assert.rejects(() => handleCall({ provider: "acme", prompt: "x", mode: "image-generate" }), /not supported for provider/));
@@ -136,6 +138,7 @@ describe("call primitive", () => {
     assert.equal(typeof API_DISPATCH.review, "function");
     assert.equal(typeof CLAUDE_DISPATCH.review, "function");
     assert.equal(typeof CODEX_DISPATCH.review, "function");
+    assert.equal(typeof AGY_DISPATCH.review, "function");
   });
 
   test("parses provider + mode from <command> block", async () => {
@@ -213,10 +216,32 @@ describe("fan_out", () => {
 // ── introspection ────────────────────────────────────────────────────
 
 describe("introspection tools", () => {
-  test("list_providers lists claude + codex", async () => {
+  test("list_providers lists claude + codex + agy", async () => {
     const res = await handleToolCall("list_providers", {});
     assert.match(text(res), /claude/);
     assert.match(text(res), /codex/);
+    assert.match(text(res), /agy/);
+  });
+
+  test("resolve_model treats agy as native", async () => {
+    const res = await handleToolCall("resolve_model", { provider: "agy", model: "sonnet" });
+    assert.match(text(res), /agy is native/);
+  });
+
+  test("agy_status formats install, auth, and models", async () => {
+    const res = await handleToolCall("agy_status", { agyPath: "/bin/agy" }, {
+      checkAgyStatus: (p) => ({
+        installed: true,
+        path: p,
+        version: "1.5.12",
+        authenticated: true,
+        models: [{ id: "gemini-4-carbon-low", displayName: "Gemini 4 Carbon (Low)" }],
+      }),
+    });
+    assert.match(text(res), /Installed: true/);
+    assert.match(text(res), /Version: 1\.5\.12/);
+    assert.match(text(res), /Authenticated: true/);
+    assert.match(text(res), /Models \(1\): gemini-4-carbon-low/);
   });
 
   test("unknown tool throws", async () => {
@@ -309,6 +334,34 @@ describe("call options reach every path", () => {
       assert.equal(path.resolve(requests.find((r) => r.method === "thread/start").params.cwd), path.resolve("C:/work"));
     });
   }
+
+  for (const mode of ["task", "review", "agent"]) {
+    test(`agy ${mode}: model, write, cwd and timeoutMs reach spawnAgyP`, async () => {
+      let seenPrompt, seenOpts;
+      const fakeSpawnAgy = async (p, o) => {
+        seenPrompt = p;
+        seenOpts = o;
+        return { content: [{ type: "text", text: "from agy" }], usage: { total_tokens: 42 } };
+      };
+      const res = await handleCall({
+        provider: "agy", mode, model: "gemini-4-carbon-low", write: mode !== "review",
+        prompt: "inspect it", cwd: "C:/work", timeoutMs: 4321, resultMode: "full",
+      }, { spawnAgy: fakeSpawnAgy });
+      assert.equal(text(res), "from agy");
+      assert.match(seenPrompt, /inspect it$/);
+      assert.equal(seenOpts.model, "gemini-4-carbon-low");
+      assert.equal(seenOpts.write, mode !== "review");
+      assert.equal(seenOpts.cwd, "C:/work");
+      assert.equal(seenOpts.timeoutMs, 4321);
+    });
+  }
+
+  test("agy observe:true is refused as unsupported", async () => {
+    await assert.rejects(
+      () => handleCall({ provider: "agy", prompt: "p", observe: true }),
+      (e) => e.kind === "unsupported" && /observe mode is not supported for provider "agy"/.test(e.message),
+    );
+  });
 });
 
 // ── summariser / synthesiser: configuration, default NONE ───────────

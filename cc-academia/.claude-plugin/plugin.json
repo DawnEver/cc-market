@@ -6,6 +6,17 @@
     "name": "Mingyang Bao"
   },
   "commands": "./claude-commands/",
+  "agents": [
+    "./claude-agents/abstract-screener.md",
+    "./claude-agents/manuscript-polisher-english.md",
+    "./claude-agents/manuscript-reviewer-experiments.md",
+    "./claude-agents/manuscript-reviewer-freestyle.md",
+    "./claude-agents/manuscript-reviewer-methodology.md",
+    "./claude-agents/manuscript-reviewer-novelty.md",
+    "./claude-agents/manuscript-reviewer-significance.md",
+    "./claude-agents/paper-reader.md",
+    "./claude-agents/query-reviewer.md"
+  ],
   "keywords": [
     "literature-review",
     "peer-review",

@@ -2,13 +2,14 @@
 // `agy` CLI is on PATH) `agy plugin validate` with only the known Claude-layout warnings.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import {
   generate, translateMatcher, translateCommand, transpileHooks, transpileMcp, transpileManifest,
-  commandSkill, GENERATED_MARK,
+  transpileAgent, commandSkill, GENERATED_MARK,
 } from '../scripts/gen-agy.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,6 +45,41 @@ describe('gen-agy mapping', () => {
     assert.deepEqual(mcp.mcpServers.s, { command: 'node', args: ['./m.mjs', '.'], cwd: '.' });
     assert.equal(transpileManifest({ name: 'watch', version: '1.0.0' }).disabled, true);
     assert.equal(transpileManifest({ name: 'rem', version: '1.0.0' }).disabled, undefined);
+  });
+
+  it('transpiles Claude agent model tiers (haiku→flash, sonnet→inherit, opus→pro) and enforces manifest agents list', () => {
+    const sonnetOut = transpileAgent('---\nname: rev\ndescription: r\nmodel: sonnet\n---\n\n# Body\n');
+    assert.match(sonnetOut, /\nmodel: inherit\n/);
+    assert.ok(sonnetOut.includes(GENERATED_MARK));
+    assert.ok(sonnetOut.endsWith('# Body\n'));
+
+    assert.match(transpileAgent('---\nname: a\ndescription: d\nmodel: haiku\n---\nbody\n'), /\nmodel: flash\n/);
+    assert.match(transpileAgent('---\nname: a\ndescription: d\nmodel: opus\n---\nbody\n'), /\nmodel: pro\n/);
+    assert.throws(() => transpileAgent('---\nname: a\ndescription: d\nmodel: bogus\n---\nbody\n', 'test/a.md'), /no agy tier mapping/);
+
+    // Verify cc-academia keeps model: sonnet in claude-agents/ while generated agents/ uses model: inherit
+    const claudePolisher = readFileSync(join(ROOT, 'cc-academia', 'claude-agents', 'manuscript-polisher-english.md'), 'utf8');
+    const agyPolisher = readFileSync(join(ROOT, 'cc-academia', 'agents', 'manuscript-polisher-english.md'), 'utf8');
+    assert.match(claudePolisher, /^model:\s*sonnet$/m);
+    assert.match(agyPolisher, /^model:\s*inherit$/m);
+
+    // Guard: if claude-agents/ exists without matching .claude-plugin/plugin.json "agents" array, generate() fails closed
+    const tmp = mkdtempSync(join(tmpdir(), 'gen-agy-agents-'));
+    try {
+      mkdirSync(join(tmp, '.claude-plugin'), { recursive: true });
+      writeFileSync(join(tmp, '.claude-plugin', 'marketplace.json'), JSON.stringify({
+        name: 'm', plugins: [{ name: 'p' }],
+      }));
+      mkdirSync(join(tmp, 'p', '.claude-plugin'), { recursive: true });
+      mkdirSync(join(tmp, 'p', 'claude-agents'), { recursive: true });
+      writeFileSync(join(tmp, 'p', 'claude-agents', 'x.md'), '---\nname: x\ndescription: d\nmodel: sonnet\n---\nb\n');
+      writeFileSync(join(tmp, 'p', '.claude-plugin', 'plugin.json'), JSON.stringify({
+        name: 'p', version: '1.0.0', description: 'd', author: { name: 'a' },
+      }));
+      assert.throws(() => generate(tmp, { write: false }), /"agents" must list every file in claude-agents/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('wraps a command as a skill keeping its body', () => {

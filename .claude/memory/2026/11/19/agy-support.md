@@ -12,12 +12,17 @@ metadata:
 - `<plugin>/hooks.json` (ROOT — agy reads only that for native plugins) — named hook per plugin, `node ./hooks/x.js --host agy`. Events: PreToolUse matchers mapped (`CLAUDE_TO_AGY_TOOLS` in shared/hook-facts.mjs), UserPromptSubmit -> PreInvocation, PostCompact dropped, SessionStart/Stop kept.
 - `<plugin>/mcp_config.json` — `.mcp.json` with relative paths + `cwd: "."`.
 - `<plugin>/agy-skills/<cmd>/SKILL.md` — one skill per Claude command (agy plugins have no commands). The manifest `skills` path is loaded IN ADDITION to `skills/`, so Claude/Codex never see these. Name collides with a real skill -> `-command` suffix (watch).
-- Agents need nothing: agy loads `agents/*.md` natively.
+- `<plugin>/agents/<name>.md` — when a plugin authors Claude-tier agents in `claude-agents/*.md` (and declares `"agents": [...]` in `.claude-plugin/plugin.json` so Claude Code loads only `claude-agents/`), `gen-agy.mjs` generates agy-valid `agents/*.md` mapping `haiku->flash`, `sonnet->inherit`, `opus->pro`. Plugins whose agents use `inherit` or omit `model` keep `agents/*.md` directly.
 
 ## Source-layout changes forced by agy's validator
 - `commands/` -> `claude-commands/` (a `commands/` dir is an agy warning); Claude manifests point there.
-- Agent `tools:` comma-strings -> YAML lists (agy errors on strings; Claude documents both). `model: sonnet` -> `model: inherit` (agy rejects Claude tiers): the cc-academia reviewers now run on the session model in Claude too.
+- Agent `tools:` comma-strings -> YAML lists (agy errors on strings; Claude documents both). `cc-academia/claude-agents/*.md` keeps `model: sonnet` for Claude Code while `gen-agy.mjs` emits `cc-academia/agents/*.md` with `model: inherit` (agy ignores manifest `agents` and always scans `./agents/*.md`, rejecting Claude shorthand tiers).
 - `agy plugin validate --strict` cannot pass on the shared layout: per-plugin AGENTS.md, `hooks/hooks.json`, `.mcp.json` stay as warnings. The test asserts 0 errors and only those warnings.
+
+## Fabric `agy` host provider
+- `HOST_PROVIDERS` in `fabric/engine/providers.mjs` includes `agy` (`callable: claude, codex, agy, ...`).
+- `fabric/engine/agy/discovery.mjs` resolves `agy` (`AGY_CLI_PATH` / PATH / standard install dirs) and checks install + `agy models` auth (`agy_status` MCP tool, lightweight pool).
+- `fabric/scripts/lib/agy.mjs` (`spawnAgyP`) drives `agy -p`: single-line short prompts use `--output-format json -p <prompt>`; multi-line/long/image prompts use `--input-format stream-json --output-format stream-json -p ""` over stdin (`{"event":"user","message":{"role":"user","content":"..."}}`) to stay clear of the Windows 32 KB command-line cap; read-only calls pass `--mode plan --sandbox`, `write: true` passes `--dangerously-skip-permissions`, and child env strips `PROVIDER_ENV_KEYS` and sets `CC_CONFIG_AGY_SMOKE=1` + `CC_CONFIG_AGY_PRINT=1`.
 
 ## Hook runtime (shared/hook-facts.mjs)
 - `isAgyHost` (`--host agy`, camelCase payload keys, `ANTIGRAVITY_CONVERSATION_ID` / `ANTIGRAVITY_AGENT=1`, or `PLUGIN_ROOT` without `CLAUDE_PLUGIN_ROOT`), `normalizeHookInput` (toolCall -> tool_name/tool_input with Claude names/arg keys, cwd = workspacePaths[0], `<USER_REQUEST>` envelope stripped from `lastUserInput`, continuationActive -> stop_hook_active, fullyIdle:false -> background_tasks), `hookSessionKey` = conversationId || ANTIGRAVITY_CONVERSATION_ID, agy transcript steps (USER_INPUT / PLANNER_RESPONSE.tool_calls, double-encoded args) in `normalizeHookFacts`.

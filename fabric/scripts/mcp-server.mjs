@@ -9,9 +9,9 @@
 //                      is one call; "many" is the caller making N calls (fan-out is the
 //                      orchestrator's job, not a tool's).
 //   - fan_out        : N calls in parallel, compact JSON + optional synthesis.
-//   - list_providers / resolve_model / codex_status : introspection.
+//   - list_providers / resolve_model / codex_status / agy_status : introspection.
 //
-// Layering: L0 mechanism = engine/ (providers, spawn-child, ai-lab-call, codex,
+// Layering: L0 mechanism = engine/ (providers, spawn-child, ai-lab-call, codex, agy,
 // observe). L1 policy = scripts/lib + scripts/codex + prompts (modes, prompt
 // shaping, <command> parsing, result shaping). L2 ergonomics = claude-commands/
 // skills/agents. This file wires L1 onto L0.
@@ -31,7 +31,9 @@ import {
   parseCommandBlock,
   callCodexCompanion,
   spawnClaudeP,
+  spawnAgyP,
   checkCodexStatus,
+  checkAgyStatus,
   ConfigError,
   ProviderError,
 } from "./lib.mjs";
@@ -60,7 +62,7 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", description: "claude, codex, or a provider of the ai-lab catalogue (list_providers)" },
+        provider: { type: "string", description: "claude, codex, agy, or a provider of the ai-lab catalogue (list_providers)" },
         model: { type: "string", description: "Model override" },
         task: { type: "string", description: "Key task of an API provider (its credential: api-key-<task>). Default: default" },
         mode: {
@@ -68,7 +70,7 @@ export const TOOLS = [
           enum: ["task", "review", "agent", "image-generate", "image-edit"],
           description: "task|review|agent|image-*. Default: task",
         },
-        write: { type: "boolean", description: "Allow file writes (codex only)" },
+        write: { type: "boolean", description: "Allow file writes (codex, agy)" },
         systemPrompt: { type: "string", description: "System prompt override" },
         prompt: { type: "string", description: "Message or task to send" },
         images: {
@@ -83,7 +85,7 @@ export const TOOLS = [
             },
           },
         },
-        observe: { type: "boolean", description: "Capture HTTP traffic to jsonl (non-codex)" },
+        observe: { type: "boolean", description: "Capture HTTP traffic to jsonl (non-codex, non-agy)" },
         cwd: { type: "string", description: "Working dir" },
         timeoutMs: { type: "number", description: "Kill after N ms" },
         resultMode: {
@@ -119,6 +121,14 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: { codexPath: { type: "string", description: "Path to codex binary" } },
+    },
+  },
+  {
+    name: "agy_status",
+    description: "Check Antigravity CLI (agy) install, auth, and available models.",
+    inputSchema: {
+      type: "object",
+      properties: { agyPath: { type: "string", description: "Path to agy binary" } },
     },
   },
   {
@@ -179,12 +189,12 @@ function resolveImages(images) {
 
 function checkImageSizeLimit(resolvedImages, provider, providerConfig) {
   if (provider === "codex" || !providerConfig.native) return; // API providers: ai-lab sends structured images
-  const oversized = resolvedImages.filter((img) => img.data.length > MAX_DATA_URI_BYTES);
+  const oversized = resolvedImages.filter((img) => !img.path && img.data.length > MAX_DATA_URI_BYTES);
   if (oversized.length > 0) {
     const sizes = oversized.map((img) => `${img.path || "image"} (${(img.data.length / 1024).toFixed(0)}KB)`).join(", ");
     throw new ConfigError(
       `Image(s) too large for text-prompt embedding: ${sizes}. Max ${MAX_DATA_URI_BYTES / 1000}KB per image. ` +
-      `Options: (1) pre-resize, (2) use an API provider that supports structured content blocks, (3) use provider=codex.`
+      `Options: (1) pre-resize, (2) pass image file path (agy), (3) use an API provider that supports structured content blocks, (4) use provider=codex.`
     );
   }
 }
@@ -270,6 +280,29 @@ const CODEX_DISPATCH = {
   "image-edit": dispatchCodexImageEdit,
 };
 
+async function dispatchAgyTask({ userPrompt, systemPrompt, model, write, resolvedImages, cwd, timeoutMs, signal, spawnAgy: _spawnAgy = spawnAgyP }) {
+  const hasImages = resolvedImages.length > 0;
+  process.stderr.write(`fabric-mcp: calling agy (${model || "default"})${write ? " [write]" : ""}${hasImages ? ` + ${resolvedImages.length} image(s)` : ""}...\n`);
+  const data = await _spawnAgy(userPrompt, {
+    systemPrompt, model: model || null, write: !!write, images: hasImages ? resolvedImages : null, cwd, timeoutMs, signal,
+  });
+  return { data, resolvedModel: model || "default" };
+}
+
+async function dispatchAgyAgent({ userPrompt, systemPrompt, model, write, resolvedImages, cwd, timeoutMs, signal, spawnAgy: _spawnAgy = spawnAgyP }) {
+  process.stderr.write(`fabric-mcp: agent mode — provider=agy model=${model || "(none)"}\n`);
+  const data = await _spawnAgy(userPrompt, {
+    systemPrompt, model: model || null, write: !!write, images: resolvedImages.length > 0 ? resolvedImages : null, cwd, timeoutMs, signal,
+  });
+  return { data, resolvedModel: model || "default" };
+}
+
+const AGY_DISPATCH = {
+  task: dispatchAgyTask,
+  agent: dispatchAgyAgent,
+  review: dispatchAgyTask,
+};
+
 // The child options every claude -p path forwards: model, key task, cwd, timeoutMs, signal.
 const childOpts = ({ systemPrompt, model, task, resolvedImages, signal, cwd, timeoutMs, spawnChild: _spawnChild }) => ({
   systemPrompt, model: model || null, task, images: resolvedImages.length > 0 ? resolvedImages : null, signal, cwd, timeoutMs, _spawnChild,
@@ -323,7 +356,7 @@ const API_DISPATCH = {
   review: dispatchAPITask,
 };
 
-export { API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH };
+export { API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, AGY_DISPATCH };
 
 // observe path: capture a non-codex child's API traffic. Debug modifier orthogonal to mode —
 // forces the isolated-config harness engine (fabric's spawnChild) behind the observe proxy.
@@ -361,9 +394,12 @@ export async function handleCall(args, deps = {}) {
   if (!provider) throw new ConfigError("provider is required — pass it directly, include --provider <name> in a <command> block, or set fabric.sessionDefaults.provider in claude_env_settings.json");
   if (!userPrompt || !userPrompt.trim()) throw new ConfigError("prompt must be non-empty");
 
-  // observe is a debug modifier: capture raw traffic via the harness engine (non-codex only).
-  if (observe && provider !== "codex") {
+  // observe is a debug modifier: capture raw traffic via the harness engine (Anthropic-HTTP providers only).
+  if (observe && provider !== "codex" && provider !== "agy") {
     return runObserved({ ...args, provider, prompt: userPrompt, model }, deps.spawnChild || spawnChild);
+  }
+  if (observe && provider === "agy") {
+    throw new ProviderError("unsupported", 'observe mode is not supported for provider "agy" (native CLI protocol).');
   }
 
   // Instruction layering (systematic, all providers identical):
@@ -383,17 +419,32 @@ export async function handleCall(args, deps = {}) {
     ? resolvedImages.map((img) => `data:${img.media_type};base64,${img.data}`).join("\n") : "";
 
   const providerConfig = loadProviderConfig(provider);
-  checkImageSizeLimit(resolvedImages, provider, providerConfig);
+  if (provider === "claude") {
+    // For claude -p, even path-sourced images are base64-embedded into stream-json; check size limit on all resolved images.
+    const oversized = resolvedImages.filter((img) => img.data.length > MAX_DATA_URI_BYTES);
+    if (oversized.length > 0) {
+      const sizes = oversized.map((img) => `${img.path || "image"} (${(img.data.length / 1024).toFixed(0)}KB)`).join(", ");
+      throw new ConfigError(
+        `Image(s) too large for text-prompt embedding: ${sizes}. Max ${MAX_DATA_URI_BYTES / 1000}KB per image. ` +
+        `Options: (1) pre-resize, (2) use an API provider that supports structured content blocks, (3) use provider=codex.`
+      );
+    }
+  } else {
+    checkImageSizeLimit(resolvedImages, provider, providerConfig);
+  }
 
   const effectiveMode = mode || "task";
   const common = {
     userPrompt, systemPrompt, provider, model, task: args.task, resolvedImages, cwd: args.cwd, timeoutMs: args.timeoutMs,
-    spawnChild: deps.spawnChild, withCodexClient: deps.withCodexClient || withPooledClient,
+    spawnChild: deps.spawnChild, withCodexClient: deps.withCodexClient || withPooledClient, spawnAgy: deps.spawnAgy,
   };
   let dispatchMap, dispatchContext;
   if (providerConfig.provider === "codex") {
     dispatchMap = CODEX_DISPATCH;
     dispatchContext = { ...common, write, imageURIs };
+  } else if (providerConfig.provider === "agy") {
+    dispatchMap = AGY_DISPATCH;
+    dispatchContext = { ...common, write };
   } else if (providerConfig.native) {
     dispatchMap = CLAUDE_DISPATCH;
     dispatchContext = common;
@@ -427,7 +478,7 @@ export async function handleCall(args, deps = {}) {
 // ── fan_out: the orchestrator's parallel-work primitive ─────────
 
 // Calls in flight at once: fabric.fanOutConcurrency, else this default. Each call may be a
-// whole claude/codex process, so an unbounded fan-out of N tasks is N processes at once.
+// whole claude/codex/agy process, so an unbounded fan-out of N tasks is N processes at once.
 export const FAN_OUT_CONCURRENCY_DEFAULT = 4;
 
 function fanOutConcurrency() {
@@ -532,6 +583,22 @@ export async function handleToolCall(name, args = {}, deps = {}) {
         status.version ? `Version: ${status.version}` : "",
         `Authenticated: ${status.authenticated}`,
         `Pool: ${pool.total}/${pool.size} clients (${pool.idle} idle, ${pool.waiters} waiting)${pool.saturated ? " — SATURATED" : ""}`,
+        status.error ? `Error: ${status.error}` : "",
+      ];
+      return textResult(lines.filter(Boolean).join("\n"));
+    }
+    case "agy_status": {
+      const check = deps.checkAgyStatus || checkAgyStatus;
+      const status = check(args.agyPath || null);
+      const modelSummary = Array.isArray(status.models) && status.models.length
+        ? `Models (${status.models.length}): ${status.models.map((m) => m.id).join(", ")}`
+        : "";
+      const lines = [
+        `Installed: ${status.installed}`,
+        status.path ? `Path: ${status.path}` : "",
+        status.version ? `Version: ${status.version}` : "",
+        `Authenticated: ${status.authenticated}`,
+        modelSummary,
         status.error ? `Error: ${status.error}` : "",
       ];
       return textResult(lines.filter(Boolean).join("\n"));
