@@ -84,11 +84,12 @@ describe('a plugin starts at most one hook process per event', () => {
 // its skill and worker agent stay and run on demand).
 export const SHIPS_NO_HOOKS = ['sharp-review'];
 
-/** Where the plugin at *dir* declares hooks: its hooks/hooks.json and any manifest `hooks` key. */
+/** Where the plugin at *dir* declares hooks: its hooks/hooks.json, root hooks.json, and any manifest `hooks` key. */
 export function hookDeclarations(dir) {
   const out = [];
   if (existsSync(join(dir, 'hooks', 'hooks.json'))) out.push('hooks/hooks.json');
-  for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
+  if (existsSync(join(dir, 'hooks.json'))) out.push('hooks.json');
+  for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.antigravity-plugin/plugin.json']) {
     const file = join(dir, manifest);
     if (existsSync(file) && JSON.parse(readFileSync(file, 'utf8')).hooks !== undefined) out.push(`${manifest} hooks`);
   }
@@ -97,7 +98,7 @@ export function hookDeclarations(dir) {
 
 describe('a plugin declared hook-free ships no hooks', () => {
   it('PLANTED CONTROL: rem ships hooks, and the probe sees them', () => {
-    assert.deepEqual(hookDeclarations(join(ROOT, 'rem')), ['hooks/hooks.json']);
+    assert.deepEqual(hookDeclarations(join(ROOT, 'rem')), ['hooks/hooks.json', 'hooks.json']);
   });
 
   for (const name of SHIPS_NO_HOOKS) {

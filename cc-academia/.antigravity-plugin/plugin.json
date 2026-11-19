@@ -1,0 +1,12 @@
+{
+  "name": "cc-academia",
+  "version": "0.5.1",
+  "description": "Academic research toolchain — systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "homepage": "https://github.com/DawnEver/cc-market/tree/main/cc-academia",
+  "repository": "https://github.com/DawnEver/cc-market",
+  "disabled": true,
+  "skills": "./agy-skills/"
+}
