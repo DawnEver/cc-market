@@ -64,8 +64,9 @@ export function main(argv) {
   } else if (verb === 'close') {
     const journalOnly = (flag(args, '--journal-only') || '').split(',').map(s => s.trim()).filter(Boolean);
     const [slug, ...reason] = args;
-    const dest = closeTask(cwd, slug, reason.join(' '), { journalOnly });
+    const { dest, onClose } = closeTask(cwd, slug, reason.join(' '), { journalOnly });
     console.log(`${PREFIX} closed ${slug}; archived to ${dest}`);
+    if (onClose) console.log(`${PREFIX} ${onClose}`);
   } else if (JOURNAL_VERBS[verb]) {
     const slug = bound(args);
     console.log(appendJournal(cwd, slug, JOURNAL_VERBS[verb], args.join(' ')));
