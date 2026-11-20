@@ -25,7 +25,8 @@ import { atomicWriteFile } from '../shared/atomic-write.mjs';
 import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
-import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
+import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, recordLedger, knownLedgers, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
+import { forgeCommand, findTaskIssues, openTaskIssue, closeTaskIssue, issueNumber, label } from './task-forge.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -108,14 +109,14 @@ export function readTask(start, slug) {
   const file = taskFile(start, slug);
   if (!SLUG_RE.test(slug) || !existsSync(file)) return null;
   const { fields } = parseFrontmatter(readFileSync(file, 'utf8'));
-  const journal = existsSync(journalFile(start, slug)) ? readFileSync(journalFile(start, slug), 'utf8') : '';
-  const { decisions, items } = parseJournal(journal);
+  const { decisions, items } = parseJournal(journalText(join(tasksDir(start), slug)));
   return {
     slug,
     goal: (fields.description || '').replace(/^"|"$/g, ''),
     status: fields.status || 'open',
     opened_by: fields.opened_by || null,
     authority: fields.authority || null,
+    issue: fields.issue || null,
     owner: fields.owner || null,
     created: fields.created || null,
     scope: (fields.scope || '').split(',').map(s => s.trim()).filter(Boolean),
@@ -124,6 +125,102 @@ export function readTask(start, slug) {
     openItems: items.filter(i => i.open),
     dir: join(tasksDir(start), slug),
   };
+}
+
+// ── Chapters: the journal's older lines, moved verbatim by `task.js distill` ──
+// <task>/chapters/<date>.md holds that date's lines; chapters/distilled.md holds decisions an agent's plan
+// distilled, each followed by its pointer. Every Dn/On keeps its id: the whole journal is the chapters
+// (oldest first) followed by JOURNAL.md, so numbering, items and lookups read one record.
+export const CHAPTERS = 'chapters';
+export const DISTILLED = 'distilled.md';
+export const KEEP_DECISIONS = 3;
+const DAY_MS = 86400000;
+function chapterFiles(dir) {
+  const at = join(dir, CHAPTERS);
+  if (!existsSync(at)) return [];
+  return readdirSync(at).filter(f => f.endsWith('.md')).sort().map(f => join(at, f));
+}
+export function journalText(dir) {
+  const read = f => { try { return readFileSync(f, 'utf8'); } catch { return ''; } };
+  return [...chapterFiles(dir), join(dir, 'JOURNAL.md')].map(read).join('\n');
+}
+
+// Where decision Dn lives now: JOURNAL.md, chapters/<date>.md, or chapters/distilled.md (with its pointer).
+export function findDecision(start, slug, n) {
+  const dir = join(tasksDir(start), slug);
+  for (const file of [join(dir, 'JOURNAL.md'), ...chapterFiles(dir)]) {
+    let lines;
+    try { lines = readFileSync(file, 'utf8').split(/\r?\n/); } catch { continue; }
+    const i = lines.findIndex(l => l.match(LINE_RE)?.[3] === String(n));
+    if (i < 0) continue;
+    return { file, line: lines[i], pointer: lines[i + 1]?.match(/^ {2}-> (.*)$/)?.[1] ?? null };
+  }
+  return null;
+}
+
+// MECHANICAL distill, deterministic: every JOURNAL.md line dated before `before` (default: `keepDays` before
+// `date`) moves verbatim to chapters/<its date>.md, except the `opened` line, the open line of a still-open
+// item and the newest `keep` decisions. It judges nothing; distillByPlan applies an agent's judgment.
+export function distillJournal(start, slug, { keep = KEEP_DECISIONS, keepDays = 14, before, date = todayISO() } = {}) {
+  const cut = before || new Date(Date.parse(date) - keepDays * DAY_MS).toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cut)) throw new Error(`--before needs YYYY-MM-DD, got ${cut}`);
+  if (!Number.isInteger(keep) || keep < 0) throw new Error(`--keep needs a whole number of decisions, got ${keep}`);
+  return withLock(journalFile(start, slug), () => {
+    const task = readTask(start, slug);
+    if (!task) throw new Error(`no task ${slug}`);
+    const open = new Set(task.openItems.map(i => i.n));
+    const live = new Set(keep ? task.decisions.slice(-keep).map(d => d.n) : []);
+    const stays = [], moved = new Map();
+    for (const line of readFileSync(journalFile(start, slug), 'utf8').split(/\r?\n/)) {
+      const m = line.match(LINE_RE);
+      const held = !m || m[1] >= cut || m[2] === 'opened' || (m[3] && live.has(Number(m[3])))
+        || (m[5] === 'open' && open.has(Number(m[4])));
+      if (held) { stays.push(line); continue; }
+      if (!moved.has(m[1])) moved.set(m[1], []);
+      moved.get(m[1]).push(line);
+    }
+    const dir = join(task.dir, CHAPTERS);
+    if (moved.size) mkdirSync(dir, { recursive: true });
+    for (const [day, lines] of moved) appendFileSync(join(dir, `${day}.md`), lines.join('\n') + '\n', 'utf8');
+    atomicWriteFile(journalFile(start, slug), stays.join('\n'));
+    const n = [...moved.values()].reduce((a, l) => a + l.length, 0);
+    return `moved ${n} line(s) dated before ${cut} into ${moved.size} chapter(s) under ${dir}`;
+  });
+}
+
+// SEMANTIC distill, applied: `plan` is an agent's judgment, {"distill":[{"id":"D12","pointer":"<rule id or memory
+// path>"}]}. Each named decision's line moves verbatim to chapters/distilled.md with its pointer, and JOURNAL.md
+// records the move. Validated first: an unknown id, a missing pointer or a repeat refuses the whole plan by name.
+export function distillByPlan(start, slug, plan, { date = todayISO() } = {}) {
+  const rows = plan?.distill;
+  if (!Array.isArray(rows) || !rows.length) throw new Error('a distill plan is {"distill":[{"id":"D<n>","pointer":"<where it is captured>"}]}');
+  return withLock(journalFile(start, slug), () => {
+    const task = readTask(start, slug);
+    if (!task) throw new Error(`no task ${slug}`);
+    const seen = new Set();
+    const found = rows.map(r => {
+      const n = Number(String(r?.id ?? '').match(/^D(\d+)$/)?.[1]);
+      if (!n || !task.decisions.some(d => d.n === n)) throw new Error(`plan names ${r?.id}, which is no decision of ${slug}`);
+      if (seen.has(n)) throw new Error(`plan names D${n} twice`);
+      seen.add(n);
+      const pointer = String(r.pointer ?? '').trim();
+      if (!pointer || /[\r\n]/.test(pointer)) throw new Error(`plan row D${n} needs a one-line pointer to where it is captured`);
+      const at = findDecision(start, slug, n);
+      if (at.file.endsWith(DISTILLED)) throw new Error(`D${n} is already distilled (-> ${at.pointer})`);
+      return { n, pointer, at };
+    });
+    const dir = join(task.dir, CHAPTERS);
+    mkdirSync(dir, { recursive: true });
+    const byFile = new Map();
+    for (const f of found) { if (!byFile.has(f.at.file)) byFile.set(f.at.file, new Set()); byFile.get(f.at.file).add(f.at.line); }
+    for (const [file, drop] of byFile) {
+      atomicWriteFile(file, readFileSync(file, 'utf8').split(/\r?\n/).filter(l => !drop.has(l)).join('\n'));
+    }
+    appendFileSync(join(dir, DISTILLED), found.map(f => `${f.at.line}\n  -> ${f.pointer}`).join('\n') + '\n', 'utf8');
+    const ids = found.map(f => `D${f.n}`).join(', ');
+    appendJournalLocked(start, slug, 'progress', `distilled ${ids} by plan (${CHAPTERS}/${DISTILLED})`, { date });
+    return `distilled ${ids} into ${join(dir, DISTILLED)}`;
+  });
 }
 
 // ── Progressive disclosure: one line per prompt, status on demand, show for the whole record ──
@@ -147,7 +244,7 @@ export function taskSummary(task) {
 
 // `task.js status` (<= STATUS_BYTES): goal, scope, authority, open items one line each, the
 // newest 3 decisions and the last handoff. `undistilled` (from distillStatus) adds that line.
-export function taskStatus(task, { undistilled } = {}) {
+export function taskStatus(task, { undistilled, decisions: keep = KEEP_DECISIONS } = {}) {
   let journal = '';
   try { journal = readFileSync(join(task.dir, 'JOURNAL.md'), 'utf8'); } catch { /* none yet */ }
   const handoff = journal.split(/\r?\n/).map(l => l.match(LINE_RE)).filter(m => m?.[2] === 'handoff').at(-1);
@@ -157,7 +254,8 @@ export function taskStatus(task, { undistilled } = {}) {
   ];
   const tail = [
     `decisions: ${task.decisions.length}${task.decisions.length ? ', newest:' : ''}`,
-    ...task.decisions.slice(-3).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...task.decisions.slice(keep ? -keep : task.decisions.length).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...(chapterFiles(task.dir).length ? [`older lines: ${join(task.dir, CHAPTERS)} (any Dn: task.js status D<n>)`] : []),
     ...(handoff ? [`last handoff (${handoff[1]}): ${clip(handoff[6], 160)}`] : []),
     ...(undistilled ? [`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`] : []),
     `whole record: task.js show ${task.slug}`,
@@ -167,7 +265,9 @@ export function taskStatus(task, { undistilled } = {}) {
   const render = () => [...head, `open items: ${items.length}`, ...items.slice(0, shown),
     ...(shown < items.length ? [`  +${items.length - shown} more (task.js show ${task.slug})`] : []), ...tail].join('\n');
   while (shown > 0 && Buffer.byteLength(render()) > STATUS_BYTES) shown--;
-  return render();
+  let out = render();
+  while (Buffer.byteLength(out) > STATUS_BYTES) out = out.slice(0, -1); // the cap holds even when the head alone is long
+  return out;
 }
 
 export function listTasks(start) {
@@ -203,19 +303,127 @@ export function parseBindPrompt(prompt) {
   return String(prompt || '').match(BIND_PROMPT_RE)?.[1] ?? null;
 }
 
-// Bind `session` to the OPEN task `slug` of the ledger at `start`: write its one binding file and return the task
-// id `<slug>@<authority>`. Called only by the UserPromptSubmit hook, on the USER's prompt. Throws naming the door
-// when the task is not open with a user authority, or the session id is not a plain id.
-export function bindSession(start, session, slug) {
+// Bind `session` to the OPEN task `slug`: write its one binding file naming the ledger the task was FOUND in
+// (findTaskForBinding), never the cwd's, and return the task id `<slug>@<authority>`. Called only by the
+// UserPromptSubmit hook, on the USER's prompt. A session started in repo Y so binds a task hosted in repo X
+// (D88, cc-market #44). Throws naming the door otherwise.
+export function bindSession(start, session, slug, { env = process.env, date = todayISO() } = {}) {
   if (!SESSION_RE.test(String(session || ''))) throw new Error('the harness named no plain session id to bind');
-  const task = readTask(start, slug);
-  if (task?.status !== 'open' || !task.authority) {
-    throw new Error(`no open task ${slug} in the ledger (${tasksDir(start)}). `
-      + `Door: the user opens it with /rem:task open ${slug} "<goal>", then binds with \`task: ${slug}\``);
-  }
+  const { checkout, task } = findTaskForBinding(start, slug, { env, date });
   const id = `${slug}@${task.authority}`;
-  writeBinding(session, id, ledgerOf(mainCheckout(start), tasksDir(start)));
+  writeBinding(session, id, ledgerOf(checkout, tasksDir(checkout)), env);
   return id;
+}
+
+const ledgerCheckout = path => String(path).replace(/\\/g, '/').match(/^(.*)\/\.claude\/tasks\/?$/)?.[1] ?? null;
+const pathKey = p => { const t = String(p).replace(/\\/g, '/').replace(/\/+$/, ''); return /^(win32|darwin)$/.test(process.platform) ? t.toLowerCase() : t; };
+
+// This machine's known main checkouts: `start`'s first, then every checkout whose ledger the machine home records
+// (recordLedger, at open and adopt) or a session binding names, each once. Nothing is guessed.
+export function knownCheckouts(start, env = process.env) {
+  const seen = new Map();
+  const add = c => { if (!seen.has(pathKey(c))) seen.set(pathKey(c), c); };
+  add(mainCheckout(start));
+  let paths = [];
+  try { paths = knownLedgers(env); } catch { /* no machine home: this repo only */ }
+  for (const checkout of paths.map(ledgerCheckout)) if (checkout && existsSync(checkout)) add(checkout);
+  return [...seen.values()];
+}
+
+// Record the ledger of `checkout` in the machine home so other repos' sessions find its tasks. No machine home:
+// nothing to record into, and binding from this repo itself still works (its cwd is always searched first).
+function recordHere(checkout, env = process.env) {
+  try { recordLedger(ledgerOf(checkout, tasksDir(checkout)), env); } catch { /* HOME_DOOR is named where a binding needs it */ }
+}
+
+// Where `task: <slug>` finds its task: {checkout, task}. This repo's ledger first; then this machine's other known
+// ledgers; then the task:<slug> issue on each known repo's forge -- an OPEN one is adopted into that repo's ledger
+// here (adoptTask). Refused by name, each with its door: a task not open, a closed issue, more than one open issue,
+// no forge door, or nothing anywhere.
+export function findTaskForBinding(start, slug, { env = process.env, date = todayISO() } = {}) {
+  if (!SLUG_RE.test(String(slug || ''))) throw new Error(`a task slug is kebab-case, got ${slug}`);
+  const checkouts = knownCheckouts(start, env);
+  const shut = [];
+  for (const checkout of checkouts) {
+    const task = readTask(checkout, slug);
+    if (task?.status === 'open' && task.authority) return { checkout, task };
+    if (task) shut.push(`${task.dir} (${task.status})`);
+  }
+  const ledgers = checkouts.map(c => tasksDir(c)).join(', ');
+  if (shut.length) {
+    throw new Error(`task ${slug} is not open here: ${shut.join('; ')}. Door: the user opens a new task with `
+      + '/rem:task open <slug> "<goal>"');
+  }
+  try { forgeCommand(env); } catch (unset) {
+    throw new Error(`no task ${slug} in this machine's ledgers (${ledgers}), and its forge issue cannot be looked up: ${unset.message}`);
+  }
+  for (const checkout of checkouts) {
+    const issues = findTaskIssues(checkout, slug, env);
+    const open = issues.filter(i => String(i.state).toLowerCase() === 'open');
+    if (open.length > 1) {
+      throw new Error(`the forge of ${checkout} holds ${open.length} open ${label(slug)} issues (${open.map(i => i.url).join(', ')}); `
+        + 'a task is ONE issue. Door: the user closes the duplicates, then binds again');
+    }
+    if (open.length) return { checkout, task: adoptTask(checkout, slug, open[0], { date }) };
+    shut.push(...issues.map(i => i.url));
+  }
+  if (shut.length) {
+    throw new Error(`task ${slug} was closed: its issue (${shut.join(', ')}) is not open. Door: the user opens a new `
+      + 'task with /rem:task open <slug> "<goal>"');
+  }
+  throw new Error(`no task ${slug}: no ledger of this machine holds it (${ledgers}) and no ${label(slug)} issue is on `
+    + `the forge of ${checkouts.join(', ')}. Door: the user opens it with /rem:task open ${slug} "<goal>" in the repo `
+    + `that hosts it, then binds with \`task: ${slug}\``);
+}
+
+// This machine's ledger of a task whose identity is the open forge issue `issue` (D88): TASK.md names the issue as
+// `issue:` and takes it as its authority (`issue-<n>`); the journal records the adoption. The user's `task:` prompt
+// is what adopts it; the issue, opened under the user's authority on the host that opened it, is the task's.
+export function adoptTask(checkout, slug, issue, { date = todayISO() } = {}) {
+  const goal = String(issue.title || '').replace(/^task:\s*[a-z0-9-]+\s*(?:--\s*)?/, '').replace(/[\r\n]+/g, ' ').trim() || slug;
+  mkdirSync(join(tasksDir(checkout), slug), { recursive: true });
+  writeFileSync(taskFile(checkout, slug),
+    taskHead(slug, goal, { authority: `issue-${issue.number}`, issue: issue.url, owner: 'user', date }), { flag: 'wx' });
+  appendJournal(checkout, slug, 'opened', `${goal} (adopted on this machine from ${issue.url})`, { date, allowClosed: true });
+  recordHere(checkout);
+  return readTask(checkout, slug);
+}
+
+function taskHead(slug, goal, { authority, issue, owner, date, scope = [] }) {
+  return [
+    '---',
+    `name: ${slug}`,
+    `description: ${JSON.stringify(goal)}`,
+    'kind: task',
+    `task: ${slug}`,
+    'opened_by: user',
+    `authority: ${authority}`,
+    `issue: ${issue}`,
+    `owner: ${owner}`,
+    `created: ${date}`,
+    'status: open',
+    ...(scope.length ? [`scope: ${scope.join(', ')}`] : []),
+    '---',
+    '',
+    `# ${slug}`,
+    '',
+    `Goal: ${goal}`,
+    '',
+    `Identity: ${issue} -- every machine's ledger of this task journals this one issue.`,
+    '',
+    'Progress, decisions (Dn), open items (On) and handoffs are in JOURNAL.md (append-only).',
+    '',
+  ].join('\n');
+}
+
+// The main checkout of the ledger `session` is bound to when that is another repo's than `start`'s; else null.
+// A session started in repo Y and bound to a task of repo X runs that task's journal verbs against X's ledger.
+export function boundCheckout(start, { session = sessionOf() } = {}) {
+  if (!session || !SESSION_RE.test(session)) return null;
+  const bound = readBinding(session);
+  if (!bound || sameLedger(bound.ledger, tasksDir(start))) return null;
+  const checkout = ledgerCheckout(bound.ledger);
+  return checkout && existsSync(checkout) ? checkout : null;
 }
 
 // The binding of `session` (default: this process's) as bindSession wrote it -- one file in the machine
@@ -262,30 +470,13 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
   assertLanguage(start, goal, 'the task goal');
   if (existsSync(taskFile(start, slug))) throw new Error(`task ${slug} exists`);
+  forgeCommand(); // the identity is a forge issue: no forge door, nothing opens (checked before the authority is spent)
   const authority = consumeAuthority(start, 'open', slug); // the user's /rem:task prompt grants it
+  const issue = openTaskIssue(mainCheckout(start), slug, goal);
   mkdirSync(join(tasksDir(start), slug), { recursive: true });
-  writeFileSync(taskFile(start, slug), [
-    '---',
-    `name: ${slug}`,
-    `description: ${JSON.stringify(goal)}`,
-    'kind: task',
-    `task: ${slug}`,
-    'opened_by: user',
-    `authority: ${authority}`,
-    `owner: ${owner}`,
-    `created: ${date}`,
-    'status: open',
-    ...(scope.length ? [`scope: ${scope.join(', ')}`] : []),
-    '---',
-    '',
-    `# ${slug}`,
-    '',
-    `Goal: ${goal}`,
-    '',
-    'Progress, decisions (Dn), open items (On) and handoffs are in JOURNAL.md (append-only).',
-    '',
-  ].join('\n'), { flag: 'wx' });
+  writeFileSync(taskFile(start, slug), taskHead(slug, goal, { authority, issue: issue.url, owner, date, scope }), { flag: 'wx' });
   appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
+  recordHere(mainCheckout(start));
 }
 
 // Append ONE line. O_APPEND: earlier bytes are never rewritten. The read that numbers the line
@@ -421,6 +612,10 @@ export function distillStatus(start, slug) {
     try { text = readFileSync(file, 'utf8'); } catch { continue; }
     for (const m of text.replace(/\\/g, '/').matchAll(cite)) cited.add(Number(m[1]));
   }
+  // A decision a plan distilled (chapters/distilled.md) names where it is captured: it counts as distilled.
+  try {
+    for (const d of parseJournal(readFileSync(join(task.dir, CHAPTERS, DISTILLED), 'utf8')).decisions) cited.add(d.n);
+  } catch { /* nothing distilled by plan */ }
   return {
     undistilled: task.decisions.map(d => d.n).filter(n => !cited.has(n)),
     openItems: task.openItems.map(i => i.n),
@@ -449,7 +644,9 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   const kept = [...keep].sort((a, b) => a - b).map(n => `D${n}`);
   const line = `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`;
   if (/[\r\n]/.test(line)) throw new Error('a close reason is one line');
+  if (task.issue) forgeCommand(); // its identity closes with it: no forge door, the task stays open
   const authority = consumeAuthority(start, 'close', slug); // the user's /rem:task prompt grants it
+  if (task.issue) closeTaskIssue(mainCheckout(start), issueNumber(task.issue));
 
   appendJournal(start, slug, 'closed', `${line} (authority ${authority})`, { date });
   setTaskStatus(start, slug, 'closed');

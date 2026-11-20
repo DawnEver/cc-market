@@ -19,7 +19,8 @@
   },
   "env": {
     "HEAD_SHA": "${{ github.sha }}",
-    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/"
+    "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"host\", \"tests\": \"ci\"}"
   },
   "jobs": {
     "merge-tick": {
