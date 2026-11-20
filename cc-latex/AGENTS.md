@@ -1,13 +1,19 @@
 # cc-latex — AGENTS.md
 
 LaTeX writing assistant plugin: compile workflow, academic writing style, and word
-counting (`texcount`) for LaTeX documents (reports, theses, papers). Two skills, one
+counting (`texcount`) for LaTeX documents (reports, theses, papers). Three skills, one
 helper script, no hooks.
 
 ## Structure
 
 - `skills/latex/` — `latex` skill: compile workflow, figure/table placement, citations,
   and writing style. Full style rules live in `reference/writing-style.md`.
+- `skills/latex/reference/style-sources.md` — rules P1-P24 drawn from published style guides
+  (IEEE, Gopen and Swan, Mensh and Kording), with sources; binding by writing-style rule 39.
+- `skills/latex/reference/fields/` — field writing profiles (section moves, slot templates,
+  conventions) learned from published papers; field-level only, never copied sentences.
+- `skills/field-reading/` — `field-reading` skill: builds a field writing profile from a
+  literature corpus before drafting (writing-style rule 38).
 - `skills/count-tex/` — `count-tex` skill: word counting; drives `scripts/word-count.mjs`.
 - `scripts/word-count.mjs` — finds `main.tex` (root, single depth-1 subdir, or explicit
   path), runs `texcount -inc -sum -sub=section`, formats the breakdown (per section, or

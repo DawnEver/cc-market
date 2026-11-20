@@ -18,7 +18,7 @@ deep detail when a task reaches into that area.
 
 ```
 /evolve [--until --path --min-severity --dry-run --seed --commit]
-  Setup: pre-flight git + dirty-tree check; require sharp-review/rem/todo; init state via scripts/evolve.mjs
+  Setup: pre-flight git + dirty-tree check; require sharp-review/rem; init state via scripts/evolve.mjs
   Per round (reference/round-protocol.md):
     0. Pre-flight (dirty-tree re-check, cc-market repo check)
     1. Critique: run sharp-review skill (host-agnostic) → read OPEN findings from backlog

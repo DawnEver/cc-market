@@ -20,45 +20,27 @@ Then run setup to symlink:
 node scripts/setup/setup.js
 ```
 
-> The standard trigger runs the **entire** review inside a dispatched worker subagent, so the
+> A review runs **entirely** inside a dispatched worker subagent, so the
 > diff/reviewer/merge noise never touches the main session — only the one-line summary returns.
 > The worker runs `plan.js`, calls each planned reviewer, and hands the raw results to
 > `post-review.js`, which has ai-lab merge them by the method's rules.
 >
-> **On Codex:** install with `codex plugin add sharp-review@cc-market`. The Stop hook and the
-> review skill both run on Codex, fanning out reviewers the same way. `/sharp-review` is a
-> Claude slash-command; on Codex invoke the skill directly.
+> **On Codex:** install with `codex plugin add sharp-review@cc-market`. The review skill runs
+> on Codex, fanning out reviewers the same way. `/sharp-review` is a Claude slash-command; on
+> Codex invoke the skill directly.
 
 ## Usage
 
-Run `/sharp-review` after finishing a feature (Codex: invoke the skill). Automatic review
-from the Stop hook is **off by default**: switch it on per repo with `"stopHook": true` in
-`.claude/sharp-review.json`, or per shell with `SHARP_REVIEW_STOP_HOOK=1` (`=0` forces it off).
-Once on, the Stop hook evaluates deterministic change/source thresholds on every eligible turn and requests one
-review pass. It does not invoke a hidden Claude classifier or a model just to decide depth.
-Codex claims and REM coordination use actual execution-thread identity, not a shared
-parent session ID. Unknown execution identity skips automatic review continuation.
-Any live REM or review reservation excludes another continuation in the same checkout.
-Review completion credits content only while its matching reservation is unexpired.
-Only a successfully persisted memory result credits the gate; stdout-only output does not.
-
-### Modes
-
-| Mode | Trigger | Reviewers |
-|---|---|---|
-| `none` | No fresh source crosses its configured threshold | 0 (skipped) |
-| `once` | A fresh diff/docs/deps/codebase source fires | 1 pass using the method's provider/profile plan |
-
-A pass can contain multiple independent reviewers. Further passes are an explicit manual
-or Evolve workflow, not a separate model-classified Stop loop. Codex uses its built-in
-worker; installed plugins still require normal hook trust and Fabric/provider authentication.
+Run `/sharp-review` after finishing a feature (Codex: invoke the skill). The plugin ships no
+hooks: a review runs only when asked for, by you or by a workflow such as Evolve. One run is
+one pass of several independent reviewers; Codex uses its built-in worker and needs
+Fabric/provider authentication.
 
 ## Output
 
 - `post-review.js --sink stdout` — the findings JSON instead of memory, a versioned contract (ai-lab's `findings-output.schema.json`)
 - `output/logs/YY/MM/DD/sharp-review/sharp-review.md` — the run's report (regenerable output; keep a finding by moving it into `.claude/memory/`)
 - `.claude/rules/MEMORY.md` — one index entry per session (upserted in-process via the bundled shared stamp module)
-- `todo` / `todo report` — scan memory directly; no derived `tasks.md`
 
 ### Resolving Findings
 
@@ -70,20 +52,11 @@ node cc-market/sharp-review/scripts/post-review.js --rescan --date YYYY-MM-DD --
 
 ## How It Works
 
-Full architecture and flow: Stop hook → source gate and atomic claim → skill (profile pick,
-diff manifest, parallel reviewers, merge, memory write) → successful claim completion.
-See **`AGENTS.md`** for the architecture diagram and component map.
-
-### Wave Gate
-
-Reviews are gated by accumulated code changes, not per-session. A new commit reviews early on a small change; once a ref is reviewed, only substantial new changes re-trigger. Skipped sessions preserve the reference point so changes add up until the threshold is met; the wave resets when HEAD moves to a new commit.
-
-Thresholds are per-project configurable under `thresholds` in the tracked `.claude/sharp-review.json` (committed, so the tuning is shared — not device-local). Exact defaults, the full config schema, custom profiles, and weighting → `skills/sharp-review/reference/profiles-and-modes.md`.
-
-REM and review share the state lock: a pending REM continuation defers review for that
-session; an active checkout review defers REM. Waiting-input and Stop-continuation turns
-do not recursively dispatch. Only successful post-review output credits reviewed hashes;
-an unavailable/failed review does not falsely mark the checkout reviewed.
+Full architecture and flow: `/sharp-review` → worker subagent → skill (profile pick, diff
+manifest, parallel reviewers, merge, report write). See **`AGENTS.md`** for the architecture
+and component map. The tracked `.claude/sharp-review.json` (committed, so the tuning is
+shared — not device-local) holds profile weights, custom profiles, the inline-diff limit and
+providers → `skills/sharp-review/reference/profiles-and-modes.md`.
 
 ### Large Diffs
 

@@ -1,10 +1,11 @@
 {
   "name": "rem",
-  "version": "2.6.0",
-  "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, crystallized rules",
+  "version": "3.1.0",
+  "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, task journals",
   "author": {
     "name": "Mingyang Bao"
   },
+  "commands": "./claude-commands/",
   "keywords": [
     "rem",
     "memory",
@@ -12,7 +13,6 @@
     "retrospect",
     "recall",
     "derived-index",
-    "crystallize",
     "summarize"
   ]
 }

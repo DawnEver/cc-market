@@ -16,7 +16,7 @@ import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const TASK = path.join(REM, 'scripts', 'task.js');
-const AUTHORITY_HOOK = path.join(REM, 'hooks', 'task-authority.js');
+const AUTHORITY_HOOK = path.join(REM, 'hooks', 'user-prompt.js');
 const VALIDATE = path.join(REM, 'scripts', 'scope-validate.mjs');
 
 function repo() {
@@ -113,7 +113,7 @@ describe('detection: a TASK.md written around the library', () => {
 describe('wiring (planted control)', () => {
   it('the authority hook is registered on UserPromptSubmit', () => {
     const hooks = JSON.parse(fs.readFileSync(path.join(REM, 'hooks', 'hooks.json'), 'utf8')).hooks;
-    assert.ok((hooks.UserPromptSubmit || []).some(g => g.hooks.some(h => h.command.includes('task-authority.js'))));
+    assert.ok((hooks.UserPromptSubmit || []).some(g => g.hooks.some(h => h.command.includes('user-prompt.js'))));
   });
 });
 

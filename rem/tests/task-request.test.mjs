@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 void TEST_HOME;
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const TASK = path.join(REM, 'scripts', 'task.js');
-const AUTHORITY_HOOK = path.join(REM, 'hooks', 'task-authority.js');
+const AUTHORITY_HOOK = path.join(REM, 'hooks', 'user-prompt.js');
 
 function repo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-req-'));
@@ -50,7 +50,7 @@ describe('an agent requests, the user approves, the agent opens', () => {
     assert.equal(task(root, 'open', 'x', 'goal').status, 1, 'a prompt that mentions the code is not an approval');
     userTypes(root, 'approve 000000');
     assert.equal(task(root, 'open', 'x', 'goal').status, 1, 'an unknown code grants nothing');
-    userTypes(root, `批准 ${code}`);
+    userTypes(root, `\u6279\u51c6 ${code}`);
     assert.equal(task(root, 'open', 'x', 'goal').status, 0);
   });
 

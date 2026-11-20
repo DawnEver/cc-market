@@ -1,6 +1,6 @@
 ---
 name: rem
-description: REM sleep for Claude Code and Codex sessions — summarize what changed, update memory, crystallize if needed
+description: REM sleep for Claude Code and Codex sessions — summarize what changed, update memory
 ---
 
 # REM
@@ -15,12 +15,8 @@ summary) yet keeps prep/memory-write noise out of the main session.
 offers a context-inheriting fork. A fresh worker without this conversation is not an
 equivalent substitute. Do not spawn a second CLI session to reconstruct live context.
 
-1. **Main loop first** runs the user-gated checks (a background fork can't prompt):
-   `crystallize.js --check` — if it fires, do its interactive procedure (`reference/crystallize.md`)
-   inline before forking. A user who declines: run `crystallize.js --decline`; it is never asked again.
-2. **Then dispatch one `fork`** for the standard pass (rem-prep → summarize → write
-   memory → index), returning a one-line recap. The fork must not re-fork or
-   touch crystallize.
+Dispatch one `fork` for the standard pass (rem-prep → summarize → write memory → index),
+returning a one-line recap. The fork must not re-fork.
 
 Lightweight (doc-only) sessions are cheap — running inline is fine.
 
@@ -29,45 +25,32 @@ only after every required REM step succeeds, in the same project cwd. The comman
 `node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-session.js complete --session <id> --request <id>`.
 Never acknowledge failed, interrupted, user-blocked or merely scheduled work. Manual REM
 without a pending request needs no acknowledgement. A continuation already in progress
-does not request another REM pass; review and REM share a transaction-locked reservation.
+does not request another REM pass; one transaction-locked reservation per checkout.
 
 ## Memory Mechanism (global conventions)
 
 
-Full conventions — the lifecycle (merge / crystallize hide, nothing is deleted), frontmatter schema,
+Full conventions — the lifecycle (merge / supersede hide, nothing is deleted), frontmatter schema,
 the derived index, scoped memory (monorepo), rules-vs-memory boundary — → `reference/memory-conventions.md`.
 
 ### Scripts
 
 Core scripts the happy-path invokes — full table with all scripts and flags → `reference/scripts.md`.
 
-- `rem-prep.js --transcript <path>` — read-only report: entries read, visible / hidden counts, crystallize advisory
+- `rem-prep.js --transcript <path>` — read-only report: entries read, visible / hidden counts
 - `index-memory.js` — regenerate the derived `.claude/memory-index.md` indexes (written only when the bytes change)
 - `remember.js` — immediate save for explicit "remember this" requests (run it right away, don't wait for `/rem`; see `reference/memory-conventions.md` § When memory is written)
-- `crystallize.js --check` / `--decline` — the gated procedure (see below)
 
 ### Reference
 
-- Full script reference (incl. `check-docs.js`, `todo.js`, `task.js`, all flags) → `reference/scripts.md`
+- Full script reference (incl. `check-docs.js`, `task.js`, all flags) → `reference/scripts.md`
 - `.claude/.rem-state.json` shape (for debugging hook gating) → `reference/state-schema.md`
-- Crystallize procedure (current `--check` advisory threshold; user-gated distill) → `reference/crystallize.md`
 - Standard-pass walkthrough + Lightweight variant → `reference/standard-procedure.md`
 - Tasks layer (user-opened tasks, binding, the append-only journal) → `reference/tasks.md`
 
 ---
 
 Decide depth by checking context:
-
-## Crystallize (when the advisory check fires)
-
-Check whether crystallize is needed:
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/crystallize.js --check
-```
-Exit 0 = needed, exit 1 = skip. **If needed**, follow the full user-gated distill procedure in
-**`reference/crystallize.md`** (propose → classify → user-confirm → distill into `.claude/rules/rem/`
-→ cleanup → check-docs), then continue with the standard REM session below.
-
 
 ## Lightweight (doc-only or non-code session)
 
