@@ -101,12 +101,15 @@ endpoint, auth, and model alias. `observe` is a single boolean — proxy vs dire
   `provider: "claude"` runs via `claude -p`; a catalogue provider runs task/review through
   `ai_lab.call` and agent mode via `claude -p` on its anthropic endpoint;
   `provider: "codex"` runs via the codex app-server (native — pass `write: true` for tools,
-  `cwd` for the repo). `observe: true` (non-codex) captures API traffic to the proxy jsonl.
+  `cwd` for the repo); `provider: "agy"` runs via `agy -p` (native — `--mode plan --sandbox`
+  by default, `write: true` + `cwd` for workspace edits, stream-json stdin for multi-line/large prompts).
+  `observe: true` (Anthropic-HTTP providers) captures API traffic to the proxy jsonl.
   Call several concurrently for fan-out.
 - `list_providers` — dump the provider registry + model aliases; the last line,
   `callable: ...`, names the providers a call without `model` can run.
 - `resolve_model` — map a full Claude model id → a provider's real upstream id.
 - `codex_status` — codex CLI install / version / auth check.
+- `agy_status` — Antigravity CLI (`agy`) install / version / auth / model-list check.
 - `fan_out` — run N `call`s in parallel, at most `fabric.fanOutConcurrency` (default 4) at once; returns compact JSON (per-task `result` capped at
   400 chars, est. tokens, duration) plus a synthesis when `synthesize: true` and a
   `fabric.synthesizer` is configured (refused by name otherwise).

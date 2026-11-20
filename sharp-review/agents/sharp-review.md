@@ -1,7 +1,16 @@
 ---
 name: sharp-review
 description: Post-feature sharp review worker — dispatched by /sharp-review to run the full review pipeline (plan → parallel reviewer fan-out → merge → memory entry → report)
-tools: Bash, PowerShell, Read, Write, Agent, Glob, Grep, mcp__plugin_fabric_fabric__call, mcp__plugin_fabric_fabric__list_providers
+tools:
+  - Bash
+  - PowerShell
+  - Read
+  - Write
+  - Agent
+  - Glob
+  - Grep
+  - mcp__plugin_fabric_fabric__call
+  - mcp__plugin_fabric_fabric__list_providers
 ---
 
 You are the sharp-review worker. Your only job: run a structured code review on the current git

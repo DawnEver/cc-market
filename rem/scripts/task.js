@@ -11,10 +11,11 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { isMain } from '../shared/lib.mjs';
 import {
-  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, BIND_DOOR,
+  openTask, placeTask, appendJournal, translateJournalLine, amendJournalLine, closeTask, distillStatus, readTask, listTasks, resolveTask, findArchivedTask, taskStatus, tasksDir, unboundReason,
 } from './tasks.mjs';
 import { requestAuthority } from './authority.mjs';
 import { VERBS, helpText } from './task-verbs.mjs';
+import { keptEventsText } from './feed-events.mjs';
 
 const PREFIX = '[task]';
 // Retired verbs, each refused naming why and what replaced it (every wall teaches).
@@ -34,7 +35,7 @@ function flag(args, name) {
 
 function bound(args) {
   const slug = resolveTask(cwd, { task: flag(args, '--task') });
-  if (!slug) throw new Error(`no open task is bound: pass --task <slug>, or ${BIND_DOOR}`);
+  if (!slug) throw new Error(`no open task is bound: pass --task <slug>, or ${unboundReason(cwd)}`);
   return slug;
 }
 
@@ -97,10 +98,12 @@ export function main(argv) {
     const rest = args.filter(a => a !== '--distill');
     const named = rest[0] && !rest[0].startsWith('--') ? rest[0] : null;
     const slug = named || resolveTask(cwd, { task: flag(rest, '--task') });
-    if (!slug) { console.log(`no task bound: ${BIND_DOOR}`); return; }
+    if (!slug) { console.log(`no task bound: ${unboundReason(cwd)}`); return; }
     const task = readTask(cwd, slug);
     if (!task) throw new Error(`no task ${slug}`);
     console.log(taskStatus(task, distill ? { undistilled: distillStatus(cwd, slug).undistilled } : {}));
+    const kept = keptEventsText(slug);
+    if (kept) console.log(kept);
   } else if (verb === 'show') {
     const slug = args[0] || bound(args);
     const dir = readTask(cwd, slug)?.dir || findArchivedTask(cwd, slug);

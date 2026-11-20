@@ -8,7 +8,8 @@ replaces state spread over dated memory files. Present only where a repo has
 <main checkout>/.claude/tasks/            the LEDGER: one per repository
   <slug>/TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
   <slug>/JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
-  .bindings/<session>.json   the session's binding — written only by rem's UserPromptSubmit hook (§ Bind)
+<machine home>/state/sessions/<session>.json   the session's binding — written only by rem's
+                                               UserPromptSubmit hook (§ Bind); one per session, every repo
 ```
 
 **The ledger is REPO state, not branch state** (cc-market #20, 2026-11-16). Every read and write
@@ -21,7 +22,7 @@ feature branch; `close` archives a task into the closing tree's memory, which is
 ## Open — refused by default, detectable when bypassed
 
 `/rem:task open <slug> "<goal>" [--scope <paths>] [--owner <who>]` — a user slash command
-(`commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
+(`claude-commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
@@ -77,15 +78,26 @@ A session or agent works on ONE task, resolved by `resolveTask()` (`scripts/task
 git-side gate (another tool's pre-push hook) reads it and never writes it:
 
 - the ledger: `<parent of git rev-parse --path-format=absolute --git-common-dir>/.claude/tasks/`;
-- the binding: `<ledger>/.bindings/<session>.json` = `{"session": "<id>", "task": "<slug>@<authority>"}`,
-  exactly those two keys; `<id>` is the harness's session as a process inside it sees it --
+- the binding is SESSION state, not repo state (user ruling D34, 2026-11-17):
+  `<machine home>/state/sessions/<session>.json` =
+  `{"session": "<id>", "task": "<slug>@<authority>", "ledger": {"repo_key": "<name>-<digest>", "path": "<ledger>"}}`,
+  exactly those keys (`scripts/session-binding.mjs`). The machine home is lab_commons'; rem reads it from ONE
+  variable, `LAB_COMMONS_HOME`, which dev-lab writes into the user Claude settings
+  (`python -m dev_lab.dev.remhome --install`). Unset, rem binds nothing and names that command; `repo_key` is lab_commons.repostate's (`<checkout name>-<first 12
+  hex of SHA-256 of the resolved git common dir, case-folded where the filesystem ignores case>`). Every repo's
+  check reads the one file, so a session bound in repo A pushes from repo B; the task is judged in the ledger
+  the record names. `<id>` is the harness's session as a process inside it sees it --
   `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex (the executing thread, never
   a parent's id);
 - valid only while `<ledger>/<slug>/TASK.md` has frontmatter `status: open` and the same
-  `authority: <authority>`; anything else binds nothing.
+  `authority: <authority>`; anything else binds nothing. rem's own journal verbs act only in that ledger's repo.
+- the retired per-repo store `<ledger>/.bindings/<session>.json` is never read: `migrations/migrate.mjs
+  <main checkout>` moves its records ONCE (a second run is a no-op), and a record still there is refused by
+  name with that migration.
 
-Pinned by `tests/task-bind.test.mjs`. Changing a key or a path is a contract change: readers move
-with it.
+Pinned by `tests/task-bind.test.mjs` and `tests/session-binding.test.mjs`, whose fixture
+`tests/fixtures/session-binding.json` dev-lab asserts byte-identically. Changing a key or a path is a contract
+change: readers move with it.
 
 The binding counts only while the ledger's `<slug>/TASK.md` is `status: open` with the same
 `authority:`; a closed task, or a reopened one under another authority, binds nothing. No binding

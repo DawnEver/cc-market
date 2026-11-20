@@ -14,4 +14,5 @@ All scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 | `task.js` | Tasks layer CLI; its verbs are one table, `task-verbs.mjs` | `task.js help` |
 | `authority.mjs` | User authority for task open/close: `recordUserCommand` (the UserPromptSubmit hook only), `consumeAuthority` (openTask/closeTask) | (library) |
 | `tasks.mjs` | Tasks layer library: `readTask`, `listTasks`, `resolveTask`, `openTask`, `appendJournal`, `distillStatus`, `closeTask`, `findArchivedTask` | (library) |
+| `session-binding.mjs` | Where a session's task binding lives (D34): `machineHome`, `bindingFile`, `repoKey`, `writeBinding`, `readBinding`, `retiredBinding`, `migrateRetiredBindings` | (library) |
 | `rem-session.js` | Acknowledge successfully completed REM work for the matching pending Stop request | `complete --session <id> --request <request-id>`; run in the project cwd, never acknowledge unfinished work |
