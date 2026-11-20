@@ -64,5 +64,8 @@
       ],
       "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) }}"
     }
+  },
+  "env": {
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"host\", \"tests\": \"ci\"}"
   }
 }

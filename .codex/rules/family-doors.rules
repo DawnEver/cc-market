@@ -161,6 +161,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "issue", "label"],
+    decision = "allow",
+    justification = "Adding or removing labels on an existing forge issue through the family door; a missing label is created.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "create"],
     decision = "allow",
     justification = "Opening a draft pull request onto the integration branch through the forge door; the agent does this itself and never hands it to the user.",
@@ -284,6 +290,12 @@ prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.branchprune", "delete"],
     decision = "allow",
     justification = "Deleting a remote branch only when every commit on it is already on the integration branch or on another live branch or open pull request; never a force push and never a lossy delete.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.branchprune", "task"],
+    decision = "allow",
+    justification = "Deleting a closed task's pull request branches, each only when every commit on it is already on the integration branch or on another live branch or open pull request; every branch kept is named with why.",
 )
 
 prefix_rule(
