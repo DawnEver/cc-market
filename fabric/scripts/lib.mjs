@@ -11,7 +11,9 @@
 export * from "./lib/config.mjs";
 export * from "../engine/errors.mjs";
 export * from "./lib/spawn.mjs";
+export * from "./lib/agy.mjs";
 export * from "./lib/parse.mjs";
 export * from "./lib/callers.mjs";
 
 export { findCodexBinary, checkCodexStatus } from "../engine/codex/discovery.mjs";
+export { findAgyBinary, checkAgyStatus } from "../engine/agy/discovery.mjs";

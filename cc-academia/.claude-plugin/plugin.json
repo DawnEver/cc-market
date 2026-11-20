@@ -1,10 +1,22 @@
 {
   "name": "cc-academia",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "Academic research toolchain — systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
   "author": {
     "name": "Mingyang Bao"
   },
+  "commands": "./claude-commands/",
+  "agents": [
+    "./claude-agents/abstract-screener.md",
+    "./claude-agents/manuscript-polisher-english.md",
+    "./claude-agents/manuscript-reviewer-experiments.md",
+    "./claude-agents/manuscript-reviewer-freestyle.md",
+    "./claude-agents/manuscript-reviewer-methodology.md",
+    "./claude-agents/manuscript-reviewer-novelty.md",
+    "./claude-agents/manuscript-reviewer-significance.md",
+    "./claude-agents/paper-reader.md",
+    "./claude-agents/query-reviewer.md"
+  ],
   "keywords": [
     "literature-review",
     "peer-review",

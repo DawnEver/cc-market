@@ -8,15 +8,22 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import crypto from "node:crypto";
+import { syncBuiltinESMExports } from "node:module";
 
 import {
   tokenize,
   isSkippable,
   scopedContext,
   collectCandidates,
+  readCandidates,
+  requestBuild,
+  buildIndex,
+  indexFileFor,
+  BUILD_LEASE_MS,
+  buildInFlight,
   scopeFingerprint,
   scoreEntry,
   selectTop,
@@ -26,6 +33,8 @@ import {
 } from "../scripts/recall.js";
 
 const RECALL_JS = fileURLToPath(new URL("../scripts/recall.js", import.meta.url));
+// rem's one UserPromptSubmit hook: the process every prompt pays for.
+const PROMPT_HOOK = fileURLToPath(new URL("../hooks/user-prompt.js", import.meta.url));
 
 // ── tokenize ─────────────────────────────────────────────────────────────────
 
@@ -144,7 +153,8 @@ describe("recall over a fixture scope", () => {
     fs.mkdirSync(path.join(dir, ".git"));
     mkMemory(dir, "2026/07/01", "zebra-root", FM("zebra-root", "zebra notes", "project"), "root body");
     mkMemory(path.join(dir, "pkg"), "2026/07/01", "zebra-child", FM("zebra-child", "zebra notes", "project"), "child body");
-    const ctx = scopedContext("zebra notes", path.join(dir, "pkg"), Date.now(), { binding: () => null }) || "";
+    buildIndex(dir);
+    const ctx = scopedContext("zebra notes", path.join(dir, "pkg"), Date.now(), { binding: () => null, refresh: () => {} }) || "";
     assert.match(ctx, /root body/, "PLANTED CONTROL: the root entry matches the same prompt");
     assert.doesNotMatch(ctx, /child body/);
   });
@@ -200,7 +210,7 @@ describe("recall over a fixture scope", () => {
 
 // ── candidate cache ──────────────────────────────────────────────────────────
 
-describe("collectCandidates cache", () => {
+describe("the candidate index: the hook reads, the build writes", () => {
   let dir;
   const T0 = Date.parse("2026-07-31T00:00:00Z"); // fixed clock for TTL tests
   beforeEach(() => {
@@ -211,32 +221,59 @@ describe("collectCandidates cache", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test("cache hit returns identical candidates without re-reading", () => {
+  test("a built index is read back identically, fresh within the TTL", () => {
     mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
       "body");
-    const first = collectCandidates(dir, { now: T0 });
+    const built = collectCandidates(dir, { now: T0 });
     const info = {};
-    const second = collectCandidates(dir, { now: T0 + 1000, info }); // within TTL → fast path
-    assert.deepEqual(second, first);
-    assert.equal(second[0].name, "git-rules");
+    const read = readCandidates(dir, { now: T0 + 1000, info });
+    assert.deepEqual(read.candidates, built);
+    assert.equal(read.stale, false);
     assert.equal(info.cacheHit, true);
     assert.equal(info.fast, true);
   });
 
-  test("fingerprint changes when a memory file is added → cache invalidated after TTL", () => {
+  test("no index reads as stale and empty", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"), "body");
+    assert.deepEqual(readCandidates(dir, { now: T0 }), { candidates: [], stale: true });
+  });
+
+  test("a half-written or foreign index reads as stale and empty, never throws", () => {
+    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"), "body");
+    collectCandidates(dir, { now: T0 });
+    assert.equal(readCandidates(dir, { now: T0 + 1000 }).candidates.length, 1, "PLANTED CONTROL: the whole index reads");
+    const file = indexFileFor(dir);
+    const whole = fs.readFileSync(file, "utf8");
+    try {
+      fs.writeFileSync(file, whole.slice(0, Math.floor(whole.length / 2)));
+      assert.deepEqual(readCandidates(dir, { now: T0 + 1000 }), { candidates: [], stale: true });
+      fs.writeFileSync(file, JSON.stringify({ something: "else" }));
+      assert.deepEqual(readCandidates(dir, { now: T0 + 1000 }), { candidates: [], stale: true });
+    } finally {
+      fs.rmSync(file, { force: true });
+      fs.rmSync(`${file}.ts`, { force: true });
+    }
+  });
+
+  test("past the TTL the old index is served and called stale; the build picks the write up", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
       "body");
     const fp1 = scopeFingerprint(dir);
-    collectCandidates(dir, { now: T0 }); // populate cache
+    collectCandidates(dir, { now: T0 });
     mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
       "body");
-    const fp2 = scopeFingerprint(dir);
-    assert.notEqual(fp1, fp2);
-    const cands = collectCandidates(dir, { now: T0 + 60_000 }); // TTL expired → re-stat picks it up
-    assert.deepEqual(cands.map((c) => c.name).sort(), ["one", "two"]);
+    assert.notEqual(fp1, scopeFingerprint(dir));
+    const withinTtl = readCandidates(dir, { now: T0 + 1000 });
+    assert.equal(withinTtl.candidates.length, 1, "within the TTL the tree is not re-walked");
+    assert.equal(withinTtl.stale, false);
+    const afterTtl = readCandidates(dir, { now: T0 + 60_000 });
+    assert.equal(afterTtl.candidates.length, 1, "the hook never reads the new entry itself");
+    assert.equal(afterTtl.stale, true);
+    const rebuilt = collectCandidates(dir, { now: T0 + 60_000 });
+    assert.deepEqual(rebuilt.map((c) => c.name).sort(), ["one", "two"]);
   });
 
-  test("a superseding entry retires the old one after TTL", () => {
+  test("a superseding entry retires the old one on the next build", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
       "body");
     assert.equal(collectCandidates(dir, { now: T0 }).length, 1);
@@ -244,42 +281,71 @@ describe("collectCandidates cache", () => {
     assert.deepEqual(collectCandidates(dir, { now: T0 + 60_000 }).map((c) => c.relPath), ["2026/07/02/one.md"]);
   });
 
-  test("within TTL the cache is served without re-stating the tree (bounded staleness)", () => {
-    mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
-      "body");
-    assert.equal(collectCandidates(dir, { now: T0 }).length, 1);
-    // A memory write lands within the TTL window.
-    mkMemory(dir, "2026/07/02", "two", FM("two", "second", "project"),
-      "body");
-    const info = {};
-    const withinTtl = collectCandidates(dir, { now: T0 + 1000, info });
-    assert.equal(withinTtl.length, 1); // stale — the tree was not re-walked
-    assert.equal(info.cacheHit, true);
-    assert.equal(info.fast, true);
-    // After the TTL expires the tree is re-statted and the write is picked up.
-    const info2 = {};
-    const afterTtl = collectCandidates(dir, { now: T0 + 60_000, info: info2 });
-    assert.equal(afterTtl.length, 2);
-    assert.equal(info2.cacheHit, false);
-    assert.equal(info2.fast, false);
-  });
-
-  test("TTL expiry with unchanged tree reuses candidates (fingerprint still guards correctness)", () => {
+  test("a rebuild over an unchanged tree re-reads no file", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
       "body");
     const first = collectCandidates(dir, { now: T0 });
     const info = {};
     const second = collectCandidates(dir, { now: T0 + 60_000, info });
-    assert.deepEqual(second, first);   // same candidates, no frontmatter re-read
-    assert.equal(info.cacheHit, true); // fingerprint matched → reused
-    assert.equal(info.fast, false);    // but the tree was re-statted
+    assert.deepEqual(second, first);
+    assert.equal(info.cacheHit, true);
+    assert.equal(info.read, 0);
   });
 
-  test("useCache:false bypasses the cache", () => {
+  test("useCache:false bypasses the index", () => {
     mkMemory(dir, "2026/07/01", "one", FM("one", "first", "project"),
       "body");
     const cands = collectCandidates(dir, { useCache: false });
     assert.equal(cands.length, 1);
+  });
+});
+
+// ── the background build ─────────────────────────────────────────────────────
+
+describe("requestBuild: one detached build at a time", () => {
+  let dir;
+  beforeEach(() => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rem-recall-lease-")));
+  });
+  afterEach(() => {
+    fs.rmSync(`${indexFileFor(dir)}.build`, { force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("the first request starts the build, a second while it runs does not", () => {
+    const started = [];
+    const start = (root) => started.push(root);
+    assert.equal(requestBuild(dir, { start }), true, "PLANTED CONTROL: a free lease starts a build");
+    assert.equal(requestBuild(dir, { start }), false);
+    assert.deepEqual(started, [dir]);
+  });
+
+  test("a lease older than BUILD_LEASE_MS belongs to a dead build and is taken over", () => {
+    const started = [];
+    const start = (root) => started.push(root);
+    requestBuild(dir, { start });
+    const old = new Date(Date.now() - BUILD_LEASE_MS - 1000);
+    fs.utimesSync(`${indexFileFor(dir)}.build`, old, old);
+    assert.equal(requestBuild(dir, { start }), true);
+    assert.equal(started.length, 2);
+  });
+
+  test("the build releases its lease, so the next stale prompt can start another", () => {
+    const start = () => {};
+    requestBuild(dir, { start });
+    assert.equal(buildInFlight(dir), true, "PLANTED CONTROL: a started build holds the lease");
+    buildIndex(dir);
+    assert.equal(buildInFlight(dir), false);
+    assert.equal(requestBuild(dir, { start }), true);
+  });
+
+  test("several sessions at once: of many concurrent requests exactly one starts a build", async () => {
+    const marks = path.join(dir, "starts");
+    const code = `import("${pathToFileURL(RECALL_JS).href}").then((m) => { if (m.requestBuild(process.argv[1], { start: () => {} })) require("node:fs").appendFileSync(process.argv[2], "x"); })`;
+    await Promise.all(Array.from({ length: 6 }, () => new Promise((resolve) => {
+      spawn(process.execPath, ["-e", code, dir, marks], { windowsHide: true, stdio: "ignore" }).on("exit", resolve);
+    })));
+    assert.equal(fs.readFileSync(marks, "utf8"), "x");
   });
 });
 
@@ -296,17 +362,20 @@ describe("recall.js CLI", () => {
   });
 
   function run(payload, env = {}) {
-    return spawnSync(process.execPath, [RECALL_JS], {
+    return spawnSync(process.execPath, [PROMPT_HOOK], {
       input: JSON.stringify(payload),
       encoding: "utf8",
       env: { ...process.env, ...env },
       windowsHide: true,
     });
   }
+  // The index a background build leaves: the hook itself only reads it.
+  const build = (root) => assert.equal(spawnSync(process.execPath, [RECALL_JS, "--build", root], { windowsHide: true }).status, 0);
 
   test("emits additionalContext for a matching prompt", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "commit message style rules", "feedback"),
       "Use conventional commits with double quotes.");
+    build(dir);
 
     const r = run({ prompt: "how do I write git commit messages?", cwd: dir, session_id: "s1" });
     assert.equal(r.status, 0);
@@ -319,6 +388,7 @@ describe("recall.js CLI", () => {
   test("emits additionalContext for a fully Chinese prompt (CJK recall)", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "\u63D0\u4EA4\u4FE1\u606F\u98CE\u683C\u7EA6\u5B9A", "feedback"),
       "\u4F7F\u7528\u7EA6\u5B9A\u5F0F\u63D0\u4EA4\u3002");
+    build(dir);
     const r = run({ prompt: "\u63D0\u4EA4\u4FE1\u606F\u5E94\u8BE5\u600E\u4E48\u5199\uFF1F", cwd: dir, session_id: "s1" });
     assert.equal(r.status, 0);
     const out = JSON.parse(r.stdout);
@@ -326,6 +396,7 @@ describe("recall.js CLI", () => {
   });
 
   test("silent when nothing matches", () => {
+    build(dir);
     const r = run({ prompt: "zzz qqq nonexistent", cwd: dir, session_id: "s1" });
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim(), "");
@@ -334,6 +405,7 @@ describe("recall.js CLI", () => {
   test("Codex UserPromptSubmit recalls the same scoped memories", () => {
     mkMemory(dir, "2026/07/01", "git-conventions", FM("git-conventions", "commit style", "feedback"),
       "body");
+    build(dir);
     const r = run(
       { prompt: "git commit style", cwd: dir },
       { CLAUDE_PLUGIN_ROOT: "/home/u/.codex/plugins/cache/cc-market/rem/1.0.0" },
@@ -345,7 +417,7 @@ describe("recall.js CLI", () => {
   });
 
   test("exits 0 on malformed stdin (never breaks the session)", () => {
-    const r = spawnSync(process.execPath, [RECALL_JS], {
+    const r = spawnSync(process.execPath, [PROMPT_HOOK], {
       input: "not json {",
       encoding: "utf8",
       env: process.env,
@@ -360,6 +432,7 @@ describe("recall.js CLI", () => {
       mkMemory(dir, "2026/07/01", `entry-${i}`, FM(`entry-${i}`, `memory about topic${i} git`, "project"),
         "body ".repeat(50));
     }
+    build(dir);
     // Relative to a bare node start measured just before: a loaded machine (a parallel suite, a
     // release run) slows both alike, so the bound tests recall's own work, not the host's load.
     const b0 = Date.now();
@@ -371,11 +444,41 @@ describe("recall.js CLI", () => {
     assert.equal(r.status, 0);
     assert.ok(elapsed < 3 * baseline + 1000, `took ${elapsed}ms against a ${baseline}ms bare node start`);
   });
+
+  test("cold over a planted large memory set: answers in budget, the detached build lands, the next prompt recalls", async () => {
+    for (let d = 1; d <= 20; d++) {
+      for (let i = 0; i < 100; i++) {
+        mkMemory(dir, `2026/07/${String(d).padStart(2, "0")}`, `n${d}-${i}`, FM(`note-${d}-${i}`, `filler${i} detail`, "project"), "body");
+      }
+    }
+    mkMemory(dir, "2026/07/07", "zebra-budget", FM("zebra-budget", "zebra budget notes", "project"), "the zebra budget body");
+    const b0 = Date.now();
+    spawnSync(process.execPath, ["-e", "0"], { windowsHide: true });
+    const baseline = Date.now() - b0;
+    const t0 = Date.now();
+    const cold = run({ prompt: "zebra budget", cwd: dir, session_id: "s1" });
+    const elapsed = Date.now() - t0;
+    assert.equal(cold.status, 0);
+    assert.equal(cold.stdout.trim(), "", "no index yet: the cold prompt answers with what it has");
+    assert.ok(elapsed < 3 * baseline + 1000 && elapsed < 5000, `cold took ${elapsed}ms against a ${baseline}ms bare node start`);
+    // The detached build outlives the hook: wait for its lease to drop and its index to land.
+    const index = indexFileFor(dir);
+    for (const until = Date.now() + 180_000; Date.now() < until && (buildInFlight(dir) || !fs.existsSync(index));) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.ok(fs.existsSync(index), "PLANTED CONTROL: the cold prompt started a build that wrote the index");
+    const warm = run({ prompt: "zebra budget", cwd: dir, session_id: "s2" });
+    assert.match(JSON.parse(warm.stdout).hookSpecificOutput.additionalContext, /the zebra budget body/);
+    fs.rmSync(index, { force: true });
+    fs.rmSync(`${index}.ts`, { force: true });
+    fs.rmSync(`${index}.build`, { force: true });
+  });
 });
 
 // ── the per-prompt budget ────────────────────────────────────────────────────
-// Every prompt waits for recall (it was p95 10.5 s, a third killed at the 15 s timeout). Its
-// warm path spawns no process and stats no memory file; these hold that, each beside its plant.
+// Every prompt waits for recall (it was p95 10.5 s, a third killed at the 15 s timeout; 110 s on a
+// cold 6k-entry machine, 2026-11-17). It reads a ready index and never builds one in-line; the build
+// is a detached background job. These hold that, each beside its plant.
 
 describe("the per-prompt budget", () => {
   const session = () => `budget-${crypto.randomUUID()}`;
@@ -426,16 +529,59 @@ describe("the per-prompt budget", () => {
       }
     }
     const read = counter(null);
+    const refresh = counter(true);
     const s = session();
-    scopedContext("topic7 detail", root, Date.now(), { session: s, binding: read }); // cold: builds the cache
+    buildIndex(root); // the background build, done earlier
     const t0 = Date.now();
-    // An hour later: the TTL has lapsed, so the fingerprint walk runs -- the common case.
-    const ctx = scopedContext("topic7 detail", root, Date.now() + 3_600_000, { session: s, binding: read });
+    // An hour later: the TTL has lapsed -- the common case. The old index is served at once and
+    // the refresh is handed to the background.
+    const ctx = scopedContext("topic7 detail", root, Date.now() + 3_600_000, { session: s, binding: read, refresh });
     const elapsed = Date.now() - t0;
     assert.match(ctx || "", /Relevant memories/);
-    assert.equal(read.calls, 2, "one ledger read per prompt, nothing spawned");
+    assert.equal(read.calls, 1, "one ledger read per prompt");
+    assert.equal(refresh.calls, 1, "a stale index asks for one background build");
     assert.ok(elapsed < 1000, `a warm prompt took ${elapsed}ms (budget 1000ms in-process; hook p95 target < 2 s)`);
   });
+
+  test("cold: with no index the hook reads no memory file, asks for the build, and answers in budget", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rem-budget-"));
+    fs.mkdirSync(path.join(root, ".git"));
+    for (let d = 1; d <= 30; d++) {
+      const day = path.join(root, ".claude", "memory", "2026", "07", String(d).padStart(2, "0"));
+      fs.mkdirSync(day, { recursive: true });
+      for (let i = 0; i < 100; i++) {
+        fs.writeFileSync(path.join(day, `n${d}-${i}.md`), `---\nname: note-${d}-${i}\ndescription: topic${i} detail\n---\n\nbody\n`);
+      }
+    }
+    // A spy on the builtin fs, synced into every module's named imports.
+    const original = fs.readFileSync;
+    let memoryReads = 0;
+    fs.readFileSync = (file, ...rest) => {
+      if (/[\\/]\.claude[\\/]memory[\\/].*\.md$/.test(String(file))) memoryReads++;
+      return original(file, ...rest);
+    };
+    syncBuiltinESMExports();
+    const refresh = counter(true);
+    try {
+      const t0 = Date.now();
+      const ctx = scopedContext("topic7 detail", root, Date.now(), { session: session(), binding: counter(null), refresh });
+      const elapsed = Date.now() - t0;
+      assert.equal(ctx, null, "no index yet: nothing to recall");
+      assert.equal(memoryReads, 0, "the hook never reads a memory file to build an index");
+      assert.equal(refresh.calls, 1, "it asks for one background build instead");
+      assert.ok(elapsed < 1000, `a cold prompt took ${elapsed}ms`);
+      buildIndex(root);
+      assert.equal(memoryReads, 3000, "PLANTED CONTROL: the spy sees the build read every entry");
+    } finally {
+      fs.readFileSync = original;
+      syncBuiltinESMExports();
+    }
+    const fresh = counter(true);
+    assert.match(scopedContext("topic7 detail", root, Date.now(), { session: session(), binding: counter(null), refresh: fresh }) || "", /Relevant memories/,
+      "the built index answers the next prompt");
+    assert.equal(fresh.calls, 0, "a fresh index asks for nothing");
+  });
+
 });
 
 // ── telemetry ────────────────────────────────────────────────────────────────
@@ -478,7 +624,8 @@ describe("telemetry", () => {
   test("a CLI run leaves a completed telemetry row; --telemetry prints it", () => {
     mkMemory(dir, "2026/07/01", "git-rules", FM("git-rules", "commit style", "feedback"),
       "body");
-    const r = spawnSync(process.execPath, [RECALL_JS], {
+    assert.equal(spawnSync(process.execPath, [RECALL_JS, "--build", dir], { windowsHide: true }).status, 0);
+    const r = spawnSync(process.execPath, [PROMPT_HOOK], {
       input: JSON.stringify({ prompt: "git commit style", cwd: dir }),
       encoding: "utf8",
       env: process.env,

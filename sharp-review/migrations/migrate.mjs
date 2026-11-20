@@ -2,13 +2,14 @@
 //   1. consolidate legacy per-finding review files into the single-file-per-day format.
 //        Old: .claude/memory/YYYY-MM-DD/SR-*.md (+ optional resolved.txt)
 //        New: .claude/memory/YYYY/MM/DD/sharp-review.md (frontmatter status per finding)
-//   2. relocate static review config out of the gitignored runtime state
-//        (.claude/.rem-state.json → reviewGate.{profileWeights,customProfiles,thresholds,
-//        inlineDiffLimit,docsThreshold,codebaseIntervalMin}) into the tracked, shareable
-//        .claude/sharp-review.json so it travels with the repo.
+//   2. retire the Stop hook's state: relocate static review config still in the gitignored
+//        runtime state (.claude/.rem-state.json → reviewGate.{profileWeights,customProfiles,
+//        inlineDiffLimit}) into the tracked .claude/sharp-review.json, then drop the whole
+//        `reviewGate` slice and the trigger-only config keys (RETIRED_CONFIG_KEYS) -- nothing
+//        reads them since the plugin stopped shipping a Stop hook.
 //
-// Retirement: both steps target pre-1.1 project layouts — safe to delete (reverting this
-// file to a no-op stub) once no active project predates sharp-review 1.2.
+// Retirement: step 1 targets pre-1.1 project layouts -- safe to delete once no active project
+// predates sharp-review 1.2.
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -16,46 +17,49 @@ import { reviewFrontmatter, SR_ID_RE, FINDING_HDR_RE } from '../scripts/lib.mjs'
 
 const FLAT_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-// Config keys that used to live under reviewGate but are static, shareable config.
-const CONFIG_KEYS = ['profileWeights', 'customProfiles', 'thresholds', 'inlineDiffLimit', 'docsThreshold', 'codebaseIntervalMin'];
+// Static, shareable config keys that once lived under reviewGate.
+const CONFIG_KEYS = ['profileWeights', 'customProfiles', 'inlineDiffLimit'];
+// Config keys only the retired Stop hook read (its switch and its trigger thresholds).
+export const RETIRED_CONFIG_KEYS = ['stopHook', 'thresholds', 'docsThreshold', 'codebaseIntervalMin'];
 
-// Move review config from .rem-state.json → .claude/sharp-review.json. Idempotent: only the
-// keys still present in reviewGate are moved, and the config file never clobbers a key it
-// already has (a hand-written config wins). After moving, the keys are stripped from reviewGate.
-function migrateReviewConfig(projectRoot) {
+function readJSONFile(file) {
+  if (!existsSync(file)) return null;
+  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+// Idempotent: a reviewGate config key moves only where the config file lacks it (a hand-written
+// config wins); the slice and the retired keys are then deleted, so a second run finds nothing.
+function retireStopHookState(projectRoot) {
   const summary = [];
   const stateFile = join(projectRoot, '.claude', '.rem-state.json');
-  if (!existsSync(stateFile)) return { changed: false, summary };
-
-  let state;
-  try { state = JSON.parse(readFileSync(stateFile, 'utf8')); } catch { return { changed: false, summary }; }
-  const gate = state?.reviewGate;
-  if (!gate || typeof gate !== 'object') return { changed: false, summary };
-
-  const present = CONFIG_KEYS.filter(k => gate[k] !== undefined);
-  if (present.length === 0) return { changed: false, summary };
-
   const configFile = join(projectRoot, '.claude', 'sharp-review.json');
-  let config = {};
-  if (existsSync(configFile)) {
-    try { config = JSON.parse(readFileSync(configFile, 'utf8')) || {}; } catch { config = {}; }
-  }
+  const state = readJSONFile(stateFile);
+  const gate = state?.reviewGate;
+  const loaded = readJSONFile(configFile);
+  const config = loaded && typeof loaded === 'object' ? loaded : {};
 
-  const moved = [];
-  for (const k of present) {
-    if (config[k] === undefined) { config[k] = gate[k]; moved.push(k); }
-    delete gate[k];
-  }
+  const present = gate && typeof gate === 'object' ? CONFIG_KEYS.filter(k => gate[k] !== undefined) : [];
+  const moved = present.filter(k => config[k] === undefined);
+  for (const k of moved) config[k] = gate[k];
+  const retired = RETIRED_CONFIG_KEYS.filter(k => config[k] !== undefined);
+  for (const k of retired) delete config[k];
 
-  mkdirSync(join(projectRoot, '.claude'), { recursive: true });
-  writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n', 'utf8');
-  writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
-  summary.push(`relocated review config ${JSON.stringify(present)} from .rem-state.json → .claude/sharp-review.json${moved.length < present.length ? ' (some keys already present in config, kept)' : ''}`);
-  return { changed: true, summary };
+  if (moved.length || retired.length) {
+    mkdirSync(join(projectRoot, '.claude'), { recursive: true });
+    writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  }
+  if (moved.length) summary.push(`relocated review config ${JSON.stringify(moved)} from .rem-state.json → .claude/sharp-review.json`);
+  if (retired.length) summary.push(`dropped retired Stop-hook config ${JSON.stringify(retired)} from .claude/sharp-review.json`);
+  if (state && Object.hasOwn(state, 'reviewGate')) {
+    delete state.reviewGate;
+    writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
+    summary.push('dropped the retired Stop hook state (reviewGate) from .claude/.rem-state.json');
+  }
+  return { changed: summary.length > 0, summary };
 }
 
 export async function migrate(projectRoot) {
-  const cfg = migrateReviewConfig(projectRoot);
+  const cfg = retireStopHookState(projectRoot);
   const memoryDir = join(projectRoot, '.claude', 'memory');
   const summary = [...cfg.summary];
   let changed = cfg.changed;

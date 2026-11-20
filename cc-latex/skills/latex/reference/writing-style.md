@@ -13,6 +13,9 @@ the paper uses, how sections are organized) live in the project itself — its
 CLAUDE.md, a project-local style guide, or the document's own comments. Examples in a
 generic skill illustrate the principle; they are never instructions to apply that
 content verbatim.
+Field profiles in `fields/` are field-level, not project-level: they hold section moves,
+slot templates and conventions abstracted from a wide sample of published papers, never a
+sentence copied from one of them.
 
 ## Core rules
 
@@ -263,7 +266,45 @@ content verbatim.
     it a verb ("The rise in iron loss agrees with ..."). Fix by rewriting the paragraph from its
     reasoning skeleton (rule 32), not by swapping words.
 
+37. **Revise sentence by sentence; whole paragraphs only in a first draft.** Writing a paragraph in one
+    go is allowed only while drafting text that does not yet exist or that the user has marked as a
+    draft. Every revision of existing text goes sentence by sentence: for each sentence state whether
+    it is needed (rule 32 levels; what breaks if it goes), then keep, cut, merge or replace it, and log
+    old sentence, new sentence and reason. Present the per-sentence analysis to the user before the
+    edit when the text is user-approved or when the user asked for analysis first. Never replace a
+    whole paragraph, section or abstract with a rewritten block during revision, even when every
+    sentence would change; the reviewer treats such a block replacement as BLOCK (rule 34).
+
+38. **Read the field before writing in it.** Before the first draft in a field or for a venue the
+    project has no writing profile for, read widely in that field's published papers (at least 20 full
+    texts, at least 5 from the target venue, at least 5 highly cited ones as models) and record how they
+    write: the moves of each section, slot templates of recurring sentences, and conventions (verbs,
+    tense, hedging, gap statements, where numbers appear, contribution lists). The `field-reading` skill
+    runs this procedure; shipped profiles live in `fields/`, the project's own in `.claude/field-style.md`.
+    Draft each section move by move from the profile; the rules above then shape every sentence. The field
+    profile only adds constraints and never relaxes a rule: where the field's practice is looser than one
+    of these rules (contribution lists, announced novelty, ", which" tails, personified verbs), the rule
+    holds without exception and without asking; where the field is stricter or adds a convention the
+    rules do not cover, the field's practice is adopted. Learn structure, never wording: no run of more than six words is taken
+    from any one paper; stock formulae shared by many papers ("to the best of our knowledge") are
+    conventions, not copying.
+
+39. **Published style guides bind as well.** Rules P1-P24 in `style-sources.md` come from the IEEE
+    Editorial Style Manual, the IEEE Transactions template, Gopen and Swan's "The Science of Scientific
+    Writing", Mensh and Kording's "Ten simple rules for structuring papers" and Schulzrinne's guide. They
+    cover sentence positions (subject next to its verb, old information first, new information last),
+    paragraph shape (context, content, conclusion), abstract format, and IEEE forms for citations,
+    figures, equations, numbers and units. They are binding; where one tightens a rule above, the stricter
+    form applies. A guide is added only for a constraint that makes these rules stricter.
+
 ## Self-check before finishing a section
+
+- Each sentence passes P1-P4 of `style-sources.md` (subject next to verb, new information last, old
+  information first, action in the verb); each paragraph closes on its answer (P6); IEEE forms hold (P14,
+  P24) (rule 39).
+
+- A field writing profile exists for this field and venue and was re-read before drafting; the
+  section follows its moves, and no looser field habit has relaxed a rule (rule 38).
 
 - Search for " while ", " although ", ", but ", and for commas between a subject and its verb;
   each hit is either kept for a reason or rewritten (rule 36).

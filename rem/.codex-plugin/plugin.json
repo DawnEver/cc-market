@@ -1,7 +1,7 @@
 {
   "name": "rem",
-  "version": "2.6.0",
-  "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, crystallized rules",
+  "version": "3.1.0",
+  "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, task journals",
   "author": {
     "name": "Mingyang Bao"
   },
@@ -12,14 +12,13 @@
     "retrospect",
     "recall",
     "derived-index",
-    "crystallize",
     "summarize"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "REM",
     "shortDescription": "REM sleep for your Claude sessions — memory that converges without deletion,",
-    "longDescription": "REM sleep for Claude sessions â€” consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
+    "longDescription": "REM sleep for Claude sessions â€” consolidate learnings into memory that converges without deletion: read-only recall, a derived index, task journals. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

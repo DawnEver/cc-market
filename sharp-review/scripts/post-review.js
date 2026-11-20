@@ -16,7 +16,6 @@ import { dirname, join } from 'node:path';
 
 import { reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup, renderReviewMarkdown } from './lib.mjs';
 import { mergeRun, AiLabUnavailable } from './lib/ai-lab.mjs';
-import { finishGate } from './gate.mjs';
 import { findProjectRoot } from '../shared/lib.mjs';
 
 const ROOT = findProjectRoot();
@@ -81,9 +80,7 @@ function writeReport(output, plan) {
   console.log(`Sharp review: ${output.findings.length} issues (${high} high-confidence) → ${plan.report}`);
 }
 
-if (arg('--release-gate')) {
-  finishGate(ROOT, arg('--release-gate'), false);
-} else if (args.includes('--rescan')) {
+if (args.includes('--rescan')) {
   const date = arg('--date');
   const file = arg('--file');
   if (!date || !file) fail('--rescan needs --date <YYYY-MM-DD> --file <review.md>');
@@ -110,5 +107,4 @@ if (arg('--release-gate')) {
   if (sink === 'report') writeReport(output, plan);
   else if (sink === 'stdout') process.stdout.write(JSON.stringify(output) + '\n');
   else fail(`unknown sink ${sink}; known: report, stdout`);
-  finishGate(ROOT, plan.gate_token, sink === 'report' && output.reviewers.some(reviewer => reviewer.status === 'ok'));
 }

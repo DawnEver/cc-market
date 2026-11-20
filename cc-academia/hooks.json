@@ -1,0 +1,16 @@
+{
+  "cc-academia": {
+    "PreToolUse": [
+      {
+        "matcher": "read_file|view_file|grep_search|find_by_name",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/guard-manuscript.mjs --host agy",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

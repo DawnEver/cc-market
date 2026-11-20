@@ -14,6 +14,9 @@ import { listEntries, renderIndex } from '../scripts/lib.mjs';
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const TASK = path.join(REM, 'scripts', 'task.js');
 const RECALL = path.join(REM, 'scripts', 'recall.js');
+const PROMPT_HOOK = path.join(REM, 'hooks', 'user-prompt.js'); // rem's one UserPromptSubmit hook
+// The index the hook's detached build leaves; the hook itself only reads it.
+const buildRecall = (root) => spawnSync(process.execPath, [RECALL, '--build', root], { windowsHide: true });
 const today = new Date().toISOString().slice(0, 10);
 const todayPath = today.replace(/-/g, '/');
 const GIT_ENV = { GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
@@ -157,7 +160,8 @@ describe('an archived task has the memory architecture', () => {
     const index = renderIndex(root);
     assert.doesNotMatch(index, /task-alpha/);
     assert.match(index, /zebra-copy\.md/);
-    const r = spawnSync(process.execPath, [RECALL], { input: JSON.stringify({ prompt: 'zebra copy', cwd: root }), encoding: 'utf8', cwd: root });
+    buildRecall(root);
+    const r = spawnSync(process.execPath, [PROMPT_HOOK], { input: JSON.stringify({ prompt: 'zebra copy', cwd: root }), encoding: 'utf8', cwd: root });
     const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
     assert.match(ctx, /zebra copy reasons/);
     assert.doesNotMatch(ctx, /^task alpha:/m);

@@ -14,7 +14,6 @@ export function findProjectRoot(startDir) { return _findProjectRoot(startDir); }
 export const repoRoot = findProjectRoot();
 export const memoryDir = join(repoRoot, '.claude', 'memory');
 export const rulesDir = join(repoRoot, '.claude', 'rules');
-export const remRulesDir = join(rulesDir, 'rem');
 export const stateFile = join(repoRoot, '.claude', '.rem-state.json');
 
 // ── The memory root ──
@@ -26,13 +25,6 @@ export function memoryRoot() {
   return findProjectRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 }
 
-export const CRYSTALLIZE_ADVISORY = 400; // live entries past which /rem recommends crystallize
-
-// Whether /rem should propose crystallize for `live` entries. ONE decline is permanent
-// (`crystallize.js --decline` records `crystallize.declined: true`); only the user lifts it.
-export function crystallizeDue(live, declined = loadState().crystallize?.declined === true) {
-  return live >= CRYSTALLIZE_ADVISORY && !declined;
-}
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 // ── Frontmatter ──

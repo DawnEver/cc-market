@@ -84,7 +84,7 @@ describe('sharp-review migrate()', () => {
     assert.deepEqual(summary, []);
   });
 
-  // ── Config relocation: reviewGate (runtime state) → .claude/sharp-review.json (tracked) ──
+  // ── Retired Stop hook: reviewGate (runtime state) config → .claude/sharp-review.json, the rest dropped ──
 
   function writeState(obj) {
     const dir = path.join(projectRoot, '.claude');
@@ -93,12 +93,13 @@ describe('sharp-review migrate()', () => {
   }
   const readJSON = (rel) => JSON.parse(fs.readFileSync(path.join(projectRoot, rel), 'utf8'));
 
-  test('relocates review config out of reviewGate into sharp-review.json', async () => {
+  test('relocates review config out of reviewGate, then drops the slice and its trigger keys', async () => {
     writeState({
+      hook: { stopCount: 1 },                                    // another plugin's slice — must stay
       reviewGate: {
-        sessionId: 'abc', wave: 2, lastReviewRef: 'deadbeef',   // runtime state — must stay
+        sessionId: 'abc', wave: 2, lastReviewRef: 'deadbeef',   // hook runtime state — dropped
         profileWeights: { architecture: 0.4 },                   // config — must move
-        thresholds: { wave0: { lines: 100, files: 2 } },
+        thresholds: { wave0: { lines: 100, files: 2 } },         // trigger-only — dropped
         inlineDiffLimit: 30000, docsThreshold: 3, codebaseIntervalMin: 60,
         customProfiles: [{ key: 'k', source: 'codebase' }],
       },
@@ -109,17 +110,27 @@ describe('sharp-review migrate()', () => {
     assert.match(summary.join('\n'), /relocated review config/);
 
     const cfg = readJSON('.claude/sharp-review.json');
-    assert.deepEqual(cfg.profileWeights, { architecture: 0.4 });
-    assert.equal(cfg.inlineDiffLimit, 30000);
-    assert.equal(cfg.docsThreshold, 3);
-    assert.deepEqual(cfg.customProfiles, [{ key: 'k', source: 'codebase' }]);
+    assert.deepEqual(cfg, {
+      profileWeights: { architecture: 0.4 }, customProfiles: [{ key: 'k', source: 'codebase' }], inlineDiffLimit: 30000,
+    });
+    const state = readJSON('.claude/.rem-state.json');
+    assert.equal(state.reviewGate, undefined);
+    assert.deepEqual(state.hook, { stopCount: 1 });
+  });
 
-    const gate = readJSON('.claude/.rem-state.json').reviewGate;
-    assert.equal(gate.sessionId, 'abc');          // runtime state preserved
-    assert.equal(gate.wave, 2);
-    assert.equal(gate.profileWeights, undefined);  // config stripped
-    assert.equal(gate.inlineDiffLimit, undefined);
-    assert.equal(gate.customProfiles, undefined);
+  test('drops the retired Stop-hook keys from the tracked config and keeps every live one', async () => {
+    const cfgDir = path.join(projectRoot, '.claude');
+    fs.mkdirSync(cfgDir, { recursive: true });
+    fs.writeFileSync(path.join(cfgDir, 'sharp-review.json'), JSON.stringify({
+      stopHook: false, thresholds: { wave0: { lines: 1, files: 1 } }, docsThreshold: 3, codebaseIntervalMin: 60,
+      providers: { interactive: ['codex'] }, inlineDiffLimit: 100,
+    }), 'utf8');
+
+    const { changed, summary } = await migrate(projectRoot);
+    assert.equal(changed, true);
+    assert.match(summary.join('\n'), /dropped retired Stop-hook config/);
+    assert.deepEqual(readJSON('.claude/sharp-review.json'), { providers: { interactive: ['codex'] }, inlineDiffLimit: 100 });
+    assert.equal((await migrate(projectRoot)).changed, false, 'a current config is left alone');
   });
 
   test('config relocation is idempotent and never clobbers an existing config key', async () => {
@@ -133,7 +144,7 @@ describe('sharp-review migrate()', () => {
     assert.deepEqual(cfg.profileWeights, { diff: 0.1 }); // existing config kept
     assert.equal(cfg.inlineDiffLimit, 12345);            // new key moved
 
-    // second run is a no-op for config (keys already stripped from reviewGate)
+    // second run is a no-op (reviewGate already dropped)
     const second = await migrate(projectRoot);
     assert.equal(second.changed, false);
   });
