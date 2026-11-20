@@ -47,6 +47,10 @@ test_roots = []
 trunk = "main"
 sessions = ["main"]
 prune_merged = true
+# Branch limits (user ruling 2026-11-20): land or retire a head past them (dev_lab.dev.branchpolicy).
+max_ahead = 10
+max_idle_hours = 12
+ephemeral = ['pr/*']
 
 # FORGE-PROTECTION-DECLARED (dev_lab.dev.forgeprotect): the ONE bypass identity per forge; on GitHub the ops App
 # merges break-glass and the repo admin stays. `python -m dev_lab.dev.forge protect plan|check|apply`.
