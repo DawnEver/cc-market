@@ -22,12 +22,29 @@ import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
 import { withLock } from '../shared/lock.mjs';
 import { atomicWriteFile } from '../shared/atomic-write.mjs';
-import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
+import { parseFrontmatter, setField, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
 import { consumeAuthority, authorityProblem } from './authority.mjs';
 import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+// A NEED is a test resource name the repo maps to the extra that serves it (dev-lab depneeds, D79): a task
+// declares needs, never extras. The one frontmatter shape dev-lab reads is `needs: [a, b]`.
+export const NEED_RE = /^[a-z0-9][a-z0-9_-]*$/;
+
+export function parseNeeds(value) {
+  const names = String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  const bad = names.filter(n => !NEED_RE.test(n));
+  if (bad.length) throw new Error(`needs must be need names (e.g. simba, windows), got: ${bad.join(', ')}`);
+  return [...new Set(names)];
+}
+
+function readNeedsField(value) {
+  if (!value) return [];
+  if (!value.startsWith('[') || !value.endsWith(']')) throw new Error(`needs must be a [a, b] list, got: ${value}`);
+  return parseNeeds(value.slice(1, -1));
+}
+const needsLine = needs => `[${needs.join(', ')}]`;
 
 // THE ONE answer to "which checkout holds the ledger": the main checkout of the repository at
 // `start`, from any of its worktrees (its own root outside git) -- the parent of git's common dir,
@@ -119,6 +136,7 @@ export function readTask(start, slug) {
     owner: fields.owner || null,
     created: fields.created || null,
     scope: (fields.scope || '').split(',').map(s => s.trim()).filter(Boolean),
+    needs: readNeedsField(fields.needs),
     decisions,
     items,
     openItems: items.filter(i => i.open),
@@ -257,7 +275,8 @@ export function resolveTask(start, { task, binding = readSessionBinding } = {}) 
 
 // ── Writes (task.js is the only caller) ──
 
-export function openTask(start, slug, goal, { scope = [], owner = 'user', date = todayISO() } = {}) {
+export function openTask(start, slug, goal, { scope = [], needs = [], owner = 'user', date = todayISO() } = {}) {
+  const declared = parseNeeds(needs.join(','));
   if (!SLUG_RE.test(slug)) throw new Error(`task slug must be kebab-case, got: ${slug}`);
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
   assertLanguage(start, goal, 'the task goal');
@@ -276,6 +295,7 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
     `created: ${date}`,
     'status: open',
     ...(scope.length ? [`scope: ${scope.join(', ')}`] : []),
+    ...(declared.length ? [`needs: ${needsLine(declared)}`] : []),
     '---',
     '',
     `# ${slug}`,
@@ -286,6 +306,20 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
     '',
   ].join('\n'), { flag: 'wx' });
   appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
+}
+
+// The bound session amends the task's NEEDS (D79): the one frontmatter line is rewritten and a decision line records
+// old and new -- the journal stays append-only, so the record of why lives there.
+export function setNeeds(start, slug, needs, { date = todayISO() } = {}) {
+  const task = readTask(start, slug);
+  if (!task) throw new Error(`no task ${slug}`);
+  if (task.status !== 'open') throw new Error(`task ${slug} is ${task.status}; its record is final`);
+  const next = parseNeeds(needs);
+  const file = taskFile(start, slug);
+  const text = readFileSync(file, 'utf8');
+  const updated = next.length ? setField(text, 'needs', needsLine(next)) : text.replace(/^needs:.*\r?\n/m, '');
+  atomicWriteFile(file, updated);
+  return appendJournal(start, slug, 'decision', `needs set to ${needsLine(next)} (was ${needsLine(task.needs)})`, { date });
 }
 
 // Append ONE line. O_APPEND: earlier bytes are never rewritten. The read that numbers the line
