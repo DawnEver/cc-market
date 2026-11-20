@@ -10,14 +10,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { tasksDir, BINDINGS, parseBindPrompt, readSessionBinding } from '../scripts/tasks.mjs';
+import { tasksDir, parseBindPrompt, readSessionBinding } from '../scripts/tasks.mjs';
+import { bindingFile as storeFile, ledgerOf } from '../scripts/session-binding.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
 const REM = fileURLToPath(new URL('..', import.meta.url));
 const HOOK = path.join(REM, 'hooks', 'user-prompt.js');
 const TASK = path.join(REM, 'scripts', 'task.js');
 const NATIVE_KEYS = ['CLAUDE_PLUGIN_ROOT', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_SESSION_ID', 'CODEX_HOME', 'CODEX_SANDBOX',
-  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'HARNESS_AGENT'];
+  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'HARNESS_AGENT', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'PLUGIN_ROOT'];
 
 // The process environment with no harness identity of its own, plus `extra`.
 function envWith(extra = {}) {
@@ -29,6 +30,8 @@ function envWith(extra = {}) {
 function repo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-bind-'));
   spawnSync('git', ['init', '-q', '-b', 'main', root]);
+  // A fresh machine home per repo: a binding is keyed by session alone, so tests must not share one store.
+  process.env.LAB_COMMONS_HOME = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rem-mhome-')), 'machine-home');
   fs.mkdirSync(path.join(root, '.claude', 'memory'), { recursive: true });
   return root;
 }
@@ -47,7 +50,8 @@ function open(root, slug) {
   return fs.readFileSync(path.join(tasksDir(root), slug, 'TASK.md'), 'utf8').match(/^authority: (\S+)$/m)[1];
 }
 
-const bindingFile = (root, session) => path.join(tasksDir(root), BINDINGS, `${session}.json`);
+// The binding lives in the machine home, keyed by session alone (D34): `root` names no part of the path.
+const bindingFile = (_root, session) => storeFile(session);
 const context = r => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '');
 
 describe('the prompt that binds', () => {
@@ -67,7 +71,11 @@ describe('rem binds the session on the user\'s `task: <slug>` prompt', () => {
     const r = prompt(root, 'task: feature-x\nfix the thing');
     assert.equal(r.status, 0, r.stderr);
     const record = JSON.parse(fs.readFileSync(bindingFile(root, 's-1'), 'utf8'));
-    assert.deepEqual(record, { session: 's-1', task: `feature-x@${authority}` }, 'the contract: exactly these two keys');
+    assert.deepEqual(record, { session: 's-1', task: `feature-x@${authority}`, ledger: ledgerOf(root, tasksDir(root)) },
+      'the contract: exactly these three keys, the ledger naming where the task lives');
+    assert.equal(record.ledger.path, tasksDir(root).replace(/\\/g, '/'));
+    assert.match(record.ledger.repo_key, new RegExp(`^${path.basename(root)}-[0-9a-f]{12}$`));
+    assert.ok(!fs.existsSync(path.join(tasksDir(root), '.bindings')), 'nothing lands in the retired per-repo store');
     assert.deepEqual(readSessionBinding(root, { session: 's-1' }), { slug: 'feature-x', authority });
     assert.match(context(r), new RegExp(`task feature-x@${authority}`));
     assert.match(context(r), /pr\/feature-x\/<feature>/);
@@ -106,7 +114,8 @@ describe('rem binds the session on the user\'s `task: <slug>` prompt', () => {
     const root = repo();
     open(root, 'feature-x');
     const r = prompt(root, 'task: feature-x', { session_id: '../escape' });
-    assert.ok(!fs.existsSync(path.join(tasksDir(root), BINDINGS)), 'no binding file anywhere');
+    assert.ok(!fs.existsSync(path.dirname(storeFile('s-1'))) || fs.readdirSync(path.dirname(storeFile('s-1')))
+      .every(n => !n.includes('escape')), 'no binding file anywhere');
     assert.match(context(r), /no plain session id/);
   });
 
@@ -136,7 +145,7 @@ describe('rem binds the session on the user\'s `task: <slug>` prompt', () => {
   });
 
   it('an agent still cannot write a binding: the guard refuses it', () => {
-    const file = path.join('repo', '.claude', 'tasks', BINDINGS, 's-1.json');
+    const file = storeFile('s-1');
     assert.equal(decideTaskGuard({ tool_name: 'Write', tool_input: { file_path: file } }).deny, true);
     assert.equal(decideTaskGuard({ tool_name: 'Bash', tool_input: { command: `echo {} > ${file}` } }).deny, true);
   });
@@ -151,7 +160,8 @@ describe('a Codex session binds under its own thread', () => {
     const codex = envWith({ CODEX_HOME: path.join(TEST_HOME, '.codex'), CODEX_THREAD_ID: thread });
     const r = prompt(root, 'task: feature-x', { session_id: 'parent-session' }, codex);
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(JSON.parse(fs.readFileSync(bindingFile(root, thread), 'utf8')), { session: thread, task: `feature-x@${authority}` });
+    const record = JSON.parse(fs.readFileSync(bindingFile(root, thread), 'utf8'));
+    assert.deepEqual([record.session, record.task], [thread, `feature-x@${authority}`]);
     assert.ok(!fs.existsSync(bindingFile(root, 'parent-session')), 'PLANTED CONTROL: the parent id is not bound');
   });
 
@@ -161,5 +171,31 @@ describe('a Codex session binds under its own thread', () => {
     const codex = envWith({ CODEX_HOME: path.join(TEST_HOME, '.codex') });
     prompt(root, 'task: feature-x', { session_id: 'parent-session', transcript_path: `/x/rollout-2026-11-16T10-00-00-${thread}.jsonl` }, codex);
     assert.ok(fs.existsSync(bindingFile(root, thread)));
+  });
+
+  it('an Antigravity PreInvocation prompt strips <USER_REQUEST> and binds conversationId', () => {
+    const root = repo();
+    const authority = open(root, 'feature-x');
+    const r = spawnSync(process.execPath, [HOOK, '--host', 'agy'], {
+      input: JSON.stringify({
+        conversationId: 'agy-conv-1',
+        hookEventName: 'PreInvocation',
+        workspacePaths: [root],
+        lastUserInput: '<USER_REQUEST>\ntask: feature-x\nimplement it\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\n{}\n</ADDITIONAL_METADATA>',
+      }),
+      encoding: 'utf8',
+      env: envWith({ ANTIGRAVITY_CONVERSATION_ID: 'agy-conv-1', ANTIGRAVITY_AGENT: '1' }),
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.match(out.injectSteps[0].systemMessage.systemMessage, new RegExp(`task feature-x@${authority}`));
+    const record = JSON.parse(fs.readFileSync(bindingFile(root, 'agy-conv-1'), 'utf8'));
+    assert.deepEqual([record.session, record.task], ['agy-conv-1', `feature-x@${authority}`]);
+    const second = spawnSync(process.execPath, [HOOK, '--host', 'agy'], {
+      input: JSON.stringify({ conversationId: 'agy-conv-1', hookEventName: 'PreInvocation', invocationNum: 1, workspacePaths: [root], lastUserInput: 'next' }),
+      encoding: 'utf8',
+      env: envWith({ ANTIGRAVITY_CONVERSATION_ID: 'agy-conv-1', ANTIGRAVITY_AGENT: '1' }),
+    });
+    assert.equal(second.stdout, '{}');
   });
 });

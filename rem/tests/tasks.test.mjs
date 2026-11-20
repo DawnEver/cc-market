@@ -8,7 +8,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { grantIfUserVerb } from './user-grant.mjs';
-import { readTask, listTasks, resolveTask, readSessionBinding, sessionOf, tasksDir, BINDINGS, taskSummary, SUMMARY_BYTES, STATUS_BYTES } from '../scripts/tasks.mjs';
+import { readTask, listTasks, resolveTask, readSessionBinding, sessionOf, tasksDir, taskSummary, SUMMARY_BYTES, STATUS_BYTES } from '../scripts/tasks.mjs';
+import { writeBinding, bindingFile } from '../scripts/session-binding.mjs';
 import { VERBS } from '../scripts/task-verbs.mjs';
 import { decideTaskGuard } from '../hooks/task-guard.js';
 
@@ -20,6 +21,8 @@ const today = new Date().toISOString().slice(0, 10);
 function repo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-task-'));
   spawnSync('git', ['init', '-q', '-b', 'main', root]);
+  // A fresh machine home per repo: a binding is keyed by session alone, so tests must not share one store.
+  process.env.LAB_COMMONS_HOME = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rem-mhome-')), 'machine-home');
   fs.mkdirSync(path.join(root, '.claude', 'memory'), { recursive: true });
   return root;
 }
@@ -158,23 +161,23 @@ describe('binding', () => {
     assert.deepEqual(listTasks(root), [], 'a closed task is archived out of .claude/tasks/');
   });
 
-  it('reads the binding file from the ledger, one file, for this session only', () => {
+  it('reads the binding file from the session store, one file, for this session only', () => {
     const root = repo();
     run(root, 'open', 'feature-x', 'g');
     const authority = authorityOf(root, 'feature-x');
-    const dir = path.join(tasksDir(root), BINDINGS);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 's-1.json'), JSON.stringify({ session: 's-1', task: `feature-x@${authority}` }));
+    const ledger = { repo_key: 'r-0', path: tasksDir(root) };
+    writeBinding('s-1', `feature-x@${authority}`, ledger);
     assert.deepEqual(readSessionBinding(root, { session: 's-1' }), { slug: 'feature-x', authority });
     assert.equal(resolveTask(root, { binding: start => readSessionBinding(start, { session: 's-1' }) }), 'feature-x');
     assert.equal(readSessionBinding(root, { session: 's-2' }), null, 'PLANTED CONTROL: another session is unbound');
-    fs.writeFileSync(path.join(dir, 's-3.json'), JSON.stringify({ session: 's-1', task: `feature-x@${authority}` }));
+    fs.writeFileSync(bindingFile('s-3'), JSON.stringify({ session: 's-1', task: `feature-x@${authority}`, ledger }));
     assert.equal(readSessionBinding(root, { session: 's-3' }), null, 'a record naming another session binds nothing');
-    fs.writeFileSync(path.join(dir, 's-4.json'), 'not json');
+    fs.writeFileSync(bindingFile('s-4'), 'not json');
     assert.equal(readSessionBinding(root, { session: 's-4' }), null);
     assert.equal(readSessionBinding(root, { session: '../s-1' }), null, 'a session id is never a path');
     assert.equal(sessionOf({ CLAUDE_CODE_SESSION_ID: 's-1' }), 's-1');
     assert.equal(sessionOf({ CODEX_THREAD_ID: 't-1' }), 't-1');
+    assert.equal(sessionOf({ ANTIGRAVITY_CONVERSATION_ID: 'c-1' }), 'c-1');
     assert.equal(sessionOf({}), '');
     assert.deepEqual(listTasks(root).map(t => t.slug), ['feature-x'], 'the bindings directory is not a task');
   });
@@ -243,7 +246,7 @@ describe('an agent opening a task is refused', () => {
   });
 
   it('the /rem:task command is user-only and runs task.js', () => {
-    const text = fs.readFileSync(path.join(REM, 'commands', 'task.md'), 'utf8');
+    const text = fs.readFileSync(path.join(REM, 'claude-commands', 'task.md'), 'utf8');
     assert.match(text, /^disable-model-invocation: true$/m);
     assert.match(text, /!`node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/task\.js" \$ARGUMENTS`/);
   });
@@ -262,14 +265,11 @@ describe('the ledger is repo state, one place for every worktree (cc-market #20)
     return { main, a: trees[0], b: trees[1] };
   }
   const bindIn = (root, session, slug) => {
-    const dir = path.join(tasksDir(root), BINDINGS);
-    fs.mkdirSync(dir, { recursive: true });
-    const task = `${slug}@${readTask(root, slug).authority}`;
-    fs.writeFileSync(path.join(dir, `${session}.json`), JSON.stringify({ session, task }));
+    writeBinding(session, `${slug}@${readTask(root, slug).authority}`, { repo_key: 'r-0', path: tasksDir(root) });
   };
   const runAs = (root, session, ...args) => spawnSync(process.execPath, [TASK, ...args], {
     cwd: root, encoding: 'utf8',
-    env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, CODEX_THREAD_ID: '', CLAUDE_PROJECT_DIR: root },
+    env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, CODEX_THREAD_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', CLAUDE_PROJECT_DIR: root },
   });
 
   it('a task opened in worktree A is resolved, bound and journaled from worktree B', () => {
@@ -309,11 +309,15 @@ describe('the ledger is repo state, one place for every worktree (cc-market #20)
 
   it('the task guard refuses an agent writing a binding, and admits task.js place', () => {
     const write = file => decideTaskGuard({ tool_name: 'Write', tool_input: { file_path: file } }).deny;
-    assert.ok(write('/r/.claude/tasks/.bindings/s.json'));
-    assert.ok(write('C:\\r\\.claude\\tasks\\.bindings\\s.json'));
+    assert.ok(write(bindingFile('s')));
+    assert.ok(write(bindingFile('s').replace(/\//g, '\\')));
     assert.ok(!write('/r/.claude/tasks/x/notes.txt'), 'PLANTED CONTROL: the file rule names only records and bindings');
+    assert.ok(!write(path.join(process.env.LAB_COMMONS_HOME, 'state', 'other', 's.json')),
+      'PLANTED CONTROL: only the session store is guarded');
     const shell = command => decideTaskGuard({ tool_name: 'Bash', tool_input: { command } }).deny;
-    assert.ok(shell('echo {} > .claude/tasks/.bindings/s.json'));
+    assert.ok(shell('echo {} > $LAB_COMMONS_HOME/state/sessions/s.json'));
+    assert.ok(shell('echo {} > "${LAB_COMMONS_HOME}/state/sessions/s.json"'));
+    assert.ok(shell(`echo {} > ${bindingFile('s').replace(/\\/g, '/')}`));
     assert.equal(shell(`node ${TASK} place toolchain`), false);
   });
 });
@@ -399,7 +403,7 @@ describe('progressive disclosure', () => {
   });
 
   it('no doc restates the journal verb list or names a retired verb', () => {
-    const docs = ['README.md', 'AGENTS.md', 'commands/task.md', 'docs/architecture.md',
+    const docs = ['README.md', 'AGENTS.md', 'claude-commands/task.md', 'docs/architecture.md',
       'skills/rem/reference/tasks.md', 'skills/rem/reference/scripts.md'];
     for (const doc of docs) {
       const text = fs.readFileSync(path.join(REM, doc), 'utf8');

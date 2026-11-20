@@ -1,0 +1,11 @@
+{
+  "name": "rem",
+  "version": "3.1.0",
+  "description": "REM sleep for your Claude sessions — memory that converges without deletion, read-only recall, task journals",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "homepage": "https://github.com/DawnEver/cc-market/tree/main/rem",
+  "repository": "https://github.com/DawnEver/cc-market",
+  "skills": "./agy-skills/"
+}
