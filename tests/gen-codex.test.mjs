@@ -291,7 +291,12 @@ for (const _p of _readdirSync(_repoRoot).filter((n) =>
 test('the committed Codex artifacts are fresh', () => {
   const copy = mkTmp('gcfresh-');
   const skip = new Set(['.git', 'node_modules', 'output', '.venv', 'worktrees']);
-  cpSync(_repoRoot, copy, { recursive: true, filter: (src) => !skip.has(basename(src)) });
+  // Top-level entries one by one: the test temp may live inside the checkout (under output/), and cpSync refuses
+  // copying a tree into its own subdirectory before any filter runs.
+  for (const entry of readdirSync(_repoRoot)) {
+    if (skip.has(entry)) continue;
+    cpSync(join(_repoRoot, entry), join(copy, entry), { recursive: true, filter: (src) => !skip.has(basename(src)) });
+  }
   generate(copy);
   const generated = (root) => {
     const files = new Map();
