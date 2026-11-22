@@ -42,6 +42,15 @@ A project whose writing rules relax a generic rule (writing-style rule 41, e.g. 
 ", which" clauses) adds `lint-prose off: 29-tail` (comma-separated hit ids) to the same rules
 file; `lint-prose.mjs` then drops those hits. `--off id,id` overrides the project line.
 
+## Abstract, introduction, conclusion (rules 42-46)
+
+The abstract states each finding before its studied-case value (rule 42); a digest or extended
+abstract need not repeat the abstract in its introduction (rule 43); divisions of a quantity are
+written "allocation" or "distribution" (rule 44, lint id `44-allocation`); AI proposes, never
+applies, changes to the logic of the abstract, introduction, conclusion and outline (rule 45); the
+conclusion says "This paper has ..." (rule 46, lint id `46-tense`). Silence a lint id per project
+with `lint-prose off:`.
+
 ## Development
 
 ```shell

@@ -24,7 +24,8 @@ helper script, no hooks.
 - `scripts/lint-prose.mjs` — candidate hits for the pattern-checkable writing-style rules;
   with an English variant (rule 40: `English variant: British|American` in the project's
   `.claude/rules/*.md`, or `--english`) also flags the other variant's spellings, LaTeX code,
-  bibliography and quotations excluded. Tests: `tests/lint-prose.test.mjs`.
+  bibliography and quotations excluded; flags division wording (rule 44) in prose and
+  past tense for the paper inside the conclusion (rule 46). Tests: `tests/lint-prose.test.mjs`.
 
 ## Standard
 

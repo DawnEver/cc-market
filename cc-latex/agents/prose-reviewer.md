@@ -13,8 +13,8 @@ Inputs from the caller: the files or `git diff` range to review, and the writer'
 Procedure (rule 32 order: L1 argument > L2 position > L3 sentence > L4 wording):
 1. Lint: run `node <cc-latex>/scripts/lint-prose.mjs <files>` from the LaTeX project root
    (`<cc-latex>` = `$CLAUDE_PLUGIN_ROOT`, else glob `~/.claude*/plugins/cache/*/cc-latex/*/scripts/lint-prose.mjs`).
-   The lint covers the generic rules and the project's English variant (rule 40, `40-english` hits);
-   apply the project's other rules by reading. Confirm or dismiss
+   The lint covers the generic rules and the project's English variant (rule 40, `40-english` hits),
+   plus rules 44 and 46 (`44-allocation`, `46-tense`); apply the project's other rules by reading. Confirm or dismiss
    every hit with one reason.
 2. Pass 1, links: read each changed paragraph whole, from its first sentence. Name the link of each
    sentence to the previous one (cause, consequence, contrast, elaboration). Flag sentences with no link,
@@ -29,9 +29,12 @@ Procedure (rule 32 order: L1 argument > L2 position > L3 sentence > L4 wording):
    profile for its field is FIX: run the `field-reading` skill first. A run of more than six words
    matching one corpus paper is BLOCK (stock formulae common to the field excepted).
 5. Consistency: changed terms, symbols and claims match the figures, captions, abstract and conclusion.
-6. Approved text: a change of meaning in text the user has approved (the project rules name it) is
+6. Human-led logic (writing-style rule 45): in the abstract, introduction, conclusion and outline,
+   report a logic problem there (gap, missing link, misordered step) as a proposal for the user, never as
+   a rewrite; a restructured, condensed or reordered passage there not approved by the user is BLOCK.
+7. Approved text: a change of meaning in text the user has approved (the project rules name it) is
    BLOCK, however well written; it goes to the user.
-7. Revision granularity (writing-style rule 37): outside the draft stage, a paragraph replaced as a
+8. Revision granularity (writing-style rule 37): outside the draft stage, a paragraph replaced as a
    whole, rather than sentence by sentence with a per-sentence change log, is BLOCK; it goes back to
    the writer to be redone sentence by sentence.
 

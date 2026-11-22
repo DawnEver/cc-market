@@ -6,6 +6,9 @@
 // rules a pattern can catch. Hits are candidates: the reviewer confirms or dismisses each
 // (rule 34); the lint never replaces the review.
 //
+// Rule 44 (allocation wording) is checked on prose only; rule 46 (conclusion tense) only
+// inside a section whose title starts with "Conclusion".
+//
 // Project-specific wording rules are not linted; the prose-reviewer agent applies them
 // from the project's writing rules. The one exception is the English variant (rule 40): a
 // line "English variant: British|American" in the nearest .claude/rules/*.md at or above cwd
@@ -37,6 +40,10 @@ export const RULES = [
   ['22-nounclause', /^(How|What)\b/, 'noun-clause subject'],
   ['size', /\bhardly\b/i, "give the size of a small change or 'changes little'"],
 ];
+// Rule 44: division of a quantity among parts; tested on prose only (LaTeX code removed).
+const ALLOCATION = /\b(split|splits|splitting|shares?|portions?)\b|\bdivide[sd]?\b.*\bbetween\b/i;
+// Rule 46: past tense for what the paper did; tested inside \section{Conclusion...} only.
+const PAST_SELF = /\bThis (paper|study|work) (analysed|analyzed|presented|studied|showed|proposed|investigated|examined|developed|compared|demonstrated|derived|evaluated|quantified|identified)\b/i;
 const OPENER = /^(In|At|Under|For|With|By|From|On|Unlike|Because|Although|When|While|As|After|Before|Using|Compared|Without|Through|Across|Between|Since|If|Below|Above|Near|To|Following|Grouped)\b/;
 const SKIP_ENV = /\\(begin|end)\{(figure\*?|table\*?|tikzpicture|equation\*?|align\*?|tabular)\}/;
 
@@ -167,16 +174,16 @@ export function findOff(dir = process.cwd()) {
   return m ? splitIds(m[1]) : [];
 }
 
-/** Yield {line, text} sentences from LaTeX source. */
+/** Yield {line, text, section} sentences from LaTeX source (section: current \section title). */
 export function sentences(src) {
   const out = [];
-  let buf = [], start = null, depth = 0;
+  let buf = [], start = null, depth = 0, section = '';
   const flush = () => {
     if (buf.length) {
       let p = buf.join(' ')
         .replace(/\\(cite|ref|eqref|label)\{[^}]*\}/g, 'X')
         .replace(/\$[^$]*\$/g, 'M');
-      for (const s of p.split(/(?<=[.!?])\s+(?=[A-Z\\])/)) if (s.trim()) out.push({ line: start, text: s.trim() });
+      for (const s of p.split(/(?<=[.!?])\s+(?=[A-Z\\])/)) if (s.trim()) out.push({ line: start, text: s.trim(), section });
     }
     buf = []; start = null;
   };
@@ -185,6 +192,8 @@ export function sentences(src) {
     const m = s.match(SKIP_ENV);
     if (m && m[1] === 'begin') { flush(); depth++; }
     if (depth) { if (m && m[1] === 'end') depth--; return; }
+    const sec = s.match(/^\\section\*?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/);
+    if (sec) section = sec[1].trim();
     if (!s || /^\\(sub)*section|^\\label|^\\noindent\\textbf/.test(s)) { flush(); return; }
     if (start === null) start = i + 1;
     buf.push(s);
@@ -198,13 +207,17 @@ export function lint(src, file = '', { maxWords: maxW = 38, minWords: minW = 7, 
   const hits = [];
   let prevOpen = false, prevIts = false;
   const tailsAllowed = off.includes('29-tail');
-  for (const { line, text } of sentences(src)) {
+  for (const { line, text, section } of sentences(src)) {
     const plain = text.replace(/\\[a-zA-Z]+\*?(\{[^}]*\})?|[{}~]/g, ' ').replace(/\s+/g, ' ').trim();
     const words = plain.split(' ');
     const add = (rule, message) => hits.push({ file, line, rule, message, text });
     // With ", which" allowed (29-tail off, rule 41), 31-relative no longer counts those clauses.
     const relPlain = tailsAllowed ? plain.replace(/,\s*which\b/gi, ',') : plain;
     for (const [id, rx, msg] of RULES) if (rx.test(id === '31-relative' ? relPlain : plain)) add(id, msg);
+    if (ALLOCATION.test(prose(text)))
+      add('44-allocation', "division of a quantity: write 'allocation' or 'distribution'");
+    if (/^Conclusion/i.test(section) && PAST_SELF.test(plain))
+      add('46-tense', "conclusion: present perfect, 'This paper has <verb>'");
     const open = OPENER.test(plain) && words.slice(0, 14).join(' ').includes(',');
     if (open && prevOpen) add('33-openers', 'two phrase-plus-comma openings in a row');
     const its = plain.startsWith('Its ');

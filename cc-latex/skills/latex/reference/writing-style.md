@@ -94,11 +94,12 @@ sentence copied from one of them.
     what was found and why it holds: the mechanism, the direction of an effect, and its
     relative size or validity condition. Case-specific detail stays in the results: the
     operating point, the absolute value in watts or volts, the fitted coefficient, the count
-    of simulated points. Write "PWM adds a large share of the loss, and almost all of the
+    of simulated points. Write "PWM adds a large part of the loss, and almost all of the
     magnet loss comes from PWM" in the abstract, and give "1.67 kW at 450 N·m and
     5000 r/min" in the results section. A number may appear in a general section only when
     it is itself the transferable finding (a scaling exponent, a ratio, a bound), and then
-    without the operating point that produced it.
+    without the operating point that produced it. Exception: the abstract may follow each
+    finding with its value in the studied case, in the order of rule 42.
 
 16. **Established terminology, no coined terms.** Use the term the field already uses for a
     concept (check a standard textbook or the cited papers) instead of inventing a descriptive
@@ -119,6 +120,7 @@ sentence copied from one of them.
     describe a specialty concept by its role in plain words before, or instead of, its
     symbol or name; one sentence carries one step, never a chain packed with semicolons.
     The conclusion opens with the question the paper answered, not with a result detail.
+    Each finding in the abstract comes before its value (rule 42); who sets this order is rule 45.
 
 19. **Write for the general practitioner; cite the textbook, explain only what the argument
     needs.** Assume a reader who knows the field broadly but not the paper's specialty. Before
@@ -163,7 +165,8 @@ sentence copied from one of them.
 24. **The roadmap is one sentence per section.** Close the introduction with the purpose
     statement followed by the section roadmap in one paragraph; give each section one sentence
     that states its role in the argument, not its findings, and do not repeat what the purpose
-    statement or the contribution sentences already say. Results belong to the abstract, the
+    statement or the contribution sentences already say (in a short format, rule 43 also frees the
+    introduction from repeating the abstract). Results belong to the abstract, the
     results section and the conclusion.
 25. **Sections run as one line of reasoning.** Start a section with its first substantive fact,
     linked to what the reader already knows; never preview its structure ("in four steps",
@@ -321,6 +324,36 @@ sentence copied from one of them.
     skips ", which" (its "that" / "who" checks stay);
     `--off id,id` on the command line overrides that line.
 
+42. **Abstract: finding first, then its value.** In the abstract, state each finding first, as a
+    mechanism or direction; then give its value in the studied case, e.g. "PWM adds most of the magnet
+    loss, which is 2.4 kW in the studied case". The value never precedes or replaces the finding. This
+    order refines rules 15 and 18 for the abstract.
+
+43. **Short formats need not repeat the abstract.** In a page-limited submission (digest, extended
+    abstract), the introduction need not repeat what the abstract already says: context, gap or
+    purpose stated in the abstract may be taken as read, and the introduction spends its space on
+    what the abstract leaves out. This relaxes repetition only; it never removes a definition the
+    body needs (P12: abbreviations are still defined at first use in the body).
+
+44. **Distribution wording: "allocation" or "distribution".** For how a quantity is divided among
+    parts, subspaces or groups, write "allocation" or "distribution" (and their verbs: "is allocated
+    to", "is distributed over"). Do not write "split", "share", "portion" or "divide ... between".
+    `scripts/lint-prose.mjs` flags these words in prose (hit id `44-allocation`; LaTeX code is not
+    checked); a project silences it through rule 41 (`lint-prose off: 44-allocation`).
+
+45. **The author leads the logic of the abstract, introduction, conclusion and outline.** The user
+    sets the reasoning of these four parts. AI may propose a reasoning skeleton or flag a gap, a missing
+    link or a misplaced step. AI never restructures, condenses or reorders these parts on its own; any
+    such change goes to the user as a proposal first, with the reason, and is applied only after
+    approval. Reason: AI condensation repeatedly broke the author's chain of reasoning, because the
+    links it dropped looked redundant out of context.
+
+46. **Conclusion in the present perfect.** For what the paper did, the conclusion uses the present
+    perfect: "This paper has analysed ...", "has shown ...", not "This paper analysed ...". Findings
+    that hold in general stay in the present tense. `scripts/lint-prose.mjs` flags "This
+    paper/study/work" followed by a past-tense verb (analysed, presented, studied, showed, ...) inside
+    `\section{Conclusion...}` (hit id `46-tense`).
+
 ## Self-check before finishing a section
 
 - Each sentence passes P1-P4 of `style-sources.md` (subject next to verb, new information last, old
@@ -367,11 +400,15 @@ sentence copied from one of them.
   line before a new-topic paragraph.
 - Substantive deleted material has been copied to the project archive.
 - Tables use full parameter names, one quantity per cell, and units in square brackets.
-- The abstract, introduction and conclusion carry no operating points, absolute values or
-  fitted coefficients; those stay in the results.
+- The introduction and conclusion carry no operating points, absolute values or fitted
+  coefficients; those stay in the results; the abstract gives a value only after its finding (rule 42).
 - Every technical term is the one the field uses; no coined phrases; type descriptors sit on
   the right noun.
 - The manuscript calls itself "this paper".
+- The abstract states each finding before its value (rule 42); divisions of a quantity read
+  "allocation" or "distribution" (rule 44); the conclusion says "This paper has ..." (rule 46).
+- No change to the logic of the abstract, introduction, conclusion or outline was made without the
+  user's approval of a proposal (rule 45).
 - No nested in-which/so-that clauses, no noun-clause subjects, no vague causal subjects or metaphors;
   no announced novelty; every sentence follows from its predecessor.
 - The roadmap gives one sentence per section, states roles not findings, and repeats nothing.

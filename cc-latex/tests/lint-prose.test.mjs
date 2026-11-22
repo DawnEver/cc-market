@@ -136,3 +136,25 @@ test('29-tail off: 31-relative skips ", which" but keeps that/who', () => {
   assert.equal(rel('Machines that stay efficient over the drive cycle are increasingly required.\n', ['29-tail']), 1);
   assert.equal(rel('The loss rises with the current, which heats the core that carries the flux.\n', ['29-tail']), 1);
 });
+
+test('44-allocation flags split, share, portion and divide ... between in prose only', () => {
+  const has = (src) => ids(src).includes('44-allocation');
+  assert.ok(has('The loss is split between the two subspaces of the machine.\n'));
+  assert.ok(has('The xy subspace takes a large share of the sideband voltage here.\n'));
+  assert.ok(has('A small portion of the ripple current reaches the rotor magnets.\n'));
+  assert.ok(has('The inverter divides the carrier harmonics between the two winding sets.\n'));
+  assert.ok(has('Both winding sets share the second carrier group in the xy plane.\n'));
+  assert.ok(!has('The sideband voltage is allocated to the alpha-beta and xy subspaces.\n'));
+  assert.ok(!has('The loss distribution over the winding sets changes with the modulation index.\n'));
+  assert.ok(!has('The figure \\label{fig:split-share} shows the loss distribution of the rotor magnets.\n'));
+  assert.ok(!has('The loss rises with speed as \\cref{sec:portion} shows for the rotor magnets.\n'));
+});
+
+test('46-tense flags past tense for the paper inside the conclusion only', () => {
+  const body = 'This paper analysed the PWM-induced loss of the dual three-phase machine.\n';
+  assert.ok(!ids(`\\section{Results}\n${body}`).includes('46-tense'));
+  assert.ok(ids(`\\section{Conclusion}\n${body}`).includes('46-tense'));
+  assert.ok(ids(`\\section*{Conclusions}\n\\label{sec:c}\nThis study showed the magnet loss rises with the carrier frequency.\n`).includes('46-tense'));
+  assert.ok(!ids(`\\section{Conclusion}\nThis paper has analysed the PWM-induced loss of the dual three-phase machine.\n`).includes('46-tense'));
+  assert.ok(!ids(`\\section{Conclusion}\nBody.\n\\section{Future work}\n${body}`).includes('46-tense'));
+});
