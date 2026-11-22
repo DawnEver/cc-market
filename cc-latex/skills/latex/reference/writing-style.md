@@ -195,6 +195,8 @@ sentence copied from one of them.
     clause or a ", computed ..." participle on the end of a sentence, and do not invert object
     and agent ("the impedance, which eddy currents modify"). Give the added fact its own
     sentence with its real subject ("Eddy currents in the laminations change this impedance.").
+    A project's own writing rules may allow ", which" clauses (rule 41); the inverted relative
+    stays banned.
 30. **Data-figure template.** Use linear axes unless a log axis is unavoidable. End each y-axis just
     above its tallest data (a few percent headroom, no empty band). Stacked panels share the x-axis
     with a small pad before zero. Put per-panel labels in a top corner, wrapped onto two lines, and
@@ -285,7 +287,8 @@ sentence copied from one of them.
     profile only adds constraints and never relaxes a rule: where the field's practice is looser than one
     of these rules (contribution lists, announced novelty, ", which" tails, personified verbs), the rule
     holds without exception and without asking; where the field is stricter or adds a convention the
-    rules do not cover, the field's practice is adopted. Learn structure, never wording: no run of more than six words is taken
+    rules do not cover, the field's practice is adopted. Only the project's own writing rules, set by
+    the user, may relax a rule (rule 41); a field profile never does. Learn structure, never wording: no run of more than six words is taken
     from any one paper; stock formulae shared by many papers ("to the best of our knowledge") are
     conventions, not copying.
 
@@ -296,6 +299,27 @@ sentence copied from one of them.
     paragraph shape (context, content, conclusion), abstract format, and IEEE forms for citations,
     figures, equations, numbers and units. They are binding; where one tightens a rule above, the stricter
     form applies. A guide is added only for a constraint that makes these rules stricter.
+
+40. **English variant.** A project may select British or American spelling with one line in its own
+    writing rules, e.g. `English variant: British` in `.claude/rules/writing.md`; without that line no
+    variant is enforced. Once selected, all prose and all figure text (labels, legends, captions) follow
+    the variant: -ise/-isation and -yse against -ize/-ization and -yze, -our against -or, -re against -er
+    (centre, fibre, metre as a unit), doubled l (modelled, labelled), and analogue, grey, programme
+    (non-computer) and towards against analog, gray, program and toward. Words spelt the same way in both
+    variants (size, seize, prize, advise, exercise, comprise, surprise) stay. Bibliography titles and
+    quotations keep their published spelling. LaTeX commands, environment names, option keys and values,
+    labels and citation keys (center, gray, color, scriptsize) are code, not prose, and keep their
+    spelling. `scripts/lint-prose.mjs` reads the line from the project rules (or `--english
+    british|american`) and reports each other-variant spelling with its suggested form.
+
+41. **Project rules may relax named rules.** Field profiles and published guides only tighten these
+    rules (rules 38-39). The project's own writing rules, set by the user, may relax rule 29 (allowing
+    ", which" clauses) and permit hedged assertions ("might", "may"); these rules contain no separate
+    hedging ban, and rule 36 and P-rules still apply to every sentence. The project's writing rules state each
+    relaxation explicitly; the reviewer applies it and nothing beyond it. The lint follows with one line
+    in the same rules file: `lint-prose off: 29-tail` (comma-separated hit ids) suppresses those hits, and with 29-tail off the 31-relative check
+    skips ", which" (its "that" / "who" checks stay);
+    `--off id,id` on the command line overrides that line.
 
 ## Self-check before finishing a section
 

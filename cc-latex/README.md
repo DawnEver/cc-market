@@ -29,6 +29,19 @@ Finds `main.tex` (project root, the single `*/main.tex` beneath it, or an explic
 path), runs `texcount -inc -sum -sub=section`, and prints a per-section table plus the
 grand total. `texcount` ships with TeX Live (`tlmgr install texcount` if missing).
 
+## English variant
+
+A project selects British or American spelling with one line in its writing rules
+(`.claude/rules/writing.md`): `English variant: British`. Without it no variant is enforced.
+`scripts/lint-prose.mjs` then flags the other variant's spellings (writing-style rule 40);
+`--english british|american` overrides the project setting.
+
+## Relaxing lint hits per project
+
+A project whose writing rules relax a generic rule (writing-style rule 41, e.g. allowing
+", which" clauses) adds `lint-prose off: 29-tail` (comma-separated hit ids) to the same rules
+file; `lint-prose.mjs` then drops those hits. `--off id,id` overrides the project line.
+
 ## Development
 
 ```shell

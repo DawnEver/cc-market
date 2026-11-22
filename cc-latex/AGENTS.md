@@ -21,6 +21,10 @@ helper script, no hooks.
   output parsing, and the table format.
 - `tests/word-count.test.mjs` — node:test suite; fixture pinned from real texcount 3.1.1
   output (both LF and CRLF).
+- `scripts/lint-prose.mjs` — candidate hits for the pattern-checkable writing-style rules;
+  with an English variant (rule 40: `English variant: British|American` in the project's
+  `.claude/rules/*.md`, or `--english`) also flags the other variant's spellings, LaTeX code,
+  bibliography and quotations excluded. Tests: `tests/lint-prose.test.mjs`.
 
 ## Standard
 
