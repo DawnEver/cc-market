@@ -13,6 +13,9 @@ the paper uses, how sections are organized) live in the project itself — its
 CLAUDE.md, a project-local style guide, or the document's own comments. Examples in a
 generic skill illustrate the principle; they are never instructions to apply that
 content verbatim.
+Field profiles in `fields/` are field-level, not project-level: they hold section moves,
+slot templates and conventions abstracted from a wide sample of published papers, never a
+sentence copied from one of them.
 
 ## Core rules
 
@@ -91,11 +94,12 @@ content verbatim.
     what was found and why it holds: the mechanism, the direction of an effect, and its
     relative size or validity condition. Case-specific detail stays in the results: the
     operating point, the absolute value in watts or volts, the fitted coefficient, the count
-    of simulated points. Write "PWM adds a large share of the loss, and almost all of the
+    of simulated points. Write "PWM adds a large part of the loss, and almost all of the
     magnet loss comes from PWM" in the abstract, and give "1.67 kW at 450 N·m and
     5000 r/min" in the results section. A number may appear in a general section only when
     it is itself the transferable finding (a scaling exponent, a ratio, a bound), and then
-    without the operating point that produced it.
+    without the operating point that produced it. Exception: the abstract may follow each
+    finding with its value in the studied case, in the order of rule 42.
 
 16. **Established terminology, no coined terms.** Use the term the field already uses for a
     concept (check a standard textbook or the cited papers) instead of inventing a descriptive
@@ -116,6 +120,7 @@ content verbatim.
     describe a specialty concept by its role in plain words before, or instead of, its
     symbol or name; one sentence carries one step, never a chain packed with semicolons.
     The conclusion opens with the question the paper answered, not with a result detail.
+    Each finding in the abstract comes before its value (rule 42); who sets this order is rule 45.
 
 19. **Write for the general practitioner; cite the textbook, explain only what the argument
     needs.** Assume a reader who knows the field broadly but not the paper's specialty. Before
@@ -160,7 +165,8 @@ content verbatim.
 24. **The roadmap is one sentence per section.** Close the introduction with the purpose
     statement followed by the section roadmap in one paragraph; give each section one sentence
     that states its role in the argument, not its findings, and do not repeat what the purpose
-    statement or the contribution sentences already say. Results belong to the abstract, the
+    statement or the contribution sentences already say (in a short format, rule 43 also frees the
+    introduction from repeating the abstract). Results belong to the abstract, the
     results section and the conclusion.
 25. **Sections run as one line of reasoning.** Start a section with its first substantive fact,
     linked to what the reader already knows; never preview its structure ("in four steps",
@@ -192,6 +198,8 @@ content verbatim.
     clause or a ", computed ..." participle on the end of a sentence, and do not invert object
     and agent ("the impedance, which eddy currents modify"). Give the added fact its own
     sentence with its real subject ("Eddy currents in the laminations change this impedance.").
+    A project's own writing rules may allow ", which" clauses (rule 41); the inverted relative
+    stays banned.
 30. **Data-figure template.** Use linear axes unless a log axis is unavoidable. End each y-axis just
     above its tallest data (a few percent headroom, no empty band). Stacked panels share the x-axis
     with a small pad before zero. Put per-panel labels in a top corner, wrapped onto two lines, and
@@ -199,8 +207,175 @@ content verbatim.
     Mark characteristic positions (e.g. f_c, 2f_c) as symbols on the top axis with light-grey dashed
     guide lines behind the data through all panels. Paired panels share width, font size and height;
     colours and fonts come from one style block in the figure script.
+31. **No relative clauses on nouns; human actions only for humans.** Do not attach a "that ..." /
+    "which ..." / "who ..." clause to a noun, with or without a comma ("machines that stay
+    efficient", "losses that computations omit", "comparisons that change one property"). Use an
+    adjective or prepositional phrase ("machines with high efficiency") or give the fact its own
+    sentence. Machines, methods, planes and quantities do not meet needs, pursue goals, need,
+    seek, help or carry intentions: state the physical action ("split the current", "lower the
+    current of each inverter", "are designed for higher efficiency"). Rules 26 and 29 name
+    examples; this rule names the pattern, and every newly drafted or rewritten sentence is
+    checked against it, abstracts and conclusions included.
+
+32. **Order of revision and paragraph re-read.** The rules have four levels, and a higher level wins:
+    L1 argument (each sentence follows from the previous; broad to narrow; causal close: rules 16, 22,
+    25), L2 position (detail follows position, no previews or umbrella openers: rules 15, 24, 25),
+    L3 sentence (one claim per sentence, no noun clauses as subjects, no relative tails or relative
+    clauses on nouns: rules 22, 29, 31), L4 wording (technical verbs, established terms, one name per
+    concept: rules 17, 18, 21, 26). To rewrite a paragraph, first write its chain of reasoning as a
+    skeleton, then the sentences. After any split, merge or deletion, re-read the paragraph from its
+    first sentence and check that each sentence opens with a link to the one before (connective or
+    back-reference); restore a lost link instead of trading L1 for L3 or L4.
+
+33. **Sentence variety serves the chain of reasoning.** The logical link between sentences comes
+    first (rule 32); sentence form serves it. Mix sentence forms: subject-first sentences, sentences
+    opened by a phrase, short and long sentences. An opening phrase ("As a result,", "In contrast,",
+    "For this reason,") is used where it carries the link; a decorative opener that only adds a comma
+    ("In the steady state,", "Grouped by m,", "For each plane,") is not. Do not open two consecutive
+    sentences with a phrase and a comma, and avoid more than about one such opening in three sentences.
+    Do not use "whereas": give each side of a contrast its own sentence and mark the contrast in the
+    second ("The magnet loss, in contrast, ...").
+
+34. **Every prose edit passes a fixed review chain before it is reported.** (1) The writer (main
+    session or subagent) edits and keeps a change log: old sentence, new sentence, rule. (2)
+    `scripts/lint-prose.mjs` runs on the changed files; every hit is fixed or dismissed with a reason.
+    (3) The `prose-reviewer` agent, never the writer, reviews the diff cold: links first (pass 1), then
+    sentence patterns (pass 2), then consistency with figures and captions. (4) The main session
+    re-reads every changed paragraph and resolves each FIX; a BLOCK (meaning change to user-approved
+    text) goes to the user. (5) Only then compile and inspect: call the TeX engine by its full path or
+    a verified PATH, never discard its output (no redirect to /dev/null), check its exit status and the
+    log for errors and undefined references, and confirm the PDF's timestamp is newer than the edit (a
+    stale PDF or log is not a compile). Render every changed page to an image and read it; the report
+    names the pages read, the page count and the PDF time. (6) Do not commit or push: the user reviews
+    the result and must explicitly agree before any commit. A new user rule is
+    added in the same pass to the project's writing rules, which the reviewer applies; a generic rule
+    a pattern can catch is also added to the lint.
+
+35. **Figures stay readable without colour.** Colour never carries a distinction alone: every
+    colour difference is doubled by a line style, a marker or a hatch, so the figure survives
+    greyscale printing and colour-vision deficiency. Use a colour-blind-safe palette (Okabe-Ito:
+    #E69F00, #56B4E9, #009E73, #F0E442, #0072B2, #D55E00, #CC79A7, #000000), defined once in the
+    figure script and reused by every figure; avoid red against green. One quantity keeps one
+    colour and one style across all figures, including schematics. Label curves directly where
+    space allows; a legend is the fallback.
+
+36. **No machine-like sentence patterns.** Five patterns read as generated text and are rewritten:
+    (a) two contrasting facts joined in one sentence by "while", "although" or ", but"; give each
+    fact its own sentence and mark the contrast in the second ("in contrast", "however");
+    (b) a phrase or appositive wedged between subject and verb ("the second, beyond its peak near
+    $M=0.6$, grows"; "the index $M$, the amplitude over ..., sets"); state the inserted fact in its
+    own sentence; (c) one sentence carrying a premise, a cause and end-point values together; split
+    it so each sentence holds one of them; (d) mirrored sentence pairs built to the same template
+    ("X thus ... . Y, however, ..."); vary the structure or merge the content; (e) abstract or
+    nominalised subjects ("The iron-loss rise agrees with ..."); name the physical quantity and give
+    it a verb ("The rise in iron loss agrees with ..."). Fix by rewriting the paragraph from its
+    reasoning skeleton (rule 32), not by swapping words.
+
+37. **Revise sentence by sentence; whole paragraphs only in a first draft.** Writing a paragraph in one
+    go is allowed only while drafting text that does not yet exist or that the user has marked as a
+    draft. Every revision of existing text goes sentence by sentence: for each sentence state whether
+    it is needed (rule 32 levels; what breaks if it goes), then keep, cut, merge or replace it, and log
+    old sentence, new sentence and reason. Present the per-sentence analysis to the user before the
+    edit when the text is user-approved or when the user asked for analysis first. Never replace a
+    whole paragraph, section or abstract with a rewritten block during revision, even when every
+    sentence would change; the reviewer treats such a block replacement as BLOCK (rule 34).
+
+38. **Read the field before writing in it.** Before the first draft in a field or for a venue the
+    project has no writing profile for, read widely in that field's published papers (at least 20 full
+    texts, at least 5 from the target venue, at least 5 highly cited ones as models) and record how they
+    write: the moves of each section, slot templates of recurring sentences, and conventions (verbs,
+    tense, hedging, gap statements, where numbers appear, contribution lists). The `field-reading` skill
+    runs this procedure; shipped profiles live in `fields/`, the project's own in `.claude/field-style.md`.
+    Draft each section move by move from the profile; the rules above then shape every sentence. The field
+    profile only adds constraints and never relaxes a rule: where the field's practice is looser than one
+    of these rules (contribution lists, announced novelty, ", which" tails, personified verbs), the rule
+    holds without exception and without asking; where the field is stricter or adds a convention the
+    rules do not cover, the field's practice is adopted. Only the project's own writing rules, set by
+    the user, may relax a rule (rule 41); a field profile never does. Learn structure, never wording: no run of more than six words is taken
+    from any one paper; stock formulae shared by many papers ("to the best of our knowledge") are
+    conventions, not copying.
+
+39. **Published style guides bind as well.** Rules P1-P24 in `style-sources.md` come from the IEEE
+    Editorial Style Manual, the IEEE Transactions template, Gopen and Swan's "The Science of Scientific
+    Writing", Mensh and Kording's "Ten simple rules for structuring papers" and Schulzrinne's guide. They
+    cover sentence positions (subject next to its verb, old information first, new information last),
+    paragraph shape (context, content, conclusion), abstract format, and IEEE forms for citations,
+    figures, equations, numbers and units. They are binding; where one tightens a rule above, the stricter
+    form applies. A guide is added only for a constraint that makes these rules stricter.
+
+40. **English variant.** A project may select British or American spelling with one line in its own
+    writing rules, e.g. `English variant: British` in `.claude/rules/writing.md`; without that line no
+    variant is enforced. Once selected, all prose and all figure text (labels, legends, captions) follow
+    the variant: -ise/-isation and -yse against -ize/-ization and -yze, -our against -or, -re against -er
+    (centre, fibre, metre as a unit), doubled l (modelled, labelled), and analogue, grey, programme
+    (non-computer) and towards against analog, gray, program and toward. Words spelt the same way in both
+    variants (size, seize, prize, advise, exercise, comprise, surprise) stay. Bibliography titles and
+    quotations keep their published spelling. LaTeX commands, environment names, option keys and values,
+    labels and citation keys (center, gray, color, scriptsize) are code, not prose, and keep their
+    spelling. `scripts/lint-prose.mjs` reads the line from the project rules (or `--english
+    british|american`) and reports each other-variant spelling with its suggested form.
+
+41. **Project rules may relax named rules.** Field profiles and published guides only tighten these
+    rules (rules 38-39). The project's own writing rules, set by the user, may relax rule 29 (allowing
+    ", which" clauses) and permit hedged assertions ("might", "may"); these rules contain no separate
+    hedging ban, and rule 36 and P-rules still apply to every sentence. The project's writing rules state each
+    relaxation explicitly; the reviewer applies it and nothing beyond it. The lint follows with one line
+    in the same rules file: `lint-prose off: 29-tail` (comma-separated hit ids) suppresses those hits, and with 29-tail off the 31-relative check
+    skips ", which" (its "that" / "who" checks stay);
+    `--off id,id` on the command line overrides that line.
+
+42. **Abstract: finding first, then its value.** In the abstract, state each finding first, as a
+    mechanism or direction; then give its value in the studied case, e.g. "PWM adds most of the magnet
+    loss, which is 2.4 kW in the studied case". The value never precedes or replaces the finding. This
+    order refines rules 15 and 18 for the abstract.
+
+43. **Short formats need not repeat the abstract.** In a page-limited submission (digest, extended
+    abstract), the introduction need not repeat what the abstract already says: context, gap or
+    purpose stated in the abstract may be taken as read, and the introduction spends its space on
+    what the abstract leaves out. This relaxes repetition only; it never removes a definition the
+    body needs (P12: abbreviations are still defined at first use in the body).
+
+44. **Distribution wording: "allocation" or "distribution".** For how a quantity is divided among
+    parts, subspaces or groups, write "allocation" or "distribution" (and their verbs: "is allocated
+    to", "is distributed over"). Do not write "split", "share", "portion" or "divide ... between".
+    `scripts/lint-prose.mjs` flags these words in prose (hit id `44-allocation`; LaTeX code is not
+    checked); a project silences it through rule 41 (`lint-prose off: 44-allocation`).
+
+45. **The author leads the logic of the abstract, introduction, conclusion and outline.** The user
+    sets the reasoning of these four parts. AI may propose a reasoning skeleton or flag a gap, a missing
+    link or a misplaced step. AI never restructures, condenses or reorders these parts on its own; any
+    such change goes to the user as a proposal first, with the reason, and is applied only after
+    approval. Reason: AI condensation repeatedly broke the author's chain of reasoning, because the
+    links it dropped looked redundant out of context.
+
+46. **Conclusion in the present perfect.** For what the paper did, the conclusion uses the present
+    perfect: "This paper has analysed ...", "has shown ...", not "This paper analysed ...". Findings
+    that hold in general stay in the present tense. `scripts/lint-prose.mjs` flags "This
+    paper/study/work" followed by a past-tense verb (analysed, presented, studied, showed, ...) inside
+    `\section{Conclusion...}` (hit id `46-tense`).
 
 ## Self-check before finishing a section
+
+- Each sentence passes P1-P4 of `style-sources.md` (subject next to verb, new information last, old
+  information first, action in the verb); each paragraph closes on its answer (P6); IEEE forms hold (P14,
+  P24) (rule 39).
+
+- A field writing profile exists for this field and venue and was re-read before drafting; the
+  section follows its moves, and no looser field habit has relaxed a rule (rule 38).
+
+- Search for " while ", " although ", ", but ", and for commas between a subject and its verb;
+  each hit is either kept for a reason or rewritten (rule 36).
+
+- Read the opening words of consecutive sentences in each paragraph: no two phrase-plus-comma openings in a
+  row, no decorative opener, no "whereas" (rule 33).
+
+- Two passes, in this order. Pass 1 (L1): read each paragraph from start to end and check every link
+  between consecutive sentences. Pass 2 (L3-L4): search the sentences for the patterns of rules 26,
+  29 and 31.
+
+- Search the new text for " that ", " which ", " who " and for personal verbs (meet, need, pursue,
+  seek, help, allow, enable, see, feed, decide); each hit is either a pronoun ("that of") or is
+  rewritten (rule 31).
 
 - Every sentence is short enough to read aloud in one breath.
 - No showy adjectives or abstract-noun piles survive.
@@ -225,11 +400,15 @@ content verbatim.
   line before a new-topic paragraph.
 - Substantive deleted material has been copied to the project archive.
 - Tables use full parameter names, one quantity per cell, and units in square brackets.
-- The abstract, introduction and conclusion carry no operating points, absolute values or
-  fitted coefficients; those stay in the results.
+- The introduction and conclusion carry no operating points, absolute values or fitted
+  coefficients; those stay in the results; the abstract gives a value only after its finding (rule 42).
 - Every technical term is the one the field uses; no coined phrases; type descriptors sit on
   the right noun.
 - The manuscript calls itself "this paper".
+- The abstract states each finding before its value (rule 42); divisions of a quantity read
+  "allocation" or "distribution" (rule 44); the conclusion says "This paper has ..." (rule 46).
+- No change to the logic of the abstract, introduction, conclusion or outline was made without the
+  user's approval of a proposal (rule 45).
 - No nested in-which/so-that clauses, no noun-clause subjects, no vague causal subjects or metaphors;
   no announced novelty; every sentence follows from its predecessor.
 - The roadmap gives one sentence per section, states roles not findings, and repeats nothing.
@@ -240,3 +419,8 @@ content verbatim.
   role is stated in plain words.
 - Every specialty concept is named with its reference and its one needed property before use;
   textbook material is cited, not explained; the background runs from familiar to special.
+- The review chain of rule 34 has run: lint hits resolved, `prose-reviewer` verdict obtained from an
+  agent other than the writer, every changed paragraph re-read whole, the PDF rebuilt after the edit
+  (timestamp checked) and every changed page rendered and read.
+- Every figure passes rule 35: readable in greyscale, Okabe-Ito colours from the shared definition,
+  one colour and style per quantity across figures.

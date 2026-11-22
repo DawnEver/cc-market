@@ -58,7 +58,7 @@ test('a project without a dev-lab interpreter states no registry rules (empty, n
 }));
 
 test('a project and an ai-lab without dev-lab state no principles (an empty list file, never omitted)', () => withDir((dir) => {
-  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: undefined }), 'utf8')), { principles: [] });
+  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: null }), 'utf8')), { principles: [] });
 }));
 
 test('an interpreter without ai-lab cannot plan: no planner of our own', () => {

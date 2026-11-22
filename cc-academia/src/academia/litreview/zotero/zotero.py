@@ -35,6 +35,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from academia.core.http import open_web
+
 # ── Zotero schema constants ──────────────────────────────────────────
 ITEM_TYPE_JOURNAL = 22
 CREATOR_TYPE_AUTHOR = 8
@@ -65,11 +67,12 @@ MCP_ARGS = ["tool", "run", "--from", "zotero-mcp-server==0.6.3", "zotero-mcp"]
 
 # ── Per-paper result ─────────────────────────────────────────────────
 
+
 @dataclass
 class SyncResult:
     paper_index: int
     title: str
-    backend: str          # "zotero_mcp" | "sqlite" | "cayw"
+    backend: str  # "zotero_mcp" | "sqlite" | "cayw"
     item_key: str = ""
     attachment: bool = False
     error: str = ""
@@ -77,8 +80,10 @@ class SyncResult:
 
 # ── zotero-mcp client (stdio + HTTP) ─────────────────────────────────
 
+
 class ZoteroMCPError(Exception):
     """Error from the zotero-mcp server."""
+
     def __init__(self, message: str, code: int = -1):
         super().__init__(f"[zotero-mcp] {message}")
         self.code = code
@@ -110,16 +115,21 @@ class ZoteroMCPClient:
 
     def _http_rpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Send JSON-RPC via HTTP POST."""
-        payload = {"jsonrpc": "2.0", "id": self._next_id(), "method": method,
-                    "params": params or {}}
+        payload = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": method,
+            "params": params or {},
+        }
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self._http_url}/mcp",
-            data=data, method="POST",
-            headers={"Content-Type": "application/json"},
-        )
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with open_web(
+                f"{self._http_url}/mcp",
+                data=data,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+                timeout=self._timeout,
+            ) as resp:
                 body = json.loads(resp.read().decode("utf-8", errors="replace"))
         except urllib.error.URLError as e:
             raise ZoteroMCPError(f"Connection failed: {e.reason}") from e
@@ -135,8 +145,12 @@ class ZoteroMCPClient:
         if not self._proc or self._proc.poll() is not None:
             raise ZoteroMCPError("stdio process not running")
 
-        payload = {"jsonrpc": "2.0", "id": self._next_id(), "method": method,
-                    "params": params or {}}
+        payload = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": method,
+            "params": params or {},
+        }
         line = json.dumps(payload) + "\n"
 
         with self._stdio_lock:
@@ -167,36 +181,42 @@ class ZoteroMCPClient:
         """
         # 1) Quick HTTP check
         try:
-            req = urllib.request.Request(f"{self._http_url}/mcp", method="HEAD")
-            with urllib.request.urlopen(req, timeout=2):
+            with open_web(f"{self._http_url}/mcp", method="HEAD", timeout=2):
                 pass
             # If reachable, do full initialize
-            self._http_rpc("initialize", {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "lit-review", "version": "1.0"},
-            })
+            self._http_rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "lit-review", "version": "1.0"},
+                },
+            )
             self._initialized = True
             return True
-        except Exception:
-            pass
+        except (OSError, ValueError, ZoteroMCPError):
+            pass  # no HTTP server answering: fall through to the stdio spawn
 
         # 2) Try spawning stdio process
         try:
             self._proc = subprocess.Popen(
                 [MCP_CMD, *MCP_ARGS, "serve", "--transport", "stdio"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
             time.sleep(0.5)
             if self._proc.poll() is not None:
                 self._proc = None
                 return False
-            self._stdio_rpc("initialize", {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "lit-review", "version": "1.0"},
-            })
+            self._stdio_rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "lit-review", "version": "1.0"},
+                },
+            )
             self._stdio_rpc("notifications/initialized", {})
             self._initialized = True
             return True
@@ -231,45 +251,58 @@ class ZoteroMCPClient:
         Uses ``zotero_add_from_file``. Returns the Zotero item key.
         """
         abs_path = str(pdf_path.resolve())
-        result = self._call("zotero_add_from_file", {
-            "path": abs_path,
-            "collections": [collection],
-            "create_missing_collections": True,
-            "if_exists": "skip",
-        })
+        result = self._call(
+            "zotero_add_from_file",
+            {
+                "path": abs_path,
+                "collections": [collection],
+                "create_missing_collections": True,
+                "if_exists": "skip",
+            },
+        )
         return _extract_key(result)
 
-    def add_by_doi(self, doi: str, pdf_path: str | None = None,
-                   collection: str = "Literature Review") -> str | None:
+    def add_by_doi(
+        self, doi: str, pdf_path: str | None = None, collection: str = "Literature Review"
+    ) -> str | None:
         """Add a paper by DOI; the OA PDF cascade runs automatically.
 
         Uses ``zotero_add_by_doi``. If *pdf_path* is provided and no OA PDF
         is found, the local PDF is attached via ``zotero_add_from_file``.
         """
-        result = self._call("zotero_add_by_doi", {
-            "doi": doi,
-            "collections": [collection],
-            "create_missing_collections": True,
-            "if_exists": "skip",
-        })
+        result = self._call(
+            "zotero_add_by_doi",
+            {
+                "doi": doi,
+                "collections": [collection],
+                "create_missing_collections": True,
+                "if_exists": "skip",
+            },
+        )
         key = _extract_key(result)
         if key and pdf_path and Path(pdf_path).exists():
             # Attach local PDF if OA cascade didn't find one
             with contextlib.suppress(ZoteroMCPError):
-                self._call("zotero_add_from_file", {
-                    "path": str(Path(pdf_path).resolve()),
-                    "collections": [collection],
-                })
+                self._call(
+                    "zotero_add_from_file",
+                    {
+                        "path": str(Path(pdf_path).resolve()),
+                        "collections": [collection],
+                    },
+                )
         return key
 
     def add_by_bibtex(self, bibtex: str, collection: str = "Literature Review") -> str | None:
         """Add a paper via BibTeX."""
-        result = self._call("zotero_add_by_bibtex", {
-            "bibtex": bibtex,
-            "collections": [collection],
-            "create_missing_collections": True,
-            "if_exists": "skip",
-        })
+        result = self._call(
+            "zotero_add_by_bibtex",
+            {
+                "bibtex": bibtex,
+                "collections": [collection],
+                "create_missing_collections": True,
+                "if_exists": "skip",
+            },
+        )
         return _extract_key(result)
 
     def ensure_collection(self, name: str) -> bool:
@@ -283,11 +316,14 @@ class ZoteroMCPClient:
     def add_to_collection(self, item_key: str, collection: str) -> bool:
         """Add an item to a collection."""
         try:
-            self._call("zotero_manage_collections", {
-                "action": "add",
-                "item_keys": [item_key],
-                "collection": collection,
-            })
+            self._call(
+                "zotero_manage_collections",
+                {
+                    "action": "add",
+                    "item_keys": [item_key],
+                    "collection": collection,
+                },
+            )
             return True
         except ZoteroMCPError:
             return False
@@ -295,11 +331,7 @@ class ZoteroMCPClient:
 
 def _extract_key(result: dict[str, Any]) -> str | None:
     """Extract a Zotero item key from a tool result, trying common fields."""
-    key = (
-        result.get("key")
-        or result.get("itemKey")
-        or result.get("item_key")
-    )
+    key = result.get("key") or result.get("itemKey") or result.get("item_key")
     if key:
         return str(key)
     # Some tools return a list of results
@@ -315,15 +347,16 @@ def _extract_key(result: dict[str, Any]) -> str | None:
 
 # ── SQLite helpers ────────────────────────────────────────────────────
 
+
 def _zotero_key() -> str:
     raw = uuid.uuid4().hex.encode()
-    return hashlib.md5(raw).hexdigest()[:8].upper()
+    return hashlib.md5(raw, usedforsecurity=False).hexdigest()[:8].upper()
 
 
 def _ensure_value(conn: sqlite3.Connection, value: str) -> int:
     c = conn.cursor()
     c.execute("SELECT valueID FROM itemDataValues WHERE value=?", (value,))
-    if (row := c.fetchone()):
+    if row := c.fetchone():
         return row[0]
     c.execute("INSERT INTO itemDataValues (value) VALUES (?)", (value,))
     return c.lastrowid
@@ -333,12 +366,18 @@ def _set_field(conn: sqlite3.Connection, item_id: int, field_id: int, value: str
     if not value:
         return
     vid = _ensure_value(conn, value)
-    conn.execute("INSERT INTO itemData (itemID, fieldID, valueID) VALUES (?, ?, ?)",
-                 (item_id, field_id, vid))
+    conn.execute(
+        "INSERT INTO itemData (itemID, fieldID, valueID) VALUES (?, ?, ?)", (item_id, field_id, vid)
+    )
 
 
-def _add_creator(conn: sqlite3.Connection, item_id: int, full_name: str,
-                 order_index: int, creator_type: int = CREATOR_TYPE_AUTHOR) -> None:
+def _add_creator(
+    conn: sqlite3.Connection,
+    item_id: int,
+    full_name: str,
+    order_index: int,
+    creator_type: int = CREATOR_TYPE_AUTHOR,
+) -> None:
     name = full_name.strip()
     if not name:
         return
@@ -353,16 +392,24 @@ def _add_creator(conn: sqlite3.Connection, item_id: int, full_name: str,
     c = conn.cursor()
     c.execute("SELECT creatorID FROM creators WHERE firstName=? AND lastName=?", (first, last))
     row = c.fetchone()
-    cid = row[0] if row else (
-        c.execute("INSERT INTO creators (firstName, lastName) VALUES (?, ?)", (first, last))
-        or c.lastrowid
+    cid = (
+        row[0]
+        if row
+        else (
+            c.execute("INSERT INTO creators (firstName, lastName) VALUES (?, ?)", (first, last))
+            or c.lastrowid
+        )
     )
-    c.execute("INSERT INTO itemCreators (itemID, creatorID, creatorTypeID, orderIndex) "
-              "VALUES (?, ?, ?, ?)", (item_id, cid, creator_type, order_index))
+    c.execute(
+        "INSERT INTO itemCreators (itemID, creatorID, creatorTypeID, orderIndex) "
+        "VALUES (?, ?, ?, ?)",
+        (item_id, cid, creator_type, order_index),
+    )
 
 
 def _storage_dir() -> Path:
     import glob as _g
+
     profiles = _g.glob(str(ZOTERO_DB.parent / "Profiles" / "*"))
     if profiles:
         return Path(profiles[0]) / "storage"
@@ -372,21 +419,37 @@ def _storage_dir() -> Path:
     raise FileNotFoundError("Cannot find Zotero storage directory")
 
 
-def _sqlite_add_paper(conn: sqlite3.Connection, *, title: str,
-                      authors: list[str] | None = None, abstract: str = "",
-                      year: int | None = None, venue: str = "", doi: str = "",
-                      url: str = "", pdf_path: str | None = None,
-                      item_type: int = ITEM_TYPE_JOURNAL) -> tuple[int, str]:
+def _sqlite_add_paper(
+    conn: sqlite3.Connection,
+    *,
+    title: str,
+    authors: list[str] | None = None,
+    abstract: str = "",
+    year: int | None = None,
+    venue: str = "",
+    doi: str = "",
+    url: str = "",
+    pdf_path: str | None = None,
+    item_type: int = ITEM_TYPE_JOURNAL,
+) -> tuple[int, str]:
     now = datetime.now().astimezone().isoformat(timespec="seconds")
     zkey = _zotero_key()
     c = conn.cursor()
-    c.execute("INSERT INTO items (itemTypeID, key, libraryID, dateAdded, dateModified, "
-              "clientDateModified, version) VALUES (?, ?, ?, ?, ?, ?, 0)",
-              (item_type, zkey, 1, now, now, now))
+    c.execute(
+        "INSERT INTO items (itemTypeID, key, libraryID, dateAdded, dateModified, "
+        "clientDateModified, version) VALUES (?, ?, ?, ?, ?, ?, 0)",
+        (item_type, zkey, 1, now, now, now),
+    )
     item_id = c.lastrowid
-    for fid, val in [(F_TITLE, title), (F_ABSTRACT, abstract),
-                     (F_DATE, str(year) if year else ""), (F_PUBLICATION, venue),
-                     (F_DOI, doi), (F_URL, url), (F_ACCESS_DATE, now[:10])]:
+    for fid, val in [
+        (F_TITLE, title),
+        (F_ABSTRACT, abstract),
+        (F_DATE, str(year) if year else ""),
+        (F_PUBLICATION, venue),
+        (F_DOI, doi),
+        (F_URL, url),
+        (F_ACCESS_DATE, now[:10]),
+    ]:
         _set_field(conn, item_id, fid, val)
     if authors:
         for i, a in enumerate(authors):
@@ -394,13 +457,17 @@ def _sqlite_add_paper(conn: sqlite3.Connection, *, title: str,
     if pdf_path and Path(pdf_path).exists():
         pf = Path(pdf_path)
         pdf_key = _zotero_key()
-        c.execute("INSERT INTO items (itemTypeID, key, libraryID, dateAdded, dateModified, "
-                  "clientDateModified, version) VALUES (?, ?, ?, ?, ?, ?, 0)",
-                  (3, pdf_key, 1, now, now, now))
+        c.execute(
+            "INSERT INTO items (itemTypeID, key, libraryID, dateAdded, dateModified, "
+            "clientDateModified, version) VALUES (?, ?, ?, ?, ?, ?, 0)",
+            (3, pdf_key, 1, now, now, now),
+        )
         aid = c.lastrowid
-        c.execute("INSERT INTO itemAttachments (itemID, parentItemID, linkMode, "
-                  "contentType, path, syncState) VALUES (?, ?, 0, 'application/pdf', ?, 0)",
-                  (aid, item_id, f"storage:{pf.name}"))
+        c.execute(
+            "INSERT INTO itemAttachments (itemID, parentItemID, linkMode, "
+            "contentType, path, syncState) VALUES (?, ?, 0, 'application/pdf', ?, 0)",
+            (aid, item_id, f"storage:{pf.name}"),
+        )
         _set_field(conn, aid, 1, pf.name)
         storage = _storage_dir() / pdf_key
         storage.mkdir(parents=True, exist_ok=True)
@@ -414,18 +481,22 @@ def _sqlite_add_to_collection(conn: sqlite3.Connection, item_id: int, collection
     c = conn.cursor()
     c.execute("SELECT MAX(orderIndex) FROM collectionItems WHERE collectionID=?", (collection_id,))
     row = c.fetchone()
-    c.execute("INSERT INTO collectionItems (collectionID, itemID, orderIndex) VALUES (?, ?, ?)",
-              (collection_id, item_id, (row[0] or 0) + 1))
+    c.execute(
+        "INSERT INTO collectionItems (collectionID, itemID, orderIndex) VALUES (?, ?, ?)",
+        (collection_id, item_id, (row[0] or 0) + 1),
+    )
 
 
 def _sqlite_find_or_create_collection(conn: sqlite3.Connection, name: str) -> int:
     c = conn.cursor()
-    c.execute("SELECT collectionID FROM collections WHERE collectionName=? AND libraryID=?",
-              (name, 1))
-    if (row := c.fetchone()):
+    c.execute(
+        "SELECT collectionID FROM collections WHERE collectionName=? AND libraryID=?", (name, 1)
+    )
+    if row := c.fetchone():
         return row[0]
-    c.execute("INSERT INTO collections (collectionName, libraryID, version) VALUES (?, ?, 0)",
-              (name, 1))
+    c.execute(
+        "INSERT INTO collections (collectionName, libraryID, version) VALUES (?, ?, 0)", (name, 1)
+    )
     return c.lastrowid
 
 
@@ -441,12 +512,15 @@ def _sqlite_available() -> bool:
 
 # ── CAYW ──────────────────────────────────────────────────────────────
 
+
 def _paper_to_bibtex(paper: dict[str, Any], cite_key: str) -> str:
     authors = paper.get("authors", [])
     author_str = " and ".join(authors) if authors else "Unknown"
-    lines = [f"@article{{{cite_key},",
-             f"  title = {{{paper.get('title', '')}}},",
-             f"  author = {{{author_str}}},"]
+    lines = [
+        f"@article{{{cite_key},",
+        f"  title = {{{paper.get('title', '')}}},",
+        f"  author = {{{author_str}}},",
+    ]
     if paper.get("year"):
         lines.append(f"  year = {{{paper['year']}}},")
     if paper.get("venue"):
@@ -462,13 +536,14 @@ def _paper_to_bibtex(paper: dict[str, Any], cite_key: str) -> str:
 
 
 def _cayw_import(bibtex: str) -> bool:
-    req = urllib.request.Request(
-        f"{BBT_CAYW_URL}?progid=lit-review",
-        data=bibtex.encode("utf-8"),
-        headers={"Content-Type": "text/plain"}, method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10):
+        with open_web(
+            f"{BBT_CAYW_URL}?progid=lit-review",
+            data=bibtex.encode("utf-8"),
+            headers={"Content-Type": "text/plain"},
+            method="POST",
+            timeout=10,
+        ):
             return True
     except (urllib.error.HTTPError, OSError):
         return False
@@ -527,7 +602,9 @@ def find_in_registry(entries: list[dict[str, Any]], candidate_id: str) -> dict[s
     return None
 
 
-def upsert_registry(entries: list[dict[str, Any]], new_entry: dict[str, Any]) -> list[dict[str, Any]]:
+def upsert_registry(
+    entries: list[dict[str, Any]], new_entry: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Add or replace a registry entry keyed by candidate_id. Returns mutated list."""
     cid = new_entry["candidate_id"]
     for i, e in enumerate(entries):
@@ -554,6 +631,7 @@ def registry_summary(workspace_dir: Path) -> dict[str, Any]:
 
 
 # ── Dedup helpers ─────────────────────────────────────────────────────
+
 
 def _dedup_key(paper: dict[str, Any]) -> str | None:
     doi = str(paper.get("doi", "")).strip().lower()
@@ -583,6 +661,7 @@ def _validate_pdf(pdf_path: str | None, expected_sha256: str | None = None) -> b
 
 # ── Main sync ─────────────────────────────────────────────────────────
 
+
 def _derive_collection_name(workspace_dir: Path) -> str:
     """Derive the Zotero collection name from the workspace directory name.
 
@@ -599,6 +678,7 @@ def _paper_to_registry_entry(
 ) -> dict[str, Any]:
     """Build a registry entry from a paper dict + sync result."""
     from datetime import datetime
+
     return {
         "candidate_id": str(paper.get("candidate_id", "")),
         "zotero_key": zotero_key,
@@ -646,8 +726,7 @@ def sync_papers(
         registry = load_registry(workspace_dir)
         if skip_existing:
             existing_keys = {e["candidate_id"] for e in registry if e.get("zotero_key")}
-            print(f"Registry: {len(existing_keys)} papers already synced, "
-                  f"will skip duplicates.\n")
+            print(f"Registry: {len(existing_keys)} papers already synced, will skip duplicates.\n")
         else:
             existing_keys: set[str] = set()
     else:
@@ -656,8 +735,7 @@ def sync_papers(
     # ── 1. zotero-mcp ──────────────────────────────────────────
     mcp = ZoteroMCPClient()
     if mcp.available():
-        print(f"Backend: zotero-mcp (Zotero running, full write + PDF)\n"
-              f"Collection: {coll_name}\n")
+        print(f"Backend: zotero-mcp (Zotero running, full write + PDF)\nCollection: {coll_name}\n")
         try:
             mcp.ensure_collection(coll_name)
             for i, p in enumerate(papers):
@@ -668,18 +746,28 @@ def sync_papers(
                 if cid and cid in existing_keys:
                     existing = find_in_registry(registry, cid)
                     zk = (existing or {}).get("zotero_key", "")
-                    results.append(SyncResult(
-                        i, title, "zotero_mcp", item_key=zk,
-                        error="already synced (registry)",
-                    ))
+                    results.append(
+                        SyncResult(
+                            i,
+                            title,
+                            "zotero_mcp",
+                            item_key=zk,
+                            error="already synced (registry)",
+                        )
+                    )
                     continue
 
                 # Dedup within this batch
                 dk = _dedup_key(p)
                 if dk and dk in seen:
-                    results.append(SyncResult(
-                        i, title, "zotero_mcp", error="duplicate (skipped)",
-                    ))
+                    results.append(
+                        SyncResult(
+                            i,
+                            title,
+                            "zotero_mcp",
+                            error="duplicate (skipped)",
+                        )
+                    )
                     continue
                 if dk:
                     seen.add(dk)
@@ -704,7 +792,7 @@ def sync_papers(
 
                     # Last resort: BibTeX
                     if not key:
-                        bibtex = _paper_to_bibtex(p, f"LR-{p.get('year', '?')}-{i+1:02d}")
+                        bibtex = _paper_to_bibtex(p, f"LR-{p.get('year', '?')}-{i + 1:02d}")
                         key = mcp.add_by_bibtex(bibtex, coll_name)
                         has_attachment = False
 
@@ -714,19 +802,28 @@ def sync_papers(
 
                     if key:
                         print(f"  ✓ {title}")
-                        results.append(SyncResult(
-                            i, title, "zotero_mcp",
-                            item_key=key, attachment=has_attachment,
-                        ))
+                        results.append(
+                            SyncResult(
+                                i,
+                                title,
+                                "zotero_mcp",
+                                item_key=key,
+                                attachment=has_attachment,
+                            )
+                        )
                         # Update registry
                         if workspace_dir and cid:
                             entry = _paper_to_registry_entry(p, key, coll_name, has_attachment)
                             upsert_registry(registry, entry)
                     else:
-                        results.append(SyncResult(
-                            i, title, "zotero_mcp",
-                            error="all add methods returned no key",
-                        ))
+                        results.append(
+                            SyncResult(
+                                i,
+                                title,
+                                "zotero_mcp",
+                                error="all add methods returned no key",
+                            )
+                        )
                 except ZoteroMCPError as e:
                     print(f"  ✗ {title} — {e}")
                     results.append(SyncResult(i, title, "zotero_mcp", error=str(e)))
@@ -735,14 +832,14 @@ def sync_papers(
             # Persist registry after sync
             if workspace_dir:
                 save_registry(workspace_dir, registry)
-                print(f"\nRegistry updated: {registry_path(workspace_dir)} "
-                      f"({len(registry)} entries)")
+                print(
+                    f"\nRegistry updated: {registry_path(workspace_dir)} ({len(registry)} entries)"
+                )
         return results
 
     # ── 2. SQLite (Zotero closed) ───────────────────────────────
     if _sqlite_available():
-        print(f"Backend: SQLite (Zotero closed, full write + PDF)\n"
-              f"Collection: {coll_name}\n")
+        print(f"Backend: SQLite (Zotero closed, full write + PDF)\nCollection: {coll_name}\n")
         db = db_path or ZOTERO_DB
         conn = sqlite3.connect(str(db))
         try:
@@ -754,17 +851,27 @@ def sync_papers(
                 if cid and cid in existing_keys:
                     existing = find_in_registry(registry, cid)
                     zk = (existing or {}).get("zotero_key", "")
-                    results.append(SyncResult(
-                        i, title, "sqlite", item_key=zk,
-                        error="already synced (registry)",
-                    ))
+                    results.append(
+                        SyncResult(
+                            i,
+                            title,
+                            "sqlite",
+                            item_key=zk,
+                            error="already synced (registry)",
+                        )
+                    )
                     continue
 
                 dk = _dedup_key(p)
                 if dk and dk in seen:
-                    results.append(SyncResult(
-                        i, title, "sqlite", error="duplicate (skipped)",
-                    ))
+                    results.append(
+                        SyncResult(
+                            i,
+                            title,
+                            "sqlite",
+                            error="duplicate (skipped)",
+                        )
+                    )
                     continue
                 if dk:
                     seen.add(dk)
@@ -772,18 +879,27 @@ def sync_papers(
                 pdf_ok = _validate_pdf(pdf_path, p.get("pdf_sha256"))
                 try:
                     item_id, zkey = _sqlite_add_paper(
-                        conn, title=p.get("title", ""),
+                        conn,
+                        title=p.get("title", ""),
                         authors=p.get("authors", []),
                         abstract=p.get("abstract", ""),
-                        year=p.get("year"), venue=p.get("venue", ""),
-                        doi=p.get("doi", ""), url=p.get("url", ""),
+                        year=p.get("year"),
+                        venue=p.get("venue", ""),
+                        doi=p.get("doi", ""),
+                        url=p.get("url", ""),
                         pdf_path=pdf_path if pdf_ok else None,
                     )
                     _sqlite_add_to_collection(conn, item_id, coll_id)
                     print(f"  ✓ {title}")
-                    results.append(SyncResult(
-                        i, title, "sqlite", item_key=zkey, attachment=pdf_ok,
-                    ))
+                    results.append(
+                        SyncResult(
+                            i,
+                            title,
+                            "sqlite",
+                            item_key=zkey,
+                            attachment=pdf_ok,
+                        )
+                    )
                     if workspace_dir and cid:
                         entry = _paper_to_registry_entry(p, zkey, coll_name, pdf_ok)
                         upsert_registry(registry, entry)
@@ -795,14 +911,14 @@ def sync_papers(
             conn.close()
             if workspace_dir:
                 save_registry(workspace_dir, registry)
-                print(f"\nRegistry updated: {registry_path(workspace_dir)} "
-                      f"({len(registry)} entries)")
+                print(
+                    f"\nRegistry updated: {registry_path(workspace_dir)} ({len(registry)} entries)"
+                )
         return results
 
     # ── 3. CAYW (citation only) ─────────────────────────────────
     if _cayw_available():
-        print(f"Backend: CAYW (Zotero running, citation only, no PDF)\n"
-              f"Collection: {coll_name}\n")
+        print(f"Backend: CAYW (Zotero running, citation only, no PDF)\nCollection: {coll_name}\n")
         for i, p in enumerate(papers):
             title = str(p.get("title", ""))[:80]
             cid = str(p.get("candidate_id", ""))
@@ -810,29 +926,41 @@ def sync_papers(
             if cid and cid in existing_keys:
                 existing = find_in_registry(registry, cid)
                 zk = (existing or {}).get("zotero_key", "")
-                results.append(SyncResult(
-                    i, title, "cayw", item_key=zk,
-                    error="already synced (registry)",
-                ))
+                results.append(
+                    SyncResult(
+                        i,
+                        title,
+                        "cayw",
+                        item_key=zk,
+                        error="already synced (registry)",
+                    )
+                )
                 continue
 
             dk = _dedup_key(p)
             if dk and dk in seen:
-                results.append(SyncResult(
-                    i, title, "cayw", error="duplicate (skipped)",
-                ))
+                results.append(
+                    SyncResult(
+                        i,
+                        title,
+                        "cayw",
+                        error="duplicate (skipped)",
+                    )
+                )
                 continue
             if dk:
                 seen.add(dk)
-            cite_key = f"LR-{p.get('year', '?')}-{i+1:02d}"
+            cite_key = f"LR-{p.get('year', '?')}-{i + 1:02d}"
             if _cayw_import(_paper_to_bibtex(p, cite_key)):
                 print(f"  ✓ {title}")
                 results.append(SyncResult(i, title, "cayw"))
             else:
                 print(f"  ✗ {title}")
                 results.append(SyncResult(i, title, "cayw", error="import failed"))
-        print(f"\nItems in Zotero inbox. Drag to '{coll_name}' collection.\n"
-              f"Note: CAYW does not support registry tracking (no Zotero key returned).")
+        print(
+            f"\nItems in Zotero inbox. Drag to '{coll_name}' collection.\n"
+            f"Note: CAYW does not support registry tracking (no Zotero key returned)."
+        )
         return results
 
     raise RuntimeError(

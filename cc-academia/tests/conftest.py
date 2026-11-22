@@ -136,8 +136,6 @@ def assess(conn, person, policy, *, now_year, relevant_papers=None):
     from academia.reviewer.record import CandidateRecord
 
     return run_rules(
-        CandidateRecord.build(
-            conn, person, relevant_papers=relevant_papers, now_year=now_year
-        ),
+        CandidateRecord.build(conn, person, relevant_papers=relevant_papers, now_year=now_year),
         policy,
     )

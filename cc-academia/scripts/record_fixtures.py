@@ -206,7 +206,9 @@ def record_scopus() -> None:
         print("no author profile returned; skipped scopus_author.json", file=sys.stderr)
         return
     profile = get_json(
-        build_url(f"{AUTHOR_URL}/{scopus_id}", {"view": "ENHANCED", "httpAccept": "application/json"}),
+        build_url(
+            f"{AUTHOR_URL}/{scopus_id}", {"view": "ENHANCED", "httpAccept": "application/json"}
+        ),
         SOURCE,
         headers=_headers(),
     )

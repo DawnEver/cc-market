@@ -1,42 +1,44 @@
 ---
 name: config-and-custom-profiles
-description: sharp-review 评审配置迁出 gitignored runtime state 进 tracked .claude/sharp-review.json;新增 config-driven customProfiles 扩展点;架构 profile 内置文件体积阈值
+description: sharp-review review config moved out of gitignored runtime state into tracked .claude/sharp-review.json; new config-driven customProfiles extension point; architecture profile has built-in file-size thresholds
 metadata:
   type: design
 ---
 
-# sharp-review 配置外置 + 自定义 profile + 文件体积阈值 (2026-06-22)
+# sharp-review config externalized + custom profiles + file-size thresholds (2026-06-22)
 
-## 1. 配置与运行时状态分离(关键设计)
-评审**静态配置**(`profileWeights`、`customProfiles`、`thresholds`、`inlineDiffLimit`、
-`docsThreshold`、`codebaseIntervalMin`)从 gitignored 的 `.claude/.rem-state.json → reviewGate`
-迁到 **tracked 的 `.claude/sharp-review.json`** —— 这样"某仓库偏重架构梳理 / 自定义评审模板"
-等团队决策随仓库走,不再 device-local。
+## 1. Separating config from runtime state (key design)
+The review **static config** (`profileWeights`, `customProfiles`, `thresholds`, `inlineDiffLimit`,
+`docsThreshold`, `codebaseIntervalMin`) moved from the gitignored `.claude/.rem-state.json → reviewGate`
+to the **tracked `.claude/sharp-review.json`** — so team decisions like "this repo leans on architecture cleanup / a custom review template"
+travel with the repo, no longer device-local.
 
-- 读取入口:`scripts/lib/config.mjs` `loadReviewConfig(root)`(返回 {},缺省由各调用方兜底)。
-- 读者已切:`pick-profile.js`、`diff-manifest.js`、`hooks/sharp-review-hook.js`。运行时状态
-  (sessionId/wave/lastReviewRef…)仍留 `.rem-state.json reviewGate`,**hook 不再把 config 键回写
-  进 runtime state**(避免漂移)。
-- 迁移:`migrations/migrate.mjs` 把旧 reviewGate 里的 config 键搬进 `sharp-review.json`(幂等;
-  已存在的 config 键不被覆盖)。`.gitignore` 加 `!**/.claude/sharp-review.json` 例外(cc-market
-  本仓库 `**/.claude/**` 全忽略,需放行)。
+- Read entry: `scripts/lib/config.mjs` `loadReviewConfig(root)` (returns {}; each caller supplies defaults).
+- Readers switched: `pick-profile.js`, `diff-manifest.js`, `hooks/sharp-review-hook.js`. Runtime state
+  (sessionId/wave/lastReviewRef…) stays in `.rem-state.json reviewGate`; **the hook no longer writes config keys back
+  into runtime state** (avoids drift).
+- Migration: `migrations/migrate.mjs` moves the config keys in the old reviewGate into `sharp-review.json` (idempotent;
+  existing config keys are not overwritten). `.gitignore` adds a `!**/.claude/sharp-review.json` exception (cc-market
+  this repo ignores all of `**/.claude/**`, so it must be let through).
 
-## 2. config-driven 自定义 profile(扩展点)
-仓库可在 `customProfiles`(数组)声明评审模板,**不改插件代码**。`pick-profile.js` 经
-`mergeProfiles`/`normalizeCustomProfile` 把它们并入 `PROFILES`,按 source 门控 + 权重参与选取。
-条目:`{ key, source(必填,已知 trigger), weight?, mode?, promptKind?, framing?, reviewScope? }`。
-重用内置 key 即覆盖该内置。cc-market 自身 `.claude/sharp-review.json` 首用:`arch-hygiene`
-(整洁锐评)挂 `codebase` source,并把 `architecture` 权重调低,使本仓库偏重整洁度评审。
+## 2. Config-driven custom profiles (extension point)
+A repo can declare review templates in `customProfiles` (array), **without changing plugin code**. `pick-profile.js` via
+`mergeProfiles`/`normalizeCustomProfile` merges them into `PROFILES`, taking part in selection by source gating + weight.
+Entry: `{ key, source (required, a known trigger), weight?, mode?, promptKind?, framing?, reviewScope? }`.
+Reusing a built-in key overrides that built-in. First use in cc-market's own `.claude/sharp-review.json`: `arch-hygiene`
+(hygiene review) hangs off the `codebase` source, and the `architecture` weight is lowered, so this repo leans on hygiene review.
 
-## 3. 文件体积阈值(全局,内置进 architecture profile)
-内置 `architecture` profile 的 reviewScope 现含硬阈值,**每个仓库**生效:
-- 代码:> 300 行值得警惕;> 600 行**必须**拆分。
-- 文档:单个 SKILL.md / AGENTS.md / CLAUDE.md > 100 行值得警惕 → 机制/schema/边角下沉
-  `reference/*`(渐进式披露)。
-diff 评审默认 scope 原"~400 行"已同步对齐到 300/600,避免两 profile 矛盾。
+## 3. File-size thresholds (global, built into the architecture profile)
+The built-in `architecture` profile's reviewScope now has hard thresholds, effective in **every repo**:
+- Code: > 300 lines is worth a warning; > 600 lines **must** be split.
+- Docs: a single SKILL.md / AGENTS.md / CLAUDE.md > 100 lines is worth a warning → push mechanism/schema/edge cases down into
+  `reference/*` (progressive disclosure).
+The diff-review default scope, formerly "~400 lines", is aligned to 300/600, so the two profiles do not contradict.
 
-## 关联
-- 测试:`profiles.test.mjs`(normalizeCustomProfile/mergeProfiles)、`pick-profile.test.mjs`
-  (config 文件读取 + 自定义 profile 选取)、`migrations.test.mjs`(config 迁移幂等/不覆盖)。
-- 渐进式披露同批:SKILL.md 295→168、rem SKILL 157→114,机制下沉 `reference/profiles-and-modes.md`
-  与 `reference/crystallize.md`。
+## Related
+- Tests: `profiles.test.mjs` (normalizeCustomProfile/mergeProfiles), `pick-profile.test.mjs`
+  (config file read + custom profile selection), `migrations.test.mjs` (config migration idempotent / no overwrite).
+- Progressive disclosure in the same batch: SKILL.md 295→168, rem SKILL 157→114, mechanism moved into `reference/profiles-and-modes.md`
+  and `reference/crystallize.md`.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

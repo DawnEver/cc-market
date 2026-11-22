@@ -7,8 +7,8 @@ Memory management plugin for Claude Code sessions. Rules (always injected) and d
 SessionStart runs `session-context.js` — Codex rules + memo listing in one process (it writes nothing) (Codex compact restores context);
 PostCompact re-lists memos on Claude Code; UserPromptSubmit runs recall on both hosts; Stop fires
 `rem-hook.js`, gated after ≥3 stops AND (≥2 min session OR ≥30s + substantive edits), which
-requests the REM skill. The skill runs user-gated checks first, then uses a context-inheriting
-fork on Claude or the current session on Codex. The user's `/rem:task open|close` drives `task.js` (a PreToolUse hook refuses an agent doing it); `/todo` drives `todo.js` (the one backlog: task open items, then issues or `.claude/todo/` files). Full
+requests the REM skill. The skill uses a context-inheriting
+fork on Claude or the current session on Codex. The user's `/rem:task open|close` drives `task.js` (a PreToolUse hook refuses an agent doing it). Full
 lifecycle flow diagram → `docs/architecture.md` § Architecture.
 
 Memory lifecycle → `skills/rem/reference/memory-conventions.md`. Nothing writes on read; the index is derived.
@@ -21,7 +21,7 @@ deep detail when a task reaches into that area.
 - **File structure** map (every module, `hooks/`, `scripts/`, `skills/`, `tests/`, `docs/`) →
   `docs/architecture.md` § File Structure.
 - **Architecture lifecycle** (full SessionStart→PostCompact→UserPromptSubmit→Stop flow and the
-  `/rem` / `/todo` dispatch trees) → `docs/architecture.md` § Architecture.
+  `/rem` / `/rem:task` dispatch trees) → `docs/architecture.md` § Architecture.
 - **Living docs** (separate collection from dated memory, `doc_source` binding, git-drift
   freshness, `/refresh-docs`) → `docs/architecture.md` § Living docs.
 - **Memos** (`scripts/memo.js` fact caching, STALE detection via source blob hashes, `--cmd`
@@ -45,8 +45,8 @@ Execution and acknowledgement procedures live in the REM skill and its reference
 
 ## Reference
 
-Script flag reference, the `.claude/.rem-state.json` schema, and the (rare, user-gated) crystallize
-procedure now live in `skills/rem/reference/` (`scripts.md`, `state-schema.md`, `crystallize.md`) —
+Script flag reference and the `.claude/.rem-state.json` schema live in `skills/rem/reference/`
+(`scripts.md`, `state-schema.md`) —
 loaded on demand by `/rem`.
 
 ## Testing

@@ -1,4 +1,4 @@
-// manifest.mjs — Sharp Review manifest logic (pure): low-value/doc/lockfile classification,
+// manifest.mjs — Sharp Review manifest logic (pure): low-value classification,
 // git -z parsing, manifest building, mode decision, and size-bounded rendering.
 // Re-exported via lib.mjs.
 
@@ -47,57 +47,6 @@ export function classifyLowValue(filePath) {
     if (re.test(filePath)) return reason;
   }
   return null;
-}
-
-// True when `filePath` is a dependency lockfile — reuses the lockfile entries in
-// LOW_VALUE_PATTERNS (single source of truth). Drives the `deps` review source.
-export function isLockfile(filePath) {
-  for (const { re, reason } of LOW_VALUE_PATTERNS) {
-    if (reason === 'lockfile' && re.test(filePath)) return true;
-  }
-  return false;
-}
-
-// True when `filePath` matches any generated/vendored/minified LOW_VALUE pattern (dist/,
-// build/, out/, vendor/, node_modules/, *.generated.*, *.min.*, *.map, snapshots, protobuf).
-// Reused by isDoc so the dist/build/out/vendor list lives in one place (LOW_VALUE_PATTERNS).
-export function isGeneratedPath(filePath) {
-  for (const { re, reason } of LOW_VALUE_PATTERNS) {
-    if ((reason.startsWith('generated') || reason === 'vendored' || reason === 'minified' || reason === 'sourcemap')
-        && re.test(filePath)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Human-authored documentation by name (case-insensitive, with or without extension).
-// NOTE: LICENSE is intentionally NOT a doc.
-const DOC_NAME_RE = /(^|\/)(README|CHANGELOG|CONTRIBUTING|AGENTS|CLAUDE|GLOBAL-AGENTS|CODE_OF_CONDUCT|SECURITY|NOTICE)([.][^/]*)?$/i;
-// Markup documentation extensions.
-const DOC_EXT_RE = /\.(md|mdx|rst|adoc|txt|org)$/i;
-// Auto-generated / built documentation trees that must NOT fire the docs source. The exclusion
-// wins over inclusion (a `.md` under docs/api/ is excluded). Covers sphinx/mkdocs/jekyll/
-// docusaurus/javadoc/rustdoc/storybook outputs plus a generic generated guard.
-const DOC_BUILD_RE = new RegExp([
-  /(^|\/)(_site|site|storybook-static)\//.source,        // jekyll _site, mkdocs site, storybook
-  /(^|\/)\.docusaurus\//.source,                         // docusaurus cache
-  /(^|\/)docs\/(_build|api|html)\//.source,              // sphinx _build, generated api/html under docs
-  /(^|\/)target\/doc\//.source,                          // rustdoc
-  /(^|\/)(javadoc|apidocs)\//.source,                    // javadoc / generated apidocs
-  /\.generated\./.source,                                // *.generated.md
-  /(^|\/)_build\//.source,                               // generic build tree
-  /(^|\/)\.cache\//.source,                              // generic cache
-].join('|'), 'i');
-
-// True when `filePath` is human-authored documentation. The exclusion check (generated/built
-// docs, vendored trees) WINS over inclusion. Drives the `docs` review source.
-export function isDoc(filePath) {
-  if (isGeneratedPath(filePath) || DOC_BUILD_RE.test(filePath)) return false;
-  if (/(^|\/)LICEN[CS]E([.][^/]*)?$/i.test(filePath)) return false; // LICENSE is explicitly NOT a doc
-  if (DOC_NAME_RE.test(filePath)) return true;
-  if (/(^|\/)docs?\//i.test(filePath)) return true;      // docs/ or doc/ at any depth
-  return DOC_EXT_RE.test(filePath);
 }
 
 // Parse `git diff --numstat -z -M` output.

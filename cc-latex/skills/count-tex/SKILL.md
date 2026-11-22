@@ -1,6 +1,6 @@
 ---
 name: count-tex
-description: Count words in a LaTeX project with texcount — per-section breakdown and grand total, references excluded. Use when the user asks for the document word count, per-section counts, or progress against a word-count target (e.g. "统计字数", "word count", "how many words", "字数分章节统计").
+description: Count words in a LaTeX project with texcount — per-section breakdown and grand total, references excluded. Use when the user asks for the document word count, per-section counts, or progress against a word-count target (e.g. "count the words", "word count", "how many words", "word count per chapter", including the same requests in Chinese).
 ---
 
 # count-tex

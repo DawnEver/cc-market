@@ -43,9 +43,13 @@ CHALLENGE_WAIT_S = 180.0
 """How long to let a challenge clear — long enough for a human to solve it."""
 
 _CHALLENGE_MARKERS = (
-    "challenge-platform", "just a moment", "security check required",
-    "temporarily unavailable", "unusual activity from your network",
-    "cf-challenge", "turnstile",
+    "challenge-platform",
+    "just a moment",
+    "security check required",
+    "temporarily unavailable",
+    "unusual activity from your network",
+    "cf-challenge",
+    "turnstile",
 )
 _FULL_TEXT_MARKERS = ("download full-text pdf", "download full-text", "public full-text")
 
@@ -53,7 +57,8 @@ _PUBLICATION_RE = re.compile(r'href="(/?publication/\d+_[^"]+)"', re.IGNORECASE)
 
 
 _DENIED_MARKERS = (
-    "error reference number: 1020", "you do not have access to www.researchgate.net",
+    "error reference number: 1020",
+    "you do not have access to www.researchgate.net",
     "access denied",
 )
 
@@ -187,7 +192,7 @@ def wait_for_clearance(page: Any, html: str, wait_s: float | None = None) -> str
         time.sleep(CHALLENGE_POLL_S)
         try:
             current = page.content()
-        except Exception:
+        except Exception:  # noqa: S112 -- best-effort poll: page.content() raises while the challenge navigates; the deadline bounds the retries
             continue
         # A check can turn into an outright ban while we wait; don't sit on it.
         if is_access_denied(current):
@@ -252,10 +257,12 @@ def fetch(page: Any, query: str, target: Path, warm_up: bool = True) -> str | No
         link = download_url(publication)
         try:
             response = page.context.request.get(
-                link, timeout=90_000, headers={"Referer": publication},
+                link,
+                timeout=90_000,
+                headers={"Referer": publication},
             )
             body = response.body() if response.status == 200 else b""
-        except Exception:
+        except Exception:  # noqa: S112 -- best-effort download: a failed request for one publication moves on to the next candidate link
             continue
         if body and body.lstrip().startswith(b"%PDF-"):
             target.parent.mkdir(parents=True, exist_ok=True)

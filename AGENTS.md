@@ -16,7 +16,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 |---|---|---|
 | [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
 | [`fabric`](fabric/README.md) | `fabric/` | Multi-provider fabric: one `call` primitive (task/review/agent/image) + `fan_out` + observe proxy. Absorbed the former `takeover` plugin |
-| [`rem`](rem/README.md) | `rem/` | Memory management: summarization, merge and crystallization without deletion, derived index |
+| [`rem`](rem/README.md) | `rem/` | Memory management: summarization, merge without deletion, task journals, derived index |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |
@@ -24,8 +24,18 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 
 Each plugin has its own `AGENTS.md`; plugin-specific `.claude/rules/` are optional. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
+## Family flow
+cc-market is a dev-lab family member (`pyproject.toml` `[tool.dev_lab.*]`; no Python package at the root). It
+has ONE branch: PRs from `pr/*` merge into `main` through the forge, because `main` is the published marketplace
+clients clone. The complete JS suite is the `base` part (`dev_lab.dev.commandpart`, linux and windows), which
+gates the merge. Bootstrap with `uv sync --all-groups`, then install the family hooks once per checkout:
+`.venv/Scripts/python -m dev_lab.dev.hook_install --install` (`.venv/bin/python` on POSIX); they run
+`scripts/git-hooks/*` as rows. Workflows are rendered (`python -m dev_lab.dev.ciworkflows render`) and
+`.gitignore`/`.gitattributes` too (`python -m dev_lab.dev.famfiles --deltas scripts/_famconfig.py`): edit the TOML
+or the delta, never the output.
+
 ## Tests & Git Hooks
-The pre-commit hook (`scripts/git-hooks/pre-commit`, wired via `core.hooksPath`) runs **only
+The pre-commit hook (`scripts/git-hooks/pre-commit`, the family hook row `plugin-tests` in `pyproject.toml`) runs **only
 the tests for plugins whose files are staged** — committing a fabric-only change runs just
 `fabric/tests/*.test.mjs` (plus the cross-cutting `tests/bundle-integrity.test.mjs`). It
 maps each changed top-level dir to its tests. Because `shared/`
@@ -112,8 +122,7 @@ detects changed plugins, bundles shared code, bumps their Claude manifests and t
 regenerates Codex artifacts, runs the full JS suite, then creates a release commit and annotated
 tag. Review them and push normally; `push.followTags=true` publishes the tag. The read-only
 pre-push hook rejects untagged plugin changes but never amends history. Run `bash scripts/setup.sh`
-once per clone (the parent cc-config setup also does this) to install the relative hooks path and
-`push.followTags`. Generated `.codex-plugin/` and `.agents/` files are committed artifacts; never
+once per clone for `push.followTags`. Generated `.codex-plugin/` and `.agents/` files are committed artifacts; never
 hand-edit them. Use `codexInterface` in the Claude manifest for interface overrides.
 
 ## Standard

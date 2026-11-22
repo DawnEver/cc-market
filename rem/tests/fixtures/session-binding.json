@@ -1,0 +1,13 @@
+{
+  "rule": "D34 (2026-11-17): a task binding is PER SESSION, ONE file <machine home>/state/sessions/<session>.json. A byte-identical copy lives in rem (tests/fixtures/session-binding.json); both sides assert it.",
+  "session": "1d9000bd-6cd0-42ab-873f-102cd963e53d",
+  "relative_path": "state/sessions/1d9000bd-6cd0-42ab-873f-102cd963e53d.json",
+  "common_dir": "D:/work/repo-a/.git",
+  "caseless": true,
+  "repo_key": "repo-a-b317647173ff",
+  "record": {
+    "session": "1d9000bd-6cd0-42ab-873f-102cd963e53d",
+    "task": "toolchain@a1",
+    "ledger": {"repo_key": "repo-a-b317647173ff", "path": "D:/work/repo-a/.claude/tasks"}
+  }
+}

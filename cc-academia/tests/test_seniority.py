@@ -77,7 +77,6 @@ def test_the_most_senior_stated_rank_wins():
     assert seniority.best_rank([]) == "unknown"
 
 
-
 # --------------------------------------------------------- end to end
 
 
@@ -128,7 +127,6 @@ def test_rank_is_unknown_without_any_stated_role(tmp_path):
         conn.close()
 
 
-
 def test_a_supplied_rank_overrides_whatever_the_career_record_says(tmp_path):
     """A rank supplied with its source was read off a page by someone.
 
@@ -147,9 +145,7 @@ def test_a_supplied_rank_overrides_whatever_the_career_record_says(tmp_path):
         repo.store_institution_for(
             conn, person_id, name="Spinoff", role="VP Engineering", is_current=True
         )
-        repo.set_stated_rank(
-            conn, person_id, "phd_student", source_url="https://lab.edu/people"
-        )
+        repo.set_stated_rank(conn, person_id, "phd_student", source_url="https://lab.edu/people")
         person = repo.load_person(conn, person_id)
         assert person.rank == "phd_student"
     finally:
@@ -225,10 +221,8 @@ def test_a_role_is_not_lost_when_openalex_wrote_the_affiliation_first(tmp_path):
         conn.close()
 
 
-
-
 def test_a_stated_title_is_shown_even_when_it_maps_to_no_standard_rank(tmp_path):
-    """"Research Assistant" is a real answer; reporting it as unknown loses it.
+    """ "Research Assistant" is a real answer; reporting it as unknown loses it.
 
     Unknown should mean nobody stated anything, not that the classifier had no
     bucket for what they stated.
@@ -250,7 +244,7 @@ def test_a_stated_title_is_shown_even_when_it_maps_to_no_standard_rank(tmp_path)
         conn.close()
 
 
-@pytest.mark.parametrize("junk", ["无", "n/a", "-", "none", "  "])
+@pytest.mark.parametrize("junk", ["\u65e0", "n/a", "-", "none", "  "])
 def test_placeholder_titles_are_not_treated_as_a_position(junk):
     assert seniority.clean_title(junk) == ""
 

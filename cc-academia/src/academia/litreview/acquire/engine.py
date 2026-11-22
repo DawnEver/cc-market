@@ -64,9 +64,9 @@ def select_pending(
         raise ValueError(f"limit exceeds hard limit of {HARD_LIMIT}")
     completed_ids = completed_ids or set()
     return [
-        item for item in items
-        if item.get("approved") is True
-        and str(item.get("candidate_id") or "") not in completed_ids
+        item
+        for item in items
+        if item.get("approved") is True and str(item.get("candidate_id") or "") not in completed_ids
     ][:limit]
 
 
@@ -96,16 +96,15 @@ def download_one(
                     # Record it: a silent "nothing here" is the single most
                     # confusing outcome to debug after the fact.
                     record.attempts.append(
-                        Attempt(source.url, transport.name, Outcome.NOT_FOUND,
-                                "no PDF at this source")
+                        Attempt(
+                            source.url, transport.name, Outcome.NOT_FOUND, "no PDF at this source"
+                        )
                     )
                     continue
                 validate_pdf(target)
             except Exception as error:
                 outcome = outcome_of(error)
-                record.attempts.append(
-                    Attempt(source.url, transport.name, outcome, str(error))
-                )
+                record.attempts.append(Attempt(source.url, transport.name, outcome, str(error)))
                 if outcome is Outcome.DENIED:
                     # The host banned us; every later paper would fail the same
                     # way, so stop using this transport for the whole run.
@@ -117,14 +116,11 @@ def download_one(
             record.pdf_path = str(target.resolve())
             record.sha256 = sha256_file(target)
             record.source_url = found or source.url
-            record.attempts.append(
-                Attempt(source.url, transport.name, Outcome.DOWNLOADED)
-            )
+            record.attempts.append(Attempt(source.url, transport.name, Outcome.DOWNLOADED))
             return record
 
     # Report the most informative verdict rather than a bare "not found".
-    for preferred in (Outcome.DENIED, Outcome.BLOCKED, Outcome.NOT_OPEN_ACCESS,
-                      Outcome.ERROR):
+    for preferred in (Outcome.DENIED, Outcome.BLOCKED, Outcome.NOT_OPEN_ACCESS, Outcome.ERROR):
         if any(a.outcome is preferred for a in record.attempts):
             record.outcome = preferred
             break
@@ -153,7 +149,8 @@ def plan_sources(
     # A plan is a preview, so it covers everything acquisition would consider —
     # the queue is still unapproved at this point.
     pending = [
-        item for item in artifact.get("items", [])
+        item
+        for item in artifact.get("items", [])
         if str(item.get("candidate_id") or "") not in done
     ][:limit]
 
@@ -167,11 +164,13 @@ def plan_sources(
                 entry["degraded"] = True
                 entry["note"] = "no-browser mode — will likely fail with challenge"
             sources.append(entry)
-        plans.append({
-            "candidate_id": str(item.get("candidate_id") or ""),
-            "title": str(item.get("title") or ""),
-            "sources": sources,
-        })
+        plans.append(
+            {
+                "candidate_id": str(item.get("candidate_id") or ""),
+                "title": str(item.get("title") or ""),
+                "sources": sources,
+            }
+        )
     return plans
 
 
@@ -216,9 +215,8 @@ def acquire_pdfs(
     close: Callable[[], None] = lambda: None  # noqa: E731
     if downloader is None and not http_only:
         from academia.litreview.acquire.download import playwright_page
-        factory = page_factory or (
-            lambda: playwright_page(profile, browser_channel, network_mode)
-        )
+
+        factory = page_factory or (lambda: playwright_page(profile, browser_channel, network_mode))
         page, close = factory()
 
     disabled: set[str] = set()
@@ -230,7 +228,8 @@ def acquire_pdfs(
             target = pdf_dir / f"{cid}_{title}.pdf"
 
             transports = (
-                [_CallableTransport(downloader, item)] if downloader is not None
+                [_CallableTransport(downloader, item)]
+                if downloader is not None
                 else default_transports(page, item, http_only=http_only)
             )
             sources = [Source(url) for url in candidate_urls(item, resolve=resolve_oa)]

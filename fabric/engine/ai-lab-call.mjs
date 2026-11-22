@@ -64,7 +64,6 @@ export function callAiLab(request, { configPath = getConfigPath(), ledger = ledg
       try { _killTree(child); } catch {}
       settle(reject, new ProviderError("timeout", `ai_lab.call ${request.provider}:${request.model}: no reply after ${timeoutMs}ms`));
     }, timeoutMs);
-    timer.unref?.();
     signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.on("data", (d) => { stdout += d; });
     child.stderr.on("data", (d) => { stderr += d; });

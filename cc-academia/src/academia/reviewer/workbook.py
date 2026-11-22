@@ -88,7 +88,12 @@ RULE_DIMENSIONS: dict[str, str] = {
 
 #: The two blocks that are not a rule: who this is, and what to do about them.
 IDENTITY_COLUMNS = (
-    "rank", "reviewer", "email", "institution", "current_country", "profile_url",
+    "rank",
+    "reviewer",
+    "email",
+    "institution",
+    "current_country",
+    "profile_url",
 )
 DECISION_BLOCK = ("recommend_for_reviewer", "blocking_reason")
 
@@ -216,7 +221,6 @@ BLOCKING_REASONS = {
 }
 
 
-
 #: Policy thresholds read out of the CSV, so a header states the rule this run
 #: actually applied rather than a number frozen into this script.
 THRESHOLDS: dict[str, str] = {}
@@ -275,6 +279,7 @@ def missing_thresholds(header: list[str]) -> list[str]:
             if field:
                 wanted.add(field)
     return sorted(wanted - set(THRESHOLDS))
+
 
 #: The verdict column of each rule, in the order a blocking reason is read.
 #: Conflict first because it is the only one that is about the manuscript rather
@@ -602,7 +607,11 @@ def _style_body(ws, header: list[str], verdicts: list[list[str | None]]) -> None
     for index, row in enumerate(ws.iter_rows(min_row=2)):
         for position, cell in enumerate(row):
             verdict = verdicts[index][position]
-            style = VERDICT_STYLE.get(verdict or cell.value) if isinstance(verdict or cell.value, str) else None
+            style = (
+                VERDICT_STYLE.get(verdict or cell.value)
+                if isinstance(verdict or cell.value, str)
+                else None
+            )
             if style:
                 fill, colour = style
                 cell.fill = PatternFill("solid", fgColor=fill)
@@ -862,7 +871,9 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
             glossary.append([sheet, name, text])
     if constants:
         glossary.append([])
-        glossary.append(["thresholds", "", "Same for every candidate this run, so not shown as columns."])
+        glossary.append(
+            ["thresholds", "", "Same for every candidate this run, so not shown as columns."]
+        )
         glossary.cell(row=glossary.max_row, column=1).font = Font(bold=True)
         for name, value in constants:
             glossary.append([dimension_of(name), label_of(name), f"= {value}"])

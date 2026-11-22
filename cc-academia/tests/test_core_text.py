@@ -73,7 +73,12 @@ def test_invert_abstract_restores_word_order():
 def test_dedupe_merges_on_shared_doi_and_keeps_richest_record():
     records = [
         {"source": "ieee", "doi": "10.1109/A", "title": "Torque ripple", "abstract": "full text"},
-        {"source": "openalex", "doi": "https://doi.org/10.1109/A", "title": "Torque ripple", "venue": "TIE"},
+        {
+            "source": "openalex",
+            "doi": "https://doi.org/10.1109/A",
+            "title": "Torque ripple",
+            "venue": "TIE",
+        },
     ]
     merged = text.dedupe_records(records)
     assert len(merged) == 1
@@ -200,7 +205,7 @@ def test_person_name_key_does_not_re_split_a_surname_a_source_already_gave():
 
 
 def test_name_keys_holds_both_readings_only_when_the_order_is_unknown():
-    """"Geraint Jewell" and "Zhu Zi-Qiang" are one shape and two orders.
+    """ "Geraint Jewell" and "Zhu Zi-Qiang" are one shape and two orders.
 
     Both spellings occur in the repositories, so the comparison has to hold
     both readings. A comma settles the order, and then there is only one.

@@ -95,7 +95,9 @@ def test_arxiv_to_update_maps_to_preprint():
     upd = zm.arxiv_to_update(meta)
     assert upd["itemType"] == "preprint"
     assert upd["creators"][0] == {
-        "creatorType": "author", "firstName": "Fedor V.", "lastName": "Fomin"
+        "creatorType": "author",
+        "firstName": "Fedor V.",
+        "lastName": "Fomin",
     }
     assert upd["extra"] == "arXiv: 1304.4626"
     assert upd["url"] == "https://arxiv.org/abs/1304.4626"
@@ -106,7 +108,9 @@ def test_split_name_keeps_surname_particles():
     assert zm._split_name("Mark de Berg")["firstName"] == "Mark"
     assert zm._split_name("Johan van Rooij")["lastName"] == "van Rooij"
     assert zm._split_name("Fedor V. Fomin") == {
-        "creatorType": "author", "firstName": "Fedor V.", "lastName": "Fomin"
+        "creatorType": "author",
+        "firstName": "Fedor V.",
+        "lastName": "Fomin",
     }
 
 
@@ -182,9 +186,7 @@ def test_plan_update_uses_doi_when_no_arxiv():
 
 def test_plan_update_falls_back_to_title_query():
     title = "A Sufficiently Long And Descriptive Paper Title"
-    action, upd = zm.plan_update(
-        _item(title), fetcher=lambda kind, value: {"title": "via-title"}
-    )
+    action, upd = zm.plan_update(_item(title), fetcher=lambda kind, value: {"title": "via-title"})
     assert action == "crossref-title" and upd["title"] == "via-title"
 
 
@@ -216,14 +218,14 @@ def test_enrich_items_empty_only_keys_enriches_nothing(monkeypatch):
     """An empty scope set must mean 'nothing' — never 'unscoped'."""
     monkeypatch.setattr(zm, "iter_items", lambda *a, **k: [_item("bare_document.pdf")])
     monkeypatch.setattr(zm, "update_item", lambda *a, **k: pytest.fail("must not write"))
-    results = zm.enrich_items("lib", "key", only_keys=set(),
-                              fetcher=lambda k, v: {"title": "x"})
+    results = zm.enrich_items("lib", "key", only_keys=set(), fetcher=lambda k, v: {"title": "x"})
     assert results == []
 
 
 def test_enrich_items_reports_put_failure(monkeypatch):
-    monkeypatch.setattr(zm, "iter_items",
-                        lambda *a, **k: [_item("bare_document_with_long_title.pdf")])
+    monkeypatch.setattr(
+        zm, "iter_items", lambda *a, **k: [_item("bare_document_with_long_title.pdf")]
+    )
     monkeypatch.setattr(zm, "update_item", lambda *a, **k: (False, "http 400: bad field"))
     results = zm.enrich_items("lib", "key", fetcher=lambda k, v: {"title": "x"})
     assert results[0].applied is False
@@ -234,8 +236,16 @@ def test_enrich_items_reports_put_failure(monkeypatch):
 
 
 def _attachment(key, parent, md5="abc", filename="p.pdf"):
-    return {"key": key, "data": {"itemType": "attachment", "linkMode": "imported_file",
-                                 "filename": filename, "md5": md5, "parentItem": parent}}
+    return {
+        "key": key,
+        "data": {
+            "itemType": "attachment",
+            "linkMode": "imported_file",
+            "filename": filename,
+            "md5": md5,
+            "parentItem": parent,
+        },
+    }
 
 
 def test_mirror_scopes_to_registry_parents(monkeypatch, tmp_path):
@@ -243,13 +253,16 @@ def test_mirror_scopes_to_registry_parents(monkeypatch, tmp_path):
 
     content = b"%PDF-fake"
     md5 = hashlib.md5(content).hexdigest()
-    monkeypatch.setattr(zm, "iter_items", lambda *a, **k: [
-        _attachment("A1", "PARENT1", md5=md5),
-        _attachment("A2", "PARENT2", md5=md5),
-    ])
+    monkeypatch.setattr(
+        zm,
+        "iter_items",
+        lambda *a, **k: [
+            _attachment("A1", "PARENT1", md5=md5),
+            _attachment("A2", "PARENT2", md5=md5),
+        ],
+    )
     monkeypatch.setattr(zm, "_request", lambda *a, **k: (200, content))
-    results = zm.mirror_attachments("lib", "key", storage_dir=tmp_path,
-                                    only_keys={"PARENT1"})
+    results = zm.mirror_attachments("lib", "key", storage_dir=tmp_path, only_keys={"PARENT1"})
     assert len(results) == 1 and results[0].status == "downloaded"
     assert (tmp_path / "A1" / "p.pdf").read_bytes() == content
 
@@ -264,14 +277,20 @@ def test_mirror_rejects_md5_mismatch(monkeypatch, tmp_path):
 
 def test_mirror_accepts_non_pdf_attachments(monkeypatch, tmp_path):
     """HTML snapshots etc. must not be rejected by magic-byte sniffing."""
-    monkeypatch.setattr(zm, "iter_items", lambda *a, **k: [
-        _attachment("A1", "P1", md5=None, filename="snap.html")])
+    monkeypatch.setattr(
+        zm, "iter_items", lambda *a, **k: [_attachment("A1", "P1", md5=None, filename="snap.html")]
+    )
     # md5=None -> no-file path; use a real md5 for the download path
     import hashlib
 
     body = b"<html>snapshot</html>"
-    monkeypatch.setattr(zm, "iter_items", lambda *a, **k: [
-        _attachment("A1", "P1", md5=hashlib.md5(body).hexdigest(), filename="snap.html")])
+    monkeypatch.setattr(
+        zm,
+        "iter_items",
+        lambda *a, **k: [
+            _attachment("A1", "P1", md5=hashlib.md5(body).hexdigest(), filename="snap.html")
+        ],
+    )
     monkeypatch.setattr(zm, "_request", lambda *a, **k: (200, body))
     results = zm.mirror_attachments("lib", "key", storage_dir=tmp_path)
     assert results[0].status == "downloaded"

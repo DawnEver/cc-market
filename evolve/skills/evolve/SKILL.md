@@ -9,9 +9,8 @@ Drive a codebase toward a clean state over repeated rounds. This loop is **Claud
 (run from the main loop, not a background `Workflow`) because human gates (`AskUserQuestion`)
 and interactive `git commit` cannot happen inside a background workflow.
 
-Runs in any git project, but **hard-depends on three cc-market plugins** — `sharp-review`
-(round critique engine), `rem` (state + memory in `.claude/.rem-state.json`), and the `todo`
-CLI (finding/task status). Setup verifies they are installed and aborts if any is missing;
+Runs in any git project, but **hard-depends on two cc-market plugins** — `sharp-review`
+(round critique engine) and `rem` (state + memory in `.claude/.rem-state.json`). Setup verifies they are installed and aborts if any is missing;
 there are no built-in fallbacks. See `README.md` for the overview.
 
 ## Usage
@@ -36,8 +35,7 @@ there are no built-in fallbacks. See `README.md` for the overview.
    ask the user to commit/stash first, or to confirm proceeding — evolve commits with explicit
    per-file `git add` scope, but a dirty tree still risks confusion. Note the current branch.
    **Verify the required plugins are installed** — check that `sharp-review` and `rem` are
-   registered (e.g. in `~/.claude/plugins/installed_plugins.json`) and that the `todo` CLI is
-   on `PATH`. If any is missing, abort with a clear message naming what to install — evolve has
+   registered (e.g. in `~/.claude/plugins/installed_plugins.json`). If either is missing, abort with a clear message naming what to install — evolve has
    no fallback for them.
 2. Parse flags (see Usage). On Windows under OneDrive, run
    `git config windows.appendAtomically false` once so `git commit` doesn't fail with
@@ -62,7 +60,7 @@ it) and never hang on `AskUserQuestion`. Surface all deferred/gated items in the
 
 ## Per round (overview)
 
-1. **Critique (锐评)** — architecture + diff review → an OPEN findings list.
+1. **Critique (sharp review)** — architecture + diff review → an OPEN findings list.
 2. **Fan-out fix** — parallel subagents over disjoint file sets (≤ `maxAgents`).
 3. **Review the un-fixed** — classify each remaining finding's reason.
 4. **Human gate** — `AskUserQuestion` for architectural changes, won't-fix calls, or
@@ -117,5 +115,5 @@ failure handling). Stop conditions and safety caps → `reference/termination.md
   rem-frontmatter entry under `.claude/memory/YYYY/MM/DD/`, so rem's session indexer picks it
   up automatically (no need to rebuild the index here).
 - Report a one-line summary in chat (rounds, total fixed, won't-fix, deferred items, **and the
-  count of findings still OPEN** — point to `todo` so deferred/LOW items leave the loop visible,
+  count of findings still OPEN** — point to the repo's issue tracker so deferred/LOW items leave the loop visible,
   never silently dropped; `defer` ≠ drop).

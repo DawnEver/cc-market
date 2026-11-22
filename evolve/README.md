@@ -1,11 +1,11 @@
 # evolve
 
-> *Join the glorious evolution — 加入光荣的进化吧！*
+> *Join the glorious evolution — join the glorious evolution! (the Chinese original of the tagline)*
 
 An iterative, test-driven **review→fix loop** skill. Each round drives the codebase closer
 to a clean state:
 
-1. **Critique (锐评)** the architecture and diff → an OPEN findings list.
+1. **Critique (sharp review)** the architecture and diff → an OPEN findings list.
 2. **Fan out subagents** to fix findings in parallel over disjoint file sets.
 3. **Review the un-fixed** and judge *why* each was left (false-positive / intentional /
    out-of-scope / needs-architecture-decision).
@@ -34,7 +34,7 @@ runs `sharp-review` and reads its backlog; sharp-review handles fan-out internal
 invokes the skill directly rather than via a slash-command.
 
 Claude-driven (not a background workflow) so human gates and commits work. Runs in any git
-repo but **hard-depends on cc-market's `sharp-review`, `rem`, and `todo`** — Setup verifies
+repo but **hard-depends on cc-market's `sharp-review` and `rem`** — Setup verifies
 they are installed and aborts if any is missing; there are no built-in fallbacks.
 
 A real `scripts/evolve.mjs` helper now backs state, finding-grouping, and termination — no

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { acknowledgementCommand } from '../hooks/rem-hook.js';
 
@@ -91,4 +91,38 @@ test('completion CLI reports persistence failure instead of acknowledging in-mem
   assert.equal(result.status, 1);
   assert.doesNotMatch(result.stdout, /completed/);
   assert.equal(JSON.parse(fs.readFileSync(file)).hook.sessions.thread.remPending, true);
+});
+
+test('concurrent due REM siblings reserve one checkout while keeping separate completion', { timeout: 30000 }, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-concurrent-siblings-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.mkdirSync(path.join(root, '.claude'));
+  const file = path.join(root, '.claude', '.rem-state.json');
+  const now = Date.now();
+  fs.writeFileSync(file, JSON.stringify({ hook: { sessions: Object.fromEntries(['memory', 'sibling'].map(key =>
+    [key, { sessionKey: key, stopCount: 2, firstStopAt: now - 180000, lastTouched: now }])) } }));
+  const state = () => JSON.parse(fs.readFileSync(file));
+  const hook = fileURLToPath(new URL('../hooks/rem-hook.js', import.meta.url));
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_PLUGIN_ROOT: '', CODEX_HOME: root, CODEX_THREAD_ID: 'stale' };
+  const run = (args, input = {}) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, { cwd: root, env, windowsHide: true, stdio: 'pipe' });
+    let stderr = '';
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.stdout.resume();
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stderr }));
+    child.stdin.end(JSON.stringify(input));
+  });
+  const stop = thread => run([hook], { cwd: root, session_id: 'parent', thread_id: thread, hook_event_name: 'Stop' });
+  const finish = key => run([script, 'complete', '--session', key, '--request', state().hook.sessions[key].requestId]);
+  const results = await Promise.all(['memory', 'sibling'].map(stop));
+  assert.equal(results.filter(result => result.code === 2).length, 1, JSON.stringify(results));
+  const owner = results[0].code === 2 ? 'memory' : 'sibling';
+  const deferred = owner === 'memory' ? 'sibling' : 'memory';
+  assert.equal(state().hook.sessions[deferred].stopCount, 2);
+  assert.equal((await finish(owner)).code, 0);
+  assert.equal((await stop(deferred)).code, 2);
+  assert.equal(state().hook.sessions[owner].remDone, true);
+  assert.equal((await finish(deferred)).code, 0);
 });

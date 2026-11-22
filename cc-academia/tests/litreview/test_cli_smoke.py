@@ -38,7 +38,11 @@ def test_console_scripts_are_installed(script):
 
 def test_doctor_reports_the_active_configuration():
     result = subprocess.run(
-        [sys.executable, "-c", "from academia.cli.dispatch import main; raise SystemExit(main(['doctor','--json']))"],
+        [
+            sys.executable,
+            "-c",
+            "from academia.cli.dispatch import main; raise SystemExit(main(['doctor','--json']))",
+        ],
         capture_output=True,
         text=True,
     )

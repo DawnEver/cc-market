@@ -49,7 +49,6 @@ export function watchTurn(client, { timeoutMs = 600000, label = "turn" } = {}) {
       }
     };
     timer = setTimeout(() => reject(new ProviderError("timeout", `codex ${label}: no turn/completed after ${timeoutMs}ms`)), timeoutMs);
-    timer.unref?.();
   });
   done.catch(() => {}); // a request that throws first must not leave an unhandled rejection
   client.onNotification("error", onError);

@@ -24,7 +24,7 @@ truly need you — irreversible/arch or HIGH stakes. Ask it, then apply the answ
 (fix / record wont-fix / defer).
 
 **The auto-deferred set is suppressed as a *decision*, not as *information*:** emit one
-non-blocking line (`N low-stakes findings deferred → still OPEN in backlog, see \`todo\`: SR-…`),
+non-blocking line (`N low-stakes findings deferred → still OPEN in backlog (the issue tracker): SR-…`),
 never an `AskUserQuestion`. They are not dropped.
 
 ## AI consumer
@@ -46,7 +46,7 @@ A deferred finding — LOW included — is *not* resolved and is *not* abandoned
 ensure it still gets solved:
 
 1. **It stays in the backlog.** It remains `status: open` in `evolveState.findings` and in the
-   `todo`/`sharp-review.md` source of truth — visible and resolvable at any time, including after
+   issue-tracker/`sharp-review.md` source of truth — visible and resolvable at any time, including after
    the loop exits.
 2. **Fan-out re-attempts it every round.** Step 2 fixes findings in HIGH→MEDIUM→LOW order across
    *all* open findings regardless of stakes. A LOW item is OPEN at step 7.5 only because this
@@ -61,6 +61,6 @@ ensure it still gets solved:
 
 clean-convergence is severity-based, so the loop can exit with LOW findings still open. That is
 intended (LOW nits must not block convergence) — but it means the **exit summary MUST report the
-count of still-open deferred findings and point to `todo`**, so they leave the loop *visible*, not
+count of still-open deferred findings and point to the issue tracker**, so they leave the loop *visible*, not
 silently swallowed. If you want LOW items to also block the loop, run `--until=resolved` (stops
 only when every finding is fixed or accepted wont-fix) instead of `clean`.

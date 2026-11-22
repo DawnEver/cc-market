@@ -12,7 +12,7 @@ drift from these).
 
 ## State ownership
 - `saveState` only replaces the `evolveState` key in `.claude/.rem-state.json`; it must
-  preserve all other top-level keys (`hook`, `prune`, `reviewGate`, …) shared with rem.
+  preserve all other top-level keys (`hook`, `prune`, `docs`, …) shared with rem.
 - Never block the loop on a state-write failure — `saveState` returns `{persisted:false}`
   and the loop continues in memory.
 

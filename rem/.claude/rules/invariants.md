@@ -9,12 +9,12 @@ state exists beside the files. NOTHING deletes a file under `.claude/memory/` (u
 2026-10-31; `tests/lifecycle.test.mjs` scans every script for a file-removing call). An entry
 is never edited either: a correction or restatement is a NEW entry naming the old one
 (`corrects:` flags it; `supersedes:` / `merged_from:` hide it) — visibility is derived, the file stays.
-`scope-split.js` moves nothing: an entry's path is part of its identity.
+Every write lands in the root's memory; an older child scope is read, never written or moved: an entry's path is part of its identity.
 
 ## Opening/closing a task: refused by default, detectable when bypassed; a journal is append-only
 
 `openTask` / `closeTask` refuse without an authority record that the user's own
-`/rem:task open|close <slug>` prompt creates (`hooks/task-authority.js`, `scripts/authority.mjs`);
+`/rem:task open|close <slug>` prompt creates (`hooks/task-authority.js` via `hooks/user-prompt.js`, `scripts/authority.mjs`);
 never add a path around that check. A bypass is detectable: `scope-validate.mjs` checks every
 task's `authority:` id against the append-only history in `~/.claude/rem/authority/`, and git
 history shows who wrote TASK.md. Limit: the hook and an agent's shell run as the same OS user, so a determined agent can
@@ -26,9 +26,7 @@ never a delete (`closeTask()`).
 
 ## One backlog, no checkboxes in memory
 
-A task's open items are journal lines; a repo backlog item is an issue (`.claude/rem.json`
-`{"backlog": "issues"}` makes `todo.js` a read-only view) or one `.claude/todo/<id>.md` file, archived
-into memory when closed (written whole, O_EXCL; only then does the `.claude/todo/` item go). Nothing writes a checkbox or a status into a memory entry.
+A task's open items are journal lines; a repo backlog item is an issue in the repo's tracker. Nothing writes a checkbox or a status into a memory entry.
 
 ## Hook pending-work gate
 
@@ -82,7 +80,7 @@ never read/write directly. Every save is tmp+rename with a unique temp name
 ### deepMerge preserves foreign keys
 
 `deepMerge` must preserve keys in `partial` that are not in `DEFAULT_STATE`. Other plugins
-(e.g. sharp-review) store their state under the same file — silent drop on load→save would
+(e.g. evolve) store their state under the same file — silent drop on load→save would
 lose their data. When adding a new key to `DEFAULT_STATE`, add it here first, then propagate
 to all `*/shared/state.mjs` copies. Bundle integrity test enforces per-plugin copies stay in
 sync with `cc-market/shared/`.

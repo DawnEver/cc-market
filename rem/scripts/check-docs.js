@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// check-docs.js — detect doc staleness at crystallize time
+// check-docs.js — detect doc staleness at /rem time
 // Project-agnostic: discovers doc files at all levels, checks uncommitted changes.
 
 import { readdirSync, readFileSync } from 'fs';
@@ -72,7 +72,7 @@ export function referencedChanges(text, changedFiles) {
  *
  * The earlier criterion marked every doc that was not itself modified as "may be stale"
  * the moment anything changed. With a dozen docs in a repo that is a standing wall of
- * warnings on every crystallize, which is how a check stops being read — the same failure
+ * warnings on every /rem, which is how a check stops being read — the same failure
  * as a checker that cries wolf anywhere else. A doc is now a candidate only when it
  * mentions a file that changed, and the report says which one.
  *

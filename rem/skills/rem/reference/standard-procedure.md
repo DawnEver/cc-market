@@ -20,7 +20,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/rem-prep.js --transcript "<transcript_path>"
 ```
 
 It lists the memory entries this session read and, per scope, the visible entry count, the
-entries hidden by a newer `merged_from` / `supersedes` (their files stay), and the crystallize advisory.
+entries hidden by a newer `merged_from` / `supersedes` (their files stay).
 It writes nothing.
 
 ### 1. Summarize
@@ -43,5 +43,4 @@ It writes nothing.
 
 ### 3. Update project docs if needed
 
-- If crystallize ran: `check-docs.js` already flagged stale docs above — update them now
-- If no crystallize: use judgment — update `AGENTS.md`, `README.md`, etc. if architecture, directory layout, setup steps, or hook behaviour changed this session
+- Run `check-docs.js`; update what it flags. Beyond that, use judgment — update `AGENTS.md`, `README.md`, etc. if architecture, directory layout, setup steps, or hook behaviour changed this session

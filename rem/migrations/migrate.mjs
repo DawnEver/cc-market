@@ -1,26 +1,43 @@
-// rem migration to the four layers (rules, docs, memory, tasks). Idempotent; NOTHING is deleted.
+// rem migration to the current format. Idempotent: a second run plans nothing.
 //   - .gitignore gains the ignores for what rem generates (additive).
 //   - Every memory entry's frontmatter loses the volatile fields (accessed, tier, count):
 //     memory is immutable once written, so nothing may keep rewriting it.
-//   - Reported, never acted on here: legacy checkbox files (adopt them with `todo.js adopt`;
-//     the originals stay byte-identical) and HANDOFF-/PLAN-/DECISIONS- files (they stay as
-//     history; a live one becomes a task only when the USER opens it).
+//   - A child scope's memory (`<dir>/.claude/memory/**`, the retired scope-split) moves ONCE into
+//     the root's `.claude/memory/` at the same dated path (git mv). A name taken by a different
+//     root entry gets the scope as a suffix (`<name>-<scope>.md`) and the scope's own references
+//     to it are rewritten; a byte-identical copy is removed, its content already at the root.
+//   - The retired generated indexes are deleted: every `.claude/rules/MEMORY.md` (it loaded on
+//     every turn and nothing rebuilds it), every `.claude/meta/` copy, and a child scope's
+//     `memory-index.md`. attic/, output/ and .claude/worktrees/ are never touched.
+//   - The device-local state drops the retired `scopes` and `crystallize` keys.
+//   - The retired per-repo session bindings (`<ledger>/.bindings/<session>.json`) move ONCE into the machine
+//     home's session store, `state/sessions/<session>.json`, naming the ledger they were found in (D34,
+//     scripts/session-binding.mjs); the old files and their directory are deleted. Readers never read the old store.
+//   - Reported, never acted on here: HANDOFF-/PLAN-/DECISIONS- files (they stay as history; a
+//     live one becomes a task only when the USER opens it).
 //   node migrate.mjs [--dry-run] [<root>]   prints the plan as JSON; --dry-run writes nothing.
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, resolve } from 'path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, rmdirSync } from 'fs';
+import { join, resolve, dirname, posix } from 'path';
 import { spawnSync } from 'child_process';
 import { isMain } from '../shared/lib.mjs';
-import { parseLegacyItems } from '../scripts/todo-lib.mjs';
+import { mainCheckout, tasksDir } from '../scripts/tasks.mjs';
+import { migrateRetiredBindings } from '../scripts/session-binding.mjs';
 
 // rem owns ONLY the ignores for artefacts it generates or that earlier rem versions
-// generated: the derived memory-index.md, the old injected rules/MEMORY.md, the old
-// _meta.json shards, and the device-local memo store. The broader .claude structure template is global policy
-// owned by the root `migrate` skill — a plugin must not blanket-ignore a host's .claude.
-const REM_GENERATED_IGNORES = ['**/.claude/memory-index.md', '**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
+// generated: the derived memory-index.md, the old _meta.json shards, and the device-local memo
+// store. The broader .claude structure template is global policy owned by the root `migrate`
+// skill — a plugin must not blanket-ignore a host's .claude.
+const REM_GENERATED_IGNORES = ['**/.claude/memory-index.md', '**/_meta.json', '**/.claude/memo/'];
 
 export const VOLATILE_FIELDS = ['accessed', 'tier', 'count'];
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/; // the closing fence is a whole `---` line
 const CLASSED_RE = /^(HANDOFF|PLAN|DECISIONS)-/;
+// Never migrated: an archive is frozen source, output/ is regenerable, a worktree is another checkout.
+const FROZEN_RE = /^(?:attic|output)\/|(?:^|\/)\.claude\/worktrees\//;
+const CHILD_RE = /^(.+)\/\.claude\/memory\/(.+)$/;
+export const ORPHAN_RE = /(?:^|\/)\.claude\/(?:rules\/MEMORY\.md|meta\/.+)$/;
+const CHILD_INDEX_RE = /^.+\/\.claude\/memory-index\.md$/;
+export const MIGRATE_DOOR = 'node "${CLAUDE_PLUGIN_ROOT}/migrations/migrate.mjs" (the /migrate skill)';
 
 function readGitignore(projectRoot) {
   const gitignorePath = join(projectRoot, '.gitignore');
@@ -42,11 +59,68 @@ function ensureGitignore(projectRoot) {
   return { changed: true, summary: [`ensured ${missing.length} rem gitignore ignore(s): ${missing.join(', ')}`] };
 }
 
-// Tracked memory files of every scope (`**/.claude/memory/**`), repo-relative, sorted.
+const git = (root, args) => spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+const gitList = (root, args) => {
+  const r = git(root, ['ls-files', '-z', ...args]);
+  return r.status === 0 ? r.stdout.split('\0').filter(Boolean).sort() : [];
+};
+
+// Tracked memory files of the root and of every child scope, repo-relative, sorted.
 function memoryFiles(root) {
-  const r = spawnSync('git', ['ls-files', '-z', '--', ':(glob)**/.claude/memory/**/*.md'], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
-  if (r.status !== 0) return [];
-  return r.stdout.split('\0').filter(Boolean).sort();
+  return gitList(root, ['--', ':(glob)**/.claude/memory/**/*.md']).filter(p => !FROZEN_RE.test(p));
+}
+
+// Retired generated files, tracked or not (an ignored one too): `{ path, tracked }`. They sit in
+// a `.claude/` beside tracked ones (the root's, a child scope's), so those directories are
+// checked on disk -- a walk of every untracked file would cost minutes in a large checkout.
+export function orphanedFiles(root) {
+  const tracked = new Set(gitList(root, ['--', ':(glob)**/.claude/**']));
+  const homes = new Set(['']);
+  for (const p of tracked) {
+    const i = p.indexOf('/.claude/');
+    if (i > 0) homes.add(p.slice(0, i));
+  }
+  const found = new Set([...tracked].filter(p => ORPHAN_RE.test(p) || CHILD_INDEX_RE.test(p)));
+  const filesUnder = rel => {
+    const abs = join(root, rel);
+    if (!existsSync(abs)) return [];
+    return readdirSync(abs, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? filesUnder(`${rel}/${e.name}`) : [`${rel}/${e.name}`]));
+  };
+  for (const home of homes) {
+    const claude = home ? `${home}/.claude` : '.claude';
+    if (existsSync(join(root, claude, 'rules', 'MEMORY.md'))) found.add(`${claude}/rules/MEMORY.md`);
+    for (const f of filesUnder(`${claude}/meta`)) found.add(f);
+    if (home && existsSync(join(root, claude, 'memory-index.md'))) found.add(`${claude}/memory-index.md`);
+  }
+  return [...found].filter(p => !FROZEN_RE.test(p)).sort().map(path => ({ path, tracked: tracked.has(path) }));
+}
+
+// The child scopes' tracked memory files: `{ path, scope, rel }`.
+export function childScopeFiles(root) {
+  return memoryFiles(root).flatMap(path => {
+    const m = path.match(CHILD_RE);
+    return m && !m[1].includes('/.claude/') ? [{ path, scope: m[1], rel: m[2] }] : [];
+  });
+}
+
+// Where each child file lands at the root: { from, to } moves, and identical copies to drop.
+function planMoves(root, children) {
+  const moves = [], drops = [], taken = new Set();
+  for (const { path, scope, rel } of children) {
+    let to = `.claude/memory/${rel}`;
+    const there = join(root, to);
+    if (!taken.has(to) && existsSync(there) && readFileSync(there).equals(readFileSync(join(root, path)))) {
+      drops.push(path);
+      continue;
+    }
+    if (taken.has(to) || existsSync(there)) {
+      const ext = posix.extname(rel);
+      to = `.claude/memory/${rel.slice(0, rel.length - ext.length)}-${scope.replace(/\//g, '-')}${ext}`;
+    }
+    taken.add(to);
+    moves.push({ from: path, to, scope, rel, renamed: to !== `.claude/memory/${rel}` });
+  }
+  return { moves, drops };
 }
 
 function stripVolatile(text) {
@@ -62,18 +136,40 @@ function stripVolatile(text) {
   return { text: `---${eol}${kept.join(eol)}${eol}---` + text.slice(m[0].length), fields };
 }
 
+const stateFileOf = root => join(root, '.claude', '.rem-state.json');
+
+// The device-local state in the current shape, or null when it already is (or there is none).
+function migratedState(root) {
+  let state;
+  try { state = JSON.parse(readFileSync(stateFileOf(root), 'utf8')); } catch { return null; }
+  if (!('scopes' in state) && !('crystallize' in state)) return null;
+  const { scopes: _scopes, crystallize: _crystallize, ...rest } = state;
+  return rest;
+}
+
 export function planMigration(root) {
-  const plan = { gitignore: missingIgnores(root), strip: [], legacyTodos: [], classified: [], deletes: [] };
+  const plan = { gitignore: missingIgnores(root), strip: [], classified: [], moves: [], deletes: [], state: false };
   for (const rel of memoryFiles(root)) {
     const text = readFileSync(join(root, rel), 'utf8');
     const { fields } = stripVolatile(text);
     if (fields.length) plan.strip.push({ path: rel, fields });
-    const items = parseLegacyItems(text);
-    if (items.length) plan.legacyTodos.push({ path: rel, open: items.filter(i => i.open).length, closed: items.filter(i => !i.open).length });
     const prefix = rel.split('/').pop().match(CLASSED_RE)?.[1];
     if (prefix) plan.classified.push({ path: rel, prefix });
   }
+  const { moves, drops } = planMoves(root, childScopeFiles(root));
+  plan.moves = moves.map(({ from, to }) => ({ from, to }));
+  plan.deletes = [...drops.map(path => ({ path, tracked: true, why: 'identical to the root entry' })),
+    ...orphanedFiles(root).map(o => ({ ...o, why: 'retired generated index' }))];
+  plan.state = migratedState(root) !== null;
+  plan.bindings = migrateRetiredBindings(mainCheckout(root), tasksDir(root), { dryRun: true });
   return plan;
+}
+
+// Remove the now-empty directories under `dir` (and `dir` itself), bottom-up.
+function pruneEmpty(dir) {
+  if (!existsSync(dir)) return;
+  for (const e of readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) pruneEmpty(join(dir, e.name));
+  if (readdirSync(dir).length === 0) rmdirSync(dir);
 }
 
 export async function migrate(projectRoot, { dryRun = false } = {}) {
@@ -85,7 +181,55 @@ export async function migrate(projectRoot, { dryRun = false } = {}) {
     writeFileSync(file, stripVolatile(readFileSync(file, 'utf8')).text, 'utf8');
   }
   if (plan.strip.length) summary.push(`stripped volatile frontmatter from ${plan.strip.length} memory file(s)`);
-  return { changed: changed || plan.strip.length > 0, summary, plan };
+
+  const { moves } = planMoves(projectRoot, childScopeFiles(projectRoot));
+  const scopes = [...new Set(moves.map(m => m.scope))];
+  for (const { from, to } of moves) {
+    mkdirSync(dirname(join(projectRoot, to)), { recursive: true });
+    const r = git(projectRoot, ['mv', from, to]);
+    if (r.status !== 0) throw new Error(`git mv ${from} ${to} failed: ${r.stderr.trim()}`);
+  }
+  // A renamed entry: its own scope's references (relative to that scope's memory) follow it.
+  for (const scope of scopes) {
+    const renames = moves.filter(m => m.scope === scope && m.renamed).map(m => [m.rel, m.to.slice('.claude/memory/'.length)]);
+    if (!renames.length) continue;
+    for (const { to } of moves.filter(m => m.scope === scope)) {
+      const file = join(projectRoot, to);
+      const text = readFileSync(file, 'utf8');
+      const next = renames.reduce((t, [a, b]) => t.split(a).join(b), text);
+      if (next !== text) writeFileSync(file, next, 'utf8');
+    }
+  }
+  if (moves.length) summary.push(`moved ${moves.length} child-scope memory file(s) into .claude/memory/ (${scopes.join(', ')})`);
+
+  for (const { path, tracked } of plan.deletes) {
+    if (tracked) {
+      const r = git(projectRoot, ['rm', '-q', '-f', '--', path]);
+      if (r.status !== 0) throw new Error(`git rm ${path} failed: ${r.stderr.trim()}`);
+    } else {
+      rmSync(join(projectRoot, path), { force: true });
+    }
+  }
+  if (plan.deletes.length) summary.push(`deleted ${plan.deletes.length} retired file(s): ${plan.deletes.map(d => d.path).join(', ')}`);
+  for (const scope of scopes) pruneEmpty(join(projectRoot, scope, '.claude', 'memory'));
+  for (const meta of new Set(plan.deletes.map(d => d.path.match(/^(.*\.claude\/meta)\//)?.[1]).filter(Boolean))) {
+    pruneEmpty(join(projectRoot, meta));
+  }
+
+  const state = migratedState(projectRoot);
+  if (state) {
+    writeFileSync(stateFileOf(projectRoot), JSON.stringify(state, null, 2) + '\n', 'utf8');
+    summary.push('state: the retired scopes and crystallize keys dropped');
+  }
+  const bindings = migrateRetiredBindings(mainCheckout(projectRoot), tasksDir(projectRoot));
+  const settled = bindings.moved.length + bindings.dropped.length;
+  if (settled) summary.push(`moved ${bindings.moved.length} session binding(s) into the machine home's session store `
+    + `(state/sessions/) and dropped ${bindings.dropped.length} already there`);
+  for (const { old, kept } of bindings.conflicts) summary.push(`binding conflict, both kept: ${old} names another task than ${kept}`);
+  for (const bad of bindings.bad) summary.push(`unreadable binding left in place: ${bad}`);
+  plan.bindings = bindings;
+  const did = changed || plan.strip.length > 0 || moves.length > 0 || plan.deletes.length > 0 || Boolean(state) || settled > 0;
+  return { changed: did, summary, plan };
 }
 
 if (isMain(import.meta.url)) {

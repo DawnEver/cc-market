@@ -47,6 +47,17 @@ describe("scope-validate", () => {
     assert.match(run(SCRIPT, "--check").stdout, /clean/);
   });
 
+  test("a journal minting one ID twice warns by name (PLANTED: a unique journal is silent)", () => {
+    project();
+    run(INDEX);
+    const task = path.join(root, ".claude", "tasks", "t");
+    fs.mkdirSync(task, { recursive: true });
+    fs.writeFileSync(path.join(task, "JOURNAL.md"), "- 2026-11-01 D1: a\n- 2026-11-01 O1 open: x\n- 2026-11-02 O1 closed: y\n");
+    assert.doesNotMatch(run(SCRIPT, "--check").stdout, /duplicate/);
+    fs.appendFileSync(path.join(task, "JOURNAL.md"), "- 2026-11-03 D1: b\n- 2026-11-03 O1 open: z\n");
+    assert.match(run(SCRIPT, "--check").stdout, /\[warn\].*task t: duplicate journal IDs D1, O1/);
+  });
+
   test("a leftover _meta.json warns that nothing reads it", () => {
     const day = project();
     run(INDEX);
