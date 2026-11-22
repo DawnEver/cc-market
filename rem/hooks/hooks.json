@@ -39,13 +39,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-authority.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt.js\"",
             "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/recall.js\"",
-            "timeout": 15
           }
         ]
       }
@@ -56,7 +51,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/rem-hook.js\"",
-            "timeout": 10
+            "timeout": 5
           }
         ]
       }

@@ -35,6 +35,7 @@ test('manifest author name is exempt; emails and other files are not', () => {
   const rules = parseMarkers('secretname');
   const name = '  "author": {\n    "name": "Secretname"\n  }';
   assert.ok(!hit(name, 'fabric/.claude-plugin/plugin.json', rules));
+  assert.ok(!hit(name, 'fabric/.antigravity-plugin/plugin.json', rules));
   assert.ok(!hit('authors = [{ name = "Secretname" }]', 'x/pyproject.toml', rules));
   assert.ok(hit(name, 'fabric/README.md', rules));
   assert.ok(hit('    "email": "x' + '@corp.io"', 'fabric/.claude-plugin/plugin.json'));

@@ -169,7 +169,7 @@
           "id": "matrix",
           "name": "The parts and their runners",
           "if": "${{ steps.pending.outputs.pending != 'false' }}",
-          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event \"$PARTS_EVENT\")\" >> \"$GITHUB_OUTPUT\""
+          "run": "matrix=\"$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event \"$PARTS_EVENT\")\"; echo \"matrix=$matrix\" >> \"$GITHUB_OUTPUT\""
         }
       ],
       "outputs": {
@@ -484,7 +484,7 @@
         },
         {
           "name": "Promote main",
-          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote \"$HEAD_SHA\" && git push origin main"
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote --newest \"$HEAD_SHA\""
         },
         {
           "name": "Delete the branches integration now contains",

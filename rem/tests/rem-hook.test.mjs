@@ -390,12 +390,6 @@ test('a Stop continuation cannot recursively trigger a fresh REM request', () =>
   assert.equal(decideStop(state, { session_id: 'a', stop_hook_active: true }, 200000).decision, 'allow');
 });
 
-test('an in-flight review reservation defers REM without advancing counters', () => {
-  const state = { hook: {}, reviewGate: { pending: { expiresAt: 2000 } } };
-  assert.equal(decideSessionStop(state, { session_id: 'a' }, 1000).decision, 'allow');
-  assert.equal(state.hook.sessions.a, undefined);
-});
-
 test('Codex siblings sharing a parent retain separate REM gates and completion keys', () => {
   const state = { hook: {} };
   const env = { CODEX_THREAD_ID: 'stale' };
@@ -428,4 +422,30 @@ test('another REM reservation defers a sibling counter until completion or expir
   assert.equal(state.hook.sessions.sibling.stopCount, 2);
   state.hook.sessions.owner.requestExpiresAt = 131000;
   assert.equal(decideSessionStop(state, input, 132000).decision, 'deny');
+});
+
+test('a held state lock costs the Stop hook its bounded wait, never the 5 s ceiling, and the stop proceeds', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const { lockFilePath } = await import('../shared/lock.mjs');
+  const { STATE_LOCK_WAIT_MS } = await import('../hooks/rem-hook.js');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rem-hook-lock-')));
+  fs.mkdirSync(path.join(dir, '.git'));
+  const lock = lockFilePath(path.join(dir, '.claude', '.rem-state.json'));
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  fs.writeFileSync(lock, JSON.stringify({ pid: 999999, at: Date.now(), token: 'other' }));
+  try {
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, [fileURLToPath(new URL('../hooks/rem-hook.js', import.meta.url))], {
+      cwd: dir, input: JSON.stringify({ session_id: 's', cwd: dir }), encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: dir },
+    });
+    const elapsed = Date.now() - t0;
+    assert.equal(r.status, 0, 'a stop that cannot take the lock is allowed (the next Stop decides again)');
+    assert.ok(elapsed >= STATE_LOCK_WAIT_MS * 0.9, `PLANTED CONTROL: the held lock was waited on (${elapsed}ms)`);
+    assert.ok(STATE_LOCK_WAIT_MS <= 2000 && elapsed < STATE_LOCK_WAIT_MS + 2500, `the Stop hook took ${elapsed}ms`);
+  } finally {
+    fs.rmSync(lock, { force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

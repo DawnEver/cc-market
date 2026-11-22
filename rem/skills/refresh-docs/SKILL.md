@@ -103,7 +103,7 @@ when chapters are added or removed.
 - **Minimal change** — the diff drives edits; do not rewrite untouched prose.
 - **Preserve `<!-- rem:manual -->` blocks** exactly.
 - **Refresh in place** — same file path; only touched sections change (the anchor is external).
-- Stale docs surface in `/todo` as virtual `DOC-<path>` rows; they clear automatically once the
+- `doc-freshness.js` lists the stale docs; one clears automatically once the
   anchor advances — there is no mark/remove step.
 - Multi-round refresh: if refreshing many docs in one turn without background tasks, set
   `taskActiveUntil` so the Stop hook doesn't fire mid-run.

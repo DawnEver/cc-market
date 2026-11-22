@@ -5,28 +5,30 @@ metadata:
   type: project
 ---
 
-# REM vs Claude Code / Codex 记忆系统差距分析（2026-07-29）
+# REM vs Claude Code / Codex memory system gap analysis (2026-07-29)
 
-Source: 文章对比 Claude Code（auto memory + Extract Agent + Dream 整理）与 Codex（两阶段 mini-model pipeline + citation/usage 反馈）。
+Source: an article comparing Claude Code (auto memory + Extract Agent + Dream consolidation) with Codex (two-stage mini-model pipeline + citation/usage feedback).
 
-## REM 已做对/超前
-- 无 RAG：capped 索引 + 模型按需 Read（progressive disclosure）。
-- 四类型 `user/feedback/project/reference` 与 CC 一致。
-- 易失元数据外置 `_meta.json`（accessed/count/tier/dropped），等价 Codex usage_count/last_usage 且 frontmatter 干净。
-- 引用反馈回路：rem-prep 扫 transcript 统计 Read 次数 + SR-ID，`count>=3` 自动 short→long。
-- 整理闭环：prune（90d/20 条/long 降级两周期）+ crystallize + scope-split ≈ Dream。
+## What REM already does right / ahead
+- No RAG: a capped index + the model Reads on demand (progressive disclosure).
+- The four types `user/feedback/project/reference` match CC.
+- Volatile metadata kept outside in `_meta.json` (accessed/count/tier/dropped), equivalent to Codex usage_count/last_usage, with clean frontmatter.
+- Citation feedback loop: rem-prep scans the transcript counting Reads + SR-IDs; `count>=3` auto-promotes short→long.
+- Consolidation loop: prune (90d / 20 entries / long demoted after two cycles) + crystallize + scope-split ≈ Dream.
 
-## 采纳的改进（优先级 1→5 + bugfix）
-1. **相关性召回**：新增 prompt 时注入通道——按当前用户消息从 frontmatter description 选 1–3 条相关记忆正文注入 additionalContext（recall.js + UserPromptSubmit hook）。
-2. **立即记住快速通道**：用户显式"记住这个"时立即写文件 + stamp，不等 /rem 的 Stop 门控（remember.js + 规则）。
-3. **drift 检测**：crystallize 流程对长记忆做"对照当前代码/git 验证"，淘汰内容失效而非仅过期。
-4. **锁**：prune/crystallize/stamp 对 `.rem-state.json`/`_meta.json` 加 lease 锁（stale 超时），防多会话/多设备竞态。
-5. **类型物化**：feedback 豁免 90d 淘汰；recall 加权 user/feedback > project。
-6. **bugfix**：rem-hook.js 中 `session_id` 为 null 时 remPending 跨会话泄漏——null 视为 always-different。
+## Improvements adopted (priority 1→5 + bugfix)
+1. **Relevance recall**: a new injection channel at prompt time — pick 1–3 relevant memory bodies by frontmatter description against the current user message and inject them into additionalContext (recall.js + UserPromptSubmit hook).
+2. **Remember-now fast path**: when the user explicitly says "remember this", write the file + stamp immediately, without waiting for the /rem Stop gate (remember.js + rule).
+3. **Drift detection**: the crystallize flow "verifies long memories against current code/git", retiring content that is invalid rather than merely old.
+4. **Locks**: prune/crystallize/stamp take a lease lock (stale timeout) on `.rem-state.json`/`_meta.json`, preventing multi-session/multi-device races.
+5. **Types made real**: feedback is exempt from 90d retirement; recall weights user/feedback > project.
+6. **bugfix**: in rem-hook.js, a null `session_id` leaked remPending across sessions — null is now treated as always-different.
 
-## 实施状态（2026-07-29 完成，cc-market 08df9db）
-全部 6 项已落地：recall.js（UserPromptSubmit 注入，Codex 静默降级）、remember.js、shared/lock.mjs（六个插件均已 bundle）、prune feedback 豁免、crystallize --drift、rem-hook null session 修复。测试 rem 321 + shared 74 全绿。提交用 --no-verify 绕过 4 个 HEAD 预存在的 fabric proxy/image 测试失败（待修）。注意 `~/.claude/plugins/cache` 与 marketplaces 克隆滞后，需 autoUpdate 拉取后 recall hook 才生效。
+## Implementation status (done 2026-07-29, cc-market 08df9db)
+All 6 items landed: recall.js (UserPromptSubmit injection, silently degraded on Codex), remember.js, shared/lock.mjs (bundled into all six plugins), prune feedback exemption, crystallize --drift, rem-hook null session fix. Tests rem 321 + shared 74 all green. The commit used --no-verify to bypass 4 pre-existing fabric proxy/image test failures at HEAD (to fix). Note `~/.claude/plugins/cache` and the marketplaces clone lag; the recall hook takes effect only after autoUpdate pulls.
 
-## 明确不抄- Codex 两阶段异步 pipeline（REM fork 式 /rem 第一手总结质量更高）。
-- CC 后台抽取的"只准最后 N 条、禁止验证"节流约束（fork 无此问题）。
-- KAIROS daily logs 双层结构（YYYY/MM/DD 目录 + crystallize 已是等价物）。
+## Deliberately not copied- Codex's two-stage async pipeline (REM's fork-style /rem first-hand summary is higher quality).
+- CC background extraction's "only the last N entries, no verification" throttling constraint (fork does not have this problem).
+- KAIROS daily logs two-layer structure (the YYYY/MM/DD directories + crystallize are already the equivalent).
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

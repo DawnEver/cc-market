@@ -18,11 +18,11 @@ Two paths:
 
 ## Language
 
-Write memory entries, task goals, journal lines and todo items **in English** unless the
+Write memory entries, task goals and journal lines **in English** unless the
 repo's `.claude/rem.json` sets `"language": "unrestricted"`. When the user spoke another
 language, write a faithful English translation and mark a translated quote `(user, translated)`.
-Under the default, every rem writer (`remember.js`, `merge-memory.js`, `crystallize.js`,
-`task.js`, `todo.js`) refuses text containing CJK ideographs, CJK symbols and punctuation, kana,
+Under the default, every rem writer (`remember.js`, `merge-memory.js`,
+`task.js`) refuses text containing CJK ideographs, CJK symbols and punctuation, kana,
 hangul or full-width forms, naming the offending code points. Ordinary non-ASCII (degree sign,
 Greek letters, em dash, multiplication sign) is accepted. The character set is dev-lab's CJK
 rule (`dev_lab.dev.cjk.CJK_RANGES`) plus kana and hangul; it lives once, in `scripts/lib.mjs`
@@ -75,7 +75,7 @@ One frontmatter for every kind of memory — an entry file and an archived task'
 | Field | Meaning | When absent |
 |---|---|---|
 | `name`, `description` | identity and one-line summary (a task: its slug and goal) | name = file name |
-| `kind` | `entry`, `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) or `todo` (an archived backlog item `YYYY/MM/DD/todo-<id>.md`) | `entry` |
+| `kind` | `entry`, `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) or `todo` (an archived item `YYYY/MM/DD/todo-<id>.md` from the retired file backlog; still hidden) | `entry` |
 | `task` | the task the entry was written for (`remember.js` writes the bound task) | none |
 | `created` | when it began (a task: the day it was opened) | the path date |
 | `from` | where it was distilled from, e.g. `tasks/<slug>/JOURNAL.md#D3` | none |
@@ -133,12 +133,12 @@ OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
   (every new entry would otherwise be a merge conflict).
 - Each line: `- [YYYY-MM-DD name](memory/YYYY/MM/DD/slug.md) — description`, plus
   ` (corrected by memory/…)` for a corrected entry.
-- Writers (`remember.js`, `merge-memory.js`, `crystallize.js`) and
+- Writers (`remember.js`, `merge-memory.js`) and
   `index-memory.js` regenerate it; no hook does. Recall reads the tree, never the index.
 
 ## Recall
 
-`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task's one-line summary, the
+`recall.js` (run in-process by rem's one UserPromptSubmit hook, `hooks/user-prompt.js`) reads only a ready device-local index -- a missing or stale one starts a detached `recall.js --build` for the next prompt -- and is read-only and scoped: the bound task's one-line summary, the
 visible entries of the root's memory and the bound docs of the task's `scope:` paths. An entry
 tagged `task: <other>` stays out unless the prompt names that task. A corrected entry is injected
 together with its correction. Details → `tasks.md`.
@@ -159,9 +159,6 @@ newer entry names the older ones:
   writes a new entry with every source line verbatim and names the sources in `merged_from:`.
 - **Archive** — a closed task moves (git mv) to `YYYY/MM/DD/task-<slug>/` after its decisions were
   distilled (`tasks.md`); it is hidden, its distilled entries stay visible.
-- **Crystallize** — a fact every session needs becomes a rule:
-  `crystallize.js --execute --rule <file> --distilled <paths>` writes a ledger entry that
-  points at the rule and names the distilled entries in `supersedes:`.
 
 ## Rules vs Memory boundary
 - **Rule** = what the model MUST do every session. Short, actionable; it cites the memory

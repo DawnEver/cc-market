@@ -46,7 +46,7 @@ function statePath(projectRoot) {
 
 // State lives under the `evolveState` key of the shared `.claude/.rem-state.json` (owned by
 // the required rem plugin). loadState/saveState delegate to shared/state.mjs — its deepMerge
-// preserves foreign keys (hook, prune, reviewGate…) so we never clobber rem/sharp-review's
+// preserves foreign keys (hook, prune, docs…) so we never clobber rem's
 // slice of the file, and its atomic save (with Windows-retry) replaces evolve's old
 // hand-rolled temp/rename dance.
 export function loadState(projectRoot = process.cwd()) {

@@ -20,7 +20,6 @@ from academia.litreview.acquire.options import (  # noqa: F401 - re-exported
     SUPPORTED_BROWSER_CHANNELS,
     SUPPORTED_NETWORK_MODES,
 )
-from academia.litreview.acquire.types import Blocked
 
 # ---------------------------------------------------------------------------
 # Playwright setup (inlined from deleted browser/login.py)
@@ -89,9 +88,6 @@ def open_login(
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Legacy name for the typed failure. Keeping it an alias (rather than a
-# separate class) means old raisers are still classified as BLOCKED.
-AccessBlockedError = Blocked
 
 _PROFILE_LOCK_MARKERS = (
     "existing browser",

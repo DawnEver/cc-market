@@ -28,13 +28,21 @@ passes resolve references and cross-references. Re-run after any change.
   when the following text starts a new topic; a "where ..."-style explanation or a
   sentence continuing the equation stays attached, with no blank line.
 
+## Before the first draft: read the field
+
+Before drafting in a field or for a venue the project has no writing profile for, run the
+`field-reading` skill: read widely in the field's published papers and record their section
+moves, sentence templates and conventions. Shipped profiles: `reference/fields/`. Rule 38 in
+`reference/writing-style.md`.
+
 ## Writing style
 
 Write fluent, concise academic English: short clear sentences, plain direct wording,
 cohesive flow, and semantic line breaks (roughly one sentence per source line). One claim
 per sentence: split any sentence that combines a definition aside with a consequence.
 The full style rules with examples are in `reference/writing-style.md` — load it before
-drafting or rewriting prose.
+drafting or rewriting prose. Rules P1-P24 from published style guides (IEEE, Gopen and Swan,
+Mensh and Kording) are in `reference/style-sources.md` and bind as well (rule 39).
 
 ## Review chain (mandatory for every prose edit)
 

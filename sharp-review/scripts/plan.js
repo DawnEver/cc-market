@@ -21,7 +21,6 @@ import { loadReviewConfig } from './lib/config.mjs';
 import { collectManifest } from './lib/git-manifest.mjs';
 import { INLINE_DIFF_LIMIT_DEFAULT } from './lib/manifest.mjs';
 import { todayISO, findProjectRoot } from '../shared/lib.mjs';
-import { finishGate } from './gate.mjs';
 
 const ROOT = findProjectRoot();
 const args = process.argv.slice(2);
@@ -53,9 +52,7 @@ try {
   const out = arg('--out') || join(tmpdir(), 'claude-sharp-review', `plan-${runId}.json`);
   mkdirSync(dirname(out), { recursive: true });
   plan.plan_file = out;
-  if (arg('--gate-token')) plan.gate_token = arg('--gate-token');
   writeFileSync(out, JSON.stringify(plan, null, 2), 'utf8');
-  if (!plan.reviewers.some(reviewer => reviewer.status === 'pending')) finishGate(ROOT, plan.gate_token, false);
   process.stdout.write(JSON.stringify(plan) + '\n');
 } catch (e) {
   console.error(`[plan] ${e instanceof AiLabUnavailable ? `${e.name}: ` : ''}${e.message}`);
