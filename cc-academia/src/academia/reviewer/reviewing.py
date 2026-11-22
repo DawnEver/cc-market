@@ -35,15 +35,33 @@ NOT_INVITED = "not yet invited"
 #: Every column ``signals`` can return, in reading order. The review-record
 #: columns are absent when that check is switched off.
 COLUMNS = (
-    "found_by", "invitation_status",
-    "reviews", "reviews_source", "reviews_by_journal", "reviewed_target_journal",
-    "reviews_last_12_months", "days_since_last_review", "articles_window",
+    "found_by",
+    "invitation_status",
+    "reviews",
+    "reviews_source",
+    "reviews_by_journal",
+    "reviewed_target_journal",
+    "reviews_last_12_months",
+    "days_since_last_review",
+    "articles_window",
     "articles_window_years",
-    "invitations_last_12_months", "invitations_open", "relevant_works", "orcid_url",
-    "locator_reviews", "locator_articles", "locator_reviews_by_journal", "locator_load",
-    "locator_days_since_review", "locator_r_score", "locator_works", "locator_wos_url",
-    "review_record", "review_record_ratio", "review_record_reasons",
-    "review_record_reviews_minimum", "review_record_ratio_minimum",
+    "invitations_last_12_months",
+    "invitations_open",
+    "relevant_works",
+    "orcid_url",
+    "locator_reviews",
+    "locator_articles",
+    "locator_reviews_by_journal",
+    "locator_load",
+    "locator_days_since_review",
+    "locator_r_score",
+    "locator_works",
+    "locator_wos_url",
+    "review_record",
+    "review_record_ratio",
+    "review_record_reasons",
+    "review_record_reviews_minimum",
+    "review_record_ratio_minimum",
     "review_record_countries_minimum",
 )
 
@@ -148,11 +166,14 @@ def _record_check(
         emails = [row["email"] for row in repo.emails_of(conn, candidate.person.person_id)]
         if emails and all(e.partition("@")[2].lower() in free for e in emails):
             reasons.append("only a non-institutional address is known")
-        horizon = today.year - int((policy.data.get("reviewing") or {}).get("article_window_years", 5))
+        horizon = today.year - int(
+            (policy.data.get("reviewing") or {}).get("article_window_years", 5)
+        )
         countries = {
             a.country_code
             for a in candidate.person.affiliations
-            if a.country_code and (a.is_current or (a.year_to or a.year_from or today.year) >= horizon)
+            if a.country_code
+            and (a.is_current or (a.year_to or a.year_from or today.year) >= horizon)
         }
         for _, country in (locator or {}).get("affiliations") or []:
             if country:
@@ -161,7 +182,9 @@ def _record_check(
             reasons.append(f"affiliations in {len(countries)} countries")
         if reasons:
             shown = f"{ratio:.1f}" if articles else "no articles"
-            reasons.insert(0, f"{reviews} reviews against {articles} articles ({shown} per article)")
+            reasons.insert(
+                0, f"{reviews} reviews against {articles} articles ({shown} per article)"
+            )
     out["review_record"] = "REVIEW" if reasons else "PASS"
     out["review_record_reasons"] = "; ".join(reasons)
     return out
@@ -190,7 +213,11 @@ def signals(
     since = _months_ago(today, 12)
 
     locator = next(
-        (r["data"] for r in repo.locator_suggestions(conn, ms_id) if r["person_id"] == person.person_id),
+        (
+            r["data"]
+            for r in repo.locator_suggestions(conn, ms_id)
+            if r["person_id"] == person.person_id
+        ),
         None,
     )
     found_by = "both" if harvested and locator else ("locator" if locator else "ours")
@@ -208,7 +235,9 @@ def signals(
     known = check is not None
     latest = max(dates, default=None)
 
-    locator_journals = [(str(j), int(n)) for j, n in (locator or {}).get("reviews_by_journal") or []]
+    locator_journals = [
+        (str(j), int(n)) for j, n in (locator or {}).get("reviews_by_journal") or []
+    ]
     locator_target = any(_is_target(j, "", policy) for j, _ in locator_journals)
     if known or locator:
         reviewed_target: bool | str = target or locator_target
@@ -240,9 +269,7 @@ def signals(
         "articles_window_years": window,
         "invitations_last_12_months": len(recent),
         "invitations_open": sum(1 for h in history if h["responded"] is None),
-        "relevant_works": "\n".join(
-            _work_line(e.title, e.venue, e.year, e.doi) for e in evidence
-        ),
+        "relevant_works": "\n".join(_work_line(e.title, e.venue, e.year, e.doi) for e in evidence),
         "orcid_url": f"https://orcid.org/{person.orcid}" if person.orcid else "",
         "locator_reviews": (locator or {}).get("verified_reviews", "") if locator else "",
         "locator_articles": _blank((locator or {}).get("articles")),
@@ -265,7 +292,9 @@ def signals(
     # because Web of Science sees every verified review and ORCID only the ones
     # the reviewer chose to publish.
     hint_reviews = out["locator_reviews"] if locator else reviews
-    hint_articles = out["locator_articles"] if locator and out["locator_articles"] != "" else articles
+    hint_articles = (
+        out["locator_articles"] if locator and out["locator_articles"] != "" else articles
+    )
     out.update(_record_check(conn, candidate, policy, hint_reviews, hint_articles, locator, today))
     return out
 

@@ -74,7 +74,9 @@ def test_public_record_counts_and_target_journal(conn, policy):
             ("issn:1234-5678", "Journal of Examples", "2019"),
         ],
     )
-    repo.record_output(conn, candidate.person.person_id, {2026: 4, 2023: 3, 2015: 9}, source="openalex")
+    repo.record_output(
+        conn, candidate.person.person_id, {2026: 4, 2023: 3, 2015: 9}, source="openalex"
+    )
     candidate.person = repo.load_person(conn, candidate.person.person_id)
 
     out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
@@ -105,7 +107,9 @@ def test_invitation_load_and_status(conn, policy):
     candidate = _candidate(conn)
     pid = candidate.person.person_id
     repo.record_invitation(conn, pid, "ms-old", invited_at="2026-03-01", responded=None)
-    repo.record_invitation(conn, pid, "ms-1", invited_at="2026-10-01", responded=True, accepted=False)
+    repo.record_invitation(
+        conn, pid, "ms-1", invited_at="2026-10-01", responded=True, accepted=False
+    )
     repo.record_invitation(conn, pid, "ms-ancient", invited_at="2020-01-01", responded=True)
     out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=True)
     assert out["invitation_status"] == "declined"
@@ -116,13 +120,21 @@ def test_invitation_load_and_status(conn, policy):
 def test_returned_review_status_comes_from_the_editorial_import(conn, policy):
     candidate = _candidate(conn)
     pid = candidate.person.person_id
-    repo.record_invitation(conn, pid, "ms-1", invited_at="2026-10-01", responded=True, accepted=True)
+    repo.record_invitation(
+        conn, pid, "ms-1", invited_at="2026-10-01", responded=True, accepted=True
+    )
     assert reviewing.invitation_status(conn, pid, "ms-1") == "agreed"
     repo.replace_editorial_invitations(
         conn,
         "ms-1",
-        [{"person_id": pid, "position": 1, "match_method": "orcid",
-          "data": {"status": "Revise and Resubmit", "returned": "2026-10-28"}}],
+        [
+            {
+                "person_id": pid,
+                "position": 1,
+                "match_method": "orcid",
+                "data": {"status": "Revise and Resubmit", "returned": "2026-10-28"},
+            }
+        ],
     )
     assert reviewing.invitation_status(conn, pid, "ms-1") == "returned"
 
@@ -135,11 +147,25 @@ def test_suspicious_record_is_a_hint_only(conn, policy):
     repo.replace_locator_suggestions(
         conn,
         "ms-1",
-        [{"person_id": pid, "position": 1, "match_method": "orcid",
-          "data": {"verified_reviews": 117, "articles": 20, "reviews_by_journal": [["IEEE Access", 37]],
-                   "works": [], "current_assignments": 0, "past_year_assignments": 2,
-                   "days_since_last_review": 3, "r_score": 2.75, "affiliations": [],
-                   "wos_url": "https://www.webofscience.com/wos/author/record/X"}}],
+        [
+            {
+                "person_id": pid,
+                "position": 1,
+                "match_method": "orcid",
+                "data": {
+                    "verified_reviews": 117,
+                    "articles": 20,
+                    "reviews_by_journal": [["IEEE Access", 37]],
+                    "works": [],
+                    "current_assignments": 0,
+                    "past_year_assignments": 2,
+                    "days_since_last_review": 3,
+                    "r_score": 2.75,
+                    "affiliations": [],
+                    "wos_url": "https://www.webofscience.com/wos/author/record/X",
+                },
+            }
+        ],
     )
     out = reviewing.signals(conn, candidate, policy, ms_id="ms-1", today=TODAY, harvested=False)
     assert out["found_by"] == "locator"

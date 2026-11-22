@@ -662,7 +662,9 @@ class _Reviews:
 
 
 def _reviewer(conn) -> Person:
-    pid = repo.upsert_person(conn, Author(name="Erin Imaginary", idx=0, orcid="0000-0000-0000-0001"))
+    pid = repo.upsert_person(
+        conn, Author(name="Erin Imaginary", idx=0, orcid="0000-0000-0000-0001")
+    )
     return repo.load_person(conn, pid)
 
 

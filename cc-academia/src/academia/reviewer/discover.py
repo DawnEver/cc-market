@@ -372,9 +372,7 @@ def _openalex_id_for(person, client) -> tuple[str, bool]:
     agreeing = [
         profile
         for profile in client.search_authors(person.display_name)
-        if any(
-            repo.normalize_institution_key(a.institution) == key for a in profile.affiliations
-        )
+        if any(repo.normalize_institution_key(a.institution) == key for a in profile.affiliations)
     ]
     return (agreeing[0].openalex_id if len(agreeing) == 1 else ""), False
 
@@ -402,7 +400,8 @@ def fetch_own_works(conn: sqlite3.Connection, person, client=None) -> list[str]:
             log.warn(f"OpenAlex profile {openalex_id} already belongs to another person; skipped")
             return []
         conn.execute(
-            "UPDATE persons SET openalex_id = ? WHERE person_id = ?", (openalex_id, person.person_id)
+            "UPDATE persons SET openalex_id = ? WHERE person_id = ?",
+            (openalex_id, person.person_id),
         )
         works = client.get_author_papers(openalex_id, limit=OWN_WORKS_LIMIT)
     except SourceError as error:

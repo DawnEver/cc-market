@@ -106,9 +106,13 @@ SIGNAL_BLOCKS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "Reviewing record",
         (
-            "reviews", "reviewed_target_journal", "days_since_last_review", "articles_window",
+            "reviews",
+            "reviewed_target_journal",
+            "days_since_last_review",
+            "articles_window",
             "invitations_",
-            "relevant_works", "orcid_url",
+            "relevant_works",
+            "orcid_url",
         ),
     ),
 )
@@ -385,8 +389,13 @@ DECISION_COLUMNS = (
 
 #: Columns whose cells are sentences or lists, given room and wrapped.
 WIDE_COLUMNS = (
-    "reasoning", "relevant_works", "locator_works", "reviews_by_journal",
-    "locator_reviews_by_journal", "review_record_reasons", "title",
+    "reasoning",
+    "relevant_works",
+    "locator_works",
+    "reviews_by_journal",
+    "locator_reviews_by_journal",
+    "review_record_reasons",
+    "title",
 )
 
 HOW_TO_READ = [
@@ -438,8 +447,10 @@ def dimension_of(name: str) -> str:
     if name in IDENTITY_COLUMNS:
         return "Identity"
     for label, prefixes in SIGNAL_BLOCKS:
-        if any(name.startswith(p) if p.endswith("_") else name == p or name.startswith(p + "_")
-               for p in prefixes):
+        if any(
+            name.startswith(p) if p.endswith("_") else name == p or name.startswith(p + "_")
+            for p in prefixes
+        ):
             return label
     if name in DECISION_BLOCK:
         return "Decision"

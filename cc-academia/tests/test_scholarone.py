@@ -163,7 +163,9 @@ def test_import_matches_by_orcid_then_email_then_name(conn, page):
 
     result = scholarone.store_page(conn, page, "ms-1", candidate_rows=rows)
 
-    methods = {row["person_id"]: row["match_method"] for row in repo.locator_suggestions(conn, "ms-1")}
+    methods = {
+        row["person_id"]: row["match_method"] for row in repo.locator_suggestions(conn, "ms-1")
+    }
     assert methods == {erin: "orcid", frank: "email", chen: "name"}
     assert result.locator == {"orcid": 1, "email": 1, "name": 1}
 

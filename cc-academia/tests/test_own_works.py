@@ -68,7 +68,9 @@ def test_works_found_by_orcid_become_evidence(conn):
         _paper("10.0/2", "Interlaminar fault in a stator core under test", me),
         _paper("10.0/3", "Something unrelated about batteries", me),
     ]
-    client = FakeOpenAlex(works, by_orcid=Person(person_id="x", display_name="", openalex_id="A-erin"))
+    client = FakeOpenAlex(
+        works, by_orcid=Person(person_id="x", display_name="", openalex_id="A-erin")
+    )
 
     fetched = discover.fetch_own_works(conn, erin, client)
     assert len(fetched) == 3
@@ -86,12 +88,19 @@ def test_a_name_search_needs_the_institution_to_agree(conn):
     frank = repo.load_person(conn, frank.person_id)
     me = Author(name="Frank Madeup", idx=0, openalex_id="A-frank")
     elsewhere = Person(person_id="p2", display_name="Frank Madeup", openalex_id="A-other")
-    elsewhere.affiliations = [Affiliation(inst_id="i2", institution="Other University", is_current=True)]
+    elsewhere.affiliations = [
+        Affiliation(inst_id="i2", institution="Other University", is_current=True)
+    ]
     here = Person(person_id="p1", display_name="Frank Madeup", openalex_id="A-frank")
-    here.affiliations = [Affiliation(inst_id="i1", institution="University of Example", is_current=True)]
+    here.affiliations = [
+        Affiliation(inst_id="i1", institution="University of Example", is_current=True)
+    ]
     works = [_paper("10.0/4", "Stator core interlaminar fault", me)]
 
-    assert len(discover.fetch_own_works(conn, frank, FakeOpenAlex(works, by_name=[elsewhere, here]))) == 1
+    assert (
+        len(discover.fetch_own_works(conn, frank, FakeOpenAlex(works, by_name=[elsewhere, here])))
+        == 1
+    )
     stored = repo.load_person(conn, frank.person_id)
     assert stored.openalex_id == "A-frank"
     # A name proposed the id; it did not make the identity certain.

@@ -795,10 +795,23 @@ class OwnWorks:
 
 
 def _through_candidates(slug="tie-demo"):
-    run("init", "--slug", slug, "--title", "Torque ripple suppression in PMSM drives",
-        "--abstract", "Torque ripple suppression for PMSM traction drives.",
-        "--keywords", "Torque ripple", "--journal", "tie", "--year", "2026",
-        "--authors", "Alice Author|Tsinghua University|CN")
+    run(
+        "init",
+        "--slug",
+        slug,
+        "--title",
+        "Torque ripple suppression in PMSM drives",
+        "--abstract",
+        "Torque ripple suppression for PMSM traction drives.",
+        "--keywords",
+        "Torque ripple",
+        "--journal",
+        "tie",
+        "--year",
+        "2026",
+        "--authors",
+        "Alice Author|Tsinghua University|CN",
+    )
     run("profile", "--slug", slug)
     run("profile", "--slug", slug, "--approve")
     run("search", "--slug", slug)
@@ -849,7 +862,9 @@ def test_an_imported_editorial_page_merges_into_the_workbook(
     assert frank["Rule: related journal papers ≥ 3"] == "No evidence"
     assert frank["Recommend as reviewer"] != "Recommend"
     assert by_name["Erin Imaginary"]["Verified reviews in Web of Science (Locator)"] == 80
-    assert by_name["Erin Imaginary"]["Check: review record in proportion to output"] == "Check by hand"
+    assert (
+        by_name["Erin Imaginary"]["Check: review record in proportion to output"] == "Check by hand"
+    )
     chen = by_name["Chen Placeholder"]
     assert chen["Invitation on this manuscript"] == "returned"
     assert chen["Recommend as reviewer"] == "Already invited"

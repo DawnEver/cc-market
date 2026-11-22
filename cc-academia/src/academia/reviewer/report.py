@@ -637,9 +637,7 @@ def render_audit(rows: list[Row], policy: Policy) -> str:
     # Locator columns exist only where a page was imported: a column of blanks
     # would read as "Web of Science knows nothing about anybody".
     with_locator = any(row.has_locator for row in rows)
-    signal_columns = [
-        c for c in reviewing.COLUMNS if with_locator or not c.startswith("locator_")
-    ]
+    signal_columns = [c for c in reviewing.COLUMNS if with_locator or not c.startswith("locator_")]
     seen = set(columns)
     records: list[dict[str, object]] = []
 
@@ -852,8 +850,19 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
 
 
 EDITORIAL_COLUMNS = (
-    "order", "reviewer", "affiliation", "orcid_url", "status", "invited", "agreed",
-    "declined", "due", "returned", "days_in_review", "decision_letter", "match_method",
+    "order",
+    "reviewer",
+    "affiliation",
+    "orcid_url",
+    "status",
+    "invited",
+    "agreed",
+    "declined",
+    "due",
+    "returned",
+    "days_in_review",
+    "decision_letter",
+    "match_method",
     "in_candidate_pool",
 )
 SUMMARY_COLUMNS = ("item", "value")
