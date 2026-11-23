@@ -54,9 +54,8 @@ prune_merged = true
 [tool.dev_lab.protection.forges."github.com"]
 breakglass = ["app:5704921", "role:admin"]
 
-# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10); ADVISORY, never a gate.
+# Who reviews is bound once in the family layer's [roles.github] (D73); this repo keeps only its judge App id.
 [tool.dev_lab.review]
-where = "judge"
 judge_app = 5619495
 
 # Git hooks: the family base (dev_lab/dev/githooks/base.toml), plus this repo's own: the staged-plugin tests,
@@ -87,10 +86,6 @@ setup = [
     # What `fabric setup` does on a machine: pin the ai-lab interpreter in the provider cache the plugins read.
     { name = "Record the provider cache", shell = "bash", run = 'mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json' },
 ]
-
-# The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).
-[tool.dev_lab.ci."review-prepare.yml"]
-forge = "github"
 
 # cc-academia's Python suite in its own uv environment, and the secret scan over a public tree whose fixtures are
 # captured from live APIs. Not a merge gate: the forge's merge decision reads the parts (tests/base).
