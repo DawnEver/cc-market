@@ -30,6 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="academia-write", description="Manuscript writing checks over the knowledge base."
     )
+    from academia import __version__
+
+    parser.add_argument("--version", action="version", version=f"cc-academia write {__version__}")
     sub = parser.add_subparsers(dest="command")
 
     p = sub.add_parser(
