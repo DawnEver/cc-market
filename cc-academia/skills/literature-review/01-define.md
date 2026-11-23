@@ -12,7 +12,7 @@ Define the research topic and scope interactively.
 
 3. **Create workspace**:
    ```bash
-   uv run --project "<plugin-root>" lit-review init "<topic>" --language <tag>
+   uv run --project "<plugin-root>" academia-read init "<topic>" --language <tag>
    ```
    Creates `ongoing/<slug>/` with `workspace.toml` and all subdirectories.
 

@@ -14,7 +14,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from academia.reviewer import workbook as script
+from academia.referee import workbook as script
 
 #: The audit CSV as a run writes it: identity, the decision, then one verdict
 #: column per rule with that rule's own facts named after it.
@@ -246,10 +246,10 @@ def every_fact_key() -> set[str]:
     a measured pass names the measurement too.
     """
     from academia.core.models import Affiliation, Education, Person
-    from academia.reviewer import eligibility
-    from academia.reviewer.policy import load_policy
-    from academia.reviewer.rank import Evidence
-    from academia.reviewer.record import (
+    from academia.referee import eligibility
+    from academia.referee.policy import load_policy
+    from academia.referee.rank import Evidence
+    from academia.referee.record import (
         CandidateRecord,
         PublicationRecord,
         RelevantRecord,
@@ -315,7 +315,7 @@ def every_fact_key() -> set[str]:
 
 def test_every_rule_is_named_and_explained():
     """A rule with no label prints its field name at an editor."""
-    from academia.reviewer.eligibility import RULE_NAMES
+    from academia.referee.eligibility import RULE_NAMES
 
     for rule in RULE_NAMES:
         assert rule in script.RULE_DIMENSIONS, f"{rule} belongs to no block"
@@ -345,7 +345,7 @@ def test_nothing_is_labelled_that_no_rule_produces():
     A stale label is invisible until a column happens to be named the same
     thing again, and then it silently mislabels it.
     """
-    from academia.reviewer.eligibility import RULE_NAMES
+    from academia.referee.eligibility import RULE_NAMES
 
     produced = every_fact_key() | set(RULE_NAMES) | set(script.IDENTITY_COLUMNS)
     produced |= set(script.DECISION_BLOCK) | {"reasoning"}

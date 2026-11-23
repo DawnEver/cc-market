@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from academia.core.models import Author, Paper
-from academia.reviewer import discover, report
+from academia.referee import discover, report
 from academia.store import db
 from academia.store import repository as repo
 

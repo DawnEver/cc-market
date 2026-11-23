@@ -1,0 +1,3 @@
+term	class	replace	when	why	source	scope
+/\bhardly\b/i	caution	changes little		data.quantify-claims: give the size of a small change	common	all
+/\b(clearly|nearly)\b/i	caution		in a result sentence of the abstract or conclusion	data.quantify-claims: give the number	common	abstract,conclusion

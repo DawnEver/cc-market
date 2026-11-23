@@ -1,0 +1,280 @@
+"""Search phase: brief -> queries -> probe -> search -> dedupe -> screening packet."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from academia.read.state import mark_step
+
+if TYPE_CHECKING:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Path helpers
+# ---------------------------------------------------------------------------
+
+
+def _ensure(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
+    _ensure(path.parent)
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=True) + "\n")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# 1. Search pipeline
+# ---------------------------------------------------------------------------
+
+# 1. Search pipeline
+# ---------------------------------------------------------------------------
+
+
+def run_search(
+    topic_dir: Path,
+    *,
+    provider: str | list[str] | None = None,
+    max_pages: int = 5,
+    rows_per_page: int = 25,
+    delay_seconds: float = 1.0,
+    probe_only: bool = False,
+    skip_probe: bool = False,
+) -> dict[str, Any]:
+    """Run end-to-end search: brief → queries → probe → search → normalize → dedupe → screening packet.
+
+    Args:
+        topic_dir: Path to ongoing/<slug>/
+        provider: Provider name(s) (e.g. 'openalex', 'semantic_scholar', or
+                  ['openalex', 'ieee']). If None, reads providers from
+                  workspace.toml, falling back to ['openalex'] when the file is
+                  absent.
+        max_pages: Maximum pages per query for full search
+        probe_only: If True, stop after probe (for query adjustment)
+        skip_probe: If True, skip probe and go straight to full search
+
+    Returns:
+        Dict with keys: queries_path, probe_results, candidates_count, screening_packet_path
+    """
+    from academia.core.errors import EXIT_SOURCE, SourceError
+    from academia.read.schema import load_data
+    from academia.read.screen import write_screening_packet
+    from academia.read.search import failure_reasons, run_dedupe_rank, run_probe
+    from academia.read.search import run_search as _run_search
+    from academia.sources import get_source
+    from academia.sources.base import PaperSource
+
+    mark_step(topic_dir, "search", "in_progress")
+
+    # Resolve providers: explicit arg > workspace.toml > default ['openalex'].
+    # The fallback matches Workspace.providers; see the note there for why it is
+    # OpenAlex and not IEEE.
+    if provider is None:
+        ws_path = topic_dir / "workspace.toml"
+        if ws_path.exists():
+            from academia.read.models import Workspace
+
+            provider = Workspace.from_dict(load_data(ws_path)).providers
+        else:
+            provider = ["openalex"]
+    if isinstance(provider, str):
+        provider = [provider]
+
+    prov_instances: list[PaperSource] = []
+    for name in provider:
+        try:
+            prov_instances.append(get_source(name))
+        except ValueError:
+            print(f"  skip unknown provider: {name}")
+
+    if not prov_instances:
+        raise ValueError(f"No valid providers found from: {provider}")
+
+    brief_path = topic_dir / "research_brief.toml"
+    queries_path = topic_dir / "queries.toml"
+    search_dir = _ensure(topic_dir / "search")
+
+    if not brief_path.exists():
+        raise FileNotFoundError(
+            f"research_brief.toml not found in {topic_dir}. Run define step first."
+        )
+
+    result: dict[str, Any] = {
+        "queries_path": str(queries_path),
+        "probe_results": None,
+        "candidates_count": 0,
+        "screening_packet_path": None,
+        "records_path": None,
+        "providers_used": [p.name for p in prov_instances],
+        "failures": [],
+    }
+
+    def _record_failure(provider_name: str, stage: str, error: Exception) -> None:
+        result["failures"].append({"provider": provider_name, "stage": stage, "error": str(error)})
+        print(f"    {stage} failed [{provider_name}]: {error}")
+
+    #: Providers whose account-level failure means the full search can only
+    #: repeat it. Filled by the probe, read by the search below.
+    aborted: set[str] = set()
+
+    # --- Probe (each provider) ---
+    if not skip_probe:
+        print("=== Probe ===")
+        probe_dir = _ensure(search_dir / "probe")
+        for prov in prov_instances:
+            print(f"  Provider: {prov.name}")
+            try:
+                code = run_probe(
+                    queries_path=queries_path,
+                    out_dir=search_dir,
+                    provider=prov,
+                    allow_unapproved_plan=True,
+                )
+            except Exception as exc:
+                _record_failure(prov.name, "probe", exc)
+                continue
+            if code == 0:
+                continue
+            reasons = failure_reasons(probe_dir / prov.name / "probe_results.jsonl")
+            _record_failure(
+                prov.name,
+                "probe",
+                SourceError(reasons[0] if reasons else f"probe exited {code}", prov.name),
+            )
+            if code == EXIT_SOURCE:
+                aborted.add(prov.name)
+        result["probe_results"] = str(probe_dir)
+
+        if probe_only:
+            mark_step(
+                topic_dir,
+                "search",
+                "probed",
+                queries_path=str(queries_path),
+                probe_results=result["probe_results"],
+            )
+            return result
+
+        # Evaluate probe results per provider — advisory output for the agent
+        # to review query breadth; full search does not gate on it. Paths are
+        # surfaced in result['evaluation_paths'].
+        from academia.read.query import evaluate_queries
+
+        result["evaluation_paths"] = {}
+        for prov in prov_instances:
+            probe_results_file = probe_dir / prov.name / "probe_results.jsonl"
+            if not probe_results_file.exists():
+                continue
+            try:
+                eval_dir = search_dir / "evaluation" / prov.name
+                evaluate_queries(
+                    queries_path=queries_path,
+                    probe_results_path=probe_results_file,
+                    out_dir=eval_dir,
+                )
+                result["evaluation_paths"][prov.name] = str(eval_dir)
+            except Exception as exc:
+                _record_failure(prov.name, "evaluate", exc)
+
+    # --- Full search (each provider; normalized records returned in memory) ---
+    print("=== Full Search ===")
+    all_candidates: list[dict[str, Any]] = []
+
+    for prov in prov_instances:
+        if prov.name in aborted:
+            print(f"  Provider: {prov.name} — skipped, the probe found the account unusable")
+            continue
+        print(f"  Provider: {prov.name}")
+        try:
+            code, records = _run_search(
+                queries_path=queries_path,
+                out_dir=search_dir,
+                provider=prov,
+                max_pages=max_pages,
+                rows_per_page=rows_per_page,
+                delay_seconds=delay_seconds,
+                allow_unapproved_plan=True,
+            )
+            if code != 0:
+                # Name the reason the run actually recorded. A generic message
+                # here is what turned a spent API quota into "the literature is
+                # thin" for anyone reading the failure list.
+                reasons = failure_reasons(search_dir / "search" / f"search_audit_{prov.name}.log")
+                _record_failure(
+                    prov.name,
+                    "search",
+                    SourceError(
+                        reasons[0] if reasons else "one or more queries failed (see audit log)",
+                        prov.name,
+                    ),
+                )
+            all_candidates.extend(records)
+        except Exception as exc:
+            _record_failure(prov.name, "search", exc)
+
+    all_cand_path = search_dir / "all_candidates.jsonl"
+    _write_jsonl(all_cand_path, all_candidates)
+
+    # --- Deduplicate & rank ---
+    print("=== Deduplicate & Rank ===")
+    if all_candidates:
+        run_dedupe_rank([all_cand_path], search_dir)
+
+    result["records_path"] = str(search_dir / "candidates_ranked.jsonl")
+    result["candidates_count"] = len(_read_jsonl(search_dir / "candidates_ranked.jsonl"))
+
+    # --- Make screening packet ---
+    print("=== Screening Packet ===")
+    screening_dir = _ensure(topic_dir / "screening")
+    records_path = Path(result["records_path"])
+    if records_path.exists():
+        write_screening_packet(records_path, screening_dir)
+        result["screening_packet_path"] = str(screening_dir / "screening_packet.jsonl")
+
+    # A run that produced nothing *because the account was refused* is not a run
+    # that found nothing. Stamping the step "done" would make the workspace look
+    # searched, and every later reader — including the resume hint — would take
+    # the empty candidate list at face value.
+    if not result["candidates_count"] and aborted:
+        mark_step(
+            topic_dir,
+            "search",
+            "failed",
+            candidates_count=result["candidates_count"],
+            screening_packet_path=result["screening_packet_path"],
+            providers_used=result["providers_used"],
+            failures=result["failures"],
+        )
+        return result
+
+    mark_step(
+        topic_dir,
+        "search",
+        "done",
+        candidates_count=result["candidates_count"],
+        screening_packet_path=result["screening_packet_path"],
+        providers_used=result["providers_used"],
+        failures=result["failures"],
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 2. Acquire pipeline
+# ---------------------------------------------------------------------------

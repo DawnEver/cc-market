@@ -1,6 +1,6 @@
 """End-to-end: manuscript metadata in, evidenced shortlist out.
 
-Runs the whole rev-disc pipeline through the CLI with the source layer stubbed,
+Runs the whole academia-referee pipeline through the CLI with the source layer stubbed,
 so it exercises the real workspace, database, COI engine, ranking and renderer
 without touching the network.
 """
@@ -16,8 +16,8 @@ import pytest
 
 from academia.cli import dispatch
 from academia.core.models import Author, Paper
-from academia.reviewer.policy import load_policy
-from academia.reviewer.workspace import STAGES, open_workspace
+from academia.referee.policy import load_policy
+from academia.referee.workspace import STAGES, open_workspace
 from academia.sources.base import SearchPage
 
 
@@ -79,18 +79,18 @@ def _corpus():
 @pytest.fixture()
 def stub_sources(monkeypatch):
     source = StubSource()
-    monkeypatch.setattr("academia.cli.rev_disc._sources", lambda names: [source])
+    monkeypatch.setattr("academia.cli.referee._sources", lambda names: [source])
     return source
 
 
 def run(*argv) -> int:
-    return dispatch.rev_disc_main(list(argv))
+    return dispatch.referee_main(list(argv))
 
 
 def test_reviewer_search_registry_includes_semantic_scholar():
-    from academia.cli import rev_disc
+    from academia.cli import referee
 
-    assert [source.name for source in rev_disc._sources(None)] == [
+    assert [source.name for source in referee._sources(None)] == [
         "openalex",
         "ieee",
         "semantic_scholar",
@@ -98,11 +98,11 @@ def test_reviewer_search_registry_includes_semantic_scholar():
 
 
 def test_unknown_reviewer_search_source_is_a_usage_error():
-    from academia.cli import rev_disc
+    from academia.cli import referee
     from academia.core.errors import UsageError
 
     with pytest.raises(UsageError, match="unknown source"):
-        rev_disc._sources(["not-a-source"])
+        referee._sources(["not-a-source"])
 
 
 def test_full_pipeline_produces_an_evidenced_shortlist(tmp_path, stub_sources, capsys):
@@ -278,7 +278,7 @@ def test_status_reports_the_next_stage(stub_sources, capsys):
 def test_lookup_attempts_make_unsearched_candidates_visible_in_report(
     tmp_path, stub_sources, capsys, monkeypatch
 ):
-    monkeypatch.setattr("academia.reviewer.enrich.enrich", lambda conn, person: person)
+    monkeypatch.setattr("academia.referee.enrich.enrich", lambda conn, person: person)
     run(
         "init",
         "--slug",
@@ -419,8 +419,8 @@ def test_rerunning_report_does_not_leave_a_stale_dossier(tmp_path, stub_sources)
     left the old one beside it. An editor opening the directory cannot tell
     which run a file came from.
     """
-    from academia.reviewer import report as report_module
-    from academia.reviewer.profile import Profile
+    from academia.referee import report as report_module
+    from academia.referee.profile import Profile
     from academia.store import db
 
     directory = tmp_path / "5-shortlist"
@@ -480,7 +480,7 @@ def test_search_proceeds_once_the_queries_are_approved(tmp_path, stub_sources):
 
 def test_editing_the_queries_after_approval_re_arms_the_gate(tmp_path, stub_sources, capsys):
     """Approval binds to what was approved, not to the act of approving."""
-    from academia.reviewer.workspace import open_workspace
+    from academia.referee.workspace import open_workspace
 
     _init_and_profile("gate3")
     run("profile", "--slug", "gate3", "--approve")
@@ -615,7 +615,7 @@ def test_the_shortlist_shows_a_second_address_when_one_was_found(tmp_path, stub_
     import csv
 
     from academia.core import paths
-    from academia.reviewer.workspace import open_workspace
+    from academia.referee.workspace import open_workspace
     from academia.store import db
     from academia.store import repository as repo
 
@@ -767,4 +767,4 @@ def test_candidates_says_so_when_the_papers_are_on_the_other_machine(
 
     warning = capsys.readouterr().err
     assert "no papers" in warning
-    assert "rev-disc search" in warning
+    assert "academia-referee search" in warning

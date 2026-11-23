@@ -1,0 +1,20 @@
+id	content	options	unset_default	owner	why
+spelling.variant	prose	british,american,none	none	project	Each paper chooses its English variant (a venue may also fix it, but IEEE accepts either when consistent); none disables the spelling check.
+self-reference	prose	this-paper,this-digest,either,this-article,this-work,this-study,this-letter	this-paper	preset	How the manuscript names itself in subject position, by format: this-paper in every format; this-digest (or this-letter, this-article) for that format; either = "this paper" or the name of its format (digest, letter, article), never a third name such as "this work" or "this study". IEEE Transactions house style uses this-article.
+sentence.relative-clause	prose	forbid,nonrestrictive-only,allow	forbid	preset	Which relative clauses are allowed (sentence.relative-clause): forbid none, nonrestrictive-only a short ", which" tail, allow both kinds; an inverted relative stays banned either way (sentence.subject-verb-adjacent).
+connective.avoid	prose	words	none	preset	Connectives the writing avoids (a comma word list, or none); each is flagged under sentence.no-contrast-join.
+claim.hedging	prose	allow,avoid	allow	preset	Whether hedged assertions ("might", "may") are used; strong assertions stay sparing either way.
+sentence.max-words	prose	int:20-60	38	preset	Word count above which a sentence is flagged as too long.
+sentence.min-words	prose	int:3-12	7	preset	Word count below which a sentence counts as very short.
+sentence.short-run	prose	int:1-5	2	preset	Number of consecutive very short sentences that is flagged (1 flags every short sentence).
+opener.max-run	prose	int:1-3	1	preset	Most consecutive sentences opened by a decorative phrase plus comma.
+numbers.abstract-conclusion	prose	mechanisms-only,finding-then-value	mechanisms-only	preset	Whether the abstract and conclusion give the key results as numbers, each after its finding ("<finding>, which is <value> in this case"), or mechanisms only.
+conclusion.tense	prose	present-perfect,past,any	any	preset	Tense for what the paper did, in the conclusion ("This paper has analysed" or "This paper analysed").
+abstract.word-range	prose	range	none	venue	Allowed abstract length in words, e.g. 150-250.
+document.page-limit	prose	int:1-100,none	none	venue	Page limit of the submission.
+heading.style	prose	declarative,topic	declarative	preset	Style of results subsection headings (rule heading.style): declarative states the finding, topic names the subject.
+format.short	prose	yes,no	no	venue	Whether the venue's format is short (digest, letter, extended abstract): the introduction may then skip what the abstract already says (structure.intro-no-abstract-repeat).
+introduction.roadmap	prose	none,per-section	per-section	venue	Whether the introduction closes with a roadmap (introduction.roadmap): per-section gives one sentence per section stating its role; none omits it, as short formats (digest, letter) usually do.
+process.author-led-parts	prose	words	none	project	Parts of the manuscript whose logic the author leads (a comma list such as abstract,introduction,conclusion,outline, or none): the write and review skills only propose changes to their logic.
+abstract.result-sentences	prose	int:1-6,none	none	preset	Sentence budget of the result layer of the abstract (template abstract-layers.md); none leaves it to the word range.
+conclusion.future-work	prose	required,optional,none	optional	project	Whether the conclusion closes with future work (rule conclusion.future-work); each paper decides.

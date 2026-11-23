@@ -1,6 +1,6 @@
 from academia.core.models import Paper
-from academia.reviewer.discover import run_search
-from academia.reviewer.profile import Profile, Query
+from academia.referee.discover import run_search
+from academia.referee.profile import Profile, Query
 from academia.sources.base import SearchPage
 
 

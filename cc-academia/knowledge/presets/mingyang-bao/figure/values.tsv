@@ -1,0 +1,14 @@
+id	value	evidence
+figure.font-size-pt	8	user ruling 2026-11-12 (figure text 8 pt; TikZ \scriptsize in an 11 pt document); paper_figs.py rcParams font.size 8
+figure.font-family	computer-modern	user ruling 2026-11-12 (Computer Modern); paper_figs.py font.serif cmr10, mathtext.fontset cm
+figure.scaling	unscaled	user ruling 2026-11-12 (drawn at final printed size, no width= on matplotlib PDFs)
+figure.palette	okabe-ito	writing-style rule 35; paper_figs.py OI dict ("the single source of every colour")
+figure.axis-scale	linear-first	user ruling 2026-11-10 (figure template: linear axes unless a log axis is unavoidable)
+figure.y-headroom	0.04	user ruling 2026-11-10 (about 4 % headroom); paper_figs.py fig_compare "top * 1.04"
+figure.panel-letter-position	bottom-left	user ruling 2026-11-12 (panel letters bottom-left, regular weight; x-label baseline outside the frame for data plots, inside the bottom-left corner for drawings); paper_figs.py letter_bl
+figure.panel-letter-weight	regular	user ruling 2026-11-12 (panel letters)
+figure.panel-label-position	top-right	user ruling 2026-11-10 (per-panel labels in the top-right corner, wrapped onto two lines)
+figure.legend-position	inside-first-panel	user ruling 2026-11-10 (legend inside the first panel, not in a row above)
+figure.pair-width	0.48	user ruling 2026-11-10 (paired panels at 0.48 textwidth); paper_figs.py W = 0.48 * TW
+figure.axis-unit-brackets	brackets	user review 2026-11-23 C13 (the author owns the axis-unit style: square brackets, as in tables, table.unit-brackets); paper_figs.py axis labels "[W]"
+figure.characteristic-marks	top-axis	user ruling 2026-11-10 (characteristic frequencies marked on the top axis with guide lines through all panels; user review 2026-11-23 P2-G5)

@@ -1,5 +1,5 @@
 from academia.core.models import Affiliation, Education, Person
-from academia.reviewer import rank, report, trajectory
+from academia.referee import rank, report, trajectory
 from academia.store import db
 
 

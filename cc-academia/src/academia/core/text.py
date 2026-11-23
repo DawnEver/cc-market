@@ -6,6 +6,7 @@ two records describe the same paper, and both need the same answer.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -321,3 +322,8 @@ def dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         combined["merged_from"] = sorted({r.get("source", "") for r in group if r.get("source")})
         merged.append(combined)
     return merged
+
+
+def title_hash(title: str) -> str:
+    """Manuscripts are keyed by hash so the database never stores their titles."""
+    return hashlib.sha256((title or "").strip().lower().encode("utf-8")).hexdigest()[:32]

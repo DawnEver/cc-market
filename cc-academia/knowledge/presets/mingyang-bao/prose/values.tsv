@@ -1,0 +1,13 @@
+id	value	evidence
+self-reference	either	user review 2026-11-23 C6 ("this paper" or the name of the format, e.g. "this digest"; supersedes the 2026-11-08 ruling "this paper" in every format); example (paraphrase; original withheld until publication): "This paper develops a thermal network of a wind generator ..." (abstract), "This paper has examined ..." (conclusion)
+sentence.relative-clause	nonrestrictive-only	user ruling 2026-11-22 (", which" clauses allowed; keep them short; no inverted relatives); example (paraphrase; original withheld until publication): "..., which amounts to 0.8\,N.m for the case examined."
+connective.avoid	however,whereas	user rulings: no "However" (writing.md#4) and no "whereas" (writing.md#26, 2026-11-23 C3); user review 2026-11-23 P2-G1
+claim.hedging	allow	user ruling 2026-11-22 (hedged assertions such as "might" allowed; strong assertions sparingly); example (paraphrase; original withheld until publication): "the common skewed rotor of small pump motors might lower the starting torque noticeably"
+sentence.max-words	35	user ruling 2026-11-22 ("Long sentences stay controlled (about 35 words at most)"); user review 2026-11-23 F1 (35 for this author; common default 38)
+sentence.min-words	7	user ruling 2026-11-22 (short sentences fine, a run of very short bare sentences reads machine-written); threshold kept from the old lint
+sentence.short-run	2	user ruling 2026-11-22 ("A run of very short sentences, each carrying one bare fact, reads machine-written")
+opener.max-run	1	user ruling 2026-11-12 ("never two phrase-plus-comma openings in a row")
+numbers.abstract-conclusion	finding-then-value	user rulings 2026-11-12 (numbers in abstract and conclusion) and 2026-11-22 (finding first, then its value); example (paraphrase; original withheld until publication): "might raise the bearing temperature, which amounts to 12\,K for the case examined"
+conclusion.tense	present-perfect	user ruling 2026-11-22 (conclusion tense); example (paraphrase; original withheld until publication): "This paper has examined the stray losses of a geared wind generator."
+heading.style	topic	user review 2026-11-23 C12 (results headings name the subject; captions still state the finding, caption.states-finding)
+abstract.result-sentences	3	user ruling 2026-11-16 (abstract budget: the result layer announces, then enumerates two findings); user review 2026-11-23 P2-G7

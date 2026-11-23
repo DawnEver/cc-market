@@ -1,18 +1,38 @@
 # cc-academia
 
-Three research workflows over one library: systematic literature review,
-manuscript peer review, and reviewer discovery for a journal editor.
+Four research tasks over one library and one knowledge base: **read** the
+literature, **write** a manuscript, **review** a manuscript (your own draft or
+someone else's submission), and **referee** a submission (reviewer discovery for
+a journal editor).
 
 > **Principles only.** Operating instructions — commands, flags, troubleshooting —
 > live in the skill playbooks under `skills/`. Principles and operations stay
 > apart; when they disagree, the playbook is authoritative for *how* and this
 > file is authoritative for *why*.
 
+## Layers
+
+Dependencies point downward only; `tests/test_layers.py` enforces it.
+
+| Layer | Packages (`src/academia/`) | Holds |
+|---|---|---|
+| L0 | `core` | paths, errors, HTTP, text, models, seniority ranks, country codes |
+| L1 | `documents`, `sources`, `store` | PDF and TeX parsing, manuscript records, PDF acquisition; scholarly APIs; the SQLite store |
+| L2 | `knowledge`, `check`, `figure` | knowledge resolution; data-driven manuscript checks; the figure library (both read `knowledge`) |
+| L3 | `read`, `write`, `review`, `referee` | the four tasks; they never import each other, so what two of them share moves down a layer |
+| L4 | `cli` | console scripts `academia`, `academia-read`, `academia-write`, `academia-review`, `academia-referee` |
+| L5 | `skills/`, `claude-agents/`, `hooks/` | playbooks, agent prompts, host hooks |
+
+`write` has no Python package yet: writing is orchestrated by its skill and the
+`academia-write` checks, which sit in L2.
+
 ## Why one plugin
 
-The three workflows share the scholarly sources, one PDF ingest, one AI backend
-selection, and one accumulating database. Split into three plugins, the shared
-playbooks would have nowhere to live and the coordination problem would return.
+The workflows share the scholarly sources, one PDF ingest, one AI backend
+selection, one accumulating database and one knowledge base. Split into several
+plugins, the shared playbooks would have nowhere to live and the coordination
+problem would return. Writing and reviewing in particular judge a manuscript by
+the same criteria, so those criteria live once, in `knowledge/`.
 
 Shipping the library in the same tag as the playbooks that call it removes an
 entire class of problem: there is no cross-repo contract, so there is no lock
@@ -50,13 +70,13 @@ synced folder.
 
 ## Configuration layering
 
-Defaults ship here; personal customisation overrides them. Neither forks the
+Defaults ship in `knowledge/`; personal customisation overrides them. Neither forks the
 other.
 
 | Variable | Default | What it controls |
 |----------|---------|------------------|
-| `ACADEMIA_CONFIG_DIR` | `configs/` | COI policy, journal parameters |
-| `ACADEMIA_LENS_DIR` | `configs/lenses/` | domain appraisal lenses |
+| `ACADEMIA_CONFIG_DIR` | unset | user overlay: `coi.toml` replaces `knowledge/common/editorial/coi.toml`; `journals/<slug>.toml` replaces `knowledge/venues/<slug>/editorial/coi.toml` |
+| `ACADEMIA_LENS_DIR` | `knowledge/fields/*/lens.toml` | domain appraisal lenses (`<id>.toml` here wins) |
 | `ACADEMIA_DATA_ROOT` | `~/cc-academia-data` | where workflow data live |
 | `ACADEMIA_DB` | the platform's local application-state directory (`%LOCALAPPDATA%\cc-academia` on Windows, `~/Library/Application Support/cc-academia` on macOS, `$XDG_DATA_HOME/cc-academia` on Linux) | the accumulating store. Never under `Documents` or any folder a person would sync: WAL-mode SQLite and a file-level syncer corrupt each other |
 | `ACADEMIA_CONTACT` | unset | polite-pool address for OpenAlex, Crossref, ORCID |
@@ -139,12 +159,12 @@ score, eligibility is a gate.
 
 Every eligibility rule — the activity window, the doctoral year-of-study floor,
 the seniority floor and related-journal evidence — is a key in
-`configs/coi.toml` with its own `off` / `prefer` / `require` mode. A `require`
+`knowledge/common/editorial/coi.toml` with its own `off` / `prefer` / `require` mode. A `require`
 failure sets the score to negative infinity for the same reason a `BLOCK` does.
 A `prefer` failure only annotates and feeds one score component, so an editor
 can see it and disagree.
 
-IEEE journals share one shipped policy in `configs/coi.toml`; their journal
+IEEE journals share one shipped policy in `knowledge/common/editorial/coi.toml`; their journal
 files identify the venue rather than duplicate thresholds. Personal exceptions
 belong in the user's configuration overlay, not in the shipped policy.
 Address coverage is measured separately for invitable and excluded candidates,
@@ -249,11 +269,46 @@ Claude manifest and regenerates the Codex artifact. This plugin's
 `scripts/release.py --check` and `tests/test_manifests.py` are read-only drift guards.
 Never hand-edit a version.
 
+## One knowledge base
+
+`knowledge/` is the single public source of writing rules, review criteria, venue
+parameters and field lenses. Two axes: sources (common, venue, field, author,
+project; parallel, none overrides another) and content types (prose, figure,
+table, data, equation, reference, caption). Five forms: rule, dimension,
+vocabulary, template, criterion. `academia-write resolve` merges the sources a project
+names and rejects an item written outside its jurisdiction, naming where it
+belongs.
+
+- Data, not code: a word list, threshold or choice lives once in `knowledge/`;
+  `src/academia/check/` holds mechanisms only. A new check is a rule row naming
+  `lint:<id>`, an implementation listed in its module's `CHECKS`, and positive and
+  negative tests; `tests/check/test_resolve.py` fails when either side is missing.
+- Shared criteria, distinct roles: the `review-writing` agent (the author's
+  review, target `own`) and the other `review-*` agents (target `submission`)
+  read the same `criteria.tsv` files; only their procedures differ. The English
+  polisher reads the `review-comment` rules, not a private checklist.
+- Project knowledge (one paper's facts, numbers, vocabulary, decisions) lives in
+  `<paper>/.academia/`, outside the package, like every other confidential
+  workspace.
+- No source quotes an unpublished manuscript; an example drawn from one is a
+  marked paraphrase (`knowledge/README.md`, Unpublished text). Tests use synthetic
+  sentences and numbers only.
+- Subprocesses spawned by the writing checks (texcount) pass `CREATE_NO_WINDOW`
+  on Windows.
+
 ## Agent naming
 
-All three workflows ship in one plugin, so agent names carry a workflow prefix:
-`literature-*`, `manuscript-*`, `discovery-*`. A collision would silently route
-work to the wrong reviewer.
+All tasks ship in one plugin, so agent names carry a role prefix: `literature-*`
+for reading (`literature-paper-reader`, `literature-abstract-screener`,
+`literature-query-reviewer`), `review-*` for every review angle
+(`review-novelty`, `review-methodology`, `review-experiments`,
+`review-significance`, `review-freestyle`, `review-writing`) and `polisher` for
+the English reviewer comments. A collision would silently route work to the wrong
+reviewer.
+
+Workspace directories under the data root keep their names
+(`literature-review/`, `manuscript-review/`, `reviewer-discovery/`): they are
+user data on disk, not code names.
 
 ## Testing
 
@@ -269,4 +324,6 @@ Progressive disclosure — read as needed:
 - Workflow steps → `skills/<workflow>/`
 - Running the CLI → `skills/_shared/running-the-cli.md`
 - Host differences → `skills/_shared/host-adapters.md`
-- COI policy and journal parameters → `configs/coi.toml`, `configs/journals/`
+- Editorial policy and journal parameters → `knowledge/common/editorial/coi.toml`, `knowledge/venues/<slug>/editorial/coi.toml`
+- Knowledge base (sources, content types, five forms, jurisdiction) → `knowledge/README.md`
+- Writing checks → `src/academia/check/`, skills `write`, `review`

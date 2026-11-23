@@ -1,0 +1,12 @@
+term	class	replace	when	why	source	scope
+/\bOD\b/	canonical	outer diameter	in a name cell	table.full-names	common	table
+/\bID\b/	canonical	inner diameter	in a name cell	table.full-names	common	table
+/\bdia\./i	canonical	diameter	in a name cell	table.full-names	common	table
+/\bNo\./	canonical	Number	in a name cell	table.full-names	common	table
+/\btemp\./i	canonical	temperature	in a name cell	table.full-names	common	table
+/\bmax\./i	canonical	maximum	in a name cell	table.full-names	common	table
+/\bmin\./i	canonical	minimum	in a name cell	table.full-names	common	table
+/\bfreq\./i	canonical	frequency	in a name cell	table.full-names	common	table
+/\bapprox\./i	canonical	approximately	in a name cell	table.full-names	common	table
+/\bthk\.?\b/i	canonical	thickness	in a name cell	table.full-names	common	table
+/\blen\.\b/i	canonical	length	in a name cell	table.full-names	common	table

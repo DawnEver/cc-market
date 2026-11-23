@@ -10,7 +10,7 @@ Decompose PDFs on demand → structured markdown. Papers already decomposed are 
 
 1. **Check what's pending** (dry run):
    ```bash
-   uv run --project "<plugin-root>" lit-review ingest --topic <slug> --dry-run
+   uv run --project "<plugin-root>" academia-read ingest --topic <slug> --dry-run
    ```
    Shows: X pending, Y already cached.
 
@@ -21,7 +21,7 @@ Decompose PDFs on demand → structured markdown. Papers already decomposed are 
 
 3. **Decompose selected**:
    ```bash
-   uv run --project "<plugin-root>" lit-review ingest --topic <slug> --paper <id1> --paper <id2> ...
+   uv run --project "<plugin-root>" academia-read ingest --topic <slug> --paper <id1> --paper <id2> ...
    ```
    Without `--paper`, decomposes all pending. Cache is always respected.
 
@@ -29,4 +29,4 @@ Decompose PDFs on demand → structured markdown. Papers already decomposed are 
 
 ## Resume
 
-Re-running `uv run --project "<plugin-root>" lit-review ingest --topic <slug> --dry-run` always shows current cache status. Already-decomposed papers are never reprocessed.
+Re-running `uv run --project "<plugin-root>" academia-read ingest --topic <slug> --dry-run` always shows current cache status. Already-decomposed papers are never reprocessed.

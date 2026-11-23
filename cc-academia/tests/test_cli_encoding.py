@@ -16,7 +16,7 @@ def test_cli_entry_point_configures_both_output_streams_as_utf8(monkeypatch):
     monkeypatch.setattr(dispatch.sys, "stderr", stderr)
     monkeypatch.setattr(dispatch, "_dispatch", lambda *args: 0)
 
-    assert dispatch.rev_disc_main(["status"]) == 0
+    assert dispatch.referee_main(["status"]) == 0
 
     assert stdout.encodings == ["utf-8"]
     assert stderr.encodings == ["utf-8"]

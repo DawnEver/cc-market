@@ -372,8 +372,8 @@ def test_relevance_matches_papers_that_share_words_but_not_the_whole_phrase(tmp_
     later stage arbitrary. Words are matched alongside phrases; BM25 still
     prefers the paper that has them together.
     """
-    from academia.reviewer import discover
-    from academia.reviewer.profile import Profile
+    from academia.referee import discover
+    from academia.referee.profile import Profile
 
     conn = db.connect(tmp_path / "r.db")
     try:
@@ -471,7 +471,7 @@ def test_match_expression_survives_hostile_topic_text(tmp_path):
     reviewers surface. The expression must stay valid and stay scoped whatever
     the keyword line contains.
     """
-    from academia.reviewer.discover import _match_expression
+    from academia.referee.discover import _match_expression
 
     conn = db.connect(tmp_path / "hostile.db")
     try:
@@ -493,14 +493,14 @@ def test_match_expression_survives_hostile_topic_text(tmp_path):
 
 
 def test_match_expression_skips_topics_with_no_searchable_words():
-    from academia.reviewer.discover import _match_expression
+    from academia.referee.discover import _match_expression
 
     assert _match_expression(["a an the"]) == ""
     assert _match_expression([""]) == ""
 
 
 def test_match_expression_does_not_repeat_a_single_word_topic():
-    from academia.reviewer.discover import _match_expression
+    from academia.referee.discover import _match_expression
 
     assert _match_expression(["magnet"]) == '"magnet"'
 

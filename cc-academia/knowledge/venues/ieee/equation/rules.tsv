@@ -1,0 +1,2 @@
+id	content	source	kind	scope	check	statement	why	good	bad	provenance
+ieee.symbol-typography	equation	venue	must	body	reviewer	Italicise variables; set descriptive subscripts upright.	IEEE author guide.	$P_\mathrm{mag}$	$P_{mag}$	P13 (S1 III-A; S4 LaTeX)

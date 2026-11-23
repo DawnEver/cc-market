@@ -1,0 +1,41 @@
+unit	latex	spacing	note
+W	W	thin	power
+kW	kW	thin	power
+MW	MW	thin	power
+mW	mW	thin	power
+V	V	thin	voltage
+kV	kV	thin	voltage
+mV	mV	thin	voltage
+A	A	thin	current
+kA	kA	thin	current
+mA	mA	thin	current
+Hz	Hz	thin	frequency
+kHz	kHz	thin	frequency
+MHz	MHz	thin	frequency
+N.m	N.m	thin	torque
+Nm	Nm	thin	torque
+r/min	r/min	thin	speed (slash unit, not a list)
+rpm	rpm	thin	speed
+krpm	krpm	thin	speed
+mm	mm	thin	length
+cm	cm	thin	length
+km	km	thin	length
+um	\textmu m	thin	length
+mT	mT	thin	flux density
+mH	mH	thin	inductance
+uH	\textmu H	thin	inductance
+ms	ms	thin	time
+us	\textmu s	thin	time
+ns	ns	thin	time
+kg	kg	thin	mass
+MPa	MPa	thin	pressure
+GPa	GPa	thin	pressure
+kJ	kJ	thin	energy
+kWh	kWh	thin	energy
+dB	dB	thin	level
+%	\%	thin	percent
+deg	$^\circ$	none	angle: no space before the degree sign
+degC	$^\circ$C	thin	temperature
+N/m	N/m	thin	slash unit, not a list
+W/kg	W/kg	thin	slash unit, not a list
+A/mm2	A/mm$^2$	thin	slash unit, not a list

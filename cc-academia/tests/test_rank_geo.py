@@ -6,10 +6,11 @@ import math
 
 import pytest
 
+from academia.core import geo as core_geo
 from academia.core.errors import UsageError
 from academia.core.models import Affiliation, Author, Education, Person
-from academia.reviewer import coi, geo, rank
-from academia.reviewer.policy import Policy, load_policy
+from academia.referee import coi, geo, rank
+from academia.referee.policy import Policy, load_policy
 from academia.store import db
 from academia.store import repository as repo
 from conftest import neutral
@@ -117,9 +118,9 @@ def test_hard_filter_still_spares_an_unknown_country():
 
 
 def test_origin_countries_prefer_explicit_codes_over_affiliation_text():
-    assert geo.origin_countries_from(["Tsinghua University, Beijing"], ["GB"]) == ["GB"]
-    assert geo.origin_countries_from(["Tsinghua University, Beijing, China"], []) == ["CN"]
-    assert geo.origin_countries_from(["Some Unrecognisable Institute"], []) == []
+    assert core_geo.origin_countries_from(["Tsinghua University, Beijing"], ["GB"]) == ["GB"]
+    assert core_geo.origin_countries_from(["Tsinghua University, Beijing, China"], []) == ["CN"]
+    assert core_geo.origin_countries_from(["Some Unrecognisable Institute"], []) == []
 
 
 # ---------------------------------------------------------------- scoring ----
@@ -338,7 +339,7 @@ def test_take_keeps_blocked_candidates_past_the_cut():
     obvious name was considered. Slicing the ordered list then threw them away
     again, and the shortlist footer promised the opposite of what it rendered.
     """
-    from academia.reviewer import rank as rank_module
+    from academia.referee import rank as rank_module
 
     clear = []
     for i in range(30):
@@ -365,7 +366,7 @@ def test_candidate_vocabulary_is_bounded_by_the_strongest_evidence(tmp_path):
     and topic plus method carry 60% of the weight.
     """
     from academia.core.models import Paper
-    from academia.reviewer import rank as rank_module
+    from academia.referee import rank as rank_module
 
     conn = db.connect(tmp_path / "v.db")
     try:
@@ -401,7 +402,7 @@ def test_candidate_vocabulary_is_bounded_by_the_strongest_evidence(tmp_path):
 
 def test_take_rejects_a_negative_cap():
     """`invitable[:-5]` silently drops the best candidates instead of the worst."""
-    from academia.reviewer import rank as rank_module
+    from academia.referee import rank as rank_module
 
     with pytest.raises(UsageError):
         rank_module.take([], -5)

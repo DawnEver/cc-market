@@ -7,7 +7,7 @@
 
 .PHONY: all clean fmt install install-dev lint test test-parallel verify
 
-NODE_TESTS := fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs evolve/tests/*.test.mjs cc-latex/tests/*.test.mjs shared/tests/*.test.mjs tests/*.test.mjs
+NODE_TESTS := fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs evolve/tests/*.test.mjs shared/tests/*.test.mjs tests/*.test.mjs
 
 all: verify
 

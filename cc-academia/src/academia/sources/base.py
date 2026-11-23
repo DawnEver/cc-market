@@ -12,7 +12,7 @@ has both well:
 
 The old ``PaperSource`` also declared ``acquire()``, which every implementation
 raised ``NotImplementedError`` for. PDF acquisition is a transport concern and
-lives in ``litreview.acquire``, not on a search interface.
+lives in ``documents.acquire``, not on a search interface.
 """
 
 from __future__ import annotations

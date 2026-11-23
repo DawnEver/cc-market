@@ -1,0 +1,14 @@
+id	content	options	unset_default	owner	why
+figure.font-size-pt	figure	num:6-12	8	preset	Printed size of every figure text element; venues may bound it (IEEE: 8-10 pt).
+figure.font-family	figure	computer-modern,times,helvetica	computer-modern	preset	Figure font; computer-modern matches a default LaTeX body.
+figure.scaling	figure	unscaled,scaled	unscaled	preset	Whether figures are drawn at printed size and included without width=.
+figure.palette	figure	okabe-ito,greys	okabe-ito	preset	Colour palette (common/figure/palettes.tsv); okabe-ito is colour-blind safe.
+figure.axis-scale	figure	linear-first,free	linear-first	preset	Linear axes unless a log axis is unavoidable, or free choice.
+figure.y-headroom	figure	num:0-0.2	0.04	preset	Fraction of the data range left above the tallest data.
+figure.panel-letter-position	figure	bottom-left,top-left	bottom-left	preset	Where (a), (b), (c) sit: bottom-left on the x-label baseline outside the frame for data plots, inside the bottom-left corner for drawings; or top-left inside.
+figure.panel-letter-weight	figure	regular,bold	regular	preset	Weight of the panel letters.
+figure.panel-label-position	figure	top-right,top-left	top-right	preset	Corner of per-panel labels in stacked panels, wrapped onto two lines.
+figure.legend-position	figure	inside-first-panel,above,outside	inside-first-panel	preset	Where the legend goes.
+figure.pair-width	figure	num:0.3-0.5	0.48	preset	Width of each of two paired panels as a fraction of the text width.
+figure.axis-unit-brackets	figure	brackets,parentheses	parentheses	preset	Bracket style for units in axis labels: brackets "Loss [W]" or parentheses "Loss (W)". The author owns the choice; the IEEE author guide shows parentheses (venue note in knowledge/venues/ieee/README.md).
+figure.characteristic-marks	figure	top-axis,in-plot,none	none	preset	Where characteristic frequencies or orders are marked on a data figure: on a secondary top axis with guide lines behind the data, inside the plot area, or not at all.

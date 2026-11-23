@@ -3,7 +3,7 @@
 Three roots, three lifetimes (see PLAN §1):
 
 * **plugin root** — code and default config; changes when the plugin is updated.
-* **config/lens override dirs** — personal customisation; change when the user changes.
+* **config/lens override dirs** — personal customisation over the knowledge base; change when the user changes.
 * **data root / database** — research output; changes with the work itself.
 
 The immutable plugin root is derived from this module's location. User-owned
@@ -43,36 +43,78 @@ def plugin_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def default_config_dir() -> Path:
-    return plugin_root() / "configs"
+def knowledge_dir() -> Path:
+    """The public knowledge base: sources (common, venues, fields, authors) x content types.
+
+    Single source of truth for writing rules, review criteria, venue parameters
+    and field lenses; layout and schemas in ``knowledge/README.md``.
+    """
+    return plugin_root() / "knowledge"
 
 
-def config_file(*parts: str) -> Path:
-    """Resolve a config file, preferring the user's override directory.
+def _override(*parts: str) -> Path | None:
+    """A file the user customised under ``$ACADEMIA_CONFIG_DIR``, if present.
 
     The override directory holds only the files the user actually customised;
-    anything absent falls back to the defaults shipped with the plugin. This is a
-    layering relationship, not a fork.
+    anything absent falls back to the knowledge base. Layering, not a fork.
     """
-    override = _env_path(ENV_CONFIG_DIR)
-    if override is not None:
-        candidate = override.joinpath(*parts)
-        if candidate.exists():
-            return candidate
-    return default_config_dir().joinpath(*parts)
+    base = _env_path(ENV_CONFIG_DIR)
+    if base is not None and base.joinpath(*parts).exists():
+        return base.joinpath(*parts)
+    return None
+
+
+def policy_file() -> Path:
+    """The venue-neutral editorial policy (COI and eligibility rules).
+
+    ``$ACADEMIA_CONFIG_DIR/coi.toml`` when present, else
+    ``knowledge/common/policy/coi.toml``.
+    """
+    return _override("coi.toml") or knowledge_dir() / "common" / "policy" / "coi.toml"
+
+
+def venue_policy_file(slug: str) -> Path:
+    """One venue's editorial overlay: ``$ACADEMIA_CONFIG_DIR/journals/<slug>.toml`` when
+    present, else ``knowledge/venues/<slug>/policy/coi.toml``."""
+    return (
+        _override("journals", f"{slug}.toml")
+        or knowledge_dir() / "venues" / slug / "policy" / "coi.toml"
+    )
+
+
+def policy_venues() -> list[str]:
+    """Venues of the knowledge base that carry editorial parameters."""
+    return sorted(
+        p.parent.parent.name for p in (knowledge_dir() / "venues").glob("*/policy/coi.toml")
+    )
 
 
 def lens_dir() -> Path:
-    return _env_path(ENV_LENS_DIR) or (default_config_dir() / "lenses")
+    """Where lenses are looked up first: the override directory, else the fields of the knowledge base."""
+    return _env_path(ENV_LENS_DIR) or (knowledge_dir() / "fields")
+
+
+def _lens_key(name: str) -> str:
+    return name.strip().lower().replace("_", "-")
 
 
 def lens_file(lens_id: str) -> Path | None:
-    """Locate a domain lens by id, override directory first."""
-    for base in (_env_path(ENV_LENS_DIR), default_config_dir() / "lenses"):
-        if base is None:
-            continue
-        candidate = base / f"{lens_id}.toml"
+    """Locate a domain lens by id: ``<override>/<id>.toml`` first, then the field whose
+    ``knowledge/fields/<field>/lens.toml`` declares that ``lens_id`` (``_`` and ``-`` alike)."""
+    override = _env_path(ENV_LENS_DIR)
+    if override is not None:
+        candidate = override / f"{lens_id}.toml"
         if candidate.exists():
+            return candidate
+    import tomllib
+
+    key = _lens_key(lens_id)
+    for candidate in sorted((knowledge_dir() / "fields").glob("*/lens.toml")):
+        try:
+            declared = tomllib.loads(candidate.read_text(encoding="utf-8")).get("lens_id", "")
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        if key in (_lens_key(declared), _lens_key(candidate.parent.name)):
             return candidate
     return None
 

@@ -6,6 +6,66 @@ build if they drift.
 
 ## [Unreleased]
 
+### Changed (2.0.0, breaking): knowledge refactor, user review 2026-11-23
+
+- Rules 144 -> 96 across all sources (46 checked by lint), 99 criteria. Every removed or renamed id is mapped in
+  `knowledge/MAPPING.tsv` (decision column "user review 2026-11-23 P2-G1 ... P2-G7, P4-budget"); no aliases.
+- Scope axis: `scope` tokens are a fixed vocabulary (`all`, the parts title/abstract/keywords/introduction/body/
+  conclusion, caption, prose, table, figure kinds, review-comment, manuscript); unknown tokens are errors.
+- Progressive disclosure: `academia-write resolve --task write|review --scope <part>` prints one line per item an
+  agent judges; `academia-write explain <id>` expands one item; lint rules stay out of the index and every lint hit
+  names its rule id and remedy. Budget test: every write combination <= 25 items.
+- New lint checks: footnote, number-format, abstract-format, abbreviation, display-paragraph, relative-clause,
+  semicolon-chain; `ieee.no-footnotes`, `ieee.numbers`, `ieee.abstract-format`, `ieee.abbreviations`,
+  `terms.one-canonical`, `equation.paragraph-after-display` moved from reviewer to lint.
+- `editorial` is no longer an object type: `knowledge/<source>/policy/` (paths API `policy_file`,
+  `venue_policy_file`, `policy_venues`).
+- The author source is now the style preset (see below); `--author` is `--preset`.
+- Process rules left the knowledge base: the `write` and `review` skills carry them as hard constraints and
+  steps; project dimension `process.author-led-parts` names the author-led parts.
+- New dimensions: `sentence.relative-clause`, `connective.avoid`, `introduction.roadmap`, `abstract.result-sentences`,
+  `conclusion.future-work`, `figure.characteristic-marks`, `process.author-led-parts`; option type `words`.
+- Lint skips the definition site of a canonical term ("Full Name (ABBR)").
+
+### Changed (1.0.0, breaking)
+
+- The author knowledge source became the style preset (`knowledge/presets/<name>/`, profile kind `preset`,
+  `--preset`): a preset holds only dimension values and recommended phrases; the remaining author rules moved to
+  common (`abstract.finding-then-value`, `conclusion.future-work`, template `abstract-layers.md`) or to the `write`
+  skill; skill `author-profiling` is now `style-profiling`.
+- Merged the former cc-latex plugin. Manuscript writing is a workflow of this plugin: skills `write` (draft,
+  revise, compress, figure, table, data), `self-review`, `field-reading`, `author-profiling`, `ruling-capture` and
+  `count-tex`, agent `writing-reviewer`, and the `ms-write` console script (`resolve`, `lint-prose`, `lint-table`,
+  `check-data`, `page-budget`, `word-count`, `check-figure`). The Node engine was ported to Python
+  (`academia.write`); no Node code remains. No alias or shim keeps the old plugin name.
+- One knowledge base, `knowledge/`: the writing knowledge (sources x content types), a fifth form `criterion`
+  (review questions shared by self-review and the `manuscript-reviewer-*` agents), venue parameters
+  (`knowledge/venues/<slug>/coi.toml`, formerly `configs/journals/<slug>.toml`; the user overlay
+  `$ACADEMIA_CONFIG_DIR/journals/<slug>.toml` is unchanged) and field lenses
+  (`knowledge/fields/<field>/lens.toml`, formerly `configs/lenses/`).
+- The number macro is `\val{id}` (was `\num{id}`, which collided with siunitx).
+- `configs/templates/polish-checklist.md` removed: the English polisher reads the `review-comment` rules of the
+  knowledge base (`ms-write resolve --md --scope review-comment`).
+
+- Layered architecture, enforced by `tests/test_layers.py`: L0 `core`; L1 `documents` (was `ingest`; PDF and TeX
+  parsing, manuscript records, PDF acquisition), `sources`, `store`; L2 `knowledge`, `check`, `figure`; L3 the tasks
+  `read` (was `litreview`), `write`, `review` (was `msreview`), `referee` (was `reviewer`); L4 `cli`. Seniority ranks,
+  country codes and `title_hash` moved to `core`; acquisition moved to `documents.acquire`.
+- Console scripts `academia-read`, `academia-write`, `academia-review`, `academia-referee` (were `lit-review`,
+  `ms-write`, `ms-review`, `rev-disc`).
+- Skills: `review` (targets `own` and `submission`, option `rerun`) replaces `manuscript-review`, `self-review` and
+  `manuscript-rerun`; `referee-discovery` replaces `reviewer-discovery`. Agents: `review-novelty`,
+  `review-methodology`, `review-experiments`, `review-significance`, `review-freestyle`, `review-writing`,
+  `polisher`.
+- `editorial` is the eighth object type of the knowledge base: `knowledge/common/editorial/coi.toml` (was
+  `configs/coi.toml`) and `knowledge/venues/<slug>/editorial/coi.toml`. `configs/` is gone; procedure templates
+  live in the skills that use them. A LaTeX project's knowledge lives in `<paper>/.academia/` (was
+  `<paper>/.claude/latex/`).
+
+### Fixed
+
+- `academia-read read --lens <unknown>` no longer fails with an AttributeError on a missing lens.
+
 ### Added
 
 - Literature review: workspace output language (`[output] language`, `lit-review init

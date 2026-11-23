@@ -15,10 +15,10 @@ Running the CLI: `_shared/running-the-cli.md`. Host differences:
 
 | Step | File | CLI | What happens |
 |------|------|-----|--------------|
-| 01 | `01-define.md` | `uv run --project "<plugin-root>" lit-review init` | Define topic & scope → `workspace.toml` + `research_brief.toml` |
-| 02 | `02-search.md` | `uv run --project "<plugin-root>" lit-review search` | AI queries → multi-provider search → dedupe → screening packet |
-| 03 | `03-acquire.md` | `uv run --project "<plugin-root>" lit-review acquire` | Script-first batch PDF acquisition — auto walks http→browser→researchgate ladder, run in background |
-| 04 | `04-ingest.md` | `uv run --project "<plugin-root>" lit-review ingest` | On-demand decomposition with cache reuse |
+| 01 | `01-define.md` | `uv run --project "<plugin-root>" academia-read init` | Define topic & scope → `workspace.toml` + `research_brief.toml` |
+| 02 | `02-search.md` | `uv run --project "<plugin-root>" academia-read search` | AI queries → multi-provider search → dedupe → screening packet |
+| 03 | `03-acquire.md` | `uv run --project "<plugin-root>" academia-read acquire` | Script-first batch PDF acquisition — auto walks http→browser→researchgate ladder, run in background |
+| 04 | `04-ingest.md` | `uv run --project "<plugin-root>" academia-read ingest` | On-demand decomposition with cache reuse |
 | — | `05-options.md` | AI (deep-read/synthesize via fabric/litellm, confirm the model every time)· export · stats | Post-acquisition capabilities as a menu |
 
 ## How to execute
