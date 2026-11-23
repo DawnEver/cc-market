@@ -33,7 +33,7 @@
         },
         {
           "name": "Sync",
-          "run": "uv sync --all-extras --no-install-package paper-pdf-ingest"
+          "run": "uv sync --extra ai --extra acquire --extra browser --extra pdf --extra plot --extra zotero --extra embed --no-install-package paper-pdf-ingest"
         },
         {
           "name": "Lint",
@@ -64,5 +64,8 @@
       ],
       "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) }}"
     }
+  },
+  "env": {
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"host\", \"tests\": \"ci\"}"
   }
 }

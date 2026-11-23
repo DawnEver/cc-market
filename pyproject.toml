@@ -92,16 +92,18 @@ setup = [
 [tool.dev_lab.ci."cc-academia-ci.yml"]
 name = "cc-academia"
 on = { push = { branches = ["main"] }, pull_request = {} }
+jobs.test.role = "tests"
 jobs.test.runs-on = "ubuntu-latest"
 # The plugin is one directory of a multi-plugin repository: every uv step runs inside it.
 jobs.test.defaults.run.working-directory = "cc-academia"
 jobs.test.steps = [
     { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
-    { name = "Sync", run = "uv sync --all-extras --no-install-package paper-pdf-ingest" },
+    { name = "Sync", run = "uv sync --extra ai --extra acquire --extra browser --extra pdf --extra plot --extra zotero --extra embed --no-install-package paper-pdf-ingest" },
     { name = "Lint", run = "uv run ruff check ." },
     { name = "Test", run = "uv run python -m pytest -q" },
 ]
+jobs.secrets.role = "tests"
 jobs.secrets.runs-on = "ubuntu-latest"
 jobs.secrets.steps = [
     { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },
