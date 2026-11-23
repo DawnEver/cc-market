@@ -30,27 +30,6 @@
       "category": "productivity"
     },
     {
-      "name": "rem",
-      "source": "./rem",
-      "displayName": "REM",
-      "description": "REM sleep for Claude sessions \u00e2\u20ac\u201d consolidate learnings into memory that converges without deletion: read-only recall, a derived index, crystallized rules. Includes memos: fact caching keyed on git blob hashes, listed on SessionStart/PostCompact.",
-      "author": {
-        "name": "Mingyang Bao"
-      },
-      "repository": "https://github.com/DawnEver/cc-market",
-      "license": "MIT",
-      "keywords": [
-        "memory",
-        "session",
-        "retrospect",
-        "recall",
-        "derived-index",
-        "memo",
-        "cache"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "sharp-review",
       "source": "./sharp-review",
       "displayName": "Sharp Review",
