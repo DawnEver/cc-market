@@ -8,18 +8,16 @@ spawns one fix subagent per group — `Agent` on Claude, `spawn_agent` on Codex 
 subagents is evolve's own orchestration primitive, so this host-awareness is irreducible).
 Step-1 critique is **not** host-aware: run the `sharp-review` skill and read OPEN findings
 from its backlog via `seedFromSharpReview`. Helpers, gates, TDD, and commits are host-agnostic.
-On Codex, set the task guard at round start (no `background_tasks` field) so the Stop hook
-doesn't fire mid-round.
 
 ## Helper module — `scripts/evolve.mjs`
 
 Do **not** hand-edit state JSON or hand-compute grouping/termination. Delegate every
 state/grouper/gate operation to the helper (importable + CLI:
 `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" <cmd> [args]`). Key functions:
-`loadState`/`saveState` (atomic, preserves rem's other keys), `initState`, `recordRound`,
+`loadState`/`saveState` (atomic, into the git dir), `initState`, `recordRound`,
 `prioritize`, `groupFindings`, `seedFromSharpReview`, `checkTermination`, `checkRoundComplete`,
-`routeRoundCompletion`, `writeRoundLog`, `setTaskGuard`/`clearTaskGuard`. State I/O delegates
-to `shared/state.mjs`; never hand-write `.claude/.rem-state.json`.
+`routeRoundCompletion`, `writeRoundLog`. State lives at `statePath()` (`<git dir>/evolve/state.json`); never
+hand-write it.
 
 ## 0. Pre-flight (every round)
 
@@ -110,7 +108,7 @@ incrementing) — do not mark it fixed in step 7.
 
 ## 7. Resolve & commit
 
-- Record each finding `fixed` or `wont-fix` (with reason) in `evolveState.findings`. A finding
+- Record each finding `fixed` or `wont-fix` (with reason) in the state's `findings`. A finding
   kept in the backlog is closed where it lives: its issue.
 - **Stage only evolve's changes:** `git add <file> ...` listing exactly the files the round's
   agents modified (diff against step-0 snapshot). Never `git add -A`.
@@ -148,12 +146,11 @@ findings must be surfaced, not carried silently.
 
 ## State shape
 
-The `evolveState` schema in `.claude/.rem-state.json` is for debugging only — delegate all
+The loop-state schema is for debugging only — delegate all
 I/O to `scripts/evolve.mjs`. Full schema → `reference/state-schema.md`.
 
 ## Failure handling
 
 - Dead/failed subagent → `null` result; filter and continue.
 - Never commit with failing tests.
-- State persisted atomically by `saveState`/`recordRound`; if loop crashes, the task guard
-  auto-expires after 30 min (rem Stop hook self-heals).
+- State persisted atomically by `saveState`/`recordRound`; a crashed loop resumes from it.

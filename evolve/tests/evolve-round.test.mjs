@@ -1,6 +1,6 @@
 // Integration test — one simulated evolve round end-to-end at the script API/CLI level:
 // seed OPEN findings from a real sharp-review.md, prioritize, record the round, persist
-// state under `evolveState` (without clobbering foreign keys), simulate fixes in the memory
+// state in the checkout's git dir, simulate fixes in the memory
 // file, run an empty round, and verify termination.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,11 +53,7 @@ beforeEach(() => {
   fs.mkdirSync(day, { recursive: true });
   srFile = path.join(day, 'sharp-review.md');
   fs.writeFileSync(srFile, SR_BACKLOG, 'utf8');
-  // Pre-seed the shared state file with foreign plugin keys (rem + sharp-review slices).
-  fs.writeFileSync(
-    path.join(root, '.claude', '.rem-state.json'),
-    JSON.stringify({ hook: { stopCount: 4 }, reviewGate: { wave: 1, mode: 'once' } }, null, 2)
-  );
+  execFileSync('git', ['init', '-q', root]);
 });
 
 afterEach(() => {
@@ -109,12 +105,10 @@ test('full round: seed → prioritize → fix → persist → empty rounds → c
 
   assert.equal(checkTermination(state).stop, false);
 
-  // --- Persist and verify foreign keys survive ---
+  // --- Persist into the git dir and reload ---
   assert.equal(saveState(root, state).persisted, true);
-  const raw = JSON.parse(fs.readFileSync(path.join(root, '.claude', '.rem-state.json'), 'utf8'));
-  assert.equal(raw.evolveState.round, 1);
-  assert.equal(raw.hook.stopCount, 4);            // rem slice untouched
-  assert.deepEqual(raw.reviewGate, { wave: 1, mode: 'once' }); // sharp-review slice untouched
+  assert.equal(loadState(root).round, 1);
+  assert.ok(!fs.existsSync(path.join(root, '.claude', '.rem-state.json')));
 
   // --- Round 2: fix the remaining MEDIUM; round surfaces nothing new blocking ---
   markFixedInBacklog('SR-20260703-002');

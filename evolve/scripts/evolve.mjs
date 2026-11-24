@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadState as loadSharedState, saveState as saveSharedState } from '../shared/state.mjs';
+import { execFileSync } from '../shared/spawn.mjs';
+import { atomicWriteFile } from '../shared/atomic-write.mjs';
 import { parseFindingsFromMarkdown, dateToPath, isMain } from '../shared/lib.mjs';
 import { route as routeAttention } from '../shared/attention.mjs';
 
-const STATE_FILE = '.claude/.rem-state.json';
+const STATE_PATH = 'evolve/state.json';
 
 const SEVERITY_ORDER = { HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
 const BLOCKING = new Set(['HIGH', 'MEDIUM']);
@@ -40,45 +41,40 @@ export function initState({
   };
 }
 
-function statePath(projectRoot) {
-  return path.join(projectRoot, STATE_FILE);
+// The loop state is per-worktree, device-local and never tracked, so git owns its place:
+// `<git dir>/evolve/state.json` (`git rev-parse --git-path`). No plugin shares the file.
+export function statePath(projectRoot = process.cwd()) {
+  let rel;
+  try {
+    rel = execFileSync('git', ['rev-parse', '--git-path', STATE_PATH], {
+      cwd: projectRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    throw new Error(`evolve: ${projectRoot} is not a git checkout, so its loop state has no place.\n`
+      + 'Door: run evolve inside the repository it improves (or `git init` it first).');
+  }
+  return path.resolve(projectRoot, rel);
 }
 
-// State lives under the `evolveState` key of the shared `.claude/.rem-state.json` (owned by
-// the required rem plugin). loadState/saveState delegate to shared/state.mjs — its deepMerge
-// preserves foreign keys (hook, prune, docs…) so we never clobber rem's
-// slice of the file, and its atomic save (with Windows-retry) replaces evolve's old
-// hand-rolled temp/rename dance.
 export function loadState(projectRoot = process.cwd()) {
-  const root = loadSharedState(statePath(projectRoot));
-  return { ...initState(), ...(root.evolveState || {}) };
+  const file = statePath(projectRoot);
+  if (!fs.existsSync(file)) return initState();
+  let raw = fs.readFileSync(file, 'utf8');
+  if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+  return { ...initState(), ...JSON.parse(raw) };
 }
 
+// Atomic tmp+rename; a failed rename (Windows AV) reports { persisted: false } and the round
+// continues in memory.
 export function saveState(projectRoot = process.cwd(), state) {
   const file = statePath(projectRoot);
-  const root = loadSharedState(file); // returns DEFAULT_STATE if absent; shared save creates the dir
-  root.evolveState = state;
-  return saveSharedState(file, root);
-}
-
-// Task guard — set/clear the rem Stop-hook window so evolve can run multi-round without
-// being interrupted mid-round. evolve does NOT know rem's internal state key layout; these
-// functions encapsulate the single touch-point.
-export function setTaskGuard(projectRoot = process.cwd(), minutes = 30) {
-  const file = statePath(projectRoot);
-  const root = loadSharedState(file);
-  if (!root.hook) root.hook = {};
-  root.hook.taskActiveUntil = Date.now() + minutes * 60 * 1000;
-  return saveSharedState(file, root);
-}
-
-export function clearTaskGuard(projectRoot = process.cwd()) {
-  const file = statePath(projectRoot);
-  const root = loadSharedState(file);
-  if (root.hook?.taskActiveUntil !== undefined) {
-    delete root.hook.taskActiveUntil;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    atomicWriteFile(file, JSON.stringify(state, null, 2));
+    return { persisted: true };
+  } catch {
+    return { persisted: false };
   }
-  return saveSharedState(file, root);
 }
 
 function findingFiles(f) {
@@ -269,9 +265,8 @@ export function seedFromSharpReview(projectRoot = process.cwd(), date) {
     }));
 }
 
-// Cleanup: write the round-log as a memory entry with rem frontmatter into
-// .claude/memory/YYYY/MM/DD/ so rem's existing SessionStart indexer picks it up — no need to
-// call rem's rebuildIndex directly. Returns the written path.
+// Cleanup: write the round-log as a memory entry with frontmatter into
+// .claude/memory/YYYY/MM/DD/. Returns the written path.
 export function writeRoundLog(projectRoot = process.cwd(), { date, rounds, fixed = 0, wontFix = 0, deferred = 0, note = '' } = {}) {
   const dir = memoryDayDir(projectRoot, date);
   fs.mkdirSync(dir, { recursive: true });
@@ -330,15 +325,9 @@ function main() {
     case 'seed':
       out(seedFromSharpReview(root, positional[0]));
       break;
-    case 'set-task-guard':
-      out(setTaskGuard(root, parseInt(positional[0]) || 30));
-      break;
-    case 'clear-task-guard':
-      out(clearTaskGuard(root));
-      break;
     default:
       process.stderr.write(
-        'usage: evolve.mjs <init|load|group <file.json>|terminate|prioritize <minSeverity>|seed [date]|set-task-guard [minutes]|clear-task-guard> [--root <dir>]\n'
+        'usage: evolve.mjs <init|load|group <file.json>|terminate|prioritize <minSeverity>|seed [date]> [--root <dir>]\n'
       );
       process.exit(cmd ? 1 : 0);
   }

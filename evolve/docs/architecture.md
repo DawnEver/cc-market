@@ -12,7 +12,7 @@ evolve/
 │   └── reference/
 │       ├── round-protocol.md        Full ordered per-round protocol + failure handling
 │       ├── termination.md           clean/resolved/ask + safety caps
-│       └── state-schema.md          evolveState JSON schema (debug-only; delegate to evolve.mjs)
+│       └── state-schema.md          loop-state JSON schema (debug-only; delegate to evolve.mjs)
 ├── scripts/evolve.mjs               State/grouping/termination helper (importable + CLI)
 ├── tests/evolve.test.mjs            node:test (13 tests)
 ├── CLAUDE.md / AGENTS.md / README.md
@@ -21,7 +21,7 @@ evolve/
 ## Helper — `scripts/evolve.mjs`
 
 Dependency-free Node ESM (importable + CLI). Centralizes the error-prone mechanics so the
-loop never hand-edits JSON: `loadState`/`saveState` (atomic, rem state file, Windows-retry),
+loop never hand-edits JSON: `loadState`/`saveState` (atomic, into `<git dir>/evolve/state.json`),
 `initState`, `recordRound`, `groupFindings` (connected components), `prioritize`,
 `checkTermination`, `confirmedByQuorum` (a unit helper; quorum is done upstream by
 sharp-review's merge, not called in the live flow). Pure logic functions take timestamps as
