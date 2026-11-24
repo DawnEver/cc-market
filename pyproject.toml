@@ -58,7 +58,7 @@ ephemeral = ['pr/*']
 [tool.dev_lab.protection.forges."github.com"]
 breakglass = ["app:5704921", "role:admin"]
 
-# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10); ADVISORY, never a gate.
+# Who reviews is bound once in the family layer's [roles.github] (D73); this repo keeps only its judge App id.
 [tool.dev_lab.review]
 judge_app = 5619495
 
@@ -103,7 +103,7 @@ jobs.test.defaults.run.working-directory = "cc-academia"
 jobs.test.steps = [
     { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
-    { name = "Sync", run = "uv sync --all-extras --no-install-package paper-pdf-ingest" },
+    { name = "Sync", run = "uv sync --extra ai --extra acquire --extra browser --extra pdf --extra plot --extra zotero --extra embed --no-install-package paper-pdf-ingest" },
     { name = "Lint", run = "uv run ruff check ." },
     { name = "Test", run = "uv run python -m pytest -q" },
 ]

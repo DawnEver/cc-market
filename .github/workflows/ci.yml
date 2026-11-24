@@ -182,12 +182,14 @@
     },
     "part": {
       "env": {
-        "GITHUB_TOKEN": "${{ github.token }}"
+        "GITHUB_TOKEN": "${{ github.token }}",
+        "LAB_COMMONS_BOX": "${{ github.workspace }}/../lab-commons/box.sqlite"
       },
       "needs": "parts",
       "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (needs.parts.outputs.matrix != '')) }}",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
+      "timeout-minutes": 90,
       "steps": [
         {
           "uses": "actions/checkout@v4",
@@ -219,6 +221,11 @@
           "run": "mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json"
         },
         {
+          "name": "Sync the part's extras",
+          "shell": "bash",
+          "run": "uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part \"${{ matrix.part }}\")"
+        },
+        {
           "name": "Produce and post the part",
           "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
         },
@@ -228,7 +235,7 @@
           "uses": "actions/upload-artifact@v4",
           "with": {
             "name": "verify-log-${{ matrix.part }}-${{ github.run_attempt }}",
-            "path": "**/verify/verify-*.log",
+            "path": "**/verify/verify-*.log\n**/verify/verify-*.outcomes/**",
             "if-no-files-found": "warn"
           }
         }
