@@ -967,15 +967,33 @@ def review_record(
 # ------------------------------------------------- editorial-system imports
 
 
+_MS_ROW_STATEMENTS: dict[str, tuple[str, str]] = {
+    "locator_suggestions": (
+        "DELETE FROM locator_suggestions WHERE ms_id = ?",
+        "INSERT OR REPLACE INTO locator_suggestions "
+        "(ms_id, person_id, position, match_method, data_json, imported_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+    ),
+    "editorial_invitations": (
+        "DELETE FROM editorial_invitations WHERE ms_id = ?",
+        "INSERT OR REPLACE INTO editorial_invitations "
+        "(ms_id, person_id, position, match_method, data_json, imported_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+    ),
+}
+
+
 def _replace_ms_rows(
     conn: sqlite3.Connection, table: str, ms_id: str, rows: Sequence[dict[str, Any]]
 ) -> None:
-    conn.execute(f"DELETE FROM {table} WHERE ms_id = ?", (ms_id,))
+    """Replace one manuscript's rows; ``table`` selects a fixed literal statement pair."""
+    if table not in _MS_ROW_STATEMENTS:
+        raise ValueError(f"no manuscript-row table {table!r}; known: {sorted(_MS_ROW_STATEMENTS)}")
+    delete_sql, insert_sql = _MS_ROW_STATEMENTS[table]
+    conn.execute(delete_sql, (ms_id,))
     now = utcnow()
     conn.executemany(
-        f"INSERT OR REPLACE INTO {table} "
-        "(ms_id, person_id, position, match_method, data_json, imported_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        insert_sql,
         [
             (
                 ms_id,

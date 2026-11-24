@@ -214,3 +214,11 @@ def test_import_is_idempotent(conn, page):
     summary = repo.editorial_import(conn, "ms-1")
     assert summary["summary"]["invited"] == 4
     assert summary["locator_total"] == 7
+
+
+def test_manuscript_rows_refuse_an_undeclared_table(conn):
+    """Table names are a closed set of literal statements, never interpolated SQL."""
+    from academia.store import repository as repo
+
+    with pytest.raises(ValueError, match="no manuscript-row table"):
+        repo._replace_ms_rows(conn, "people; DROP TABLE people", "ms-1", [])
