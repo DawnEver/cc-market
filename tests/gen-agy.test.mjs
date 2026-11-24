@@ -2,15 +2,15 @@
 // `agy` CLI is on PATH) `agy plugin validate` with only the known Claude-layout warnings.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import {
   generate, translateMatcher, translateCommand, transpileHooks, transpileMcp, transpileManifest,
   transpileAgent, commandSkill, GENERATED_MARK,
 } from '../scripts/gen-agy.mjs';
+import { tempDir } from './temp-dir.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const market = JSON.parse(readFileSync(join(ROOT, '.claude-plugin', 'marketplace.json'), 'utf8'));
@@ -64,7 +64,7 @@ describe('gen-agy mapping', () => {
     assert.match(agyPolisher, /^model:\s*inherit$/m);
 
     // Guard: if claude-agents/ exists without matching .claude-plugin/plugin.json "agents" array, generate() fails closed
-    const tmp = mkdtempSync(join(tmpdir(), 'gen-agy-agents-'));
+    const tmp = tempDir('gen-agy-agents-');
     try {
       mkdirSync(join(tmp, '.claude-plugin'), { recursive: true });
       writeFileSync(join(tmp, '.claude-plugin', 'marketplace.json'), JSON.stringify({

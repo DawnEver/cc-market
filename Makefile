@@ -7,8 +7,6 @@
 
 .PHONY: all clean fmt install install-dev lint test test-parallel verify
 
-NODE_TESTS := fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs evolve/tests/*.test.mjs cc-latex/tests/*.test.mjs shared/tests/*.test.mjs tests/*.test.mjs
-
 all: verify
 
 clean:
@@ -28,10 +26,10 @@ install-dev: install
 	uv run python -m dev_lab.dev.hook_install --install
 
 test:
-	node --test $(NODE_TESTS)
+	node scripts/run-tests.mjs
 
 test-parallel:
-	node --test --test-concurrency=4 $(NODE_TESTS)
+	node scripts/run-tests.mjs
 
 verify:
-	node --test --test-concurrency=4 $(NODE_TESTS)
+	node scripts/run-tests.mjs

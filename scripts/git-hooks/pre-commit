@@ -51,10 +51,10 @@ if has shared || has tests; then
 fi
 
 if [ "$fanout" -eq 1 ]; then
-  node_tests=(rem sharp-review evolve fabric cc-latex)
+  node_tests=(sharp-review evolve fabric cc-latex)
   run_bundle=1
 else
-  for p in rem sharp-review evolve fabric cc-latex; do
+  for p in sharp-review evolve fabric cc-latex; do
     has "$p" && node_tests+=("$p") && run_bundle=1
   done
   has watch && run_bundle=1
@@ -87,7 +87,7 @@ failed=0
 for glob in "${selected[@]}"; do
   if ! env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX \
           -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
-          node --test $glob > /dev/null 2>&1; then
+          node scripts/run-tests.mjs $glob > /dev/null 2>&1; then
     echo "FAIL: $glob"
     failed=1
   fi

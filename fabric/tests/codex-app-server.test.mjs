@@ -5,15 +5,15 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 import { resolveClientInfo, withSharedClient } from '../engine/codex/app-server.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 describe('resolveClientInfo', () => {
   it('finds the nearest .claude-plugin/plugin.json walking up', () => {
-    const root = mkdtempSync(join(tmpdir(), 'codex-ci-'));
+    const root = tempDir('codex-ci-');
     try {
       mkdirSync(join(root, '.claude-plugin'));
       writeFileSync(
@@ -30,7 +30,7 @@ describe('resolveClientInfo', () => {
   });
 
   it('falls back to cc-market/0.0.0 when no plugin.json is found', () => {
-    const root = mkdtempSync(join(tmpdir(), 'codex-ci-none-'));
+    const root = tempDir('codex-ci-none-');
     try {
       const info = resolveClientInfo(join(root, 'entry.mjs'));
       assert.deepEqual(info, { name: 'cc-market', version: '0.0.0' });
@@ -40,7 +40,7 @@ describe('resolveClientInfo', () => {
   });
 
   it('skips a malformed plugin.json and keeps walking up to a valid ancestor', () => {
-    const root = mkdtempSync(join(tmpdir(), 'codex-ci-bad-'));
+    const root = tempDir('codex-ci-bad-');
     try {
       // Valid manifest at the top.
       mkdirSync(join(root, '.claude-plugin'));

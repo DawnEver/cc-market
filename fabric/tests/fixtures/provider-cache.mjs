@@ -2,9 +2,9 @@
 // contract setup copies into ~/.claude/provider-cache.json), next to a registry file, in a
 // fresh temp dir. Returns the registry path: providers.mjs finds the cache beside it.
 import crypto from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tempDir } from '../../../tests/temp-dir.mjs';
 
 export function row({ endpoints = {}, models = {}, host = "api.example.test", protocol = "openai" } = {}) {
   return {
@@ -45,7 +45,7 @@ Version: ${installed}
 }
 
 export function providerCacheFixture({ providers = FIXTURE_PROVIDERS, registry = {}, generatedAt = new Date().toISOString(), python, installed = FIXTURE_AI_LAB_VERSION, extra = {} } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "fabric-cache-"));
+  const dir = tempDir("fabric-cache-");
   if (python === undefined) python = fakeVenv(dir, installed);
   const packaged = join(dir, "providers.toml");
   writeFileSync(packaged, "# fixture catalogue\n");

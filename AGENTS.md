@@ -42,17 +42,10 @@ maps each changed top-level dir to its tests. Because `shared/`
 is bundled into every plugin, staging anything under `shared/` (or the root `tests/`) fans out
 to **all** plugins. A commit touching no test-bearing dir (e.g. only root docs) skips tests.
 
-To run every JS suite manually:
-
-```shell
-node --test cc-market/fabric/tests/*.test.mjs cc-market/rem/tests/*.test.mjs \
-  cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs \
-  cc-market/cc-latex/tests/*.test.mjs \
-  cc-market/shared/tests/*.test.mjs cc-market/tests/*.test.mjs
-```
-
-That list is the complete JS suite — it previously omitted `cc-latex/`, `shared/`, and two of
-the three files under `tests/`, so "run every JS suite manually" did not.
+To run every JS suite manually: `node scripts/run-tests.mjs` (or `make test`). Its `SUITE` is the one
+list; it runs with a private temp root and fails (`TEMP-LEAK`) if a test leaves anything there. A test
+makes temp dirs only through `tempDir()` in `tests/temp-dir.mjs` (`tests/temp-dir.test.mjs` refuses any
+other). `rem/` is archived (R16): not installed, not tested, so its tests are not in the suite.
 
 See each plugin's AGENTS.md § Testing for per-suite coverage.
 

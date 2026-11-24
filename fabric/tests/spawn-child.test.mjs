@@ -5,12 +5,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import http from 'node:http';
-import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { buildChildEnv, spawnChild, resolveClaudeExe, clearClaudeExeCache } from '../engine/spawn-child.mjs';
 import { providerCacheFixture, FIXTURE_PROVIDERS, row, fixtureKeySource } from './fixtures/provider-cache.mjs';
 import { _setKeySource } from '../engine/providers.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 _setKeySource(fixtureKeySource());
 
@@ -60,7 +60,7 @@ function makeFakeSpawn(sink) {
 
 test('spawnChild wires env + args, isolates config dir (normal mode)', async () => {
   const sink = {};
-  const runDir = mkdtempSync(join(tmpdir(), 'sc-run-'));
+  const runDir = tempDir('sc-run-');
   const res = await spawnChild({
     provider: 'acme', prompt: 'hello', model: 'claude-haiku-4-5', runDir,
     configPath: fixture(), _spawn: makeFakeSpawn(sink), _bin: 'fake-claude',
@@ -294,7 +294,7 @@ test('spawnChild observe mode defaults passthroughAuth on for native claude, for
     proxyCalls.push(opts);
     return { url: 'http://127.0.0.1:9', jsonlPath: null, close: async () => {} };
   };
-  const runDir = mkdtempSync(join(tmpdir(), 'sc-pta-'));
+  const runDir = tempDir('sc-pta-');
   await spawnChild({
     provider: 'claude', prompt: 'hi', runDir, observe: true,
     configPath: fixture(), _spawn: makeFakeSpawn({}), _bin: 'fake-claude',
@@ -334,7 +334,7 @@ test('spawnChild observe mode starts proxy, points child at it, captures jsonl',
   const port = upstream.address().port;
   const cfg = fixture({ providers: { acme: row({ host: 'api.acme.test', endpoints: { anthropic: `http://127.0.0.1:${port}` }, models: { base: 'acme-flash' } }) }, registry: { providers: { acme: { claudeApiKeyEnv: 'ANTHROPIC_AUTH_TOKEN' } } } });
   const sink = {};
-  const runDir = mkdtempSync(join(tmpdir(), 'sc-obs-'));
+  const runDir = tempDir('sc-obs-');
   try {
     const res = await spawnChild({
       provider: 'acme', prompt: 'hi', runDir, observe: true,
@@ -462,7 +462,7 @@ test('spawnChild MULTILINE prompt goes via stdin even when short (argv -p trunca
 
 test('resolveClaudeExe finds a native install: claude.exe itself on PATH, no npm prefix', (t) => {
   if (process.platform !== 'win32') return t.skip('win32 only');
-  const dir = mkdtempSync(join(tmpdir(), 'native-claude-'));
+  const dir = tempDir('native-claude-');
   writeFileSync(join(dir, 'claude.exe'), '');
   const saved = { cli: process.env.CLAUDE_CLI_PATH, path: process.env.PATH };
   delete process.env.CLAUDE_CLI_PATH;

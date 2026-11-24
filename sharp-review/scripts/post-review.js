@@ -6,7 +6,7 @@
 // memory; a finding worth keeping is moved into memory by a person) or `stdout` (the findings JSON, ai-lab's findings-output.schema.json). Default: the plan's sink.
 //
 //   node post-review.js --plan <plan.json> --raw <raw.json> [--sink report|stdout] [--principles <principles.json>]
-//     --principles overrides the project's principles (lib/ai-lab.mjs projectPrinciples)
+//     --principles overrides the project's principles (lib/ai-lab.mjs projectPrinciplesText)
 //   node post-review.js --rescan --date <YYYY-MM-DD> --file <review.md>   re-derive frontmatter after an edit
 //
 // raw.json: { run_id, results: [{ name, findings? | text? | error_kind?, error? }] } — `name` is the

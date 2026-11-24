@@ -14,14 +14,14 @@
 // Lockfiles live in a DEVICE-LOCAL dir (os.tmpdir()/rem-locks/<hash>.lock), not
 // next to the guarded file: guarded files sit in OneDrive-synced dirs, and a
 // synced lockfile would falsely muteX across HOSTS. Data files stay synced;
-// only the .lock moves.
+// only the .lock moves. The last release removes the then-empty dir, so nothing outlives its locks.
 //
 // Lease renewal: while held, the lockfile mtime is refreshed every staleMs/3
 // (unref'd interval, for async holders) AND synchronously on every subsequent
 // withLock acquisition in the same process (for sync holders like prune whose
 // event loop is blocked — the interval cannot fire mid-section).
 
-import { openSync, closeSync, writeSync, readFileSync, unlinkSync, statSync, mkdirSync, utimesSync } from 'fs';
+import { openSync, closeSync, writeSync, readFileSync, unlinkSync, statSync, mkdirSync, rmdirSync, utimesSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { tmpdir } from 'os';
 import { createHash, randomBytes } from 'crypto';
@@ -87,6 +87,13 @@ export function withLock(lockPath, fn, { staleMs = 60000, retryMs = 50, timeoutM
       fd = openSync(file, 'wx');
       writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now(), token }));
     } catch (err) {
+      // A concurrent last release removed the lock dir between our mkdir and open (ENOENT), or on Windows is
+      // still removing it (EPERM/EACCES): back off, make it again, retry.
+      if (['ENOENT', 'EPERM', 'EACCES'].includes(err.code) && !giveUp()) {
+        if (CAN_WAIT) sleepMs(retryMs);
+        try { mkdirSync(dirname(file), { recursive: true }); } catch { /* still being removed -- retry */ }
+        continue;
+      }
       if (err.code !== 'EEXIST') throw err;
       let mtime;
       try {
@@ -134,5 +141,7 @@ export function withLock(lockPath, fn, { staleMs = 60000, retryMs = 50, timeoutM
       const cur = JSON.parse(readFileSync(file, 'utf8'));
       if (cur.token === token) unlinkSync(file);
     } catch { /* stolen or already gone */ }
+    // The last release reclaims the lock dir; rmdir refuses while any other lock is still in it.
+    try { rmdirSync(dirname(file)); } catch { /* not empty, or already gone */ }
   }
 }

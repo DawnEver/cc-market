@@ -12,6 +12,7 @@ import path from "node:path";
 import { classifyTurnError } from "../engine/codex/turn.mjs";
 import { runCodexTask } from "../engine/codex/task.mjs";
 import { runCodexReview } from "../scripts/codex/review.mjs";
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 // A pooled-client stand-in: replies to requests and, on the turn-starting request,
 // plays a scripted list of notifications.
@@ -160,7 +161,7 @@ describe("codex write permission (live)", { skip: process.env.FABRIC_LIVE_CODEX 
   const ask = (file) => `Create a file named ${path.basename(file)} in the current directory containing the word planted. Use a shell command. Do nothing else.`;
   for (const write of [false, true]) {
     it(`write:${write} ${write ? "creates" : "leaves absent"} the requested file`, { timeout: 300000 }, async () => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-ro-"));
+      const dir = tempDir("fabric-ro-");
       const file = path.join(dir, "planted.txt");
       try {
         await runCodexTask(ask(file), { cwd: dir, write, timeoutMs: 280000 }).catch(() => {});

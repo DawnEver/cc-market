@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tempDir } from "../../tests/temp-dir.mjs";
 import {
   TOOLS, handleToolCall, handleCall, handleFanOut, encodeRpcMessage,
   API_DISPATCH, CLAUDE_DISPATCH, CODEX_DISPATCH, AGY_DISPATCH, FAN_OUT_CONCURRENCY_DEFAULT,
@@ -297,7 +298,7 @@ describe("call options reach every path", () => {
   test("planted: no Python -> an API task is unsupported by name; a host agent still runs", async () => {
     const seen = {};
     const prev = process.env.CC_MARKET_CONFIG_PATH;
-    process.env.CC_MARKET_CONFIG_PATH = providerCacheFixture({ registry: ACME_FIXTURE, python: path.join(os.tmpdir(), "no-such-venv", "Scripts", "python.exe") }).configPath;
+    process.env.CC_MARKET_CONFIG_PATH = providerCacheFixture({ registry: ACME_FIXTURE, python: path.join(tempDir("fabric-novenv-"), "no-such-venv", "Scripts", "python.exe") }).configPath;
     try {
       await assert.rejects(handleCall({ provider: "acme", prompt: "p", resultMode: "full" }),
         (e) => e.kind === "unsupported" && e.message.includes("ai-lab (not installed) beside") && e.message.includes("no-such-venv") && e.message.includes("node scripts/setup/setup.js"));

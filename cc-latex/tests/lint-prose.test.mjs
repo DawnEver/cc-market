@@ -29,12 +29,12 @@ test('flags bare and long sentences', () => {
 });
 
 // Rule 40: English variant.
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { spelling, findVariant, findOff } from '../scripts/lint-prose.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const words = (src, v) => spelling(src, v).map(h => `${h.word}>${h.suggest}`);
 
@@ -89,7 +89,7 @@ The title reads ${'``'}Color Fiber Optimization''.
 });
 
 test('findVariant reads the project writing rules; lint reports 40-english', () => {
-  const root = mkdtempSync(join(tmpdir(), 'lint-en-'));
+  const root = tempDir('lint-en-');
   mkdirSync(join(root, '.claude', 'rules'), { recursive: true });
   mkdirSync(join(root, 'Sections'));
   assert.equal(findVariant(join(root, 'Sections')), null);
@@ -102,7 +102,7 @@ test('findVariant reads the project writing rules; lint reports 40-english', () 
 });
 
 test('off ids from the project rules or the caller suppress hits', () => {
-  const root = mkdtempSync(join(tmpdir(), 'lint-off-'));
+  const root = tempDir('lint-off-');
   mkdirSync(join(root, '.claude', 'rules'), { recursive: true });
   assert.deepEqual(findOff(root), []);
   writeFileSync(join(root, '.claude', 'rules', 'writing.md'), '- Tails allowed.\n    lint-prose off: 29-tail, 26-verb\n');
@@ -114,7 +114,7 @@ test('off ids from the project rules or the caller suppress hits', () => {
 });
 
 test('--off and project off line work from the CLI', () => {
-  const root = mkdtempSync(join(tmpdir(), 'lint-cli-'));
+  const root = tempDir('lint-cli-');
   const tex = join(root, 'a.tex');
   writeFileSync(tex, 'The loss rises with the current amplitude, which heats the rotor core.\n');
   const cli = fileURLToPath(new URL('../scripts/lint-prose.mjs', import.meta.url));

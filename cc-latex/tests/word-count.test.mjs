@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +11,7 @@ import {
   FIXTURE, EXPECTED_SECTIONS, EXPECTED_TOTAL,
   CHAPTER_FIXTURE, EXPECTED_CHAPTER_SECTIONS, EXPECTED_CHAPTER_TOTAL,
 } from './fixture.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/word-count.mjs', import.meta.url));
 const STUB = fileURLToPath(new URL('./stub-texcount.mjs', import.meta.url));
@@ -25,7 +25,7 @@ function tmpProject() {
 
 /** Temp dir with nothing in it, cleaned up after the test. */
 function tmpBare() {
-  return mkdtempSync(join(tmpdir(), 'cc-latex-'));
+  return tempDir('cc-latex-');
 }
 
 function run(args, cwd) {
@@ -128,7 +128,7 @@ test('E2E: missing texcount binary exits 1 with an install hint', () => {
 });
 
 test('E2E: no main.tex exits 2', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'cc-latex-'));
+  const dir = tempDir('cc-latex-');
   try {
     const r = run([], dir);
     assert.equal(r.status, 2);

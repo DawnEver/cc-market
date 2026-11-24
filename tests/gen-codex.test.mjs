@@ -1,7 +1,7 @@
 // Tests for scripts/gen-codex.mjs — Claude → Codex artifact transpilation.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import {
@@ -21,7 +21,7 @@ const REQUIRED_INTERFACE = ['displayName', 'shortDescription', 'longDescription'
 // Track every temp dir so the suite cleans up after itself instead of leaking into tmpdir.
 const tmpDirs = [];
 function mkTmp(prefix) {
-  const d = mkdtempSync(join(tmpdir(), prefix));
+  const d = tempDir(prefix);
   tmpDirs.push(d);
   return d;
 }
@@ -275,6 +275,7 @@ test('generated manifest satisfies Codex required fields', () => {
 import { readdirSync as _readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { tempDir } from './temp-dir.mjs';
 const _repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 for (const _p of _readdirSync(_repoRoot).filter((n) =>
   existsSync(join(_repoRoot, n, 'hooks', 'hooks.json'))
