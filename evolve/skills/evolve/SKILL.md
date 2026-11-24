@@ -9,9 +9,10 @@ Drive a codebase toward a clean state over repeated rounds. This loop is **Claud
 (run from the main loop, not a background `Workflow`) because human gates (`AskUserQuestion`)
 and interactive `git commit` cannot happen inside a background workflow.
 
-Runs in any git project, but **hard-depends on two cc-market plugins** — `sharp-review`
-(round critique engine) and `rem` (state + memory in `.claude/.rem-state.json`). Setup verifies they are installed and aborts if any is missing;
-there are no built-in fallbacks. See `README.md` for the overview.
+Runs in any git project, but **hard-depends on the cc-market plugin `sharp-review`** (round
+critique engine). Its loop state lives in the checkout's git dir (`<git dir>/evolve/state.json`,
+derived by `git rev-parse --git-path`); no other plugin shares it. Setup aborts if
+`sharp-review` is missing; there is no built-in fallback. See `README.md` for the overview.
 
 ## Usage
 
@@ -34,22 +35,17 @@ there are no built-in fallbacks. See `README.md` for the overview.
    repo). Run `git status --short`: if the working tree has **unrelated** uncommitted changes,
    ask the user to commit/stash first, or to confirm proceeding — evolve commits with explicit
    per-file `git add` scope, but a dirty tree still risks confusion. Note the current branch.
-   **Verify the required plugins are installed** — check that `sharp-review` and `rem` are
-   registered (e.g. in `~/.claude/plugins/installed_plugins.json`). If either is missing, abort with a clear message naming what to install — evolve has
-   no fallback for them.
+   **Verify the required plugin is installed** — check that `sharp-review` is registered
+   (e.g. in `~/.claude/plugins/installed_plugins.json`). If it is missing, abort with a clear
+   message naming what to install — evolve has no fallback for it.
 2. Parse flags (see Usage). On Windows under OneDrive, run
    `git config windows.appendAtomically false` once so `git commit` doesn't fail with
    "cannot update the ref".
-3. **Interruption guard.** Run
-   `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" set-task-guard` (or import `setTaskGuard` from
-   `$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs`). This sets a 30-minute window so the rem Stop hook
-   does not interrupt the loop mid-round. (rem is a required dependency, so the state file exists or
-   is created by the helper.)
-4. **Initialize loop state via the helper** — run
+3. **Initialize loop state via the helper** — run
    `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" init [flags]` (or import `initState` from
    `$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs`) to create or load the state. Do **not**
-   hand-write the JSON. The helper centralizes state load/save (atomic,
-   rem-or-memory, Windows-retry), finding grouping, prioritization, and termination checks, so
+   hand-write the JSON. The helper centralizes state load/save (atomic into the git dir,
+   in-memory on a failed rename), finding grouping, prioritization, and termination checks, so
    the loop never hand-edits JSON.
 
 ### Autonomous use
@@ -83,7 +79,7 @@ and short summaries.
 
 **Before executing a round, read `reference/round-protocol.md`** (the full ordered protocol +
 failure handling). Stop conditions and safety caps → `reference/termination.md`; the
-`evolveState` JSON schema (debugging only — use `scripts/evolve.mjs`, never hand-edit) →
+loop-state JSON schema (debugging only — use `scripts/evolve.mjs`, never hand-edit) →
 `reference/state-schema.md`.
 
 ## Cleanup (on exit — normal stop or abort)
@@ -107,13 +103,8 @@ failure handling). Stop conditions and safety caps → `reference/termination.md
   With `--commit=group` the user opted into per-group commits — honor that and skip squashing.
   If anything is uncertain (which commits are ours, already-pushed, protected branch), leave the
   per-round commits and say so in the summary.
-- If you set it in Setup, clear the task guard:
-  `node "$env:CLAUDE_PLUGIN_ROOT/scripts/evolve.mjs" clear-task-guard` (or import
-  `clearTaskGuard`). If the loop crashes, the rem Stop hook auto-expires the guard after 30
-  min, so a lingering value is harmless.
 - Write a short round-log memory entry via `writeRoundLog(projectRoot, {...})` — it writes a
-  rem-frontmatter entry under `.claude/memory/YYYY/MM/DD/`, so rem's session indexer picks it
-  up automatically (no need to rebuild the index here).
+  frontmatter entry under `.claude/memory/YYYY/MM/DD/`.
 - Report a one-line summary in chat (rounds, total fixed, won't-fix, deferred items, **and the
   count of findings still OPEN** — point to the repo's issue tracker so deferred/LOW items leave the loop visible,
   never silently dropped; `defer` ≠ drop).

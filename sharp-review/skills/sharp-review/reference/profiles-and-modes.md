@@ -16,7 +16,7 @@ On-demand detail behind SKILL.md. The METHOD itself is ai-lab's data, in the dir
 ## Configuration file (`.claude/sharp-review.json`)
 
 Static, per-project config lives in a **tracked, committed** `.claude/sharp-review.json` so it
-travels with the repo. Do NOT put it in `.claude/.rem-state.json` (gitignored runtime state).
+travels with the repo. It is the only file the plugin reads for config.
 Every key is optional:
 
 ```json

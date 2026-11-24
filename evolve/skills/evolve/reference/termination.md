@@ -21,7 +21,7 @@ Stop ends the loop and runs cleanup.
 
 Auto-loop. Convergence is **severity-based**: a round counts as "empty" when it produces no
 new OPEN findings of severity **HIGH or MEDIUM**. LOW/INFO findings do **not** block
-convergence. Stop after **≥2 consecutive empty rounds**. Tracked via `evolveState.emptyRounds`
+convergence. Stop after **≥2 consecutive empty rounds**. Tracked via the state's `emptyRounds`
 inside `checkTermination`:
 
 - New OPEN HIGH/MEDIUM findings this round → `emptyRounds = 0`, continue.
@@ -37,7 +37,7 @@ confirmed by ≥2 reviewers, so single-reviewer noise never reaches the converge
 
 ## `resolved`
 
-Auto-loop. Stop when **all findings are resolved** — every finding in `evolveState.findings`
+Auto-loop. Stop when **all findings are resolved** — every finding in the state's `findings`
 has `status: fixed` or an accepted `wont-fix` (with reason), **and** the latest critique
 produced no new OPEN findings. Edge case: if round 1's critique finds nothing (codebase
 already clean), `findings` is empty and this condition is true immediately — the loop exits
@@ -45,7 +45,7 @@ after one (no-op) round. That is intended.
 
 ## Safety caps (all modes)
 
-- **Max rounds backstop:** if `evolveState.round` reaches `maxRounds` (default 10), stop the
+- **Max rounds backstop:** if the state's `round` reaches `maxRounds` (default 10), stop the
   auto-loop and surface to the user via `AskUserQuestion` before continuing. This bounds
   runaway when findings churn every round (new ones appear as old ones are fixed), which the
   per-finding stop below cannot catch.
@@ -70,8 +70,8 @@ and remain enforced by `checkTermination`.
 
 ## On stop
 
-Run the SKILL.md cleanup: run `clearTaskGuard` (if the task guard was set), write the round-log memory
-entry via `writeRoundLog` (rem indexes it automatically), and report a one-line summary in chat
+Run the SKILL.md cleanup: write the round-log memory
+entry via `writeRoundLog`, and report a one-line summary in chat
 (rounds run, total fixed, won't-fix, any deferred items, and whether a safety cap triggered).
 
 **Still-open findings must leave the loop visible (not swallowed).** `clean` can converge with

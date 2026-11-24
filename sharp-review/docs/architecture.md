@@ -42,6 +42,5 @@ sharp-review/
 ## Config, and no runtime state
 
 Static review config (`profileWeights`, `customProfiles`, `inlineDiffLimit`, `providers`) lives
-in the tracked `.claude/sharp-review.json`. The plugin keeps no runtime state: the retired Stop
-hook's `reviewGate` slice of `.claude/.rem-state.json` and its trigger keys are removed by
-`migrations/migrate.mjs`.
+in the tracked `.claude/sharp-review.json`. The plugin keeps no runtime state and reads no other plugin's; the retired Stop hook's trigger
+keys are removed from that config by `migrations/migrate.mjs`.

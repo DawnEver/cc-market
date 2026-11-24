@@ -27,15 +27,14 @@ to a clean state:
 
 Extra flags: `--path`, `--min-severity`, `--dry-run`, `--seed`, `--commit=round|group`.
 
-**On Codex:** install with `codex plugin add evolve@cc-market` (also requires `sharp-review`
-+ `rem`). evolve runs from the main loop on both hosts; only the per-group fix fan-out differs
+**On Codex:** install with `codex plugin add evolve@cc-market` (also requires `sharp-review`). evolve runs from the main loop on both hosts; only the per-group fix fan-out differs
 (`Agent` on Claude vs. `spawn_agent` on Codex). The critique stays host-agnostic — evolve just
 runs `sharp-review` and reads its backlog; sharp-review handles fan-out internally. Codex
 invokes the skill directly rather than via a slash-command.
 
 Claude-driven (not a background workflow) so human gates and commits work. Runs in any git
-repo but **hard-depends on cc-market's `sharp-review` and `rem`** — Setup verifies
-they are installed and aborts if any is missing; there are no built-in fallbacks.
+repo but **hard-depends on cc-market's `sharp-review`** — Setup verifies
+it is installed and aborts if it is missing; there are no built-in fallbacks.
 
 A real `scripts/evolve.mjs` helper now backs state, finding-grouping, and termination — no
 hand-edited JSON. Convergence is **severity-based** (`checkTermination`): only HIGH/MEDIUM
