@@ -91,29 +91,10 @@
       "category": "productivity"
     },
     {
-      "name": "cc-latex",
-      "source": "./cc-latex",
-      "displayName": "cc-latex",
-      "description": "LaTeX writing assistant \u00e2\u20ac\u201d compile workflow, academic writing style, and word counting (texcount) for LaTeX documents. Per-section word counts with references excluded, targets and JSON output.",
-      "author": {
-        "name": "Mingyang Bao"
-      },
-      "repository": "https://github.com/DawnEver/cc-market",
-      "license": "MIT",
-      "keywords": [
-        "latex",
-        "writing",
-        "academic",
-        "word-count",
-        "texcount"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "cc-academia",
       "source": "./cc-academia",
       "displayName": "CC Academia",
-      "description": "Academic research toolchain -- systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
+      "description": "Academic research toolchain -- reading the literature, writing manuscripts (LaTeX checks over a layered knowledge base), reviewing your own drafts and others' submissions, and refereeing (reviewer discovery), backed by one deterministic Python library and an accumulating local scholarly database.",
       "author": {
         "name": "Mingyang Bao"
       },
@@ -125,7 +106,11 @@
         "reviewer-discovery",
         "ieee",
         "openalex",
-        "research"
+        "research",
+        "latex",
+        "writing",
+        "academic",
+        "word-count"
       ],
       "category": "productivity"
     }

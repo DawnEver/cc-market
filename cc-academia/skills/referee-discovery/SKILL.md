@@ -1,0 +1,171 @@
+---
+name: referee-discovery
+description: Find candidate peer reviewers for a journal submission — profile the manuscript, search the literature, harvest authors of the closest work, screen conflicts of interest deterministically, and produce an evidenced shortlist with institutions, backgrounds and public contact addresses.
+allowed-tools: "Read,Write,Bash,Glob,Grep,Agent,Skill,WebFetch,WebSearch"
+---
+
+# /cc-academia:referee-discovery — candidate reviewers, with evidence
+
+You are the orchestrator for an associate editor. Given a submission, produce a
+shortlist they can act on: who, where, why them, any conflict, and how to reach
+them.
+
+## The one rule this workflow is built around
+
+**Reviewers are discovered as authors of closely related work — never by asking a
+model for names.**
+
+```
+submission -> queries -> related papers -> authorships -> candidates
+```
+
+A model asked to "suggest ten experts" returns plausible names with nothing
+behind them. Even searching by name is unreliable: a live probe for a common
+name returned a researcher from an unrelated field. Every candidate in the
+output arrives attached to the papers that qualify them.
+
+## Division of labour
+
+| Decided by code | Decided by a model | Decided by you |
+|-----------------|--------------------|----------------|
+| Which papers are relevant | Phrasing a research summary | Who actually gets invited |
+| Who authored them, and how identity was resolved | | Whether a REVIEW-flagged conflict is acceptable |
+| Whether a conflict exists | | |
+| The ranking | | |
+
+A model never decides a conflict of interest. That verdict has to be defensible
+with a rule and a citation, not an opinion.
+
+## Pipeline
+
+| Step | File | Command | Output |
+|------|------|---------|--------|
+| 01 | `01-intake.md` | `academia-referee init` / `profile` | sanitized record + search profile |
+| 02 | `02-search.md` | `academia-referee search` | related papers, de-duplicated, stored |
+| 03 | `03-candidates.md` | `academia-referee candidates` | authors of the closest work |
+| 04 | `04-enrich.md` | `academia-referee enrich` | affiliation, career, public email, public review record |
+| (optional) | `04-enrich.md` § Editorial page | `academia-referee import-scholarone` | Reviewer Locator candidates and numbers, this manuscript's invitation statuses |
+| 05 | `05-coi.md` | `academia-referee coi` | three-tier verdicts with evidence |
+| 06 | `06-report.md` | `academia-referee report` | `<slug>.xlsx` — the deliverable — plus the working files behind it |
+
+Read each step's file when you reach it. This file is the map.
+
+Running the CLI: `_shared/running-the-cli.md`. Host differences:
+`_shared/host-adapters.md`.
+
+## What travels between machines
+
+The store is a local cache and is never synced. What does travel is the handful
+of facts nobody can re-derive — invitations and their outcomes, verified ranks,
+addresses, corrected affiliations, doctorate years — as text in a synced folder,
+one directory per device:
+
+```bash
+uv run --project "<plugin-root>" academia-referee facts --json
+```
+
+Every command already does this automatically, merging in before it runs and
+publishing after. `--no-facts-sync` opts one command out; `ACADEMIA_FACTS_SYNC=0`
+opts out entirely. `academia doctor` prints the folder and whether it is synced.
+
+The folder holds real people's addresses and employment. It is not the place for
+manuscript content — nothing about a submission is written there — but it is
+personal data, so treat the location accordingly.
+
+## Confidentiality
+
+The submission is unpublished and confidential.
+
+- Only `academia-referee init` reads the raw PDF. Everything downstream — including
+  everything you see — reads `1-manuscript/sanitized.json`: title, abstract,
+  keywords, author metadata. No body text.
+- **Do not open `0-raw.pdf` yourself.** The CLI enforces this, and on Claude
+  Code a hook blocks it, but the reason it matters is IEEE policy on unpublished
+  manuscripts, not the mechanism.
+- What leaves the machine is derived search keywords, never the abstract text.
+- The database stores a hash of the title, never the title.
+
+## Resume
+
+Re-invoking with a slug picks up where the run stopped:
+
+```bash
+uv run --project "<plugin-root>" academia-referee status --slug <slug>
+```
+
+| Last completed | Next |
+|----------------|------|
+| (none) | 01 intake |
+| `init` | `profile` |
+| `profile` | 02 search |
+| `search` | 03 candidates |
+| `candidates` | 04 enrich |
+| `enrich` | 05 coi |
+| `coi` | 06 report |
+| `report` | offer to widen the search, adjust the journal policy, or record invitations with `academia-referee invite` |
+
+## Journal policy
+
+Every run is bound to a journal config (`knowledge/venues/<slug>/policy/coi.toml`), which
+sets the co-authorship window, the seniority and eligibility floors and whether
+geographic separation is a preference or a hard filter. An unknown journal slug
+stops the run rather than quietly applying defaults — reviewing a TIE submission
+under the wrong window is exactly the mistake worth failing on.
+
+Every constraint an editor might want to move is a key in `knowledge/common/policy/coi.toml` and
+a per-journal override, never a number in the code: the activity window, the
+doctoral-year floor, the seniority floor and preferred ceiling, the
+related-journal floor, the restricted countries, the identity-confidence
+threshold, and how strictly each is applied (`off`, `prefer`, `require`).
+`06-report.md` lists every table, and the handful of things that are
+deliberately fixed.
+
+Ask the user for the journal at intake if the manuscript does not say.
+
+## What is handed over
+
+One file: `ongoing/<slug>/<slug>.xlsx`, beside the manuscript it is about.
+Everything in `5-shortlist/` is working material — the audit CSVs, the reading
+list, the dossiers — kept so a verdict can be disputed, not sent to anybody.
+
+Hand over the workbook itself, and walk the user through the top handful as
+below. Do not paste a shortlist table into the conversation as a substitute:
+the workbook states the rule behind every column and a pasted table does not.
+
+## What the shortlist means
+
+- **Clear\*** is *no detected conflict*. Never report it as "no conflict": a
+  bibliographic database cannot prove the absence of a personal, financial or
+  competitive relationship. Say so if the user reads it as a guarantee.
+- **Blocked candidates stay on the list.** An editor needs to see that an obvious
+  name was considered and why it was set aside.
+- **A score is never the whole answer.** Every row carries its evidence, and each
+  dossier breaks the score into components.
+- **Email `not found` means not found.** No address is ever generated from a
+  name-and-domain pattern; a guess either bounces or reaches the wrong person.
+
+## After the shortlist
+
+Once invitations go out, record them — one command per candidate:
+
+```bash
+uv run --project "<plugin-root>" academia-referee invite --slug <slug>   --person <person_id> --invited-at 2026-03-01 --responded yes --accepted no   --note "thorough, on time"
+```
+
+When the editor can save the manuscript's ScholarOne *Assign Reviewers* page,
+`academia-referee import-scholarone` records every invitation on it at once, with its
+status — see `04-enrich.md`.
+
+Leave `--responded` unset while the outcome is still open. Run the command again
+for the same person when the answer arrives: it amends that invitation rather
+than adding a second one.
+
+**This is bookkeeping, not an input.** No rule and no score reads whether an
+invitation was answered — the two rules that did were removed, because they
+asked one question on two windows and abstained for everybody on any store
+without a long history. What the record buys you is knowing who you have
+already asked, on this submission and every earlier one; it is one of the few
+facts nobody can re-derive, so it travels between machines. It is reported
+beside a candidate in `shortlist.csv` and in their dossier.
+
+Offer this; do not do it unasked.

@@ -258,7 +258,7 @@ class Person:
         professor as a PhD student. Never inferred from output: no publication
         count promotes anybody.
         """
-        from academia.reviewer.seniority import best_rank, rank_from_title
+        from academia.core.seniority import best_rank, rank_from_title
 
         # A supplied rank was read off a page by someone and carries its source.
         # It is authoritative, so it wins outright rather than competing on
@@ -278,7 +278,7 @@ class Person:
         Reading the company title would report an associate professor as an
         engineer, which is the opposite of what an editor needs.
         """
-        from academia.reviewer.seniority import clean_title
+        from academia.core.seniority import clean_title
 
         titled = [a for a in self.affiliations if clean_title(a.role)]
         return sorted(titled, key=lambda a: (a.employer_rank, not a.is_current))
@@ -290,7 +290,7 @@ class Person:
         Reporting "Research Assistant" as unknown throws away a real answer.
         Unknown should mean nobody stated anything.
         """
-        from academia.reviewer.seniority import clean_title
+        from academia.core.seniority import clean_title
 
         for affiliation in self._titled_affiliations:
             if title := clean_title(affiliation.role):

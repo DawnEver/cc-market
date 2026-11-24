@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 
 from academia.core.models import Affiliation, Author, Paper, Person
-from academia.reviewer import discover
-from academia.reviewer.profile import Profile
+from academia.referee import discover
+from academia.referee.profile import Profile
 from academia.store import db
 from academia.store import repository as repo
 
@@ -117,9 +117,9 @@ def test_an_ambiguous_or_uncorroborated_name_fetches_nothing(conn):
 
 
 def test_without_relevant_works_the_journal_rule_asks_for_a_check(conn):
-    from academia.reviewer import eligibility
-    from academia.reviewer.policy import load_policy
-    from academia.reviewer.record import CandidateRecord
+    from academia.referee import eligibility
+    from academia.referee.policy import load_policy
+    from academia.referee.record import CandidateRecord
 
     policy = load_policy("tec")
     person = _person(conn, "No Record")

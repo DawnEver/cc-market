@@ -1,14 +1,22 @@
 """CLI entry points.
 
-Three console scripts share one dispatcher:
+Five console scripts share one dispatcher:
 
 * ``academia``   — cross-cutting maintenance (doctor, db, repair, release checks)
-* ``lit-review`` — the systematic literature review pipeline
-* ``rev-disc``   — reviewer discovery
+* ``academia-read`` — the systematic literature review pipeline
+* ``academia-review``  — manuscript review ingest and status
+* ``academia-write``   — manuscript writing checks over the knowledge base
+* ``academia-referee``   — reviewer discovery
 """
 
 from __future__ import annotations
 
-from academia.cli.dispatch import lit_review_main, main, ms_review_main, rev_disc_main
+from academia.cli.dispatch import (
+    main,
+    read_main,
+    referee_main,
+    review_main,
+    write_main,
+)
 
-__all__ = ["lit_review_main", "main", "ms_review_main", "rev_disc_main"]
+__all__ = ["main", "read_main", "referee_main", "review_main", "write_main"]

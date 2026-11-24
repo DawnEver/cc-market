@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from academia.reviewer import scholarone
+from academia.referee import scholarone
 from conftest import FIXTURE_DIR
 
 

@@ -1,26 +1,29 @@
 {
   "name": "cc-academia",
-  "version": "0.5.1",
-  "description": "Academic research toolchain — systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
+  "version": "2.0.0",
+  "description": "Academic research toolchain — reading the literature, writing manuscripts (LaTeX checks over a layered knowledge base), reviewing your own drafts and others' submissions, and refereeing (reviewer discovery), backed by one deterministic Python library and an accumulating local scholarly database.",
   "author": {
     "name": "Mingyang Bao"
   },
   "keywords": [
     "literature-review",
     "peer-review",
-    "reviewer-discovery",
+    "referee-discovery",
     "ieee",
     "openalex",
     "orcid",
     "bibliography",
-    "research"
+    "research",
+    "latex",
+    "writing",
+    "word-count"
   ],
   "mcpServers": "./.codex-plugin/mcp.json",
   "skills": "./skills/",
   "interface": {
     "displayName": "CC Academia",
-    "shortDescription": "Academic research toolchain — systematic literature review, manuscript peer",
-    "longDescription": "Academic research toolchain -- systematic literature review, manuscript peer review, and IEEE reviewer discovery, backed by a single deterministic Python library and an accumulating local scholarly database.",
+    "shortDescription": "Academic research toolchain — reading the literature, writing manuscripts",
+    "longDescription": "Academic research toolchain -- reading the literature, writing manuscripts (LaTeX checks over a layered knowledge base), reviewing your own drafts and others' submissions, and refereeing (reviewer discovery), backed by one deterministic Python library and an accumulating local scholarly database.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

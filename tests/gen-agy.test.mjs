@@ -58,8 +58,8 @@ describe('gen-agy mapping', () => {
     assert.throws(() => transpileAgent('---\nname: a\ndescription: d\nmodel: bogus\n---\nbody\n', 'test/a.md'), /no agy tier mapping/);
 
     // Verify cc-academia keeps model: sonnet in claude-agents/ while generated agents/ uses model: inherit
-    const claudePolisher = readFileSync(join(ROOT, 'cc-academia', 'claude-agents', 'manuscript-polisher-english.md'), 'utf8');
-    const agyPolisher = readFileSync(join(ROOT, 'cc-academia', 'agents', 'manuscript-polisher-english.md'), 'utf8');
+    const claudePolisher = readFileSync(join(ROOT, 'cc-academia', 'claude-agents', 'polisher.md'), 'utf8');
+    const agyPolisher = readFileSync(join(ROOT, 'cc-academia', 'agents', 'polisher.md'), 'utf8');
     assert.match(claudePolisher, /^model:\s*sonnet$/m);
     assert.match(agyPolisher, /^model:\s*inherit$/m);
 

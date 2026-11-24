@@ -1,0 +1,2 @@
+id	content	source	kind	scope	check	statement	why	good	bad	provenance
+reference.specialty-concept-cited	reference	common	principle	all	reviewer	Each specialty concept is named with its classic reference at first use.	The reference carries the textbook material.			writing-style rule 19; user ruling 2026-11-09

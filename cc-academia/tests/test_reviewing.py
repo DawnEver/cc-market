@@ -11,9 +11,9 @@ from datetime import date
 import pytest
 
 from academia.core.models import Affiliation, Author
-from academia.reviewer import reviewing
-from academia.reviewer.policy import load_policy
-from academia.reviewer.rank import Candidate, Evidence
+from academia.referee import reviewing
+from academia.referee.policy import load_policy
+from academia.referee.rank import Candidate, Evidence
 from academia.store import db
 from academia.store import repository as repo
 

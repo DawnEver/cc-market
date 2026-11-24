@@ -12,8 +12,8 @@ Screen a batch of paper candidates against the research brief's inclusion and ex
 
 ## Output Format (JSONL)
 
-One JSON object per line, matching the canonical `lit-review import-screening`
-contract implemented in `src/academia/litreview/screen.py` (validator:
+One JSON object per line, matching the canonical `academia-read import-screening`
+contract implemented in `src/academia/read/screen.py` (validator:
 `_validate`; the importer rejects a batch that misses or invents a
 `candidate_id`, so a partial read is never silently accepted):
 

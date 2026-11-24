@@ -13,12 +13,12 @@ import io
 import pytest
 
 from academia.core.models import Affiliation, Education, Person
-from academia.reviewer import eligibility, report
-from academia.reviewer import rank as rank_module
-from academia.reviewer.enrich import EmailFinding
-from academia.reviewer.policy import Policy, load_policy
-from academia.reviewer.rank import Candidate, Evidence
-from academia.reviewer.record import CandidateRecord, RelevantRecord
+from academia.referee import eligibility, report
+from academia.referee import rank as rank_module
+from academia.referee.enrich import EmailFinding
+from academia.referee.policy import Policy, load_policy
+from academia.referee.rank import Candidate, Evidence
+from academia.referee.record import CandidateRecord, RelevantRecord
 from conftest import neutral
 
 
@@ -267,7 +267,7 @@ def test_seniority_reports_the_figure_and_what_it_counted_from():
 
 
 def test_the_conflict_verdict_and_its_severity_are_stated():
-    from academia.reviewer import coi
+    from academia.referee import coi
 
     cand = candidate()
     cand.eligibility = eligibility.Assessment()

@@ -36,7 +36,8 @@ def collect() -> dict:
         "version": __version__,
         "python": sys.version.split()[0],
         "plugin_root": str(paths.plugin_root()),
-        "config_dir_default": str(paths.default_config_dir()),
+        "policy": str(paths.policy_file()),
+        "knowledge": str(paths.knowledge_dir()),
         "config_dir_override": os.environ.get(paths.ENV_CONFIG_DIR) or None,
         "lens_dir": str(paths.lens_dir()),
         "data_root": str(paths.data_root()),
@@ -64,7 +65,8 @@ def run(args: argparse.Namespace) -> int:
 
     log.info(f"cc-academia {report['version']} (python {report['python']})")
     log.info(f"  plugin root : {report['plugin_root']}")
-    log.info(f"  config      : {report['config_dir_default']}")
+    log.info(f"  knowledge   : {report['knowledge']}")
+    log.info(f"  policy      : {report['policy']}")
     if report["config_dir_override"]:
         log.info(f"  override    : {report['config_dir_override']}")
     log.info(f"  lenses      : {report['lens_dir']}")

@@ -98,7 +98,7 @@ def neutral(policy):
     those tests assert the stance rather than the mechanism they are named for.
     Stating "nothing switched on" here keeps that decision in one place.
     """
-    from academia.reviewer.policy import Policy
+    from academia.referee.policy import Policy
 
     data = policy.data
     activity = data["activity"]
@@ -132,8 +132,8 @@ def assess(conn, person, policy, *, now_year, relevant_papers=None):
     shim: passing a connection and a person straight to ``assess`` is what let
     two rules each fetch their own idea of a career length.
     """
-    from academia.reviewer.eligibility import assess as run_rules
-    from academia.reviewer.record import CandidateRecord
+    from academia.referee.eligibility import assess as run_rules
+    from academia.referee.record import CandidateRecord
 
     return run_rules(
         CandidateRecord.build(conn, person, relevant_papers=relevant_papers, now_year=now_year),

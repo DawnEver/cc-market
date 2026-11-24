@@ -1,7 +1,7 @@
 """cc-academia — academic research toolchain.
 
-Three workflows (literature review, manuscript review, reviewer discovery) over
-one library: a shared scholarly source layer, one PDF ingest implementation, and
+Four workflows (literature review, manuscript writing, manuscript review,
+reviewer discovery) over one library, one knowledge base (``knowledge/``): a shared scholarly source layer, one PDF ingest implementation, and
 an accumulating local SQLite store.
 """
 

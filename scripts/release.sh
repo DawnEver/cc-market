@@ -59,7 +59,7 @@ node scripts/gen-agy.mjs . >/dev/null
 # Bounded: the suites spawn many node/git/python children, and an unbounded run times out
 # on a busy host (a release must not depend on an idle machine).
 node --test --test-concurrency=4 fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs \
-  evolve/tests/*.test.mjs cc-latex/tests/*.test.mjs \
+  evolve/tests/*.test.mjs \
   shared/tests/*.test.mjs tests/*.test.mjs
 if printf '%s\n' "${plugins[@]}" | grep -qx cc-academia; then
   command -v uv >/dev/null 2>&1 || { echo "release: cc-academia requires uv" >&2; false; }

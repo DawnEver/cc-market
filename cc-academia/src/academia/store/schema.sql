@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS person_review_checks (
 );
 
 -- What an editorial system's reviewer finder proposed for one manuscript, as
--- imported from a saved page (`rev-disc import-scholarone`). The numbers are
+-- imported from a saved page (`academia-referee import-scholarone`). The numbers are
 -- Clarivate's and only exist here when somebody imported them.
 CREATE TABLE IF NOT EXISTS locator_suggestions (
     ms_id         TEXT NOT NULL,

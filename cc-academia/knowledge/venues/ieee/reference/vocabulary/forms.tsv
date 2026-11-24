@@ -1,0 +1,7 @@
+term	class	replace	when	why	source	scope
+/\b(Eq|Eqs|eq)\.\s*\(/	forbidden	(		ieee.citation-forms	venue	all
+/\b[Ee]quation\s*\(/	caution	(	not at a sentence start	ieee.citation-forms	venue	all
+/^Figure\s+X\b|\bFigure\s+X\b/	canonical	Fig.		ieee.citation-forms	venue	all
+/\bTab\.\s*X\b/	forbidden	Table		ieee.citation-forms	venue	all
+/\bRef\.\s*X\b/	caution		not at a sentence start	ieee.citation-forms	venue	all
+/\bFig\.\s*X of X\b/	forbidden	[n, Fig. m]		ieee.citation-forms	venue	all

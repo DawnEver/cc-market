@@ -13,12 +13,13 @@ contain spaces.
 ## The invocation
 
 ```bash
-uv run --project "<plugin-root>" lit-review <command> [flags]
-uv run --project "<plugin-root>" rev-disc  <command> [flags]
+uv run --project "<plugin-root>" academia-read <command> [flags]
+uv run --project "<plugin-root>" academia-referee  <command> [flags]
 uv run --project "<plugin-root>" academia  <command> [flags]
+uv run --project "<plugin-root>" academia-write  <command> [flags]   # writing checks, from the LaTeX project root
 ```
 
-Why `--project` rather than a bare `lit-review`: the playbook and the code it
+Why `--project` rather than a bare `academia-read`: the playbook and the code it
 calls are in the same tree and therefore the same version. Nothing has to be
 installed, checked or pinned. This is the reason there is no lock file or
 version check anywhere in this plugin.
@@ -63,7 +64,7 @@ Some commands need dependencies that are not installed by default:
 | `acquire` | HTTP PDF download |
 | `browser` | publisher sites that require a real browser |
 | `pdf` | PDF decomposition and manuscript ingest |
-| `plot` | `lit-review stats --plots` |
+| `plot` | `academia-read stats --plots` |
 | `zotero` | the Zotero bridge |
 | `ai` | deep-read and synthesis through litellm |
 

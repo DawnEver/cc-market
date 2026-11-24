@@ -1,0 +1,12 @@
+# IEEE Transactions on Transportation Electrification.
+#
+# No overrides. This file used to carry a copy of the shared policy's numbers,
+# which made TTE one more place to change a decision made once — and the copy
+# had already drifted: it narrowed the co-authorship window to four years, which
+# made TTE *more* permissive than the default and let a collaborator from five
+# years ago through unflagged. Nothing recorded why. Every IEEE journal now
+# resolves to knowledge/common/editorial/coi.toml, and a deviation belongs here only with its
+# reason beside it.
+journal = "IEEE Transactions on Transportation Electrification"
+# How public review records name this journal (ISSNs as OpenAlex lists them).
+issns = ["2332-7782", "2372-2088", "2577-4212"]

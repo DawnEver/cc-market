@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from academia.core.models import Affiliation, Author, Education, Institution, Paper, Person
-from academia.reviewer import coi
-from academia.reviewer.policy import load_policy
+from academia.referee import coi
+from academia.referee.policy import load_policy
 from academia.store import db
 from academia.store import repository as repo
 
@@ -132,7 +132,9 @@ def test_the_coauthor_window_is_journal_configurable(conn, tmp_path, monkeypatch
     """Configurable in either direction — the overlay decides, not the engine."""
     (tmp_path / "journals").mkdir()
     (tmp_path / "coi.toml").write_text(
-        (Path(__file__).parents[1] / "configs" / "coi.toml").read_text(encoding="utf-8"),
+        (Path(__file__).parents[1] / "knowledge" / "common" / "policy" / "coi.toml").read_text(
+            encoding="utf-8"
+        ),
         encoding="utf-8",
     )
     (tmp_path / "journals" / "wide.toml").write_text(
@@ -508,8 +510,9 @@ def test_no_journal_overlay_quietly_loosens_a_conflict_window():
     default = load_policy()
     deliberately_narrower: dict[str, int] = {}  # journal -> window, with the reason in review
 
-    for path in sorted((Path(__file__).parents[1] / "configs" / "journals").glob("*.toml")):
-        journal = path.stem
+    venues = Path(__file__).parents[1] / "knowledge" / "venues"
+    for path in sorted(venues.glob("*/policy/coi.toml")):
+        journal = path.parent.parent.name
         window = load_policy(journal).coauthor_years
         expected = deliberately_narrower.get(journal, default.coauthor_years)
         assert window >= expected, (

@@ -1,0 +1,2 @@
+id	content	source	kind	scope	check	statement	why	good	bad	provenance
+caption.states-finding	caption	common	principle	data-plot	reviewer	The first sentence of a data-figure caption states the finding; method details follow.	The caption tells the reader what to see.	Fig. 6. Magnet loss peaks near M = 0.6.	Fig. 6. Magnet loss versus M.	P9 (S2; S1 Fig. 1 caption note)

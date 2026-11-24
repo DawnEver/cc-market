@@ -1,0 +1,1031 @@
+"""Render the shortlist an editor actually chooses from.
+
+The design goal is that no line of this report is unattributable. A rank without
+evidence, a COI verdict without a rule, or an email without a source URL is worse
+than useless to an associate editor who may have to justify the invitation.
+
+Three artefacts:
+
+* ``shortlist.md``  — the table, for reading
+* ``shortlist.csv`` — the same rows, for pasting into an editorial system
+* ``dossiers/``     — one file per candidate, with the full audit trail
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import json
+import sqlite3
+import urllib.parse
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from academia.referee import eligibility as eligibility_module
+from academia.referee import reviewing, trajectory
+from academia.referee.coi import CLEAR, CLEAR_WORDING
+from academia.referee.eligibility import invitation_readiness
+from academia.referee.enrich import EmailFinding
+from academia.referee.policy import Policy
+from academia.referee.profile import Profile
+from academia.referee.rank import Candidate
+from academia.store import repository as repo
+
+EXPORT_COLUMNS = (
+    "rank",
+    "reviewer",
+    "person_id",
+    "profile_url",
+    "orcid",
+    "openalex_id",
+    "ieee_author_id",
+    "identity_method",
+    "identity_confidence",
+    "position",
+    "position_source",
+    "current_institution",
+    "current_country",
+    "current_year_from",
+    "current_year_to",
+    "current_source",
+    "current_source_url",
+    "historical_institution_count",
+    "historical_country_count",
+    "education_count",
+    "score",
+    "blocked",
+    "coi_status",
+    "coi_summary",
+    "coi_finding_count",
+    "evidence_count",
+    "best_similarity",
+    "evidence_year_from",
+    "evidence_year_to",
+    "component_topic",
+    "component_method",
+    "component_recent_expertise",
+    "component_publication_evidence",
+    "component_geographic",
+    "component_activity",
+    "email",
+    "email_found",
+    "email_source",
+    "email_confidence",
+    "email_source_url",
+    "email_affiliation_domain",
+    "email_alternate",
+    "email_alternate_source",
+    "email_alternate_source_url",
+    "notes",
+    "data_quality_warning",
+    "invitation_count",
+    "response_count",
+    "acceptance_count",
+    "institutions_json",
+    "education_json",
+    "emails_json",
+    "evidence_json",
+    "coi_findings_json",
+    "invitations_json",
+    *reviewing.COLUMNS,
+)
+
+
+@dataclass
+class Row:
+    rank: int
+    candidate: Candidate
+    email: EmailFinding
+    #: The best address that is not the one offered first. A candidate who has
+    #: changed institution has two, and which one reaches them is the editor's
+    #: call rather than the precedence table's.
+    alternate: EmailFinding = field(default_factory=EmailFinding)
+    #: The reviewing columns (``reviewing.signals``), keyed by column name.
+    signals: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def already_invited(self) -> bool:
+        """Invited on *this* manuscript, in any state — so not a new proposal."""
+        return self.signals.get("invitation_status", reviewing.NOT_INVITED) != reviewing.NOT_INVITED
+
+    @property
+    def has_locator(self) -> bool:
+        return self.signals.get("found_by") in ("locator", "both")
+
+    @property
+    def position(self) -> str:
+        """Academic rank, as stated by a source. Never inferred from output."""
+        from academia.core.seniority import UNKNOWN, label
+
+        person = self.candidate.person
+        if person.rank != UNKNOWN:
+            return label(person.rank)
+        # A title nobody could classify still tells the editor more than
+        # "unknown", which should mean nobody stated anything at all.
+        return person.stated_title or label(UNKNOWN)
+
+    @property
+    def institution(self) -> str:
+        affiliation = self.candidate.person.current_affiliation
+        return affiliation.institution if affiliation else "unknown"
+
+    @property
+    def country(self) -> str:
+        return self.candidate.person.country_code or "unknown"
+
+    @property
+    def score_text(self) -> str:
+        return "blocked" if self.candidate.blocked else f"{self.candidate.score:.2f}"
+
+    @property
+    def dossier_name(self) -> str:
+        return f"{self.rank:02d}-{self.candidate.person.person_id}.md"
+
+    @property
+    def evidence_text(self) -> str:
+        count = len(self.candidate.evidence)
+        if not count:
+            return "none"
+        years = [e.year for e in self.candidate.evidence if e.year]
+        span = f"{min(years)}–{max(years)}" if years else "undated"
+        # Linked, because the papers are what an editor judges a candidate on
+        # and the dossier is where they are listed with their own links.
+        return f"[{count} related papers ({span})](dossiers/{self.dossier_name})"
+
+    @property
+    def coi_text(self) -> str:
+        verdict = self.candidate.verdict
+        if verdict is None or verdict.status == CLEAR:
+            return "Clear*"
+        return f"{verdict.status}: {verdict.summary()}"
+
+    @property
+    def email_text(self) -> str:
+        return self.email.email if self.email.found else "not found"
+
+    def as_list(self) -> list[str]:
+        return [
+            str(self.rank),
+            self.candidate.person.display_name,
+            self.position,
+            self.institution,
+            self.country,
+            trajectory.history_text(self.candidate.person),
+            self.score_text,
+            self.evidence_text,
+            self.coi_text,
+            self.email_text,
+        ]
+
+
+def build_rows(
+    candidates: list[Candidate],
+    emails: dict[str, EmailFinding] | None = None,
+    alternates: dict[str, EmailFinding] | None = None,
+    signals: dict[str, dict[str, Any]] | None = None,
+) -> list[Row]:
+    lookup = emails or {}
+    second = alternates or {}
+    stated = signals or {}
+    return [
+        Row(
+            rank=index,
+            candidate=candidate,
+            email=lookup.get(candidate.person.person_id, EmailFinding()),
+            alternate=second.get(candidate.person.person_id, EmailFinding()),
+            signals=stated.get(candidate.person.person_id, {}),
+        )
+        for index, candidate in enumerate(candidates, start=1)
+    ]
+
+
+def render_markdown(
+    conn: sqlite3.Connection,
+    rows: list[Row],
+    profile: Profile,
+    policy: Policy,
+) -> str:
+    out: list[str] = []
+    out.append(f"# Reviewer shortlist — {profile.manuscript_id}")
+    out.append("")
+    out.append(f"Journal: {profile.journal or 'unspecified'}")
+    out.append(f"Submission origin: {', '.join(profile.origin_countries) or 'unknown'}")
+    out.append(f"Topics: {', '.join(profile.primary_topics) or 'none extracted'}")
+    out.append(f"Policy: {', '.join(Path(p).name for p in policy.sources)}")
+    out.append("")
+    people = [row.candidate.person for row in rows]
+    current = trajectory.country_exposure(people, historical=False)
+    if current:
+        out.append(
+            "Current-affiliation countries: "
+            + ", ".join(f"{country} {count}" for country, count in current.most_common())
+        )
+        out.append("")
+    historical = trajectory.country_exposure(people, historical=True)
+    if historical:
+        out.append(
+            "Historical institution-country evidence (people may count in multiple countries): "
+            + ", ".join(f"{country} {count}" for country, count in historical.most_common())
+        )
+        out.append("")
+    out.append("| " + " | ".join(EXPORT_COLUMNS) + " |")
+    out.append("|" + "|".join(["---"] * len(EXPORT_COLUMNS)) + "|")
+    for record in (_export_record(conn, row) for row in rows):
+        cells = [
+            str(record[column] if record[column] is not None else "") for column in EXPORT_COLUMNS
+        ]
+        out.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
+    out.append("")
+    out.append(f"\\* Clear means **{CLEAR_WORDING}**. A bibliographic database cannot")
+    out.append("prove that no personal, financial or competitive relationship exists.")
+    out.append("")
+    out.append("Blocked candidates are listed rather than hidden, so it is visible that")
+    out.append("an obvious name was considered and why it was set aside.")
+    return "\n".join(out) + "\n"
+
+
+def render_reading_list(rows: list[Row]) -> str:
+    """The papers behind the shortlist, most relevant first.
+
+    Assembled once rather than left scattered across dossiers: an editor
+    weighing a broad candidate list reads the literature, and the same paper
+    frequently qualifies several candidates.
+    """
+    best: dict[str, list] = {}
+    for row in rows:
+        for item in row.candidate.evidence:
+            name = row.candidate.person.display_name
+            entry = best.get(item.paper_id)
+            if entry is None:
+                best[item.paper_id] = [item.similarity, item.title, item.year, item.url, [name]]
+            else:
+                entry[0] = max(entry[0], item.similarity)
+                if name not in entry[4]:
+                    entry[4].append(name)
+
+    out = ["# Reading list — the work behind the shortlist", ""]
+    out.append("Papers that qualified one or more candidates, most relevant first.")
+    out.append("A paper that qualifies several people is listed once.")
+    out.append("")
+    for _score, title, year, url, names in sorted(best.values(), key=lambda v: -v[0]):
+        heading = f"[{title}]({url})" if url else f"{title} (no link available)"
+        out.append(f"- **{heading}** — {year or 'n.d.'}")
+        out.append(f"  - qualifies: {', '.join(sorted(names))}")
+    if not best:
+        out.append("- none recorded")
+    out.append("")
+    return chr(10).join(out)
+
+
+def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
+    candidate = row.candidate
+    person = candidate.person
+    current = person.current_affiliation
+    steps = trajectory.build(person)
+    historical = [step for step in steps if step.kind != "current"]
+    years = [item.year for item in candidate.evidence if item.year]
+    verdict = candidate.verdict
+    findings = verdict.findings if verdict else []
+    invitations = repo.invitation_history(conn, person.person_id)
+    education = person.education
+    components = candidate.components
+    institutions = [
+        {
+            "kind": step.kind,
+            "institution": step.institution,
+            "country": step.country,
+            "year_from": step.year_from,
+            "year_to": step.year_to,
+            "source": step.source,
+            "source_url": step.source_url,
+        }
+        for step in steps
+    ]
+    education_records = [
+        {
+            "institution": entry.institution,
+            "degree": entry.degree,
+            "field": entry.field,
+            "year_from": entry.year_from,
+            "year_to": entry.year_to,
+            "advisor_person_id": entry.advisor_person_id,
+            "source": entry.source,
+            "source_url": entry.source_url,
+        }
+        for entry in education
+    ]
+    email_records = [
+        {
+            "email": item["email"],
+            "source": item["source"],
+            "source_url": item["source_url"] or "",
+            "confidence": item["confidence"],
+            "selected": item["email"] == row.email.email,
+            "affiliation_domain": email_affiliation_domain(person, item["email"]),
+        }
+        for item in repo.emails_of(conn, person.person_id)
+    ]
+    evidence_records = [
+        {
+            "paper_id": item.paper_id,
+            "title": item.title,
+            "year": item.year,
+            "doi": item.doi,
+            "url": item.url,
+            "similarity": item.similarity,
+        }
+        for item in candidate.evidence
+    ]
+    finding_records = [
+        {"rule": finding.rule, "status": finding.status, "evidence": finding.evidence}
+        for finding in findings
+    ]
+    invitation_records = [
+        {
+            "manuscript_id": item["ms_id"],
+            "invited_at": item["invited_at"],
+            "responded": item["responded"],
+            "accepted": item["accepted"],
+        }
+        for item in invitations
+    ]
+
+    def packed(value) -> str:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+
+    return {
+        "rank": row.rank,
+        "reviewer": person.display_name,
+        "person_id": person.person_id,
+        "profile_url": profile_url(candidate),
+        "orcid": person.orcid,
+        "openalex_id": person.openalex_id,
+        "ieee_author_id": person.ieee_author_id,
+        "identity_method": person.resolution_method,
+        "identity_confidence": round(person.confidence, 3),
+        "position": row.position,
+        "position_source": person.rank_source,
+        "current_institution": current.institution if current else "",
+        "current_country": current.country_code if current else "",
+        "current_year_from": current.year_from if current else None,
+        "current_year_to": current.year_to if current else None,
+        "current_source": current.source if current else "",
+        "current_source_url": current.source_url if current else "",
+        "historical_institution_count": len(historical),
+        "historical_country_count": len({step.country for step in historical if step.country}),
+        "education_count": len(education),
+        "score": "" if candidate.blocked else round(candidate.score, 6),
+        "blocked": candidate.blocked,
+        "coi_status": candidate.coi_status,
+        "coi_summary": verdict.summary() if verdict else CLEAR_WORDING,
+        "coi_finding_count": len(findings),
+        "evidence_count": len(candidate.evidence),
+        "best_similarity": max((item.similarity for item in candidate.evidence), default=0.0),
+        "evidence_year_from": min(years) if years else None,
+        "evidence_year_to": max(years) if years else None,
+        "component_topic": components.get("topic", ""),
+        "component_method": components.get("method", ""),
+        "component_recent_expertise": components.get("recent_expertise", ""),
+        "component_publication_evidence": components.get("publication_evidence", ""),
+        "component_geographic": components.get("geographic", ""),
+        "component_activity": components.get("activity", ""),
+        "email": row.email.email,
+        "email_found": row.email.found,
+        "email_source": row.email.source,
+        "email_confidence": row.email.confidence,
+        "email_source_url": row.email.source_url,
+        "email_affiliation_domain": email_affiliation_domain(person, row.email.email),
+        "email_alternate": row.alternate.email,
+        "email_alternate_source": row.alternate.source if row.alternate.found else "",
+        "email_alternate_source_url": row.alternate.source_url,
+        "notes": ";".join(candidate.notes),
+        "data_quality_warning": trajectory.quality_note(person),
+        "invitation_count": len(invitations),
+        "response_count": sum(bool(item["responded"]) for item in invitations),
+        "acceptance_count": sum(bool(item["accepted"]) for item in invitations),
+        "institutions_json": packed(institutions),
+        "education_json": packed(education_records),
+        "emails_json": packed(email_records),
+        "evidence_json": packed(evidence_records),
+        "coi_findings_json": packed(finding_records),
+        "invitations_json": packed(invitation_records),
+        **{column: row.signals.get(column, "") for column in reviewing.COLUMNS},
+    }
+
+
+def render_csv(conn: sqlite3.Connection, rows: list[Row]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=EXPORT_COLUMNS, lineterminator="\n")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(_export_record(conn, row))
+    return buffer.getvalue()
+
+
+def _detail_csv(columns: tuple[str, ...], records: list[dict[str, object]]) -> str:
+    """Render a normalized Excel-friendly detail table without nested cells."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(records)
+    return buffer.getvalue()
+
+
+_NON_INSTITUTION_HOSTS = {
+    "api.openalex.org",
+    "openalex.org",
+    "orcid.org",
+    "ror.org",
+    "doi.org",
+    "dx.doi.org",
+}
+
+
+def email_affiliation_domain(person, email: str) -> str:
+    """Conservative recency signal; it never changes address precedence."""
+    affiliation = person.current_affiliation
+    domain = (email or "").lower().partition("@")[2]
+    if not affiliation or not domain or not affiliation.source_url:
+        return "unknown"
+    host = urllib.parse.urlparse(affiliation.source_url).netloc.lower().split(":")[0]
+    host = host.removeprefix("www.")
+    if not host or host in _NON_INSTITUTION_HOSTS:
+        return "unknown"
+    if host == domain or host.endswith("." + domain) or domain.endswith("." + host):
+        return "match"
+    return "mismatch"
+
+
+def profile_url(candidate: Candidate) -> str:
+    """One link that answers "who is this person?", or nothing.
+
+    An IEEE Xplore author page comes first where we have one. For an IEEE
+    submission it is the page the editor already has open, it lists the person's
+    work in the venue being reviewed, and it is the only one of these that the
+    publisher maintains — so it stays right when an ORCID record goes stale.
+    ORCID follows: employment and education, and the one identifier that
+    resolves a name with certainty. Then the publication profile, then a single
+    paper, which carries neither but does at least show the work that qualified
+    them here. The paper chosen is the closest to the manuscript, which is the
+    one an editor would read first anyway.
+
+    Every candidate is a URL that already exists. Nothing here constructs a
+    search, guesses a university homepage from a name, or links a page that has
+    not been observed — a plausible-looking dead link in the only file the
+    editor receives is worse than an empty cell. The Xplore author id is one
+    IEEE stated for this person, so the page it names is one they have.
+    """
+    person = candidate.person
+    if person.ieee_author_id:
+        return f"https://ieeexplore.ieee.org/author/{person.ieee_author_id}"
+    if person.orcid:
+        return f"https://orcid.org/{person.orcid}"
+    if person.openalex_id:
+        return f"https://openalex.org/{person.openalex_id}"
+    best = max(candidate.evidence, key=lambda item: item.similarity, default=None)
+    if best is None:
+        return ""
+    if best.url:
+        return best.url
+    return f"https://doi.org/{best.doi}" if best.doi else ""
+
+
+#: The three columns an editorial system asks for when an invitation goes out.
+CONTACT_COLUMNS = ("reviewer", "institution", "email", "status", "decision_reason")
+
+
+def render_contact_list(rows: list[Row], policy: Policy) -> str:
+    """Name, email, institution — the paste-into-the-system version.
+
+    Blocked candidates are the one thing left out. They stay in every other
+    export because an editor needs to see that an obvious name was considered,
+    but a list whose only purpose is to address invitations must not carry
+    somebody the conflict rules removed.
+
+    A candidate without an address stays, with the cell reading ``not found``:
+    they are still invitable through the editorial system, and a silently
+    shorter list would misrepresent the shortlist.
+    """
+    records = []
+    for row in rows:
+        if row.already_invited:
+            # Already asked on this manuscript: this list addresses new
+            # invitations, and the decision sheet shows where they stand.
+            continue
+        decision = invitation_readiness(
+            row.candidate,
+            row.email,
+            domain_status=email_affiliation_domain(row.candidate.person, row.email.email),
+            min_confidence=policy.min_identity_confidence,
+        )
+        records.append(
+            {
+                "reviewer": row.candidate.person.display_name,
+                "institution": row.institution,
+                "email": row.email.email if row.email.found else "not found",
+                "status": decision.status,
+                "decision_reason": "; ".join(decision.reasons),
+            }
+        )
+    return _detail_csv(CONTACT_COLUMNS, records)
+
+
+#: Three states, not a yes/no. Somebody who meets every rule but whose address
+#: could not be checked against their institution is neither a recommendation
+#: nor a rejection, and a boolean column has to lie about one of them.
+RECOMMENDATION = {
+    "eligible": "recommend",
+    "manual_review": "check_first",
+    "rejected": "do_not_invite",
+}
+
+#: Somebody already invited on this manuscript is not proposed again, in
+#: whatever state their invitation is. Bookkeeping, not a verdict: no rule
+#: judged them, so it never names a blocking reason.
+ALREADY_INVITED = "already_invited"
+
+
+def recommendation_of(row: Row, status: str) -> str:
+    return ALREADY_INVITED if row.already_invited else RECOMMENDATION[status]
+
+
+#: The classes an invitation can still go to. Everything else has been excluded
+#: by a rule, so a missing address there does not block the run.
+INVITABLE = ("recommend", "check_first")
+
+#: Coverage a run is judged by when the policy states no number. The gap between
+#: them is the point: an address the editor cannot find is a reason to look
+#: harder for somebody they can invite, and merely a note for somebody a rule
+#: already removed.
+DEFAULT_COVERAGE = {"invitable_email": 0.90, "other_email": 0.60}
+
+
+def email_coverage(rows: list[Row], policy: Policy) -> dict[str, Any]:
+    """The share of each recommendation class that carries an address.
+
+    Two bars rather than one. A shortlist that is 90% reachable overall and
+    missing the single candidate the editor most wanted is not covered, and
+    nothing in an aggregate rate says which name that would have been — so the
+    classes that can still be invited carry the higher bar.
+
+    What the numbers are is policy (``[coverage]``), not a constant here. The
+    run reports the rate it reached against the rate it was held to; it does not
+    decide that a shortfall is acceptable.
+    """
+    classes: dict[str, list[bool]] = {name: [] for name in ("invitable", "other")}
+    for row in rows:
+        decision = invitation_readiness(
+            row.candidate,
+            row.email,
+            domain_status=email_affiliation_domain(row.candidate.person, row.email.email),
+            min_confidence=policy.min_identity_confidence,
+        )
+        label = recommendation_of(row, decision.status)
+        classes["invitable" if label in INVITABLE else "other"].append(row.email.found)
+
+    summary: dict[str, Any] = {}
+    for name, found in classes.items():
+        total = len(found)
+        with_address = sum(found)
+        # No candidates in a class is not a failure: nothing was missed.
+        rate = (with_address / total) if total else 1.0
+        required = policy.coverage(f"{name}_email", DEFAULT_COVERAGE[f"{name}_email"])
+        summary[name] = {
+            "with_address": with_address,
+            "total": total,
+            "rate": round(rate, 4),
+            "required": required,
+            "met": rate >= required,
+        }
+    summary["met"] = all(summary[name]["met"] for name in ("invitable", "other"))
+    return summary
+
+
+#: Identity first, then the decision, then one block per rule. Order matters
+#: only for reading: the workbook groups on these names.
+AUDIT_IDENTITY = (
+    "rank",
+    "reviewer",
+    "email",
+    "institution",
+    "current_country",
+    "profile_url",
+)
+
+#: Columns that state a policy threshold rather than a fact about a person.
+#: Every rule names its thresholds with one of these endings, so a workbook can
+#: tell "3 papers required" from "3 papers found" without a list of exceptions.
+THRESHOLD_SUFFIXES = ("_minimum", "_maximum", "_window_years", "_countries")
+
+
+def render_audit(rows: list[Row], policy: Policy) -> str:
+    """One row per candidate, one column per thing a rule looked at.
+
+    The counterpart to the shortlist: the shortlist says who to invite, this
+    says why everybody else was not. Every column comes from a rule that
+    actually ran — the verdict it reached, the numbers it compared and the
+    threshold it compared them against — so a run whose policy differs produces
+    a differently shaped file rather than a file with misleading headings.
+
+    Two things stay out. The rules that were switched off contribute nothing,
+    because a column of blanks reads as a rule that found nothing wrong. And
+    ``person_id`` is absent: it identifies a row in a store nobody reading a
+    spreadsheet has, and the reviewer's name is the identity that matters here.
+    """
+    columns: list[str] = [*AUDIT_IDENTITY, "recommendation", "filter_coi"]
+    # Locator columns exist only where a page was imported: a column of blanks
+    # would read as "Web of Science knows nothing about anybody".
+    with_locator = any(row.has_locator for row in rows)
+    signal_columns = [c for c in reviewing.COLUMNS if with_locator or not c.startswith("locator_")]
+    seen = set(columns)
+    records: list[dict[str, object]] = []
+
+    for row in rows:
+        candidate = row.candidate
+        person = candidate.person
+        verdict = candidate.verdict
+        decision = invitation_readiness(
+            candidate,
+            row.email,
+            domain_status=email_affiliation_domain(person, row.email.email),
+            min_confidence=policy.min_identity_confidence,
+        )
+        record: dict[str, object] = {
+            "rank": row.rank,
+            "reviewer": person.display_name,
+            "email": row.email.email if row.email.found else "",
+            "institution": row.institution,
+            "current_country": person.country_code or "",
+            "profile_url": profile_url(candidate),
+            "recommendation": recommendation_of(row, decision.status),
+            # Three states, not two. A REVIEW-level conflict does not exclude
+            # anybody — it asks for a human — and collapsing it into FILTERED
+            # printed "Conflict of interest with the authors" in the workbook's
+            # blocking-reason column against candidates who were still
+            # invitable. Anyone filtering that column for blanks lost them.
+            "filter_coi": verdict.status if verdict else "CLEAR",
+            "filter_coi_severity": {"CLEAR": 0, "REVIEW": 1, "BLOCK": 2}.get(
+                verdict.status if verdict else "CLEAR", 0
+            ),
+            "filter_coi_finding_count": len(verdict.findings) if verdict else 0,
+        }
+        for name in ("filter_coi_severity", "filter_coi_finding_count"):
+            if name not in seen:
+                columns.append(name)
+                seen.add(name)
+
+        if candidate.geo is not None:
+            record["filter_author_country_reference"] = candidate.geo.describe()
+            record["filter_author_country_cross_region"] = int(candidate.geo.cross_region)
+            for name in (
+                "filter_author_country_reference",
+                "filter_author_country_cross_region",
+            ):
+                if name not in seen:
+                    columns.append(name)
+                    seen.add(name)
+
+        details: list[str] = []
+        for outcome in candidate.eligibility.outcomes if candidate.eligibility else []:
+            verdict_column = f"filter_{outcome.rule}"
+            record[verdict_column] = eligibility_module.verdict_of(outcome)
+            if verdict_column not in seen:
+                columns.append(verdict_column)
+                seen.add(verdict_column)
+            for key, value in outcome.facts.items():
+                column = f"filter_{key}"
+                record[column] = value
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
+            details.append(outcome.detail)
+
+        for column in signal_columns:
+            if column in row.signals:
+                record[column] = row.signals[column]
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
+        record["filter_details"] = "; ".join(details)
+        records.append(record)
+
+    if "filter_details" not in seen:
+        columns.append("filter_details")
+
+    # A threshold belongs to the run, not to a person, so it is stated on every
+    # row — including the rows of candidates a conflict removed before any rule
+    # could measure them. Everything else that is missing stays missing: a rule
+    # that did not run for somebody is a gap in the record, not a zero.
+    thresholds = {
+        column: value
+        for column in columns
+        if column.endswith(THRESHOLD_SUFFIXES)
+        for value in (next((r[column] for r in records if column in r), None),)
+        if value is not None
+    }
+    return _detail_csv(
+        tuple(columns),
+        [{c: r.get(c, thresholds.get(c, "")) for c in columns} for r in records],
+    )
+
+
+def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
+    person = row.candidate.person
+    out: list[str] = []
+    out.append(f"# {person.display_name}")
+    out.append("")
+    out.append(f"- Position: {row.position}")
+    if person.rank_source:
+        out.append(f"  - stated at {person.rank_source}")
+    out.append(f"- Institution: {row.institution}")
+    out.append(f"- Country: {row.country}")
+    if person.orcid:
+        out.append(f"- ORCID: https://orcid.org/{person.orcid}")
+    out.append(
+        f"- Identity resolved by: {person.resolution_method} (confidence {person.confidence:.2f})"
+    )
+    if row.email.found:
+        out.append(f"- Email: {row.email.email}")
+        out.append(f"  - source: {row.email.source} ({row.email.source_url or 'no url'})")
+        out.append(f"  - confidence: {row.email.confidence:.2f}")
+        signal = email_affiliation_domain(person, row.email.email)
+        if signal == "mismatch":
+            out.append("  - recency signal: domain differs from the current-affiliation page")
+    else:
+        out.append("- Email: not found — no public professional address was located")
+        out.append("  - no address is guessed from a name/domain pattern")
+    out.append("")
+
+    if person.education:
+        out.append("## Background")
+        out.append("")
+        for entry in person.education:
+            years = (
+                "–".join(str(y) for y in (entry.year_from, entry.year_to) if y) or "dates unknown"
+            )
+            degree = entry.degree or "degree unknown"
+            out.append(f"- {degree}, {entry.institution or 'institution unknown'} ({years})")
+            out.append(f"  - source: {entry.source} {entry.source_url}")
+        out.append("")
+    else:
+        out.append("## Background")
+        out.append("")
+        out.append("Not recorded. ORCID carries an education section for a minority of")
+        out.append("researchers, and nothing here is inferred.")
+        out.append("")
+
+    steps = trajectory.build(person)
+    if steps:
+        out.append("## Institutional trajectory")
+        out.append("")
+        for step in steps:
+            country = f", {step.country}" if step.country else ""
+            source = f" — {step.source} {step.source_url}".rstrip() if step.source else ""
+            out.append(f"- **{step.kind}**: {step.institution}{country} ({step.years}){source}")
+        out.append("")
+    if note := trajectory.quality_note(person):
+        out.append(f"> Data-quality warning: {note}. OpenAlex history is publication-affiliation")
+        out.append("> evidence, not proof of employment, nationality or ethnicity.")
+        out.append("")
+
+    out.append("## Why this candidate")
+    out.append("")
+    if row.candidate.components:
+        for name, value in sorted(row.candidate.components.items(), key=lambda kv: -kv[1]):
+            out.append(f"- {name}: {value:.2f}")
+    else:
+        out.append("- not scored (excluded before scoring)")
+    out.append("")
+
+    out.append("## Evidence")
+    out.append("")
+    for item in row.candidate.evidence:
+        title = f"[{item.title}]({item.url})" if item.url else item.title
+        out.append(
+            f"- [{item.year or 'n.d.'}] {title} "
+            f"({item.position} author, similarity {item.similarity:.2f})"
+        )
+    if not row.candidate.evidence:
+        out.append("- none recorded")
+    out.append("")
+
+    out.append("## Conflict-of-interest audit")
+    out.append("")
+    verdict = row.candidate.verdict
+    if verdict is None or not verdict.findings:
+        out.append(f"- {CLEAR_WORDING}")
+        out.append("- checks run: manuscript authorship, exclusion list, co-authorship window,")
+        out.append(
+            "  institutional overlap, shared doctorate, advisor relationship, citation density"
+        )
+    else:
+        for finding in verdict.findings:
+            out.append(f"- **{finding.status}** {finding.rule}")
+            for key, value in finding.evidence.items():
+                out.append(f"  - {key}: {value}")
+    out.append("")
+
+    if row.candidate.notes:
+        out.append("## Notes")
+        out.append("")
+        for note in row.candidate.notes:
+            out.append(f"- {note}")
+        out.append("")
+
+    history = repo.invitation_history(conn, person.person_id)
+    if history:
+        out.append("## Previous invitations")
+        out.append("")
+        for entry in history:
+            state = (
+                "accepted"
+                if entry["accepted"]
+                else ("responded" if entry["responded"] else "no response")
+            )
+            out.append(f"- {entry['ms_id']} ({entry['invited_at']}): {state}")
+        out.append("")
+
+    return "\n".join(out) + "\n"
+
+
+EDITORIAL_COLUMNS = (
+    "order",
+    "reviewer",
+    "affiliation",
+    "orcid_url",
+    "status",
+    "invited",
+    "agreed",
+    "declined",
+    "due",
+    "returned",
+    "days_in_review",
+    "decision_letter",
+    "match_method",
+    "in_candidate_pool",
+)
+SUMMARY_COLUMNS = ("item", "value")
+WORKS_COLUMNS = ("reviewer", "found_by", "source", "title", "venue", "year", "doi_url", "authors")
+
+
+def render_editorial(
+    conn: sqlite3.Connection, ms_id: str, rows: list[Row]
+) -> tuple[str, str] | None:
+    """This manuscript's reviewer list and the editorial system's own tally.
+
+    ``None`` when no page was imported: the editorial system is the only
+    source of these, and an empty sheet would read as "nobody invited".
+    """
+    invitations = repo.editorial_invitations(conn, ms_id)
+    imported = repo.editorial_import(conn, ms_id)
+    if not invitations and not imported:
+        return None
+    pool = {row.candidate.person.person_id for row in rows}
+    records = []
+    for item in invitations:
+        data = item["data"]
+        records.append(
+            {
+                "order": data.get("order"),
+                "reviewer": data.get("name", ""),
+                "affiliation": data.get("affiliation", ""),
+                "orcid_url": f"https://orcid.org/{data['orcid']}" if data.get("orcid") else "",
+                "status": data.get("status", ""),
+                "invited": data.get("invited", ""),
+                "agreed": data.get("agreed", ""),
+                "declined": data.get("declined", ""),
+                "due": data.get("due", ""),
+                "returned": data.get("returned", ""),
+                "days_in_review": data.get("days_in_review"),
+                "decision_letter": data.get("decision_letter"),
+                "match_method": item["match_method"],
+                "in_candidate_pool": item["person_id"] in pool,
+            }
+        )
+    summary = [
+        {"item": "Manuscript", "value": imported.get("manuscript_ref", "")},
+        {"item": "Submitted", "value": imported.get("submitted", "")},
+        {"item": "Last updated", "value": imported.get("last_updated", "")},
+        *(
+            {"item": f"ScholarOne: {name}", "value": count}
+            for name, count in (imported.get("summary") or {}).items()
+        ),
+        {
+            "item": "Reviewer Locator candidates shown on the page / found",
+            "value": f"{imported.get('locator_shown', 0)} / {imported.get('locator_total', 0)}",
+        },
+    ]
+    return _detail_csv(EDITORIAL_COLUMNS, records), _detail_csv(SUMMARY_COLUMNS, summary)
+
+
+def render_works(conn: sqlite3.Connection, ms_id: str, rows: list[Row]) -> str:
+    """The works behind each candidate: this run's closest first, then the Locator's."""
+    locator = {item["person_id"]: item["data"] for item in repo.locator_suggestions(conn, ms_id)}
+    records = []
+    for row in rows:
+        person = row.candidate.person
+        found_by = row.signals.get("found_by", "ours")
+        closest = sorted(row.candidate.evidence, key=lambda e: -e.similarity)
+        for item in closest[: reviewing.WORKS_SHOWN]:
+            records.append(
+                {
+                    "reviewer": person.display_name,
+                    "found_by": found_by,
+                    "source": "this run",
+                    "title": item.title,
+                    "venue": item.venue,
+                    "year": item.year,
+                    "doi_url": f"https://doi.org/{item.doi}" if item.doi else item.url,
+                    "authors": "",
+                }
+            )
+        for work in (locator.get(person.person_id) or {}).get("works") or []:
+            records.append(
+                {
+                    "reviewer": person.display_name,
+                    "found_by": found_by,
+                    "source": "Reviewer Locator",
+                    "title": work.get("title", ""),
+                    "venue": work.get("venue", ""),
+                    "year": work.get("year"),
+                    "doi_url": f"https://doi.org/{work['doi']}" if work.get("doi") else "",
+                    "authors": work.get("authors", ""),
+                }
+            )
+    return _detail_csv(WORKS_COLUMNS, records)
+
+
+def write_all(
+    conn: sqlite3.Connection,
+    directory: Path,
+    rows: list[Row],
+    profile: Profile,
+    policy: Policy,
+    *,
+    ms_id: str = "",
+) -> dict[str, Path]:
+    directory.mkdir(parents=True, exist_ok=True)
+    dossier_dir = directory / "dossiers"
+    dossier_dir.mkdir(parents=True, exist_ok=True)
+    # Dossier filenames carry the rank, so a re-run after tuning the profile
+    # would otherwise leave last run's ranking sitting beside this one's. The
+    # rank is not two digits wide: a pool of 166 reaches three, and a pattern
+    # that assumed two left every hundredth-and-later dossier behind to be read
+    # as part of this shortlist.
+    for previous in dossier_dir.glob("[0-9]*-person-*.md"):
+        previous.unlink()
+
+    shortlist = directory / "shortlist.md"
+    shortlist.write_text(render_markdown(conn, rows, profile, policy), encoding="utf-8")
+
+    csv_path = directory / "shortlist.csv"
+    csv_path.write_text(render_csv(conn, rows), encoding="utf-8-sig")
+
+    # Older versions emitted six normalized detail CSVs. The comprehensive
+    # shortlist now embeds those one-to-many records as JSON cells, so delete
+    # stale files rather than leaving the output directory looking current.
+    for obsolete in (
+        "institutions.csv",
+        "education.csv",
+        "emails.csv",
+        "evidence.csv",
+        "coi-findings.csv",
+        "invitations.csv",
+    ):
+        (directory / obsolete).unlink(missing_ok=True)
+
+    contacts = directory / "contact-list.csv"
+    contacts.write_text(render_contact_list(rows, policy), encoding="utf-8-sig")
+
+    audit = directory / "contact-list-audit.csv"
+    audit.write_text(render_audit(rows, policy), encoding="utf-8-sig")
+
+    works = directory / "works.csv"
+    works.write_text(render_works(conn, ms_id, rows), encoding="utf-8-sig")
+
+    editorial = directory / "editorial-reviewers.csv"
+    summary = directory / "editorial-summary.csv"
+    if (rendered := render_editorial(conn, ms_id, rows)) is not None:
+        editorial.write_text(rendered[0], encoding="utf-8-sig")
+        summary.write_text(rendered[1], encoding="utf-8-sig")
+    else:
+        editorial.unlink(missing_ok=True)
+        summary.unlink(missing_ok=True)
+
+    reading = directory / "reading-list.md"
+    reading.write_text(render_reading_list(rows), encoding="utf-8")
+
+    for row in rows:
+        name = f"{row.rank:02d}-{row.candidate.person.person_id}.md"
+        (dossier_dir / name).write_text(render_dossier(conn, row), encoding="utf-8")
+
+    return {
+        "shortlist": shortlist,
+        "csv": csv_path,
+        "contact_list": contacts,
+        "contact_list_audit": audit,
+        "works": works,
+        "reading_list": reading,
+        "dossiers": dossier_dir,
+    }

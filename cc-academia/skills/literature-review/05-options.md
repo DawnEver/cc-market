@@ -21,23 +21,23 @@ The orchestrator writes call results straight to disk (`reading/*.md`, `notes/*.
 
 **Reports/cards always use ShortRef (author + year); never the hash.**
 
-- The single citation source = each workspace's `reading/papers_registry.md` (template: `<plugin-root>/configs/templates/_papers_registry_template.md`).
+- The single citation source = each workspace's `reading/papers_registry.md` (template: `<plugin-root>/skills/literature-review/templates/_papers_registry_template.md`).
 - In-text citation: `[Author et al. YYYY]` or `Author (YYYY)`.
 - Card filename = `<author-lastname>-<year>_card.md` (with several authors take the first; same author and year get a suffix).
 - `candidate_id` (hash) is only for CLI operations and never enters a narrative report.
-- The card template is `<plugin-root>/configs/templates/_card_template.md` (skill level, shared across topics).
+- The card template is `<plugin-root>/skills/literature-review/templates/_card_template.md` (skill level, shared across topics).
 
 ## Available Options
 
 ### Deep-Read Papers
 
 Deep-read a paper with fabric (deepseek) → produce a paper card:
-1. Copy `<plugin-root>/configs/templates/_card_template.md` to `reading/<lastname>-<year>_card.md`
+1. Copy `<plugin-root>/skills/literature-review/templates/_card_template.md` to `reading/<lastname>-<year>_card.md`
 2. **Ask the user to confirm the model first** (default deepseek-v4-flash)
 3. Use `fabric__call` (provider=deepseek) to read the decomposed `ingest/<id>/1-paper-text/` markdown and produce a structured card
 4. Append the matching row to `reading/papers_registry.md`
 
-(The `uv run --project "<plugin-root>" lit-review read` command depends on litellm; it is superseded by the fabric mechanism and no longer used.)
+(The `uv run --project "<plugin-root>" academia-read read` command depends on litellm; it is superseded by the fabric mechanism and no longer used.)
 
 ### Cross-Paper Synthesis
 
@@ -46,20 +46,20 @@ Synthesize every paper card → `notes/synthesis.md`. Also with fabric (deepseek
 ### Export
 
 ```bash
-uv run --project "<plugin-root>" lit-review export --topic <slug> [--format markdown|csv|bibtex|json] [--paper <id1> ...]
+uv run --project "<plugin-root>" academia-read export --topic <slug> [--format markdown|csv|bibtex|json] [--paper <id1> ...]
 ```
 Exports paper cards in the requested format to `export/`.
 
 ### Statistics & Plots
 
 ```bash
-uv run --project "<plugin-root>" lit-review stats --topic <slug> [--plots]
+uv run --project "<plugin-root>" academia-read stats --topic <slug> [--plots]
 ```
 Summary statistics (candidates, screening breakdown, downloads, decomposed, deep-read). With `--plots`, generates year/venue distribution charts.
 
 ### Zotero Sync
 
-**Capability gate:** Zotero is optional. Before offering or executing an MCP-only Zotero action, check whether the current host exposes the required Zotero tools. A project `.mcp.json` being present does not prove that Codex loaded it. If unavailable (commonly in Codex), say clearly that Zotero sync is disabled in this session, keep the local registry/export workflow usable, and offer `uv run --project "<plugin-root>" lit-review export --format bibtex|json` as the non-destructive fallback. Never fabricate a successful sync. CLI `zotero-import`/`zotero-maintain` may still be used only when their configured backend is independently available.
+**Capability gate:** Zotero is optional. Before offering or executing an MCP-only Zotero action, check whether the current host exposes the required Zotero tools. A project `.mcp.json` being present does not prove that Codex loaded it. If unavailable (commonly in Codex), say clearly that Zotero sync is disabled in this session, keep the local registry/export workflow usable, and offer `uv run --project "<plugin-root>" academia-read export --format bibtex|json` as the non-destructive fallback. Never fabricate a successful sync. CLI `zotero-import`/`zotero-maintain` may still be used only when their configured backend is independently available.
 
 All papers → ONE shared Zotero collection (from `workspace.toml` → `[zotero]`, resolved by
 `collection_key`, names are not unique). Workspace identity = `zotero_registry.jsonl` +
@@ -68,9 +68,9 @@ workspace tag. Never create per-topic collections.
 **1. Confirm the scope before importing.** Import exactly the papers the user says to import. Show the plan with a dry run first, check the scope, then execute:
 
 ```
-uv run --project "<plugin-root>" lit-review zotero-import --topic <slug> --dry-run                                          # show what would import
-uv run --project "<plugin-root>" lit-review zotero-import --topic <slug> --candidate-id <id1> --candidate-id <id2>          # per-paper (recommended for "just these")
-uv run --project "<plugin-root>" lit-review zotero-import --topic <slug>                                                    # full workspace, only on explicit request
+uv run --project "<plugin-root>" academia-read zotero-import --topic <slug> --dry-run                                          # show what would import
+uv run --project "<plugin-root>" academia-read zotero-import --topic <slug> --candidate-id <id1> --candidate-id <id2>          # per-paper (recommended for "just these")
+uv run --project "<plugin-root>" academia-read zotero-import --topic <slug>                                                    # full workspace, only on explicit request
 ```
 
 Dedup: DOI → title-key (three-pass); DOI-bearing groups CrossRef-enriched at creation.
@@ -79,15 +79,15 @@ Interactive single paper: `zotero_add_from_file` (MCP), collection + workspace t
 **2. After import**: `zotero-maintain` (registry-scoped enrich + **mirror**) + re-embed:
 
 ```
-uv run --project "<plugin-root>" lit-review zotero-import --topic <slug> --candidate-id <id1> ...   # (or full)
-uv run --project "<plugin-root>" lit-review zotero-maintain --topic <slug>                          # enrich + mirror; --all for whole collection
+uv run --project "<plugin-root>" academia-read zotero-import --topic <slug> --candidate-id <id1> ...   # (or full)
+uv run --project "<plugin-root>" academia-read zotero-maintain --topic <slug>                          # enrich + mirror; --all for whole collection
 zotero_update_search_database (MCP)                                # re-embed for zotero_semantic_search
 ```
 
 **3. PDF unavailable (desktop "File Not Found" / the attachment will not open)**:
 - Symptom: the item has an `imported_file` attachment record, but the local `~/Zotero/storage/<key>/` is missing the file.
 - Root cause: a batch import uploaded the file but never pulled it back locally.
-- Fix: `uv run --project "<plugin-root>" lit-review zotero-maintain --topic <slug>` -- its **mirror** downloads into storage (md5-checked).
+- Fix: `uv run --project "<plugin-root>" academia-read zotero-maintain --topic <slug>` -- its **mirror** downloads into storage (md5-checked).
   Note: the directory key = the attachment's key (not the parent item key). **Do not copy PDFs into storage by hand**.
 
 ### Custom

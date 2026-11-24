@@ -1,0 +1,10 @@
+term	class	replace	when	why	source	scope
+might	phrase		hedged finding	claim.hedging: hedged finding, e.g. "the skewed rotor might lower the starting torque" (paraphrase; original withheld until publication)	preset	all
+<finding>, which is <value> in this case	phrase		value after its finding	abstract.finding-then-value: pattern with placeholders (paraphrase; original withheld until publication)	preset	abstract,conclusion
+for the case examined	phrase		value after its finding	abstract.finding-then-value: scope of a value (paraphrase; original withheld until publication)	preset	abstract,conclusion
+The results indicate <number> findings	phrase		announcing enumerated findings	pattern with placeholders (paraphrase; original withheld until publication)	preset	abstract,conclusion
+<effect> should therefore be considered in <design task>	phrase		closing implication	pattern with placeholders (paraphrase; original withheld until publication)	preset	abstract,conclusion
+This paper builds <model> of <object> for <purpose>	phrase		purpose statement	pattern with placeholders (paraphrase; original withheld until publication)	preset	introduction
+<need> becomes more pressing as <trend>	phrase		motivation close	pattern with placeholders (paraphrase; original withheld until publication)	preset	introduction
+In this <format>, <objects> are investigated	phrase		scope statement opener	pattern with placeholders; a scope phrase, not a subject (paraphrase; original withheld until publication)	preset	introduction
+In contrast	phrase		opener	sentence.no-contrast-join: this preset's contrast link in the second sentence	preset	all
