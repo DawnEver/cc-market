@@ -81,6 +81,32 @@ export function writeBinding(session, task, ledger, env = process.env) {
   return file;
 }
 
+// Record that this machine holds the ledger `ledger` ({repo_key, path}): `<machine home>/state/ledgers/<repo_key>.json`,
+// so a session started in another repo finds the tasks this one hosts (D88). The file written.
+export function recordLedger(ledger, env = process.env) {
+  const file = join(machineHome(env), 'state', 'ledgers', `${ledger.repo_key}.json`);
+  atomicWriteFile(file, JSON.stringify(ledger));
+  return file;
+}
+
+// Every ledger path this machine has recorded: the ledger records, then the ledgers session bindings name.
+export function knownLedgers(env = process.env) {
+  const home = machineHome(env);
+  const paths = [];
+  for (const sub of ['ledgers', 'sessions']) {
+    const dir = join(home, 'state', sub);
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir).filter(n => n.endsWith('.json')).sort()) {
+      try {
+        const record = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+        const path = sub === 'ledgers' ? record?.path : record?.ledger?.path;
+        if (typeof path === 'string') paths.push(path);
+      } catch { /* a malformed record names no ledger */ }
+    }
+  }
+  return paths;
+}
+
 // `session`'s binding: {slug, authority, ledger, repoKey, file}, or null (none written, or malformed). Never guessed.
 export function readBinding(session, env = process.env) {
   let file, record;

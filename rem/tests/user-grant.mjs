@@ -16,6 +16,9 @@ export const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-home-'));
 process.env.HOME = TEST_HOME;
 process.env.USERPROFILE = TEST_HOME;
 process.env.LAB_COMMONS_HOME = path.join(TEST_HOME, 'machine-home');
+// The forge a task's identity lives on (scripts/task-forge.mjs): a fake one per test process, never the real forge.
+process.env.REM_FAKE_FORGE = path.join(TEST_HOME, 'forge');
+process.env.REM_FORGE = JSON.stringify([process.execPath, fileURLToPath(new URL('./fixtures/fake-forge.mjs', import.meta.url))]);
 
 export function grantIfUserVerb(root, args) {
   if (args[0] !== 'open' && args[0] !== 'close') return;
