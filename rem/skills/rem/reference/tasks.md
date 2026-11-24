@@ -170,6 +170,13 @@ two audited rewrites. Every other rewrite stays refused (the library and the Pre
    archived journal). It appends `closed: <reason>`, sets `status: closed`, then ARCHIVES:
    `git mv .claude/tasks/<slug> .claude/memory/<close-date>/task-<slug>/` (a plain rename outside
    git). Nothing is deleted. An agent proposes closing; the user runs the command.
+3. **onClose** — a repo may declare what a close also does: `.claude/rem.json`
+   `{"onClose": ["<prog>", "<arg>", "{slug}"]}`, an argv (no shell) whose `{slug}` is the closed task, run
+   from the project root after every refusal above has passed and before the archive. It never blocks
+   the close: its exit and output (stdout then stderr, one line) go on the closed line as
+   `(on close, exit <n>: ...)` and are printed. Undeclared, nothing extra runs; a declaration that is not
+   an argv array refuses the close before any write. rem names no consumer — a family, for example,
+   declares a command that prunes the task's `pr/<slug>/*` branches and names each one it keeps.
 
 ## An archived task is memory
 

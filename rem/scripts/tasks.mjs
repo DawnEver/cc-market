@@ -656,9 +656,35 @@ export function distillStatus(start, slug) {
   };
 }
 
-// Close = refuse until distilled, record the close, then ARCHIVE: the task directory
-// moves (git mv; a plain rename outside git) to .claude/memory/<close-date>/task-<slug>/.
-// `journalOnly` names decisions the user keeps only in the archived journal.
+// The repo's declared close command, from its committed .claude/rem.json {"onClose": [argv...]}: an
+// argv whose "{slug}" elements become the closed task's slug, run with no shell from the project root.
+// rem names no consumer; a repo declares what a close also does (e.g. prune the task's branches).
+export function onCloseCommand(start) {
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(join(findProjectRoot(start), '.claude', 'rem.json'), 'utf8')); }
+  catch { return null; }
+  const argv = cfg?.onClose;
+  if (argv === undefined) return null;
+  if (!Array.isArray(argv) || !argv.length || !argv.every(a => typeof a === 'string' && a)) {
+    throw new Error('.claude/rem.json onClose must be an argv array of non-empty strings, e.g. ["prog", "verb", "{slug}"]');
+  }
+  return argv;
+}
+
+// Run it; never throws: its exit and what it said (stdout then stderr, as one line) for the closed line.
+function runOnClose(root, argv, slug) {
+  const [cmd, ...args] = argv.map(a => a.replaceAll('{slug}', slug));
+  const r = spawnSync(cmd, args, { cwd: root, encoding: 'utf8', timeout: 600_000 });
+  const said = `${r.stdout || ''}\n${r.stderr || ''}`.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (r.error) said.push(`${cmd} did not run: ${r.error.code || r.error.message}`);
+  return `on close, exit ${r.status ?? 'none'}: ${said.join('; ') || '(no output)'}`;
+}
+
+// Close = refuse until distilled, run the repo's declared onClose command, record the close, then
+// ARCHIVE: the task directory moves (git mv; a plain rename outside git) to
+// .claude/memory/<close-date>/task-<slug>/. The command runs only after every refusal and never blocks
+// the close: its exit and output go on the closed line. `journalOnly` names decisions the user keeps
+// only in the archived journal. Returns { dest, onClose } (onClose null when none is declared).
 export function closeTask(start, slug, reason, { journalOnly = [], date = todayISO() } = {}) {
   const task = readTask(start, slug);
   if (!task || task.status !== 'open') throw new Error(`no open task ${slug}`);
@@ -679,15 +705,17 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   const line = `${reason || 'closed by the user'}${kept.length ? ` (kept in the journal only: ${kept.join(', ')})` : ''}`;
   if (/[\r\n]/.test(line)) throw new Error('a close reason is one line');
   if (task.issue) forgeCommand(); // its identity closes with it: no forge door, the task stays open
+  const declared = onCloseCommand(start);
   const authority = consumeAuthority(start, 'close', slug); // the user's /rem:task prompt grants it
   if (task.issue) closeTaskIssue(mainCheckout(start), issueNumber(task.issue));
 
-  appendJournal(start, slug, 'closed', `${line} (authority ${authority})`, { date });
+  const onClose = declared ? runOnClose(root, declared, slug) : null;
+  appendJournal(start, slug, 'closed', `${line} (authority ${authority})${onClose ? ` (${onClose})` : ''}`, { date });
   setTaskStatus(start, slug, 'closed');
   mkdirSync(dirname(dest), { recursive: true });
   const moved = spawnSync('git', ['mv', task.dir, dest], { cwd: root, encoding: 'utf8' });
   if (moved.status !== 0) renameSync(task.dir, dest); // untracked or no git: a plain move
-  return dest;
+  return { dest, onClose };
 }
 
 // An archived task: .claude/memory/<date>/task-<slug>/.
