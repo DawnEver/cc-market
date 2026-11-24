@@ -1,5 +1,7 @@
 # evolve
 
+> **RETIRED (no longer updated, 2026-11-24).** Kept for reference only; cc-market's one live plugin is [cc-academia](../cc-academia/README.md).
+
 > *Join the glorious evolution — join the glorious evolution! (the Chinese original of the tagline)*
 
 An iterative, test-driven **review→fix loop** skill. Each round drives the codebase closer

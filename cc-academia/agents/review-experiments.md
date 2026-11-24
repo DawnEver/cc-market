@@ -23,9 +23,8 @@ You are a sharp reviewer covering **experimental adequacy and figure/writing qua
 ## What to look for
 
 Your checklist is the shared review criteria of the knowledge base for the angles experiments, statistics, figure, writing: the caller passes
-the output of `academia-write resolve --criteria --applies peer --angle experiments --angle statistics --angle figure --angle writing` (add `--field <field>` when the paper's field
-has a source). Without it, read the rows of `<plugin-root>/knowledge/common/*/criteria.tsv` whose `angle` is one of
-experiments, statistics, figure, writing and whose `applies` is `peer` or `both`. Answer every criterion that applies to this paper; the same
+the output of `academia-write resolve --task review --scope manuscript --applies peer --angle experiments --angle statistics --angle figure --angle writing` (add `--field <field>` when the paper's field
+has a source). Without it, run that command yourself from the paper's project root; use `academia-write explain <id>` for a criterion's why. Answer every criterion that applies to this paper; the same
 files drive `review own`, the author's review of a draft, so do not keep a private list here.
 
 Numbers in figures often disagree with prose; you catch this only by opening the figures. For terminology, give

@@ -25,7 +25,7 @@
   "interface": {
     "displayName": "Watch",
     "shortDescription": "Unattended server & long-running task supervision — the Claude front end over",
-    "longDescription": "Unattended server & long-running task supervision â€” the Claude front end over lab_commons.supervise. Health checks, anomaly detection, auto-repair and multi-channel alerting. One TOML config per project; the machinery is in the shared library.",
+    "longDescription": "RETIRED (no longer updated, 2026-11-24). Unattended server & long-running task supervision â€” the Claude front end over lab_commons.supervise. Health checks, anomaly detection, auto-repair and multi-channel alerting. One TOML config per project; the machinery is in the shared library.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

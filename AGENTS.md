@@ -14,11 +14,11 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 
 | Plugin | Directory | Description |
 |---|---|---|
-| [`evolve`](evolve/README.md) | `evolve/` | Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
-| [`fabric`](fabric/README.md) | `fabric/` | Multi-provider fabric: one `call` primitive (task/review/agent/image) + `fan_out` + observe proxy. Absorbed the former `takeover` plugin |
-| [`rem`](rem/README.md) | `rem/` | **Archived** (2026-11-23; dropped from both marketplaces, never installed; tests still run; dev-lab owns the harness). Memory management: summarization, merge without deletion, task journals, derived index |
-| [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
-| [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
+| [`evolve`](evolve/README.md) | `evolve/` | **RETIRED (no longer updated, 2026-11-24).** Iterative TDD review→fix loop: critique, fan-out fix, verify, human gate, commit per round |
+| [`fabric`](fabric/README.md) | `fabric/` | **RETIRED (no longer updated, 2026-11-24).** Multi-provider fabric: one `call` primitive (task/review/agent/image) + `fan_out` + observe proxy. Absorbed the former `takeover` plugin |
+| [`rem`](rem/README.md) | `rem/` | **RETIRED (no longer updated, 2026-11-24).** **Archived** (2026-11-23; dropped from both marketplaces, never installed; tests still run; dev-lab owns the harness). Memory management: summarization, merge without deletion, task journals, derived index |
+| [`sharp-review`](sharp-review/README.md) | `sharp-review/` | **RETIRED (no longer updated, 2026-11-24).** Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
+| [`watch`](watch/README.md) | `watch/` | **RETIRED (no longer updated, 2026-11-24).** Unattended server & task supervision: health checks, anomaly detection, auto-repair |
 | [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript writing (LaTeX checks over the writing knowledge base) and review, citation and contact discovery |
 
 Each plugin has its own `AGENTS.md`; plugin-specific `.claude/rules/` are optional. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.

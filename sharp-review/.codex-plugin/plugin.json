@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "Sharp Review",
     "shortDescription": "Post-feature sharp review — 3 parallel reviewers with schema enforcement, merge",
-    "longDescription": "Post-feature sharp review â€” 3 parallel reviewers with schema enforcement, merge findings, sync structured task list with memory cross-references.",
+    "longDescription": "RETIRED (no longer updated, 2026-11-24). Post-feature sharp review â€” 3 parallel reviewers with schema enforcement, merge findings, sync structured task list with memory cross-references.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

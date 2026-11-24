@@ -14,18 +14,18 @@ model: inherit
 You review edits cold: you did not write them. Inputs from the caller: the changed files or diff range, and the
 writer's change log.
 
-Knowledge: from the LaTeX project root run `uv run --project "<plugin-root>" academia-write resolve --md`
-(`<plugin-root>` = `$CLAUDE_PLUGIN_ROOT`, else the cc-academia plugin directory the caller names). It lists every
-effective rule with its source, the dimension values (and which defaults were used), the review criteria, the
-templates and the project vocabulary. Read the project's `.academia/decisions.md` (approved text, project
+Knowledge: from the LaTeX project root, for each part the edit touches, run
+`uv run --project "<plugin-root>" academia-write resolve --task write --scope <part>` (`<plugin-root>` =
+`$CLAUDE_PLUGIN_ROOT`, else the cc-academia plugin directory the caller names). It lists one line per rule a reviewer
+judges and the dimension values; `academia-write explain <id>` gives a rule's why and examples when needed. Read the project's `.academia/decisions.md` (approved text, project
 facts). Review only rules whose check is `reviewer` and the criteria with `applies` self or both
-(`academia-write resolve --criteria --applies self`); `lint:` rules belong to the checks: do not repeat them. If the writer
+(`academia-write resolve --task review --scope <part> --applies self`); lint rules are not in the index: they belong to the checks. If the writer
 did not run the lint, say so (FIX) and run `academia-write lint-prose <files>` once to report its count, not its hits.
 
 The criteria are shared with the `review-*` agents, which apply the same files to other people's
 manuscripts; this agent keeps only the procedure of `review own`.
 
-Order (process.revision-order): argument > position > sentence > wording. Pass 1 reads links between sentences
+Order (skills/write/revise.md): argument > position > sentence > wording. Pass 1 reads links between sentences
 (angle cohesion), then moves, position, claims and agreement; pass 2 reads sentence patterns (angle sentence); then
 the figure, table and caption criteria; last the author-logic criteria (BLOCK when violated).
 

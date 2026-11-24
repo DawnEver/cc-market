@@ -1,5 +1,7 @@
 # Sharp Review (sharp review)
 
+> **RETIRED (no longer updated, 2026-11-24).** Kept for reference only; cc-market's one live plugin is [cc-academia](../cc-academia/README.md).
+
 Post-feature code review with independent AI reviewers. Each run picks review profiles, gives each to a reviewer on a provider drawn from fabric `list_providers`, and merges their schema-bound findings into a structured task list. The review method (profiles, prompts, finding schema, merge rules), its planner and its merge are ai-lab's (`python -m ai_lab.review.plan` / `.merge`); this plugin keeps none of them.
 
 ## Install

@@ -1,5 +1,7 @@
 # watch
 
+> **RETIRED (no longer updated, 2026-11-24).** Kept for reference only; cc-market's one live plugin is [cc-academia](../cc-academia/README.md).
+
 **The Claude front end over `lab_commons.supervise`.**
 
 Unattended supervision of a server or a long-running task: health checks, anomaly detection,

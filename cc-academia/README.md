@@ -1,5 +1,7 @@
 # cc-academia
 
+> cc-latex is **RETIRED (no longer updated, 2026-11-24)**: it was folded into cc-academia, whose manuscript-writing LaTeX checks replace it.
+
 Academic research toolchain for Claude Code and Codex: systematic literature
 review, manuscript writing in LaTeX, manuscript peer review, and reviewer
 discovery for a journal editor.
