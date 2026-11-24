@@ -1,5 +1,10 @@
 # rem
 
+> **Archived (2026-11-23).** Dropped from the Claude and Codex marketplaces: not offered, not installed.
+> Its kept duties are dev-lab's, rendered into `.claude/settings.json` by `hook_install`: hard rules at SessionStart,
+> the ledger guard, a task derived from the branch, memory write and `python -m dev_lab.dev.memory search`.
+> A machine that still has it installed removes it with `python -m dev_lab.dev.remretired uninstall --apply`.
+
 REM sleep for Claude Code and Codex sessions — consolidate learnings into `.claude/memory/`, where no entry is ever deleted or edited: a newer entry corrects, supersedes or merges older ones, and the index is derived from the files.
 
 The derived index (`.claude/memory-index.md`, outside `rules/`) is read on demand; recall injects

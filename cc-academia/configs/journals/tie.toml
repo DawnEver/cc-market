@@ -4,3 +4,5 @@
 # removed from the code and nothing read it, so it was a number that looked like
 # a rule and changed no run.
 journal = "IEEE Transactions on Industrial Electronics"
+# How public review records name this journal (ISSNs as OpenAlex lists them).
+issns = ["0278-0046", "1557-9948"]

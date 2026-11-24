@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from academia.reviewer import eligibility as eligibility_module
-from academia.reviewer import trajectory
+from academia.reviewer import reviewing, trajectory
 from academia.reviewer.coi import CLEAR, CLEAR_WORDING
 from academia.reviewer.eligibility import invitation_readiness
 from academia.reviewer.enrich import EmailFinding
@@ -88,6 +88,7 @@ EXPORT_COLUMNS = (
     "evidence_json",
     "coi_findings_json",
     "invitations_json",
+    *reviewing.COLUMNS,
 )
 
 
@@ -100,6 +101,17 @@ class Row:
     #: changed institution has two, and which one reaches them is the editor's
     #: call rather than the precedence table's.
     alternate: EmailFinding = field(default_factory=EmailFinding)
+    #: The reviewing columns (``reviewing.signals``), keyed by column name.
+    signals: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def already_invited(self) -> bool:
+        """Invited on *this* manuscript, in any state — so not a new proposal."""
+        return self.signals.get("invitation_status", reviewing.NOT_INVITED) != reviewing.NOT_INVITED
+
+    @property
+    def has_locator(self) -> bool:
+        return self.signals.get("found_by") in ("locator", "both")
 
     @property
     def position(self) -> str:
@@ -171,15 +183,18 @@ def build_rows(
     candidates: list[Candidate],
     emails: dict[str, EmailFinding] | None = None,
     alternates: dict[str, EmailFinding] | None = None,
+    signals: dict[str, dict[str, Any]] | None = None,
 ) -> list[Row]:
     lookup = emails or {}
     second = alternates or {}
+    stated = signals or {}
     return [
         Row(
             rank=index,
             candidate=candidate,
             email=lookup.get(candidate.person.person_id, EmailFinding()),
             alternate=second.get(candidate.person.person_id, EmailFinding()),
+            signals=stated.get(candidate.person.person_id, {}),
         )
         for index, candidate in enumerate(candidates, start=1)
     ]
@@ -395,6 +410,7 @@ def _export_record(conn: sqlite3.Connection, row: Row) -> dict[str, object]:
         "evidence_json": packed(evidence_records),
         "coi_findings_json": packed(finding_records),
         "invitations_json": packed(invitation_records),
+        **{column: row.signals.get(column, "") for column in reviewing.COLUMNS},
     }
 
 
@@ -493,6 +509,10 @@ def render_contact_list(rows: list[Row], policy: Policy) -> str:
     """
     records = []
     for row in rows:
+        if row.already_invited:
+            # Already asked on this manuscript: this list addresses new
+            # invitations, and the decision sheet shows where they stand.
+            continue
         decision = invitation_readiness(
             row.candidate,
             row.email,
@@ -519,6 +539,16 @@ RECOMMENDATION = {
     "manual_review": "check_first",
     "rejected": "do_not_invite",
 }
+
+#: Somebody already invited on this manuscript is not proposed again, in
+#: whatever state their invitation is. Bookkeeping, not a verdict: no rule
+#: judged them, so it never names a blocking reason.
+ALREADY_INVITED = "already_invited"
+
+
+def recommendation_of(row: Row, status: str) -> str:
+    return ALREADY_INVITED if row.already_invited else RECOMMENDATION[status]
+
 
 #: The classes an invitation can still go to. Everything else has been excluded
 #: by a rule, so a missing address there does not block the run.
@@ -551,7 +581,7 @@ def email_coverage(rows: list[Row], policy: Policy) -> dict[str, Any]:
             domain_status=email_affiliation_domain(row.candidate.person, row.email.email),
             min_confidence=policy.min_identity_confidence,
         )
-        label = RECOMMENDATION[decision.status]
+        label = recommendation_of(row, decision.status)
         classes["invitable" if label in INVITABLE else "other"].append(row.email.found)
 
     summary: dict[str, Any] = {}
@@ -604,6 +634,10 @@ def render_audit(rows: list[Row], policy: Policy) -> str:
     spreadsheet has, and the reviewer's name is the identity that matters here.
     """
     columns: list[str] = [*AUDIT_IDENTITY, "recommendation", "filter_coi"]
+    # Locator columns exist only where a page was imported: a column of blanks
+    # would read as "Web of Science knows nothing about anybody".
+    with_locator = any(row.has_locator for row in rows)
+    signal_columns = [c for c in reviewing.COLUMNS if with_locator or not c.startswith("locator_")]
     seen = set(columns)
     records: list[dict[str, object]] = []
 
@@ -624,7 +658,7 @@ def render_audit(rows: list[Row], policy: Policy) -> str:
             "institution": row.institution,
             "current_country": person.country_code or "",
             "profile_url": profile_url(candidate),
-            "recommendation": RECOMMENDATION[decision.status],
+            "recommendation": recommendation_of(row, decision.status),
             # Three states, not two. A REVIEW-level conflict does not exclude
             # anybody — it asks for a human — and collapsing it into FILTERED
             # printed "Conflict of interest with the authors" in the workbook's
@@ -667,6 +701,12 @@ def render_audit(rows: list[Row], policy: Policy) -> str:
                     seen.add(column)
             details.append(outcome.detail)
 
+        for column in signal_columns:
+            if column in row.signals:
+                record[column] = row.signals[column]
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
         record["filter_details"] = "; ".join(details)
         records.append(record)
 
@@ -809,12 +849,121 @@ def render_dossier(conn: sqlite3.Connection, row: Row) -> str:
     return "\n".join(out) + "\n"
 
 
+EDITORIAL_COLUMNS = (
+    "order",
+    "reviewer",
+    "affiliation",
+    "orcid_url",
+    "status",
+    "invited",
+    "agreed",
+    "declined",
+    "due",
+    "returned",
+    "days_in_review",
+    "decision_letter",
+    "match_method",
+    "in_candidate_pool",
+)
+SUMMARY_COLUMNS = ("item", "value")
+WORKS_COLUMNS = ("reviewer", "found_by", "source", "title", "venue", "year", "doi_url", "authors")
+
+
+def render_editorial(
+    conn: sqlite3.Connection, ms_id: str, rows: list[Row]
+) -> tuple[str, str] | None:
+    """This manuscript's reviewer list and the editorial system's own tally.
+
+    ``None`` when no page was imported: the editorial system is the only
+    source of these, and an empty sheet would read as "nobody invited".
+    """
+    invitations = repo.editorial_invitations(conn, ms_id)
+    imported = repo.editorial_import(conn, ms_id)
+    if not invitations and not imported:
+        return None
+    pool = {row.candidate.person.person_id for row in rows}
+    records = []
+    for item in invitations:
+        data = item["data"]
+        records.append(
+            {
+                "order": data.get("order"),
+                "reviewer": data.get("name", ""),
+                "affiliation": data.get("affiliation", ""),
+                "orcid_url": f"https://orcid.org/{data['orcid']}" if data.get("orcid") else "",
+                "status": data.get("status", ""),
+                "invited": data.get("invited", ""),
+                "agreed": data.get("agreed", ""),
+                "declined": data.get("declined", ""),
+                "due": data.get("due", ""),
+                "returned": data.get("returned", ""),
+                "days_in_review": data.get("days_in_review"),
+                "decision_letter": data.get("decision_letter"),
+                "match_method": item["match_method"],
+                "in_candidate_pool": item["person_id"] in pool,
+            }
+        )
+    summary = [
+        {"item": "Manuscript", "value": imported.get("manuscript_ref", "")},
+        {"item": "Submitted", "value": imported.get("submitted", "")},
+        {"item": "Last updated", "value": imported.get("last_updated", "")},
+        *(
+            {"item": f"ScholarOne: {name}", "value": count}
+            for name, count in (imported.get("summary") or {}).items()
+        ),
+        {
+            "item": "Reviewer Locator candidates shown on the page / found",
+            "value": f"{imported.get('locator_shown', 0)} / {imported.get('locator_total', 0)}",
+        },
+    ]
+    return _detail_csv(EDITORIAL_COLUMNS, records), _detail_csv(SUMMARY_COLUMNS, summary)
+
+
+def render_works(conn: sqlite3.Connection, ms_id: str, rows: list[Row]) -> str:
+    """The works behind each candidate: this run's closest first, then the Locator's."""
+    locator = {item["person_id"]: item["data"] for item in repo.locator_suggestions(conn, ms_id)}
+    records = []
+    for row in rows:
+        person = row.candidate.person
+        found_by = row.signals.get("found_by", "ours")
+        closest = sorted(row.candidate.evidence, key=lambda e: -e.similarity)
+        for item in closest[: reviewing.WORKS_SHOWN]:
+            records.append(
+                {
+                    "reviewer": person.display_name,
+                    "found_by": found_by,
+                    "source": "this run",
+                    "title": item.title,
+                    "venue": item.venue,
+                    "year": item.year,
+                    "doi_url": f"https://doi.org/{item.doi}" if item.doi else item.url,
+                    "authors": "",
+                }
+            )
+        for work in (locator.get(person.person_id) or {}).get("works") or []:
+            records.append(
+                {
+                    "reviewer": person.display_name,
+                    "found_by": found_by,
+                    "source": "Reviewer Locator",
+                    "title": work.get("title", ""),
+                    "venue": work.get("venue", ""),
+                    "year": work.get("year"),
+                    "doi_url": f"https://doi.org/{work['doi']}" if work.get("doi") else "",
+                    "authors": work.get("authors", ""),
+                }
+            )
+    return _detail_csv(WORKS_COLUMNS, records)
+
+
 def write_all(
     conn: sqlite3.Connection,
     directory: Path,
     rows: list[Row],
     profile: Profile,
     policy: Policy,
+    *,
+    ms_id: str = "",
 ) -> dict[str, Path]:
     directory.mkdir(parents=True, exist_ok=True)
     dossier_dir = directory / "dossiers"
@@ -852,6 +1001,18 @@ def write_all(
     audit = directory / "contact-list-audit.csv"
     audit.write_text(render_audit(rows, policy), encoding="utf-8-sig")
 
+    works = directory / "works.csv"
+    works.write_text(render_works(conn, ms_id, rows), encoding="utf-8-sig")
+
+    editorial = directory / "editorial-reviewers.csv"
+    summary = directory / "editorial-summary.csv"
+    if (rendered := render_editorial(conn, ms_id, rows)) is not None:
+        editorial.write_text(rendered[0], encoding="utf-8-sig")
+        summary.write_text(rendered[1], encoding="utf-8-sig")
+    else:
+        editorial.unlink(missing_ok=True)
+        summary.unlink(missing_ok=True)
+
     reading = directory / "reading-list.md"
     reading.write_text(render_reading_list(rows), encoding="utf-8")
 
@@ -864,6 +1025,7 @@ def write_all(
         "csv": csv_path,
         "contact_list": contacts,
         "contact_list_audit": audit,
+        "works": works,
         "reading_list": reading,
         "dossiers": dossier_dir,
     }

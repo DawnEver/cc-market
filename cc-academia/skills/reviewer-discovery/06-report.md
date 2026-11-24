@@ -18,7 +18,28 @@ after its contents: mailed on, renamed by an inbox or dropped in a shared
 folder, it still says which submission it belongs to.
 
 Three sheets — `decision`, `audit`, `columns` — built from
-`contact-list-audit.csv` and documented in `academia/reviewer/workbook.py`. The
+`contact-list-audit.csv` and documented in `academia/reviewer/workbook.py`,
+then `reviewer list` (only after `import-scholarone`) and `works` (each
+candidate's three closest works, plus the Locator's).
+
+Beside the rule columns, the decision sheet states each candidate *as a
+reviewer* (`academia/reviewer/reviewing.py`); none of it excludes or scores:
+
+| Columns | Source |
+|---------|--------|
+| Found by (ours / locator / both); invitation on this manuscript | this run's evidence; the invitation record (`invite`, `import-scholarone`) |
+| Public reviews, by journal, last 12 months, days since, reviewed for this journal | ORCID peer-review section |
+| Articles in the window | OpenAlex yearly output |
+| Our invitations in 12 months / still open | the invitation record, all manuscripts |
+| Closest works | this run's evidence |
+| Locator reviews, articles, workload, R-Score, works, WoS link | imported page only — no public source, never estimated |
+| Review-record check | the above; thresholds in `[reviewing.record_check]` |
+
+The review-record check reads *Check by hand* when a review count is out of
+proportion to the person's output **and** only a free-mail address is known or
+their affiliations span many countries. It is a hint for the editor and nothing
+else. Anyone already invited on this manuscript reads *Already invited*, is left
+off `contact-list.csv`, and gets no blocking reason. The
 `decision` sheet carries **Homepage or paper**: a clickable link to the ORCID
 record, else the publication profile, else the paper of theirs closest to this
 manuscript. Never a constructed search or a guessed university homepage — a
@@ -92,7 +113,7 @@ reason, not a second copy of these numbers:
 | Config table | Rule | Shipped | Fires when |
 |--------------|------|---------|-----------|
 | `geo.restricted` | `restricted_country` | require (IN, IR) | the current affiliation is in a country the journal will not invite from |
-| `activity.related_journals` | `related_journals` | require (3) | too little of the relevant record is journal work |
+| `activity.related_journals` | `related_journals` | require (3; TEC 2) | too little of the relevant record is journal work |
 | `activity.relevant` | `relevant_activity` | require | nothing on *this* topic in the last 3 years |
 | `activity` | `recent_activity` | require | their publication profile shows no work at all in the last 3 years |
 | `seniority.doctoral` | `doctoral_year` | require | a doctoral candidate before their 3rd year |
@@ -184,6 +205,10 @@ rows sort below every invitable candidate whatever the reason, so the ranking
 reads: invitable by conflict status, then expertise, then geography; then
 everyone who was removed.
 
+**Missing relevance evidence is not a pass.** A candidate with no relevant
+paper in this run, even after `candidates` fetched and scored their own works,
+reads *No evidence* on the relevance rules and is *Check first* at best.
+
 **A missing fact never disqualifies anybody.** No publication years, no stated
 enrolment year, **no public address** — each of these is
 a gap in public data, not evidence about the person, and each passes. A
@@ -237,7 +262,8 @@ is stated twice.
 | `activity.relevant` | same window, asked of this manuscript's topic |
 | `activity.related_journals` | the journal-work floor over the relevant record |
 | `scoring` | the six component weights, including `geographic` |
-| `retrieval` | pool size, fetch budgets, email precedence and confidence |
+| `retrieval` | pool size, fetch budgets, email precedence and confidence, `search_window_years` |
+| `reviewing` | article window; `record_check` thresholds and free-mail domains |
 
 Every eligibility table carries a `mode` of `off`, `prefer` or `require`, and
 `off` removes the rule's columns from the audit rather than filling them with
