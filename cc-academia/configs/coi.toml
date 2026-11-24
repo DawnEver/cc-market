@@ -192,11 +192,38 @@ publication_evidence = 0.10
 geographic = 0.08
 activity = 0.07
 
+# Reviewing signals: what the workbook states about each candidate as a
+# reviewer, from public sources (the ORCID peer-review section, most of it
+# written there by Web of Science; OpenAlex yearly output; invitations in the
+# store). They describe; they never exclude and never score.
+[reviewing]
+article_window_years = 5       # "articles" counts this many years, like the Reviewer Locator
+
+# A hint, never a verdict: a review record out of proportion to the person's
+# own output, seen together with only a free-mail address or affiliations in
+# many countries, is worth a second look before inviting. It reads "Check by
+# hand" and changes nothing else. mode = "off" removes the column.
+[reviewing.record_check]
+mode = "review"                # off | review
+min_reviews = 20
+min_reviews_per_article = 2.0
+min_countries = 3
+free_mail_domains = [
+  "gmail.com", "googlemail.com", "yahoo.com", "hotmail.com", "outlook.com", "live.com",
+  "msn.com", "aol.com", "icloud.com", "protonmail.com", "proton.me", "yandex.ru",
+  "mail.ru", "qq.com", "foxmail.com", "163.com", "126.com", "sina.com", "yeah.net",
+  "rediffmail.com", "gmx.de", "web.de",
+]
+
 # Retrieval and enrichment mechanics use the same journal overlay loader as
 # policy, but remain isolated in their own table. Keeping one resolved config
 # prevents a journal's search breadth and contact budget from drifting apart.
 # Module constants remain the fallback when a personal override omits a key.
 [retrieval]
+# Publication window for `search`, in years back from now. 0 = unbounded (the
+# shipped behaviour). 5 matches the Web of Science Reviewer Locator's "Search 5
+# Years of Publications". `--year-from` overrides it for one run.
+search_window_years = 0
 candidate_pool = 300
 top_papers = 50
 max_papers_per_candidate = 10

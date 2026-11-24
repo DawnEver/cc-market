@@ -25,6 +25,7 @@ from academia.sources.base import AuthorSource, PaperSource, SearchPage
 
 WORKS_URL = "https://api.openalex.org/works"
 AUTHORS_URL = "https://api.openalex.org/authors"
+SOURCES_URL = "https://api.openalex.org/sources"
 SOURCE = "openalex"
 
 #: Keywords come with a relevance score; below this they are noise.
@@ -150,6 +151,26 @@ def _short_id(value: Any) -> str:
     """``https://openalex.org/W123`` -> ``W123``."""
     text = as_text(value)
     return text.rsplit("/", 1)[-1] if text else ""
+
+
+def journal_name(issn: str, *, timeout: int = 30) -> str:
+    """The journal an ISSN names, or empty when OpenAlex does not know it.
+
+    ORCID's review records name a venue only by ISSN; this is what turns
+    ``issn:0885-8969`` into a title an editor recognises.
+    """
+    from academia.core.errors import SourceError
+
+    clean = as_text(issn).strip()
+    if not clean:
+        return ""
+    url = build_url(f"{SOURCES_URL}/issn:{clean}", _identified({"select": "display_name"}))
+    try:
+        return as_text(get_json(url, SOURCE, timeout=timeout).get("display_name"))
+    except SourceError as error:
+        if error.details.get("status") == 404:
+            return ""
+        raise
 
 
 def api_key() -> str:
@@ -400,6 +421,15 @@ class OpenAlex(PaperSource, AuthorSource):
         if not clean:
             return None
         return self.get_author(f"https://orcid.org/{clean}", timeout=timeout)
+
+    def search_authors(self, name: str, *, limit: int = 10, timeout: int = 30) -> list[Person]:
+        """Author profiles OpenAlex finds for a name — proposals, never identities."""
+        url = build_url(
+            AUTHORS_URL,
+            _identified({"search": name, "per-page": min(limit, 50), "select": self.AUTHOR_SELECT}),
+        )
+        data = get_json(url, SOURCE, timeout=timeout)
+        return [to_person(r) for r in data.get("results") or [] if isinstance(r, dict)]
 
     def get_author_papers(
         self, author_id: str, *, limit: int = 50, timeout: int = 30

@@ -23,7 +23,7 @@ from academia.core.errors import EXIT_OK, UsageError
 from academia.core.models import stable_id
 from academia.reviewer import coi as coi_module
 from academia.reviewer import contact as contact_module
-from academia.reviewer import discover, geo, rank, report
+from academia.reviewer import discover, geo, rank, report, reviewing, scholarone
 from academia.reviewer import enrich as enrich_module
 from academia.reviewer import lookups as lookup_module
 from academia.reviewer import workbook as workbook_module
@@ -315,12 +315,17 @@ def run_search(args: argparse.Namespace) -> int:
     profile = _load_profile(workspace)
     _require_approved_queries(args.slug, state, profile)
 
+    # `search_window_years` mirrors the Reviewer Locator's "5 years of
+    # publications" when a journal wants it; 0 (shipped) leaves the corpus
+    # unbounded. An explicit --year-from always wins.
+    window = load_policy(state.journal or profile.journal).retrieval_int("search_window_years", 0)
+    year_from = args.year_from or (_now_year() - window + 1 if window > 0 else None)
     outcome = discover.run_search(
         _sources(args.source),
         profile,
         max_pages=args.pages,
         per_page=args.per_page,
-        year_from=args.year_from,
+        year_from=year_from,
     )
 
     with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
@@ -391,18 +396,20 @@ def run_candidates(args: argparse.Namespace) -> int:
         else policy.retrieval_int("top_papers", discover.DEFAULT_TOP_PAPERS)
     )
 
-    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
+    def harvest(conn, own_works: frozenset[str] = frozenset()):
         scores = discover.relevance(conn, profile, now_year=_now_year(), limit=pool)
+        searched = {pid: s for pid, s in scores.items() if pid not in own_works}
         candidates = discover.build_candidates(
-            conn, scores, top_papers=top_papers, min_evidence=args.min_evidence
+            conn, searched, top_papers=top_papers, min_evidence=args.min_evidence
         )
-        rows = [
+        harvested = [
             {
                 "person_id": c.person.person_id,
                 "name": c.person.display_name,
                 "orcid": c.person.orcid,
                 "confidence": c.person.confidence,
                 "resolution_method": c.person.resolution_method,
+                "harvested": True,
                 "evidence": [e.as_dict() for e in c.evidence],
                 # The whole relevant record, so a counting rule reads the same
                 # basis on a re-run as it did on the run that wrote this.
@@ -410,6 +417,30 @@ def run_candidates(args: argparse.Namespace) -> int:
             }
             for c in candidates
         ]
+        # An imported editorial page adds its suggestions here, so a re-run of
+        # this stage keeps them rather than silently dropping them.
+        return scores, scholarone.merge_candidates(conn, harvested, state.ms_id)
+
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
+        scores, rows = harvest(conn)
+        # Missing evidence must not pass. Anyone who joined without papers of
+        # theirs in this corpus has their own works fetched, and the corpus is
+        # scored again so they are judged by the same similarity as everybody.
+        missing = [row["person_id"] for row in rows if not row["evidence"]]
+        fetched = {
+            pid: discover.fetch_own_works(conn, person)
+            for pid in missing
+            if (person := repo.load_person(conn, pid)) is not None
+        }
+        if own := frozenset(p for ids in fetched.values() for p in ids):
+            scores, rows = harvest(conn, own)
+        found = discover.evidence_for(conn, scores, missing)
+        for row in rows:
+            if row["person_id"] in found and not row["evidence"]:
+                evidence, relevant = found[row["person_id"]]
+                row["evidence"] = [e.as_dict() for e in evidence]
+                row["relevant_papers"] = [e.as_dict() for e in relevant]
+        evidenced = sum(1 for pid in missing if found.get(pid, ([], []))[1])
 
     workspace.write_jsonl(workspace.candidate_dir / "candidates.jsonl", rows)
     state.mark("candidates")
@@ -419,6 +450,9 @@ def run_candidates(args: argparse.Namespace) -> int:
         "candidates": len(rows),
         "papers_considered": len(scores),
         "retrieval": {"candidate_pool": pool, "top_papers": top_papers},
+        "without_evidence": len(missing),
+        "own_works_fetched": sum(1 for n in fetched.values() if n),
+        "evidence_from_own_works": evidenced,
     }
     if args.json:
         log.emit(payload)
@@ -816,6 +850,7 @@ def run_report(args: argparse.Namespace) -> int:
     except UsageError:
         email_rows = {}
 
+    harvested = {row["person_id"]: row["harvested"] for row in candidate_rows}
     with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
         candidates: list[rank.Candidate] = []
         for row in candidate_rows:
@@ -896,7 +931,18 @@ def run_report(args: argparse.Namespace) -> int:
                 )
                 break
 
-        rows = report.build_rows(ordered, emails, alternates)
+        signals = {
+            candidate.person.person_id: reviewing.signals(
+                conn,
+                candidate,
+                policy,
+                ms_id=state.ms_id,
+                today=datetime.now().date(),
+                harvested=harvested[candidate.person.person_id],
+            )
+            for candidate in ordered
+        }
+        rows = report.build_rows(ordered, emails, alternates, signals)
         coverage = report.email_coverage(rows, policy)
 
         # candidate_scores is the ranking table, and a blocked candidate has no
@@ -917,7 +963,9 @@ def run_report(args: argparse.Namespace) -> int:
             for row in rows
             if row.institution == "unknown" and not row.candidate.blocked
         ]
-        written = report.write_all(conn, workspace.shortlist_dir, rows, profile, policy)
+        written = report.write_all(
+            conn, workspace.shortlist_dir, rows, profile, policy, ms_id=state.ms_id
+        )
         # The one file that leaves the workspace, built from the audit CSV that
         # was just written so the workbook cannot describe an earlier run.
         deliverable = workspace.deliverable
@@ -995,6 +1043,58 @@ def run_report(args: argparse.Namespace) -> int:
                     "address(es). Run `rev-disc contacts`, look the names up, feed them "
                     "back with `enrich --homepages`, then re-run report."
                 )
+    return EXIT_OK
+
+
+# -------------------------------------------------------- import-scholarone
+
+
+def run_import_scholarone(args: argparse.Namespace) -> int:
+    """Store a saved ScholarOne Assign Reviewers page against this manuscript.
+
+    Optional input: nothing downstream requires it. It adds the Reviewer
+    Locator's candidates and numbers, and this manuscript's invitation
+    statuses — which only the editorial system knows.
+    """
+    workspace = open_workspace(args.slug)
+    state = workspace.load_state()
+    if not state.ms_id:
+        raise UsageError(f"run `rev-disc init --slug {args.slug}` before importing a page")
+    source = Path(args.html).expanduser()
+    if not source.exists():
+        raise UsageError(f"file not found: {source}")
+    try:
+        page = scholarone.parse(source.read_text(encoding="utf-8", errors="replace"))
+    except scholarone.NotAnAssignPage as error:
+        raise UsageError(str(error)) from error
+
+    candidates_path = workspace.candidate_dir / "candidates.jsonl"
+    rows = workspace.read_jsonl(candidates_path) if candidates_path.exists() else []
+    with store(sync=not getattr(args, "no_facts_sync", False)) as conn:
+        result = scholarone.store_page(conn, page, state.ms_id, candidate_rows=rows)
+        if candidates_path.exists():
+            merged = scholarone.merge_candidates(conn, rows, state.ms_id)
+    if candidates_path.exists():
+        workspace.write_jsonl(candidates_path, merged)
+
+    payload = {
+        "locator_suggestions": len(page.suggestions),
+        "locator_total": page.locator_total,
+        "locator_matched": result.locator,
+        "invitees": len(page.invitees),
+        "invitees_matched": result.invitees,
+        "candidates_added": (len(merged) - len(rows)) if candidates_path.exists() else 0,
+    }
+    if args.json:
+        log.emit(payload)
+    else:
+        log.info(
+            f"reviewer locator: {len(page.suggestions)} of {page.locator_total} shown on the page"
+        )
+        log.info(f"  matched: {result.locator}")
+        log.info(f"reviewer list: {len(page.invitees)} invitee(s); matched: {result.invitees}")
+        if not candidates_path.exists():
+            log.info("  `rev-disc candidates` will add the Locator people to the pool")
     return EXIT_OK
 
 

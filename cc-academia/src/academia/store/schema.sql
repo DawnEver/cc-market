@@ -126,6 +126,59 @@ CREATE TABLE IF NOT EXISTS person_output (
     PRIMARY KEY (person_id, year, source)
 );
 
+-- Public peer reviews, as the person's ORCID record lists them (most are
+-- written there by Web of Science). A cache like the rest: re-running enrich
+-- brings it back. `person_review_checks` records that the record was read at
+-- all, because "no row" must read as unknown, never as "never reviewed".
+CREATE TABLE IF NOT EXISTS person_reviews (
+    person_id  TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
+    review_key TEXT NOT NULL,
+    group_id   TEXT,
+    journal    TEXT,
+    completed  TEXT,
+    source     TEXT NOT NULL,
+    PRIMARY KEY (person_id, review_key)
+);
+
+CREATE TABLE IF NOT EXISTS person_review_checks (
+    person_id  TEXT PRIMARY KEY REFERENCES persons(person_id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,
+    source_url TEXT,
+    checked_at TEXT NOT NULL
+);
+
+-- What an editorial system's reviewer finder proposed for one manuscript, as
+-- imported from a saved page (`rev-disc import-scholarone`). The numbers are
+-- Clarivate's and only exist here when somebody imported them.
+CREATE TABLE IF NOT EXISTS locator_suggestions (
+    ms_id         TEXT NOT NULL,
+    person_id     TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL,
+    match_method  TEXT NOT NULL,
+    data_json     TEXT NOT NULL,
+    imported_at   TEXT NOT NULL,
+    PRIMARY KEY (ms_id, person_id)
+);
+
+-- The manuscript's own reviewer list in the editorial system: status and
+-- dates per invitee. The outcome also lands in review_history, which is the
+-- portable record; this keeps the dates that table has no columns for.
+CREATE TABLE IF NOT EXISTS editorial_invitations (
+    ms_id        TEXT NOT NULL,
+    person_id    TEXT NOT NULL REFERENCES persons(person_id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL,
+    match_method TEXT NOT NULL,
+    data_json    TEXT NOT NULL,
+    imported_at  TEXT NOT NULL,
+    PRIMARY KEY (ms_id, person_id)
+);
+
+CREATE TABLE IF NOT EXISTS editorial_imports (
+    ms_id        TEXT PRIMARY KEY,
+    data_json    TEXT NOT NULL,
+    imported_at  TEXT NOT NULL
+);
+
 -- A rank read from a page, kept beside the career history rather than merged
 -- into it: a page states what someone is now, an employment record states what
 -- they were appointed as, and the report shows whichever is more senior.

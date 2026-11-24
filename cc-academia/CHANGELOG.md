@@ -12,6 +12,19 @@ build if they drift.
   --language`). Human-readable prose — briefs, screening explanations, paper cards,
   synthesis — follows it on both the agent/fabric and CLI/litellm paths; keys, enums
   and bibliographic metadata stay unchanged. Default remains English (#2).
+- Reviewer discovery: a reviewing record for every candidate, from public
+  sources — public peer reviews per journal and for the target journal (ORCID
+  peer-review section, journals named via OpenAlex), articles over
+  `[reviewing] article_window_years`, invitation load from the store, the
+  closest works — and a hint-only review-record check
+  (`[reviewing.record_check]`). Journal configs state their `issns`.
+- `rev-disc import-scholarone`: an optional saved ScholarOne Assign Reviewers
+  page adds the Web of Science Reviewer Locator's candidates and numbers and
+  this manuscript's invitation statuses. Anyone already invited reads
+  *Already invited* and leaves the contact list. The workbook gains
+  `reviewer list` and `works` sheets.
+- `[retrieval] search_window_years` bounds `search` (0, the default, leaves it
+  unbounded).
 
 ### Fixed
 

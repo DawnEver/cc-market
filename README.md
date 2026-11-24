@@ -22,9 +22,9 @@ Most plugins run on **both** hosts. What each does and where it runs:
 
 | Plugin | What it gives you | Claude Code | Codex |
 |---|---|---|---|
-| [`rem`](rem/README.md) | Memory that converges without deletion: session summarization, merge, task journals, derived index | yes | yes (SessionStart hook injects `.claude/rules`) |
+| [`rem`](rem/README.md) | **Archived (2026-11-23)** — not offered by the marketplace or installed; dev-lab owns the harness (rules injection, task guard, memory write/search). Memory that converges without deletion: session summarization, merge, task journals, derived index | yes | yes (SessionStart hook injects `.claude/rules`) |
 | [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync | yes | yes |
-| [`evolve`](evolve/README.md) | Iterative review→fix loop (depends on `sharp-review` + `rem`) | yes | yes |
+| [`evolve`](evolve/README.md) | Iterative review→fix loop (depends on `sharp-review` + the archived `rem`) | yes | yes |
 | [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |
 | [`fabric`](fabric/README.md) | Invoke & observe child agents of any provider (`call`, `fan_out`) | yes | yes |
 | [`cc-latex`](cc-latex/README.md) | LaTeX writing: compile workflow, academic writing style, word counting | yes | yes |
@@ -33,7 +33,7 @@ Most plugins run on **both** hosts. What each does and where it runs:
 **What Codex consumes:** skills, hooks, and `mcpServers`, but **not** plugin slash-commands
 (those are Claude Code-only; the underlying capability is still reachable via the plugin's
 skills/MCP). Codex also does not support the `Notification` or `SessionEnd` hook events, and
-does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionStart hook).
+does not auto-load `.claude/rules` (dev-lab's rendered SessionStart hook injects them).
 
 ## Add this marketplace
 
@@ -48,7 +48,7 @@ does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionS
 ```shell
 node scripts/gen-codex.mjs .          # refresh .codex-plugin/ + .agents/plugins/
 codex plugin marketplace add <path-to-cc-market>
-codex plugin add fabric@cc-market     # then rem / sharp-review / evolve / watch / cc-latex / cc-academia
+codex plugin add fabric@cc-market     # then sharp-review / evolve / watch / cc-latex / cc-academia
 ```
 
 `cc-academia` supports both hosts:
@@ -59,7 +59,6 @@ extra file-tool guard that Codex does not guarantee. See the host table above.
 
 ```shell
 /plugin install fabric@cc-market
-/plugin install rem@cc-market
 /plugin install sharp-review@cc-market
 /plugin install watch@cc-market
 /plugin install evolve@cc-market
