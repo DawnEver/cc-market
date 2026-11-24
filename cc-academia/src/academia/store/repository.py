@@ -967,14 +967,16 @@ def review_record(
 # ------------------------------------------------- editorial-system imports
 
 
-_MS_ROW_STATEMENTS: dict[str, tuple[str, str]] = {
+_MS_ROW_STATEMENTS: dict[str, tuple[str, str, str]] = {
     "locator_suggestions": (
+        "SELECT * FROM locator_suggestions WHERE ms_id = ? ORDER BY position",
         "DELETE FROM locator_suggestions WHERE ms_id = ?",
         "INSERT OR REPLACE INTO locator_suggestions "
         "(ms_id, person_id, position, match_method, data_json, imported_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
     ),
     "editorial_invitations": (
+        "SELECT * FROM editorial_invitations WHERE ms_id = ? ORDER BY position",
         "DELETE FROM editorial_invitations WHERE ms_id = ?",
         "INSERT OR REPLACE INTO editorial_invitations "
         "(ms_id, person_id, position, match_method, data_json, imported_at) "
@@ -983,13 +985,18 @@ _MS_ROW_STATEMENTS: dict[str, tuple[str, str]] = {
 }
 
 
+def _ms_row_statements(table: str) -> tuple[str, str, str]:
+    """The literal (select, delete, insert) statements for *table*; never interpolated."""
+    if table not in _MS_ROW_STATEMENTS:
+        raise ValueError(f"no manuscript-row table {table!r}; known: {sorted(_MS_ROW_STATEMENTS)}")
+    return _MS_ROW_STATEMENTS[table]
+
+
 def _replace_ms_rows(
     conn: sqlite3.Connection, table: str, ms_id: str, rows: Sequence[dict[str, Any]]
 ) -> None:
-    """Replace one manuscript's rows; ``table`` selects a fixed literal statement pair."""
-    if table not in _MS_ROW_STATEMENTS:
-        raise ValueError(f"no manuscript-row table {table!r}; known: {sorted(_MS_ROW_STATEMENTS)}")
-    delete_sql, insert_sql = _MS_ROW_STATEMENTS[table]
+    """Replace one manuscript's rows in *table*."""
+    _select_sql, delete_sql, insert_sql = _ms_row_statements(table)
     conn.execute(delete_sql, (ms_id,))
     now = utcnow()
     conn.executemany(
@@ -1016,9 +1023,7 @@ def _ms_rows(conn: sqlite3.Connection, table: str, ms_id: str) -> list[dict[str,
             "match_method": row["match_method"],
             "data": json.loads(row["data_json"]),
         }
-        for row in conn.execute(
-            f"SELECT * FROM {table} WHERE ms_id = ? ORDER BY position", (ms_id,)
-        )
+        for row in conn.execute(_ms_row_statements(table)[0], (ms_id,))
     ]
 
 

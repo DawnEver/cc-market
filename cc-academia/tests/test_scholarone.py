@@ -222,3 +222,10 @@ def test_manuscript_rows_refuse_an_undeclared_table(conn):
 
     with pytest.raises(ValueError, match="no manuscript-row table"):
         repo._replace_ms_rows(conn, "people; DROP TABLE people", "ms-1", [])
+
+
+def test_manuscript_rows_read_refuses_an_undeclared_table(conn):
+    from academia.store import repository as repo
+
+    with pytest.raises(ValueError, match="no manuscript-row table"):
+        repo._ms_rows(conn, "people", "ms-1")
