@@ -1,26 +1,73 @@
 // tasks.mjs — the tasks layer: what is being done, and how far.
 //
-// A task is a directory .claude/tasks/<slug>/ at the project root:
+// A task is a directory <slug>/ of the repository's task LEDGER (tasksDir):
 //   TASK.md     goal, scope, owner, status — written only by the user's /rem:task command
 //   JOURNAL.md  append-only: dated progress, decisions Dn, open items On, handoffs
 // Opening/closing needs the user's authority record (authority.mjs): refused by default,
 // detectable when bypassed, not preventable by the same OS user. A session
-// works on ONE task, bound by the user's instruction (--task) or by its worktree/branch
-// name, and appends only to that task's journal.
+// works on ONE task, bound by the user's instruction (--task) or by the user's `task: <slug>`
+// prompt (bindSession, run by rem's UserPromptSubmit hook hooks/task-authority.js), and appends
+// only to that task's journal.
+//
+// The ledger is REPO state, not branch state (cc-market #20): ONE directory, <main checkout>/.claude/tasks/,
+// the parent of `git rev-parse --git-common-dir`, the same from every worktree, so a task opened in one
+// worktree is found from all of them. It is never committed on a feature branch; close archives a task into
+// memory, which is. A session's binding is SESSION state (D34): one file in the machine home naming the
+// ledger its task lives in (session-binding.mjs), so every repo reads the same binding.
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { readFileSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, statSync, realpathSync } from 'fs';
+import { join, dirname, resolve, basename } from 'path';
+import { createHash } from 'crypto';
 import { findProjectRoot, todayISO } from '../shared/lib.mjs';
 import { spawnSync } from '../shared/spawn.mjs';
-import { parseFrontmatter, findAllScopes, listEntries } from './lib.mjs';
+import { withLock } from '../shared/lock.mjs';
+import { atomicWriteFile } from '../shared/atomic-write.mjs';
+import { parseFrontmatter, listEntries, assertLanguage, findForeignScript } from './lib.mjs';
 import { collectBoundDocs } from './doc-freshness.js';
-import { consumeAuthority } from './authority.mjs';
+import { consumeAuthority, authorityProblem } from './authority.mjs';
+import { writeBinding, readBinding, ledgerOf, sameLedger, retiredBinding, bindingFile, MIGRATE_BINDINGS_DOOR } from './session-binding.mjs';
 
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-export function tasksDir(start) {
-  return join(findProjectRoot(start), '.claude', 'tasks');
+// THE ONE answer to "which checkout holds the ledger": the main checkout of the repository at
+// `start`, from any of its worktrees (its own root outside git) -- the parent of git's common dir,
+// read from the files git keeps (.git, or a worktree's gitdir and its commondir) so the per-prompt
+// path spawns nothing; git itself answers only a layout those files do not explain. Cached per root.
+const checkouts = new Map();
+export function mainCheckout(start) {
+  const root = findProjectRoot(start);
+  if (!checkouts.has(root)) checkouts.set(root, canonical(mainCheckoutOf(root)));
+  return checkouts.get(root);
 }
+
+// One spelling per directory: git reports a worktree's common dir in long form while a Windows temp path may arrive
+// as an 8.3 short name (RUNNER~1), so the ledger path is canonicalised once, here.
+const canonical = p => { try { return realpathSync.native(p); } catch { return p; } };
+
+function mainCheckoutOf(root) {
+  try {
+    const dotGit = join(root, '.git');
+    if (statSync(dotGit).isDirectory()) return root;
+    const gitDir = resolve(root, readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m)[1].trim());
+    const common = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
+    if (basename(common) === '.git') return dirname(common);
+  } catch { /* not a plain checkout or worktree: ask git */ }
+  const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? dirname(r.stdout.trim()) : root;
+}
+
+// THE ONE RESOLVER of the task ledger: every read and write goes through it. A git-side reader (another tool's hook)
+// derives the same directory from git (skills/rem/reference/tasks.md § The binding file).
+export function tasksDir(start) {
+  return join(mainCheckout(start), '.claude', 'tasks');
+}
+
+// The environment keys a native harness names its session id in, as a git hook run inside that session sees it.
+export const SESSION_ENV = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'ANTIGRAVITY_CONVERSATION_ID'];
+// A session id is a plain id, never a path: it names the binding file.
+const SESSION_RE = /^[A-Za-z0-9._-]{1,128}$/;
+// The user's binding prompt: its FIRST line is exactly `task: <slug>`.
+const BIND_PROMPT_RE = /^[ \t]*task:[ \t]*([a-z0-9]+(?:-[a-z0-9]+)*)[ \t]*(?:\r?\n|$)/;
 
 const taskFile = (start, slug) => join(tasksDir(start), slug, 'TASK.md');
 const journalFile = (start, slug) => join(tasksDir(start), slug, 'JOURNAL.md');
@@ -45,6 +92,18 @@ export function parseJournal(text) {
   return { decisions, items: [...items.values()] };
 }
 
+// IDs a journal mints more than once (a Dn line, or an `On open` line, seen twice).
+export function duplicateIds(text) {
+  const seen = new Set(), dup = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(LINE_RE);
+    const id = m?.[3] ? `D${m[3]}` : m?.[5] === 'open' ? `O${m[4]}` : null;
+    if (id && seen.has(id)) dup.add(id);
+    if (id) seen.add(id);
+  }
+  return [...dup];
+}
+
 export function readTask(start, slug) {
   const file = taskFile(start, slug);
   if (!SLUG_RE.test(slug) || !existsSync(file)) return null;
@@ -56,6 +115,7 @@ export function readTask(start, slug) {
     goal: (fields.description || '').replace(/^"|"$/g, ''),
     status: fields.status || 'open',
     opened_by: fields.opened_by || null,
+    authority: fields.authority || null,
     owner: fields.owner || null,
     created: fields.created || null,
     scope: (fields.scope || '').split(',').map(s => s.trim()).filter(Boolean),
@@ -64,6 +124,50 @@ export function readTask(start, slug) {
     openItems: items.filter(i => i.open),
     dir: join(tasksDir(start), slug),
   };
+}
+
+// ── Progressive disclosure: one line per prompt, status on demand, show for the whole record ──
+
+const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 3)}...` : text);
+export const SUMMARY_BYTES = 200;
+export const STATUS_BYTES = 2048;
+
+// The per-prompt line (<= SUMMARY_BYTES): counts and the newest decision, never item texts.
+export function taskSummary(task) {
+  const last = task.decisions.at(-1);
+  const head = `task ${task.slug}: ${task.openItems.length} open, ${task.decisions.length} decisions`;
+  const tail = '; detail: task.js status';
+  if (!last) return head + tail;
+  const lead = `, last D${last.n} (${last.date.slice(5)}) "`;
+  const room = Math.max(0, SUMMARY_BYTES - Buffer.byteLength(head + lead + '"' + tail));
+  let text = clip(last.text, Math.min(60, room));
+  while (Buffer.byteLength(text) > room) text = text.slice(0, -1);
+  return `${head}${lead}${text}"${tail}`;
+}
+
+// `task.js status` (<= STATUS_BYTES): goal, scope, authority, open items one line each, the
+// newest 3 decisions and the last handoff. `undistilled` (from distillStatus) adds that line.
+export function taskStatus(task, { undistilled } = {}) {
+  let journal = '';
+  try { journal = readFileSync(join(task.dir, 'JOURNAL.md'), 'utf8'); } catch { /* none yet */ }
+  const handoff = journal.split(/\r?\n/).map(l => l.match(LINE_RE)).filter(m => m?.[2] === 'handoff').at(-1);
+  const head = [
+    `task ${task.slug} (${task.status}, authority ${task.authority || 'none'}, owner ${task.owner || 'user'}): ${clip(task.goal, 300)}`,
+    ...(task.scope.length ? [`scope: ${task.scope.join(', ')}`] : []),
+  ];
+  const tail = [
+    `decisions: ${task.decisions.length}${task.decisions.length ? ', newest:' : ''}`,
+    ...task.decisions.slice(-3).map(d => `  D${d.n} (${d.date}) ${clip(d.text, 100)}`),
+    ...(handoff ? [`last handoff (${handoff[1]}): ${clip(handoff[6], 160)}`] : []),
+    ...(undistilled ? [`undistilled: ${undistilled.map(n => `D${n}`).join(', ') || '(none)'}`] : []),
+    `whole record: task.js show ${task.slug}`,
+  ];
+  const items = task.openItems.map(i => `  O${i.n} ${clip(i.text, 100)}`);
+  let shown = items.length;
+  const render = () => [...head, `open items: ${items.length}`, ...items.slice(0, shown),
+    ...(shown < items.length ? [`  +${items.length - shown} more (task.js show ${task.slug})`] : []), ...tail].join('\n');
+  while (shown > 0 && Buffer.byteLength(render()) > STATUS_BYTES) shown--;
+  return render();
 }
 
 export function listTasks(start) {
@@ -76,20 +180,79 @@ export function listTasks(start) {
     .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 }
 
-function gitBranch(cwd) {
-  const r = spawnSync('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd, encoding: 'utf8' });
-  return r.status === 0 ? r.stdout.trim() : '';
+// Slug and status of every task, reading TASK.md only (no journal): what recall needs per prompt.
+export function listTaskHeads(start) {
+  const dir = tasksDir(start);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && SLUG_RE.test(e.name) && existsSync(join(dir, e.name, 'TASK.md')))
+    .map(e => ({ slug: e.name, status: parseFrontmatter(readFileSync(join(dir, e.name, 'TASK.md'), 'utf8')).fields.status || 'open' }));
 }
 
-// The ONE open task a session in `start` works on: the user's explicit --task, else the
-// worktree directory name, else the branch's last segment (pr/<slug>, lane/<slug>, ...).
-// null when none names an open task — nothing is guessed beyond that.
-export function resolveTask(start, { task } = {}) {
-  const open = slug => readTask(start, slug)?.status === 'open';
-  if (task) return open(task) ? task : null;
-  const root = findProjectRoot(start);
-  const candidates = [basename(root), gitBranch(root).split('/').pop()];
-  return candidates.find(s => s && SLUG_RE.test(s) && open(s)) || null;
+// The door that binds a session, named wherever none is bound.
+export const BIND_DOOR = 'the user binds this session with a prompt whose first line is `task: <slug>` '
+  + '(an open task; a new one is opened by the user with /rem:task open <slug> "<goal>")';
+
+// The native session id the harness names in `env`, or ''.
+export function sessionOf(env = process.env) {
+  return SESSION_ENV.map(k => env[k]).find(v => typeof v === 'string' && SESSION_RE.test(v)) || '';
+}
+
+// The slug a user prompt binds the session to -- its FIRST line is exactly `task: <slug>` -- or null.
+export function parseBindPrompt(prompt) {
+  return String(prompt || '').match(BIND_PROMPT_RE)?.[1] ?? null;
+}
+
+// Bind `session` to the OPEN task `slug` of the ledger at `start`: write its one binding file and return the task
+// id `<slug>@<authority>`. Called only by the UserPromptSubmit hook, on the USER's prompt. Throws naming the door
+// when the task is not open with a user authority, or the session id is not a plain id.
+export function bindSession(start, session, slug) {
+  if (!SESSION_RE.test(String(session || ''))) throw new Error('the harness named no plain session id to bind');
+  const task = readTask(start, slug);
+  if (task?.status !== 'open' || !task.authority) {
+    throw new Error(`no open task ${slug} in the ledger (${tasksDir(start)}). `
+      + `Door: the user opens it with /rem:task open ${slug} "<goal>", then binds with \`task: ${slug}\``);
+  }
+  const id = `${slug}@${task.authority}`;
+  writeBinding(session, id, ledgerOf(mainCheckout(start), tasksDir(start)));
+  return id;
+}
+
+// The binding of `session` (default: this process's) as bindSession wrote it -- one file in the machine
+// home, read directly, no process spawned -- when it binds a task of the ledger at `start`; null otherwise
+// (none bound, or bound to another repo's task: rem's journal verbs act only on this repo's ledger). Never guessed.
+export function readSessionBinding(start, { session = sessionOf() } = {}) {
+  if (!session || !SESSION_RE.test(session)) return null;
+  const bound = readBinding(session);
+  return bound && sameLedger(bound.ledger, tasksDir(start)) ? { slug: bound.slug, authority: bound.authority } : null;
+}
+
+// Why no task of the ledger at `start` is bound to `session`, with its door: bound in another repo's ledger, still
+// in the retired per-repo store (refused by name, never read), or not bound at all.
+export function unboundReason(start, { session = sessionOf() } = {}) {
+  try { bindingFile('probe'); } catch (unset) { return unset.message; }
+  const bound = session && SESSION_RE.test(session) ? readBinding(session) : null;
+  if (bound) {
+    return `this session is bound to task ${bound.slug}@${bound.authority} of another repo's ledger (${bound.ledger}); `
+      + 'its journal verbs run from that repo';
+  }
+  const old = session ? retiredBinding(tasksDir(start), session) : null;
+  if (old) {
+    return `session ${session} is bound only in the retired per-repo store ${old}; the one store every repo reads is `
+      + `${bindingFile(session)}, which holds none. Door: ${MIGRATE_BINDINGS_DOOR}`;
+  }
+  return BIND_DOOR;
+}
+
+// The ONE open task a session in `start` works on: the user's explicit --task, else the task
+// the user bound the session to (`task: <slug>`, read by `binding`), valid only while that
+// task is open in the ledger with the same authority. null otherwise.
+export function resolveTask(start, { task, binding = readSessionBinding } = {}) {
+  if (task) return readTask(start, task)?.status === 'open' ? task : null;
+  const bound = binding(start);
+  if (!bound) return null;
+  const found = readTask(start, bound.slug);
+  return found?.status === 'open' && found.authority === bound.authority ? bound.slug : null;
 }
 
 // ── Writes (task.js is the only caller) ──
@@ -97,6 +260,7 @@ export function resolveTask(start, { task } = {}) {
 export function openTask(start, slug, goal, { scope = [], owner = 'user', date = todayISO() } = {}) {
   if (!SLUG_RE.test(slug)) throw new Error(`task slug must be kebab-case, got: ${slug}`);
   if (!goal || /[\r\n]/.test(goal)) throw new Error('a task needs a one-line goal');
+  assertLanguage(start, goal, 'the task goal');
   if (existsSync(taskFile(start, slug))) throw new Error(`task ${slug} exists`);
   const authority = consumeAuthority(start, 'open', slug); // the user's /rem:task prompt grants it
   mkdirSync(join(tasksDir(start), slug), { recursive: true });
@@ -124,14 +288,20 @@ export function openTask(start, slug, goal, { scope = [], owner = 'user', date =
   appendJournal(start, slug, 'opened', `${goal} (authority ${authority})`, { date, allowClosed: true });
 }
 
-// Append ONE line. O_APPEND: earlier bytes are never rewritten.
-export function appendJournal(start, slug, tag, text, { date = todayISO(), allowClosed = false } = {}) {
+// Append ONE line. O_APPEND: earlier bytes are never rewritten. The read that numbers the line
+// and the append run under one lock, and IDs are max+1, so two sessions never mint the same Dn/On.
+export function appendJournal(start, slug, tag, text, opts = {}) {
+  return withLock(journalFile(start, slug), () => appendJournalLocked(start, slug, tag, text, opts));
+}
+
+function appendJournalLocked(start, slug, tag, text, { date = todayISO(), allowClosed = false } = {}) {
   const task = readTask(start, slug);
   if (!task) throw new Error(`no task ${slug}`);
   if (task.status !== 'open' && !allowClosed) throw new Error(`task ${slug} is ${task.status}; its journal is final`);
   if (!text || /[\r\n]/.test(text)) throw new Error('a journal line is one line of text');
+  assertLanguage(start, text, 'the journal line');
   let label = tag;
-  if (tag === 'decision') label = `D${task.decisions.length + 1}`;
+  if (tag === 'decision') label = `D${Math.max(0, ...task.decisions.map(d => d.n)) + 1}`;
   else if (tag === 'open-item') label = `O${Math.max(0, ...task.items.map(i => i.n)) + 1} open`;
   else if (tag.startsWith('close-item:')) {
     const n = Number(tag.slice('close-item:'.length).replace(/^O/, ''));
@@ -142,6 +312,72 @@ export function appendJournal(start, slug, tag, text, { date = todayISO(), allow
   if (!LINE_RE.test(line.trimEnd())) throw new Error(`bad journal tag: ${tag}`);
   appendFileSync(journalFile(start, slug), line, 'utf8');
   return line.trimEnd();
+}
+
+// One of the two audited rewrites of a journal line (with amend): translating it into English. Line n (1-based)
+// must be a journal line holding foreign script; the replacement must hold none and keep the
+// `- <date> <tag>: ` prefix byte-identical. One audit line is then appended. Nothing else moves.
+export function translateJournalLine(start, slug, n, replacement, { date = todayISO() } = {}) {
+  const task = readTask(start, slug);
+  if (!task) throw new Error(`no task ${slug}`);
+  if (task.status !== 'open') throw new Error(`task ${slug} is ${task.status}; its journal is final`);
+  const file = journalFile(start, slug);
+  const lines = readFileSync(file, 'utf8').split('\n');
+  const i = Number(n) - 1;
+  if (!Number.isInteger(i) || i < 0 || i >= lines.length) throw new Error(`line ${n} is not in ${slug}'s journal`);
+  const eol = lines[i].endsWith('\r') ? '\r' : '';
+  const old = lines[i].slice(0, lines[i].length - eol.length);
+  const m = old.match(LINE_RE);
+  if (!m) throw new Error(`line ${n} is not a journal line`);
+  if (!findForeignScript(old).length) {
+    throw new Error(`line ${n} holds no foreign-script text; only a translation may rewrite a journal line`);
+  }
+  if (!replacement || /[\r\n]/.test(replacement)) throw new Error('a journal line is one line of text');
+  const prefix = old.slice(0, old.length - m[6].length);
+  if (!replacement.startsWith(prefix) || !LINE_RE.test(replacement)) {
+    throw new Error(`the translation must keep the prefix byte-identical: "${prefix}"`);
+  }
+  const bad = findForeignScript(replacement);
+  if (bad.length) {
+    const cp = c => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+    throw new Error(`the translation still holds non-English script (${bad.slice(0, 8).map(c => `${cp(c)} ${c}`).join(', ')})`);
+  }
+  lines[i] = replacement + eol;
+  writeFileSync(file, lines.join('\n'), 'utf8');
+  return appendJournal(start, slug, 'progress', `line ${n} translated to English`, { date });
+}
+
+// The EXCEPTIONAL rewrite (user ruling 2026-11-13): a journal line that is WRONG -- a misstated
+// fact, a mistranslated quote -- is corrected in place, but only with a reason and the user's
+// words approving it. The `- <date> <tag>: ` prefix stays byte-identical, and one audit line
+// records the reason, the approval and the old line's digest. A changed MIND is a new decision,
+// never an amendment: this is for content that is wrong as written.
+export function amendJournalLine(start, slug, n, replacement, { reason, approved, date = todayISO() } = {}) {
+  if (!reason || !reason.trim()) throw new Error('an amendment names its reason (--reason)');
+  if (!approved || !approved.trim()) throw new Error('an amendment quotes the user approving it (--approved)');
+  if (/[\r\n"]/.test(reason + approved)) throw new Error('the reason and the approval are one line each, without "');
+  const task = readTask(start, slug);
+  if (!task) throw new Error(`no task ${slug}`);
+  if (task.status !== 'open') throw new Error(`task ${slug} is ${task.status}; its journal is final`);
+  const file = journalFile(start, slug);
+  const lines = readFileSync(file, 'utf8').split('\n');
+  const i = Number(n) - 1;
+  if (!Number.isInteger(i) || i < 0 || i >= lines.length) throw new Error(`line ${n} is not in ${slug}'s journal`);
+  const eol = lines[i].endsWith('\r') ? '\r' : '';
+  const old = lines[i].slice(0, lines[i].length - eol.length);
+  const m = old.match(LINE_RE);
+  if (!m) throw new Error(`line ${n} is not a journal line`);
+  if (!replacement || /[\r\n]/.test(replacement)) throw new Error('a journal line is one line of text');
+  const prefix = old.slice(0, old.length - m[6].length);
+  if (!replacement.startsWith(prefix) || !LINE_RE.test(replacement) || replacement === old) {
+    throw new Error(`the amendment must keep the prefix byte-identical ("${prefix}") and change the text`);
+  }
+  assertLanguage(start, replacement, 'the amended line');
+  const digest = createHash('sha256').update(old).digest('hex').slice(0, 12);
+  lines[i] = replacement + eol;
+  writeFileSync(file, lines.join('\n'), 'utf8');
+  return appendJournal(start, slug, 'progress',
+    `line ${n} amended: ${reason.trim()} -- approved: "${approved.trim()}" (was sha256:${digest})`, { date });
 }
 
 // Status is the one TASK.md field that moves after open; the user's close command moves it.
@@ -176,7 +412,7 @@ export function distillStatus(start, slug) {
   const cite = new RegExp(`tasks/${slug}/JOURNAL\\.md#D(\\d+)\\b`, 'g');
   const cited = new Set();
   const homes = [
-    ...findAllScopes(root).flatMap(s => filesUnder(join(s, '.claude', 'memory'))),
+    ...filesUnder(join(root, '.claude', 'memory')),
     ...filesUnder(join(root, '.claude', 'rules')),
     ...collectBoundDocs(root).map(d => d.full),
   ];
@@ -223,12 +459,38 @@ export function closeTask(start, slug, reason, { journalOnly = [], date = todayI
   return dest;
 }
 
-// An archived task: .claude/memory/<date>/task-<slug>/ in any scope.
+// An archived task: .claude/memory/<date>/task-<slug>/.
 export function findArchivedTask(start, slug) {
   const root = findProjectRoot(start);
-  for (const scope of findAllScopes(root)) {
-    const hit = listEntries(scope).find(e => e.kind === 'task' && e.task === slug);
-    if (hit) return join(scope, '.claude', 'memory', hit.path);
+  const hit = listEntries(root).find(e => e.kind === 'task' && e.task === slug);
+  return hit ? join(root, '.claude', 'memory', hit.path) : null;
+}
+
+// Place a task this WORKTREE holds in its own tree (written before the ledger was repo state, or
+// committed on a branch) into the ledger, where every worktree finds it (cc-market #18, #20). It
+// copies the user's record verbatim and opens nothing: the task must be open there with an
+// authority the local history does not contradict. The ledger gets it only when absent or
+// byte-identical; a differing copy is refused, never overwritten -- the user decides which record
+// stands. Returns what it did.
+export function placeTask(start, slug) {
+  const here = join(findProjectRoot(start), '.claude', 'tasks', slug);
+  const there = join(tasksDir(start), slug);
+  if (here === there) return `task ${slug} is already in the ledger`;
+  const fields = SLUG_RE.test(slug || '') && existsSync(join(here, 'TASK.md'))
+    ? parseFrontmatter(readFileSync(join(here, 'TASK.md'), 'utf8')).fields : null;
+  if (fields?.status !== 'open') throw new Error(`no open task ${slug} in this worktree: place copies an open task, it never opens one`);
+  const problem = authorityProblem(start, slug, fields.authority);
+  if (problem?.level === 'error') throw new Error(`task ${slug} cannot be placed: ${problem.msg}`);
+  const files = ['TASK.md', 'JOURNAL.md'].filter(f => existsSync(join(here, f)));
+  const differing = files.filter(f => existsSync(join(there, f))
+    && readFileSync(join(there, f), 'utf8') !== readFileSync(join(here, f), 'utf8'));
+  if (differing.length) {
+    throw new Error(`the ledger holds a different ${differing.join(' and ')} for ${slug}: refused, never overwritten`
+      + ' -- the user decides which record stands');
   }
-  return null;
+  const missing = files.filter(f => !existsSync(join(there, f)));
+  if (!missing.length) return `task ${slug} is already placed in the ledger`;
+  mkdirSync(there, { recursive: true });
+  for (const f of missing) writeFileSync(join(there, f), readFileSync(join(here, f), 'utf8'));
+  return `placed ${slug} (${missing.join(', ')}) in ${there}`;
 }

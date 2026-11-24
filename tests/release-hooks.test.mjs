@@ -118,3 +118,11 @@ test('release refuses to bump the same already-tagged HEAD twice', () => {
     cwd: dir, encoding: 'utf8',
   })).version, '1.2.3');
 });
+
+test('the git hooks and the release script parse under bash -n', () => {
+  for (const script of ['scripts/git-hooks/pre-commit', 'scripts/git-hooks/pre-push', 'scripts/release.sh']) {
+    const result = spawnSync(BASH, ['-n', script], { cwd: ROOT, encoding: 'utf8' });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, `${script} does not parse: ${result.stderr}`);
+  }
+});

@@ -39,7 +39,13 @@ def person_in(country: str, *, topics=None, person_id="p1", confidence=0.99) -> 
     )
     if country:
         person.affiliations.append(
-            Affiliation(inst_id="i1", institution="Some Uni", country_code=country, is_current=True, source="openalex")
+            Affiliation(
+                inst_id="i1",
+                institution="Some Uni",
+                country_code=country,
+                is_current=True,
+                source="openalex",
+            )
         )
     return person
 
@@ -82,7 +88,13 @@ def test_country_comes_from_the_current_post_not_from_a_name(policy):
     """A Chinese researcher now at Stanford counts as US."""
     person = Person(person_id="p", display_name="Wei Zhang", resolution_method="orcid")
     person.affiliations.append(
-        Affiliation(inst_id="i", institution="Stanford University", country_code="US", is_current=True, source="openalex")
+        Affiliation(
+            inst_id="i",
+            institution="Stanford University",
+            country_code="US",
+            is_current=True,
+            source="openalex",
+        )
     )
     assert geo.assess(person, ["CN"], policy).cross_region
 
@@ -135,8 +147,12 @@ def test_a_block_removes_the_candidate_rather_than_penalising_them(conn, policy)
     candidate.verdict.add(coi.Finding("recent_coauthor", coi.BLOCK, {}))
 
     scored = rank.score_candidate(
-        conn, candidate, profile_topics=["Electric Motor Design and Analysis"],
-        profile_methods=[], policy=policy, now_year=2026,
+        conn,
+        candidate,
+        profile_topics=["Electric Motor Design and Analysis"],
+        profile_methods=[],
+        policy=policy,
+        now_year=2026,
     )
     assert scored.score == -math.inf
     assert scored.components == {}
@@ -152,8 +168,14 @@ def test_expertise_can_never_outrank_a_conflict(conn, policy):
     ordinary.verdict = coi.Verdict(person_id="ordinary")
 
     scored = [
-        rank.score_candidate(conn, c, profile_topics=["Electric Motor Design and Analysis"],
-                             profile_methods=[], policy=policy, now_year=2026)
+        rank.score_candidate(
+            conn,
+            c,
+            profile_topics=["Electric Motor Design and Analysis"],
+            profile_methods=[],
+            policy=policy,
+            now_year=2026,
+        )
         for c in (expert, ordinary)
     ]
     assert rank.rank(scored)[0].person.person_id == "ordinary"
@@ -177,8 +199,14 @@ def test_review_status_sorts_below_clear_regardless_of_score(conn, policy):
     clean.verdict = coi.Verdict(person_id="clean")
 
     scored = [
-        rank.score_candidate(conn, c, profile_topics=["Electric Motor Design and Analysis"],
-                             profile_methods=[], policy=policy, now_year=2026)
+        rank.score_candidate(
+            conn,
+            c,
+            profile_topics=["Electric Motor Design and Analysis"],
+            profile_methods=[],
+            policy=policy,
+            now_year=2026,
+        )
         for c in (flagged, clean)
     ]
     assert rank.rank(scored)[0].person.person_id == "clean"
@@ -202,7 +230,9 @@ def test_first_author_evidence_outweighs_middle_author_evidence(conn, policy):
     helper.evidence = [rank.Evidence("p", "t", 2025, "middle", 0.4, 0.9)]
 
     scored = [
-        rank.score_candidate(conn, c, profile_topics=topics, profile_methods=[], policy=policy, now_year=2026)
+        rank.score_candidate(
+            conn, c, profile_topics=topics, profile_methods=[], policy=policy, now_year=2026
+        )
         for c in (lead, helper)
     ]
     assert scored[0].score > scored[1].score
@@ -224,11 +254,18 @@ def test_the_score_has_no_invitation_component(conn, policy):
     is folded into `topic`. No ranking moved: the component returned a neutral
     0.5 for anyone with no invitation history, which so far is everyone.
     """
-    person = person_in("GB", person_id=repo.upsert_person(conn, Author(name="Silent", idx=0, openalex_id="A1")))
+    person = person_in(
+        "GB", person_id=repo.upsert_person(conn, Author(name="Silent", idx=0, openalex_id="A1"))
+    )
     repo.record_invitation(conn, person.person_id, "ms-old", responded=False)
 
     scored = rank.score_candidate(
-        conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=policy, now_year=2026
+        conn,
+        make_candidate(person),
+        profile_topics=[],
+        profile_methods=[],
+        policy=policy,
+        now_year=2026,
     )
 
     assert "reviewer_history" not in scored.components
@@ -236,12 +273,16 @@ def test_the_score_has_no_invitation_component(conn, policy):
     assert sum(policy.weights.values()) == pytest.approx(1.0)
 
 
-
 def test_low_identity_confidence_is_surfaced_not_hidden(conn, policy):
     person = person_in("GB", confidence=0.3)
     person.resolution_method = "name_only"
     scored = rank.score_candidate(
-        conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=policy, now_year=2026
+        conn,
+        make_candidate(person),
+        profile_topics=[],
+        profile_methods=[],
+        policy=policy,
+        now_year=2026,
     )
     assert any("confirm before inviting" in n for n in scored.notes)
 
@@ -266,7 +307,12 @@ def test_seniority_is_noted_but_never_excludes(conn, policy):
     person = person_in("GB")
     person.education.append(Education(inst_id="i", degree="PhD", year_to=2025, source="orcid"))
     scored = rank.score_candidate(
-        conn, make_candidate(person), profile_topics=[], profile_methods=[], policy=floored, now_year=2026
+        conn,
+        make_candidate(person),
+        profile_topics=[],
+        profile_methods=[],
+        policy=floored,
+        now_year=2026,
     )
     assert scored.score > -math.inf
     assert any("below the floor of 3" in n for n in scored.notes)
@@ -275,8 +321,12 @@ def test_seniority_is_noted_but_never_excludes(conn, policy):
 
 def test_score_components_are_all_reported(conn, policy):
     scored = rank.score_candidate(
-        conn, make_candidate(person_in("GB")), profile_topics=["Electric Motor Design and Analysis"],
-        profile_methods=["finite element"], policy=policy, now_year=2026,
+        conn,
+        make_candidate(person_in("GB")),
+        profile_topics=["Electric Motor Design and Analysis"],
+        profile_methods=["finite element"],
+        policy=policy,
+        now_year=2026,
     )
     assert set(scored.components) == set(policy.weights)
 
@@ -341,7 +391,10 @@ def test_candidate_vocabulary_is_bounded_by_the_strongest_evidence(tmp_path):
             )
 
         vocabulary = rank_module._candidate_vocabulary(conn, candidate)
-        assert len([t for t in vocabulary if t.startswith("unrelated")]) == rank_module.VOCABULARY_EVIDENCE_DEPTH
+        assert (
+            len([t for t in vocabulary if t.startswith("unrelated")])
+            == rank_module.VOCABULARY_EVIDENCE_DEPTH
+        )
     finally:
         conn.close()
 

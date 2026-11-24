@@ -17,7 +17,52 @@ _WORD = re.compile(r"[a-z0-9][a-z0-9\-']*")
 
 #: Stop words tuned for scholarly titles rather than prose.
 STOP_WORDS = frozenset(
-    ["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have", "in", "into", "is", "it", "its", "of", "on", "or", "that", "the", "their", "this", "to", "was", "were", "which", "with", "using", "based", "via", "toward", "towards", "new", "novel", "study", "analysis", "approach", "method", "paper", "letter", "article", "research"]
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "has",
+        "have",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "this",
+        "to",
+        "was",
+        "were",
+        "which",
+        "with",
+        "using",
+        "based",
+        "via",
+        "toward",
+        "towards",
+        "new",
+        "novel",
+        "study",
+        "analysis",
+        "approach",
+        "method",
+        "paper",
+        "letter",
+        "article",
+        "research",
+    ]
 )
 
 

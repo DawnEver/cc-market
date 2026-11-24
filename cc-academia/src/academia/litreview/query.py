@@ -123,8 +123,7 @@ def confirm_queries(run_dir: Path, approved_by: str = "user") -> int:
             unknown = set(query.get("concept_ids", [])) - selected_ids
             if unknown:
                 raise ValueError(
-                    "query references unselected or unknown concepts: "
-                    + ", ".join(sorted(unknown))
+                    "query references unselected or unknown concepts: " + ", ".join(sorted(unknown))
                 )
 
     data["approval"] = {
@@ -133,9 +132,7 @@ def confirm_queries(run_dir: Path, approved_by: str = "user") -> int:
         "approved_by": approved_by.strip(),
         "queries_sha256": query_plan_sha256(data),
     }
-    queries_path.write_text(
-        rtoml.dumps(data), encoding="utf-8"
-    )
+    queries_path.write_text(rtoml.dumps(data), encoding="utf-8")
     return 0
 
 
@@ -195,7 +192,12 @@ def evaluate_queries(
                 qid = str(row.get("query_id", "")).strip()
                 if qid:
                     grouped[qid].append(
-                        _norm([row.get(k, "") for k in ("title", "articleTitle", "abstract", "abstractText")])
+                        _norm(
+                            [
+                                row.get(k, "")
+                                for k in ("title", "articleTitle", "abstract", "abstractText")
+                            ]
+                        )
                     )
         samples = {qid: " ".join(parts) for qid, parts in grouped.items()}
 
@@ -215,24 +217,28 @@ def evaluate_queries(
         else:
             classification = "good"
 
-        evaluations.append({
-            "query_id": query_id,
-            "purpose": query.get("purpose", probe.get("purpose", "")),
-            "classification": classification,
-            "total_count": total,
-            "eligible_for_full_search": classification not in ("too_broad", "blocked"),
-            "add_terms": [],
-            "exclude_terms": [],
-            "agent_review_required": classification != "good",
-            "sample_text": " ".join([
-                samples.get(query_id, ""),
-                _norm(probe.get("first_titles", [])),
-            ]).strip(),
-            # Empty string, not None: TOML has no null, so a null round-trips
-            # into the artifact as the *string* "null" — which is truthy, and
-            # would read as a failure to anything that checks it.
-            "failure_reason": failure or "",
-        })
+        evaluations.append(
+            {
+                "query_id": query_id,
+                "purpose": query.get("purpose", probe.get("purpose", "")),
+                "classification": classification,
+                "total_count": total,
+                "eligible_for_full_search": classification not in ("too_broad", "blocked"),
+                "add_terms": [],
+                "exclude_terms": [],
+                "agent_review_required": classification != "good",
+                "sample_text": " ".join(
+                    [
+                        samples.get(query_id, ""),
+                        _norm(probe.get("first_titles", [])),
+                    ]
+                ).strip(),
+                # Empty string, not None: TOML has no null, so a null round-trips
+                # into the artifact as the *string* "null" — which is truthy, and
+                # would read as a failure to anything that checks it.
+                "failure_reason": failure or "",
+            }
+        )
 
     # Write outputs
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -258,8 +264,10 @@ def _write_evaluation_md(
     out_dir: Path, evaluations: list[dict[str, Any]], min_total: int, max_total: int
 ) -> None:
     lines = [
-        "# Query Evaluation", "",
-        f"Thresholds: too narrow below {min_total}; too broad above {max_total}.", "",
+        "# Query Evaluation",
+        "",
+        f"Thresholds: too narrow below {min_total}; too broad above {max_total}.",
+        "",
         "| Query | Purpose | Classification | Total Count | Full Search |",
         "| --- | --- | --- | ---: | --- |",
     ]
@@ -273,7 +281,9 @@ def _write_evaluation_md(
     for e in evaluations:
         add = ", ".join(e["add_terms"]) if e["add_terms"] else "(none)"
         exc = ", ".join(e["exclude_terms"]) if e["exclude_terms"] else "(none)"
-        lines.extend([f"### {e['query_id']}", "", f"- add_terms: {add}", f"- exclude_terms: {exc}", ""])
+        lines.extend(
+            [f"### {e['query_id']}", "", f"- add_terms: {add}", f"- exclude_terms: {exc}", ""]
+        )
     (out_dir / "query_evaluation.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
@@ -321,7 +331,7 @@ def build_keyword_groups(concepts: list[Concept]) -> dict[str, list[Concept]]:
 def _concept_terms(concept: Concept) -> list[str]:
     """Collect *term* and *synonyms* into a deduplicated list."""
     terms = [concept.term]
-    for syn in (concept.synonyms or []):
+    for syn in concept.synonyms or []:
         if syn and syn not in terms:
             terms.append(syn)
     return terms
@@ -344,9 +354,7 @@ def _or_group(concepts: list[Concept]) -> str:
     return "(" + " OR ".join(terms) + ")"
 
 
-def build_boolean_query(
-    groups: dict[str, list[Concept]], provider: str = "ieee_xplore"
-) -> str:
+def build_boolean_query(groups: dict[str, list[Concept]], provider: str = "ieee_xplore") -> str:
     """Build a Boolean search expression from role-grouped concepts.
 
     ``must`` and ``should`` concepts are AND-ed
@@ -370,10 +378,6 @@ def build_boolean_query(
 
     exclude = _or_group(groups.get("exclude", []))
     if exclude:
-        expression = (
-            f"({expression}) NOT ({exclude})"
-            if expression
-            else f"NOT ({exclude})"
-        )
+        expression = f"({expression}) NOT ({exclude})" if expression else f"NOT ({exclude})"
 
     return expression

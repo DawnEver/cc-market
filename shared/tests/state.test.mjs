@@ -131,6 +131,23 @@ describe('withStateLock', async () => {
     withStateLock(file, (s) => { s.hook.stopCount = s.hook.stopCount + 1; });
     assert.equal(loadState(file).hook.stopCount, 2);
   });
+
+  it('a hook bounds its wait for a held lock with timeoutMs (every hook < 5 s)', async () => {
+    const { lockFilePath } = await import(pathToFileURL(join(__dirname, '..', 'lock.mjs')).href);
+    const file = tmp('wsl-held.json');
+    const lock = lockFilePath(file);
+    mkdirSync(dirname(lock), { recursive: true });
+    writeFileSync(lock, JSON.stringify({ pid: 999999, at: Date.now(), token: 'other' }));
+    try {
+      const start = Date.now();
+      assert.throws(() => withStateLock(file, () => {}, { onTimeout: 'throw', timeoutMs: 200 }), (e) => e.code === 'LOCK_TIMEOUT');
+      const waited = Date.now() - start;
+      assert.ok(waited >= 150, `PLANTED CONTROL: the held lock was waited on (${waited}ms)`);
+      assert.ok(waited < 2000, `waited ${waited}ms, not the 5000ms default`);
+    } finally {
+      rmSync(lock, { force: true });
+    }
+  });
 });
 
 // ── deepMerge edge cases ──
@@ -140,8 +157,8 @@ describe('deepMerge', async () => {
 
   it('preserves array from partial (replaces default)', () => {
     const file = tmp('arr.json');
-    writeFileSync(file, JSON.stringify({ scopes: { ignore: ['a'] } }));
-    assert.deepEqual(loadState(file).scopes.ignore, ['a']);
+    writeFileSync(file, JSON.stringify({ docs: { roots: ['a'] } }));
+    assert.deepEqual(loadState(file).docs.roots, ['a']);
   });
 
   it('handles non-object value for object-key in partial', () => {

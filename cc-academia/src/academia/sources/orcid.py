@@ -182,7 +182,9 @@ def _date(block: Any) -> str:
         return ""
     parts = []
     for key in ("year", "month", "day"):
-        value = as_text((block.get(key) or {}).get("value") if isinstance(block.get(key), dict) else "")
+        value = as_text(
+            (block.get(key) or {}).get("value") if isinstance(block.get(key), dict) else ""
+        )
         if not value:
             break
         parts.append(value.zfill(2) if key != "year" else value)

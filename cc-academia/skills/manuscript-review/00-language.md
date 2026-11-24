@@ -19,7 +19,7 @@ It does **not** change:
 1. **Resume check**: if `ongoing/<slug>/review-config.md` exists and contains a `lang:` line, read it and skip the gate. Otherwise continue.
 2. Ask the user (use `AskUserQuestion`): which language for the intermediate review files? Options:
    - **English** (default)
-   - **中文 (Chinese)**
+   - **Chinese** (`zh`)
 3. Write the choice to `ongoing/<slug>/review-config.md`:
    ```markdown
    lang: en   # or: zh

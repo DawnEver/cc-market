@@ -206,4 +206,3 @@ class AuthorSource(ABC):
     ) -> list[Paper]:
         """Optional: recent works by this author."""
         return []
-

@@ -1,6 +1,6 @@
 # Step 02 — Unified search & AI screening
 
-AI 生成查询 → CLI 执行检索 → AI 批量筛选摘要。
+AI generates queries → the CLI runs the search → AI screens the abstracts in batch.
 
 ## Steps
 

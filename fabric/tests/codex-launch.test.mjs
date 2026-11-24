@@ -70,7 +70,7 @@ else {
 
 test('Windows native paths and batch shims remain literal across startup and both discovery paths',
   { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
-    const base = fs.realpathSync(os.tmpdir());
+    const base = fs.realpathSync.native(os.tmpdir()); // native: the long form of an 8.3 TEMP (RUNNER~1)
     const root = fs.mkdtempSync(path.join(base, 'fabric-codex-launch-'));
     const originalCwd = process.cwd();
     const originalExpand = process.env.FABRIC_CODEX_EXPAND_TEST;

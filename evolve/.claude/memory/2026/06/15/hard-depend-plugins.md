@@ -7,7 +7,7 @@ metadata:
 
 # evolve: hard-depend on sharp-review/rem/todo (drop built-in fallbacks)
 
-Per user request ("移除兜底，硬依赖插件"), evolve no longer ships built-in equivalents for the
+Per user request ("remove the fallbacks, hard-depend on the plugins"), evolve no longer ships built-in equivalents for the
 three cc-market plugins it integrates with. Setup now verifies they are installed and aborts if
 any is missing.
 
@@ -28,3 +28,5 @@ any is missing.
 SKILL.md (intro + Setup plugin-check + rem guard), round-protocol.md, termination.md, README.md,
 AGENTS.md, invariants.md. Test `saveState no-ops when absent` → `saveState creates the state
 file when absent`. 18/18 pass. Committed `31877ea`, pushed (evolve v1.0.2).
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

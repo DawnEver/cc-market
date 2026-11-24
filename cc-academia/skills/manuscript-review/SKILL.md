@@ -1,6 +1,6 @@
 ---
 name: manuscript-review
-description: Review an academic paper PDF — ingest, summarise, fan out multi-angle 锐评, polish user draft into publishable English reviewer comments, archive.
+description: Review an academic paper PDF — ingest, summarise, fan out multi-angle sharp review, polish user draft into publishable English reviewer comments, archive.
 allowed-tools: "Read,Write,Bash,Glob,Grep,Agent,Skill,WebFetch,WebSearch,Workflow"
 ---
 

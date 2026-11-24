@@ -98,9 +98,7 @@ def decompose(pdf: Path, out_dir: Path) -> Decomposed:
     the presence of an output directory as proof the work was done.
     """
     if not _has_ingest():
-        raise UsageError(
-            "PDF decomposition requires the 'pdf' extra: uv sync --extra pdf"
-        )
+        raise UsageError("PDF decomposition requires the 'pdf' extra: uv sync --extra pdf")
     # paper_pdf_ingest exposes the stages, not a single entry point: convert
     # picks the extraction tool and yields markdown, split_sections finds the
     # section boundaries, write_paper_output lays out paper.md, md/ and img/.
@@ -308,9 +306,7 @@ def parse_cover_keywords(text: str) -> list[str]:
     built from them searched for the wrong thing.
     """
     lines = [line.strip() for line in (text or "").splitlines()]
-    start = next(
-        (i for i, line in enumerate(lines) if line.lower().rstrip(":") == "keywords"), -1
-    )
+    start = next((i for i, line in enumerate(lines) if line.lower().rstrip(":") == "keywords"), -1)
     if start < 0:
         return []
     keywords: list[str] = []
@@ -321,7 +317,6 @@ def parse_cover_keywords(text: str) -> list[str]:
             break
         keywords.append(line.strip(" .;,"))
     return keywords[:12]
-
 
 
 # --------------------------------------------------------- submitting authors
@@ -463,11 +458,7 @@ def parse_byline_authors(text: str):
         if _ABSTRACT_START.match(line):
             break
         parts = [p.strip(" ,;") for p in re.split(r",| and ", line) if p.strip(" ,;")]
-        names = [
-            _clean_name(p)
-            for p in parts
-            if not _IS_GRADE.match(p) and _looks_like_a_name(p)
-        ]
+        names = [_clean_name(p) for p in parts if not _IS_GRADE.match(p) and _looks_like_a_name(p)]
         if len(names) >= 2:
             return [ManuscriptAuthor(name=n) for n in names]
     return []

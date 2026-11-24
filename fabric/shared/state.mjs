@@ -19,12 +19,6 @@ export const DEFAULT_STATE = {
     lastTouched: null,
     taskActiveUntil: null,
   },
-  scopes: {
-    // Glob/name patterns for directories findAllScopes/findChildScopes skip during
-    // scope discovery. Bare names (no `/`) match a directory's basename; patterns
-    // with `/` match the path relative to the scan root. Supports `*` and `?`.
-    ignore: [],
-  },
   docs: {
     // Device-local CACHE of where bound docs (frontmatter `doc_source`) were
     // discovered — NOT config. Source of truth stays the frontmatter signatures;
@@ -51,7 +45,7 @@ function deepMerge(defaults, partial) {
     result[key] = deepMerge(defaults[key], partial[key]);
   }
   // Preserve extra keys from partial that are not in defaults
-  // (e.g. reviewGate added by other plugins sharing the same state file)
+  // (e.g. evolveState added by evolve, which shares the same state file)
   for (const key of Object.keys(partial)) {
     if (!(key in defaults)) {
       result[key] = JSON.parse(JSON.stringify(partial[key]));
@@ -85,16 +79,17 @@ export function saveState(stateFile, state, { onTimeout = 'proceed' } = {}) {
   }, { onTimeout });
 }
 
-// withStateLock(stateFile, fn, { onTimeout })
+// withStateLock(stateFile, fn, { onTimeout, timeoutMs })
 // Atomic load→mutate→save: loads FRESH state inside the lock, lets fn(state)
 // mutate it, then saves — closing the TOCTOU window where a caller classifies
 // from a stale snapshot and overwrites another process's concurrent write.
-// Returns { persisted } from the inner saveState.
-export function withStateLock(stateFile, fn, { onTimeout = 'proceed' } = {}) {
+// Returns { persisted } from the inner saveState. A hook passes timeoutMs so a
+// held lock cannot stall it toward its 5 s ceiling (withLock's default is 5000).
+export function withStateLock(stateFile, fn, { onTimeout = 'proceed', timeoutMs } = {}) {
   return withLock(stateFile, () => {
     const state = loadState(stateFile);
     fn(state);
     return saveState(stateFile, state, { onTimeout }); // reentrant
-  }, { onTimeout });
+  }, { onTimeout, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
 }
 

@@ -1,24 +1,27 @@
 #!/usr/bin/env node
 /**
- * recall.js — UserPromptSubmit hook: prompt-time relevance recall.
+ * recall.js — prompt-time relevance recall, the recall half of rem's ONE UserPromptSubmit hook
+ * (hooks/user-prompt.js, which calls scopedContext in-process).
  *
- * Reads the hook payload on stdin (user prompt, cwd, session_id) and injects, as
- * `additionalContext`, a SCOPED view:
- *   - the bound task (tasks.mjs resolveTask: worktree/branch name) — goal, open
- *     items and the latest journal lines, on every turn;
+ * For the prompt payload (user prompt, cwd, session_id) it returns, as `additionalContext`, a
+ * SCOPED view:
+ *   - the bound task (tasks.mjs resolveTask: the user's `task: <slug>` binding) as ONE line of
+ *     at most 200 bytes, only when it changed since this session last saw it;
  *   - the top 1–3 visible memory entries and bound docs scoring against the prompt
- *     (pure heuristic, no model call), drawn from the scope of cwd plus the scopes
- *     of the bound task's `scope:` paths, and the bound docs of those paths;
+ *     (pure heuristic, no model call), drawn from the repo root's memory and the bound
+ *     docs of the paths being worked on;
  *   - never an entry tagged with ANOTHER task (`task: <slug>`), unless the prompt
  *     names that task — other tasks come in only on explicit query.
  * Nothing to say → exit 0 silently.
  *
- * Candidate frontmatter is cached per scope in a per-host tmpdir file, keyed
- * by a stat-only fingerprint of the memory tree (count + total size + max
- * mtime) — any write invalidates it, so it never goes stale.
+ * Every prompt waits for this hook, and every hook finishes under 5 s (user ruling D24), so the
+ * hook NEVER READS A MEMORY FILE beyond its winners: it reads a ready candidate index and bound-doc
+ * cache, and when either is missing or stale it starts one detached `recall.js --build <root>`
+ * and answers with what it has (no recall on the very first prompt of a cold machine). It never
+ * waits for the build, and the build always runs to completion: the next prompt reads it.
  *
  * Read-only toward the repo: recall never writes the memory tree or any state
- * file (its cache and telemetry live in os.tmpdir()).
+ * file (its cache, session records and telemetry live in os.tmpdir()).
  *
  * Claude Code and Codex share the UserPromptSubmit additionalContext contract.
  *
@@ -29,12 +32,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-import { listEntries, visibleEntries } from "./lib.mjs";
-import { readTask, listTasks, resolveTask } from "./tasks.mjs";
+import { listEntries, visibleEntries, readEntry, sortEntries } from "./lib.mjs";
+import { readTask, listTaskHeads, resolveTask, readSessionBinding, taskSummary } from "./tasks.mjs";
 import { collectBoundDocs } from "./doc-freshness.js";
 import { isMain, findProjectRoot } from "../shared/lib.mjs";
 import { atomicWriteFile } from "../shared/atomic-write.mjs";
+import { readSession, writeSession } from "./session-record.mjs";
 
 // Module-eval start: excludes node boot + import load (unmeasurable from
 // inside), captures everything else. Used by the telemetry ring.
@@ -85,20 +91,6 @@ export function tokenize(text) {
   return [...out];
 }
 
-/**
- * Walk up from cwd to the nearest directory containing `.claude/memory/`
- * (the memory scope). null when no scope exists anywhere above.
- */
-export function findScopeForCwd(cwd) {
-  let dir = path.resolve(cwd);
-  while (true) {
-    if (fs.existsSync(path.join(dir, ".claude", "memory"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
-
 /** Task/manual bookkeeping files are never recalled. */
 export function isSkippable(relPath) {
   const norm = relPath.replace(/\\/g, "/");
@@ -111,8 +103,12 @@ export function isSkippable(relPath) {
  * frontmatter fields. Bodies are NOT read here (only for the winners).
  */
 function collectCandidatesUncached(scopeRoot) {
+  return candidatesOf(scopeRoot, listEntries(scopeRoot));
+}
+
+function candidatesOf(scopeRoot, entries) {
   const memDir = path.join(scopeRoot, ".claude", "memory");
-  return visibleEntries(listEntries(scopeRoot))
+  return visibleEntries(entries)
     .filter((e) => !isSkippable(e.path))
     .map((e) => ({
       relPath: e.path,
@@ -127,9 +123,10 @@ function collectCandidatesUncached(scopeRoot) {
 }
 
 // ── Bound docs ──
-// A bound doc (frontmatter `doc_source`) explains how code works NOW. Discovery reads
-// every tracked markdown file, so it is cached in tmpdir and refreshed only when git's
-// index changes (a doc added, moved or committed).
+// A bound doc (frontmatter `doc_source`) explains how code works NOW. Discovery reads every
+// tracked markdown file (measured 3.1 s cold on a large repo), so it is cached in tmpdir and is
+// part of the background build: the hook reads the cache (readDocs) and calls it stale when git's
+// index moved (a doc added, moved or committed) or it is older than 20 TTLs.
 
 function gitIndexStamp(root) {
   let gitDir = path.join(root, ".git");
@@ -142,14 +139,26 @@ function gitIndexStamp(root) {
   } catch { return "0"; }
 }
 
-export function collectDocs(root, { now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
+function docsFileFor(root) {
   const key = crypto.createHash("sha1").update(path.resolve(root)).digest("hex").slice(0, 16);
-  const cacheFile = path.join(os.tmpdir(), `rem-recall-docs-${key}.json`);
-  const stamp = gitIndexStamp(root);
+  return path.join(os.tmpdir(), `rem-recall-docs-${key}.json`);
+}
+
+/** THE HOOK'S READ of the bound docs: { docs, stale }; docs: [] when nothing was built yet. */
+export function readDocs(root, { now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
   try {
-    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-    if (cached.stamp === stamp && now - cached.ts < ttl * 20) return cached.docs;
-  } catch { /* rebuild */ }
+    const cached = JSON.parse(fs.readFileSync(docsFileFor(root), "utf8"));
+    if (Array.isArray(cached.docs)) {
+      return { docs: cached.docs, stale: cached.stamp !== gitIndexStamp(root) || !(now - cached.ts < ttl * 20) };
+    }
+  } catch { /* none built */ }
+  return { docs: [], stale: true };
+}
+
+/** THE BUILD of the bound-doc cache (background job, never the prompt hook). */
+export function collectDocs(root, { now = Date.now() } = {}) {
+  const cacheFile = docsFileFor(root);
+  const stamp = gitIndexStamp(root);
   const docs = collectBoundDocs(root).map((d) => {
     let name = path.basename(d.relPath, ".md"), description = "";
     try {
@@ -172,20 +181,20 @@ export function docCovers(doc, workPaths) {
   }));
 }
 
-// ── The bound task ──
+// ── The session record: the task line it last saw ──
+// One device-local file per session (tmpdir). `seen` is the task line last injected: it is
+// injected again only when it changes, and session-context.js drops the record on SessionStart
+// and PostCompact, so a fresh or compacted context gets it once more. The binding itself needs
+// no cache: it is one ledger file (tasks.mjs readSessionBinding), read with no process spawned.
 
-const TASK_TAIL = 8;
-
-export function taskBlock(task) {
-  const journal = (() => {
-    try { return fs.readFileSync(path.join(task.dir, "JOURNAL.md"), "utf8"); } catch { return ""; }
-  })();
-  const tail = journal.split(/\r?\n/).filter((l) => l.startsWith("- ")).slice(-TASK_TAIL);
-  const lines = [`Bound task: ${task.slug} — ${task.goal} (${task.status})`];
-  if (task.scope.length) lines.push(`Scope: ${task.scope.join(", ")}`);
-  if (task.openItems.length) lines.push(`Open items: ${task.openItems.map((i) => `O${i.n} open: ${i.text}`).join("; ")}`);
-  if (tail.length) lines.push("Latest journal (.claude/tasks/" + task.slug + "/JOURNAL.md):", ...tail);
-  return lines.join("\n");
+// The task line for this prompt, or null when this session already saw this exact line.
+function taskLineOnce(task, session) {
+  const line = taskSummary(task);
+  if (!session) return line;
+  const record = readSession(session);
+  if (record.seen === line) return null;
+  writeSession(session, { ...record, seen: line });
+  return line;
 }
 
 // Tasks the prompt names explicitly (whole slug, hyphen-aware).
@@ -194,80 +203,160 @@ export function queriedTasks(prompt, slugs) {
   return new Set(slugs.filter((s) => new RegExp(`(^|[^a-z0-9-])${s}($|[^a-z0-9-])`).test(text)));
 }
 
-// ── Candidate cache ──
-// Reading every memory file's frontmatter on every prompt is too slow on
-// cloud-synced dirs (OneDrive placeholders). Cache candidates in a per-host
-// tmpdir file keyed by a stat-only fingerprint of the memory tree (file count
-// + max mtime + total size).
-//
-// The whole tree is re-statted at most once per FINGERPRINT_TTL_MS (30s):
-// within the window the cache is served without touching the memory tree at
-// all, so the per-prompt cost is a single statSync on the cache file. Any
-// write from remember.js / merge-memory.js / crystallize.js changes the fingerprint and
-// is picked up on the next expiry (staleness bounded by the TTL — acceptable
-// for best-effort recall). The cache lives in os.tmpdir() (not the synced
-// tree) so multi-device setups each keep their own — and it never shows up in
-// git status.
+// ── The candidate index ──
+// Reading every memory file costs minutes cold (measured 2026-11-17: 6,275 entries, 81.8 s, about
+// 13 ms per first open under on-access scanning). So the HOOK NEVER BUILDS: it reads a ready
+// index (readCandidates) and, when that index is missing or older than FINGERPRINT_TTL_MS (30s),
+// starts ONE detached build (requestBuild -> `recall.js --build <root>`) and answers with what it
+// has -- the stale index, or no recall at all on the very first prompt. Every hook finishes under
+// 5 s (user ruling D24, 2026-11-17); a recall one prompt late is the price.
+// The build (collectCandidates) keeps the index PER DIRECTORY in a per-host tmpdir file: a memory
+// entry is written once and never edited, and adding, removing or renaming a file moves its
+// directory's mtime, so a rebuild stats the few hundred directories and re-reads only the files of
+// a directory that moved. It lives in os.tmpdir() (not the synced tree) so each device keeps its
+// own, and it never shows up in git status.
 
 export const FINGERPRINT_TTL_MS = 30_000;
+// A build lease older than this is a crashed build: the next prompt starts a new one.
+export const BUILD_LEASE_MS = 10 * 60_000;
 
-export function scopeFingerprint(scopeRoot) {
-  const memDir = path.join(scopeRoot, ".claude", "memory");
-  let count = 0, maxMtime = 0, totalSize = 0;
-  (function walk(dir) {
+// Every directory of the memory tree: { '<rel dir>': { m: mtimeMs, files: [names of its .md files] } }.
+function walkDirs(memDir) {
+  const out = {};
+  (function walk(dir, rel) {
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    let m;
+    try { m = fs.statSync(dir).mtimeMs; } catch { return; }
+    const files = [];
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) { walk(full); continue; }
-      try {
-        const st = fs.statSync(full);
-        count++;
-        totalSize += st.size;
-        if (st.mtimeMs > maxMtime) maxMtime = st.mtimeMs;
-      } catch { /* vanished mid-walk */ }
+      if (e.isDirectory()) walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name);
+      else if (e.name.endsWith(".md")) files.push(e.name);
     }
-  })(memDir);
-  return `${count}:${totalSize}:${maxMtime}`;
+    out[rel] = { m, files };
+  })(memDir, "");
+  return out;
 }
 
-function cacheFileFor(scopeRoot) {
+export function scopeFingerprint(scopeRoot) {
+  const dirs = walkDirs(path.join(scopeRoot, ".claude", "memory"));
+  return Object.keys(dirs).sort().map((d) => `${d}@${dirs[d].m}#${dirs[d].files.length}`).join("|");
+}
+
+/** The device-local candidate index of a scope (tmpdir); `.ts` beside it is its build stamp. */
+export function indexFileFor(scopeRoot) {
   const key = crypto.createHash("sha1").update(path.resolve(scopeRoot)).digest("hex").slice(0, 16);
   return path.join(os.tmpdir(), `rem-recall-${key}.json`);
 }
 
-export function collectCandidates(scopeRoot, { useCache = true, info, now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
+function readIndex(scopeRoot) {
+  const cacheFile = indexFileFor(scopeRoot);
+  let cached = null, stamp = NaN;
+  try { cached = JSON.parse(fs.readFileSync(cacheFile, "utf8")); } catch { /* no/invalid index */ }
+  try { stamp = Number(fs.readFileSync(`${cacheFile}.ts`, "utf8")); } catch { /* none */ }
+  return { dirs: cached && cached.dirs ? cached.dirs : null, stamp };
+}
+
+const fromIndex = (scopeRoot, dirs) =>
+  candidatesOf(scopeRoot, sortEntries(Object.values(dirs).flatMap((d) => d.entries)));
+
+/**
+ * THE HOOK'S READ: the candidates of a ready index, never a memory file. `stale` is true when the
+ * index is missing (candidates: []) or its build stamp is outside the TTL -- the caller then starts
+ * a background build (requestBuild) and answers with these.
+ */
+export function readCandidates(scopeRoot, { info, now = Date.now(), ttl = FINGERPRINT_TTL_MS } = {}) {
+  const { dirs, stamp } = readIndex(scopeRoot);
+  const fresh = Boolean(dirs) && Number.isFinite(stamp) && now - stamp >= 0 && now - stamp < ttl;
+  if (info) { info.cacheHit = Boolean(dirs); info.fast = fresh; info.read = 0; }
+  return { candidates: dirs ? fromIndex(scopeRoot, dirs) : [], stale: !fresh };
+}
+
+/**
+ * THE BUILD (background job or an explicit caller, never the prompt hook): walk the directories,
+ * re-read the files of a directory whose mtime moved, write the index and its stamp.
+ */
+export function collectCandidates(scopeRoot, { useCache = true, info, now = Date.now() } = {}) {
   if (!useCache) return collectCandidatesUncached(scopeRoot);
-  const cacheFile = cacheFileFor(scopeRoot);
-  let cached = null;
-  try {
-    cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-  } catch { /* no/invalid cache — rebuild */ }
-
-  // Fast path: cache fresh within TTL → serve without touching the memory tree.
-  if (cached && Array.isArray(cached.candidates) && Number.isFinite(cached.ts) && now - cached.ts < ttl) {
-    if (info) { info.cacheHit = true; info.fast = true; }
-    return cached.candidates;
+  const cacheFile = indexFileFor(scopeRoot);
+  const stampFile = `${cacheFile}.ts`;
+  const { dirs: cachedDirs } = readIndex(scopeRoot);
+  const valid = Boolean(cachedDirs);
+  const memDir = path.join(scopeRoot, ".claude", "memory");
+  const dirs = walkDirs(memDir);
+  const old = valid ? cachedDirs : {};
+  let read = 0;
+  let changed = !valid || Object.keys(old).length !== Object.keys(dirs).length;
+  const index = {};
+  for (const [rel, { m, files }] of Object.entries(dirs)) {
+    if (old[rel] && old[rel].m === m && old[rel].n === files.length) { index[rel] = old[rel]; continue; }
+    changed = true;
+    const entries = [];
+    for (const name of files) {
+      read++;
+      const fileRel = rel ? `${rel}/${name}` : name;
+      const entry = readEntry(fileRel, path.join(memDir, ...fileRel.split("/")));
+      if (entry) entries.push(entry);
+    }
+    index[rel] = { m, n: files.length, entries };
   }
-
-  // TTL expired → re-stat the tree and compare fingerprints.
-  const fingerprint = scopeFingerprint(scopeRoot);
-  if (cached && cached.fingerprint === fingerprint && Array.isArray(cached.candidates)) {
-    // Tree unchanged → reuse candidates, only refresh the TTL stamp.
-    cached.ts = now;
-    try { atomicWriteFile(cacheFile, JSON.stringify(cached)); } catch { /* best-effort */ }
-    if (info) { info.cacheHit = true; info.fast = false; }
-    return cached.candidates;
+  try { atomicWriteFile(stampFile, String(now)); } catch { /* best-effort */ }
+  if (info) { info.cacheHit = !changed; info.fast = false; info.read = read; }
+  if (changed) {
+    try { atomicWriteFile(cacheFile, JSON.stringify({ dirs: index })); } catch { /* the index is best-effort */ }
   }
+  return fromIndex(scopeRoot, index);
+}
 
-  // Tree changed → rebuild candidates.
-  if (info) { info.cacheHit = false; info.fast = false; }
-  const candidates = collectCandidatesUncached(scopeRoot);
+// ── The background build ──
+// One build per root at a time: a lease file beside the index holding the build's start time, or
+// `idle` once it finished (rem removes no file, so the lease is released by rewriting it). The hook
+// that takes the lease spawns the build DETACHED (its own process group, no inherited pipes,
+// unref'd) and returns at once. A lease older than BUILD_LEASE_MS belongs to a build that died,
+// and is taken over.
+
+const IDLE = "idle";
+const leaseFileFor = (root) => `${indexFileFor(root)}.build`;
+
+/** True while a build of `root` holds a live lease. */
+export function buildInFlight(root, { now = Date.now() } = {}) {
+  const lease = leaseFileFor(root);
   try {
-    atomicWriteFile(cacheFile, JSON.stringify({ ts: now, fingerprint, candidates }));
-  } catch { /* cache is best-effort */ }
-  return candidates;
+    if (fs.readFileSync(lease, "utf8") === IDLE) return false;
+    return now - fs.statSync(lease).mtimeMs < BUILD_LEASE_MS;
+  } catch { return false; }
+}
+
+function spawnBuild(root) {
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--build", root], {
+    detached: true, stdio: "ignore", windowsHide: true,
+  });
+  child.on("error", () => { /* a build that cannot start leaves the lease to expire */ });
+  child.unref();
+}
+
+/** Start a background build of `root`'s index unless one is running. True when one was started. */
+export function requestBuild(root, { now = Date.now(), start = spawnBuild } = {}) {
+  const lease = leaseFileFor(root);
+  try {
+    fs.writeFileSync(lease, String(now), { flag: "wx" });
+  } catch {
+    if (buildInFlight(root, { now })) return false;
+    try { fs.writeFileSync(lease, String(now)); } catch { return false; }
+  }
+  try { start(root); } catch { try { fs.writeFileSync(lease, IDLE); } catch { /* expires */ } return false; }
+  return true;
+}
+
+/** The build itself: the candidate index and the bound-doc cache of `root`, then the lease is released. */
+export function buildIndex(root, { now = Date.now() } = {}) {
+  try {
+    collectCandidates(root, { now });
+    collectDocs(root, { now });
+  } finally {
+    try { if (fs.existsSync(leaseFileFor(root))) fs.writeFileSync(leaseFileFor(root), IDLE); } catch { /* expires */ }
+  }
 }
 
 // ── Telemetry ──
@@ -414,54 +503,38 @@ export function buildRecallContext(entries, maxBytes = MAX_BYTES) {
   return header + body;
 }
 
-function readStdinPayload() {
-  try {
-    return JSON.parse(fs.readFileSync(0, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
 /**
  * The scoped context for one prompt in `cwd`, or null. Read-only toward the repo.
+ * `binding` reads the session's binding (default: its one ledger file, tasks.mjs readSessionBinding).
  */
-export function scopedContext(prompt, cwd, now = Date.now()) {
+export function scopedContext(prompt, cwd, now = Date.now(), { binding, session, refresh = requestBuild } = {}) {
   const root = findProjectRoot(cwd);
-  const tasks = listTasks(root);
-  const bound = resolveTask(root, {});
+  const info = {};
+  const heads = listTaskHeads(root);
+  const bound = resolveTask(root, { binding: binding || ((start) => readSessionBinding(start, session ? { session } : {})) });
   const task = bound ? readTask(root, bound) : null;
-  const queried = queriedTasks(prompt, tasks.map((t) => t.slug));
-  const active = new Set(tasks.filter((t) => t.status === "open").map((t) => t.slug));
+  const queried = queriedTasks(prompt, heads.map((t) => t.slug));
+  const active = new Set(heads.filter((t) => t.status === "open").map((t) => t.slug));
   const parts = [];
-  if (task) parts.push(taskBlock(task));
+  const line = task && taskLineOnce(task, session);
+  if (line) parts.push(line);
 
   const tokens = tokenize(prompt);
-  const home = findScopeForCwd(cwd);
-  if (tokens.length && home) {
-    // Paths being worked on: the bound task's scope, else the cwd's scope directory.
-    const workPaths = task?.scope.length ? task.scope : [path.relative(root, home).replace(/\\/g, "/")];
-    const scopes = new Set([home]);
-    // Ancestor scopes cover their whole subtree: a split never moves an entry, so the
-    // parent's entries about a child directory are recalled from inside the child.
-    for (let dir = path.dirname(home); !path.relative(root, dir).startsWith("..") && !path.isAbsolute(path.relative(root, dir)); dir = path.dirname(dir)) {
-      const s = findScopeForCwd(dir);
-      if (s && !path.relative(root, s).startsWith("..")) scopes.add(s);
-      if (dir === path.dirname(dir) || dir === root) break;
-    }
-    for (const p of task?.scope || []) {
-      const s = findScopeForCwd(path.join(root, p));
-      if (s) scopes.add(s);
-    }
-    const info = {};
-    appendTelemetry(home, { t: new Date().toISOString(), done: false });
-    const entries = [...scopes].flatMap((s) => collectCandidates(s, { info }))
+  if (tokens.length && fs.existsSync(path.join(root, ".claude", "memory"))) {
+    // Paths being worked on: the bound task's scope, else the whole repo.
+    const workPaths = task?.scope.length ? task.scope : [""];
+    appendTelemetry(root, { t: new Date().toISOString(), done: false });
+    const index = readCandidates(root, { info, now });
+    const docRead = readDocs(root, { now });
+    if (index.stale || docRead.stale) { try { refresh(root, { now }); } catch { /* recall still answers */ } }
+    const entries = index.candidates
       // Another OPEN task's entries stay out unless named; a closed task's are memory.
       .filter((e) => !e.task || e.task === bound || !active.has(e.task) || queried.has(e.task))
       .map((e) => (e.task && e.task === bound ? { ...e, boost: 2 } : e));
-    const docs = collectDocs(root).filter((d) => docCovers(d, workPaths));
+    const docs = docRead.docs.filter((d) => docCovers(d, workPaths));
     const candidates = [...entries, ...docs.map((d) => ({ ...d, date: "" }))];
     const recalled = buildRecallContext(selectTop(candidates, tokens, now));
-    finalizeTelemetry(home, {
+    finalizeTelemetry(root, {
       t: new Date().toISOString(),
       done: true,
       ms: Date.now() - T0,
@@ -475,30 +548,21 @@ export function scopedContext(prompt, cwd, now = Date.now()) {
   return parts.length ? parts.join("\n\n") : null;
 }
 
+// The CLI: the background build the prompt hook spawns, and the telemetry report. The prompt hook
+// itself is hooks/user-prompt.js, which calls scopedContext in-process.
 function main() {
   if (process.argv.includes("--telemetry")) { printTelemetry(); return; }
-  const payload = readStdinPayload();
-  const prompt = payload.prompt || payload.user_prompt || "";
-  const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
-
-  const context = scopedContext(prompt, cwd);
-  if (!context) return;
-
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "UserPromptSubmit",
-        additionalContext: context,
-      },
-    }),
-  );
+  const build = process.argv.indexOf("--build");
+  if (build >= 0) { buildIndex(findProjectRoot(process.argv[build + 1] || process.cwd())); return; }
+  process.stderr.write("usage: recall.js --build <dir> | --telemetry (the prompt hook is hooks/user-prompt.js)\n");
+  process.exitCode = 2;
 }
 
 if (isMain(import.meta.url)) {
   try {
     main();
-  } catch {
-    // Never break the session on a recall failure.
+  } catch (e) {
+    process.stderr.write(`recall.js: ${e.message}\n`);
+    process.exitCode = 1;
   }
-  process.exit(0);
 }

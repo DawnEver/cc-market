@@ -28,7 +28,6 @@ collect_ignore: list[str] = (
 )
 
 
-
 @pytest.fixture
 def project_root():
     return Path(__file__).resolve().parents[1]
@@ -51,21 +50,38 @@ def sample_brief():
         "inclusion_criteria": ["LLC topology", "Experimental prototype"],
         "exclusion_criteria": ["Low power <100W"],
         "constraints": {
-            "year_from": 2018, "year_to": 2026,
+            "year_from": 2018,
+            "year_to": 2026,
             "content_types": ["Journals", "Conferences"],
             "preferred_venues": ["IEEE Transactions on Power Electronics"],
             "defaults_applied": ["year_from", "year_to", "content_types"],
         },
         "concepts": [
-            {"concept_id": "c01", "role": "must", "term": "LLC resonant converter",
-             "synonyms": ["LLC converter"], "rationale": "Core topology",
-             "source": "user", "selected": True},
-            {"concept_id": "c02", "role": "should", "term": "wide voltage range",
-             "synonyms": ["wide gain range"], "rationale": "Requirement",
-             "source": "user", "selected": True},
+            {
+                "concept_id": "c01",
+                "role": "must",
+                "term": "LLC resonant converter",
+                "synonyms": ["LLC converter"],
+                "rationale": "Core topology",
+                "source": "user",
+                "selected": True,
+            },
+            {
+                "concept_id": "c02",
+                "role": "should",
+                "term": "wide voltage range",
+                "synonyms": ["wide gain range"],
+                "rationale": "Requirement",
+                "source": "user",
+                "selected": True,
+            },
         ],
-        "approval": {"approved": False, "approved_at": None, "approved_by": None,
-                     "research_scope_sha256": None},
+        "approval": {
+            "approved": False,
+            "approved_at": None,
+            "approved_by": None,
+            "research_scope_sha256": None,
+        },
     }
 
 

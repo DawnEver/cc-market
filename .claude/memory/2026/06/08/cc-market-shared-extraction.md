@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-# cc-market/shared — 提取共享工具库
+# cc-market/shared — extract the shared utility library
 
 Eliminated duplicated code across rem, sharp-review, takeover, watch by creating `cc-market/shared/`.
 
@@ -39,3 +39,5 @@ Eliminated duplicated code across rem, sharp-review, takeover, watch by creating
 ## Verification
 
 177 tests across all plugins pass (shared/state, rem, sharp-review, takeover), zero regressions.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

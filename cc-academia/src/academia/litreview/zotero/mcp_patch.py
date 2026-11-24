@@ -44,8 +44,11 @@ def _guard(Zotero, Zupload) -> None:
             "zotero_mcp_patch: pyzotero internals changed — the attachment_both "
             "patch no longer applies: " + "; ".join(problems)
         )
-    print("zotero_mcp_patch: pyzotero attachment_both patched "
-          "(basename filename + basedir; raise on failure)", file=sys.stderr)
+    print(
+        "zotero_mcp_patch: pyzotero attachment_both patched "
+        "(basename filename + basedir; raise on failure)",
+        file=sys.stderr,
+    )
 
 
 def apply() -> None:

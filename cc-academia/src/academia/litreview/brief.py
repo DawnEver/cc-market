@@ -45,9 +45,7 @@ def resolve_brief_path(queries_path: Path, plan: dict[str, Any]) -> Path | None:
     try:
         candidate.relative_to(run_dir)
     except ValueError as error:
-        raise ValueError(
-            "research brief path must stay inside the run directory"
-        ) from error
+        raise ValueError("research brief path must stay inside the run directory") from error
     return candidate
 
 
@@ -92,7 +90,10 @@ def scope_sha256(brief: dict[str, Any]) -> str:
 
 
 BRIEF_REQUIRED = [
-    "original_request", "research_objective", "constraints", "concepts",
+    "original_request",
+    "research_objective",
+    "constraints",
+    "concepts",
 ]
 
 

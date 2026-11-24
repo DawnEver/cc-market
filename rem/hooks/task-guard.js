@@ -4,15 +4,18 @@
 // refuse without the user's authority record (scripts/authority.mjs); scope-validate detects
 // a bypass. This hook judges what a shell command DOES, never what it merely mentions:
 //   - `task.js` whose VERB (first non-flag argument) is exactly `open` or `close`;
-//   - an interpreter (node/python/…) whose code — -e/-c argument or a heredoc body — names the
-//     task library, the authority store, or a path under .claude/tasks/ (even to read: use cat);
+//   - an interpreter (node/python/…) whose CODE — the -e/-c/--eval/-Command value or a heredoc
+//     body — names the task library, the authority store, or a path under .claude/tasks/ (even to
+//     read: use cat). A script's ARGUMENTS are data: citing a JOURNAL.md as evidence is reading;
 //   - a shell's -c / -Command string (bash, sh, pwsh, powershell, cmd /c), re-judged as a
 //     command line, recursively;
 //   - a known writer whose TARGET path lies under .claude/tasks/ or ~/.claude/rem/authority/:
 //     redirections (> >>), tee, cp/mv/install/ln (destination), touch/mkdir/rm/truncate,
 //     sed -i FILE, and PowerShell Set-Content/Add-Content/Out-File/New-Item/Copy-Item/… .
 // Consecutive cd's compose into one effective cwd for relative targets.
-// Message and body arguments (git commit -m, --body …) and read-only commands never match.
+// Message and body arguments (git commit -m, --body …), a journal item's free text (whatever
+// verb words it holds) and read-only commands never match.
+// Every refusal names its cause and its door (the task.js verb, or the user's /rem:task command).
 //
 // Accepted misses, by design (a regex judge cannot close every path):
 //   - a verb hidden by $'..', variables, eval or xargs — the library still refuses without
@@ -22,22 +25,40 @@
 // File tools are refused when they write a TASK.md / JOURNAL.md or the authority store.
 
 import { readStdinJSON, isMain } from '../shared/lib.mjs';
+import { isAgyHost, normalizeHookInput, hookOutput, emitHookOutput } from '../shared/hook-facts.mjs';
+import { join } from 'path';
+import { verbsOf } from '../scripts/task-verbs.mjs';
+import { machineHome } from '../scripts/session-binding.mjs';
 
+// A task's record. A session binding (written only by the user's `task: <slug>` prompt, through task-authority.js)
+// lives in the machine home, `$LAB_COMMONS_HOME/state/sessions/` (D34, scripts/session-binding.mjs): the resolved
+// directory is matched by prefix, and SESSIONS_RE catches a shell spelling of the variable (inSessionStore).
 const TASK_FILE_RE = /(?:^|[\\/])\.claude[\\/]tasks[\\/][^\\/]+[\\/](TASK|JOURNAL)\.md$/;
+const SESSIONS_RE = /(?:\$\{?|%|\$env:)LAB_COMMONS_HOME\}?%?[\\/]+state[\\/]+sessions(?:[\\/]|$)/i;
+const fold = p => String(p).replace(/\\/g, '/').toLowerCase();
+const sessionsDir = () => { try { return fold(join(machineHome(), 'state', 'sessions')); } catch { return null; } };
+const inSessionStore = p => {
+  const dir = sessionsDir();
+  return SESSIONS_RE.test(p) || (dir !== null && `${fold(p)}/`.startsWith(`${dir}/`));
+};
 const STORE_RE = /(?:^|[\\/])\.claude[\\/]rem[\\/]authority(?:[\\/]|$)/;
 const PROTECTED_RE = /(?:^|[\\/])\.claude[\\/]tasks(?:[\\/]|$)/;
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 const INTERPRETERS = /^(?:python\d?(?:\.\d+)?|py|node|deno|bun|perl|ruby|php|pwsh|powershell)(?:\.exe)?$/i;
-const CODE_RE = /\btasks\.mjs\b|\bauthority\.mjs\b|\b(?:openTask|closeTask|consumeAuthority|recordUserCommand)\b|\.claude[\\/]+(?:tasks|rem[\\/]+authority)\b/;
-const TASK_FLAGS_WITH_VALUE = new Set(['--task', '--scope', '--owner', '--journal-only']);
+const CODE_RE = /\btasks\.mjs\b|\bsession-binding\.mjs\b|\bstate[\\/]+sessions\b|\bauthority\.mjs\b|\b(?:openTask|closeTask|consumeAuthority|recordUserCommand)\b|\.claude[\\/]+(?:tasks|rem[\\/]+authority)\b/;
+const TASK_FLAGS_WITH_VALUE = new Set(['--task', '--line', '--scope', '--owner', '--journal-only']);
 const SINGLE_TARGET_WRITERS = new Set(['cp', 'mv', 'install', 'ln']);
 // (one string, so the lifecycle scan for file removers sees names to recognise, not a call)
 const ALL_TARGET_WRITERS = new Set('tee touch mkdir rm rmdir truncate unlink'.split(' '));
 const PS_WRITERS = /^(?:set-content|add-content|out-file|new-item|copy-item|move-item|remove-item)$/i;
 
-const REASON = 'Opening or closing a task is the user\'s /rem:task open|close command, and a task journal is '
-  + 'append-only through `task.js log|decide|open-item|close-item|handoff`. Propose the change to the user instead.';
+const CODE_FLAG = /^(?:-e|-E|--eval|-p|--print|-c|-command)(?:=(.*))?$/i;
+const DOOR = `Door: task.js ${verbsOf("append").join("|")} appends to the bound task's journal and ${verbsOf("rewrite").join("|")} rewrites one line `
+  + "(every verb: task.js help); the ledger is repo state, never committed on a branch, and a session binding is written only by the user's `task: <slug>` prompt; "
+  + "read a task with cat/grep or task.js status; opening or closing a task is the user's /rem:task "
+  + "open|close command -- propose it to the user.";
+const refuse = cause => `task-guard: ${cause}. ${DOOR}`;
 
 // Heredocs: `<<[-] DELIM` … `DELIM`. The body is cut out of the command line and its place
 // taken by a marker word, so the body is never parsed as commands; segments() turns the
@@ -106,7 +127,7 @@ const isFlag = w => /^-/.test(w);
 const base = w => String(w).replace(/\\/g, '/').split('/').pop();
 const protectedPath = (p, cwd) => {
   const full = cwd && !/^([\\/]|~|[A-Za-z]:)/.test(p) ? `${cwd}/${p}` : p;
-  return PROTECTED_RE.test(full) || STORE_RE.test(full);
+  return PROTECTED_RE.test(full) || STORE_RE.test(full) || inSessionStore(full);
 };
 
 // The paths a segment WRITES, judged by its program and its redirections.
@@ -162,10 +183,12 @@ export function decideTaskGuard(payload) {
   const input = payload?.tool_input || {};
   if (FILE_TOOLS.has(tool)) {
     const file = String(input.file_path || input.notebook_path || '');
-    return { deny: TASK_FILE_RE.test(file) || STORE_RE.test(file) };
+    if (!TASK_FILE_RE.test(file) && !STORE_RE.test(file) && !inSessionStore(file)) return { deny: false };
+    return { deny: true, reason: refuse(`${tool} writes ${file}, which only task.js or the user's /rem:task command may change`) };
   }
   if (!SHELL_TOOLS.has(tool)) return { deny: false };
-  return { deny: judgeCommandLine(String(input.command || ''), '', 0) };
+  const cause = judgeCommandLine(String(input.command || ''), '', 0);
+  return cause ? { deny: true, reason: refuse(cause) } : { deny: false };
 }
 
 const SHELLS = /^(?:bash|sh|zsh|dash|ksh|pwsh|powershell|cmd)(?:\.exe)?$/i;
@@ -175,34 +198,47 @@ const MAX_DEPTH = 4;
 // cd's compose: an absolute or home path replaces the cwd, a relative one extends it.
 const composeCwd = (cwd, to) => (!to || /^([\\/]|~|[A-Za-z]:)/.test(to) || !cwd ? to || '' : `${cwd}/${to}`);
 
-// True when a command line (or a shell's -c string inside it, recursively) is refused.
+// The code an interpreter runs: its -e/-c/--eval/-Command values and heredoc bodies. A script
+// path and the script's arguments are data the script reads, never code judged here.
+function interpreterCode(words, seg) {
+  const code = [];
+  for (let i = 1; i < words.length; i++) {
+    const m = words[i].match(CODE_FLAG);
+    if (!m) continue;
+    if (m[1] !== undefined) code.push(m[1]);
+    else if (words[i + 1] !== undefined) code.push(words[++i]);
+  }
+  return [...code, ...seg.filter(w => w && w.heredoc !== undefined).map(w => w.heredoc)].join('\n');
+}
+
+// The refusal cause when a command line (or a shell's -c string in it, recursively) is refused, else null.
 function judgeCommandLine(command, cwd, depth) {
-  if (depth > MAX_DEPTH) return true; // nesting this deep is not ordinary work
+  if (depth > MAX_DEPTH) return `shell -c nesting deeper than ${MAX_DEPTH} levels is not ordinary work`;
   for (const seg of segments(command)) {
     const words = seg.filter(w => typeof w === 'string');
     const prog = base(words[0] || '');
     if (prog === 'cd') { cwd = composeCwd(cwd, words[1]); continue; }
     const verb = taskVerb(words);
-    if (verb === 'open' || verb === 'close') return true;
+    if (verb === 'open' || verb === 'close') return `\`task.js ${verb}\` is the user's /rem:task ${verb} command, not an agent's`;
     if (SHELLS.test(prog)) {
       const k = words.findIndex((w, i) => i > 0 && SHELL_COMMAND_FLAG.test(w));
-      if (k > 0 && words[k + 1] !== undefined && judgeCommandLine(words.slice(k + 1).join(' '), cwd, depth + 1)) return true;
+      const inner = k > 0 && words[k + 1] !== undefined && judgeCommandLine(words.slice(k + 1).join(' '), cwd, depth + 1);
+      if (inner) return inner;
     }
-    if (verb === null && INTERPRETERS.test(prog)) {
-      const code = [...words.slice(1), ...seg.filter(w => w && w.heredoc !== undefined).map(w => w.heredoc)].join('\n');
-      if (CODE_RE.test(code)) return true;
+    if (verb === null && INTERPRETERS.test(prog) && CODE_RE.test(interpreterCode(words, seg))) {
+      return `${prog} runs code that names the task library, the authority store or a .claude/tasks path`;
     }
-    if (writeTargets(seg).some(t => protectedPath(t, cwd))) return true;
+    const target = writeTargets(seg).find(t => protectedPath(t, cwd));
+    if (target !== undefined) return `${prog || 'a redirection'} writes ${target}, inside .claude/tasks, the session binding store or the authority store`;
   }
-  return false;
+  return null;
 }
 
 if (isMain(import.meta.url)) {
   let payload = {};
   try { payload = readStdinJSON() || {}; } catch { /* no payload: allow */ }
-  if (decideTaskGuard(payload).deny) {
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: REASON },
-    }));
-  }
+  const host = isAgyHost(payload) ? 'agy' : 'claude';
+  payload = normalizeHookInput(payload);
+  const decision = decideTaskGuard(payload);
+  emitHookOutput(hookOutput({ host, event: 'PreToolUse', kind: decision.deny ? 'deny' : 'none', reason: decision.reason || '' }));
 }

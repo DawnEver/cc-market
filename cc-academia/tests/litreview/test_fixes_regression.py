@@ -25,6 +25,7 @@ from academia.sources.base import PaperSource, SearchPage
 # Fakes & fixtures
 # ---------------------------------------------------------------------------
 
+
 class FakeSource(PaperSource):
     """In-memory source returning canned papers."""
 
@@ -79,7 +80,7 @@ def topic_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (td / "queries.toml").write_text(
-        '[[queries]]\n'
+        "[[queries]]\n"
         'query_id = "q1"\npurpose = "core"\nexpression = "llc converter"\nenabled = true\n',
         encoding="utf-8",
     )
@@ -99,15 +100,22 @@ def fake_registry(monkeypatch):
         {"id": "1", "title": "Paper B1", "doi": "10.1/b1"},
         {"id": "2", "title": "Paper B2", "doi": "10.1/b2"},
     ]
-    monkeypatch.setitem(sources_pkg.SOURCE_FACTORIES, "fake_a", lambda: FakeSource("fake_a", recs_a))
-    monkeypatch.setitem(sources_pkg.SOURCE_FACTORIES, "fake_b", lambda: FakeSource("fake_b", recs_b))
-    monkeypatch.setitem(sources_pkg.SOURCE_FACTORIES, "fake_boom", lambda: FakeSource("fake_boom", [], fail=True))
+    monkeypatch.setitem(
+        sources_pkg.SOURCE_FACTORIES, "fake_a", lambda: FakeSource("fake_a", recs_a)
+    )
+    monkeypatch.setitem(
+        sources_pkg.SOURCE_FACTORIES, "fake_b", lambda: FakeSource("fake_b", recs_b)
+    )
+    monkeypatch.setitem(
+        sources_pkg.SOURCE_FACTORIES, "fake_boom", lambda: FakeSource("fake_boom", [], fail=True)
+    )
     return {"fake_a": recs_a, "fake_b": recs_b}
 
 
 # ---------------------------------------------------------------------------
 # 1+2. Multi-provider search
 # ---------------------------------------------------------------------------
+
 
 def test_multi_provider_search_no_overwrite_no_dup(topic_dir, fake_registry):
     from academia.litreview.workflow_search import run_search
@@ -118,7 +126,9 @@ def test_multi_provider_search_no_overwrite_no_dup(topic_dir, fake_registry):
 
     ranked = [
         json.loads(line)
-        for line in (topic_dir / "search" / "candidates_ranked.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (topic_dir / "search" / "candidates_ranked.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     by_provider: dict[str, int] = {}
@@ -156,6 +166,7 @@ def test_provider_failure_is_collected_not_swallowed(topic_dir, fake_registry):
 # 3. Ingest paper selection
 # ---------------------------------------------------------------------------
 
+
 def test_decompose_pdfs_filters_by_candidate_ids(tmp_path):
     from academia.litreview.ingest_pipeline import decompose_pdfs
 
@@ -181,19 +192,26 @@ def test_run_ingest_passes_pending_selection(topic_dir, monkeypatch):
 
     handoff = topic_dir / "handoff"
     handoff.mkdir(exist_ok=True)
-    (handoff / "download_manifest.json").write_text(json.dumps({
-        "manifest_id": "m1",
-        "papers": [
-            {"candidate_id": "p1", "pdf_path": "x.pdf", "sha256": ""},
-            {"candidate_id": "p2", "pdf_path": "y.pdf", "sha256": ""},
-        ],
-    }), encoding="utf-8")
+    (handoff / "download_manifest.json").write_text(
+        json.dumps(
+            {
+                "manifest_id": "m1",
+                "papers": [
+                    {"candidate_id": "p1", "pdf_path": "x.pdf", "sha256": ""},
+                    {"candidate_id": "p2", "pdf_path": "y.pdf", "sha256": ""},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
     seen: dict[str, Any] = {}
 
     def fake_decompose(manifest_path, run_dir, confirmed_by_user, candidate_ids=None):
         seen["candidate_ids"] = candidate_ids
-        return {"ingests": [{"candidate_id": c, "status": "succeeded"} for c in (candidate_ids or [])]}
+        return {
+            "ingests": [{"candidate_id": c, "status": "succeeded"} for c in (candidate_ids or [])]
+        }
 
     monkeypatch.setattr(ingest_mod, "decompose_pdfs", fake_decompose)
 
@@ -207,28 +225,40 @@ def test_run_ingest_passes_pending_selection(topic_dir, monkeypatch):
 # 4. BibTeX export
 # ---------------------------------------------------------------------------
 
+
 def test_bibtex_export_uses_candidate_metadata(topic_dir):
     from academia.litreview.workflow_export import run_export
 
     search_dir = topic_dir / "search"
     search_dir.mkdir(exist_ok=True)
-    (search_dir / "candidates_ranked.jsonl").write_text(json.dumps({
-        "candidate_id": "IEEE-1",
-        "title": "Gain & Efficiency of LLC",
-        "authors": ["Zhang, Wei", "Li, Ming"],
-        "venue": "IEEE Transactions on Power Electronics",
-        "publication_year": 2024,
-        "doi": "10.1109/tpel.2024.1",
-        "content_type": "Journals",
-    }) + "\n", encoding="utf-8")
+    (search_dir / "candidates_ranked.jsonl").write_text(
+        json.dumps(
+            {
+                "candidate_id": "IEEE-1",
+                "title": "Gain & Efficiency of LLC",
+                "authors": ["Zhang, Wei", "Li, Ming"],
+                "venue": "IEEE Transactions on Power Electronics",
+                "publication_year": 2024,
+                "doi": "10.1109/tpel.2024.1",
+                "content_type": "Journals",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     reading = topic_dir / "reading"
     reading.mkdir(exist_ok=True)
-    (reading / "IEEE-1_card.json").write_text(json.dumps({
-        "candidate_id": "IEEE-1",
-        "title": "Gain & Efficiency of LLC",
-        "one_sentence": "An LLC study.",
-    }), encoding="utf-8")
+    (reading / "IEEE-1_card.json").write_text(
+        json.dumps(
+            {
+                "candidate_id": "IEEE-1",
+                "title": "Gain & Efficiency of LLC",
+                "one_sentence": "An LLC study.",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     out = run_export(topic_dir, format="bibtex")
     text = out.read_text(encoding="utf-8")
@@ -243,6 +273,7 @@ def test_bibtex_export_uses_candidate_metadata(topic_dir):
 # ---------------------------------------------------------------------------
 # 5. Workspace root resolution
 # ---------------------------------------------------------------------------
+
 
 def test_ongoing_root_follows_the_data_root_setting(tmp_path, monkeypatch):
     """`find_root` walked up looking for a project marker.
@@ -266,6 +297,7 @@ def test_ongoing_root_separates_workflows(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # 6. Source registry
 # ---------------------------------------------------------------------------
+
 
 def test_get_source_aliases():
     from academia.sources import get_source

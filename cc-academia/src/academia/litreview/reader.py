@@ -32,11 +32,21 @@ Output schema:
 
 def _build_user_prompt(paper_text: str, brief: ResearchBrief) -> str:
     """Assemble the user prompt with research context and paper content."""
-    criteria = "\n".join(f"- {c}" for c in brief.inclusion_criteria) if brief.inclusion_criteria else "(none)"
-    exclusions = "\n".join(f"- {c}" for c in brief.exclusion_criteria) if brief.exclusion_criteria else "(none)"
+    criteria = (
+        "\n".join(f"- {c}" for c in brief.inclusion_criteria)
+        if brief.inclusion_criteria
+        else "(none)"
+    )
+    exclusions = (
+        "\n".join(f"- {c}" for c in brief.exclusion_criteria)
+        if brief.exclusion_criteria
+        else "(none)"
+    )
 
     max_chars = 24000  # safe limit for most models
-    truncated = paper_text if len(paper_text) <= max_chars else paper_text[:max_chars] + "\n\n[TRUNCATED]"
+    truncated = (
+        paper_text if len(paper_text) <= max_chars else paper_text[:max_chars] + "\n\n[TRUNCATED]"
+    )
 
     return f"""\
 ## Research Objective
@@ -97,7 +107,11 @@ def review_paper(
 
     model_key = model_spec or "gemini-2.5-flash"
     prompt = _build_user_prompt(paper_text, brief)
-    raw = chat_structured(model_key, system=_SYSTEM_PROMPT + language_instruction(language, json_output=True), prompt=prompt)
+    raw = chat_structured(
+        model_key,
+        system=_SYSTEM_PROMPT + language_instruction(language, json_output=True),
+        prompt=prompt,
+    )
     data = _parse_json_response(raw)
 
     def _str_list(items: Any) -> list[str]:

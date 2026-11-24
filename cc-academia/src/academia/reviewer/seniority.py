@@ -86,8 +86,8 @@ _PATTERNS: tuple[tuple[str, str], ...] = (
 
 
 #: Values that mean "nothing stated" in a free-text ORCID field. One live record
-#: holds the single character 无.
-_PLACEHOLDERS = frozenset({"", "-", "--", "n/a", "na", "none", "nil", "无"})
+#: holds the single character U+65E0 (Chinese for "none").
+_PLACEHOLDERS = frozenset({"", "-", "--", "n/a", "na", "none", "nil", "\u65e0"})
 
 
 def clean_title(text: str) -> str:

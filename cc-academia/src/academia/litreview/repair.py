@@ -45,9 +45,7 @@ def _ingest_slug_variants(candidate_id: str) -> list[str]:
     return variants
 
 
-def _find_ingest_dir_for_cid(
-    ingest_root: Path, candidate_id: str
-) -> Path | None:
+def _find_ingest_dir_for_cid(ingest_root: Path, candidate_id: str) -> Path | None:
     """Find an ingest directory matching *candidate_id*, regardless of naming convention."""
     if not ingest_root.exists():
         return None
@@ -132,11 +130,7 @@ def repair_ledger(
         # Try to match to a queue item
         matched = _find_queue_item_for_pdf(pdf_path.stem, queue_items)
         cid = str(matched.get("candidate_id") or "") if matched else pdf_path.stem[:40]
-        title = (
-            str(matched.get("title") or "")
-            if matched
-            else pdf_path.stem[:80]
-        )
+        title = str(matched.get("title") or "") if matched else pdf_path.stem[:80]
 
         record = DownloadRecord(
             candidate_id=cid,
@@ -212,6 +206,7 @@ def repair_workspace(topic_dir: Path, dry_run: bool = False) -> dict[str, Any]:
         else:
             # Count what would be added without writing
             from academia.litreview.acquire import ledger as ledger_mod2
+
             existing = ledger_mod2.verified_downloads(ledger_path)
             ledger_counts = {"added": 0, "already_known": len(existing), "invalid": 0}
             for pdf_path in sorted(pdf_dir.glob("*.pdf")):
@@ -239,7 +234,8 @@ def repair_workspace(topic_dir: Path, dry_run: bool = False) -> dict[str, Any]:
     # --- Scan ingest directories (and link old-style dirs) ---
     if ingest_root.exists():
         ingest_dirs = [
-            d for d in ingest_root.iterdir()
+            d
+            for d in ingest_root.iterdir()
             if d.is_dir() and (d / "1-paper-text" / "paper.md").exists()
         ]
         result["ingest_dirs_found"] = len(ingest_dirs)
@@ -318,7 +314,9 @@ def repair_workspace(topic_dir: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # --- Status table ---
     status_lines = ["", "=== CHP Pipeline Status ===", ""]
-    status_lines.append(f"{'Candidate':<50s} {'PDF':<5s} {'Ingest':<7s} {'Card':<5s} {'Decision':<10s}")
+    status_lines.append(
+        f"{'Candidate':<50s} {'PDF':<5s} {'Ingest':<7s} {'Card':<5s} {'Decision':<10s}"
+    )
     status_lines.append("-" * 80)
 
     for row in screening_rows:
@@ -330,21 +328,23 @@ def repair_workspace(topic_dir: Path, dry_run: bool = False) -> dict[str, Any]:
         has_ingest = "Y" if ingest_dir else "."
         has_card = "Y" if (ingest_dir and (ingest_dir / "paper_card.md").exists()) else "."
         decision = str(row.get("decision", "?"))[:10]
-        status_lines.append(f"{cid[:48]:<50s} {has_pdf:<5s} {has_ingest:<7s} {has_card:<5s} {decision:<10s}")
+        status_lines.append(
+            f"{cid[:48]:<50s} {has_pdf:<5s} {has_ingest:<7s} {has_card:<5s} {decision:<10s}"
+        )
 
     # Also list queue-only items not in screening
     for item in queue_items:
         cid = str(item.get("candidate_id", ""))
-        if not cid or any(
-            str(r.get("candidate_id", "")) == cid for r in screening_rows
-        ):
+        if not cid or any(str(r.get("candidate_id", "")) == cid for r in screening_rows):
             continue
         has_pdf = "Y" if cid in verified else "."
         ingest_dir = _find_ingest_dir_for_cid(ingest_root, cid)
         has_ingest = "Y" if ingest_dir else "."
         has_card = "Y" if (ingest_dir and (ingest_dir / "paper_card.md").exists()) else "."
         decision = str(item.get("decision", "?"))[:10]
-        status_lines.append(f"{cid[:48]:<50s} {has_pdf:<5s} {has_ingest:<7s} {has_card:<5s} {decision:<10s}")
+        status_lines.append(
+            f"{cid[:48]:<50s} {has_pdf:<5s} {has_ingest:<7s} {has_card:<5s} {decision:<10s}"
+        )
 
     result["status_table"] = "\n".join(status_lines)
 
@@ -356,9 +356,7 @@ def repair_workspace(topic_dir: Path, dry_run: bool = False) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def find_ingest_output(
-    topic_dir: Path, candidate_id: str
-) -> Path | None:
+def find_ingest_output(topic_dir: Path, candidate_id: str) -> Path | None:
     """Find ingest output for *candidate_id* under any naming convention.
 
     Tries the canonical CID-based slug first (fast path), then falls back

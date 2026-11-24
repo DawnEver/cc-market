@@ -1,0 +1,11 @@
+{
+  "name": "fabric",
+  "version": "1.4.0",
+  "description": "Multi-provider agent fabric — any agent (Claude / Codex / …) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes) + fan_out + a minimal observe proxy that captures a child's API traffic.",
+  "author": {
+    "name": "Mingyang Bao"
+  },
+  "homepage": "https://github.com/DawnEver/cc-market/tree/main/fabric",
+  "repository": "https://github.com/DawnEver/cc-market",
+  "skills": "./agy-skills/"
+}

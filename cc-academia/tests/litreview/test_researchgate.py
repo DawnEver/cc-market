@@ -18,6 +18,7 @@ def no_real_sleeping(monkeypatch):
     yield
     rg.BREAKER.reset()
 
+
 SEARCH_HTML = """
 <a href="publication/357468096_Design_and_Simulation_of_Hairpin_Winding_Motors">One</a>
 <a href="/publication/392464887_Design_of_Continuous_Hairpin_Winding">Two</a>
@@ -36,6 +37,7 @@ DENIED_HTML = (
 # ---------------------------------------------------------------------------
 # URL construction
 # ---------------------------------------------------------------------------
+
 
 def test_search_url_is_built_from_title():
     url = rg.search_url("A Hybrid Approach for Stator Winding Design")
@@ -73,6 +75,7 @@ def test_query_from_item_empty_when_nothing_identifies_the_paper():
 # ---------------------------------------------------------------------------
 # Parsing search results
 # ---------------------------------------------------------------------------
+
 
 def test_extract_publication_links_handles_relative_hrefs():
     """RG emits result links without a leading slash — the easy thing to miss."""
@@ -112,6 +115,7 @@ def test_download_url_derives_from_publication_url():
 # Full-text availability
 # ---------------------------------------------------------------------------
 
+
 def test_has_full_text_true_when_download_offered():
     assert rg.has_full_text("<div>Download full-text PDF</div>")
 
@@ -130,6 +134,7 @@ def test_is_challenged_detects_cloudflare():
 # ---------------------------------------------------------------------------
 # End-to-end flow against a fake page
 # ---------------------------------------------------------------------------
+
 
 class FakePage:
     """Minimal Playwright page stand-in driven by a url -> (html, pdf) map."""
@@ -166,9 +171,11 @@ PUB_URL = "https://www.researchgate.net/publication/1_Hairpin_Winding"
 
 def test_fetch_downloads_first_publication_with_full_text(tmp_path):
     page = FakePage(
-        {rg.HOME_URL: "<html>home</html>",
-         SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
-         PUB_URL: "<div>Download full-text PDF</div>"},
+        {
+            rg.HOME_URL: "<html>home</html>",
+            SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
+            PUB_URL: "<div>Download full-text PDF</div>",
+        },
         {PUB_URL + "/download": PDF_BYTES},
     )
     target = tmp_path / "o.pdf"
@@ -186,9 +193,11 @@ def test_fetch_warms_up_on_home_before_searching(tmp_path):
 
 def test_fetch_skips_publications_without_full_text(tmp_path):
     page = FakePage(
-        {rg.HOME_URL: "h",
-         SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
-         PUB_URL: "<div>Request full-text</div>"},
+        {
+            rg.HOME_URL: "h",
+            SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
+            PUB_URL: "<div>Request full-text</div>",
+        },
         {PUB_URL + "/download": PDF_BYTES},
     )
     assert rg.fetch(page, "Hairpin Winding", tmp_path / "o.pdf") is None
@@ -207,9 +216,11 @@ def test_fetch_returns_none_for_empty_query(tmp_path):
 
 def test_fetch_rejects_non_pdf_download_body(tmp_path):
     page = FakePage(
-        {rg.HOME_URL: "h",
-         SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
-         PUB_URL: "<div>Download full-text PDF</div>"},
+        {
+            rg.HOME_URL: "h",
+            SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
+            PUB_URL: "<div>Download full-text PDF</div>",
+        },
         {PUB_URL + "/download": b"<html>login wall</html>"},
     )
     assert rg.fetch(page, "Hairpin Winding", tmp_path / "o.pdf") is None
@@ -235,6 +246,7 @@ def test_fetch_raises_when_challenge_blocks_search(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # Bot-check handling
 # ---------------------------------------------------------------------------
+
 
 class _ClearingPage:
     """Serves the challenge N times, then the real page — like a human solving it."""
@@ -279,6 +291,7 @@ def test_wait_for_clearance_returns_early_on_ip_ban():
 # Cloudflare error 1020 — IP ban, not a solvable check
 # ---------------------------------------------------------------------------
 
+
 def test_is_access_denied_detects_error_1020():
     assert rg.is_access_denied(DENIED_HTML)
     assert not rg.is_access_denied(CHALLENGE_HTML)
@@ -305,9 +318,11 @@ def test_fetch_short_circuits_once_breaker_tripped(tmp_path):
 
 def test_ban_on_publication_page_also_trips_breaker(tmp_path):
     page = FakePage(
-        {rg.HOME_URL: "h",
-         SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
-         PUB_URL: DENIED_HTML},
+        {
+            rg.HOME_URL: "h",
+            SEARCH_URL: '<a href="/publication/1_Hairpin_Winding">R</a>',
+            PUB_URL: DENIED_HTML,
+        },
     )
     with pytest.raises(rg.AccessDeniedError):
         rg.fetch(page, "Hairpin Winding", tmp_path / "o.pdf")

@@ -32,9 +32,7 @@ def candidate(person_id="p1", name="Candidate One", **kwargs) -> Candidate:
 
 
 def row(cand: Candidate, rank: int = 1, email: str = "a@b.edu.example") -> report.Row:
-    return report.Row(
-        rank=rank, candidate=cand, email=EmailFinding(email=email, source="test")
-    )
+    return report.Row(rank=rank, candidate=cand, email=EmailFinding(email=email, source="test"))
 
 
 def paper(venue_type: str, *, position: str = "first", year: int = 2025) -> Evidence:
@@ -55,9 +53,7 @@ def journal_outcome(papers, journal="tte"):
         now_year=2026,
         relevant=RelevantRecord(tuple(papers)),
     )
-    return eligibility.related_journals(
-        record, load_policy(journal).constraint("related_journals")
-    )
+    return eligibility.related_journals(record, load_policy(journal).constraint("related_journals"))
 
 
 def test_a_rule_that_ran_contributes_its_verdict_and_its_numbers():
@@ -87,9 +83,7 @@ def test_a_rule_that_was_switched_off_leaves_no_column():
     """
     off = neutral(load_policy())
     cand = candidate()
-    cand.eligibility = eligibility.assess(
-        CandidateRecord(person=cand.person, now_year=2026), off
-    )
+    cand.eligibility = eligibility.assess(CandidateRecord(person=cand.person, now_year=2026), off)
 
     header, _ = read(report.render_audit([row(cand)], off))
 
@@ -118,35 +112,57 @@ def test_the_homepage_link_prefers_xplore_then_orcid():
     identifier above it is absent, so the link never regresses to a worse page
     while a better one is known.
     """
+
     def with_ids(**ids):
         return Candidate(person=Person(person_id="p1", display_name="Candidate One", **ids))
 
-    assert report.profile_url(
-        with_ids(ieee_author_id="37086766701", orcid="0000-0002-1825-0097", openalex_id="A123")
-    ) == "https://ieeexplore.ieee.org/author/37086766701"
+    assert (
+        report.profile_url(
+            with_ids(ieee_author_id="37086766701", orcid="0000-0002-1825-0097", openalex_id="A123")
+        )
+        == "https://ieeexplore.ieee.org/author/37086766701"
+    )
 
-    assert report.profile_url(
-        with_ids(orcid="0000-0002-1825-0097", openalex_id="A123")
-    ) == "https://orcid.org/0000-0002-1825-0097"
+    assert (
+        report.profile_url(with_ids(orcid="0000-0002-1825-0097", openalex_id="A123"))
+        == "https://orcid.org/0000-0002-1825-0097"
+    )
 
     assert report.profile_url(with_ids(openalex_id="A123")) == "https://openalex.org/A123"
 
     # Nothing but a paper, which is what the work itself links to.
-    assert report.profile_url(
-        Candidate(person=Person(person_id="p1", display_name="Candidate One"),
-                  evidence=[Evidence(paper_id="p", title="t", year=2024, position="first",
-                                     position_weight=1.0, similarity=0.9, doi="10.1/x")])
-    ) == "https://doi.org/10.1/x"
+    assert (
+        report.profile_url(
+            Candidate(
+                person=Person(person_id="p1", display_name="Candidate One"),
+                evidence=[
+                    Evidence(
+                        paper_id="p",
+                        title="t",
+                        year=2024,
+                        position="first",
+                        position_weight=1.0,
+                        similarity=0.9,
+                        doi="10.1/x",
+                    )
+                ],
+            )
+        )
+        == "https://doi.org/10.1/x"
+    )
 
 
 def coverage_row(index: int, *, blocked: bool, found: bool) -> report.Row:
     person = Person(
-        person_id=f"p{index}", display_name=f"Candidate {index}",
-        confidence=0.99, resolution_method="orcid",
+        person_id=f"p{index}",
+        display_name=f"Candidate {index}",
+        confidence=0.99,
+        resolution_method="orcid",
     )
     person.affiliations.append(
-        Affiliation(inst_id="i1", institution="Some Uni", country_code="GB",
-                    is_current=True, source="orcid")
+        Affiliation(
+            inst_id="i1", institution="Some Uni", country_code="GB", is_current=True, source="orcid"
+        )
     )
     candidate = Candidate(person=person)
     # `blocked` is derived from the score, which is how the ranker marks a
@@ -164,7 +180,7 @@ def test_coverage_holds_the_invitable_classes_to_the_higher_bar():
     """Two bars, because a missing address matters most where an invitation
     could still go out — and one pooled rate cannot say which name is missing."""
     rows = [
-        *(coverage_row(i, blocked=False, found=i <= 9) for i in range(1, 11)),      # 9/10
+        *(coverage_row(i, blocked=False, found=i <= 9) for i in range(1, 11)),  # 9/10
         *(coverage_row(100 + i, blocked=True, found=i <= 6) for i in range(1, 11)),  # 6/10
     ]
 
@@ -239,17 +255,13 @@ def test_seniority_reports_the_figure_and_what_it_counted_from():
     senior.education.append(
         Education(inst_id="i1", institution="Somewhere", degree="PhD", year_to=2010)
     )
-    outcome = eligibility.seniority(
-        CandidateRecord(person=senior, now_year=2026), constraint
-    )
+    outcome = eligibility.seniority(CandidateRecord(person=senior, now_year=2026), constraint)
     assert outcome.passed
     assert outcome.facts["seniority_years"] == 16
     assert outcome.facts["seniority_basis"] == "doctorate"
 
     unknown = Person(person_id="p-unknown", display_name="Unknown")
-    outcome = eligibility.seniority(
-        CandidateRecord(person=unknown, now_year=2026), constraint
-    )
+    outcome = eligibility.seniority(CandidateRecord(person=unknown, now_year=2026), constraint)
     assert eligibility.verdict_of(outcome) == "VERIFY"
     assert "seniority_years" not in outcome.facts
 
@@ -272,12 +284,14 @@ def test_the_conflict_verdict_and_its_severity_are_stated():
 def test_a_missing_address_leaves_the_cell_empty_rather_than_guessing(found):
     cand = candidate()
     cand.eligibility = eligibility.Assessment()
-    _, rows = read(report.render_audit([row(cand, email="a@b.edu.example" if found else "")], load_policy()))
+    _, rows = read(
+        report.render_audit([row(cand, email="a@b.edu.example" if found else "")], load_policy())
+    )
     assert rows[0]["email"] == ("a@b.edu.example" if found else "")
 
 
 def test_the_recommendation_column_keeps_all_three_states():
-    """"Meets every rule, address unverified" is not a rejection."""
+    """ "Meets every rule, address unverified" is not a rejection."""
     assert set(report.RECOMMENDATION.values()) == {
         "recommend",
         "check_first",

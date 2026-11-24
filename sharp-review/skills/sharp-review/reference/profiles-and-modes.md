@@ -1,4 +1,4 @@
-# Sharp Review — profiles, modes & gating (reference)
+# Sharp Review — profiles & modes (reference)
 
 On-demand detail behind SKILL.md. The METHOD itself is ai-lab's data, in the directory
 `python -m ai_lab.review.method` prints (with the interpreter fabric setup pinned in `provider-cache.json`)
@@ -21,20 +21,12 @@ Every key is optional:
 
 ```json
 {
-  "stopHook":            false,
   "profileWeights":      { "architecture": 0.35, "diff": 0.45 },
   "customProfiles":      [ /* see "Custom profiles" */ ],
-  "thresholds":          { "wave0": { "lines": 300, "files": 5 }, "wave1": { "lines": 1000, "files": 15 } },
   "inlineDiffLimit":     20000,
-  "docsThreshold":       3,
-  "codebaseIntervalMin": 10080,
   "providers":           { "interactive": ["claude", "codex"], "headless": ["anthropic"] }
 }
 ```
-
-The Stop hook dispatches a review only where `stopHook: true` (default `false`; the env
-`SHARP_REVIEW_STOP_HOOK=1|0` overrides it). Leave it off where a forge already reviews every PR, so one
-change is not reviewed twice. `/sharp-review` still runs on demand.
 
 ## Run modes and providers
 
@@ -46,37 +38,13 @@ resolves `--providers` → `providers.<mode>` here → the run mode default. Rev
 provider *i mod n*; a requested provider the host cannot run is `unavailable`, a call mode the
 run mode cannot execute is `unsupported` — neither is ever replaced by another provider.
 
-## Wave Gate (trigger thresholds)
-
-The Stop hook (`sharp-review-hook.js`) invokes the skill once enough change accumulates; a
-manual `/sharp-review` bypasses the gate.
-
-- **Wave 0** (new commit): ≥300 lines OR ≥5 files. **Wave 1+** (same ref already reviewed):
-  ≥1000 lines OR ≥15 files. The wave resets when HEAD moves; skipped sessions accumulate.
-- `lastReviewRef` / `lastReviewDiff` in `reviewGate` make a same-ref check compare only the
-  delta since the last review; a vanished ref (rebase/gc) falls back to `HEAD`, the range the review itself reads (a `HEAD~1` base fired on a commit the review then found empty, every Stop).
-- **Content-hash gate:** a fired source dispatches only when the content it reviews changed
-  since its last successful review (`reviewGate.reviewedHashes`: sha256 over each covered file's path
-  and bytes; `codebase` hashes HEAD). Sessions sharing one checkout alternate on the same state,
-  so without it an unchanged dirty tree re-fired the same profile every turn.
-- Every eligible Stop reevaluates thresholds, even within a session whose first turn was
-  below threshold. No model classifies depth: a fired source requests one planned pass.
-- `reviewGate.pending` is a checkout-wide, 30-minute claim carrying token, session/turn,
-  source hashes, head and diff stat. It is reserved atomically, not counted as a review.
-  Pass its token to `plan.js --gate-token`; post-review credits hashes only after a sink
-  write with at least one successful reviewer. `--release-gate` cancels without credit.
-- A session's pending REM, user-input wait, active project deferral, or Stop continuation
-  suppresses dispatch. REM checks the same locked review claim so both cannot request
-  competing continuations from one Stop. Manual review bypasses the trigger thresholds.
-
 ## Sources and profile selection
 
-A *source* is a trigger: `diff` = the wave gate; `codebase` = time since the last review
-(`codebaseIntervalMin`); `docs` = ≥`docsThreshold` doc files changed; `deps` = a lockfile
-changed. A *profile* names the source it reacts to. Each run draws `pick.count` profiles by
-weighted draw without replacement among the profiles whose source fired (all of them on a
-manual run); the draw order is then shuffled against the provider order. Set a weight to 0 in
-`profileWeights` to opt a profile out.
+A *profile* names the *source* it reacts to: `diff` (the change under review), `codebase`
+(an architecture survey), `docs` (documentation) or `deps` (dependency lockfiles). Each run
+draws `pick.count` profiles by weighted draw without replacement among the profiles whose
+source `plan.js --sources` names (all of them when it names none); the draw order is then
+shuffled against the provider order. Set a weight to 0 in `profileWeights` to opt a profile out.
 
 A profile's `context` decides its prompt: `diff` profiles review the diff (inline when it fits
 `inlineDiffLimit`, else a manifest the reviewer explores, skipped when nothing reviewable is
@@ -96,7 +64,7 @@ one is refused by name; `label` defaults to the key, `weight` to 0.1, `framing` 
 
 ```json
 { "key": "arch-hygiene", "source": "codebase", "context": "explore", "weight": 0.3,
-  "framing": "…one-line intent…", "scope": ["bullet a", "bullet b"], "label": "整洁锐评" }
+  "framing": "…one-line intent…", "scope": ["bullet a", "bullet b"], "label": "clean-code sharp review" }
 ```
 
 Keep framings and scopes tight — low-signal instruction text degrades review quality.
@@ -110,7 +78,7 @@ track context cost. The plan reports `stats` and `excludedSummary`.
 ## Attention boundary (Step 4, consumer-aware)
 
 - **AI consumer** (e.g. `evolve`): reads findings from the backlog; the skill never prompts.
-- **Human consumer**: findings land in `sharp-review.md` for async triage via `todo`; only the
+- **Human consumer**: findings land in `sharp-review.md` for async triage; only the
   one-line summary reaches chat.
 
 To **triage now**, route OPEN findings through `shared/attention.mjs`: `route(items, {

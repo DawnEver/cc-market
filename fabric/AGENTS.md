@@ -24,7 +24,7 @@ L2 ERGONOMICS     commands (/continue /models /handoff), the `takeover` handoff 
 L1 POLICY         scripts/lib (parse <command> flags, buildPrompt, trace, errors) +
                   scripts/codex (review, image) + prompts/ — mode dispatch matrix
 L0 MECHANISM      engine/ (fabric-owned, canonical): providers routing · spawn-child ·
-                  ai-lab-call (one-shot API calls via `python -m ai_lab.call`) · codex/{launch,app-server,task} · observe proxy.
+                  ai-lab-call (one-shot API calls via `python -m ai_lab.call`) · codex/{launch,app-server,task} · agy/discovery · observe proxy.
                   (shared/ now holds only cross-plugin generic utils)
 ```
 
@@ -43,7 +43,7 @@ deep detail when a task reaches into that area.
 
 `mcp-server.mjs` implements JSON-RPC 2.0 over stdio (line + Content-Length framed, needed
 for Codex MCP startup). One `call` primitive (task/review/agent/image-*) + `fan_out` (parallel calls) +
-providers (`list_providers` / `resolve_model` / `codex_status`). Full table and dispatch matrix →
+providers (`list_providers` / `resolve_model` / `codex_status` / `agy_status`). Full table and dispatch matrix →
 `docs/architecture.md` § MCP Server.
 
 ## Testing

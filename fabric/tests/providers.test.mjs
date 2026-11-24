@@ -49,7 +49,7 @@ test('a cache of another schema_version is stale', () => {
 });
 
 test('an unknown provider is unsupported and lists the catalogue', () => {
-  refusedUnsupported(() => loadProviderConfig('nope', fixture()), /not in the catalogue.*known: claude, codex, acme/);
+  refusedUnsupported(() => loadProviderConfig('nope', fixture()), /not in the catalogue.*known: claude, codex, agy, acme/);
 });
 
 test('loadProviderConfig reads the anthropic endpoint and the models from the catalogue row', () => {
@@ -60,10 +60,12 @@ test('loadProviderConfig reads the anthropic endpoint and the models from the ca
   assert.equal(cfg.defaultOpus, 'acme-pro[1m]');
 });
 
-test('claude/codex are host rows, read without a cache', () => {
+test('claude/codex/agy are host rows, read without a cache', () => {
   assert.deepEqual(loadProviderConfig('claude', '/nonexistent/x.json'), { native: true, provider: 'claude' });
   assert.deepEqual(loadProviderConfig('codex', '/nonexistent/x.json'), { native: true, provider: 'codex' });
+  assert.deepEqual(loadProviderConfig('agy', '/nonexistent/x.json'), { native: true, provider: 'agy' });
   assert.throws(() => resolveUpstream('claude', '/nonexistent/x.json'), /native/);
+  assert.throws(() => resolveUpstream('agy', '/nonexistent/x.json'), /native/);
 });
 
 test('a provider with no anthropic endpoint cannot run a claude child or be observed', () => {
@@ -130,13 +132,13 @@ test('listModels lists the host rows then the catalogue, or the refusal', () => 
   const { configPath, cachePath } = providerCacheFixture();
   unlinkSync(cachePath);
   assert.match(listModels(configPath), /absent.*setup/);
-  assert.match(listModels(configPath), /\ncallable: claude, codex$/, 'only the host CLIs without a catalogue');
+  assert.match(listModels(configPath), /\ncallable: claude, codex, agy$/, 'only the host CLIs without a catalogue');
 });
 
 test('listModels ends with the providers callable without a model', () => {
   const out = listModels(fixture());
   assert.match(out, /^openonly\s+→.*no defaults set/m);
-  assert.equal(out.split('\n').at(-1), 'callable: claude, codex, acme, plain, tiered');
+  assert.equal(out.split('\n').at(-1), 'callable: claude, codex, agy, acme, plain, tiered');
 });
 
 test('anthropicEndpoint builds the /v1/messages URL Claude Code itself hits', () => {

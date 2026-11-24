@@ -22,7 +22,7 @@ MCP `spawn_session` now exposes `shared` (was plumbed but not surfaced).
 
 ## Native compaction — BOTH major backends, no summarize-and-restart
 
-User asserted "codex 和 claude 都有 compact 功能" — they were right; verified in the
+User asserted "codex and claude both have a compact feature" — they were right; verified in the
 protocols and live:
 
 - **codex**: `thread/compact/start {threadId}` in the app-server protocol (v1 + v2;
@@ -49,3 +49,5 @@ peer, so compaction runs on the machine that owns the child.
 Suite: 331 pass. My earlier claim "claude has no headless compact" was wrong — the
 protocol message is just a user message, which the SDK docs document and the live probe
 confirmed.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

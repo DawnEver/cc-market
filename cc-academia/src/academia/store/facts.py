@@ -105,16 +105,17 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         }
         for r in _rows(
             conn,
-            f"SELECT h.*, p.orcid, p.openalex_id, p.display_name "
+            f"SELECT h.*, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
             f"FROM review_history h {_PERSON_JOIN} ORDER BY h.person_id, h.ms_id",
         )
     ]
 
     ranks = [
-        _identity(r) | {"rank": r["rank"], "source_url": r["source_url"] or "", "seen_at": r["seen_at"]}
+        _identity(r)
+        | {"rank": r["rank"], "source_url": r["source_url"] or "", "seen_at": r["seen_at"]}
         for r in _rows(
             conn,
-            f"SELECT k.*, p.orcid, p.openalex_id, p.display_name "
+            f"SELECT k.*, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
             f"FROM person_ranks k {_PERSON_JOIN} ORDER BY k.person_id",
         )
     ]
@@ -130,7 +131,7 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         }
         for r in _rows(
             conn,
-            f"SELECT e.*, p.orcid, p.openalex_id, p.display_name "
+            f"SELECT e.*, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
             f"FROM emails e {_PERSON_JOIN} ORDER BY e.person_id, e.email",
         )
     ]
@@ -150,7 +151,7 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         }
         for r in _rows(
             conn,
-            f"SELECT a.*, i.name, i.country_code, p.orcid, p.openalex_id, p.display_name "
+            f"SELECT a.*, i.name, i.country_code, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
             f"FROM affiliations a {_PERSON_JOIN} JOIN institutions i USING (inst_id) "
             f"WHERE a.source IN ({verified}) ORDER BY a.person_id, i.name",
             VERIFIED_SOURCES,
@@ -170,7 +171,7 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         }
         for r in _rows(
             conn,
-            f"SELECT e.*, i.name, p.orcid, p.openalex_id, p.display_name "
+            f"SELECT e.*, i.name, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
             f"FROM education e {_PERSON_JOIN} JOIN institutions i USING (inst_id) "
             f"WHERE e.source IN ({verified}) ORDER BY e.person_id, i.name, e.degree",
             VERIFIED_SOURCES,
@@ -188,7 +189,7 @@ def collect(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         }
         for r in _rows(
             conn,
-            f"SELECT f.*, p.orcid, p.openalex_id, p.display_name "
+            f"SELECT f.*, p.orcid, p.openalex_id, p.display_name "  # noqa: S608 -- interpolates only the _PERSON_JOIN constant; no value reaches the SQL text
             f"FROM person_profiles f {_PERSON_JOIN} "
             f"WHERE f.source IN ({verified}) ORDER BY f.person_id, f.system",
             VERIFIED_SOURCES,
@@ -285,7 +286,7 @@ def _resolve_person(conn: sqlite3.Connection, record: dict[str, Any]) -> str | N
     for name, value in lookups:
         if not value:
             continue
-        row = conn.execute(f"SELECT person_id FROM persons WHERE {name} = ?", (value,)).fetchone()
+        row = conn.execute(f"SELECT person_id FROM persons WHERE {name} = ?", (value,)).fetchone()  # noqa: S608 -- name is orcid, openalex_id or a PROFILE_COLUMNS value; the value is bound as ?
         if row:
             return row["person_id"]
 
@@ -374,7 +375,12 @@ def _apply(conn: sqlite3.Connection, table: str, record: dict[str, Any], person_
                 seen_at    = max(excluded.seen_at, person_ranks.seen_at)
             WHERE excluded.seen_at >= person_ranks.seen_at
             """,
-            (person_id, record["rank"], record.get("source_url") or None, record.get("seen_at") or _now()),
+            (
+                person_id,
+                record["rank"],
+                record.get("source_url") or None,
+                record.get("seen_at") or _now(),
+            ),
         )
     elif table == "emails":
         conn.execute(
@@ -399,7 +405,9 @@ def _apply(conn: sqlite3.Connection, table: str, record: dict[str, Any], person_
         from academia.core.models import Affiliation
         from academia.store import repository
 
-        inst_id = _institution_id(conn, record.get("institution", ""), record.get("country_code", ""))
+        inst_id = _institution_id(
+            conn, record.get("institution", ""), record.get("country_code", "")
+        )
         # Through the repository rather than a second copy of the SQL: an
         # undated affiliation cannot be upserted by ON CONFLICT, and one bug of
         # that shape is enough.
@@ -450,7 +458,7 @@ def _apply(conn: sqlite3.Connection, table: str, record: dict[str, Any], person_
         # The provenance row is what makes the fact portable; this is what makes
         # it take effect, because every identity lookup reads `persons`.
         conn.execute(
-            f"UPDATE persons SET {column} = ? WHERE person_id = ?",
+            f"UPDATE persons SET {column} = ? WHERE person_id = ?",  # noqa: S608 -- column is a repository.PROFILE_COLUMNS value; the values are bound as ?
             (profile_id, person_id),
         )
     elif table == "education":

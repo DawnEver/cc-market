@@ -256,8 +256,11 @@ def run_probe(
         expression = provider.adapt_expression(raw_expression)
         kwargs, dropped = _query_kwargs(query, defaults=defaults, provider=provider)
         audit_base = {
-            "timestamp": datetime.now(UTC).isoformat(), "backend": provider.name,
-            "query_id": qid, "page_number": 1, "search_expression": raw_expression,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "backend": provider.name,
+            "query_id": qid,
+            "page_number": 1,
+            "search_expression": raw_expression,
             "dropped_kwargs": dropped,
         }
         purpose = query.get("purpose", "")
@@ -269,13 +272,20 @@ def run_probe(
         if abort_reason is not None:
             record(
                 {
-                    "query_id": qid, "purpose": purpose, "status": "not_probed",
-                    "total_count": 0, "first_titles": [],
-                    "failure_reason": abort_reason, "http_status": abort_status,
+                    "query_id": qid,
+                    "purpose": purpose,
+                    "status": "not_probed",
+                    "total_count": 0,
+                    "first_titles": [],
+                    "failure_reason": abort_reason,
+                    "http_status": abort_status,
                 },
                 {
-                    **audit_base, "status": "not_probed", "result_count": 0,
-                    "failure_reason": abort_reason, "http_status": abort_status,
+                    **audit_base,
+                    "status": "not_probed",
+                    "result_count": 0,
+                    "failure_reason": abort_reason,
+                    "http_status": abort_status,
                 },
             )
             continue
@@ -283,28 +293,37 @@ def run_probe(
         if dropped and tuple(dropped) not in warned:
             warned.add(tuple(dropped))
             print(
-                f"  {provider.name}: does not accept {', '.join(dropped)}; "
-                f"not applied to any query"
+                f"  {provider.name}: does not accept {', '.join(dropped)}; not applied to any query"
             )
 
         try:
-            result = provider.probe(
-                expression, qid, timeout=timeout_seconds, **kwargs
-            )
+            result = provider.probe(expression, qid, timeout=timeout_seconds, **kwargs)
         except Exception as error:
             reason = str(error)
-            _append_jsonl(probe_dir / "errors.jsonl", {
-                **audit_base, "status": "failed", "failure_reason": reason,
-            })
+            _append_jsonl(
+                probe_dir / "errors.jsonl",
+                {
+                    **audit_base,
+                    "status": "failed",
+                    "failure_reason": reason,
+                },
+            )
             record(
                 {
-                    "query_id": qid, "purpose": purpose, "status": "failed",
-                    "total_count": 0, "first_titles": [],
-                    "failure_reason": reason, "http_status": None,
+                    "query_id": qid,
+                    "purpose": purpose,
+                    "status": "failed",
+                    "total_count": 0,
+                    "first_titles": [],
+                    "failure_reason": reason,
+                    "http_status": None,
                 },
                 {
-                    **audit_base, "status": "failed", "result_count": 0,
-                    "failure_reason": reason, "http_status": None,
+                    **audit_base,
+                    "status": "failed",
+                    "result_count": 0,
+                    "failure_reason": reason,
+                    "http_status": None,
                 },
             )
             exit_code = exit_code or 1
@@ -330,25 +349,33 @@ def run_probe(
         status = "failed" if failed else "success"
         record(
             {
-                "query_id": qid, "purpose": purpose, "status": status,
+                "query_id": qid,
+                "purpose": purpose,
+                "status": status,
                 "total_count": result.total_count,
                 "first_titles": result.sample_titles,
                 "failure_reason": result.failure_reason,
                 "http_status": result.failure_status,
             },
             {
-                **audit_base, "status": status, "result_count": result.total_count,
+                **audit_base,
+                "status": status,
+                "result_count": result.total_count,
                 "failure_reason": result.failure_reason,
                 "http_status": result.failure_status,
             },
         )
 
         if failed:
-            _append_jsonl(probe_dir / "errors.jsonl", {
-                **audit_base, "status": status,
-                "failure_reason": result.failure_reason,
-                "http_status": result.failure_status,
-            })
+            _append_jsonl(
+                probe_dir / "errors.jsonl",
+                {
+                    **audit_base,
+                    "status": status,
+                    "failure_reason": result.failure_reason,
+                    "http_status": result.failure_status,
+                },
+            )
             print(f"{qid}: FAILED — {result.failure_reason}")
             if result.is_account_failure:
                 abort_reason, abort_status = result.failure_reason, result.failure_status
@@ -419,8 +446,12 @@ def run_search(
         if evaluation_path is None or not evaluation_path.exists():
             raise ValueError("query evaluation is required before full metadata search")
         eval_artifact = load_data(evaluation_path)
-        if not isinstance(eval_artifact, dict) or eval_artifact.get("queries_sha256") != query_plan_sha256(plan):
-            raise ValueError("query evaluation belongs to a different query plan; run evaluate-queries again")
+        if not isinstance(eval_artifact, dict) or eval_artifact.get(
+            "queries_sha256"
+        ) != query_plan_sha256(plan):
+            raise ValueError(
+                "query evaluation belongs to a different query plan; run evaluate-queries again"
+            )
         suggestions = eval_artifact.get("suggestions")
         if not isinstance(suggestions, list):
             raise ValueError("query evaluation must contain suggestions")
@@ -461,14 +492,15 @@ def run_search(
         if dropped and tuple(dropped) not in warned:
             warned.add(tuple(dropped))
             print(
-                f"  {provider.name}: does not accept {', '.join(dropped)}; "
-                f"not applied to any query"
+                f"  {provider.name}: does not accept {', '.join(dropped)}; not applied to any query"
             )
 
         try:
             results = provider.search_pages(
-                expression, qid,
-                max_pages=max_pages, per_page=rows_per_page,
+                expression,
+                qid,
+                max_pages=max_pages,
+                per_page=rows_per_page,
                 timeout=timeout_seconds,
                 **kwargs,
             )
@@ -480,18 +512,21 @@ def run_search(
             # audit log was written empty, which reads as a clean run.
             reason = getattr(error, "reason", None) or str(error)
             status = error_status(error)
-            audits.append({
-                "timestamp": datetime.now(UTC).isoformat(), "query_id": qid,
-                "search_expression": expression,
-                "page_number": 1,
-                "rows_per_page": rows_per_page,
-                "status": "failed",
-                "record_count": 0,
-                "total_count": 0,
-                "failure_reason": reason,
-                "http_status": status,
-                "dropped_kwargs": dropped,
-            })
+            audits.append(
+                {
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "query_id": qid,
+                    "search_expression": expression,
+                    "page_number": 1,
+                    "rows_per_page": rows_per_page,
+                    "status": "failed",
+                    "record_count": 0,
+                    "total_count": 0,
+                    "failure_reason": reason,
+                    "http_status": status,
+                    "dropped_kwargs": dropped,
+                }
+            )
             if status in ACCOUNT_STATUSES:
                 exit_code = EXIT_SOURCE
                 break
@@ -500,18 +535,21 @@ def run_search(
 
         for _page_index, result in enumerate(results, start=1):
             stamp = datetime.now(UTC).isoformat()
-            audits.append({
-                "timestamp": stamp, "query_id": qid,
-                "search_expression": expression,
-                "page_number": result.page,
-                "rows_per_page": rows_per_page,
-                "status": "success",
-                "record_count": len(result.papers),
-                "total_count": result.total_count,
-                "failure_reason": None,
-                "http_status": None,
-                "dropped_kwargs": dropped,
-            })
+            audits.append(
+                {
+                    "timestamp": stamp,
+                    "query_id": qid,
+                    "search_expression": expression,
+                    "page_number": result.page,
+                    "rows_per_page": rows_per_page,
+                    "status": "success",
+                    "record_count": len(result.papers),
+                    "total_count": result.total_count,
+                    "failure_reason": None,
+                    "http_status": None,
+                    "dropped_kwargs": dropped,
+                }
+            )
 
             # Write raw response (namespaced per provider)
             if result.raw:
@@ -528,14 +566,19 @@ def run_search(
             for position, paper in enumerate(result.papers, start=1):
                 rank = (result.page - 1) * rows_per_page + position
                 candidate = candidate_from_paper(
-                    paper, query_id=qid, rank=rank,
-                    page=result.page, search_expression=expression,
+                    paper,
+                    query_id=qid,
+                    rank=rank,
+                    page=result.page,
+                    search_expression=expression,
                 )
-                candidate.update({
-                    "query_purpose": query.get("purpose", ""),
-                    "page_position": position,
-                    "result_position": rank,
-                })
+                candidate.update(
+                    {
+                        "query_purpose": query.get("purpose", ""),
+                        "page_position": position,
+                        "result_position": rank,
+                    }
+                )
                 records_out.append(candidate)
 
     # Write output artifacts (namespaced per provider)
@@ -549,10 +592,20 @@ def run_search(
             handle.write(json.dumps(audit, ensure_ascii=True) + "\n")
 
     fields = [
-        "candidate_id", "source_provider", "query_id", "page", "page_position",
-        "result_position", "search_expression", "title", "article_number", "doi",
+        "candidate_id",
+        "source_provider",
+        "query_id",
+        "page",
+        "page_position",
+        "result_position",
+        "search_expression",
+        "title",
+        "article_number",
+        "doi",
     ]
-    with (search_dir / f"records_{prov_name}.csv").open("w", encoding="utf-8", newline="") as handle:
+    with (search_dir / f"records_{prov_name}.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(records_out)
@@ -647,18 +700,16 @@ def run_dedupe_rank(input_paths: list[Path], out_dir: Path) -> int:
     for group in (g for g in groups if g):
         item = _merge_group(group)
         item["doi"] = normalize_doi(item.get("doi"))
-        item["matched_query_ids"] = sorted({
-            str(r.get("query_id")) for r in group if r.get("query_id")
-        })
-        item["merged_candidate_ids"] = sorted({
-            str(r.get("candidate_id")) for r in group if r.get("candidate_id")
-        })
+        item["matched_query_ids"] = sorted(
+            {str(r.get("query_id")) for r in group if r.get("query_id")}
+        )
+        item["merged_candidate_ids"] = sorted(
+            {str(r.get("candidate_id")) for r in group if r.get("candidate_id")}
+        )
         citations = max(int(r.get("citation_count") or 0) for r in group)
         year = max(int(r.get("publication_year") or 0) for r in group)
         item["ranking_score"] = (
-            citations
-            + len(item["matched_query_ids"]) * 10
-            + (year - 1900 if year else 0) / 100
+            citations + len(item["matched_query_ids"]) * 10 + (year - 1900 if year else 0) / 100
         )
         item["ranking_explanation"] = (
             f"query_matches={len(item['matched_query_ids'])}; "
@@ -687,8 +738,8 @@ def run_dedupe_rank(input_paths: list[Path], out_dir: Path) -> int:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         for row in merged:
-            writer.writerow({
-                k: json.dumps(v) if isinstance(v, list) else v for k, v in row.items()
-            })
+            writer.writerow(
+                {k: json.dumps(v) if isinstance(v, list) else v for k, v in row.items()}
+            )
 
     return 0

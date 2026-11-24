@@ -29,7 +29,7 @@ to `shared/state.mjs`; never hand-write `.claude/.rem-state.json`.
 - If any touched file lives under `cc-market/`, verify `git -C cc-market rev-parse --git-dir`
   succeeds; abort if `cc-market/` exists but isn't its own repo.
 
-## 1. Architecture critique (锐评)
+## 1. Architecture critique (sharp review)
 
 Goal: produce a quorum-confirmed, severity-sorted **OPEN findings list** for this round.
 
@@ -111,7 +111,7 @@ incrementing) — do not mark it fixed in step 7.
 ## 7. Resolve & commit
 
 - Record each finding `fixed` or `wont-fix` (with reason) in `evolveState.findings`. A finding
-  kept in rem's backlog is closed where it lives: its issue, or `todo.js close <id> "<how>"`.
+  kept in the backlog is closed where it lives: its issue.
 - **Stage only evolve's changes:** `git add <file> ...` listing exactly the files the round's
   agents modified (diff against step-0 snapshot). Never `git add -A`.
 - **Commit granularity (`--commit=round|group`):** default `round` — one commit per round.
