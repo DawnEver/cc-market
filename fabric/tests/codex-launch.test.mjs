@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { prepareCodexLaunch } from '../engine/codex/launch.mjs';
 import { CodexAppServerClient } from '../engine/codex/app-server.mjs';
 import { checkCodexStatus, checkCodexStatusAsync, findCodexBinary, findCodexBinaryAsync } from '../engine/codex/discovery.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const sentinel = 'FABRIC_CODEX_INJECTION';
 
@@ -28,7 +29,7 @@ test('native and non-Windows launches preserve argv without a shell', () => {
 });
 
 test('batch preparation isolates its path in child env and rejects non-bootstrap arguments', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-batch-prepare-'));
+  const root = tempDir('codex-batch-prepare-');
   try {
     const shim = path.join(root, 'literal%VARIABLE%&shim.cmd');
     fs.writeFileSync(shim, '@exit /b 0\r\n');
@@ -44,7 +45,7 @@ test('batch preparation isolates its path in child env and rejects non-bootstrap
 });
 
 test('Windows PATH resolution prefers an executable shim over its extensionless shell companion', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-path-shim-'));
+  const root = tempDir('codex-path-shim-');
   try {
     fs.writeFileSync(path.join(root, 'codex'), '#!/bin/sh\nexit 99\n');
     const shim = path.join(root, 'codex.cmd');
@@ -70,8 +71,8 @@ else {
 
 test('Windows native paths and batch shims remain literal across startup and both discovery paths',
   { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
-    const base = fs.realpathSync.native(os.tmpdir()); // native: the long form of an 8.3 TEMP (RUNNER~1)
-    const root = fs.mkdtempSync(path.join(base, 'fabric-codex-launch-'));
+    const root = fs.realpathSync.native(tempDir('fabric-codex-launch-')); // native: the long form of an 8.3 TEMP (RUNNER~1)
+    const base = path.dirname(root);
     const originalCwd = process.cwd();
     const originalExpand = process.env.FABRIC_CODEX_EXPAND_TEST;
     const originalPath = process.env.PATH;

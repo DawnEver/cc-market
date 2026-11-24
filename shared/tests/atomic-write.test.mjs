@@ -1,17 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { atomicWriteFile, writeIfChanged } from '../atomic-write.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const MODULE = pathToFileURL(fileURLToPath(new URL('../atomic-write.mjs', import.meta.url))).href;
 
 describe('atomicWriteFile', () => {
   it('writes the payload, creating the directory, and leaves no temp file', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    const dir = tempDir('aw-');
     const file = join(dir, 'sub', 'x.md');
     atomicWriteFile(file, 'hello');
     assert.equal(readFileSync(file, 'utf8'), 'hello');
@@ -20,7 +20,7 @@ describe('atomicWriteFile', () => {
 
   // 300 rounds: the former fixed '<file>.tmp' writer fails this within ~1.4 s (measured).
   it('concurrent writers never tear the file and never collide on a temp name', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    const dir = tempDir('aw-');
     const file = join(dir, 'x.txt');
     const chars = ['A', 'B', 'C', 'D'];
     const script = `import { atomicWriteFile } from ${JSON.stringify(MODULE)};
@@ -37,7 +37,7 @@ describe('atomicWriteFile', () => {
 
 describe('writeIfChanged', () => {
   it('skips identical bytes and writes different ones', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    const dir = tempDir('aw-');
     const file = join(dir, 'i.md');
     assert.equal(writeIfChanged(file, 'a'), true);
     const before = statSync(file).mtimeMs;
@@ -50,11 +50,11 @@ describe('writeIfChanged', () => {
 
 describe('atomicWriteFile failure', () => {
   it('a rename that keeps failing throws and leaves no temp file behind', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    const dir = tempDir('aw-');
     const target = join(dir, 'busy');
     writeFileSync(join(dir, 'keep'), 'x');
     // A non-empty directory can never be renamed over: every retry fails.
-    mkdtempSync(join(dir, 'busy-'));
+    tempDir('busy-', dir);
     const busy = readdirSync(dir).find(n => n.startsWith('busy-'));
     writeFileSync(join(dir, busy, 'f'), 'y');
     assert.throws(() => atomicWriteFile(join(dir, busy), 'payload'));
@@ -63,7 +63,7 @@ describe('atomicWriteFile failure', () => {
   });
 
   it('a write that throws leaves no partial temp file', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+    const dir = tempDir('aw-');
     assert.throws(() => atomicWriteFile(join(dir, 'x.txt'), Symbol('not writable')));
     assert.deepEqual(readdirSync(dir), []);
   });

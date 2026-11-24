@@ -56,11 +56,8 @@ for name in "${plugins[@]}"; do bundle_shared "$name"; echo "release: $name v$(b
 market_version="$(bump_json .claude-plugin/marketplace.json)"
 node scripts/gen-codex.mjs . >/dev/null
 node scripts/gen-agy.mjs . >/dev/null
-# Bounded: the suites spawn many node/git/python children, and an unbounded run times out
-# on a busy host (a release must not depend on an idle machine).
-node --test --test-concurrency=4 fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs \
-  evolve/tests/*.test.mjs \
-  shared/tests/*.test.mjs tests/*.test.mjs
+# The full suite, bounded at concurrency 4 (a release must not depend on an idle machine).
+node scripts/run-tests.mjs
 if printf '%s\n' "${plugins[@]}" | grep -qx cc-academia; then
   command -v uv >/dev/null 2>&1 || { echo "release: cc-academia requires uv" >&2; false; }
   (cd cc-academia && uv run ruff check . && uv run python -m pytest -q)

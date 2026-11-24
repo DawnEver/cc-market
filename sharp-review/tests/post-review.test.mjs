@@ -2,10 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'post-review.js');
 
@@ -45,7 +45,7 @@ const leak = { file: 'a.js', anchor: 'log(token)', rule: 'occams-razor', securit
 const ID = /F-[0-9a-f]{12}/;
 
 test('a two-reviewer agreement is written once, high-confidence, naming both reviewers', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     const out = run(dir, plan(), { run_id: 'run-1', results: [
       { name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [leak] },
@@ -64,7 +64,7 @@ test('a two-reviewer agreement is written once, high-confidence, naming both rev
 });
 
 test('a reviewer with no result is unavailable and the run warns', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }] });
     const content = readFileSync(reportFile(dir), 'utf8');
@@ -76,7 +76,7 @@ test('a reviewer with no result is unavailable and the run warns', () => {
 });
 
 test('a same-day second run appends only the findings the report does not hold, by stable id', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] });
     const other = { ...leak, anchor: 'log(secret)', summary: 'other' };
@@ -92,7 +92,7 @@ test('a same-day second run appends only the findings the report does not hold, 
 });
 
 test('a raw file from another run is refused by name', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     assert.throws(() => run(dir, plan(), { run_id: 'run-0', results: [] }), /raw\.json belongs to run run-0, not run run-1/);
   } finally {
@@ -101,7 +101,7 @@ test('a raw file from another run is refused by name', () => {
 });
 
 test('a raw file older than the run is refused', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     const future = new Date(Date.now() + 3600_000).toISOString();
     assert.throws(() => run(dir, plan({ started_at: future }), { run_id: 'run-1', results: [] }), /older than the run/);
@@ -111,7 +111,7 @@ test('a raw file older than the run is refused', () => {
 });
 
 test('--sink stdout prints the findings JSON and writes no report', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     const out = run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] }, ['--sink', 'stdout']);
     const json = JSON.parse(out);
@@ -127,7 +127,7 @@ test('--sink stdout prints the findings JSON and writes no report', () => {
 });
 
 test('the plan\'s own sink is the default', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     const out = run(dir, plan({ sink: 'stdout' }), { run_id: 'run-1', results: [] });
     assert.equal(JSON.parse(out).reviewers[0].status, 'unavailable');
@@ -137,7 +137,7 @@ test('the plan\'s own sink is the default', () => {
 });
 
 test('an unknown sink is refused by name', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     assert.throws(() => run(dir, plan(), { run_id: 'run-1', results: [] }, ['--sink', 'gitea']), /unknown sink gitea/);
   } finally {
@@ -146,7 +146,7 @@ test('an unknown sink is refused by name', () => {
 });
 
 test('findings are indexed by the rule they violate, and only HIGH or security ones are blocking', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     const typo = { file: 'b.js', anchor: 'cosnt x', rule: 'names-match-behaviour', security: false, summary: 'typo', severity: 'LOW', category: 'Bug' };
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak, typo] }, { name: 'adversarial', findings: [] }] });
@@ -158,7 +158,7 @@ test('findings are indexed by the rule they violate, and only HIGH or security o
 });
 
 test('the report sink writes the plan\'s report path and nothing into .claude/memory (planted control: the report exists)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-post-'));
+  const dir = tempDir('sr-post-');
   try {
     run(dir, plan(), { run_id: 'run-1', results: [{ name: 'diff', findings: [leak] }, { name: 'adversarial', findings: [] }] });
     assert.match(readFileSync(reportFile(dir), 'utf8'), /a\.js — leak/);

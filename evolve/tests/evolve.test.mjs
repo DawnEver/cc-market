@@ -20,9 +20,10 @@ import {
   seedFromSharpReview,
   writeRoundLog,
 } from '../scripts/evolve.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 function tmpProject({ git = true } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'evolve-test-'));
+  const root = tempDir('evolve-test-');
   fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
   if (git) execFileSync('git', ['init', '-q', root]);
   return root;

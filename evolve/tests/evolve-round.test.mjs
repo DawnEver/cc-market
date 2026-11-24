@@ -19,6 +19,7 @@ import {
   checkRoundComplete,
   seedFromSharpReview,
 } from '../scripts/evolve.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const EVOLVE_MJS = fileURLToPath(new URL('../scripts/evolve.mjs', import.meta.url));
 const DATE = '2026-07-03';
@@ -48,7 +49,7 @@ let root;
 let srFile;
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'evolve-round-test-'));
+  root = tempDir('evolve-round-test-');
   const day = path.join(root, '.claude', 'memory', '2026', '07', '03');
   fs.mkdirSync(day, { recursive: true });
   srFile = path.join(day, 'sharp-review.md');

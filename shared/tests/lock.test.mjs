@@ -2,7 +2,7 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, utimesSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, rmdirSync, utimesSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -10,6 +10,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const lockUrl = pathToFileURL(join(__dirname, '..', 'lock.mjs')).href;
 
 let tmpDir;
+// Lockfiles a test plants as "another process" (never released by withLock): removed in after(), and the lock
+// dir with them once empty, so the suite leaves nothing in the temp root.
+const planted = new Set();
 function tmp(...parts) { return join(tmpDir, ...parts); }
 
 before(() => {
@@ -19,6 +22,10 @@ before(() => {
 
 after(() => {
   if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  for (const file of planted) {
+    rmSync(file, { force: true });
+    try { rmdirSync(dirname(file)); } catch { /* other locks still in it */ }
+  }
 });
 
 describe('withLock', async () => {
@@ -45,6 +52,25 @@ describe('withLock', async () => {
     assert.equal(existsSync(lockFilePath(target)), false);
   });
 
+  it('the last release removes the empty lock dir, and the next acquire makes it again', () => {
+    const target = tmp('reclaim');
+    const dir = dirname(lockFilePath(target));
+    assert.equal(withLock(target, () => existsSync(dir)), true);
+    assert.equal(existsSync(dir), false, `${dir} outlived its last lock`);
+    assert.equal(withLock(target, () => 7), 7);
+  });
+
+  it('a nested lock on another path keeps the dir until the outer one releases', () => {
+    const outer = tmp('outer'), inner = tmp('inner');
+    const dir = dirname(lockFilePath(outer));
+    withLock(outer, () => {
+      withLock(inner, () => {});
+      assert.equal(existsSync(lockFilePath(outer)), true);
+      assert.equal(existsSync(dir), true);
+    });
+    assert.equal(existsSync(dir), false);
+  });
+
   it('writes pid+timestamp+token into the lockfile', () => {
     const target = tmp('content');
     let raw;
@@ -67,6 +93,7 @@ describe('withLock', async () => {
   it('steals a stale lock', () => {
     const target = tmp('stale');
     const file = lockFilePath(target);
+    planted.add(file);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify({ pid: 999999, at: 0, token: 'dead' }));
     const old = new Date(Date.now() - 10 * 60 * 1000);
@@ -81,6 +108,7 @@ describe('withLock', async () => {
   it('throws LockTimeoutError by default when the lock is held (fail-closed)', () => {
     const target = tmp('held-throw');
     const file = lockFilePath(target);
+    planted.add(file);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify({ pid: 999999, at: Date.now(), token: 'other' }));
     const start = Date.now();
@@ -96,6 +124,7 @@ describe('withLock', async () => {
   it('proceeds without the lock after timeout when onTimeout: proceed (hook policy)', () => {
     const target = tmp('held');
     const file = lockFilePath(target);
+    planted.add(file);
     mkdirSync(dirname(file), { recursive: true });
     // Fresh lockfile from "another process" — not stale, never released
     writeFileSync(file, JSON.stringify({ pid: 999999, at: Date.now(), token: 'other' }));
@@ -118,6 +147,7 @@ describe('withLock', async () => {
   it('does not unlink a lockfile stolen while held (token mismatch)', () => {
     const target = tmp('steal-release');
     const file = lockFilePath(target);
+    planted.add(file);
     withLock(target, () => {
       // Simulate a stealer: our lock looked stale, it unlinked and wrote its own
       rmSync(file);

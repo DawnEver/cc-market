@@ -10,12 +10,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { migrate } from '../migrations/migrate.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 describe('sharp-review migrate()', () => {
   let projectRoot;
 
   beforeEach(() => {
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-migrate-'));
+    projectRoot = tempDir('sr-migrate-');
   });
 
   afterEach(() => {

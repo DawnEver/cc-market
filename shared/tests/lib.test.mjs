@@ -2,10 +2,10 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, rmSync, existsSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sharedLibUrl = pathToFileURL(join(__dirname, '..', 'lib.mjs')).href;
@@ -17,8 +17,7 @@ function tmp(...parts) { return join(tmpDir, ...parts); }
 
 before(() => {
   // Use system temp dir for "no .git" isolation tests
-  tmpDir = join(tmpdir(), 'claude_shared_lib_test_' + Date.now());
-  mkdirSync(tmpDir, { recursive: true });
+  tmpDir = tempDir('claude_shared_lib_test_');
 });
 
 after(() => {
@@ -103,7 +102,7 @@ describe('isMain', async () => {
   // comparison is false for anything reached through a link — a hook then exits 0 having
   // done nothing, which is indistinguishable from a clean run.
   it('returns true when argv[1] reaches the module through a symlink', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'cc-market-ismain-'));
+    const tmp = tempDir('cc-market-ismain-');
     const link = join(tmp, 'link.mjs');
     try {
       symlinkSync(fileURLToPath(import.meta.url), link);
