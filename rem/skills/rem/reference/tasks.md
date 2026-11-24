@@ -35,9 +35,13 @@ and a forge lookup refuse naming it. The verbs and their JSON: `scripts/task-for
 
 ## Open — refused by default, detectable when bypassed
 
-`/rem:task open <slug> "<goal>" [--scope <paths>] [--owner <who>]` — a user slash command
+`/rem:task open <slug> "<goal>" [--scope <paths>] [--needs <a,b>] [--owner <who>]` — a user slash command
 (`claude-commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
+
+`--needs` names the test resources the task exercises (D79), written as `needs: [a, b]`: a consumer's dependency
+door maps each need to whatever serves it, so a task declares needs, never packages. The bound session amends
+them with `task.js needs set <a,b>`, which rewrites that one line and records old and new as a decision.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
 grant that the user's own prompt creates. `hooks/task-authority.js` (the task half of rem's one UserPromptSubmit hook `hooks/user-prompt.js`, the one task
