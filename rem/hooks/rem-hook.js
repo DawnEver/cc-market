@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// rem-hook.js — Claude Code and Codex Stop gate.
+// rem-hook.js — Claude Code, Codex and Antigravity Stop gate.
 // Requests REM after 3+ stops AND sufficient session age; requests are not completion.
 // State tracked in unified .claude/.rem-state.json
 
-import { stateFile } from "../scripts/lib.mjs";
+import { join } from 'node:path';
+import { stateFile, findProjectRoot } from "../scripts/lib.mjs";
 import { withStateLock } from '../shared/state.mjs';
-import { normalizeHookFacts, isCodexHost, hookSessionKey, hasRemReservation } from '../shared/hook-facts.mjs';
+import { normalizeHookFacts, isCodexHost, hookSessionKey, hasRemReservation, isAgyHost, normalizeHookInput, hookOutput, emitHookOutput } from '../shared/hook-facts.mjs';
 import { fileURLToPath } from 'node:url';
 export { isCodexHost } from '../shared/hook-facts.mjs';
 import { readStdinJSON, readTranscriptTail as _readTranscriptTail, isMain } from '../shared/lib.mjs';
@@ -14,6 +15,10 @@ const MIN_STOP_COUNT = 3;
 const MIN_SESSION_MS = 2 * 60 * 1000;
 const MIN_SESSION_MS_SUBSTANTIVE = 30 * 1000; // 30s if real code changes happened
 const SESSION_EXPIRY_MS = 30 * 60 * 1000;
+// Every hook finishes under 5 s (user ruling D24). The state lock is held for milliseconds by any
+// healthy writer, so a longer wait means a stuck holder: the stop is allowed and the next Stop
+// decides again, instead of the default 5000 ms wait running into the hook's ceiling.
+export const STATE_LOCK_WAIT_MS = 1500;
 
 // ── Pure helpers ──
 
@@ -108,8 +113,9 @@ export function decideStop(state, input, now, env = {}) {
   return { state, decision };
 }
 
-export function resolveHookExit(decision, env = process.env) {
+export function resolveHookExit(decision, env = process.env, host = 'claude') {
   if (decision !== 'deny') return { code: 0, stderr: '' };
+  if (host === 'agy') return { code: 2, stderr: 'Run the rem plugin\'s `rem` skill in this conversation before finishing. Do not delegate it to a subagent without inherited context.\n' };
   if (isCodexHost(env)) return { code: 2, stderr: 'Run the REM skill in this session context before finishing. Do not fork into a worker without inherited context.\n' };
   return { code: 2, stderr: '/rem\n' };
 }
@@ -123,7 +129,7 @@ export function decideSessionStop(state, input, now, env = {}) {
   for (const [id, record] of Object.entries(state.hook.sessions))
     if (now - (record.lastTouched || 0) > SESSION_EXPIRY_MS) delete state.hook.sessions[id];
   const session = state.hook.sessions[key] ?? { sessionKey: null, lastTouched: 0 };
-  if (state.reviewGate?.pending?.expiresAt > now || hasRemReservation(state.hook, now, key))
+  if (hasRemReservation(state.hook, now, key))
     return { state, decision: 'allow' };
   const view = { hook: { ...session, taskActiveUntil: Math.max(session.taskActiveUntil || 0, state.hook.taskActiveUntil || 0) } };
   if (view.hook.remPending && !(view.hook.requestExpiresAt > now)) view.hook.remPending = false;
@@ -154,16 +160,29 @@ export function acknowledgementCommand(script, session, request) {
 
 // Only run main logic when executed directly (not imported for testing)
 if (isMain(import.meta)) {
-  const input = readStdinJSON();
-  const now = Date.now();
-  let result;
-  try {
-    const saved = withStateLock(stateFile, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw' });
-    if (!saved?.persisted) process.exit(0);
-  } catch { process.exit(0); }
-  const { code, stderr } = resolveHookExit(result?.decision);
-  const acknowledgement = code === 2 && result.requestId ?
-    `After the skill succeeds, run ${acknowledgementCommand(fileURLToPath(new URL('../scripts/rem-session.js', import.meta.url)), result.sessionKey, result.requestId)} in the current project directory. Paths and IDs are encoded argv data. Do not acknowledge failed or unfinished work.\n` : '';
-  if (stderr) process.stderr.write(stderr + acknowledgement, () => process.exit(code));
-  else process.exit(code);
+  const raw = readStdinJSON();
+  const host = isAgyHost(raw) ? 'agy' : 'claude';
+  const input = normalizeHookInput(raw);
+  const allow = () => emitHookOutput(hookOutput({ host, event: 'Stop', kind: 'none' }));
+  // agy: only a normal turn end (model finished without a tool call) may ask for REM.
+  if (host === 'agy' && raw.terminationReason && raw.terminationReason !== 'NO_TOOL_CALL') allow();
+  else {
+    const now = Date.now();
+    const targetState = typeof input.cwd === 'string' && input.cwd
+      ? join(findProjectRoot(input.cwd), '.claude', '.rem-state.json')
+      : stateFile;
+    let result;
+    let saved;
+    try {
+      saved = withStateLock(targetState, state => { result = decideSessionStop(state, input, now, process.env); }, { onTimeout: 'throw', timeoutMs: STATE_LOCK_WAIT_MS });
+    } catch { saved = null; }
+    if (!saved?.persisted) allow();
+    else {
+      const { code, stderr } = resolveHookExit(result?.decision, process.env, host);
+      const acknowledgement = code === 2 && result.requestId ?
+        `After the skill succeeds, run ${acknowledgementCommand(fileURLToPath(new URL('../scripts/rem-session.js', import.meta.url)), result.sessionKey, result.requestId)} in the current project directory. Paths and IDs are encoded argv data. Do not acknowledge failed or unfinished work.\n` : '';
+      if (code === 2) emitHookOutput(hookOutput({ host, event: 'Stop', kind: 'block', reason: stderr + acknowledgement, input: raw }));
+      else allow();
+    }
+  }
 }

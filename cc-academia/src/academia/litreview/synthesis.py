@@ -14,7 +14,9 @@ You are a research synthesizer. Compare the provided paper summaries and identif
 Write a concise synthesis (3-5 paragraphs). Be specific; reference individual papers by title."""
 
 
-def compare_papers(cards: list[PaperCard], model_spec: str | None = None, language: str = "en") -> str:
+def compare_papers(
+    cards: list[PaperCard], model_spec: str | None = None, language: str = "en"
+) -> str:
     """Identify themes, contradictions, and gaps across a set of papers.
 
     Args:
@@ -43,7 +45,10 @@ def compare_papers(cards: list[PaperCard], model_spec: str | None = None, langua
     prompt = "## Paper Summaries\n\n" + "\n\n".join(summaries)
     model_key = model_spec or "gemini-2.5-flash"
     from academia.core.ai import chat_structured
-    result = chat_structured(model_key, system=_SYNTHESIS_SYSTEM + language_instruction(language), prompt=prompt)
+
+    result = chat_structured(
+        model_key, system=_SYNTHESIS_SYSTEM + language_instruction(language), prompt=prompt
+    )
     return result or "Synthesis failed."
 
 

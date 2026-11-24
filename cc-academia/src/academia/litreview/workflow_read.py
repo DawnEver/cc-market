@@ -25,6 +25,7 @@ def output_language(topic_dir: Path) -> str:
 # Path helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -33,7 +34,9 @@ def _ensure(path: Path) -> Path:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
@@ -50,6 +53,7 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
 
 # 4. Deep read (wires orphaned review_paper)
 # ---------------------------------------------------------------------------
+
 
 def run_read(
     topic_dir: Path,
@@ -74,6 +78,7 @@ def run_read(
     from academia.litreview.models import ResearchBrief
     from academia.litreview.reader import review_paper
     from academia.litreview.schema import load_data
+
     ingest_dir = ingest_output_dir(topic_dir, candidate_id)
     paper_md = ingest_dir / "1-paper-text" / "paper.md"
     if not paper_md.exists():
@@ -90,8 +95,9 @@ def run_read(
     # Load brief for criteria context
     brief_path = topic_dir / "research_brief.toml"
     brief_data = load_data(brief_path) if brief_path.exists() else {}
-    brief = ResearchBrief.from_dict({"brief_id": "", "original_request": "",
-                                     "research_objective": "", **brief_data})
+    brief = ResearchBrief.from_dict(
+        {"brief_id": "", "original_request": "", "research_objective": "", **brief_data}
+    )
 
     # Load lens if specified
     lens_data: dict[str, Any] | None = None
@@ -133,10 +139,13 @@ def run_read(
     reading_dir = _ensure(topic_dir / "reading")
     card_dict: dict[str, Any] = card.to_dict()
     card_path = reading_dir / f"{candidate_id}_card.json"
-    card_path.write_text(json.dumps(card_dict, indent=2, ensure_ascii=True, default=str), encoding="utf-8")
+    card_path.write_text(
+        json.dumps(card_dict, indent=2, ensure_ascii=True, default=str), encoding="utf-8"
+    )
 
     # Render markdown
     from academia.litreview.render import paper_card_to_markdown
+
     md = paper_card_to_markdown(card)
     (reading_dir / f"{candidate_id}_card.md").write_text(md, encoding="utf-8")
 
@@ -146,6 +155,7 @@ def run_read(
 # ---------------------------------------------------------------------------
 # 5. Cross-paper synthesis (wires orphaned compare_papers)
 # ---------------------------------------------------------------------------
+
 
 def run_synthesize(
     topic_dir: Path,

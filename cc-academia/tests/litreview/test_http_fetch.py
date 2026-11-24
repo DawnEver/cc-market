@@ -25,6 +25,7 @@ class FakeResponse:
 # PDF link extraction from a landing page
 # ---------------------------------------------------------------------------
 
+
 def test_extract_prefers_citation_pdf_url_meta():
     """Highwire metadata is the publisher's own declaration — trust it first."""
     html = """
@@ -37,8 +38,12 @@ def test_extract_prefers_citation_pdf_url_meta():
 
 def test_extract_finds_pure_repository_file_link():
     html = '<a href="/files/407380590/PEMD_2024_HMW_FINAL.pdf">Accepted manuscript</a>'
-    links = http_fetch.extract_pdf_links(html, "https://research-information.bris.ac.uk/en/publications/abc")
-    assert "https://research-information.bris.ac.uk/files/407380590/PEMD_2024_HMW_FINAL.pdf" in links
+    links = http_fetch.extract_pdf_links(
+        html, "https://research-information.bris.ac.uk/en/publications/abc"
+    )
+    assert (
+        "https://research-information.bris.ac.uk/files/407380590/PEMD_2024_HMW_FINAL.pdf" in links
+    )
 
 
 def test_extract_resolves_relative_links_against_base():
@@ -60,19 +65,27 @@ def test_extract_ignores_unrelated_links():
 
 def test_extract_deduplicates():
     html = '<a href="/a.pdf">1</a><a href="/a.pdf">2</a>'
-    assert http_fetch.extract_pdf_links(html, "https://repo.example/x") == ["https://repo.example/a.pdf"]
+    assert http_fetch.extract_pdf_links(html, "https://repo.example/x") == [
+        "https://repo.example/a.pdf"
+    ]
 
 
 # ---------------------------------------------------------------------------
 # fetch_pdf
 # ---------------------------------------------------------------------------
 
+
 def test_fetch_pdf_saves_direct_pdf(tmp_path, monkeypatch):
-    monkeypatch.setattr(http_fetch, "_get", lambda url, **kw: FakeResponse(
-        PDF_BYTES, content_type="application/pdf", url=url))
+    monkeypatch.setattr(
+        http_fetch,
+        "_get",
+        lambda url, **kw: FakeResponse(PDF_BYTES, content_type="application/pdf", url=url),
+    )
 
     target = tmp_path / "out.pdf"
-    assert http_fetch.fetch_pdf("https://repo.example/a.pdf", target) == "https://repo.example/a.pdf"
+    assert (
+        http_fetch.fetch_pdf("https://repo.example/a.pdf", target) == "https://repo.example/a.pdf"
+    )
     assert target.read_bytes() == PDF_BYTES
 
 
@@ -88,35 +101,48 @@ def test_fetch_pdf_follows_landing_page_to_pdf(tmp_path, monkeypatch):
     monkeypatch.setattr(http_fetch, "_get", fake_get)
 
     target = tmp_path / "out.pdf"
-    assert http_fetch.fetch_pdf("https://repo.example/en/publications/x", target) == \
-        "https://repo.example/files/1/p.pdf"
+    assert (
+        http_fetch.fetch_pdf("https://repo.example/en/publications/x", target)
+        == "https://repo.example/files/1/p.pdf"
+    )
     assert target.read_bytes() == PDF_BYTES
 
 
 def test_fetch_pdf_returns_none_when_no_pdf_found(tmp_path, monkeypatch):
-    monkeypatch.setattr(http_fetch, "_get", lambda url, **kw: FakeResponse(b"<html>nothing</html>", url=url))
+    monkeypatch.setattr(
+        http_fetch, "_get", lambda url, **kw: FakeResponse(b"<html>nothing</html>", url=url)
+    )
     assert http_fetch.fetch_pdf("https://repo.example/x", tmp_path / "o.pdf") is None
     assert not (tmp_path / "o.pdf").exists()
 
 
 def test_fetch_pdf_trusts_magic_bytes_over_content_type(tmp_path, monkeypatch):
     """Some repositories serve PDFs as application/octet-stream."""
-    monkeypatch.setattr(http_fetch, "_get", lambda url, **kw: FakeResponse(
-        PDF_BYTES, content_type="application/octet-stream", url=url))
+    monkeypatch.setattr(
+        http_fetch,
+        "_get",
+        lambda url, **kw: FakeResponse(PDF_BYTES, content_type="application/octet-stream", url=url),
+    )
     assert http_fetch.fetch_pdf("https://repo.example/dl", tmp_path / "o.pdf") is not None
 
 
 def test_fetch_pdf_rejects_html_masquerading_as_pdf(tmp_path, monkeypatch):
-    monkeypatch.setattr(http_fetch, "_get", lambda url, **kw: FakeResponse(
-        b"<!DOCTYPE html><html>login</html>", content_type="application/pdf", url=url))
+    monkeypatch.setattr(
+        http_fetch,
+        "_get",
+        lambda url, **kw: FakeResponse(
+            b"<!DOCTYPE html><html>login</html>", content_type="application/pdf", url=url
+        ),
+    )
     assert http_fetch.fetch_pdf("https://x/a.pdf", tmp_path / "o.pdf") is None
 
 
 @pytest.mark.parametrize("status", [401, 403, 404, 429, 500])
 def test_fetch_pdf_returns_none_on_error_status(tmp_path, monkeypatch, status):
     """A block here is not fatal — the browser layer still gets its turn."""
-    monkeypatch.setattr(http_fetch, "_get", lambda url, **kw: FakeResponse(
-        b"denied", status=status, url=url))
+    monkeypatch.setattr(
+        http_fetch, "_get", lambda url, **kw: FakeResponse(b"denied", status=status, url=url)
+    )
     assert http_fetch.fetch_pdf("https://x/a.pdf", tmp_path / "o.pdf") is None
 
 

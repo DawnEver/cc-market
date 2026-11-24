@@ -190,7 +190,9 @@ def _is_manuscript_author(person: Person, context: ManuscriptContext) -> Finding
     keys = {normalize_name(n) for n in [person.display_name, *person.names] if n}
     overlap = keys & context.author_name_keys
     if overlap:
-        return Finding("manuscript_author", BLOCK, {"matched_by": "name", "name": sorted(overlap)[0]})
+        return Finding(
+            "manuscript_author", BLOCK, {"matched_by": "name", "name": sorted(overlap)[0]}
+        )
     return None
 
 

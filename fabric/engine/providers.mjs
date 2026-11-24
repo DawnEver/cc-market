@@ -3,8 +3,8 @@
 // The provider CATALOGUE is ai-lab's (`python -m ai_lab.providers --json`); setup projects it
 // into `provider-cache.json` next to the registry (`~/.claude/`). This module only READS that
 // cache, and refuses a stale or absent one as `unsupported`, naming the remedy — it never
-// regenerates it and never falls back to provider data of its own. `claude` and `codex` are
-// HOST CLIs (their own auth), not API rows, so they are the two rows declared here.
+// regenerates it and never falls back to provider data of its own. `claude`, `codex` and `agy`
+// are HOST CLIs (their own auth), not API rows, so they are the rows declared here.
 //
 // The registry (`claude_env_settings.json`) keeps only host projection rules: per provider,
 // `claudeApiKeyEnv` (which env var a `claude` child reads the key from), plus the `fabric` block.
@@ -34,6 +34,7 @@ export const SETUP_REMEDY = "node scripts/setup/setup.js";
 export const HOST_PROVIDERS = Object.freeze({
   claude: "Native Claude CLI (its own sign-in)",
   codex: "OpenAI Codex (codex app-server; supports review, image, write)",
+  agy: "Antigravity CLI (agy -p; Gemini, Claude & GPT subscription pools)",
 });
 
 // Env vars that any provider may inject; stripped from the parent env before projection.

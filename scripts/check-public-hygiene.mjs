@@ -46,7 +46,7 @@ export function loadMarkers(file = join(homedir(), '.claude', 'private-markers')
 
 // Manifest author attribution is deliberate public attribution.
 // Only the name lines are exempt — a personal email in a manifest is still a hit.
-const isManifest = (path) => /(^|\/)(package\.json|pyproject\.toml|\.claude-plugin\/[^/]+\.json|\.codex-plugin\/[^/]+\.json)$/.test(path);
+const isManifest = (path) => /(^|\/)(package\.json|pyproject\.toml|\.(?:claude|codex|antigravity)-plugin\/[^/]+\.json)$/.test(path);
 const isAttribution = (line) => /^\s*("(name|developerName)"\s*:|authors\s*=)/.test(line) && !/@/.test(line);
 
 export function scanText(text, path = '', rules = GENERIC_RULES) {

@@ -74,9 +74,7 @@ _DERIVED_TABLES = {"person_topics": "source"}
 
 def _drop_outdated_derived_tables(connection: sqlite3.Connection) -> None:
     for table, required_column in _DERIVED_TABLES.items():
-        columns = {
-            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
-        }
+        columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         if columns and required_column not in columns:
             connection.execute(f"DROP TABLE {table}")
 
@@ -140,7 +138,7 @@ def initialize(path: Path | None = None) -> Path:
 def table_counts(path: Path | None = None) -> dict[str, int]:
     with session(path) as connection:
         return {
-            table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608 -- table iterates the TABLES constant
             for table in TABLES
         }
 

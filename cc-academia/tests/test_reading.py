@@ -23,7 +23,9 @@ def conn(tmp_path):
 
 
 def _store(conn, paper_id, **kwargs):
-    paper = Paper(paper_id=paper_id, source="openalex", title=f"Work {paper_id}", year=2024, **kwargs)
+    paper = Paper(
+        paper_id=paper_id, source="openalex", title=f"Work {paper_id}", year=2024, **kwargs
+    )
     paper.authors = [Author(name="Ada Author", idx=0, openalex_id="A1")]
     repo.ingest_paper(conn, paper)
     return paper

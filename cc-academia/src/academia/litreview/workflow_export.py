@@ -19,6 +19,7 @@ _BIBTEX_SPECIALS = {"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_"}
 # Path helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -27,7 +28,9 @@ def _ensure(path: Path) -> Path:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
@@ -46,7 +49,6 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
 # ---------------------------------------------------------------------------
 
 
-
 def _bibtex_escape(value: Any) -> str:
     text = str(value or "")
     text = text.replace("\\", r"\textbackslash{}")
@@ -59,14 +61,19 @@ def _candidate_metadata(topic_dir: Path) -> dict[str, dict[str, Any]]:
     """Index ranked candidates by candidate_id (including merged aliases)."""
     meta: dict[str, dict[str, Any]] = {}
     for row in _read_jsonl(topic_dir / "search" / "candidates_ranked.jsonl"):
-        for cid in {str(row.get("candidate_id", "")), *map(str, row.get("merged_candidate_ids", []))}:
+        for cid in {
+            str(row.get("candidate_id", "")),
+            *map(str, row.get("merged_candidate_ids", [])),
+        }:
             if cid:
                 meta.setdefault(cid, row)
     return meta
 
 
 def _bibtex_entry(card: Any, meta: dict[str, Any]) -> str:
-    is_journal = "journal" in str(meta.get("content_type", "")).lower() or not meta.get("content_type")
+    is_journal = "journal" in str(meta.get("content_type", "")).lower() or not meta.get(
+        "content_type"
+    )
     entry_type = "article" if is_journal else "inproceedings"
     venue_field = "journal" if is_journal else "booktitle"
 
@@ -91,7 +98,9 @@ def _bibtex_entry(card: Any, meta: dict[str, Any]) -> str:
 
 def _re_bib_key(candidate_id: str) -> str:
     import re
+
     return re.sub(r"[^A-Za-z0-9:_-]+", "-", str(candidate_id)).strip("-") or "paper"
+
 
 def run_export(
     topic_dir: Path,
@@ -119,7 +128,10 @@ def run_export(
         cards_to_csv(cards, out)
     elif format == "json":
         out = export_dir / "papers.json"
-        out.write_text(json.dumps([c.to_dict() for c in cards], indent=2, ensure_ascii=True, default=str), encoding="utf-8")
+        out.write_text(
+            json.dumps([c.to_dict() for c in cards], indent=2, ensure_ascii=True, default=str),
+            encoding="utf-8",
+        )
     elif format == "bibtex":
         out = export_dir / "references.bib"
         meta = _candidate_metadata(topic_dir)
@@ -128,6 +140,7 @@ def run_export(
     else:
         # markdown
         from academia.litreview.render import paper_card_to_markdown
+
         out = export_dir / "papers.md"
         parts = [paper_card_to_markdown(c) for c in cards]
         out.write_text("\n\n---\n\n".join(parts), encoding="utf-8")
@@ -200,6 +213,7 @@ def run_stats(
         try:
             from academia.litreview.models import Candidate
             from academia.litreview.plot import plot_venue_distribution, plot_year_distribution
+
             candidates = []
             skipped_rows = 0
             for c in _read_jsonl(ranked_path):

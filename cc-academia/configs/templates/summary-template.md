@@ -1,6 +1,6 @@
 # Summary template
 
-This file is the consensus that every reviewer agent reads **first**, before forming an opinion. Stay factual. **No critique here** — disagreement and 锐评 belong in step 04, not in the summary.
+This file is the consensus that every reviewer agent reads **first**, before forming an opinion. Stay factual. **No critique here** — disagreement and sharp review belong in step 04, not in the summary.
 
 If a field cannot be filled from the paper, write `Not stated in paper.` Never fabricate.
 
@@ -41,4 +41,4 @@ Objectively observable absences — facts, not judgements. **Calibrate to venue 
 - "Figure 4 caption claims robustness but no robustness benchmark is reported."
 - (journal only) "No experimental / hardware validation; simulation-only."
 
-5–10 bullets max. If the paper really is thorough, write `None observed.` Downstream reviewers may pick these up — they are fact-finding, not 锐评.
+5–10 bullets max. If the paper really is thorough, write `None observed.` Downstream reviewers may pick these up — they are fact-finding, not sharp review.

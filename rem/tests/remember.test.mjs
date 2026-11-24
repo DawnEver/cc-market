@@ -140,10 +140,10 @@ describe("remember.js", () => {
     assert.equal(out, memoryFile("no-force-push"));
   });
 
-  test("--scope <dir> writes into the given scope", () => {
+  test("--scope is retired: every entry lands in the root's memory (user ruling 2026-11-16)", () => {
     const other = path.join(tmp, "sub");
     fs.mkdirSync(path.join(other, ".claude", "memory"), { recursive: true });
     const out = run("--scope", other, ...BASE).trim();
-    assert.ok(out.startsWith(other));
+    assert.ok(!out.startsWith(other), "PLANTED CONTROL: a child scope is never written");
   });
 });

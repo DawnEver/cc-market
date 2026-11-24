@@ -46,7 +46,7 @@ describe('the derived index', () => {
 
   it('two machines deriving the same tree write the same bytes', () => {
     // Machine A: LF files written oldest first. Machine B: CRLF checkout, written in
-    // reverse order, different mtimes, a different cwd and a child scope found later.
+    // reverse order, different mtimes, a different cwd and a leftover child scope.
     const files = {
       '2026/01/02/Zeta.md': entryText('Zeta'),
       '2026/01/02/alpha.md': entryText('alpha'),
@@ -75,7 +75,7 @@ describe('the derived index', () => {
     // Byte order, not locale order: '_' < 'a' < 'z', and 'Z' < '_'.
     assert.ok(ia.indexOf('Zeta.md') < ia.indexOf('_under.md'));
     assert.ok(ia.indexOf('_under.md') < ia.indexOf('alpha.md'));
-    assert.ok(ia.indexOf('Lib/') < ia.indexOf('pkg/'));
+    assert.doesNotMatch(ia, /Lib\/|pkg\//, 'a child scope is migrated, never indexed');
   });
 
   it('lists every visible entry, hides superseded and merged ones, flags corrected ones', () => {
@@ -170,7 +170,9 @@ describe('recall carries corrections', () => {
     const root = scope();
     put(root, '2026/01/01/zebra-rate.md', entryText('zebra-rate', '', 'The zebra rate is 5.'));
     put(root, '2026/01/05/rate-fix.md', entryText('rate-fix', 'corrects: 2026/01/01/zebra-rate.md\n', 'It is 7.'));
-    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'recall.js')], {
+    // The index the hook's detached build leaves, then rem's one UserPromptSubmit hook reads it.
+    spawnSync(process.execPath, [path.join(SCRIPTS, 'recall.js'), '--build', root], { windowsHide: true });
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, '..', 'hooks', 'user-prompt.js')], {
       input: JSON.stringify({ prompt: 'zebra rate', cwd: root }), encoding: 'utf8', cwd: root,
     });
     const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;

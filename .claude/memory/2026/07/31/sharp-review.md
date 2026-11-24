@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Review 2026-07-31 (session) — diff review + security audit (安全锐评)
+## Review 2026-07-31 (session) — diff review + security audit (security sharp review)
 
 ### Reviewer Status
 - Reviewer claude (claude): skipped
@@ -168,3 +168,5 @@ The single secret that authorizes remote write-capable session spawning is copie
 - **Suggestion:** Cap the per-socket buffer (e.g. destroy the socket if buf exceeds a few MB without a newline).
 
 buf += chunk grows without bound if a client streams data with no newline. Auth is checked per parsed line, so pre-auth flooding accumulates too — a peer can grow server memory indefinitely.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

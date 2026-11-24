@@ -32,7 +32,9 @@ def test_network_errors_are_transient():
 @pytest.mark.parametrize(
     "raised",
     [
-        ConnectionResetError(10054, "An existing connection was forcibly closed by the remote host"),
+        ConnectionResetError(
+            10054, "An existing connection was forcibly closed by the remote host"
+        ),
         ConnectionAbortedError(10053, "An established connection was aborted by the software"),
         BrokenPipeError(32, "Broken pipe"),
         # No errno: CPython re-dispatches OSError by errno, so a bare
@@ -50,6 +52,7 @@ def test_a_socket_failure_mid_body_becomes_a_source_error(monkeypatch, raised):
     discarding the candidates already done — so the one thing this must do is
     convert, not propagate.
     """
+
     def boom(*args, **kwargs):
         raise raised
 
@@ -136,3 +139,16 @@ def test_a_browser_fetch_sends_a_whole_browser_header_set():
     assert BROWSER_HEADERS["User-Agent"] == BROWSER_USER_AGENT
     for header in ("Accept", "Accept-Language", "Upgrade-Insecure-Requests"):
         assert header in BROWSER_HEADERS
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://host/x", "no-scheme"])
+def test_a_fetch_refuses_any_scheme_but_http(monkeypatch, url):
+    """``urlopen`` reads ``file:`` off the local disk; a scraped link must never reach it."""
+    opened = []
+    monkeypatch.setattr(http, "urlopen", lambda *a, **k: opened.append(a))
+
+    with pytest.raises(SourceError, match="bad_url"):
+        http.get_text_resolved(url, "probe")
+    with pytest.raises(ValueError, match="refusing"):
+        http.open_web(url, timeout=1)
+    assert opened == []

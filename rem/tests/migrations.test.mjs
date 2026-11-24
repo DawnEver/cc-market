@@ -1,5 +1,5 @@
 /**
- * Tests for rem/migrations/migrate.mjs — additive .gitignore upkeep; never touches memory.
+ * Tests for rem/migrations/migrate.mjs — gitignore upkeep, volatile fields, child scopes, retired indexes.
  * Run: node --test cc-market/rem/tests/migrations.test.mjs
  */
 
@@ -32,7 +32,7 @@ describe('rem migrate()', () => {
 
   // rem owns ONLY ignores for the artefacts it generates — the broader .claude
   // structure template is the root migrate skill's concern.
-  const REM_IGNORES = ['**/.claude/memory-index.md', '**/.claude/rules/MEMORY.md', '**/_meta.json', '**/.claude/memo/'];
+  const REM_IGNORES = ['**/.claude/memory-index.md', '**/_meta.json', '**/.claude/memo/'];
 
   test('ensures rem generated-artifact ignores when .gitignore does not exist', async () => {
     const { changed, summary } = await migrate(projectRoot);
@@ -56,11 +56,12 @@ describe('rem migrate()', () => {
     const content = fs.readFileSync(gitignorePath, 'utf8');
     assert.ok(content.includes('node_modules/'));            // unrelated entry kept
     assert.ok(content.includes('**/.claude/**'));            // host's structure rules untouched
-    assert.ok(content.includes('**/.claude/rules/MEMORY.md')); // the missing rem ignore added
+    assert.ok(content.includes('**/.claude/memo/')); // the missing rem ignore added
+    assert.ok(!content.includes('rules/MEMORY.md'), 'nothing generates rules/MEMORY.md, so nothing ignores it');
     // rem never strips others — _meta.json kept, missing entries appended after it
     // in REM_GENERATED_IGNORES order.
     const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
-    assert.deepEqual(lines.slice(-3), ['**/.claude/memory-index.md', '**/.claude/rules/MEMORY.md', '**/.claude/memo/']);
+    assert.deepEqual(lines.slice(-2), ['**/.claude/memory-index.md', '**/.claude/memo/']);
   });
 
   test('gitignore step is idempotent — no-op when rem ignores already present', async () => {
@@ -101,7 +102,6 @@ describe('rem migration plan (four layers)', () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-plan-'));
     spawnSync('git', ['init', '-q'], { cwd: root });
     write('.claude/memory/2026/10/01/an-entry.md', '---\nname: an-entry\ndescription: d\naccessed: 2026-10-28\ntier: hot\ncount: 3\ncreated: 2026-10-01\n---\n\naccessed: body text stays\n');
-    write('.claude/memory/2026/10/02/manual-tasks.md', '---\nname: manual\n---\n\n- [ ] M-1 [HIGH] Open one (2026-10-02)\n- [x] M-2 [LOW] Closed one (2026-10-02)\n');
     write('.claude/memory/2026/10/03/HANDOFF-x.md', '---\nname: h\n---\nb\n');
     write('.claude/memory/2026/10/03/PLAN-y.md', '---\nname: p\n---\nb\n');
     write('src/.claude/memory/2026/10/04/DECISIONS-z.md', '---\nname: z\naccessed: 2026-10-04\n---\nb\n');
@@ -109,7 +109,7 @@ describe('rem migration plan (four layers)', () => {
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  test('a dry run plans the strip, the adoption and the classes, and writes nothing', async () => {
+  test('a dry run plans the strip and the classes, and writes nothing', async () => {
     const before = snapshot();
     const { plan } = await migrate(root, { dryRun: true });
     assert.deepEqual(snapshot(), before, 'a dry run writes nothing');
@@ -117,7 +117,6 @@ describe('rem migration plan (four layers)', () => {
       ['.claude/memory/2026/10/01/an-entry.md', ['accessed', 'tier', 'count']],
       ['src/.claude/memory/2026/10/04/DECISIONS-z.md', ['accessed']],
     ]);
-    assert.deepEqual(plan.legacyTodos, [{ path: '.claude/memory/2026/10/02/manual-tasks.md', open: 1, closed: 1 }]);
     assert.deepEqual(plan.classified.map(c => [c.path, c.prefix]), [
       ['.claude/memory/2026/10/03/HANDOFF-x.md', 'HANDOFF'],
       ['.claude/memory/2026/10/03/PLAN-y.md', 'PLAN'],
@@ -126,11 +125,13 @@ describe('rem migration plan (four layers)', () => {
     assert.deepEqual(plan.deletes, []);
   });
 
-  test('applying strips only frontmatter volatile fields and deletes nothing', async () => {
-    const files = Object.keys(snapshot());
+  test('applying strips only frontmatter volatile fields, moves the child scope, and loses no file', async () => {
+    const child = path.join(root, 'src/.claude/memory/2026/10/04/DECISIONS-z.md');
+    const moved = path.join(root, '.claude/memory/2026/10/04/DECISIONS-z.md');
+    const files = Object.keys(snapshot()).map(f => (f === child ? moved : f));
     await migrate(root);
     const after = snapshot();
-    assert.deepEqual(Object.keys(after).filter(f => !f.endsWith('.gitignore')), files.filter(f => !f.endsWith('.gitignore')));
+    assert.deepEqual(Object.keys(after).filter(f => !f.endsWith('.gitignore')).sort(), files.filter(f => !f.endsWith('.gitignore')).sort());
     const entry = after[path.join(root, '.claude/memory/2026/10/01/an-entry.md')];
     assert.doesNotMatch(entry.split('---')[1], /^(accessed|tier|count):/m);
     assert.match(entry, /^created: 2026-10-01$/m);
@@ -145,5 +146,77 @@ describe('rem migration plan (four layers)', () => {
     assert.deepEqual(plan.strip.find(s => s.path === rel)?.fields, ['accessed']);
     await migrate(root);
     assert.equal(fs.readFileSync(path.join(root, rel), 'utf8'), '---\nname: f\ndescription: d\n----\n---x\n---\n\n---x body\n');
+  });
+});
+
+describe('the retired scope-split and generated indexes migrate ONCE', () => {
+  let root;
+  const { spawnSync } = childProcess;
+  const write = (rel, text) => { const f = path.join(root, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
+  const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
+  const has = rel => fs.existsSync(path.join(root, rel));
+  const VALIDATE = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..', 'scripts', 'scope-validate.mjs');
+  const validate = () => spawnSync(process.execPath, [VALIDATE, '--check'], { cwd: root, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'rem-scopes-'));
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    write('.gitignore', '**/.claude/rules/MEMORY.md\n**/.claude/memory-index.md\n');
+    write('.claude/memory/2026/01/01/a.md', '---\nname: a\n---\nroot a\n');
+    write('.claude/memory/2026/01/01/c.md', '---\nname: c\n---\nsame\n');
+    write('pkg/sub/.claude/memory/2026/01/01/a.md', '---\nname: a\n---\nchild a\n');
+    write('pkg/sub/.claude/memory/2026/01/01/b.md', '---\nname: b\nmerged_from: 2026/01/01/a.md\n---\nchild b\n');
+    write('pkg/sub/.claude/memory/2026/01/01/c.md', '---\nname: c\n---\nsame\n');
+    write('attic/old/.claude/rules/MEMORY.md', '- archived index\n');
+    spawnSync('git', ['add', '-A'], { cwd: root });
+    spawnSync('git', ['add', '-f', 'attic/old/.claude/rules/MEMORY.md'], { cwd: root });
+    spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'init'], { cwd: root });
+    write('.claude/rules/MEMORY.md', '- hot entry\n');
+    write('pkg/sub/.claude/rules/MEMORY.md', '- scoped hot entry\n');
+    write('.claude/meta/MEMORY.full.md', '- full\n');
+    write('pkg/sub/.claude/memory-index.md', '# Memory Index\n');
+    write('.claude/.rem-state.json', JSON.stringify({ crystallize: { declinedAt: 6051 }, scopes: { ignore: [] }, docs: { roots: null } }));
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  test('the doctor refuses a child scope and a retired index, naming the migration (PLANTED: clean after it)', async () => {
+    const before = validate();
+    assert.equal(before.status, 1);
+    assert.match(before.stdout, /\[error\] child-scope memory in pkg\/sub: .*Door: node .*migrate\.mjs/);
+    assert.match(before.stdout, /\[error\] retired generated index\(es\) .*\.claude\/meta\/MEMORY\.full\.md.*\.claude\/rules\/MEMORY\.md.*Door: node .*migrate\.mjs/);
+    assert.doesNotMatch(before.stdout, /attic/);
+    await migrate(root);
+    spawnSync(process.execPath, [path.join(path.dirname(VALIDATE), 'index-memory.js'), '--quiet'], { cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
+    const after = validate();
+    assert.equal(after.status, 0, after.stdout);
+  });
+
+  test('child memory moves to the root; a taken name gets the scope suffix and its references follow', async () => {
+    const { changed } = await migrate(root);
+    assert.equal(changed, true);
+    assert.equal(read('.claude/memory/2026/01/01/a.md'), '---\nname: a\n---\nroot a\n', 'the root entry is untouched');
+    assert.equal(read('.claude/memory/2026/01/01/a-pkg-sub.md'), '---\nname: a\n---\nchild a\n');
+    assert.equal(read('.claude/memory/2026/01/01/b.md'), '---\nname: b\nmerged_from: 2026/01/01/a-pkg-sub.md\n---\nchild b\n');
+    assert.equal(read('.claude/memory/2026/01/01/c.md'), '---\nname: c\n---\nsame\n', 'an identical copy collapses into the root entry');
+    assert.ok(!has('pkg/sub/.claude/memory'), 'the emptied child memory directory is gone');
+    const staged = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout;
+    assert.match(staged, /^R[ M] pkg\/sub\/\.claude\/memory\/2026\/01\/01\/b\.md -> \.claude\/memory\/2026\/01\/01\/b\.md$/m, 'git mv keeps history');
+  });
+
+  test('retired indexes are deleted, an archive keeps its copy, and state migrates', async () => {
+    await migrate(root);
+    for (const gone of ['.claude/rules/MEMORY.md', 'pkg/sub/.claude/rules/MEMORY.md', '.claude/meta/MEMORY.full.md', 'pkg/sub/.claude/memory-index.md']) {
+      assert.ok(!has(gone), `${gone} is retired`);
+    }
+    assert.ok(!has('.claude/meta'), 'the emptied meta/ directory is gone');
+    assert.ok(has('attic/old/.claude/rules/MEMORY.md'), 'PLANTED CONTROL: attic/ is frozen source');
+    assert.deepEqual(JSON.parse(read('.claude/.rem-state.json')), { docs: { roots: null } });
+  });
+
+  test('a second run plans nothing (the format migrates once)', async () => {
+    await migrate(root);
+    const { changed, plan } = await migrate(root);
+    assert.equal(changed, false);
+    assert.deepEqual([plan.moves, plan.deletes, plan.state], [[], [], false]);
   });
 });

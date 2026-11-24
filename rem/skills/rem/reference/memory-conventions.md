@@ -5,7 +5,7 @@
 Two paths:
 
 1. **Immediate (`remember.js`)** — when the user explicitly asks to remember something
-   ("remember this", "记住这个"), save it right away instead of waiting for `/rem`:
+   ("remember this", or the same in Chinese), save it right away instead of waiting for `/rem`:
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/remember.js --name <kebab-slug> --type <user|feedback|project|reference> --body "<text>"
    ```
@@ -15,6 +15,18 @@ Two paths:
    Host-agnostic (plain CLI).
 2. **Session consolidation (`/rem`)** — everything learned during a session that the user
    didn't explicitly ask to keep. See `standard-procedure.md`.
+
+## Language
+
+Write memory entries, task goals and journal lines **in English** unless the
+repo's `.claude/rem.json` sets `"language": "unrestricted"`. When the user spoke another
+language, write a faithful English translation and mark a translated quote `(user, translated)`.
+Under the default, every rem writer (`remember.js`, `merge-memory.js`,
+`task.js`) refuses text containing CJK ideographs, CJK symbols and punctuation, kana,
+hangul or full-width forms, naming the offending code points. Ordinary non-ASCII (degree sign,
+Greek letters, em dash, multiplication sign) is accepted. The character set is dev-lab's CJK
+rule (`dev_lab.dev.cjk.CJK_RANGES`) plus kana and hangul; it lives once, in `scripts/lib.mjs`
+(`findForeignScript`).
 
 ## Per-type save constraints
 
@@ -63,7 +75,7 @@ One frontmatter for every kind of memory — an entry file and an archived task'
 | Field | Meaning | When absent |
 |---|---|---|
 | `name`, `description` | identity and one-line summary (a task: its slug and goal) | name = file name |
-| `kind` | `entry`, `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) or `todo` (an archived backlog item `YYYY/MM/DD/todo-<id>.md`) | `entry` |
+| `kind` | `entry`, `task` (an archived task directory `YYYY/MM/DD/task-<slug>/`) or `todo` (an archived item `YYYY/MM/DD/todo-<id>.md` from the retired file backlog; still hidden) | `entry` |
 | `task` | the task the entry was written for (`remember.js` writes the bound task) | none |
 | `created` | when it began (a task: the day it was opened) | the path date |
 | `from` | where it was distilled from, e.g. `tasks/<slug>/JOURNAL.md#D3` | none |
@@ -121,31 +133,20 @@ OR churn ≥ 200 lines OR age ≥ 30d (per-doc overridable).
   (every new entry would otherwise be a merge conflict).
 - Each line: `- [YYYY-MM-DD name](memory/YYYY/MM/DD/slug.md) — description`, plus
   ` (corrected by memory/…)` for a corrected entry.
-- Writers (`remember.js`, `merge-memory.js`, `crystallize.js`, `scope-split.js`) and
+- Writers (`remember.js`, `merge-memory.js`) and
   `index-memory.js` regenerate it; no hook does. Recall reads the tree, never the index.
 
 ## Recall
 
-`recall.js` (UserPromptSubmit) is read-only and scoped: the bound task, the visible entries of
-the scope(s) being worked on (cwd, plus the bound task's `scope:` paths) and the bound docs of
-those paths. An entry tagged `task: <other>` stays out unless the prompt names that task. A
-corrected entry is injected together with its correction. Details → `tasks.md`.
+`recall.js` (run in-process by rem's one UserPromptSubmit hook, `hooks/user-prompt.js`) reads only a ready device-local index -- a missing or stale one starts a detached `recall.js --build` for the next prompt -- and is read-only and scoped: the bound task's one-line summary, the
+visible entries of the root's memory and the bound docs of the task's `scope:` paths. An entry
+tagged `task: <other>` stays out unless the prompt names that task. A corrected entry is injected
+together with its correction. Details → `tasks.md`.
 
-## Scoped memory (monorepo / multi-project)
+## Memory lives at the root
 
-Any directory containing its own `.claude/memory/` is an independent memory **scope**
-with its own derived index — e.g. each `cc-market/<plugin>/` alongside the repo root.
-
-- `findMemoryScope()` walks up from `cwd` to the nearest ancestor (within
-  `CLAUDE_PROJECT_DIR`) containing `.claude/memory/` — that's `scopeRoot` /
-  `scopeMemoryDir`, the scope `remember.js` and `crystallize.js` operate on by default.
-- `findAllScopes()` walks the whole repo tree to find *every* `.claude/memory/`
-  directory — `index-memory.js` and `rem-prep.js` cover them all.
-- The index's `## Scoped` section links each child scope's index; it is derived from the
-  scopes on disk.
-- `/rem` always operates on the scope for the **current working directory** — if you
-  modified files in another scope this session, run rem-prep for that scope too
-  (see "Cross-project check" in SKILL.md).
+All memory is the repo root's `.claude/memory/` (a task, not a directory, is the unit of work); a
+child `.claude/memory/` is moved there once by `migrations/migrate.mjs`, and scope-validate refuses one.
 
 ## Convergence
 
@@ -158,9 +159,6 @@ newer entry names the older ones:
   writes a new entry with every source line verbatim and names the sources in `merged_from:`.
 - **Archive** — a closed task moves (git mv) to `YYYY/MM/DD/task-<slug>/` after its decisions were
   distilled (`tasks.md`); it is hidden, its distilled entries stay visible.
-- **Crystallize** — a fact every session needs becomes a rule:
-  `crystallize.js --execute --rule <file> --distilled <paths>` writes a ledger entry that
-  points at the rule and names the distilled entries in `supersedes:`.
 
 ## Rules vs Memory boundary
 - **Rule** = what the model MUST do every session. Short, actionable; it cites the memory

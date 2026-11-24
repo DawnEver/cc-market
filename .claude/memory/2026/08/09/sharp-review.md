@@ -6,7 +6,7 @@ metadata:
 ---
 
 
-## Review 2026-08-09 (session) — adversarial review (对抗性审查) + diff review
+## Review 2026-08-09 (session) — adversarial review (adversarial review) + diff review
 
 ### Reviewer Status
 - Reviewer claude (claude): OK
@@ -622,3 +622,5 @@ Mostly defended by the 600s request timer, hence LOW, but the asymmetry is worth
 - **Suggestion:** No action — these are the load-bearing choices the fixes above should preserve.
 
 The architecture (facts not decisions, message-passing only, ownership reaping) is coherent; the HIGH findings are holes in that honesty under concurrency, not the shape being wrong.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

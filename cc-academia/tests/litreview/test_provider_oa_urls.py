@@ -59,9 +59,7 @@ def test_dois_are_resolved_in_one_batch(monkeypatch):
         ]
 
     monkeypatch.setattr(source, "post_json_list", post)
-    assert source.resolve_open_access_pdfs(["10.1/a", "10.1/b"]) == {
-        "10.1/a": "https://r/a.pdf"
-    }
+    assert source.resolve_open_access_pdfs(["10.1/a", "10.1/b"]) == {"10.1/a": "https://r/a.pdf"}
     assert seen["payload"] == {"ids": ["DOI:10.1/a", "DOI:10.1/b"]}
 
 

@@ -1,0 +1,37 @@
+{
+  "rem": {
+    "PreToolUse": [
+      {
+        "matcher": "write_file|write_to_file|edit_file|replace_file_content|multi_replace_file_content|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/task-guard.js --host agy",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./hooks/session-context.js --host agy",
+        "timeout": 5
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./hooks/user-prompt.js --host agy",
+        "timeout": 5
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./hooks/rem-hook.js --host agy",
+        "timeout": 5
+      }
+    ]
+  }
+}

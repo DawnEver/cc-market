@@ -3,22 +3,22 @@
 Script-first batch PDF acquisition with multi-scenario access handling.
 For detailed paywall methodology → see `03-acquire-paywall.md` (progressive disclosure).
 
-## 来源优先级(publisher 站有 Cloudflare Turnstile,自动下载必失败)
+## Source priority (publisher sites sit behind Cloudflare Turnstile, so automated download always fails)
 
-解析 DOI(Unpaywall/OpenAlex/SS)后,按此优先级找 PDF:
+After resolving the DOI (Unpaywall/OpenAlex/SS), look for the PDF in this priority order:
 
 1. **University repository** — `repo.uni-hannover.de`, `acris.aalto.fi`,
-   `<institution>-repository.worktribe.com`, etc. 无 Cloudflare,HTTP 快路径。
-2. **Preprint servers** — arXiv, techrxiv。直接 PDF。
-3. **ResearchGate** — author-uploaded PDF,付费墙常可拿。由
-   `literature_review/acquire/researchgate.py` 处理三跳(search → publication → /download)。
-   **限速极严,升级到 IP ban**:~6s 间隔、每篇 ≤3 个 pub 页、home 页预热。Cloudflare
-   **error 1020(IP 级 ban)不可解**——熔断跳过本轮,不要重试,等 ban 解除或换网络。
-   绝不尝试规避,以免损害机构 IP 信誉。
-4. **Publisher OA page** — 最后手段;需真实 Chrome + 持久 profile + cookie-dismissal + PDF 按钮自动点击。
+   `<institution>-repository.worktribe.com`, etc. No Cloudflare; the fast HTTP path.
+2. **Preprint servers** — arXiv, techrxiv. Direct PDF.
+3. **ResearchGate** — author-uploaded PDF, often available past a paywall. Handled by
+   `literature_review/acquire/researchgate.py` in three hops (search → publication → /download).
+   **Very strict rate limit that escalates to an IP ban**: ~6 s spacing, ≤3 pub pages per paper, warm up on the home page. Cloudflare
+   **error 1020 (IP-level ban) cannot be worked around** -- trip the breaker and skip this round; do not retry; wait for the ban to lift or switch networks.
+   Never try to evade it, so as not to damage the institution's IP reputation.
+4. **Publisher OA page** — the last resort; needs a real Chrome + persistent profile + cookie dismissal + an automatic click on the PDF button.
 
-**排查工具**:`uv run --project "<plugin-root>" lit-review acquire --topic <slug> --dry-run` 打印每篇的源计划(不下载);
-`download/download_log.csv` 记录每个 URL 的失败原因——先读那列再手动重试。
+**Troubleshooting**: `uv run --project "<plugin-root>" lit-review acquire --topic <slug> --dry-run` prints each paper's source plan (no download);
+`download/download_log.csv` records the failure reason for each URL -- read that column first, then retry by hand.
 
 ## Core principle
 

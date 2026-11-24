@@ -1,13 +1,13 @@
 # Step 01 — Define topic & scope
 
-交互式定义研究主题和范围。
+Define the research topic and scope interactively.
 
 ## Steps
 
 1. **Derive slug** from topic name (lowercase, non-alphanum → `-`).
 
 2. **Ask the output language** (`AskUserQuestion`; Codex: ask in chat): English (default)
-   or 简体中文 (`zh-CN`); any other BCP 47 tag is accepted. If the user already wrote the
+   or Simplified Chinese (`zh-CN`); any other BCP 47 tag is accepted. If the user already wrote the
    request in Chinese, still ask — do not infer. See `SKILL.md` § Output language.
 
 3. **Create workspace**:

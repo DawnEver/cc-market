@@ -19,7 +19,7 @@ Write prose in the language from `review-config.md` (`lang:`, default `en`).
 ### N2 · <point title>
 ...
 
-### N6 · ⏭ SKIP — 与 E3 重复
+### N6 · ⏭ SKIP — duplicate of E3
 <one-line summary. The full critique is under E3.>
 ...
 

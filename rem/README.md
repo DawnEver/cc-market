@@ -10,9 +10,15 @@ REM sleep for Claude Code and Codex sessions — consolidate learnings into `.cl
 The derived index (`.claude/memory-index.md`, outside `rules/`) is read on demand; recall injects
 the visible entries and bound docs of the scope being worked on, plus the bound task — never another task's memory unless the prompt names it. Reading memory never writes.
 
-**Tasks** (`.claude/tasks/<slug>/`): opening or closing one without the user's `/rem:task open|close` prompt is refused by default and detectable when bypassed (an agent running as the same OS user could still forge it); a session binds to one task (`--task`, or its worktree/branch name) and appends to its append-only `JOURNAL.md` with `task.js log|decide|open-item|close-item|handoff`. Closing distills the decisions into docs, rules and memory entries first, then archives the task by `git mv` into `.claude/memory/<date>/task-<slug>/`. → `skills/rem/reference/tasks.md`.
+**Tasks** (`.claude/tasks/<slug>/`): what is being done and how far -- the user opens and closes one with `/rem:task`, the session bound to it appends to its journal, and closing archives it into memory. Verbs: `task.js help`; mechanism → `skills/rem/reference/tasks.md`.
 
-**Todo** — one backlog: a task's open items are journal lines; a repo backlog item is an issue where `.claude/rem.json` says `{"backlog": "issues"}` (then `/todo` is a read-only view), else one file per item in `.claude/todo/`, archived into memory when closed. No checkboxes in memory. → `skills/todo/SKILL.md`.
+**Backlog** — a task's open items are journal lines (`task.js list` shows them); a repo backlog item is an issue in the repo's tracker. No checkboxes in memory.
+
+**Language** — rem writes English only by default: a memory entry, task goal, journal line
+containing CJK, kana, hangul or full-width characters is refused, naming the code
+points and asking for a faithful English translation (user quotes marked `(user, translated)`).
+To allow any language, commit `.claude/rem.json` with `{"language": "unrestricted"}` ; values `english` (default) | `unrestricted`. Character set →
+`skills/rem/reference/memory-conventions.md` § Language.
 
 ## Install
 
@@ -28,7 +34,7 @@ and duplicate registrations can run the same lifecycle work twice.
 > **On Codex:** install with `codex plugin add rem@cc-market`. The hooks run on Codex too;
 > additionally, rem's SessionStart hook injects the host project's `.claude/rules/**/*.md`
 > into context (Codex doesn't auto-load them — Claude Code does, where this step is a no-op).
-> `/rem` and `/todo` are Claude slash-commands; on Codex invoke the underlying skills directly.
+> `/rem` is a Claude slash-command; on Codex invoke the underlying skills directly.
 > Prompt-time recall runs on both hosts and touches only memories actually injected.
 > Codex `SessionStart source=compact` restores rules and memo context immediately after
 > compaction. Resume/fork inherit rules rather than guessing from transcript file size.
@@ -38,7 +44,7 @@ and duplicate registrations can run the same lifecycle work twice.
 > context-inheriting fork is unavailable; an empty worker is not equivalent.
 > Codex gates use the actual execution thread, not a shared parent `session_id`.
 > When no execution identity is available, the hook does not request continuation.
-> A live REM or review reservation excludes other continuations in the same checkout;
+> A live REM reservation excludes other continuations in the same checkout;
 > per-thread counters remain independent and deferred work waits for an eligible Stop.
 
 ## Usage
@@ -59,8 +65,7 @@ Memos (`scripts/memo.js`) sit next to memory: save a file slice or a command's s
 
 | Skill | Purpose |
 |---|---|
-| `/rem` | REM sleep — summarize, update memory, crystallize if needed |
-| `/todo` | Task management — view, add, sync, and resolve findings |
+| `/rem` | REM sleep — summarize, update memory |
 
 ## Scripts & Files
 

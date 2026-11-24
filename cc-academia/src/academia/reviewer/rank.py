@@ -220,7 +220,7 @@ def score_candidate(
     candidate.score = sum(components[k] * weights.get(k, 0.0) for k in components)
 
     candidate.notes.extend(assessment.notes())
-    if (note := _student_note(candidate.person, now_year)):
+    if note := _student_note(candidate.person, now_year):
         candidate.notes.append(note)
     if candidate.person.confidence < policy.min_identity_confidence:
         candidate.notes.append(
