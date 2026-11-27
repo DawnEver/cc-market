@@ -13,6 +13,8 @@ rather than producing something half-right.
 from __future__ import annotations
 
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,9 +112,22 @@ def decompose(pdf: Path, out_dir: Path) -> Decomposed:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     source = _without_cover_pages(pdf, out_dir)
-    markdown, _tool = convert(source, out_dir)  # pragma: no cover - exercised by the extra
-    sections = split_sections(markdown)
-    write_paper_output(sections, out_dir, markdown, pdf_path=pdf)
+    # pymupdf4llm rewrites spaces in its image path to underscores and then
+    # cannot open the images it wrote; synced data roots ("OneDrive - <org>")
+    # always contain spaces. Decompose in a space-free scratch dir, then move
+    # the result into place.
+    with tempfile.TemporaryDirectory(prefix="ccacad-ingest-") as scratch:
+        work = Path(scratch)
+        markdown, _tool = convert(source, work)  # pragma: no cover - exercised by the extra
+        sections = split_sections(markdown)
+        write_paper_output(sections, work, markdown, pdf_path=pdf)
+        for item in work.iterdir():
+            target = out_dir / item.name
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+            shutil.move(str(item), str(target))
     entry = out_dir / "paper.md"
     return Decomposed(
         root=out_dir,

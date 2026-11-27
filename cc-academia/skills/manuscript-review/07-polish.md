@@ -13,7 +13,7 @@ Spawn `manuscript-polisher-english` to refine the user's edited draft into publi
 
 ## Steps
 
-1. `Agent(subagent_type: polisher-english)` with a prompt containing:
+1. `Agent(subagent_type: manuscript-polisher-english)` with a prompt containing:
    - Full paths to `draft.md`, `templates/reviewer-voice.md`, `style/profile.md`, `templates/polish-checklist.md`.
    - Output path `ongoing/<slug>/3-response/final.md`.
    - **Output language: English**, regardless of the draft's language. If `draft.md` is in Chinese (per `review-config.md`), translate it into natural reviewer English — preserve content faithfully, invent nothing.
@@ -38,5 +38,5 @@ Spawn `manuscript-polisher-english` to refine the user's edited draft into publi
 
 ## Host adaptation
 
-- **Claude Code:** use `Agent(subagent_type: polisher-english)` as above.
+- **Claude Code:** use `Agent(subagent_type: manuscript-polisher-english)` as above.
 - **Codex:** read `.claude/agents/manuscript-polisher-english.md` in full, then spawn one bounded collaboration subagent with that canonical prompt plus the paths and constraints above. If collaboration agents are unavailable, the current model may execute the same prompt locally as an explicit same-model fallback. Enforce traceability/no-invention and verify `final.md` exists and is non-empty.
