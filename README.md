@@ -22,17 +22,17 @@ Most plugins run on **both** hosts. What each does and where it runs:
 
 | Plugin | What it gives you | Claude Code | Codex |
 |---|---|---|---|
-| [`rem`](rem/README.md) | Memory that converges without deletion: session summarization, merge, task journals, derived index | yes | yes (SessionStart hook injects `.claude/rules`) |
-| [`sharp-review`](sharp-review/README.md) | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync | yes | yes |
-| [`evolve`](evolve/README.md) | Iterative review→fix loop (depends on `sharp-review` + `rem`) | yes | yes |
-| [`watch`](watch/README.md) | Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |
-| [`fabric`](fabric/README.md) | Invoke & observe child agents of any provider (`call`, `fan_out`) | yes | yes |
+| [`rem`](rem/README.md) | **RETIRED (no longer updated, 2026-11-24).** **Archived (2026-11-23)** — not offered by the marketplace or installed; dev-lab owns the harness (rules injection, task guard, memory write/search). Memory that converges without deletion: session summarization, merge, task journals, derived index | yes | yes (SessionStart hook injects `.claude/rules`) |
+| [`sharp-review`](sharp-review/README.md) | **RETIRED (no longer updated, 2026-11-24).** Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync | yes | yes |
+| [`evolve`](evolve/README.md) | **RETIRED (no longer updated, 2026-11-24).** Iterative review→fix loop (depends on `sharp-review` + the archived `rem`) | yes | yes |
+| [`watch`](watch/README.md) | **RETIRED (no longer updated, 2026-11-24).** Unattended server & task supervision: health checks, anomaly detection, auto-repair | yes | yes (no `Notification` event; alert degrades to `Stop`-only) |
+| [`fabric`](fabric/README.md) | **RETIRED (no longer updated, 2026-11-24).** Invoke & observe child agents of any provider (`call`, `fan_out`) | yes | yes |
 | [`cc-academia`](cc-academia/README.md) | Literature review, manuscript writing (LaTeX checks, writing knowledge base, word counts) and review, citation and reviewer discovery | yes | yes (CLI-enforced confidential-manuscript boundary; Claude adds a second hook guard) |
 
 **What Codex consumes:** skills, hooks, and `mcpServers`, but **not** plugin slash-commands
 (those are Claude Code-only; the underlying capability is still reachable via the plugin's
 skills/MCP). Codex also does not support the `Notification` or `SessionEnd` hook events, and
-does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionStart hook).
+does not auto-load `.claude/rules` (dev-lab's rendered SessionStart hook injects them).
 
 ## Add this marketplace
 
@@ -47,7 +47,7 @@ does not auto-load `.claude/rules` (the `rem` plugin injects them via a SessionS
 ```shell
 node scripts/gen-codex.mjs .          # refresh .codex-plugin/ + .agents/plugins/
 codex plugin marketplace add <path-to-cc-market>
-codex plugin add fabric@cc-market     # then rem / sharp-review / evolve / watch / cc-academia
+codex plugin add cc-academia@cc-market   # the one live plugin; the rest are RETIRED (2026-11-24)
 ```
 
 `cc-academia` supports both hosts:
@@ -57,11 +57,6 @@ extra file-tool guard that Codex does not guarantee. See the host table above.
 ## Install
 
 ```shell
-/plugin install fabric@cc-market
-/plugin install rem@cc-market
-/plugin install sharp-review@cc-market
-/plugin install watch@cc-market
-/plugin install evolve@cc-market
 /plugin install cc-academia@cc-market
 ```
 

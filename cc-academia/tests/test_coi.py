@@ -324,17 +324,23 @@ def test_every_ieee_journal_resolves_to_the_one_policy():
     The shipped IEEE journals used to each carry a partial copy of the shared
     numbers, so the same decision lived in four files and could drift between
     them. A journal file that states nothing now changes nothing. Compared over
-    every key rather than the handful a test would think to name; the one key
-    that still differs is the journal's own name, which is documentation that no
-    rule reads.
+    every key rather than the handful a test would think to name; the keys that
+    still differ identify the journal — its name and its ISSNs — and no rule
+    reads them.
     """
 
     def rules(policy):
-        return {key: value for key, value in policy.data.items() if key != "journal"}
+        return {k: v for k, v in policy.data.items() if k not in ("journal", "issns")}
 
     base = rules(load_policy())
-    for journal in ("tie", "tii", "tte", "tec"):
+    for journal in ("tie", "tii", "tte"):
         assert rules(load_policy(journal)) == base, journal
+
+    # TEC records one deliberate deviation, and only that one.
+    tec = rules(load_policy("tec"))
+    assert tec["activity"]["related_journals"]["min_publications"] == 2
+    tec["activity"]["related_journals"]["min_publications"] = 3
+    assert tec == base
 
 
 def test_unknown_journal_is_refused_rather_than_silently_defaulted():

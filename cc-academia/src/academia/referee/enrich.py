@@ -397,6 +397,58 @@ def enrich_from_orcid(
     return person
 
 
+_JOURNAL_NAMES: dict[str, str] = {}
+
+
+def _journal_name(issn: str) -> str:
+    """ISSN to title via OpenAlex, once per process; empty when unresolved."""
+    if issn not in _JOURNAL_NAMES:
+        from academia.sources.openalex import journal_name
+
+        try:
+            _JOURNAL_NAMES[issn] = journal_name(issn)
+        except SourceError as error:
+            log.warn(f"journal name for ISSN {issn} not resolved: {error}")
+            return ""
+    return _JOURNAL_NAMES[issn]
+
+
+def enrich_reviews(conn: sqlite3.Connection, person: Person, *, source=None) -> Person:
+    """The public reviewing record, from the ORCID peer-review section.
+
+    Nothing is stored when there is no ORCID or the record cannot be read, so
+    the report says "unknown" rather than "0". A record that is read and lists
+    nothing is stored as checked-and-empty: no *public* review, which is still
+    not evidence that the person never reviewed.
+    """
+    if not person.orcid:
+        return person
+    client = source or Orcid()
+    try:
+        reviews = client.get_peer_reviews(person.orcid)
+    except SourceError as error:
+        log.warn(f"orcid peer reviews failed for {person.display_name}: {error}")
+        return person
+    if reviews is None:
+        return person
+    repo.set_review_record(
+        conn,
+        person.person_id,
+        [
+            {
+                "review_key": review.put_code or f"{review.group_id}:{index}",
+                "group_id": review.group_id,
+                "journal": (_journal_name(review.issn) if review.issn else "") or review.group_id,
+                "completed": review.completed,
+            }
+            for index, review in enumerate(reviews)
+        ],
+        source="orcid",
+        source_url=f"https://orcid.org/{person.orcid}",
+    )
+    return person
+
+
 def enrich(
     conn: sqlite3.Connection,
     person: Person,
@@ -407,7 +459,8 @@ def enrich(
     """One pass over every enrichment source for a single candidate."""
     person = enrich_from_openalex(conn, person, source=openalex)
     refreshed = repo.load_person(conn, person.person_id) or person
-    return enrich_from_orcid(conn, refreshed, source=orcid)
+    refreshed = enrich_from_orcid(conn, refreshed, source=orcid)
+    return enrich_reviews(conn, refreshed, source=orcid)
 
 
 def contact_for(person: Person, *, source: Orcid | None = None) -> Contact:

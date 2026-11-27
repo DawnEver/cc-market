@@ -3,18 +3,21 @@
 // No project-specific data — only reusable functions.
 
 import { readFileSync, existsSync, realpathSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, delimiter, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 // ── findProjectRoot: walk up to nearest .git ──
+// The walk stops where git's does: never into a GIT_CEILING_DIRECTORIES entry (git's own contract), so a
+// sandbox made under a ceiling (a test temp inside the checkout) never resolves the checkout that contains it.
 
 export function findProjectRoot(startDir) {
   let dir = startDir || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const ceilings = new Set((process.env.GIT_CEILING_DIRECTORIES || '').split(delimiter).filter(Boolean).map((p) => resolve(p)));
 
   while (true) {
     if (existsSync(join(dir, '.git'))) return dir;
     const parent = dirname(dir);
-    if (parent === dir) break;
+    if (parent === dir || ceilings.has(resolve(parent))) break;
     dir = parent;
   }
 

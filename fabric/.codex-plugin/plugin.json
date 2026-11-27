@@ -22,7 +22,7 @@
   "interface": {
     "displayName": "Fabric",
     "shortDescription": "Multi-provider agent fabric — any agent (Claude / Codex / …) invoking,",
-    "longDescription": "Multi-provider agent fabric â€” any agent (claude / codex / â€¦) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), parallel fan_out, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
+    "longDescription": "RETIRED (no longer updated, 2026-11-24). Multi-provider agent fabric â€” any agent (claude / codex / â€¦) invoking, orchestrating, and handing off to models of any provider. One `call` primitive (task/review/agent/image modes), parallel fan_out, and a minimal observe proxy that dissolves the Foundry-vs-tap conflict.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

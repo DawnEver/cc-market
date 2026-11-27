@@ -1,2 +1,4 @@
 # IEEE Transactions on Industrial Informatics.
 journal = "IEEE Transactions on Industrial Informatics"
+# How public review records name this journal (ISSNs as OpenAlex lists them).
+issns = ["1551-3203", "1941-0050"]

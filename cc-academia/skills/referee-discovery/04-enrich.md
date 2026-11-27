@@ -212,6 +212,55 @@ not to every author on the paper.
 - ORCID is not an email directory. Addresses there default to private, and only
   ones the researcher chose to publish are ever read.
 
+## The public review record
+
+`enrich` also reads each candidate's ORCID **peer-review** section — most of it
+written there by Web of Science on the reviewer's behalf — and names each
+journal from its ISSN through OpenAlex. That gives every candidate, on every
+run, a review count, reviews per journal, recency, and whether they have
+reviewed for this journal (matched on the journal config's `journal` and
+`issns`). No ORCID, or a record that cannot be read, stores nothing and reports
+blank: unknown, never zero. Articles in the window (`[reviewing]
+article_window_years`, default 5) come from the OpenAlex yearly output already
+fetched here.
+
+Never fetch `webofscience.com` or `reviewerlocator.webofscience.com` for this:
+both are login-gated and their terms forbid it. What Web of Science shows the
+editor arrives only through the editorial page below.
+
+## Editorial page (optional)
+
+When the editor saves the manuscript's ScholarOne *Assign Reviewers* page as
+HTML, import it — at any point after `init`, best before `coi`:
+
+```bash
+uv run --project "<plugin-root>" academia-referee import-scholarone --slug <slug>   ongoing/<slug>/0-editorial/<saved-page>.html --json
+```
+
+It stores two things against this manuscript:
+
+- **Reviewer Locator** candidates, with Clarivate's verified-review counts per
+  journal, articles, ScholarOne workload, days since last review, R-Score and
+  most relevant works. Each is attached to a person by ORCID, then by an address
+  already in the store, then by name — the last only when exactly one candidate
+  *in this run* carries it; otherwise a new low-confidence person is created.
+  They join the candidate pool. **Re-run `candidates` after importing**: anyone
+  in the pool without evidence in this corpus has their own works fetched from
+  OpenAlex (by ORCID, else by a name search their stored institution
+  corroborates — a name never raises identity confidence) and scored with the
+  same similarity as everybody else. Those works feed only that person's
+  evidence, never the harvest, so `found_by` stays honest. If no works can be
+  obtained the relevance rules read *No evidence* and the candidate is at best
+  *Check first*. Then run `enrich`, `coi` and `report` as usual.
+- The **Reviewer List**: every invitee's status and dates. Outcomes go into the
+  invitation record `academia-referee invite` writes, so they travel between machines;
+  anyone on it reads *Already invited* and is not proposed again. That is
+  bookkeeping, never an eligibility verdict.
+
+The page holds the confidential manuscript and real addresses. Keep it in the
+workspace; read it only through this command. Nothing requires it: without an
+import, the Locator columns and the reviewer-list sheet are simply absent.
+
 ## Reporting to the user
 
 Say plainly how many candidates got an email and how many got a career history.

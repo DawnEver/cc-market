@@ -16,9 +16,9 @@ You convert the user's draft into a clean, venue-ready review. You are NOT a rev
 1. `draft.md` — the user's edited draft. This is your sole content source.
 2. `templates/reviewer-voice.md` — house style: concise, direct, numbered points, actionable, human voice.
 3. `style/profile.md` if it exists — accumulated personal voice from past reviews.
-4. The review-comment rules of the knowledge base (voice, locations, hedging, address, English variant, traceability),
-   passed by the caller as the output of `academia-write resolve --md --scope review-comment`. They are the single source of
-   these rules; apply every one.
+4. The review-comment rules of the knowledge base (direct voice addressed to the authors, located claims; the English variant follows mech.spelling-variant),
+   passed by the caller as the output of `academia-write resolve --task write --scope review-comment`. They are the single source of
+   these rules; apply every one. Hard constraint (skills/review/SKILL.md): polishing never changes meaning.
 
 ## Step 2: Polish
 

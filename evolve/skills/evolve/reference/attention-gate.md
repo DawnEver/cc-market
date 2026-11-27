@@ -37,7 +37,7 @@ that *wants* a second opinion on a deferred arch call may hand it to a stronger 
 
 ## Both consumers
 
-Record the gate's `applied`/`deferred`/answers back into `evolveState.findings`, so the next
+Record the gate's `applied`/`deferred`/answers back into the state's `findings`, so the next
 round sees accurate status and the round summary reflects what was decided vs deferred.
 
 ## `defer` ≠ drop (the guarantee)
@@ -45,7 +45,7 @@ round sees accurate status and the round summary reflects what was decided vs de
 A deferred finding — LOW included — is *not* resolved and is *not* abandoned. Three mechanisms
 ensure it still gets solved:
 
-1. **It stays in the backlog.** It remains `status: open` in `evolveState.findings` and in the
+1. **It stays in the backlog.** It remains `status: open` in the state's `findings` and in the
    issue-tracker/`sharp-review.md` source of truth — visible and resolvable at any time, including after
    the loop exits.
 2. **Fan-out re-attempts it every round.** Step 2 fixes findings in HIGH→MEDIUM→LOW order across

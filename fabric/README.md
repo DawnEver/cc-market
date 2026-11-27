@@ -1,5 +1,7 @@
 # Fabric
 
+> **RETIRED (no longer updated, 2026-11-24).** Kept for reference only; cc-market's one live plugin is [cc-academia](../cc-academia/README.md).
+
 Multi-provider agent **fabric** — the shared layer for any agent (`claude` / `codex` / …)
 invoking and orchestrating one-shot child agents of any provider. The orchestrator and its
 children can each be any provider. Dual-form: an importable library **and** an MCP

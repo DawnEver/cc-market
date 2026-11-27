@@ -18,6 +18,10 @@ layers:
   thresholds moved into the glossary, so what is left varies per person.
 * ``columns``  — how to read the thing, then a line per column.
 
+Two sheets follow the audit when their CSVs sit beside it: ``reviewer list``
+(this manuscript's invitations, from an imported editorial page) and
+``works`` (each candidate's closest works, and the Reviewer Locator's).
+
 ``academia-referee report`` writes it. To rebuild one by hand from a CSV that is already
 on disk:
 
@@ -60,10 +64,10 @@ COUNTRY_NAMES = {
 
 WHITE_COLUMNS = ("rank", "reviewer", "email", "institution", "profile_url")
 
-#: The link column. Written as a hyperlink rather than raw text, because the
+#: The link columns. Written as hyperlinks rather than raw text, because the
 #: workbook is the only thing the editor gets and a URL they cannot click is a
 #: URL they retype.
-LINK_COLUMN = "profile_url"
+LINK_COLUMNS = ("profile_url", "orcid_url", "locator_wos_url", "doi_url")
 
 #: What each rule's block of columns is called in the sheet, in sheet order.
 #: Keyed by rule name, and that is the whole mapping: every fact a rule emits is
@@ -92,6 +96,26 @@ IDENTITY_COLUMNS = (
     "profile_url",
 )
 DECISION_BLOCK = ("recommend_for_reviewer", "blocking_reason")
+
+#: Blocks that state facts about a candidate as a reviewer rather than apply a
+#: rule (``academia.referee.reviewing``). Matched on the column's own name.
+SIGNAL_BLOCKS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("This manuscript", ("found_by", "invitation_status")),
+    ("Review-record check", ("review_record",)),
+    ("Reviewer Locator (imported)", ("locator_",)),
+    (
+        "Reviewing record",
+        (
+            "reviews",
+            "reviewed_target_journal",
+            "days_since_last_review",
+            "articles_window",
+            "invitations_",
+            "relevant_works",
+            "orcid_url",
+        ),
+    ),
+)
 
 #: What each column is called in the sheet. The internal name stays the key
 #: everywhere in this module but never reaches the workbook: a reader who has
@@ -153,7 +177,38 @@ LABELS: dict[str, str] = {
     "seniority_since": "The year it is counted from",
     "seniority_minimum": "Years required",
     "seniority_maximum": "Years this journal prefers to stay within (0 = no ceiling). A preference only; it excludes nobody.",
-    # Invitation response
+    # This manuscript
+    "found_by": "Found by (ours, locator or both)",
+    "invitation_status": "Invitation on this manuscript",
+    # Reviewing record — public sources, every run
+    "reviews": "Public peer reviews (ORCID)",
+    "reviews_source": "Where the review count came from",
+    "reviews_by_journal": "Public reviews by journal",
+    "reviews_last_12_months": "Public reviews in the last 12 months",
+    "reviewed_target_journal": "Has reviewed for this journal",
+    "days_since_last_review": "Days since the last public review",
+    "articles_window": "Articles in the last {articles_window_years} years (OpenAlex)",
+    "articles_window_years": "Years the article count covers",
+    "invitations_last_12_months": "Our invitations in the last 12 months, any manuscript",
+    "invitations_open": "Our invitations still unanswered, any manuscript",
+    "relevant_works": "Closest works to this manuscript",
+    "orcid_url": "ORCID record",
+    # Reviewer Locator — only when an editorial page was imported
+    "locator_reviews": "Verified reviews in Web of Science (Locator)",
+    "locator_articles": "Articles in Web of Science, 5 years (Locator)",
+    "locator_reviews_by_journal": "Verified reviews by journal (Locator)",
+    "locator_load": "ScholarOne assignments: current / past 12 months (Locator)",
+    "locator_days_since_review": "Days since last review (Locator)",
+    "locator_r_score": "Average R-Score (Locator)",
+    "locator_works": "Most relevant works (Locator)",
+    "locator_wos_url": "Web of Science researcher profile",
+    # Review-record check — a hint, never a verdict
+    "review_record": "Check: review record in proportion to output",
+    "review_record_ratio": "Reviews per article",
+    "review_record_reasons": "Why the review record is worth a second look",
+    "review_record_reviews_minimum": "Reviews before the check looks at a record",
+    "review_record_ratio_minimum": "Reviews per article before the check looks at a record",
+    "review_record_countries_minimum": "Countries of affiliation that count as many",
     "reasoning": "Reason for each check, in words",
 }
 
@@ -244,6 +299,7 @@ VERDICT_TEXT = {
     "recommend": "Recommend",
     "check_first": "Check first",
     "do_not_invite": "Do not invite",
+    "already_invited": "Already invited",
     "PASS": "Pass",
     "CLEAR": "Pass",
     "FILTERED": "Fail",
@@ -257,6 +313,7 @@ VERDICT_STYLE = {
     "Recommend": ("C6EFCE", "0B6B2E"),
     "Check first": ("FFE9A8", "8A6100"),
     "Do not invite": ("F8C9C6", "9C0006"),
+    "Already invited": ("D9E1F2", "1F3864"),
     "Pass": ("C6EFCE", "0B6B2E"),
     "Fail": ("F8C9C6", "9C0006"),
     "No evidence": ("FFE9A8", "8A6100"),
@@ -304,8 +361,41 @@ DECISION_COLUMNS = (
     "profile_url",
     "recommend_for_reviewer",
     "blocking_reason",
+    "found_by",
+    "invitation_status",
     *VERDICTS_IN_ORDER,
+    "reviews",
+    "reviews_by_journal",
+    "reviewed_target_journal",
+    "reviews_last_12_months",
+    "days_since_last_review",
+    "articles_window",
+    "invitations_last_12_months",
+    "invitations_open",
+    "review_record",
+    "review_record_reasons",
+    "relevant_works",
+    "orcid_url",
+    "locator_reviews",
+    "locator_articles",
+    "locator_reviews_by_journal",
+    "locator_load",
+    "locator_days_since_review",
+    "locator_r_score",
+    "locator_works",
+    "locator_wos_url",
     "reasoning",
+)
+
+#: Columns whose cells are sentences or lists, given room and wrapped.
+WIDE_COLUMNS = (
+    "reasoning",
+    "relevant_works",
+    "locator_works",
+    "reviews_by_journal",
+    "locator_reviews_by_journal",
+    "review_record_reasons",
+    "title",
 )
 
 HOW_TO_READ = [
@@ -334,6 +424,14 @@ HOW_TO_READ = [
         "6. Measured numbers are coloured against their own threshold.",
         "A count or rate is green once it reaches the figure named in its own column heading and red until it does, so a number reads pass or fail without looking across at the rule column.",
     ),
+    (
+        "7. Already invited is not a verdict.",
+        "Anyone the editorial system or academia-referee invite records as invited on this manuscript reads Already invited, whatever they answered, so they are never proposed twice. No rule judged them, so ‘Why not recommended’ stays blank. Their status is in ‘Invitation on this manuscript’ and, when a page was imported, on the reviewer list sheet.",
+    ),
+    (
+        "8. The reviewing record describes; it never decides.",
+        "Public reviews come from the ORCID record, where Web of Science writes most of them; a blank means no ORCID or no readable record, never zero reviews. Columns marked Locator exist only when a ScholarOne page was imported — R-Score and the ScholarOne workload have no public source and are never estimated. The review-record check can only ask for a second look.",
+    ),
     ("", ""),
 ]
 
@@ -348,6 +446,12 @@ def dimension_of(name: str) -> str:
     """
     if name in IDENTITY_COLUMNS:
         return "Identity"
+    for label, prefixes in SIGNAL_BLOCKS:
+        if any(
+            name.startswith(p) if p.endswith("_") else name == p or name.startswith(p + "_")
+            for p in prefixes
+        ):
+            return label
     if name in DECISION_BLOCK:
         return "Decision"
     if name == "reasoning":
@@ -391,7 +495,7 @@ GLOSSARY: dict[str, str] = {
     "restricted_country": "Fails anyone whose current affiliation is in a country the journal will not invite from. An unknown country abstains rather than guessing, and is sent for confirmation.",
     "restricted_country_current": "Country of the current affiliation, as an ISO code.",
     "restricted_country_countries": "The journal's restricted list, from its own policy file.",
-    "related_journals": "Passes once the verified related-journal count reaches the minimum. Counted over the evidence that qualified this candidate, so it asks about *this* topic rather than about output in general.",
+    "related_journals": "Passes once the verified related-journal count reaches the minimum stated in the heading (the journal's policy; TEC sets 2, the shared IEEE policy 3). Counted over the evidence that qualified this candidate, so it asks about *this* topic rather than about output in general. A candidate with no relevant paper in this run — even after their own works were fetched and scored — reads No evidence and at best Check first, never Recommend.",
     "related_journals_count": "Verified journal papers in venues related to the submission.",
     "related_journals_nonjournal": "Related conference or other non-journal items. They never satisfy the floor.",
     "related_journals_unresolved": "Related items whose venue type no source stated. Not counted, and not held against anybody — a candidate who misses the floor only on these is sent for a human check.",
@@ -414,7 +518,61 @@ GLOSSARY: dict[str, str] = {
     "seniority_basis": "doctorate = counted from a stated doctorate year, the better basis. first publication = the fallback, because ORCID states a doctorate year for a minority of researchers in this field.",
     "seniority_since": "The year the count starts from, so the figure can be checked.",
     "seniority_maximum": "The preferred ceiling. It scores and never excludes, whatever the mode says: refusing a reviewer for being too experienced is not something an editor should be able to state by accident, and a required ceiling once emptied a live shortlist of every senior name in it.",
+    "found_by": "ours = harvested by this run as an author of closely related work. locator = proposed only by the Web of Science Reviewer Locator on an imported ScholarOne page; their own works are fetched from OpenAlex (by ORCID, or by a name search their stored institution corroborates) and scored like everybody else's, and if none can be obtained the relevance rules read No evidence and ask for a check. both = found by each independently: this run's search harvested them too.",
+    "invitation_status": "Where this person stands on this manuscript: not yet invited, invited (no answer yet), declined, agreed, or returned (review submitted — known only from an imported editorial page). Read from the invitation record, which academia-referee invite and academia-referee import-scholarone both write. Anyone other than not yet invited reads Already invited and is not proposed again.",
+    "reviews": "Peer reviews on the public ORCID record — most written there by Web of Science on the reviewer's behalf. Blank = no ORCID, or the record could not be read: unknown, never zero. 0 = the record lists no public review, which a private section also produces.",
+    "reviews_source": "orcid = counted from the public ORCID record. unknown = nothing could be read.",
+    "reviews_by_journal": "The public reviews grouped by journal, most first. A journal ORCID names only by ISSN is named through OpenAlex; one OpenAlex does not know keeps its ISSN.",
+    "reviews_last_12_months": "Public reviews completed in the twelve months before this report. A review dated only to a year counts from 1 January of it.",
+    "reviewed_target_journal": "Whether any public review (ORCID) or any Locator review was for this journal, matched on the journal's name and the ISSNs in its config. Blank when nothing could be read.",
+    "days_since_last_review": "Days from the most recent dated public review to the day this report was written.",
+    "articles_window": "Works per year on the candidate's OpenAlex profile, summed over the window in [reviewing] article_window_years — the whole record, not only this topic. Blank when no profile was read.",
+    "invitations_last_12_months": "Invitations recorded in this store, on any manuscript, in the last twelve months — our own load signal, from academia-referee invite and imported pages.",
+    "invitations_open": "Invitations recorded in this store that have no answer yet, on any manuscript.",
+    "relevant_works": "The three works of theirs this run scored closest to the manuscript, with venue, year and DOI link. The works sheet lists them with clickable links.",
+    "orcid_url": "Their ORCID record, when the identity carries one.",
+    "locator_reviews": "Verified reviews Web of Science counts for this person, as the imported Locator page stated it.",
+    "locator_articles": "Articles Web of Science counts over the Locator's five-year window, as imported.",
+    "locator_reviews_by_journal": "The Locator's verified reviews grouped by journal, as imported.",
+    "locator_load": "ScholarOne's own count of this person's assignments on this journal's site: currently open / in the past twelve months. Exists only inside the editorial system, so only an imported page supplies it.",
+    "locator_days_since_review": "The Locator's days since this person last completed a review, as imported.",
+    "locator_r_score": "ScholarOne's average reviewer score for this person. It has no public source; it is shown only when imported and never estimated.",
+    "locator_works": "The Locator's 'Most Relevant Works' for this person: title, venue, year, DOI. Chosen by Web of Science, not scored by this run.",
+    "locator_wos_url": "The Web of Science researcher profile the Locator links. Shown for the editor to open; this tool never fetches it.",
+    "review_record": "A hint, never a verdict: Check by hand when the review count reaches the minimum and the reviews per article reach the ratio, together with only a free-mail address known or affiliations in many countries. Pass otherwise; No evidence when either count is unknown. Thresholds and the free-mail list are [reviewing.record_check] in coi.toml. The Locator's verified counts are used where imported, the public counts otherwise. It excludes nobody and moves no score.",
+    "review_record_ratio": "Reviews divided by articles, on the same basis the check used. Blank when the person has no counted articles.",
+    "review_record_reasons": "What made the check ask for a second look, in words.",
     "reasoning": "One human-readable sentence per rule. The reason an editor can disagree with.",
+}
+
+#: The two extra sheets, documented in the glossary under their own names.
+SHEET_GLOSSARY: dict[str, dict[str, str]] = {
+    "reviewer list": {
+        "order": "Position in the editorial system's reviewer list.",
+        "reviewer": "Name as the editorial system lists it.",
+        "affiliation": "Affiliation as the editorial system lists it.",
+        "orcid_url": "ORCID the editorial system lists, when there is one.",
+        "status": "ScholarOne's status for the invitation, verbatim.",
+        "invited": "Date invited.",
+        "agreed": "Date agreed, when they did.",
+        "declined": "Date declined, when they did.",
+        "due": "Date the review is due.",
+        "returned": "Date the review came back.",
+        "days_in_review": "Days the review took, as ScholarOne states it.",
+        "decision_letter": "Position of this review in the decision letter.",
+        "match_method": "How the invitee was attached to a person in the store: orcid, email, name (only when exactly one candidate in this run carries the name) or new.",
+        "in_candidate_pool": "Whether this invitee is also on the decision sheet.",
+    },
+    "works": {
+        "reviewer": "The candidate.",
+        "found_by": "As on the decision sheet.",
+        "source": "this run = among the works this run scored closest to the manuscript. Reviewer Locator = as the imported page listed it.",
+        "title": "Title of the work.",
+        "venue": "Where it appeared.",
+        "year": "Year of publication.",
+        "doi_url": "The DOI link, else a landing page this run observed.",
+        "authors": "Authors as the Locator lists them (blank for this run's works; see the dossiers).",
+    },
 }
 
 
@@ -481,20 +639,21 @@ LINK_FONT = Font(color="0563C1", underline="single")
 
 
 def _style_links(ws, header: list[str]) -> None:
-    """Make the one URL column clickable, and only where there is a URL.
+    """Make the URL columns clickable, and only where there is a URL.
 
     A cell holding the word for "nothing found" must not become a hyperlink to
     it, so the test is the value itself rather than the column.
     """
-    if LINK_COLUMN not in header:
-        return
-    letter = get_column_letter(header.index(LINK_COLUMN) + 1)
-    for cell in ws[letter][1:]:
-        target = str(cell.value or "")
-        if not target.startswith(("http://", "https://")):
+    for column in LINK_COLUMNS:
+        if column not in header:
             continue
-        cell.hyperlink = target
-        cell.font = LINK_FONT
+        letter = get_column_letter(header.index(column) + 1)
+        for cell in ws[letter][1:]:
+            target = str(cell.value or "")
+            if not target.startswith(("http://", "https://")):
+                continue
+            cell.hyperlink = target
+            cell.font = LINK_FONT
 
 
 def _finish(
@@ -526,7 +685,7 @@ def _finish(
         widest = max([len(str(r[column - 1])) for r in body] or [0])
         # A URL truncated to 24 characters is unreadable even when it is still
         # clickable, so the link column gets its own ceiling.
-        ceiling = 44 if name == LINK_COLUMN else 24
+        ceiling = 44 if name in LINK_COLUMNS else 24
         ws.column_dimensions[letter].width = min(max(widest + 2, 8), ceiling)
 
 
@@ -694,19 +853,16 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
     for row in decision_body:
         decision.append(row)
     _finish(
-        decision,
-        decision_header,
-        decision_body,
-        decision_verdicts,
-        freeze="A2",
-        wide=("reasoning",),
+        decision, decision_header, decision_body, decision_verdicts, freeze="A2", wide=WIDE_COLUMNS
     )
 
     audit = wb.create_sheet("audit")
     audit.append(header)
     for row in body:
         audit.append(row)
-    _finish(audit, header, body, verdicts, freeze="A2", wide=("reasoning",))
+    _finish(audit, header, body, verdicts, freeze="A2", wide=WIDE_COLUMNS)
+
+    extra = _extra_sheets(wb, src.parent)
 
     glossary = wb.create_sheet("columns")
     for title, text in HOW_TO_READ:
@@ -718,6 +874,12 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
         cell.fill = PatternFill("solid", fgColor="D9D9D9")
     for name in header:
         glossary.append([dimension_of(name), label_of(name), GLOSSARY.get(name, "(undocumented)")])
+    for sheet in extra:
+        glossary.append([])
+        glossary.append([f"{sheet} sheet", "", ""])
+        glossary.cell(row=glossary.max_row, column=1).font = Font(bold=True)
+        for name, text in SHEET_GLOSSARY[sheet].items():
+            glossary.append([sheet, name, text])
     if constants:
         glossary.append([])
         glossary.append(
@@ -734,6 +896,50 @@ def build(src: Path, dst: Path, journal: str = "") -> tuple[int, int, int]:
     wb.active = 0
     wb.save(dst)
     return len(body), len(decision_header), len(header)
+
+
+def _read(path: Path) -> tuple[list[str], list[list]]:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    if not rows:
+        return [], []
+    return rows[0], [[cast(value) for value in row] for row in rows[1:]]
+
+
+def _plain_sheet(ws, header: list[str], body: list[list]) -> None:
+    ws.append(header)
+    for row in body:
+        ws.append(row)
+    _finish(ws, header, body, [[None] * len(header) for _ in body], freeze="A2", wide=WIDE_COLUMNS)
+    # Plain headings: these sheets are lists, and the decision sheet's labels
+    # (written for its own columns) would misname theirs.
+    for cell, name in zip(ws[1], header, strict=True):
+        cell.value = name.replace("_", " ").capitalize()
+
+
+def _extra_sheets(wb, directory: Path) -> list[str]:
+    """The reviewer list and the works, when their CSVs sit beside the audit."""
+    made = []
+    editorial = directory / "editorial-reviewers.csv"
+    if editorial.exists():
+        ws = wb.create_sheet("reviewer list")
+        header, body = _read(editorial)
+        _plain_sheet(ws, header, body)
+        summary = directory / "editorial-summary.csv"
+        if summary.exists():
+            _, items = _read(summary)
+            ws.append([])
+            for item in items:
+                ws.append(item)
+                ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
+        made.append("reviewer list")
+    works = directory / "works.csv"
+    if works.exists():
+        header, body = _read(works)
+        if body:
+            _plain_sheet(wb.create_sheet("works"), header, body)
+            made.append("works")
+    return made
 
 
 def main(argv: list[str] | None = None) -> int:

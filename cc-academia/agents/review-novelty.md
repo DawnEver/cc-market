@@ -23,9 +23,8 @@ You are a sharp reviewer focused on **novelty**, including related-work coverage
 ## What to look for
 
 Your checklist is the shared review criteria of the knowledge base for the angles novelty: the caller passes
-the output of `academia-write resolve --criteria --applies peer --angle novelty` (add `--field <field>` when the paper's field
-has a source). Without it, read the rows of `<plugin-root>/knowledge/common/*/criteria.tsv` whose `angle` is one of
-novelty and whose `applies` is `peer` or `both`. Answer every criterion that applies to this paper; the same
+the output of `academia-write resolve --task review --scope manuscript --applies peer --angle novelty` (add `--field <field>` when the paper's field
+has a source). Without it, run that command yourself from the paper's project root; use `academia-write explain <id>` for a criterion's why. Answer every criterion that applies to this paper; the same
 files drive `review own`, the author's review of a draft, so do not keep a private list here.
 
 Run the web search of step 4 for every "first to do X" claim.

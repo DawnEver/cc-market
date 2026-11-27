@@ -8,6 +8,9 @@ replaces state spread over dated memory files. Present only where a repo has
 <main checkout>/.claude/tasks/            the LEDGER: one per repository
   <slug>/TASK.md      goal, scope, owner, status — written only by the user's /rem:task command
   <slug>/JOURNAL.md   append-only: dated progress, decisions Dn, open items On, handoffs
+  <slug>/chapters/    older journal lines moved verbatim by `task.js distill` (<date>.md), and decisions an
+                      agent's plan distilled with their pointers (distilled.md); ids never change, and the
+                      journal a verb reads is chapters + JOURNAL.md
 <machine home>/state/sessions/<session>.json   the session's binding — written only by rem's
                                                UserPromptSubmit hook (§ Bind); one per session, every repo
 ```
@@ -19,11 +22,26 @@ checkout's `.claude/tasks/`, the same directory from every worktree. A task open
 is found, bound, journaled and admitted from every other. The ledger is never committed on a
 feature branch; `close` archives a task into the closing tree's memory, which is committed.
 
+**A task's identity is ONE forge issue** (D88, cc-market #44): labelled `task:<slug>` on the forge of
+the repo that hosts the task. `open` opens it and records its URL as `issue:` in `TASK.md`; `close`
+closes it. A ledger is one machine's journal of that identity, so two machines' ledgers of one task
+name the same issue. `task: <slug>` looks in this repo's ledger, then in this machine's other ledgers
+(recorded in `<machine home>/state/ledgers/`, and those session bindings name), then for the open
+`task:<slug>` issue on those repos' forges, which it adopts into a ledger here (`authority: issue-<n>`);
+the binding names the ledger the task was FOUND in, so a session started in repo Y binds a task of repo
+X, and its journal verbs write there. rem reaches the forge through ONE door, `REM_FORGE` (a JSON argv
+prefix of the family's forge CLI, written by `python -m dev_lab.dev.remhome --install`); unset, `open`
+and a forge lookup refuse naming it. The verbs and their JSON: `scripts/task-forge.mjs`.
+
 ## Open — refused by default, detectable when bypassed
 
-`/rem:task open <slug> "<goal>" [--scope <paths>] [--owner <who>]` — a user slash command
+`/rem:task open <slug> "<goal>" [--scope <paths>] [--needs <a,b>] [--owner <who>]` — a user slash command
 (`claude-commands/task.md`, `disable-model-invocation: true`). It runs `scripts/task.js open` through
 command expansion, which is not a tool call. `TASK.md` carries `opened_by: user`.
+
+`--needs` names the test resources the task exercises (D79), written as `needs: [a, b]`: a consumer's dependency
+door maps each need to whatever serves it, so a task declares needs, never packages. The bound session amends
+them with `task.js needs set <a,b>`, which rewrites that one line and records old and new as a decision.
 
 An authority record is a precondition of the library itself: `openTask` / `closeTask` consume a
 grant that the user's own prompt creates. `hooks/task-authority.js` (the task half of rem's one UserPromptSubmit hook `hooks/user-prompt.js`, the one task
@@ -90,7 +108,7 @@ git-side gate (another tool's pre-push hook) reads it and never writes it:
   `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex (the executing thread, never
   a parent's id);
 - valid only while `<ledger>/<slug>/TASK.md` has frontmatter `status: open` and the same
-  `authority: <authority>`; anything else binds nothing. rem's own journal verbs act only in that ledger's repo.
+  `authority: <authority>`; anything else binds nothing. rem's own journal verbs act in that ledger, from any repo.
 - the retired per-repo store `<ledger>/.bindings/<session>.json` is never read: `migrations/migrate.mjs
   <main checkout>` moves its records ONCE (a second run is a no-op), and a record still there is refused by
   name with that migration.
@@ -152,6 +170,13 @@ two audited rewrites. Every other rewrite stays refused (the library and the Pre
    archived journal). It appends `closed: <reason>`, sets `status: closed`, then ARCHIVES:
    `git mv .claude/tasks/<slug> .claude/memory/<close-date>/task-<slug>/` (a plain rename outside
    git). Nothing is deleted. An agent proposes closing; the user runs the command.
+3. **onClose** — a repo may declare what a close also does: `.claude/rem.json`
+   `{"onClose": ["<prog>", "<arg>", "{slug}"]}`, an argv (no shell) whose `{slug}` is the closed task, run
+   from the project root after every refusal above has passed and before the archive. It never blocks
+   the close: its exit and output (stdout then stderr, one line) go on the closed line as
+   `(on close, exit <n>: ...)` and are printed. Undeclared, nothing extra runs; a declaration that is not
+   an argv array refuses the close before any write. rem names no consumer — a family, for example,
+   declares a command that prunes the task's `pr/<slug>/*` branches and names each one it keeps.
 
 ## An archived task is memory
 

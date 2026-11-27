@@ -2,17 +2,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { AiLabUnavailable, aiLabPython, moduleFailure, mergeRun, planRun, projectPrinciples, projectRuleIds, providerCachePath } from '../scripts/lib/ai-lab.mjs';
+import { AiLabUnavailable, aiLabPython, moduleFailure, mergeRun, planRun, projectPrinciplesText, projectRuleIds, providerCachePath } from '../scripts/lib/ai-lab.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const POST_REVIEW = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'post-review.js');
 
 function withDir(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'sr-ailab-'));
+  const dir = tempDir('sr-ailab-');
   try { return fn(dir); } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
@@ -57,14 +57,26 @@ test('a project without a dev-lab interpreter states no registry rules (empty, n
   assert.equal(projectRuleIds(dir), '');
 }));
 
-test('a project and an ai-lab without dev-lab state no principles (an empty list file, never omitted)', () => withDir((dir) => {
-  assert.deepEqual(JSON.parse(readFileSync(projectPrinciples(dir, { fallback: null }), 'utf8')), { principles: [] });
+test('a project and an ai-lab without dev-lab state no principles (an empty list, never omitted)', () => withDir((dir) => {
+  assert.deepEqual(JSON.parse(projectPrinciplesText(dir, { fallback: null })), { principles: [] });
 }));
 
 test('an interpreter without ai-lab cannot plan: no planner of our own', () => {
   assert.throws(() => planRun({ run_id: 'r' }, { python: process.execPath }),
     (e) => e instanceof Error && /ai_lab\.review\.plan exited|AiLabUnavailable/.test(`${e.name} ${e.message}`));
 });
+
+test('a plan or merge reclaims the principles file it wrote, whether the run succeeds or fails', () => withDir((dir) => {
+  const saved = { TMP: process.env.TMP, TEMP: process.env.TEMP, TMPDIR: process.env.TMPDIR };
+  Object.assign(process.env, { TMP: dir, TEMP: dir, TMPDIR: dir });
+  try {
+    assert.throws(() => planRun({ run_id: 'r' }, { python: process.execPath, rules: '' }));
+    assert.throws(() => mergeRun({ run_id: 'r' }, { python: process.execPath, rules: '' }));
+    assert.deepEqual(readdirSync(dir), []);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}));
 
 // ── Through the installed ai-lab (the provider cache's interpreter), as post-review's suite does ──
 

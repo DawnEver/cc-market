@@ -31,17 +31,15 @@ _GITATTRIBUTES: Final = (
 )
 
 # The Makefile is a REQUIRED base: its target headers are the family's, its recipes this repo's. Every line the
-# base does not name -- the phony set, the default goal, the test list and the node recipes.
+# base does not name -- the phony set, the default goal and the node recipe (scripts/run-tests.mjs owns the test list).
 _MAKEFILE: Final = (
     ".DEFAULT_GOAL := all",
     ".PHONY: all clean fmt install install-dev lint test test-parallel verify",
-    "NODE_TESTS := fabric/tests/*.test.mjs rem/tests/*.test.mjs sharp-review/tests/*.test.mjs evolve/tests/*.test.mjs shared/tests/*.test.mjs tests/*.test.mjs",
     "\trm -rf output",
     "\tuv sync --frozen",
     "\tuv sync --frozen --all-groups",
     "\tuv run python -m dev_lab.dev.hook_install --install",
-    "\tnode --test $(NODE_TESTS)",
-    "\tnode --test --test-concurrency=4 $(NODE_TESTS)",
+    "\tnode scripts/run-tests.mjs",
 )
 
 #: The base's verify recipe is ruff plus pytest; this repo's tests are node:test, so `verify` runs the node suite --

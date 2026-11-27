@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "Evolve",
     "shortDescription": "Iterative TDD review→fix loop — critique, fan out fix agents, verify, gate hard",
-    "longDescription": "Iterative TDD reviewâ†’fix loop â€” each round critiques the codebase, fans out fix agents over disjoint files, verifies, gates hard calls to the human, keeps tests green, and commits. Severity-based convergence with safety caps.",
+    "longDescription": "RETIRED (no longer updated, 2026-11-24). Iterative TDD reviewâ†’fix loop â€” each round critiques the codebase, fans out fix agents over disjoint files, verifies, gates hard calls to the human, keeps tests green, and commits. Severity-based convergence with safety caps.",
     "developerName": "Mingyang Bao",
     "category": "Productivity",
     "capabilities": [

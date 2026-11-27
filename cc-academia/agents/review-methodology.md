@@ -20,9 +20,8 @@ Read `ongoing/<slug>/2-review/summary.md` BEFORE anything else. Then read the fu
 ## Step 2: Hunt
 
 Your checklist is the shared review criteria of the knowledge base for the angles methodology, reproducibility: the caller passes
-the output of `academia-write resolve --criteria --applies peer --angle methodology --angle reproducibility` (add `--field <field>` when the paper's field
-has a source). Without it, read the rows of `<plugin-root>/knowledge/common/*/criteria.tsv` whose `angle` is one of
-methodology, reproducibility and whose `applies` is `peer` or `both`. Answer every criterion that applies to this paper; the same
+the output of `academia-write resolve --task review --scope manuscript --applies peer --angle methodology --angle reproducibility` (add `--field <field>` when the paper's field
+has a source). Without it, run that command yourself from the paper's project root; use `academia-write explain <id>` for a criterion's why. Answer every criterion that applies to this paper; the same
 files drive `review own`, the author's review of a draft, so do not keep a private list here.
 
 Be specific. "The proof of Theorem 2 is hand-wavy" is useless. "Step from eq. (7) to (8) uses Jensen's inequality in the wrong direction — `E[f(X)] ≤ f(E[X])` needs concave f, but f is convex here" is a real finding.

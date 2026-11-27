@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   initState,
   loadState,
   saveState,
+  statePath,
   recordRound,
   groupFindings,
   prioritize,
@@ -18,10 +20,12 @@ import {
   seedFromSharpReview,
   writeRoundLog,
 } from '../scripts/evolve.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
-function tmpProject() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'evolve-test-'));
+function tmpProject({ git = true } = {}) {
+  const root = tempDir('evolve-test-');
   fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+  if (git) execFileSync('git', ['init', '-q', root]);
   return root;
 }
 
@@ -177,40 +181,29 @@ test('confirmedByQuorum same reviewer twice does not count as quorum', () => {
   assert.equal(confirmedByQuorum(raw, 2).length, 0);
 });
 
-test('saveState preserves foreign keys (rem/sharp-review slice) via shared deepMerge', () => {
+test('the loop state lives in the checkout\'s git dir, never in a rem state file', () => {
   const root = tmpProject();
-  const stateFile = path.join(root, '.claude', '.rem-state.json');
-  // Simulate a file owned by other plugins (hook + reviewGate) with no evolveState yet.
-  fs.writeFileSync(stateFile, JSON.stringify({
-    hook: { taskActiveUntil: 999 },
-    reviewGate: { wave: 2, memory: ['x'] },
-  }, null, 2));
+  const file = statePath(root);
+  assert.equal(path.relative(path.join(root, '.git'), file), path.join('evolve', 'state.json'));
 
   const st = initState({ until: 'clean' });
   st.round = 3;
-  const res = saveState(root, st);
-  assert.equal(res.persisted, true);
-
-  const written = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-  assert.equal(written.evolveState.round, 3);
-  assert.equal(written.reviewGate.wave, 2);          // foreign key preserved
-  assert.deepEqual(written.reviewGate.memory, ['x']); // foreign key preserved
-  assert.equal(written.hook.taskActiveUntil, 999);    // hook slice preserved
+  assert.equal(saveState(root, st).persisted, true);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).round, 3);
+  assert.ok(!fs.existsSync(path.join(root, '.claude', '.rem-state.json')), 'rem is retired: no .rem-state.json');
 
   const reloaded = loadState(root);
   assert.equal(reloaded.round, 3);
   assert.equal(reloaded.until, 'clean');
 });
 
-test('saveState creates the state file when absent (hard rem dependency)', () => {
-  const root = tmpProject(); // no .rem-state.json yet
-  const st = initState();
-  st.round = 2;
-  const res = saveState(root, st);
-  assert.equal(res.persisted, true);
-  // file is created and reloads the persisted state
-  assert.ok(fs.existsSync(path.join(root, '.claude', '.rem-state.json')));
-  assert.equal(loadState(root).round, 2);
+test('a fresh checkout loads the initial state', () => {
+  assert.deepEqual(loadState(tmpProject()), initState());
+});
+
+test('outside a git checkout the state refuses by name and names its door', () => {
+  const root = tmpProject({ git: false });
+  assert.throws(() => saveState(root, initState()), /not a git checkout.*git init/s);
 });
 
 test('seedFromSharpReview pulls OPEN findings, skips fixed', () => {

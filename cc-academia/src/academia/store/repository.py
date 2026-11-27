@@ -906,3 +906,173 @@ def store_institution_for(
 
 def normalize_institution_key(name: str) -> str:
     return normalize_title(name)
+
+
+# --------------------------------------------------------- reviewing record
+
+
+def set_review_record(
+    conn: sqlite3.Connection,
+    person_id: str,
+    reviews: Sequence[dict[str, Any]],
+    *,
+    source: str,
+    source_url: str = "",
+) -> None:
+    """Replace one person's public reviews from one source, and note the check.
+
+    Replaced rather than merged: the source states the whole list, so a review
+    the person has since hidden must not linger here.
+    """
+    conn.execute(
+        "DELETE FROM person_reviews WHERE person_id = ? AND source = ?", (person_id, source)
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO person_reviews "
+        "(person_id, review_key, group_id, journal, completed, source) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (
+                person_id,
+                str(item["review_key"]),
+                item.get("group_id") or None,
+                item.get("journal") or None,
+                item.get("completed") or None,
+                source,
+            )
+            for item in reviews
+        ],
+    )
+    conn.execute(
+        "INSERT INTO person_review_checks (person_id, source, source_url, checked_at) "
+        "VALUES (?, ?, ?, ?) ON CONFLICT(person_id) DO UPDATE SET source = excluded.source, "
+        "source_url = excluded.source_url, checked_at = excluded.checked_at",
+        (person_id, source, source_url or None, utcnow()),
+    )
+
+
+def review_record(
+    conn: sqlite3.Connection, person_id: str
+) -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+    """The check (``None`` = never read) and the reviews it found."""
+    check = conn.execute(
+        "SELECT * FROM person_review_checks WHERE person_id = ?", (person_id,)
+    ).fetchone()
+    rows = conn.execute(
+        "SELECT * FROM person_reviews WHERE person_id = ? ORDER BY completed DESC",
+        (person_id,),
+    ).fetchall()
+    return check, rows
+
+
+# ------------------------------------------------- editorial-system imports
+
+
+_MS_ROW_STATEMENTS: dict[str, tuple[str, str, str]] = {
+    "locator_suggestions": (
+        "SELECT * FROM locator_suggestions WHERE ms_id = ? ORDER BY position",
+        "DELETE FROM locator_suggestions WHERE ms_id = ?",
+        "INSERT OR REPLACE INTO locator_suggestions "
+        "(ms_id, person_id, position, match_method, data_json, imported_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+    ),
+    "editorial_invitations": (
+        "SELECT * FROM editorial_invitations WHERE ms_id = ? ORDER BY position",
+        "DELETE FROM editorial_invitations WHERE ms_id = ?",
+        "INSERT OR REPLACE INTO editorial_invitations "
+        "(ms_id, person_id, position, match_method, data_json, imported_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+    ),
+}
+
+
+def _ms_row_statements(table: str) -> tuple[str, str, str]:
+    """The literal (select, delete, insert) statements for *table*; never interpolated."""
+    if table not in _MS_ROW_STATEMENTS:
+        raise ValueError(f"no manuscript-row table {table!r}; known: {sorted(_MS_ROW_STATEMENTS)}")
+    return _MS_ROW_STATEMENTS[table]
+
+
+def _replace_ms_rows(
+    conn: sqlite3.Connection, table: str, ms_id: str, rows: Sequence[dict[str, Any]]
+) -> None:
+    """Replace one manuscript's rows in *table*."""
+    _select_sql, delete_sql, insert_sql = _ms_row_statements(table)
+    conn.execute(delete_sql, (ms_id,))
+    now = utcnow()
+    conn.executemany(
+        insert_sql,
+        [
+            (
+                ms_id,
+                row["person_id"],
+                row["position"],
+                row["match_method"],
+                json.dumps(row["data"], ensure_ascii=False),
+                now,
+            )
+            for row in rows
+        ],
+    )
+
+
+def _ms_rows(conn: sqlite3.Connection, table: str, ms_id: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "person_id": row["person_id"],
+            "position": row["position"],
+            "match_method": row["match_method"],
+            "data": json.loads(row["data_json"]),
+        }
+        for row in conn.execute(_ms_row_statements(table)[0], (ms_id,))
+    ]
+
+
+def replace_locator_suggestions(
+    conn: sqlite3.Connection, ms_id: str, rows: Sequence[dict[str, Any]]
+) -> None:
+    _replace_ms_rows(conn, "locator_suggestions", ms_id, rows)
+
+
+def locator_suggestions(conn: sqlite3.Connection, ms_id: str) -> list[dict[str, Any]]:
+    return _ms_rows(conn, "locator_suggestions", ms_id)
+
+
+def replace_editorial_invitations(
+    conn: sqlite3.Connection, ms_id: str, rows: Sequence[dict[str, Any]]
+) -> None:
+    _replace_ms_rows(conn, "editorial_invitations", ms_id, rows)
+
+
+def editorial_invitations(conn: sqlite3.Connection, ms_id: str) -> list[dict[str, Any]]:
+    return _ms_rows(conn, "editorial_invitations", ms_id)
+
+
+def set_editorial_import(conn: sqlite3.Connection, ms_id: str, data: dict[str, Any]) -> None:
+    conn.execute(
+        "INSERT INTO editorial_imports (ms_id, data_json, imported_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(ms_id) DO UPDATE SET data_json = excluded.data_json, "
+        "imported_at = excluded.imported_at",
+        (ms_id, json.dumps(data, ensure_ascii=False), utcnow()),
+    )
+
+
+def editorial_import(conn: sqlite3.Connection, ms_id: str) -> dict[str, Any]:
+    row = conn.execute(
+        "SELECT data_json FROM editorial_imports WHERE ms_id = ?", (ms_id,)
+    ).fetchone()
+    return json.loads(row["data_json"]) if row else {}
+
+
+def person_by_email(conn: sqlite3.Connection, email: str) -> str | None:
+    row = conn.execute(
+        "SELECT person_id FROM emails WHERE email = ?", ((email or "").lower(),)
+    ).fetchone()
+    return row["person_id"] if row else None
+
+
+def person_by_orcid(conn: sqlite3.Connection, orcid: str) -> str | None:
+    clean = normalize_orcid(orcid)
+    if not clean:
+        return None
+    row = conn.execute("SELECT person_id FROM persons WHERE orcid = ?", (clean,)).fetchone()
+    return row["person_id"] if row else None

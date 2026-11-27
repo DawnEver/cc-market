@@ -14,6 +14,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
+from academia.referee import reviewing
 from academia.referee import workbook as script
 
 #: The audit CSV as a run writes it: identity, the decision, then one verdict
@@ -353,6 +354,8 @@ def test_nothing_is_labelled_that_no_rule_produces():
     # rules; they reach the audit from the report rather than from RULES.
     produced |= {"coi", "coi_severity", "coi_finding_count"}
     produced |= {"author_country_reference", "author_country_cross_region"}
+    # Reviewing signals describe a candidate; they reach the audit from report.
+    produced |= set(reviewing.COLUMNS)
 
     assert not set(script.LABELS) - produced
     assert not set(script.GLOSSARY) - produced
@@ -391,3 +394,11 @@ def test_the_workbook_follows_the_policy_rather_than_restating_it(tmp_path):
     # workbook has no column for them — not a column of blanks.
     assert not [h for h in heading if h and "PhD student" in h]
     assert not [h for h in heading if h and "independent career" in h]
+
+
+def test_every_reviewing_column_is_named_and_explained():
+    for column in reviewing.COLUMNS:
+        assert column in script.LABELS, f"{column} would print as a field name"
+        assert script.dimension_of(column), f"{column} belongs to no block"
+        if not column.endswith(script.THRESHOLD_SUFFIXES):
+            assert column in script.GLOSSARY, f"{column} would print as (undocumented)"

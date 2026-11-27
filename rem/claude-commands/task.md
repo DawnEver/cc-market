@@ -1,6 +1,6 @@
 ---
 description: Open or close a task — the user's command (refused by default for an agent) — rem's tasks layer
-argument-hint: open <slug> "<goal>" [--scope <paths>] [--owner <who>] | close <slug> ["<reason>"] [--journal-only D<n>,...]
+argument-hint: open <slug> "<goal>" [--scope <paths>] [--needs <a,b>] [--owner <who>] | close <slug> ["<reason>"] [--journal-only D<n>,...]
 allowed-tools: Bash(node:*)
 disable-model-invocation: true
 ---

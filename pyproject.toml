@@ -22,14 +22,9 @@ ai-lab = { git = "https://github.com/DawnEver/ai-lab.git", branch = "integrate/m
 [tool.dev_lab.parts]
 output = "output/logs"
 
-# The complete JS suite (AGENTS.md "Tests & Git Hooks"); node expands the globs itself on every OS.
+# The complete JS suite: its one list, and the empty-temp-root check, live in scripts/run-tests.mjs.
 [tool.lab_commons.tests]
-produce = [
-    "-m", "dev_lab.dev.commandpart", "{part}", "--",
-    "node", "--test", "--test-concurrency=4",
-    "fabric/tests/*.test.mjs", "rem/tests/*.test.mjs", "sharp-review/tests/*.test.mjs", "evolve/tests/*.test.mjs",
-    "shared/tests/*.test.mjs", "tests/*.test.mjs",
-]
+produce = ["-m", "dev_lab.dev.commandpart", "{part}", "--", "node", "scripts/run-tests.mjs"]
 
 # ONE branch: `main` IS the published marketplace -- Claude Code and Codex clone the repository's DEFAULT branch,
 # and the family's two-branch flow makes integrate/main the default (its nightly schedule runs there), so every new
@@ -47,6 +42,10 @@ test_roots = []
 trunk = "main"
 sessions = ["main"]
 prune_merged = true
+# Branch limits (user ruling 2026-11-20): land or retire a head past them (dev_lab.dev.branchpolicy).
+max_ahead = 10
+max_idle_hours = 12
+ephemeral = ['pr/*']
 
 # FORGE-PROTECTION-DECLARED (dev_lab.dev.forgeprotect): the ONE bypass identity per forge; on GitHub the ops App
 # merges break-glass and the repo admin stays. `python -m dev_lab.dev.forge protect plan|check|apply`.
@@ -54,9 +53,8 @@ prune_merged = true
 [tool.dev_lab.protection.forges."github.com"]
 breakglass = ["app:5704921", "role:admin"]
 
-# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10); ADVISORY, never a gate.
+# Who reviews is bound once in the family layer's [roles.github] (D73); this repo keeps only its judge App id.
 [tool.dev_lab.review]
-where = "judge"
 judge_app = 5619495
 
 # Git hooks: the family base (dev_lab/dev/githooks/base.toml), plus this repo's own: the staged-plugin tests,
@@ -88,25 +86,23 @@ setup = [
     { name = "Record the provider cache", shell = "bash", run = 'mkdir -p ~/.claude && uv run --no-sync python -m ai_lab.providers --json > ~/.claude/provider-cache.json' },
 ]
 
-# The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).
-[tool.dev_lab.ci."review-prepare.yml"]
-forge = "github"
-
 # cc-academia's Python suite in its own uv environment, and the secret scan over a public tree whose fixtures are
 # captured from live APIs. Not a merge gate: the forge's merge decision reads the parts (tests/base).
 [tool.dev_lab.ci."cc-academia-ci.yml"]
 name = "cc-academia"
 on = { push = { branches = ["main"] }, pull_request = {} }
+jobs.test.role = "tests"  # a test suite: rendered only where the family binds tests to ci (D73)
 jobs.test.runs-on = "ubuntu-latest"
 # The plugin is one directory of a multi-plugin repository: every uv step runs inside it.
 jobs.test.defaults.run.working-directory = "cc-academia"
 jobs.test.steps = [
     { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
-    { name = "Sync", run = "uv sync --all-extras --no-install-package paper-pdf-ingest" },
+    { name = "Sync", run = "uv sync --extra ai --extra acquire --extra browser --extra pdf --extra plot --extra zotero --extra embed --no-install-package paper-pdf-ingest" },
     { name = "Lint", run = "uv run ruff check ." },
     { name = "Test", run = "uv run python -m pytest -q" },
 ]
+jobs.secrets.role = "tests"  # the secret scan checks the tree like a test (D73)
 jobs.secrets.runs-on = "ubuntu-latest"
 jobs.secrets.steps = [
     { uses = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", with = { fetch-depth = 0 } },

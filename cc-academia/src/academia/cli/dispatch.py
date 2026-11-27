@@ -258,6 +258,16 @@ def build_referee_parser() -> argparse.ArgumentParser:
     _add_facts_flag(contacts)
     _add_common(contacts)
 
+    imported = sub.add_parser(
+        "import-scholarone",
+        help="Store a saved ScholarOne Assign Reviewers page: Locator suggestions "
+        "and this manuscript's invitation statuses. Optional.",
+    )
+    imported.add_argument("--slug", required=True)
+    imported.add_argument("html", help="The page saved from the browser (HTML only).")
+    _add_facts_flag(imported)
+    _add_common(imported)
+
     invite = sub.add_parser(
         "invite",
         help="Record that a candidate was invited, and how they answered.",
@@ -318,6 +328,7 @@ def _referee_handlers() -> dict[str, Handler]:
         "report": referee_cli.run_report,
         "contacts": referee_cli.run_contacts,
         "invite": referee_cli.run_invite,
+        "import-scholarone": referee_cli.run_import_scholarone,
         "facts": referee_cli.run_facts,
         "status": referee_cli.run_status,
     }

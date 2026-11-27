@@ -43,7 +43,8 @@ with a rule and a citation, not an opinion.
 | 01 | `01-intake.md` | `academia-referee init` / `profile` | sanitized record + search profile |
 | 02 | `02-search.md` | `academia-referee search` | related papers, de-duplicated, stored |
 | 03 | `03-candidates.md` | `academia-referee candidates` | authors of the closest work |
-| 04 | `04-enrich.md` | `academia-referee enrich` | affiliation, career, public email |
+| 04 | `04-enrich.md` | `academia-referee enrich` | affiliation, career, public email, public review record |
+| (optional) | `04-enrich.md` § Editorial page | `academia-referee import-scholarone` | Reviewer Locator candidates and numbers, this manuscript's invitation statuses |
 | 05 | `05-coi.md` | `academia-referee coi` | three-tier verdicts with evidence |
 | 06 | `06-report.md` | `academia-referee report` | `<slug>.xlsx` — the deliverable — plus the working files behind it |
 
@@ -150,6 +151,10 @@ Once invitations go out, record them — one command per candidate:
 ```bash
 uv run --project "<plugin-root>" academia-referee invite --slug <slug>   --person <person_id> --invited-at 2026-03-01 --responded yes --accepted no   --note "thorough, on time"
 ```
+
+When the editor can save the manuscript's ScholarOne *Assign Reviewers* page,
+`academia-referee import-scholarone` records every invitation on it at once, with its
+status — see `04-enrich.md`.
 
 Leave `--responded` unset while the outcome is still open. Run the command again
 for the same person when the answer arrives: it amends that invitation rather

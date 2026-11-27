@@ -649,3 +649,61 @@ def test_no_regex_in_the_ingest_module_carries_a_control_character():
     stray = _re.findall(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", source)
 
     assert not stray, f"{len(stray)} control character(s) in {ingest_pdf.__file__}"
+
+
+class _Reviews:
+    def __init__(self, reviews):
+        self.reviews = reviews
+        self.calls = 0
+
+    def get_peer_reviews(self, orcid):
+        self.calls += 1
+        return self.reviews
+
+
+def _reviewer(conn) -> Person:
+    pid = repo.upsert_person(
+        conn, Author(name="Erin Imaginary", idx=0, orcid="0000-0000-0000-0001")
+    )
+    return repo.load_person(conn, pid)
+
+
+def test_public_reviews_are_stored_with_journal_names(conn, monkeypatch):
+    from academia.sources.orcid import PeerReview
+
+    names = {"0885-8969": "IEEE Transactions on Energy Conversion"}
+    monkeypatch.setattr(enrich, "_journal_name", lambda issn: names.get(issn, ""))
+    person = _reviewer(conn)
+    client = _Reviews(
+        [
+            PeerReview(1, "issn:0885-8969", "2026-05-02", "Web of Science"),
+            PeerReview(2, "issn:1234-5678", "2019", "ORCID"),
+        ]
+    )
+    enrich.enrich_reviews(conn, person, source=client)
+    check, rows = repo.review_record(conn, person.person_id)
+    assert check["source"] == "orcid"
+    assert check["source_url"] == "https://orcid.org/0000-0000-0000-0001"
+    assert [(r["journal"], r["completed"]) for r in rows] == [
+        ("IEEE Transactions on Energy Conversion", "2026-05-02"),
+        ("issn:1234-5678", "2019"),
+    ]
+
+
+def test_reviews_are_unknown_without_a_readable_record(conn):
+    person = _reviewer(conn)
+    enrich.enrich_reviews(conn, person, source=_Reviews(None))
+    assert repo.review_record(conn, person.person_id) == (None, [])
+
+    nameless = repo.load_person(conn, repo.upsert_person(conn, Author(name="No Orcid", idx=0)))
+    client = _Reviews([])
+    enrich.enrich_reviews(conn, nameless, source=client)
+    assert client.calls == 0
+    assert repo.review_record(conn, nameless.person_id)[0] is None
+
+
+def test_an_empty_public_record_is_recorded_as_checked(conn):
+    person = _reviewer(conn)
+    enrich.enrich_reviews(conn, person, source=_Reviews([]))
+    check, rows = repo.review_record(conn, person.person_id)
+    assert check is not None and rows == []

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './temp-dir.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 function findBash() {
@@ -35,7 +35,7 @@ function git(cwd, ...args) {
 }
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'cc-market-release-'));
+  const dir = tempDir('cc-market-release-');
   mkdirSync(join(dir, 'scripts', 'git-hooks'), { recursive: true });
   mkdirSync(join(dir, '.claude-plugin'));
   mkdirSync(join(dir, 'demo', '.claude-plugin'), { recursive: true });

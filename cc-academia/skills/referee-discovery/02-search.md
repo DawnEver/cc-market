@@ -31,6 +31,10 @@ that collapses to zero is visible even when the combined corpus looks healthy.
 Aim for **at least 100** unique papers before harvesting authors. Fewer than that
 and the candidate pool is thin enough that the ranking becomes arbitrary.
 
+`[retrieval] search_window_years` bounds the corpus to the last N years by
+default (5 matches the Reviewer Locator); the shipped 0 leaves it unbounded, and
+`--year-from` always wins.
+
 If the count is low:
 
 1. widen `--year-from`

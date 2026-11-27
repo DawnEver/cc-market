@@ -11,8 +11,8 @@ drift from these).
 - Dependency-free: only `node:fs` / `node:path`. No external packages.
 
 ## State ownership
-- `saveState` only replaces the `evolveState` key in `.claude/.rem-state.json`; it must
-  preserve all other top-level keys (`hook`, `prune`, `docs`, …) shared with rem.
+- The loop state is evolve's alone, at `<git dir>/evolve/state.json` (`statePath`, from
+  `git rev-parse --git-path`); no other plugin reads or writes it.
 - Never block the loop on a state-write failure — `saveState` returns `{persisted:false}`
   and the loop continues in memory.
 

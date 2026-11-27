@@ -18,7 +18,7 @@ deep detail when a task reaches into that area.
 
 ```
 /evolve [--until --path --min-severity --dry-run --seed --commit]
-  Setup: pre-flight git + dirty-tree check; require sharp-review/rem; init state via scripts/evolve.mjs
+  Setup: pre-flight git + dirty-tree check; require sharp-review; init state via scripts/evolve.mjs
   Per round (reference/round-protocol.md):
     0. Pre-flight (dirty-tree re-check, cc-market repo check)
     1. Critique: run sharp-review skill (host-agnostic) → read OPEN findings from backlog
@@ -41,9 +41,7 @@ step-2 fan-out fix (`Agent` per group on Claude vs. `spawn_agent` per group on C
 fix subagents is evolve's own orchestration primitive, so this host-awareness is irreducible.
 Step-1 critique is **not** host-aware here: evolve runs the `sharp-review` skill and reads
 OPEN findings from its backlog (`seedFromSharpReview`). Helpers, gates, TDD, commits are
-host-agnostic. Detail → `reference/round-protocol.md` § Host adaptivity. (On Codex, set
-the task guard at round start — no `background_tasks` field — so the Stop hook doesn't
-fire mid-round.)
+host-agnostic. Detail → `reference/round-protocol.md` § Host adaptivity.
 
 ## Testing
 

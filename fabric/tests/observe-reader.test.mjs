@@ -2,10 +2,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { loadRows, pair, isQuotaProbe, mainTurns, summarize, summarizeFile } from '../engine/observe-reader.mjs';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 const ROWS = [
   { t: 'request', id: 1, ts: 10, provider: 'acme', path: '/v1/messages', modelBefore: 'claude-haiku-4-5', modelAfter: 'acme-flash', body: { messages: [{ role: 'user', content: 'hi' }] } },
@@ -50,7 +50,7 @@ test('summarize rolls up counts, models, providers', () => {
 });
 
 test('loadRows + summarizeFile round-trip through a file', () => {
-  const p = join(mkdtempSync(join(tmpdir(), 'reader-')), 'http.jsonl');
+  const p = join(tempDir('reader-'), 'http.jsonl');
   writeFileSync(p, ROWS.map((r) => JSON.stringify(r)).join('\n') + '\n');
   assert.equal(loadRows(p).length, 6);
   assert.equal(summarizeFile(p).mainTurns, 1);

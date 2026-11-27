@@ -1,10 +1,10 @@
 // sharp-review/lib.test.mjs — Tests for lib.mjs shared functions
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, rmSync } from 'fs';
+import { mkdirSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { tmpdir } from 'os';
+import { tempDir } from '../../tests/temp-dir.mjs';
 
 // Import the module under test
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -15,13 +15,12 @@ try {
   lib = await import(pathToFileURL(libPath).href);
 } catch (e) {
   // We need a project context; set one up
-  const tmp = join(tmpdir(), `sharp-review-test-${Date.now()}`);
+  const tmp = tempDir('sharp-review-test-');
   mkdirSync(join(tmp, '.claude', 'memory'), { recursive: true });
   const orig = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = tmp;
   lib = await import(pathToFileURL(libPath).href);
   process.env.CLAUDE_PROJECT_DIR = orig;
-  process.on('exit', () => { try { rmSync(tmp, { recursive: true }); } catch {} });
 }
 
 const { SR_ID_RE, SR_ID_PARSE_RE, reviewFrontmatter, parseFindingsFromMarkdown, mergeFollowup } = lib;
