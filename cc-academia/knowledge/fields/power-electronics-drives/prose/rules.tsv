@@ -1,0 +1,2 @@
+id	content	source	kind	scope	check	statement	why	good	bad	provenance
+ped.operating-point-per-result-figure	prose	field	must	data-plot	reviewer	Every result figure and comparison carries its operating point (speed, torque or current, DC-link voltage, carrier frequency, modulation index); validation runs analytical, 2-D FEA, 3-D FEA, then measurement, and a paper without tests says so.	Stricter field convention: results without an operating point cannot be compared.			fields/power-electronics-drives.md section 4 (stricter in the field)

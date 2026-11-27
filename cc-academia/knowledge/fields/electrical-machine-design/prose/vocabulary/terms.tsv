@@ -1,0 +1,5 @@
+term	class	replace	when	why	source	scope
+permanent magnet	hyphenate	permanent-magnet	before-noun	mech.compound-hyphen	field	all
+field weakening	hyphenate	field-weakening	before-noun	mech.compound-hyphen	field	all
+flux weakening	hyphenate	flux-weakening	before-noun	mech.compound-hyphen	field	all
+end winding	hyphenate	end-winding	before-noun	mech.compound-hyphen	field	all

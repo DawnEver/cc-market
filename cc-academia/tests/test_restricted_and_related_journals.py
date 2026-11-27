@@ -15,11 +15,11 @@ import pytest
 
 from academia.core.errors import UsageError
 from academia.core.models import Affiliation, Person
-from academia.reviewer import eligibility
-from academia.reviewer import policy as policy_module
-from academia.reviewer.policy import Policy, load_policy
-from academia.reviewer.rank import Evidence
-from academia.reviewer.record import CandidateRecord, RelevantRecord
+from academia.referee import eligibility
+from academia.referee import policy as policy_module
+from academia.referee.policy import Policy, load_policy
+from academia.referee.rank import Evidence
+from academia.referee.record import CandidateRecord, RelevantRecord
 from academia.store import db
 from conftest import assess
 

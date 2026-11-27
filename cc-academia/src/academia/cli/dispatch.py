@@ -115,13 +115,13 @@ def _academia_handlers() -> dict[str, Handler]:
     }
 
 
-def build_rev_disc_parser() -> argparse.ArgumentParser:
+def build_referee_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="rev-disc",
+        prog="academia-referee",
         description="Reviewer discovery: manuscript in, evidenced shortlist out.",
         epilog=(
             "Pipeline: init -> profile -> search -> candidates -> enrich -> coi -> report\n"
-            "Every stage is resumable; `rev-disc status --slug <s>` says what is next."
+            "Every stage is resumable; `academia-referee status --slug <s>` says what is next."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -211,7 +211,7 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     enrich.add_argument(
         "--homepages",
         metavar="FILE",
-        help="JSON answers to a `rev-disc contacts` worklist: person_id to a "
+        help="JSON answers to a `academia-referee contacts` worklist: person_id to a "
         "URL, a list of URLs, or {urls, rank, rank_source}.",
     )
     enrich.add_argument(
@@ -305,21 +305,21 @@ def build_rev_disc_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _rev_disc_handlers() -> dict[str, Handler]:
-    from academia.cli import rev_disc
+def _referee_handlers() -> dict[str, Handler]:
+    from academia.cli import referee as referee_cli
 
     return {
-        "init": rev_disc.run_init,
-        "profile": rev_disc.run_profile,
-        "search": rev_disc.run_search,
-        "candidates": rev_disc.run_candidates,
-        "enrich": rev_disc.run_enrich,
-        "coi": rev_disc.run_coi,
-        "report": rev_disc.run_report,
-        "contacts": rev_disc.run_contacts,
-        "invite": rev_disc.run_invite,
-        "facts": rev_disc.run_facts,
-        "status": rev_disc.run_status,
+        "init": referee_cli.run_init,
+        "profile": referee_cli.run_profile,
+        "search": referee_cli.run_search,
+        "candidates": referee_cli.run_candidates,
+        "enrich": referee_cli.run_enrich,
+        "coi": referee_cli.run_coi,
+        "report": referee_cli.run_report,
+        "contacts": referee_cli.run_contacts,
+        "invite": referee_cli.run_invite,
+        "facts": referee_cli.run_facts,
+        "status": referee_cli.run_status,
     }
 
 
@@ -328,23 +328,30 @@ def main(argv: list[str] | None = None) -> int:
     return _dispatch(build_academia_parser(), _academia_handlers(), argv or sys.argv[1:])
 
 
-def lit_review_main(argv: list[str] | None = None) -> int:
+def read_main(argv: list[str] | None = None) -> int:
     _configure_standard_streams()
-    from academia.cli import lit_review
+    from academia.cli import read as read_cli
 
-    return _dispatch(lit_review.build_parser(), lit_review.handlers(), argv or sys.argv[1:])
+    return _dispatch(read_cli.build_parser(), read_cli.handlers(), argv or sys.argv[1:])
 
 
-def ms_review_main(argv: list[str] | None = None) -> int:
+def review_main(argv: list[str] | None = None) -> int:
     _configure_standard_streams()
-    from academia.cli import ms_review
+    from academia.cli import review as review_cli
 
-    return _dispatch(ms_review.build_parser(), ms_review.handlers(), argv or sys.argv[1:])
+    return _dispatch(review_cli.build_parser(), review_cli.handlers(), argv or sys.argv[1:])
 
 
-def rev_disc_main(argv: list[str] | None = None) -> int:
+def write_main(argv: list[str] | None = None) -> int:
     _configure_standard_streams()
-    return _dispatch(build_rev_disc_parser(), _rev_disc_handlers(), argv or sys.argv[1:])
+    from academia.cli import write as write_cli
+
+    return _dispatch(write_cli.build_parser(), write_cli.handlers(), argv or sys.argv[1:])
+
+
+def referee_main(argv: list[str] | None = None) -> int:
+    _configure_standard_streams()
+    return _dispatch(build_referee_parser(), _referee_handlers(), argv or sys.argv[1:])
 
 
 if __name__ == "__main__":

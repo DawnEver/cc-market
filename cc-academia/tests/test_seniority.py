@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from academia.reviewer import seniority
+from academia.core import seniority
 
 
 @pytest.mark.parametrize(
@@ -154,8 +154,8 @@ def test_a_supplied_rank_overrides_whatever_the_career_record_says(tmp_path):
 
 def test_the_shortlist_shows_the_academic_position(tmp_path):
     from academia.core.models import Person
-    from academia.reviewer import rank as rank_module
-    from academia.reviewer import report as report_module
+    from academia.referee import rank as rank_module
+    from academia.referee import report as report_module
 
     person = Person(person_id="p1", display_name="Ada Prof", stated_rank="associate_professor")
     candidate = rank_module.Candidate(person=person)
@@ -168,8 +168,8 @@ def test_the_shortlist_shows_the_academic_position(tmp_path):
 def test_a_student_is_flagged_for_the_editor(tmp_path):
     """The pool is built from authorship, so it contains students by construction."""
     from academia.core.models import Person
-    from academia.reviewer import rank as rank_module
-    from academia.reviewer.policy import load_policy
+    from academia.referee import rank as rank_module
+    from academia.referee.policy import load_policy
     from academia.store import db
 
     conn = db.connect(tmp_path / "n.db")

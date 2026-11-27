@@ -1,0 +1,2 @@
+id	content	source	kind	scope	check	statement	why	good	bad	provenance
+ieee.axis-labels	figure	venue	must	data-plot	reviewer	Label axes with the quantity name and symbol plus the unit in the brackets of dimension figure.axis-unit-brackets (an author choice; the IEEE guide's own examples use parentheses); never a unit alone, a ratio "P/W" or a "x 1000" multiplier; figure text 8-10 pt.	IEEE author guide.	Magnet loss $P_\mathrm{m}$ (W)	W; P/W	P18 (S1 VI-I-1); user review 2026-11-23 C13 (bracket style owned by the author)

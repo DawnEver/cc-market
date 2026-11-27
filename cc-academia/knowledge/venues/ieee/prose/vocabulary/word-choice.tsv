@@ -1,0 +1,8 @@
+term	class	replace	when	why	source	scope
+alternately	caution	alternatively	meaning "as another option"	ieee.word-choice	venue	all
+essentially	caution	approximately	meaning "approximately"	ieee.word-choice	venue	all
+/\bissues?\b/i	caution	problem	meaning "problem"	ieee.word-choice	venue	all
+/\bet\. al\b/	forbidden	et al.		ieee.word-choice: no period after "et"	venue	all
+/\b\w+n't\b|\b(it's|we're|they're|that's|there's)\b/i	forbidden			ieee.word-choice: no contractions	venue	all
+/\bdata (is|was|has|shows)\b/i	forbidden	data are, data were, data have, data show		ieee.data-plural	venue	all
+/\b(\d[\d.]*)\s*(\\,|~)?\s*rpm\b/	canonical	$1\,r/min		ieee.units: IEEE writes r/min	venue	all

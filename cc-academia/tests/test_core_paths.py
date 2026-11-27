@@ -11,19 +11,21 @@ def test_plugin_root_is_the_package_checkout():
     assert (paths.plugin_root() / "pyproject.toml").exists()
 
 
-def test_config_file_uses_override_when_present(tmp_path, monkeypatch):
+def test_venue_policy_file_uses_override_when_present(tmp_path, monkeypatch):
     override = tmp_path / "cfg"
     (override / "journals").mkdir(parents=True)
-    mine = override / "journals" / "tie.yaml"
-    mine.write_text("geo_policy: {}", encoding="utf-8")
+    mine = override / "journals" / "tie.toml"
+    mine.write_text("[windows]", encoding="utf-8")
     monkeypatch.setenv(paths.ENV_CONFIG_DIR, str(override))
-    assert paths.config_file("journals", "tie.yaml") == mine
+    assert paths.venue_policy_file("tie") == mine
 
 
-def test_config_file_falls_back_to_plugin_default(tmp_path, monkeypatch):
+def test_editorial_files_fall_back_to_the_knowledge_base(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.ENV_CONFIG_DIR, str(tmp_path / "empty"))
-    resolved = paths.config_file("coi.yaml")
-    assert resolved == paths.default_config_dir() / "coi.yaml"
+    k = paths.knowledge_dir()
+    assert paths.policy_file() == k / "common" / "policy" / "coi.toml"
+    assert paths.venue_policy_file("tie") == k / "venues" / "tie" / "policy" / "coi.toml"
+    assert "tie" in paths.policy_venues()
 
 
 def test_lens_file_returns_none_when_unknown(tmp_path, monkeypatch):

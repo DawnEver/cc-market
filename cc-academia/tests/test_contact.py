@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from academia.core.models import Author, Paper, Person
-from academia.reviewer import contact
+from academia.referee import contact
 from academia.store import db
 from academia.store import repository as repo
 
@@ -57,7 +57,7 @@ def test_a_university_address_is_not_rejected():
 
 
 def test_grouped_pdf_addresses_are_expanded_before_matching():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     text = "Email: {justin.j.scheidler, thomas.tallerico, aaron.d.anderson-1}@nasa.gov.example"
 
@@ -69,7 +69,7 @@ def test_grouped_pdf_addresses_are_expanded_before_matching():
 
 
 def test_common_public_address_obfuscation_is_normalized():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     assert extract_emails("gabriel.weissitsch(at)jku.at.example") == [
         "gabriel.weissitsch@jku.at.example"
@@ -77,14 +77,14 @@ def test_common_public_address_obfuscation_is_normalized():
 
 
 def test_pdf_spacing_and_fullwidth_at_are_normalized():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     assert extract_emails("alice.smith @ example . edu") == ["alice.smith@example.edu"]
     assert extract_emails("alice.smith\uff20example.edu") == ["alice.smith@example.edu"]
 
 
 def test_html_entities_and_cloudflare_email_are_decoded():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     assert extract_emails("alice&#64;example&#46;edu") == ["alice@example.edu"]
     encoded = "6b0a0702080e2b0e130a061b070e450e0f1e"
@@ -92,7 +92,7 @@ def test_html_entities_and_cloudflare_email_are_decoded():
 
 
 def test_email_split_across_html_elements_is_joined():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     assert extract_emails("<span>alice.smith</span><i>@</i><span>example.edu</span>") == [
         "alice.smith@example.edu"
@@ -100,28 +100,28 @@ def test_email_split_across_html_elements_is_joined():
 
 
 def test_email_fragments_do_not_join_the_next_block_heading():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     page = "<div><span>jad23</span><span>@example.edu</span></div><h2>Masters</h2>"
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
 def test_visible_email_fragments_are_normalized_after_markup_removal():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     page = "<div>jad23</div><div>[at]</div><div>example.edu</div><h2>Masters</h2>"
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
 def test_sentence_punctuation_does_not_turn_a_heading_into_a_domain():
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     page = "<p>jad23@example.edu.</p><h2>Masters</h2>"
     assert extract_emails(page) == ["jad23@example.edu"]
 
 
 def test_numbered_initials_are_weak_and_ambiguous_matches_stay_blank():
-    from academia.reviewer.enrich import match_email_to_person, match_strength
+    from academia.referee.enrich import match_email_to_person, match_strength
 
     person = Person(person_id="p", display_name="Jane Ann Doe")
     assert match_strength("jad23@example.edu", person) == 1
@@ -424,7 +424,7 @@ def test_a_malformed_homepage_file_is_a_usage_error(tmp_path):
 
 
 def test_initials_plus_surname_is_a_strong_match():
-    from academia.reviewer.enrich import match_strength
+    from academia.referee.enrich import match_strength
 
     person = Person(person_id="p", display_name="Guohai Liu")
     assert match_strength("ghliu@ujs.edu.cn.example", person) == 2
@@ -432,7 +432,7 @@ def test_initials_plus_surname_is_a_strong_match():
 
 
 def test_two_letter_surname_and_punctuated_variants_are_normalized():
-    from academia.reviewer.enrich import match_strength
+    from academia.referee.enrich import match_strength
 
     yang_lu = Person(person_id="lu", display_name="Yang Lu", names=["Lu, Yang"])
     qiang_li = Person(person_id="li", display_name="Qiang Li", names=["Li Qiang"])
@@ -442,7 +442,7 @@ def test_two_letter_surname_and_punctuated_variants_are_normalized():
 
 
 def test_a_bare_surname_is_only_a_weak_match():
-    from academia.reviewer.enrich import match_strength
+    from academia.referee.enrich import match_strength
 
     person = Person(person_id="p", display_name="Guohai Liu")
     assert match_strength("wei.liu@ujs.edu.cn.example", person) == 1
@@ -454,7 +454,7 @@ def test_a_directory_page_does_not_attribute_a_namesakes_address():
 
     Matching on the surname alone is how an invitation reaches the wrong Liu.
     """
-    from academia.reviewer.enrich import match_email_to_person
+    from academia.referee.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
     directory = [
@@ -467,7 +467,7 @@ def test_a_directory_page_does_not_attribute_a_namesakes_address():
 
 
 def test_the_right_person_is_still_found_on_a_directory_page():
-    from academia.reviewer.enrich import match_email_to_person
+    from academia.referee.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
     directory = [
@@ -481,14 +481,14 @@ def test_the_right_person_is_still_found_on_a_directory_page():
 
 def test_a_sole_weak_match_on_a_personal_page_is_accepted():
     """On someone's own profile page there is no one else it could belong to."""
-    from academia.reviewer.enrich import match_email_to_person
+    from academia.referee.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Guohai Liu")
     assert match_email_to_person(["liu@ujs.edu.cn.example"], person) == "liu@ujs.edu.cn.example"
 
 
 def test_a_sole_surname_match_is_not_attributed_on_a_coauthored_paper():
-    from academia.reviewer.enrich import match_email_to_person
+    from academia.referee.enrich import match_email_to_person
 
     person = Person(person_id="p", display_name="Syed Sabir Hussain Bukhari")
     assert not match_email_to_person(["asif.hussain@example.edu"], person, allow_weak=False)
@@ -496,7 +496,7 @@ def test_a_sole_surname_match_is_not_attributed_on_a_coauthored_paper():
 
 def test_a_page_on_the_institutions_own_domain_is_an_institutional_profile():
     """mcmaster.ca is a university even though the domain does not say so."""
-    from academia.reviewer.enrich import email_source_for
+    from academia.referee.enrich import email_source_for
 
     assert (
         email_source_for(
@@ -783,7 +783,7 @@ def test_a_url_ending_in_pdf_is_treated_as_one_even_without_a_content_type():
 
 
 def test_the_fetcher_decodes_html_and_extracts_pdfs():
-    from academia.reviewer.enrich import PageFetcher
+    from academia.referee.enrich import PageFetcher
 
     pdf = _one_page_pdf("contact: someone@uni.edu.example")
     fetcher = PageFetcher(
@@ -808,7 +808,7 @@ def test_an_all_initials_local_part_is_a_weak_match():
     collide even more readily than surnames do, so the sole-match rule still
     decides whether it is used.
     """
-    from academia.reviewer.enrich import match_strength
+    from academia.referee.enrich import match_strength
 
     geng = Person(person_id="p", display_name="Weiwei Geng")
     assert match_strength("gww@njust.edu.cn.example", geng) == 1
@@ -818,7 +818,7 @@ def test_an_all_initials_local_part_is_a_weak_match():
 
 
 def test_initials_belonging_to_someone_else_are_not_a_match():
-    from academia.reviewer.enrich import match_strength
+    from academia.referee.enrich import match_strength
 
     geng = Person(person_id="p", display_name="Weiwei Geng")
     assert match_strength("apsc-zzr@nuaa.edu.cn.example", geng) == 0
@@ -826,7 +826,7 @@ def test_initials_belonging_to_someone_else_are_not_a_match():
 
 
 def test_a_sole_initials_address_on_a_staff_page_is_accepted():
-    from academia.reviewer.enrich import match_email_to_person
+    from academia.referee.enrich import match_email_to_person
 
     geng = Person(person_id="p", display_name="Weiwei Geng")
     page = ["apsc-zzr@nuaa.edu.cn.example", "gww@njust.edu.cn.example"]
@@ -840,7 +840,7 @@ def test_a_package_version_is_not_an_address():
     It has the shape of an address and none of the substance. A real top-level
     domain is alphabetic, which is enough to tell the two apart.
     """
-    from academia.reviewer.enrich import extract_emails
+    from academia.referee.enrich import extract_emails
 
     page = "bootstrap@5.1.3 jquery-ui@6.0 ys@uakron.edu.example"
 
@@ -849,7 +849,7 @@ def test_a_package_version_is_not_an_address():
 
 def test_oa_pdf_urls_are_hydrated_in_one_batch(tmp_path):
     from academia.core.models import Author, Paper
-    from academia.reviewer.contact import hydrate_open_access_pdfs
+    from academia.referee.contact import hydrate_open_access_pdfs
     from academia.store import db
     from academia.store import repository as repo
 
@@ -897,7 +897,7 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
     matter how many times the editor re-ran enrich with the right page.
     """
     from academia.core.models import Author
-    from academia.reviewer.enrich import discover_email
+    from academia.referee.enrich import discover_email
     from academia.store import db
     from academia.store import repository as repo
 
@@ -926,9 +926,9 @@ def test_an_editor_supplied_url_is_read_even_when_an_address_is_already_stored(t
 
 
 def test_enrich_parser_accepts_browser_channel():
-    from academia.cli.dispatch import build_rev_disc_parser
+    from academia.cli.dispatch import build_referee_parser
 
-    args = build_rev_disc_parser().parse_args(
+    args = build_referee_parser().parse_args(
         ["enrich", "--slug", "paper", "--browser", "--browser-channel", "chrome"]
     )
 
@@ -936,9 +936,9 @@ def test_enrich_parser_accepts_browser_channel():
 
 
 def test_enrich_parser_accepts_target_people():
-    from academia.cli.dispatch import build_rev_disc_parser
+    from academia.cli.dispatch import build_referee_parser
 
-    args = build_rev_disc_parser().parse_args(
+    args = build_referee_parser().parse_args(
         ["enrich", "--slug", "paper", "--person-id", "person-a", "--person-id", "person-b"]
     )
 
@@ -946,7 +946,7 @@ def test_enrich_parser_accepts_target_people():
 
 
 def test_targeted_enrichment_preserves_other_people():
-    from academia.cli.rev_disc import _merge_person_rows
+    from academia.cli.referee import _merge_person_rows
 
     existing = [
         {"person_id": "person-a", "email": {"email": "old@a.edu.example"}},
@@ -962,7 +962,7 @@ def test_targeted_enrichment_preserves_other_people():
 
 def test_author_proximity_uses_visible_html_not_markup():
     from academia.core.models import Person
-    from academia.reviewer.enrich import match_email_in_text
+    from academia.referee.enrich import match_email_in_text
 
     person = Person(person_id="person-sabir", display_name="Syed Sabir Hussain Bukhari")
     markup = "x" * 500
@@ -977,7 +977,7 @@ def test_author_proximity_uses_visible_html_not_markup():
 
 def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
     from academia.core.models import Author
-    from academia.reviewer.enrich import Contact, discover_email
+    from academia.referee.enrich import Contact, discover_email
     from academia.store import repository as repo
 
     person_id = repo.upsert_person(conn, Author(name="Eric Ho Tatt Wei", idx=0))
@@ -1001,7 +1001,7 @@ def test_a_supplied_orcid_url_uses_the_public_contact_api(conn):
 
 def test_an_opaque_email_is_attributed_from_a_unique_nearby_full_name(conn):
     from academia.core.models import Author
-    from academia.reviewer.enrich import discover_email
+    from academia.referee.enrich import discover_email
     from academia.store import repository as repo
 
     person_id = repo.upsert_person(conn, Author(name="Lianjie Ma", idx=0))
@@ -1019,7 +1019,7 @@ def test_an_opaque_email_is_attributed_from_a_unique_nearby_full_name(conn):
 
 
 def test_proximity_does_not_choose_between_multiple_nearby_addresses(conn):
-    from academia.reviewer.enrich import match_email_in_text
+    from academia.referee.enrich import match_email_in_text
 
     person = Person(person_id="p", display_name="Ada Expert")
     text = "Ada Expert; lab@uni.edu.example; assistant@uni.edu.example"
@@ -1037,7 +1037,7 @@ def test_every_address_found_is_kept_not_only_the_chosen_one(tmp_path):
     silently discarding the one that lost on precedence.
     """
     from academia.core.models import Author
-    from academia.reviewer.enrich import discover_email
+    from academia.referee.enrich import discover_email
     from academia.store import db
     from academia.store import repository as repo
 
@@ -1070,8 +1070,8 @@ def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
     stays as cheap on the tenth run as on the first.
     """
     from academia.core.models import Author
-    from academia.reviewer import contact as contact_module
-    from academia.reviewer.enrich import discover_email
+    from academia.referee import contact as contact_module
+    from academia.referee.enrich import discover_email
     from academia.store import db
     from academia.store import repository as repo
 
@@ -1102,8 +1102,8 @@ def test_a_settled_address_is_not_re_crawled_every_run(tmp_path, monkeypatch):
 def test_a_supplied_url_still_reopens_a_settled_address(tmp_path, monkeypatch):
     """The saving above must not switch the correction path back off."""
     from academia.core.models import Author
-    from academia.reviewer import contact as contact_module
-    from academia.reviewer.enrich import discover_email
+    from academia.referee import contact as contact_module
+    from academia.referee.enrich import discover_email
     from academia.store import db
     from academia.store import repository as repo
 

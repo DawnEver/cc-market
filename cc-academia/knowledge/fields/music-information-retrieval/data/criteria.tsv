@@ -1,0 +1,2 @@
+id	content	source	scope	angle	applies	question	why	provenance
+mir.split-no-leakage	data	field	body	experiments	both	Are training and test splits free of leakage, with no shuffled frame-level split reported as generalisation evidence?	Weak pattern in the field corpus; related: review.evaluation-integrity.	field weak pattern (fields/music-information-retrieval.md section 5); user review 2026-11-23 D2

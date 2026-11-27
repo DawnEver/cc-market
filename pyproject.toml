@@ -28,7 +28,7 @@ produce = [
     "-m", "dev_lab.dev.commandpart", "{part}", "--",
     "node", "--test", "--test-concurrency=4",
     "fabric/tests/*.test.mjs", "rem/tests/*.test.mjs", "sharp-review/tests/*.test.mjs", "evolve/tests/*.test.mjs",
-    "cc-latex/tests/*.test.mjs", "shared/tests/*.test.mjs", "tests/*.test.mjs",
+    "shared/tests/*.test.mjs", "tests/*.test.mjs",
 ]
 
 # ONE branch: `main` IS the published marketplace -- Claude Code and Codex clone the repository's DEFAULT branch,

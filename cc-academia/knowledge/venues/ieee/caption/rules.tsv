@@ -1,0 +1,2 @@
+id	content	source	kind	scope	check	statement	why	good	bad	provenance
+ieee.caption-opening	caption	venue	must	all	lint:caption-opening	A figure or table caption never opens with "A", "An" or "The"; its first word is capitalised.	IEEE editorial style.	Fig. 3. Measured loss versus switching frequency.	Fig. 3. The measured loss.	P24 (S5 Text Citation of Figures and Tables)

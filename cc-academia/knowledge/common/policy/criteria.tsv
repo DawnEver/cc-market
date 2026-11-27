@@ -1,0 +1,3 @@
+id	content	source	scope	angle	applies	question	why	provenance
+review.venue-scope	policy	common	all	policy	peer	Does the manuscript fall within the venue's scope and article type, and is it the right length and format for it?	An out-of-scope paper is returned without review.	merged 2026-11-22 (editorial as an object type)
+review.referee-independence	policy	common	all	policy	peer	Does the reviewer have no conflict of interest with the authors (co-authorship, institution, supervision) under the venue's editorial policy (coi.toml)?	A conflicted review is void; conflicts are decided by rules, not judgement.	merged 2026-11-22 (editorial as an object type)

@@ -14,9 +14,9 @@ import pytest
 
 from academia.core.errors import UsageError
 from academia.core.models import Author, Education, Paper, Person
-from academia.reviewer import eligibility, rank, report
-from academia.reviewer.policy import Constraint, Policy, load_policy
-from academia.reviewer.record import CandidateRecord
+from academia.referee import eligibility, rank, report
+from academia.referee.policy import Constraint, Policy, load_policy
+from academia.referee.record import CandidateRecord
 from academia.store import db
 from academia.store import repository as repo
 from conftest import assess, neutral
@@ -413,7 +413,7 @@ def test_an_invitation_can_still_be_recorded_and_changes_no_verdict(conn, policy
     after = assess(conn, person, policy, now_year=NOW)
 
     assert [o.detail for o in before.outcomes] == [o.detail for o in after.outcomes]
-    assert "invite" in dispatch.build_rev_disc_parser().format_help()
+    assert "invite" in dispatch.build_referee_parser().format_help()
 
 
 def test_several_papers_in_one_year_count_separately(conn, policy):
@@ -438,7 +438,7 @@ def test_several_papers_in_one_year_count_separately(conn, policy):
 
 
 def test_an_invalid_mode_is_rejected_when_the_policy_loads(tmp_path, monkeypatch):
-    from academia.reviewer.policy import load_policy as load
+    from academia.referee.policy import load_policy as load
 
     config = tmp_path / "configs"
     (config / "journals").mkdir(parents=True)
@@ -529,8 +529,8 @@ def test_a_verified_affiliation_outranks_a_bibliographic_guess(conn, policy):
 def test_contact_list_marks_every_candidate_and_explains_rejections(conn, policy):
     """The one export whose only job is to address invitations."""
     from academia.core.models import Affiliation
-    from academia.reviewer import report
-    from academia.reviewer.enrich import EmailFinding
+    from academia.referee import report
+    from academia.referee.enrich import EmailFinding
 
     def row(rank, name, blocked, email):
         person = Person(person_id=f"p-{name}", display_name=name)

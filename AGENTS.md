@@ -19,8 +19,7 @@ Community marketplace of Claude Code **and Codex** plugins. Each plugin lives in
 | [`rem`](rem/README.md) | `rem/` | Memory management: summarization, merge without deletion, task journals, derived index |
 | [`sharp-review`](sharp-review/README.md) | `sharp-review/` | Post-feature sharp review: 2 of N parallel reviewers (dynamic provider roster), task sync, memory cross-reference |
 | [`watch`](watch/README.md) | `watch/` | Unattended server & task supervision: health checks, anomaly detection, auto-repair |
-| [`cc-latex`](cc-latex/README.md) | `cc-latex/` | LaTeX writing assistant: compile workflow, academic writing style, word counting via texcount |
-| [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript review, citation and contact discovery |
+| [`cc-academia`](cc-academia/README.md) | `cc-academia/` | Academic research workflows: literature review, manuscript writing (LaTeX checks over the writing knowledge base) and review, citation and contact discovery |
 
 Each plugin has its own `AGENTS.md`; plugin-specific `.claude/rules/` are optional. Cross-plugin invariants (e.g. dev vs. runtime context boundaries) live in `cc-market/.claude/rules/invariants.md`. Runtime-relevant reference material (script flags, state schemas, file-ownership tables) lives under `skills/*/reference/`, linked from the corresponding `SKILL.md`. See plugin READMEs for user-facing docs.
 
@@ -47,12 +46,11 @@ To run every JS suite manually:
 ```shell
 node --test cc-market/fabric/tests/*.test.mjs cc-market/rem/tests/*.test.mjs \
   cc-market/sharp-review/tests/*.test.mjs cc-market/evolve/tests/*.test.mjs \
-  cc-market/cc-latex/tests/*.test.mjs \
   cc-market/shared/tests/*.test.mjs cc-market/tests/*.test.mjs
 ```
 
-That list is the complete JS suite — it previously omitted `cc-latex/`, `shared/`, and two of
-the three files under `tests/`, so "run every JS suite manually" did not.
+That list is the complete JS suite — it previously omitted `shared/` and two of the three files under
+`tests/`, so "run every JS suite manually" did not.
 
 See each plugin's AGENTS.md § Testing for per-suite coverage.
 
@@ -62,7 +60,7 @@ environment. It is intentionally not run by the lightweight local pre-commit hoo
 Codex artifacts are covered by `tests/gen-codex.test.mjs`. Live host integration is exercised
 by `scripts/codex-e2e-live.sh` after `codex login`; it installs four plugins (`fabric`,
 `rem`, `sharp-review`, `evolve`) into the real `~/.codex`, then probes hooks, `.claude/rules`
-injection, MCP exposure, and skill ingestion. `watch`, `cc-latex`, and Claude-only plugins are
+injection, MCP exposure, and skill ingestion. `watch`, `cc-academia`, and Claude-only plugins are
 not yet covered by that live test.
 
 JS tests (`*.test.mjs`) run via the pre-commit hook, scoped to the changed plugins. Use Node's built-in test runner (`node:test` + `node:assert/strict`).

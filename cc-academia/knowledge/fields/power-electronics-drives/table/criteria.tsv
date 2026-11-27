@@ -1,0 +1,2 @@
+id	content	source	scope	angle	applies	question	why	provenance
+ped.state-of-the-art-table	table	field	body	experiments	both	Is the result compared with the state of the art in an efficiency or power-density table?	Without a comparative benchmark the contribution cannot be assessed (red flag, warning).	former lens.toml red_flags (no state-of-the-art table); user review 2026-11-23 D4

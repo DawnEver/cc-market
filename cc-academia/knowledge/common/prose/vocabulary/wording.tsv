@@ -1,0 +1,61 @@
+term	class	replace	when	why	source	scope
+remarkable	caution		unless quantified	wording.plain: showy adjective	common	all
+decisive leap	forbidden			wording.plain: showy phrase	common	all
+focal point	forbidden			wording.plain: showy phrase	common	all
+/\bha(s|ve) placed .{1,40} at the cent(re|er) of\b/i	forbidden			wording.plain: showy phrase	common	all
+of paramount importance	forbidden			wording.plain: showy phrase	common	all
+/\bimperative\b/i	caution		as an adjective of importance	wording.plain: showy adjective	common	all
+/\b(exceptionally|tremendous(ly)?|unprecedented|groundbreaking|cutting-edge)\b/i	caution			wording.plain: showy adjective	common	all
+/\bsignificant(ly)? (promise|improvement|reduction|increase)\b/i	caution		unless a number or a statistical test follows	wording.plain: unquantified intensifier	common	all
+/\b[Ii]t should be noted that\b/	forbidden			wording.plain: empty caveat opener	common	all
+/\b(novelty|novel)\b/i	caution			argument.no-announced-novelty: announced novelty	common	all
+/\battribution\b/i	caution		as a label of the paper's own work	argument.no-announced-novelty: ill-fitting abstract noun	common	all
+/\bto the best of (our|the authors'?) knowledge\b/i	forbidden			argument.no-announced-novelty: announced novelty	common	all
+/\bfor the first time\b/i	caution			argument.no-announced-novelty: announced novelty	common	all
+/\bmain contributions?\b/i	caution			argument.no-announced-novelty: announced contribution list	common	all
+/\b(in which|so that)\b/i	caution			sentence.no-nested-clause: nested clause	common	all
+/^(How|What)\b/	caution		sentence-start	sentence.no-noun-clause-subject: noun-clause subject	common	all
+/^(There|This split|These studies)\b/	caution		sentence-start	wording.no-vague-reference: vague subject	common	all
+/\b(sees?|feeds?|decides?|knows?|wants?)\b/i	caution		subject is a machine, method or quantity	wording.technical-verbs: personified verb	common	all
+/\b(case by case|well documented|has even moved)\b/i	caution			wording.technical-verbs: spoken phrase	common	all
+/\b(meets?|meeting|pursu\w*|seeks?|seeking)\b/i	caution		subject is a machine, method or quantity	wording.technical-verbs: human action	common	all
+/,\s*(whose|computed|giving|resulting)\b/i	caution			sentence.no-participle-tail: trailing clause	common	all
+/\bSections? [IVX]+(\.?[A-Z])?(,? (and|to) [IVX]+)? (describes?|presents?|discuss(es)?|introduces?|gives?|reports?|shows?|details?|covers?|concludes?|analy[sz]es?|summari[sz]es?|deals?|provides?|is devoted)\b/	caution		section-by-section preview (a scope statement is fine)	structure.no-structure-preview: section preview	common	!introduction
+/\b(the )?(rest|remainder) of this (paper|section|article|digest) is (organi[sz]ed|structured|arranged)\b/i	caution		section-by-section preview (a scope statement is fine)	structure.no-structure-preview: section preview	common	!introduction
+/\bas (discussed|described|shown|detailed) (below|later|in the following)\b/i	caution		section-by-section preview (a scope statement is fine)	structure.no-structure-preview: section preview	common	!introduction
+/\b(while|although)\b|,\s*(but|yet)\b/i	caution		joining two contrasting facts	sentence.no-contrast-join: contrast in one sentence	common	all
+/\berrors?\b/i	caution	discrepancy	no reference truth (two models or methods compared)	data.discrepancy-not-error	common	all
+with regards to	forbidden	with regard to		mech.fixed-phrase	common	all
+in regards to	forbidden	regarding		mech.fixed-phrase	common	all
+based off	forbidden	based on		mech.fixed-phrase	common	all
+comprised of	collocation	composed of		mech.fixed-phrase	common	all
+different than	collocation	different from		mech.fixed-phrase	common	all
+/\bdepend(s|ing|ed)? of\b/i	collocation	depend on		mech.fixed-phrase	common	all
+/\bconsist(s|ing|ed)? from\b/i	collocation	consist of		mech.fixed-phrase	common	all
+heavy duty	hyphenate	heavy-duty	before-noun	mech.compound-hyphen	common	all
+high frequency	hyphenate	high-frequency	before-noun	mech.compound-hyphen	common	all
+low frequency	hyphenate	low-frequency	before-noun	mech.compound-hyphen	common	all
+high power	hyphenate	high-power	before-noun	mech.compound-hyphen	common	all
+high speed	hyphenate	high-speed	before-noun	mech.compound-hyphen	common	all
+high voltage	hyphenate	high-voltage	before-noun	mech.compound-hyphen	common	all
+low voltage	hyphenate	low-voltage	before-noun	mech.compound-hyphen	common	all
+real time	hyphenate	real-time	before-noun	mech.compound-hyphen	common	all
+state of the art	hyphenate	state-of-the-art	before-noun	mech.compound-hyphen	common	all
+time consuming	hyphenate	time-consuming		mech.compound-hyphen	common	all
+/\b([A-Z][A-Za-z]*[A-Z]) (induced|based|driven|fed|controlled|related|dependent)\b/	hyphenate	$1-$2		mech.compound-hyphen: acronym plus participle	common	all
+First	phrase		opener	sentence.opener-variety: ordered findings or steps	common	all
+Second	phrase		opener	sentence.opener-variety: ordered findings or steps	common	all
+Third	phrase		opener	sentence.opener-variety: ordered findings or steps	common	all
+Finally	phrase		opener	sentence.opener-variety: ordered findings or steps	common	all
+Therefore	phrase		opener	sentence.opener-variety: causal link	common	all
+Hence	phrase		opener	sentence.opener-variety: causal link	common	all
+Thus	phrase		opener	sentence.opener-variety: causal link	common	all
+Consequently	phrase		opener	sentence.opener-variety: causal link	common	all
+As a result	phrase		opener	sentence.opener-variety: causal link	common	all
+For this reason	phrase		opener	sentence.opener-variety: causal link	common	all
+In addition	phrase		opener	sentence.opener-variety: additive link	common	all
+/^(In|At|Under|For|With|By|From|On|Unlike|Because|Although|When|While|As|After|Before|Using|Compared|Without|Through|Across|Between|Since|If|Below|Above|Near|To|Following|Grouped)\b/	caution		opener-run	sentence.opener-variety: phrase-plus-comma opening	common	all
+/(analysed|analyzed|presented|studied|showed|proposed|investigated|examined|developed|compared|demonstrated|derived|evaluated|quantified|identified|built|modelled|modeled)/	caution		self-verb	conclusion.tense: verbs for what the paper did	common	conclusion
+outlines	phrase		verb for a background section (develops only when it derives new results)	recommended phrasing: a background section is described by what it does (user review 2026-11-23 P2-G4)	common	introduction
+reviews	phrase		verb for a background section (develops only when it derives new results)	recommended phrasing: a background section is described by what it does (user review 2026-11-23 P2-G4)	common	introduction
+summarises	phrase		verb for a background section (develops only when it derives new results)	recommended phrasing: a background section is described by what it does (user review 2026-11-23 P2-G4)	common	introduction

@@ -1,0 +1,224 @@
+# Conflict-of-interest and eligibility policy — one set for every IEEE journal.
+#
+# There is a single policy, not one per journal. The shipped IEEE journals have
+# the same reviewer pool and the same editorial rules, so a per-journal copy of
+# these numbers was four places to change one decision, and a run could inherit
+# a window nobody meant to set. knowledge/venues/<slug>/editorial/coi.toml still exists and
+# still wins, but it is now the place to record a *deliberate* deviation and the
+# reason for it, not a second copy of the defaults.
+#
+# The engine that reads this file is purely deterministic: no model decides
+# whether a conflict exists. A journal may override any key in its venue file
+# (knowledge/venues/<slug>/editorial/coi.toml), and a user may override it with
+# $ACADEMIA_CONFIG_DIR/journals/<slug>.toml, and replace this file with
+# $ACADEMIA_CONFIG_DIR/coi.toml.
+#
+# Wording is fixed everywhere: a clear result is reported as "no detected
+# conflict", never "no conflict". A bibliographic database cannot prove the
+# absence of a personal, financial or competitive relationship.
+
+[windows]
+# Co-authorship within this many years is disqualifying.
+coauthor_years = 5
+# Collaborations older than the window still raise a flag once they are dense.
+historic_collaboration_papers = 3
+# A shared doctoral institution matters when the two overlapped in time.
+shared_institution_overlap_years = 3
+
+[rules]
+# Hard exclusions. A BLOCK is not a penalty — the candidate is removed from
+# consideration and never re-enters through a high expertise score.
+block = [
+  "manuscript_author",
+  "exclusion_list",
+  "recent_coauthor",
+  "same_department",
+  "same_phd_institution_overlap",
+  "advisor_advisee",
+]
+
+# Flags for the editor to judge. These stay in the shortlist, marked.
+review = [
+  # A co-authorship with somebody who merely shares a submitting author's name.
+  # Three researchers publish as "Wei Hua"; blocking on the name would remove a
+  # legitimate reviewer on no evidence, and hiding it would drop the commonest
+  # conflict there is. So the editor sees it and decides.
+  "possible_recent_coauthor",
+  "same_institution",
+  "previous_institution_overlap",
+  "dense_historic_collaboration",
+  "heavily_cited_by_manuscript",
+]
+
+[thresholds]
+# References to a candidate's work above this count suggest closeness worth noting.
+heavily_cited_by_manuscript = 3
+
+# Contact coverage a finished run is judged by, per recommendation class. An
+# editor cannot invite somebody they cannot address, so the classes that can
+# still be invited are held to the higher bar and the ones already set aside to
+# a lower one. Two numbers rather than one because the run cannot tell which of
+# the missing names is the person the editor most wanted.
+#
+# Policy, not constants in the code. The pipeline reaches about a fifth of
+# candidates from structured sources; the rest is lookup work, and these are the
+# numbers that say when it is done — or that it is not, which a run reports
+# rather than hides.
+[coverage]
+invitable_email = 0.90         # recommend and check_first, pooled
+other_email = 0.60             # do_not_invite
+
+[geo]
+# Cross-region preference operates on the candidate's *current affiliation
+# country*, never on nationality or on any inference from a name.
+# How much a cross-region candidate gains is scoring.geographic, like every
+# other component. A second key here saying the same thing was dead: nothing
+# read it, so tuning it changed nothing.
+mode = "prefer_cross_region"   # or "hard_filter" or "off"
+
+# Countries no IEEE journal will invite from at all — a sanctions regime or a
+# publisher instruction, not a preference. Refusing a whole country is a
+# decision an editor has to make explicitly, which is why the list is stated
+# here once rather than defaulted to empty and left to each journal file. A
+# switched-on rule with an empty list is rejected at load time rather than
+# silently passing everybody. Read from the current affiliation, never from
+# nationality or from a name; an unknown affiliation is flagged for manual
+# confirmation rather than guessed.
+[geo.restricted]
+mode = "require"               # off | prefer | require
+countries = ["IN", "IR"]       # two-letter ISO codes
+
+# One seniority axis, one rule: how far past the start of an independent career
+# somebody is. Measured in years since the doctorate where a doctorate year is
+# stated, and in years since the first publication otherwise; whichever was
+# used is reported. This was two rules measuring the same thing from two
+# different sources, disagreeing by up to 28 years in adjacent audit columns.
+#
+# The floor obeys the mode. The ceiling never excludes anybody whatever the
+# mode says — refusing a reviewer for being too experienced is not a policy an
+# editor should be able to state by accident, and a `require` ceiling once
+# emptied a live shortlist of every senior name in it.
+# How sure the identity match has to be before an invitation goes out unasked.
+# Below this the candidate is kept and sent for confirmation — a weak match is a
+# reason to check a name, never a reason to drop a qualified reviewer.
+#
+# One threshold, because it is one question. There were two hardcoded numbers:
+# 0.8 sent a candidate for confirmation and 0.6 added a note saying the same
+# thing, so a candidate at 0.7 was flagged for a human and not told why.
+[identity]
+min_confidence = 0.8
+
+# No floor, and a ceiling that is a preference. The floor used to be three
+# years, for "too soon after the doctorate"; the case it guards against is
+# already a hard gate elsewhere — [seniority.doctoral] excludes a PhD student
+# before their third year outright — and a floor that only costs score cannot
+# add to that. Stating both bounds also put "between 3 and 10 years" on the
+# workbook heading, which is not the rule an editor set.
+[seniority]
+mode = "prefer"
+min_years = 0
+max_years = 10                 # preferred ceiling; never excludes
+
+# Doctoral candidates. The pool is harvested from authorship, so it contains
+# students by construction, and a late-stage one can be the right reviewer on a
+# narrow topic. The floor is the year of study, counted from the enrolment year
+# on the education record: 3 means "third year or later".
+[seniority.doctoral]
+mode = "require"               # off | prefer | require
+min_year = 3
+# A student whose enrolment year is nowhere stated is kept and marked, and that
+# is not configurable: turning a gap in ORCID into an exclusion would remove the
+# candidates with the thinnest records rather than the ones who are too junior.
+
+# Every constraint below follows the same three modes:
+#   off      — not evaluated at all
+#   prefer   — feeds the score and adds a note; nobody is removed
+#   require  — the candidate is excluded, and stays on the list with the reason
+[activity]
+# Still publishing: works within the window, counted from the candidate's own
+# bibliographic profile rather than from the papers this run harvested. Counting
+# the harvest would ask a different question and call a prolific author dormant
+# because their latest work is not on this manuscript's topic.
+mode = "require"
+recent_years = 3
+min_recent_papers = 1
+
+# The same window, asked of the manuscript's own topic rather than of
+# everything: counted over the relevant evidence this run gathered, because
+# only the run can say what is relevant to this submission.
+[activity.relevant]
+mode = "require"
+recent_years = 3
+min_recent_papers = 1
+
+# Journal work on the manuscript's topic. Conferences are where this field moves
+# fastest, but a review report is a journal genre, and an editor wants somebody
+# who has written for one on this subject. Counted over the evidence that
+# qualified the candidate rather than over their whole output, so it asks "about
+# *this*" and not "how much". Papers whose venue type no source stated are
+# reported rather than counted, and a candidate who would clear the floor if
+# only those were resolved is flagged for manual review instead of failed.
+# Three journal papers on the manuscript's topic. This is the floor that does
+# most of the work on a run: the pool is harvested from a literature search, so
+# almost everyone in it is relevant, and what separates a reviewer from a name
+# on a conference paper is having carried the topic through peer review.
+#
+# Worth knowing when it looks too strict: it counts journal papers among the
+# evidence *this run* harvested for that person, which is bounded by the search
+# corpus, not by their actual record. On a narrow topic nobody may reach three.
+[activity.related_journals]
+mode = "require"
+min_publications = 3
+
+# Nothing judges whether an invitation was answered. Two rules did — a
+# windowed response rate and an "unresponsive veteran" gate — and both are
+# gone. They asked one question on two windows, so they agreed by
+# construction; on any store without a long invitation history both
+# abstained; and the veteran gate carried its own ten-year career threshold
+# beside [seniority]'s, so one axis had two numbers on it in two tables.
+#
+# Who was invited is still recorded, and still travels between machines. It
+# is reported beside a candidate, not judged.
+
+# Six components, summing to 1.0. A seventh, `reviewer_history`, scored a
+# candidate on the share of past invitations they answered and is gone with the
+# rest of the answered-invitation reading. Its 0.05 is folded into `topic`, the
+# primary expertise signal — no ranking moves, because that component returned a
+# neutral 0.5 for anyone with no invitation history, which so far is everyone.
+[scoring]
+topic = 0.40
+method = 0.20
+recent_expertise = 0.15
+publication_evidence = 0.10
+geographic = 0.08
+activity = 0.07
+
+# Retrieval and enrichment mechanics use the same journal overlay loader as
+# policy, but remain isolated in their own table. Keeping one resolved config
+# prevents a journal's search breadth and contact budget from drifting apart.
+# Module constants remain the fallback when a personal override omits a key.
+[retrieval]
+candidate_pool = 300
+top_papers = 50
+max_papers_per_candidate = 10
+pdf_front_pages = 30
+page_request_delay = 1.0
+host_failure_budget = 2
+max_page_bytes = 1000000
+
+# Lowest to highest precedence. These defaults preserve the editor's explicit
+# choice to keep a published corresponding address above a staff-page address.
+email_precedence = [
+  "orcid_public",
+  "lab_homepage",
+  "published_author",
+  "institutional_profile",
+  "published_corresponding",
+]
+
+[retrieval.email_confidence]
+orcid_public = 0.65
+lab_homepage = 0.75
+published_author = 0.85
+institutional_profile = 0.90
+published_corresponding = 0.95

@@ -1,0 +1,2 @@
+id	content	options	unset_default	owner	why
+reference.inside-page-limit	reference	yes,no	no	venue	Whether references count within the page limit.

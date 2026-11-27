@@ -17,7 +17,7 @@ After resolving the DOI (Unpaywall/OpenAlex/SS), look for the PDF in this priori
    Never try to evade it, so as not to damage the institution's IP reputation.
 4. **Publisher OA page** — the last resort; needs a real Chrome + persistent profile + cookie dismissal + an automatic click on the PDF button.
 
-**Troubleshooting**: `uv run --project "<plugin-root>" lit-review acquire --topic <slug> --dry-run` prints each paper's source plan (no download);
+**Troubleshooting**: `uv run --project "<plugin-root>" academia-read acquire --topic <slug> --dry-run` prints each paper's source plan (no download);
 `download/download_log.csv` records the failure reason for each URL -- read that column first, then retry by hand.
 
 ## Core principle
@@ -35,8 +35,8 @@ your real Chrome sessions. To download subscribed/off-campus papers you MUST
 first create a profile and pass it to acquire:
 
 ```bash
-uv run --project "<plugin-root>" lit-review login --profile <name> --url <publisher-page> --completion browser-close   # headed Chrome; log in, then close the window
-uv run --project "<plugin-root>" lit-review acquire --topic <slug> --approved-by <you> --profile <name> --limit <N>     # reuse the saved session
+uv run --project "<plugin-root>" academia-read login --profile <name> --url <publisher-page> --completion browser-close   # headed Chrome; log in, then close the window
+uv run --project "<plugin-root>" academia-read acquire --topic <slug> --approved-by <you> --profile <name> --limit <N>     # reuse the saved session
 ```
 
 Without `--profile`, an OA mirror or repository usually suffices, but publisher
@@ -46,14 +46,14 @@ paywalls will silently fail (the browser has no auth cookies).
 
 1. **Build & review download queue**:
    ```bash
-   uv run --project "<plugin-root>" lit-review acquire --topic <slug> --queue-only
+   uv run --project "<plugin-root>" academia-read acquire --topic <slug> --queue-only
    ```
 
 2. **Approve & download in ONE run** — auto-approves all `include` decisions
    (`maybe` items stay unapproved and are skipped; pass `--candidate-id <id>`
    to explicitly include one) and walks the full transport ladder:
    ```bash
-   uv run --project "<plugin-root>" lit-review acquire --topic <slug> --approved-by <you> --profile <name> --limit <N>
+   uv run --project "<plugin-root>" academia-read acquire --topic <slug> --approved-by <you> --profile <name> --limit <N>
    ```
    - `--limit` is capped at 20 (hard bound in the engine); a value above 20
      aborts the run with an error.
@@ -71,7 +71,7 @@ paywalls will silently fail (the browser has no auth cookies).
    - ⚠️ A headed browser needs the display; on a headless/CI box without one,
      use `--http-only` (publisher URLs will be logged as failed for manual
      retrieval) or run on a machine with a display.
-   - ⚠️ A profile lock on Windows makes `uv run --project "<plugin-root>" lit-review login` force-kill every
+   - ⚠️ A profile lock on Windows makes `uv run --project "<plugin-root>" academia-read login` force-kill every
      `chrome.exe` (`taskkill /F /IM chrome.exe`) to reopen it — close your
      personal Chrome windows first.
 
@@ -84,7 +84,7 @@ paywalls will silently fail (the browser has no auth cookies).
    | **Open Access** | OpenAlex `is_oa=true` | Download from `oa_url` |
    | **Campus IP** | institution IP range or `*.<institution-domain>` | Direct HTTP for OA; publisher PDF endpoints still need a session → `--profile` |
    | **VPN** | User says VPN is on | Same as campus IP |
-   | **Off-campus / paywall** | OA check fails + no campus IP | `uv run --project "<plugin-root>" lit-review login --profile <name>` then `acquire --profile <name>` |
+   | **Off-campus / paywall** | OA check fails + no campus IP | `uv run --project "<plugin-root>" academia-read login --profile <name>` then `acquire --profile <name>` |
    | **CAPTCHA wall** | Page body has "captcha" / "verify you are human" | Real Chrome via a saved `--profile` session |
 
 4. **Manual fallback only when auto-click is impossible**: the script opens the
@@ -113,7 +113,7 @@ Paper to acquire
   ├─ Campus IP / VPN? → run acquire with --profile (publisher PDF needs a session)
   │
   ├─ Off-campus with institutional access?
-  │     └─ uv run --project "<plugin-root>" lit-review login --profile <name> → acquire --profile <name>
+  │     └─ uv run --project "<plugin-root>" academia-read login --profile <name> → acquire --profile <name>
   │
   └─ Fully closed? → skip, note in audit log
 ```
