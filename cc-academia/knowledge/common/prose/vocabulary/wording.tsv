@@ -23,7 +23,7 @@ of paramount importance	forbidden			wording.plain: showy phrase	common	all
 /\bSections? [IVX]+(\.?[A-Z])?(,? (and|to) [IVX]+)? (describes?|presents?|discuss(es)?|introduces?|gives?|reports?|shows?|details?|covers?|concludes?|analy[sz]es?|summari[sz]es?|deals?|provides?|is devoted)\b/	caution		section-by-section preview (a scope statement is fine)	structure.no-structure-preview: section preview	common	!introduction
 /\b(the )?(rest|remainder) of this (paper|section|article|digest) is (organi[sz]ed|structured|arranged)\b/i	caution		section-by-section preview (a scope statement is fine)	structure.no-structure-preview: section preview	common	!introduction
 /\bas (discussed|described|shown|detailed) (below|later|in the following)\b/i	caution		section-by-section preview (a scope statement is fine)	structure.no-structure-preview: section preview	common	!introduction
-/\b(while|although)\b|,\s*but\b/i	caution		joining two contrasting facts	sentence.no-contrast-join: contrast in one sentence	common	all
+/\b(while|although)\b|,\s*(but|yet)\b/i	caution		joining two contrasting facts	sentence.no-contrast-join: contrast in one sentence	common	all
 /\berrors?\b/i	caution	discrepancy	no reference truth (two models or methods compared)	data.discrepancy-not-error	common	all
 with regards to	forbidden	with regard to		mech.fixed-phrase	common	all
 in regards to	forbidden	regarding		mech.fixed-phrase	common	all

@@ -139,6 +139,10 @@ def test_caution_nested_clause_and_contrast_join_warn_plain_sentences_do_not():
         "The noise rises at low speed. In contrast, it falls at high speed.\n",
         "sentence.no-contrast-join",
     )
+    assert has(
+        "The noise rises at low speed, yet it falls at high speed.\n", "sentence.no-contrast-join"
+    )
+    assert not has("The noise has not yet been measured.\n", "sentence.no-contrast-join")
 
 
 def test_canonical_project_and_venue_terms_suggest_the_replacement():
