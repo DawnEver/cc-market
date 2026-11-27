@@ -13,6 +13,8 @@ rather than producing something half-right.
 from __future__ import annotations
 
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -107,9 +109,6 @@ def decompose(pdf: Path, out_dir: Path) -> Decomposed:
         split_sections,
         write_paper_output,
     )
-
-    import shutil
-    import tempfile
 
     out_dir.mkdir(parents=True, exist_ok=True)
     source = _without_cover_pages(pdf, out_dir)
