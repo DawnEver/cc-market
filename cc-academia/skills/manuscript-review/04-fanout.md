@@ -43,6 +43,7 @@ Read `angles.md` and build the args:
 {
   "slug": "<slug>",
   "lang": "<en|zh from review-config.md>",
+  "nonce": "<fresh 32-hex-char value, e.g. from `openssl rand -hex 16`>",
   "angles": [
     { "name": "novelty", "definition": "...", "provider": "claude", "model": "" },
     { "name": "methodology", "definition": "...", "provider": "deepseek", "model": "deepseek-v4-pro" }
@@ -51,6 +52,10 @@ Read `angles.md` and build the args:
 ```
 
 Map router → provider: `sonnet-vision` → `claude`, `takeover-codex` → `codex`, `takeover-deepseek` → `deepseek`.
+
+`nonce` is required: generate a new one for every invocation and never reuse it. It seeds the prompt boundary markers that paper text cannot spoof. The Workflow runtime forbids imports and `Math.random`, so the script cannot generate it itself and refuses to run without it.
+
+Local angles use agent type `manuscript-reviewer-<angle>`. If the host has not registered it, the workflow logs that and runs the same prompt on a generic agent, so a missing registration never silently drops an angle.
 
 **If any angle uses external Fabric (codex/deepseek)**, pre-read the paper text to pass as `paperSections` in args. This prevents the relay agent from reading paper files directly, closing a prompt-injection vector where paper content could influence relay behavior before it builds the downstream prompt (H2).
 
