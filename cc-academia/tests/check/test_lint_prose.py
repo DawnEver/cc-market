@@ -625,3 +625,13 @@ def test_ieee_abbreviation_used_before_its_definition():
     )
     got = [x for x in hits(src, FULL) if x["rule"] == "ieee.abbreviations"]
     assert [x["line"] for x in got] == [2] and "VSD" in got[0]["message"]
+
+def test_empty_announcement_warns_content_sentences_do_not():
+    rid = "sentence.no-empty-announcement"
+    assert has("The state of the art is reviewed.\n", rid)
+    assert has("The state of the art is reviewed, including aluminium windings.\n", rid)
+    assert has("Their applications in aerospace are briefly discussed.\n", rid)
+    assert not has("The tool is then introduced to handle connection constraints.\n", rid)
+    assert not has("Insulation is verified by surge and hipot tests.\n", rid)
+    assert not has("The state of the art now includes aluminium windings.\n", rid)
+
